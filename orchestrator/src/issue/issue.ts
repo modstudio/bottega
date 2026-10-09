@@ -17,7 +17,6 @@ import { type Project, projectByName } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
 import { run } from '../run/run.ts'
-import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
@@ -414,7 +413,7 @@ async function handbackAskingIssue(
           `kept branch ${branch}: ${unique} unique, ${after ?? 'n/a'} after cut (run ${id})`,
       },
     },
-    { lifecycleCheckpoint: () => {}, terminateRunProcesses },
+    { lifecycleCheckpoint: () => {} },
   )
 }
 

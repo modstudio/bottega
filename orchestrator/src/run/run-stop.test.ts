@@ -2,7 +2,8 @@ import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
-import { abandonRun, stoppedRunLine, stopRun } from './run-stop.ts'
+import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
+import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -19,14 +20,20 @@ const presentation = () => {
 async function invoke(
   action: 'stop' | 'abandon',
   id: number,
-  opts: { note?: string; checkpoint?: (name: string) => void } = {},
+  opts: {
+    note?: string
+    checkpoint?: (name: string) => void
+    plan?: () => RunProcessTerminationPlan
+    terminate?: () => TerminateRunProcessesResult
+  } = {},
 ) {
   const shown = presentation()
   try {
     const options = { force: false, auditReason: null, note: opts.note, presentation: shown.value }
     const helpers = {
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
-      terminateRunProcesses: () => ({ outcome: 'no-pid' as const, acceptableIds: [] }),
+      planRunProcessTermination: opts.plan ?? (() => ({ outcome: 'no-pid' as const })),
+      terminateRunProcesses: opts.terminate ?? (() => ({ outcome: 'no-pid' as const })),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
     else await abandonRun(id, options, helpers)
@@ -37,39 +44,41 @@ async function invoke(
 }
 const insert = (status: string, job = 'implement') =>
   addRun({ agent: 'codex', job, status, session: 'orch-test-session' })
+const verifiedVendor = {
+  outcome: 'verified' as const,
+  rootPid: 42922,
+  pids: [42922],
+  pgid: 42922,
+  signalGroup: false,
+}
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
 
-test('stop reports an identity mismatch with an inspect-then-signal remedy', () => {
-  expect(stoppedRunLine(42, 9001, { outcome: 'identity-mismatch', acceptableIds: [41, 42] })).toBe(
-    'stopped run 42; pid 9001 is present but does not name this run (expected exec.ts 41, exec.ts 42); after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of those ids',
+test('stop reports an identity mismatch with an inspect-then-signal remedy and does not claim stopped', () => {
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'identity-mismatch', pid: 42922 })).toBe(
+    'run 42 pid 42922 identity could not be confirmed; the run remains running; after checking ps -p 42922 -o lstart=,command=, run kill -TERM 42922 only if the start time matches the recorded agent_start_time',
   )
 })
 
-test('stop reports an unreadable process table and an inspect-then-signal remedy', () => {
+test('stop reports a vendor that survived SIGKILL after the row is recorded stopped', () => {
   expect(
-    stoppedRunLine(42, 9001, {
-      outcome: 'unascertainable',
-      acceptableIds: [41, 42],
-      reason: 'process inventory failed with exit 1',
-    }),
+    stopTerminationRefusal(
+      { id: 42 },
+      { outcome: 'still-alive', pid: 42922, reason: 'process did not exit after SIGKILL' },
+    ),
   ).toBe(
-    'stopped run 42; no process could be signaled because process inventory failed with exit 1; after checking ps -p 9001 -o command, run kill -TERM 9001 only if the command shows one of these ids: exec.ts 41, exec.ts 42',
+    'run 42 is recorded stopped; process 42922 is still alive; after checking ps -p 42922 -o lstart=,command=, run kill -KILL 42922',
   )
 })
 
-test('stop uses the plain success line for signaled, no-pid and gone outcomes', () => {
-  expect(
-    stoppedRunLine(42, 9001, {
-      outcome: 'signaled',
-      signaled: [9001],
-      acceptableIds: [42],
-    }),
-  ).toBe('stopped run 42')
-  expect(stoppedRunLine(42, null, { outcome: 'no-pid', acceptableIds: [] })).toBe('stopped run 42')
-  expect(stoppedRunLine(42, 9001, { outcome: 'gone', acceptableIds: [42] })).toBe('stopped run 42')
+test('stop uses the plain success line after a proven termination', () => {
+  expect(stoppedRunLine(42)).toBe('stopped run 42')
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-pid' })).toBeNull()
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-vendor' })).toBeNull()
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'gone' })).toBeNull()
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'signaled', signaled: [42922] })).toBeNull()
 })
 
 test('abandon retires an asking run from the live inbox and keeps it in all as terminal', async () => {
@@ -149,6 +158,80 @@ test('stop refuses a run that is not running without changing it', async () => {
   const result = await invoke('stop', id)
   expect(result.err).toContain(`${id} turn 1 ok`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'ok' })
+})
+
+test('stop refuses an identity mismatch and leaves the run running', async () => {
+  const id = insert('running')
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  let terminated = false
+  const result = await invoke('stop', id, {
+    plan: () => ({ outcome: 'identity-mismatch', pid: 42922 }),
+    terminate: () => {
+      terminated = true
+      return { outcome: 'identity-mismatch', pid: 42922 }
+    },
+  })
+  expect(terminated).toBe(false)
+  expect(result.code).toBe(1)
+  expect(result.err).toContain('pid 42922 identity could not be confirmed')
+  expect(result.err).toContain('the run remains running')
+  expect(result.err).toContain('kill -TERM 42922')
+  expect(result.out).not.toContain(`stopped run ${id}`)
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
+})
+
+test('stop refuses when the vendor stays alive after the row is recorded stopped', async () => {
+  const id = insert('running')
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  const result = await invoke('stop', id, {
+    plan: () => verifiedVendor,
+    terminate: () => ({
+      outcome: 'still-alive',
+      pid: 42922,
+      reason: 'process did not exit after SIGKILL',
+    }),
+  })
+  expect(result.code).toBe(1)
+  expect(result.err).toContain('is recorded stopped')
+  expect(result.err).toContain('process 42922 is still alive')
+  expect(result.err).toContain('kill -KILL 42922')
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+})
+
+test('stop calls terminate only after the row already reads stopped', async () => {
+  const id = insert('running')
+  db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  const statusesDuringTerminate: string[] = []
+  const result = await invoke('stop', id, {
+    plan: () => verifiedVendor,
+    terminate: () => {
+      statusesDuringTerminate.push(
+        (db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status,
+      )
+      return { outcome: 'signaled', signaled: [42922] }
+    },
+  })
+  expect(statusesDuringTerminate).toEqual(['stopped'])
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(`stopped run ${id}`)
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+})
+
+test('stop records a setup run with no vendor and signals nothing', async () => {
+  const id = insert('running')
+  db().query('UPDATE run SET pid=? WHERE id=?').run(42402, id)
+  let terminated = false
+  const result = await invoke('stop', id, {
+    plan: () => ({ outcome: 'no-vendor' }),
+    terminate: () => {
+      terminated = true
+      return { outcome: 'signaled', signaled: [42402] }
+    },
+  })
+  expect(terminated).toBe(false)
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(`stopped run ${id}`)
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
 })
 
 test('stopping a running turn records the conversation root as stopped', async () => {

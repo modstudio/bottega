@@ -12,7 +12,10 @@ import {
 } from '../cleanup/cleanup.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import {
+  type TerminalDockerTeardown,
+  teardownTerminalRunResources,
+} from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
@@ -27,32 +30,40 @@ import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
+  type RootAuthority,
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import type {
+  RunProcessTerminationPlan,
+  TerminateRunProcessesResult,
+  VerifiedRunProcessTermination,
+} from './run-process.ts'
 
-export type TerminateRunProcessesResult =
-  | { outcome: 'signaled'; signaled: number[]; acceptableIds: number[] }
-  | { outcome: 'identity-mismatch'; acceptableIds: number[] }
-  | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
-  | { outcome: 'no-pid'; acceptableIds: number[] }
-  | { outcome: 'gone'; acceptableIds: number[] }
-
-export function stoppedRunLine(
-  id: number,
-  pid: number | null,
-  termination: TerminateRunProcessesResult,
-): string {
-  if (pid && termination.outcome === 'identity-mismatch') {
-    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
-    return `stopped run ${id}; pid ${pid} is present but does not name this run (expected ${commands}); after checking ps -p ${pid} -o command, run kill -TERM ${pid} only if the command shows one of those ids`
-  }
-  if (pid && termination.outcome === 'unascertainable') {
-    const commands = termination.acceptableIds.map((runId) => `exec.ts ${runId}`).join(', ')
-    return `stopped run ${id}; no process could be signaled because ${termination.reason}; after checking ps -p ${pid} -o command, run kill -TERM ${pid} only if the command shows one of these ids: ${commands}`
-  }
+export function stoppedRunLine(id: number): string {
   return `stopped run ${id}`
+}
+
+export function stopTerminationRefusal(
+  row: { id: number },
+  termination: TerminateRunProcessesResult,
+): string | null {
+  if (termination.outcome === 'identity-mismatch') {
+    const pid = termination.pid
+    return (
+      `run ${row.id} pid ${pid} identity could not be confirmed; the run remains running; ` +
+      `after checking ps -p ${pid} -o lstart=,command=, run kill -TERM ${pid} only if the start time matches the recorded agent_start_time`
+    )
+  }
+  if (termination.outcome === 'still-alive') {
+    const pid = termination.pid
+    return (
+      `run ${row.id} is recorded stopped; process ${pid} is still alive; ` +
+      `after checking ps -p ${pid} -o lstart=,command=, run kill -KILL ${pid}`
+    )
+  }
+  return null
 }
 
 function stoppedWorktreeLine(
@@ -65,10 +76,148 @@ function stoppedWorktreeLine(
   return `kept worktree ${worktree}${keptBranch} for continuation; ${dockerMessage}`
 }
 
+function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
+  if (!dockerTeardown.complete) {
+    return dockerTeardown.removed
+      ? 'reclaimed Docker containers, but reclamation was incomplete'
+      : 'Docker container reclamation was incomplete'
+  }
+  if (dockerTeardown.outcome === 'removed') return 'reclaimed Docker containers'
+  if (dockerTeardown.outcome === 'live-sibling') {
+    return 'left Docker containers in place because another live run still owns the tree'
+  }
+  if (dockerTeardown.outcome === 'unascertainable') {
+    return `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
+  }
+  return 'found no Docker containers to reclaim'
+}
+
+function logStoppedRun(
+  options: RunStopOptions,
+  row: StopRow,
+  cleanupRow: ReturnType<typeof stopCleanupRow>,
+  dockerTeardown: TerminalDockerTeardown,
+): void {
+  options.presentation.log(stoppedRunLine(row.id))
+  if (cleanupRow.worktree) {
+    options.presentation.log(
+      stoppedWorktreeLine(
+        cleanupRow.worktree,
+        cleanupRow.branch,
+        branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch) === null,
+        dockerStopMessage(dockerTeardown),
+      ),
+    )
+    return
+  }
+  if (dockerTeardown.outcome === 'unascertainable') {
+    options.presentation.log(
+      `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`,
+    )
+  }
+}
+
 export type RunStopOptions = CleanupOptions & { note?: string }
-export type RunStopHelpers = {
+type RunControlHelpers = {
   lifecycleCheckpoint: (name: string) => void
-  terminateRunProcesses: (runId: number, exceptPids?: number[]) => TerminateRunProcessesResult
+}
+export type RunStopHelpers = RunControlHelpers & {
+  planRunProcessTermination: (runId: number, exceptPids?: number[]) => RunProcessTerminationPlan
+  terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
+}
+
+type StopRow = {
+  id: number
+  status: string
+  pid: number | null
+  agent_pid: number | null
+  parent_run_id: number | null
+  turn: number
+  repo: string | null
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: Worktree['source'] | null
+}
+
+function readStopChain(rootId: number): StopRow[] {
+  return db()
+    .query(
+      `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
+            base_commit, worktree_source
+       FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+    )
+    .all(rootId, rootId) as StopRow[]
+}
+
+function describeStopChain(chain: StopRow[]): string {
+  return [...chain]
+    .reverse()
+    .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`)
+    .join('; ')
+}
+
+function stopCleanupRow(chain: StopRow[], root: StopRow, row: StopRow) {
+  const artifact = chain.find((turn) => turn.worktree)
+  return {
+    ...root,
+    worktree: row.worktree ?? artifact?.worktree ?? null,
+    branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
+    base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+    worktree_source:
+      root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
+  }
+}
+
+function runningStopTurn(rootId: number, id: number): StopRow {
+  const chain = readStopChain(rootId)
+  const row = chain.find((turn) => turn.status === 'running')
+  if (!row) {
+    throw new Error(
+      `run ${id}'s chain has no running turn — nothing to stop: ${describeStopChain(chain)}`,
+    )
+  }
+  return row
+}
+
+function commitStoppedRun(
+  authority: RootAuthority,
+  id: number,
+  auditReason: string | null,
+): { row: StopRow; cleanupRow: ReturnType<typeof stopCleanupRow> } {
+  const chain = readStopChain(authority.rootId)
+  const row = chain.find((turn) => turn.status === 'running')
+  if (!row) {
+    throw new Error(
+      `run ${id}'s chain has no running turn — nothing to stop: ${describeStopChain(chain)}`,
+    )
+  }
+  const root = chain.find((turn) => turn.id === authority.rootId)!
+  const cleanupRow = stopCleanupRow(chain, root, row)
+  const next = adoptRunMutation(reauthorizeRunMutation(authority, 'stop'), 'stop')
+  const changed = db()
+    .query(
+      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=? AND status='running'",
+    )
+    .run(row.id)
+  if (changed.changes !== 1) {
+    throw new Error(
+      `run ${id}'s chain changed before it could be stopped: ${describeStopChain(
+        readStopChain(authority.rootId),
+      )}`,
+    )
+  }
+  if (row.id !== next.rootId) {
+    db()
+      .query(
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=?",
+      )
+      .run(next.rootId)
+  }
+  auditRunMutation(next, 'stop', auditReason)
+  closeRunChainQuestions(db(), next.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
+  return { row, cleanupRow }
 }
 
 export async function stopRun(
@@ -76,126 +225,33 @@ export async function stopRun(
   options: RunStopOptions,
   helpers: RunStopHelpers,
 ): Promise<void> {
-  let authority = authorizeRunMutation(id, 'stop')
+  const authority = authorizeRunMutation(id, 'stop')
   helpers.lifecycleCheckpoint('stop-before-immediate')
-  type StopRow = {
-    id: number
-    status: string
-    pid: number | null
-    agent_pid: number | null
-    parent_run_id: number | null
-    turn: number
-    repo: string | null
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: Worktree['source'] | null
-  }
-  const readChain = () =>
-    db()
-      .query(
-        `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
-              base_commit, worktree_source
-         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
-      )
-      .all(authority.rootId, authority.rootId) as StopRow[]
-  const describe = (chain: StopRow[]) =>
-    [...chain]
-      .reverse()
-      .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`)
-      .join('; ')
-
-  const stopped = writeTransaction(() => {
-    const chain = readChain()
-    const row = chain.find((turn) => turn.status === 'running')
-    if (!row) {
-      throw new Error(`run ${id}'s chain has no running turn — nothing to stop: ${describe(chain)}`)
-    }
-    const root = chain.find((turn) => turn.id === authority.rootId)!
-    const artifact = chain.find((turn) => turn.worktree)
-    const cleanupRow = {
-      ...root,
-      worktree: row.worktree ?? artifact?.worktree ?? null,
-      branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
-      base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
-      worktree_source:
-        root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
-    }
-
-    authority = reauthorizeRunMutation(authority, 'stop')
-    authority = adoptRunMutation(authority, 'stop')
-    const changed = db()
-      .query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=? AND status='running'",
-      )
-      .run(row.id)
-    if (changed.changes !== 1) {
-      const current = readChain()
-      throw new Error(`run ${id}'s chain changed before it could be stopped: ${describe(current)}`)
-    }
-    if (row.id !== authority.rootId) {
-      db()
-        .query(
-          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=?",
-        )
-        .run(authority.rootId)
-    }
-    auditRunMutation(authority, 'stop', options.auditReason)
-    closeRunChainQuestions(db(), authority.rootId, QUESTION_CLOSE_CHAIN_STOPPED)
-    return { row, cleanupRow }
-  })
-  const { row, cleanupRow } = stopped
-
-  const pids = [...new Set([row.agent_pid, row.pid].filter((pid): pid is number => Boolean(pid)))]
-  for (const pid of pids) {
-    try {
-      process.kill(pid, 0)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
-    }
-  }
-
+  const candidate = runningStopTurn(authority.rootId, id)
   // The coordinator owns setup and final recording. Killing it inside the
   // creation window strands the project tool's directory before it can be
   // attributed or reclaimed. Stop the vendor, but let the coordinator see
   // the stopped row and finish recording. The tree remains the continuation
   // substrate; only its recreatable containers are reclaimed at stop.
-  const termination = helpers.terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
-  const dockerTeardown = teardownTerminalRunResources(db(), row.id)
-  options.presentation.log(stoppedRunLine(row.id, row.pid, termination))
-  if (cleanupRow.worktree) {
-    const dockerMessage = !dockerTeardown.complete
-      ? dockerTeardown.removed
-        ? 'reclaimed Docker containers, but reclamation was incomplete'
-        : 'Docker container reclamation was incomplete'
-      : dockerTeardown.outcome === 'removed'
-        ? 'reclaimed Docker containers'
-        : dockerTeardown.outcome === 'live-sibling'
-          ? 'left Docker containers in place because another live run still owns the tree'
-          : dockerTeardown.outcome === 'unascertainable'
-            ? `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
-            : 'found no Docker containers to reclaim'
-    options.presentation.log(
-      stoppedWorktreeLine(
-        cleanupRow.worktree,
-        cleanupRow.branch,
-        branchDeletionProvenanceRefusal(cleanupRow.id, cleanupRow.branch) === null,
-        dockerMessage,
-      ),
-    )
-  } else if (dockerTeardown.outcome === 'unascertainable') {
-    options.presentation.log(
-      `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`,
-    )
+  const plan = helpers.planRunProcessTermination(candidate.id, candidate.pid ? [candidate.pid] : [])
+  if (plan.outcome === 'identity-mismatch') {
+    throw new Error(stopTerminationRefusal(candidate, plan)!)
   }
-  return
+  const { row, cleanupRow } = writeTransaction(() =>
+    commitStoppedRun(authority, id, options.auditReason),
+  )
+  if (plan.outcome === 'verified') {
+    const termination = helpers.terminateRunProcesses(plan)
+    const refusal = stopTerminationRefusal(row, termination)
+    if (refusal) throw new Error(refusal)
+  }
+  logStoppedRun(options, row, cleanupRow, teardownTerminalRunResources(db(), row.id))
 }
 
 export async function abandonRun(
   id: number,
   options: RunStopOptions,
-  helpers: RunStopHelpers,
+  helpers: RunControlHelpers,
 ): Promise<void> {
   let authority = authorizeRunMutation(id, 'abandon')
   helpers.lifecycleCheckpoint('abandon-before-immediate')

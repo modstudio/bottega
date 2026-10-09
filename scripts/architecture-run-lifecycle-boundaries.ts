@@ -205,6 +205,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-process.ts',
     [
       'node:crypto',
+      '../../../shared/process-identity.ts',
       './checkpoint.ts',
       '../database/db.ts',
       '../dispatch/dispatch-preflight.ts',
