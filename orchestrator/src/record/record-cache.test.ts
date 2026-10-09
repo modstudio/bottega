@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { installRecordApiClient, unusedBoardClientMethods } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { retireProject, upsertProject } from '../project/projects.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
 
@@ -10,9 +11,9 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     ...unusedBoardClientMethods(),
     whoami: async () => ({
       user: { id: newRecordId() },
-      activeSpaceId: null,
-      personalSpaceId: null,
-      memberships: [],
+      activeSpaceId: 'space-active',
+      personalSpaceId: 'space-active',
+      memberships: [{ space_id: 'space-active', slug: 'active' }],
     }),
     inviteMember: async () => ({ id: newRecordId() }),
     putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
@@ -48,6 +49,230 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
 }
 
 describe('record cache pull', () => {
+  test('refuses a pull when the record session has no active space', async () => {
+    let queried = false
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: null,
+          personalSpaceId: null,
+          memberships: [],
+        }),
+        listDocs: async () => {
+          queried = true
+          return { items: [], nextCursor: null }
+        },
+        listScores: async () => {
+          queried = true
+          return { items: [], nextCursor: null }
+        },
+      }),
+    )
+
+    await expect(pullRecordCache(db())).rejects.toThrow(
+      'record session has no active space; run `orch record space switch <slug>`',
+    )
+    expect(queried).toBe(false)
+  })
+
+  test('pulls each distinct live or retired project destination only when it is a membership', async () => {
+    upsertProject({ name: 'alpha-one', path: '/w/alpha-one', settings: { space: 'alpha' } })
+    upsertProject({ name: 'alpha-two', path: '/w/alpha-two', settings: { space: 'alpha' } })
+    upsertProject({ name: 'beta-retired', path: '/w/beta', settings: { space: 'beta' } })
+    retireProject('beta-retired')
+    upsertProject({ name: 'outside', path: '/w/outside', settings: { space: 'outside' } })
+    const pulled: string[] = []
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: 'space-active',
+          personalSpaceId: 'space-active',
+          memberships: [
+            { space_id: 'space-active', slug: 'active' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-beta', slug: 'beta' },
+          ],
+        }),
+        listDocs: async (_query, destination) => {
+          pulled.push(destination?.destinationSpaceId ?? 'missing')
+          return { items: [], nextCursor: null }
+        },
+      }),
+    )
+
+    await pullRecordCache(db())
+
+    expect(pulled).toEqual(['space-active', 'space-alpha', 'space-beta'])
+  })
+
+  test('applies live rows and deletions only from the space owning the address', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    upsertProject({ name: 'outside', path: '/w/outside', settings: { space: 'outside' } })
+    const globalId = newRecordId()
+    const item = (overrides: Record<string, unknown>) => ({
+      id: newRecordId(),
+      scope: 'global',
+      subject: null,
+      owner: null,
+      slug: 'shared',
+      title: 'Shared',
+      body: 'active copy',
+      delivery: 'demand',
+      audience: 'technical',
+      parentId: null,
+      position: 0,
+      updatedAt: '2026-10-08T12:00:00.000Z',
+      deletedAt: null,
+      ...overrides,
+    })
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: 'space-active',
+          personalSpaceId: 'space-active',
+          memberships: [
+            { space_id: 'space-active', slug: 'active' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+          ],
+        }),
+        listDocs: async (_query, destination) => ({
+          items:
+            destination?.destinationSpaceId === 'space-alpha'
+              ? [
+                  item({ body: 'wrong-space copy', updatedAt: '2026-10-08T12:01:00.000Z' }),
+                  item({
+                    id: globalId,
+                    deletedAt: '2026-10-08T12:02:00.000Z',
+                    updatedAt: '2026-10-08T12:02:00.000Z',
+                  }),
+                  item({
+                    scope: 'project',
+                    subject: 'alpha',
+                    slug: 'owned',
+                    body: 'project copy',
+                    updatedAt: '2026-10-08T12:03:00.000Z',
+                  }),
+                ]
+              : [
+                  item({ id: globalId }),
+                  item({ scope: 'project', subject: 'alpha', slug: 'owned' }),
+                  item({ scope: 'project', subject: 'outside', slug: 'unreachable' }),
+                ],
+          nextCursor: null,
+        }),
+      }),
+    )
+
+    expect(await pullRecordCache(db())).toMatchObject({ docs: 2, skippedDocs: 4 })
+    expect(
+      db()
+        .query<{ body: string }, []>("SELECT body FROM doc WHERE scope='global' AND slug='shared'")
+        .get()?.body,
+    ).toBe('active copy')
+    expect(
+      db()
+        .query<{ body: string }, []>("SELECT body FROM doc WHERE scope='project' AND slug='owned'")
+        .get()?.body,
+    ).toBe('project copy')
+    expect(db().query("SELECT 1 FROM doc WHERE slug='unreachable'").get()).toBeNull()
+  })
+
+  test('keeps a cursor per space when the active space changes', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
+    let activeSpaceId = 'space-a'
+    const seen: Array<[string, string | undefined]> = []
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId,
+          personalSpaceId: activeSpaceId,
+          memberships: [
+            { space_id: 'space-a', slug: 'a' },
+            { space_id: 'space-b', slug: 'b' },
+            { space_id: 'space-alpha', slug: 'alpha' },
+          ],
+        }),
+        listDocs: async (query, destination) => {
+          const space = destination?.destinationSpaceId ?? 'missing'
+          seen.push([space, query.updatedSince])
+          return query.updatedSince
+            ? { items: [], nextCursor: null }
+            : {
+                items: [
+                  {
+                    id: newRecordId(),
+                    scope: 'global',
+                    subject: null,
+                    slug: `cursor-${space}`,
+                    title: 'Cursor',
+                    body: 'cursor',
+                    delivery: 'demand',
+                    updatedAt: `${space}-cursor`,
+                  },
+                ],
+                nextCursor: null,
+              }
+        },
+      }),
+    )
+
+    await pullRecordCache(db())
+    activeSpaceId = 'space-b'
+    await pullRecordCache(db())
+
+    expect(seen).toEqual([
+      ['space-a', undefined],
+      ['space-alpha', undefined],
+      ['space-b', undefined],
+      ['space-alpha', 'space-alpha-cursor'],
+    ])
+    expect(
+      db()
+        .query<{ value: string }, []>(
+          "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
+        )
+        .get()?.value,
+    ).toBe('space-a-cursor')
+  })
+
+  test('inherits the legacy cursor into the active space only once', async () => {
+    db().query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor','legacy')").run()
+    let activeSpaceId = 'space-a'
+    const seen: Array<string | undefined> = []
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId,
+          personalSpaceId: activeSpaceId,
+          memberships: [],
+        }),
+        listDocs: async (query) => {
+          seen.push(query.updatedSince)
+          return { items: [], nextCursor: null }
+        },
+      }),
+    )
+
+    await pullRecordCache(db())
+    activeSpaceId = 'space-b'
+    await pullRecordCache(db())
+
+    expect(seen).toEqual(['legacy', undefined])
+    expect(
+      db()
+        .query<{ value: string }, []>(
+          "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
+        )
+        .get()?.value,
+    ).toBe('legacy')
+    expect(db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor'").get()).toBeNull()
+  })
+
   test('resolves a child whose parent arrives on a later page', async () => {
     const childId = newRecordId()
     const parentId = newRecordId()
@@ -138,7 +363,7 @@ describe('record cache pull', () => {
 
     await expect(pullRecordCache(db())).rejects.toThrow(`${childId} -> ${parentId}`)
     expect(
-      db().query("SELECT value FROM schema_meta WHERE key='record_docs_cursor'").get(),
+      db().query("SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-active'").get(),
     ).toBeNull()
   })
 

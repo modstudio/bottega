@@ -1,8 +1,17 @@
 // concern: record-cache
 /** Pulls hosted docs and verdicts into the local offline cache. Must not know CLI presentation. */
 import type { Database } from 'bun:sqlite'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { projects } from '../project/projects.ts'
 import { recordApiClient } from './record-api-client.ts'
+import type { RecordIdentity } from './record-auth.ts'
+import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import {
+  declaredRecordSpace,
+  noActiveRecordSpaceRefusal,
+  projectRecordDestination,
+} from './record-project-destination.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
@@ -22,35 +31,130 @@ function writeCursor(local: Database, key: string, value: string): void {
     .run(key, value)
 }
 
-export async function pullRecordCache(
-  local: Database = db(),
-): Promise<{ docs: number; scores: number }> {
-  const hasMeta = local
-    .query<{ n: number }, []>(
-      "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
+function deleteCursor(local: Database, key: string): void {
+  local.query('DELETE FROM schema_meta WHERE key=?').run(key)
+}
+
+function recordCacheSpaces(identity: RecordIdentity): {
+  spaces: string[]
+  projectSpaces: Map<string, string | null>
+} {
+  if (!identity.activeSpaceId) return { spaces: [], projectSpaces: new Map() }
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
+  const spaces = new Set([identity.activeSpaceId])
+  const projectSpaces = new Map<string, string | null>()
+  for (const project of [...projects(), ...projects({ retired: true })]) {
+    const destination = projectRecordDestination(
+      project.name,
+      declaredRecordSpace(project.settings),
+      identity.activeSpaceId,
+      memberships,
     )
-    .get()
-  if (!hasMeta) return { docs: 0, scores: 0 }
-  const client = recordApiClient()
+    if ('refused' in destination) {
+      projectSpaces.set(project.name, null)
+      continue
+    }
+    projectSpaces.set(project.name, destination.spaceId)
+    spaces.add(destination.spaceId)
+  }
+  return { spaces: [...spaces], projectSpaces }
+}
+
+function applyDocPage(
+  local: Database,
+  items: Record<string, unknown>[],
+  ownership: {
+    pullingSpaceId: string
+    activeSpaceId: string
+    projectSpaces: ReadonlyMap<string, string | null>
+  },
+  unresolvedParents: Map<string, string>,
+): { docs: number; skippedDocs: number; cursor?: string } {
   let docs = 0
-  let cursor = readCursor(local, DOCS_CURSOR)
-  const unresolvedParents = new Map<string, string>()
-  for (;;) {
-    const page = await client.listDocs({
-      updatedSince: cursor,
-      includeDeleted: true,
-      limit: 100,
+  let skippedDocs = 0
+  let cursor: string | undefined
+  for (const item of items) {
+    const owned = recordCacheSpaceOwnsAddress({
+      scope: String(item.scope),
+      subject: item.subject == null ? null : String(item.subject),
+      ...ownership,
     })
+    if (owned) {
+      applyDoc(local, item, unresolvedParents)
+      resolveRememberedParents(local, unresolvedParents)
+      docs++
+    } else {
+      skippedDocs++
+    }
+    if (typeof item.updatedAt === 'string') cursor = item.updatedAt
+  }
+  return { docs, skippedDocs, cursor }
+}
+
+async function pullDocsForSpace(
+  local: Database,
+  input: {
+    spaceId: string
+    activeSpaceId: string
+    projectSpaces: ReadonlyMap<string, string | null>
+    unresolvedParents: Map<string, string>
+  },
+): Promise<{ docs: number; skippedDocs: number; cursorKey: string; cursor?: string }> {
+  const cursorKey = `${DOCS_CURSOR}:${input.spaceId}`
+  let cursor = readCursor(local, cursorKey)
+  if (input.spaceId === input.activeSpaceId && cursor === undefined) {
+    const legacy = readCursor(local, DOCS_CURSOR)
+    if (legacy !== undefined) {
+      cursor = legacy
+      writeCursor(local, cursorKey, legacy)
+      deleteCursor(local, DOCS_CURSOR)
+    }
+  }
+  let docs = 0
+  let skippedDocs = 0
+  const client = recordApiClient()
+  for (;;) {
+    const page = await client.listDocs(
+      { updatedSince: cursor, includeDeleted: true, limit: 100 },
+      { destinationSpaceId: input.spaceId },
+    )
     if (!page.items.length) break
     writeTransaction(() => {
-      for (const item of page.items) {
-        applyDoc(local, item, unresolvedParents)
-        resolveRememberedParents(local, unresolvedParents)
-        docs++
-        if (typeof item.updatedAt === 'string') cursor = item.updatedAt
-      }
+      const applied = applyDocPage(
+        local,
+        page.items,
+        { ...input, pullingSpaceId: input.spaceId },
+        input.unresolvedParents,
+      )
+      docs += applied.docs
+      skippedDocs += applied.skippedDocs
+      cursor = applied.cursor ?? cursor
     }, local)
     if (!page.nextCursor) break
+  }
+  return { docs, skippedDocs, cursorKey, cursor }
+}
+
+async function pullDocs(
+  local: Database,
+  identity: RecordIdentity,
+  spaces: readonly string[],
+  projectSpaces: ReadonlyMap<string, string | null>,
+): Promise<{ docs: number; skippedDocs: number }> {
+  let docs = 0
+  let skippedDocs = 0
+  const cursors = new Map<string, string>()
+  const unresolvedParents = new Map<string, string>()
+  for (const spaceId of spaces) {
+    const pulled = await pullDocsForSpace(local, {
+      spaceId,
+      activeSpaceId: identity.activeSpaceId as string,
+      projectSpaces,
+      unresolvedParents,
+    })
+    docs += pulled.docs
+    skippedDocs += pulled.skippedDocs
+    if (pulled.cursor) cursors.set(pulled.cursorKey, pulled.cursor)
   }
   if (unresolvedParents.size) {
     const links = [...unresolvedParents]
@@ -61,7 +165,24 @@ export async function pullRecordCache(
       `record cache could not resolve document parent links ${links}; cleared by: ensure the hosted parent documents are readable and refresh again`,
     )
   }
-  if (cursor) writeCursor(local, DOCS_CURSOR, cursor)
+  for (const [key, cursor] of cursors) writeCursor(local, key, cursor)
+  return { docs, skippedDocs }
+}
+
+export async function pullRecordCache(
+  local: Database = db(),
+): Promise<{ docs: number; skippedDocs: number; scores: number }> {
+  const hasMeta = local
+    .query<{ n: number }, []>(
+      "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
+    )
+    .get()
+  if (!hasMeta) return { docs: 0, skippedDocs: 0, scores: 0 }
+  const client = recordApiClient()
+  const identity = await client.whoami()
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  const cache = recordCacheSpaces(identity)
+  const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -77,7 +198,7 @@ export async function pullRecordCache(
     }, local)
     if (!page.nextCursor) break
   }
-  return { docs, scores }
+  return { ...pulledDocs, scores }
 }
 
 function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {
