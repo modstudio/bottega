@@ -258,6 +258,92 @@ export function isTaskBranchSuperseded(branch: string, rows: readonly TaskBranch
   )
 }
 
+function preferredTaskBranchAlias<T extends { branch: string }>(
+  aliases: readonly T[],
+  launchKey: string,
+): T {
+  const keyed = aliases.find((candidate) => candidate.branch === launchKey)
+  if (keyed) return keyed
+  let preferred = aliases[0]!
+  for (const candidate of aliases) {
+    if (candidate.branch < preferred.branch) preferred = candidate
+  }
+  return preferred
+}
+
+/** Drop strict-ancestor tips and collapse equal-tip aliases to one live candidate. */
+export function selectMaximalTaskBranchCandidates(
+  candidates: readonly TaskBranchCandidate[],
+  launchKey: string,
+  containedTips: ReadonlySet<string>,
+): TaskBranchCandidate[] {
+  const live = candidates.filter((candidate) => !containedTips.has(candidate.tip))
+  const selected: TaskBranchCandidate[] = []
+  const seenTips = new Set<string>()
+  for (const candidate of live) {
+    if (seenTips.has(candidate.tip)) continue
+    seenTips.add(candidate.tip)
+    selected.push(
+      preferredTaskBranchAlias(
+        live.filter((alias) => alias.tip === candidate.tip),
+        launchKey,
+      ),
+    )
+  }
+  return selected
+}
+
+function taskBranchGitReconciliationRemedies(candidates: readonly TaskBranchCandidate[]): string {
+  return candidates
+    .map((kept) => {
+      const deletions = candidates
+        .filter((candidate) => candidate !== kept)
+        .map((candidate) => `    git branch -d ${candidate.branch}`)
+        .join('\n')
+      return `  To keep ${kept.branch}:\n    merge the other tips into ${kept.branch}, or\n${deletions}`
+    })
+    .join('\n')
+}
+
+function taskBranchScoreVoidRemedies(
+  launchKey: string,
+  candidates: readonly TaskBranchCandidate[],
+): string {
+  return candidates
+    .map((kept) => {
+      const voidCommands = candidates
+        .filter((candidate) => candidate !== kept)
+        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
+        .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
+        .join('\n')
+      return `  To keep ${kept.branch}:\n${voidCommands}`
+    })
+    .join('\n')
+}
+
+/** Compose the operator-facing remedy when more than one maximal task branch remains. */
+export function taskBranchAmbiguityRefusal(
+  launchKey: string,
+  trunk: string,
+  candidates: readonly TaskBranchCandidate[],
+): string {
+  const detail = candidates
+    .map(
+      (candidate) => `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
+    )
+    .join('\n')
+  return (
+    `refusing task branch resolution for ${launchKey}: more than one branch carries content not on ${trunk}\n` +
+    `${detail}\n` +
+    `invariant: A task owns one branch.\n` +
+    `Reconcile in Git so one branch contains the intended content, then retry resolution.\n` +
+    '`git branch -d` compares at the current tip and refuses an unmerged branch; do not use -D.\n' +
+    `${taskBranchGitReconciliationRemedies(candidates)}\n` +
+    `Void a nominating score only when that run's branch claim itself is false or stale:\n` +
+    `${taskBranchScoreVoidRemedies(launchKey, candidates)}`
+  )
+}
+
 export function taskBranchCandidacySql(runAlias = 'candidate'): string {
   return (
     `${runAlias}.status <> 'stopped' AND ` + `COALESCE(${runAlias}.failure_kind, '') <> 'abandoned'`
@@ -277,6 +363,39 @@ function taskBranchGit(cwd: string, ...args: string[]): string {
     )
   }
   return p.stdout.toString().trim()
+}
+
+function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
+  const process = Bun.spawnSync(
+    ['git', '-C', cwd, 'merge-base', '--is-ancestor', ancestor, descendant],
+    {
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  if (process.exitCode === 0) return true
+  if (process.exitCode === 1) return false
+  throw new Error(
+    'git merge-base --is-ancestor failed while resolving the task branch: ' +
+      (process.stderr.toString().trim() || `exit ${process.exitCode}`),
+  )
+}
+
+function taskBranchContainedTips(
+  repoRoot: string,
+  candidates: readonly Pick<TaskBranchCandidate, 'tip'>[],
+): Set<string> {
+  if (candidates.length < 2) return new Set()
+  const tips = [...new Set(candidates.map((candidate) => candidate.tip))]
+  const contained = new Set<string>()
+  for (const tip of tips) {
+    for (const other of tips) {
+      if (tip === other) continue
+      if (taskBranchIsAncestor(repoRoot, tip, other)) contained.add(tip)
+    }
+  }
+  return contained
 }
 
 /** Which existing task-branch landing shape, if any, is already present on trunk. */
@@ -421,29 +540,14 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     })
   }
 
-  if (candidates.length === 0) return null
-  if (candidates.length === 1) return candidates[0]!
-  const detail = candidates
-    .map(
-      (candidate) => `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
-    )
-    .join('\n')
-  const commands = candidates
-    .map((kept) => {
-      const voidCommands = candidates
-        .filter((candidate) => candidate !== kept)
-        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
-        .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
-        .join('\n')
-      return `  To keep ${kept.branch}:\n${voidCommands}`
-    })
-    .join('\n')
-  throw new Error(
-    `refusing task branch resolution for ${launchKey}: more than one branch carries content not on ${trunk}\n` +
-      `${detail}\n` +
-      `invariant: A task owns one branch.\n` +
-      `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
+  const maximal = selectMaximalTaskBranchCandidates(
+    candidates,
+    launchKey,
+    taskBranchContainedTips(repoRoot, candidates),
   )
+  if (maximal.length === 0) return null
+  if (maximal.length === 1) return maximal[0]!
+  throw new Error(taskBranchAmbiguityRefusal(launchKey, trunk, maximal))
 }
 
 /** Compose the dispatch notice for deliberate reuse of an unlanded task branch. */

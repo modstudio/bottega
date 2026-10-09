@@ -10,7 +10,10 @@ import {
   decideTaskBranchLanding,
   decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
+  selectMaximalTaskBranchCandidates,
+  type TaskBranchCandidate,
   type TaskBranchRunRow,
+  taskBranchAmbiguityRefusal,
   taskBranchCandidacySql,
   taskBranchLandingRefusalMessage,
   taskBranchReuseNotice,
@@ -240,6 +243,109 @@ describe('targeted task branch pull-request decision', () => {
         commitCheck: null,
       }),
     ).toEqual({ state: 'landed', landedBy: 'name', number: 415 })
+  })
+})
+
+const branchCandidate = (
+  branch: string,
+  tip: string,
+  commitCount: number,
+  extras: Partial<TaskBranchCandidate> = {},
+): TaskBranchCandidate => ({
+  branch,
+  tip,
+  commitCount,
+  mergeBase: 'merge-base',
+  projectId: 1,
+  projectName: 'starship',
+  nominatingRuns: [{ id: commitCount, sessionId: 'session-a' }],
+  trunk: 'develop',
+  worktree: null,
+  ...extras,
+})
+
+describe('maximal task branch candidates', () => {
+  const worker = branchCandidate(
+    'STAR-5307-orch-9648',
+    '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
+    8,
+    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+  )
+  const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
+    nominatingRuns: [
+      { id: 9690, sessionId: 'session-a' },
+      { id: 9691, sessionId: 'session-a' },
+    ],
+    worktree: {
+      path: '/tmp/STAR-5307',
+      branch: 'STAR-5307',
+      base: '684ec5d8cdc914e501d353a5c22a76b493ae33a9',
+      repoRoot: '/tmp/starship',
+      mintedBranch: null,
+    },
+  })
+
+  test('trunk <- worker <- task-plus-one keeps the descendant task branch', () => {
+    expect(
+      selectMaximalTaskBranchCandidates([worker, task], 'STAR-5307', new Set([worker.tip])),
+    ).toEqual([task])
+  })
+
+  test('an empty contained-tip set keeps every unique tip', () => {
+    expect(selectMaximalTaskBranchCandidates([worker, task], 'STAR-5307', new Set())).toEqual([
+      worker,
+      task,
+    ])
+  })
+
+  test('equal-tip aliases collapse to the key-named task branch', () => {
+    const alias = branchCandidate(worker.branch, task.tip, 10, {
+      nominatingRuns: worker.nominatingRuns,
+    })
+    expect(selectMaximalTaskBranchCandidates([alias, task], 'STAR-5307', new Set())).toEqual([task])
+  })
+
+  test('equal-tip aliases without a key-named branch collapse lexicographically', () => {
+    const later = branchCandidate('STAR-5307-orch-9690', worker.tip, 8)
+    expect(selectMaximalTaskBranchCandidates([later, worker], 'STAR-5307', new Set())).toEqual([
+      worker,
+    ])
+  })
+
+  test('genuinely diverged tips remain incomparable', () => {
+    const other = branchCandidate(
+      'STAR-5307-orch-9800',
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      3,
+    )
+    expect(selectMaximalTaskBranchCandidates([worker, other], 'STAR-5307', new Set())).toEqual([
+      worker,
+      other,
+    ])
+  })
+})
+
+describe('task branch ambiguity refusal', () => {
+  const worker = branchCandidate(
+    'STAR-5307-orch-9648',
+    '4e0cf76e5070417ee0ccfef1c33a7794898e2677',
+    8,
+    { nominatingRuns: [{ id: 9648, sessionId: 'session-a' }] },
+  )
+  const task = branchCandidate('STAR-5307', '684ec5d8cdc914e501d353a5c22a76b493ae33a9', 10, {
+    nominatingRuns: [{ id: 9690, sessionId: 'session-a' }],
+  })
+
+  test('leads with git reconciliation before score voiding', () => {
+    const message = taskBranchAmbiguityRefusal('STAR-5307', 'develop', [worker, task])
+    expect(message).toContain('more than one branch carries content not on develop')
+    expect(message).toContain('git branch -d STAR-5307-orch-9648')
+    expect(message).toContain('git branch -d STAR-5307')
+    expect(message).toContain('do not use -D')
+    expect(message).toContain('false or stale')
+    expect(message.indexOf('git branch -d')).toBeLessThan(message.indexOf('orch score'))
+    expect(message).toContain('orch score 9648 --void')
+    expect(message).toContain('orch score 9690 --void')
   })
 })
 
