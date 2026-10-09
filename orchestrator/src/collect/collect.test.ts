@@ -197,6 +197,65 @@ describe('collection records', () => {
     expect(result).toMatchObject({ kind: 'timed-out', runningIds: [id] })
   })
 
+  test('a poll that sleeps does not read an output file', async () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    const output = join(dir, `structured-wait-sleep-${id}.txt`)
+    writeFileSync(output, 'partial review result')
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    let reads = 0
+    let now = 100
+    try {
+      const result = await collectWaitForRuns(db(), [id], {
+        timeoutMs: 5,
+        beforePoll: () => {},
+        now: () => now,
+        sleep: async () => {
+          expect(reads).toBe(0)
+          now += 5
+        },
+        readOutput: (path) => {
+          reads++
+          return readFileSync(path, 'utf8')
+        },
+      })
+      expect(result.kind).toBe('timed-out')
+      expect(reads).toBe(1)
+    } finally {
+      rmSync(output, { force: true })
+    }
+  })
+
+  test('dead-run callback fires once on first observation before a timeout', async () => {
+    const dead = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    const live = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
+    const callbacks: number[] = []
+    let polls = 0
+    let now = 100
+    const result = await collectWaitForRuns(db(), [dead, live], {
+      timeoutMs: 5,
+      beforePoll: () => {
+        polls++
+        return [{ id: dead, reason: 'process gone' }]
+      },
+      onObservedDead: (run) => callbacks.push(run.id),
+      now: () => now,
+      sleep: async () => {
+        expect(callbacks).toEqual([dead])
+        now += 5
+      },
+    })
+    expect(polls).toBe(2)
+    expect(callbacks).toEqual([dead])
+    expect(result).toMatchObject({
+      kind: 'timed-out',
+      runs: [
+        { finalId: dead, observedDead: true },
+        { finalId: live, observedDead: false },
+      ],
+      runningIds: [live],
+    })
+  })
+
   test('result shows an ok outcome note directly before the score hint', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET error=? WHERE id=?').run('this turn changed nothing', id)
