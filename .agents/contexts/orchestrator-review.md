@@ -24,6 +24,8 @@ A review that must execute — mutate code and watch a test or a rendered page g
 
 A measurement job — diagnose, understand, file-question — returns what it measured or says why not. The caller names the tables at dispatch; each is delivered, blocked with a reason, or not applicable. A conclusion without its table is unevidenced, the same class as a clean review with no coverage.
 
+A project that keeps its own review evidence declares the command that writes it as `record` in its `review` register setting. `orch review project-record` runs that command once every review round on the branch is graded and triaged, after accepted findings are applied, passing the tier, a one-line reason, the number of lens runs and a findings file in the shape `review-record-findings.ts:reviewRecordFindings` decides. Bottega passes facts and never writes or reads the project's own record. The command is run directly with its arguments; a shell interpreter is refused as the command.
+
 Reviews are recorded when they happen and begin incomplete. Triage is a later act by the architect: each finding becomes accepted, modified, rejected, or skipped, and a review may be completed only after every finding is triaged. Thus an untriaged review remains visible rather than becoming indistinguishable from one that never ran.
 
 A findings run records that incomplete review itself when its parsed reply terminalises. `orch judge` is the close-out verb: it records the score, review grades, finding triage, review completion and any pair verdict together. A pair means the same task: root runs with the same job and identical caller-prompt hash, and for findings work the same lens; their input trees must also match when both runs recorded one.

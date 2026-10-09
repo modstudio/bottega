@@ -73,6 +73,39 @@ describe('project workflow injection', () => {
       ),
     ).toEqual([])
     expect(
+      validateProjectSettings({
+        review: {
+          lenses: [],
+          record:
+            'project-review record --tier {tier} --reason "{reason}" --agents {agents} --findings {findings} --branch {branch}',
+        },
+      }),
+    ).toEqual([])
+    const unknownPlaceholder = validateProjectSettings({
+      review: { lenses: [], record: 'project-review record --findings {findings} --tree {tree}' },
+    }).join('\n')
+    expect(unknownPlaceholder).toContain('unknown placeholder {tree}')
+    expect(unknownPlaceholder).toContain(
+      'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
+    )
+    expect(unknownPlaceholder).toContain('set with: orch project set <project> --settings')
+    const missingFindings = validateProjectSettings({
+      review: { lenses: [], record: 'project-review record --tier {tier}' },
+    }).join('\n')
+    expect(missingFindings).toContain('template must contain {findings}')
+    expect(missingFindings).toContain(
+      'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
+    )
+    const shellCommand = validateProjectSettings({
+      review: { lenses: [], record: '/bin/bash -c "record {findings}"' },
+    }).join('\n')
+    expect(shellCommand).toContain(
+      'a review record command is run directly with its arguments; a shell interpreter is not allowed',
+    )
+    expect(shellCommand).toContain(
+      'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
+    )
+    expect(
       validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } }, undefined, {
         enabledLensIds: ['correctness'],
       }),

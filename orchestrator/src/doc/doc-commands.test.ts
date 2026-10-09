@@ -355,13 +355,13 @@ describe('scoped operator docs', () => {
     expect(await command(['review', 'inspect'])).toMatchObject({
       code: 1,
       err: expect.stringContaining(
-        'unknown: orch review inspect. Try tier | record | triage | complete | calibration',
+        'unknown: orch review inspect. Try tier | record | project-record | triage | complete | calibration',
       ),
     })
     expect(await command(['review'])).toMatchObject({
       code: 1,
       err: expect.stringContaining(
-        'unknown: orch review. Try tier | record | triage | complete | calibration',
+        'unknown: orch review. Try tier | record | project-record | triage | complete | calibration',
       ),
     })
   }, 20_000)

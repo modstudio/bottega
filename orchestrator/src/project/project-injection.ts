@@ -16,6 +16,10 @@ import {
   type TrackerSettings,
   trackerSettingsShape,
 } from '../../../shared/trackers.ts'
+import {
+  REVIEW_RECORD_PLACEHOLDERS,
+  reviewRecordTemplateProblem,
+} from './review-record-template.ts'
 
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 
@@ -58,6 +62,18 @@ const reviewSchema = strictObject({
       minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     }),
   ),
+  record: z.string().trim().min(1).optional(),
+}).superRefine((review, context) => {
+  if (!review.record) return
+  const problem = reviewRecordTemplateProblem(review.record)
+  if (!problem) return
+  context.addIssue({
+    code: 'custom',
+    path: ['record'],
+    message:
+      `${problem}; valid placeholders: ${REVIEW_RECORD_PLACEHOLDERS.map((name) => `{${name}}`).join(', ')}; ` +
+      `set with: orch project set <project> --settings '{"review":{"lenses":[],"record":"<command> {findings}"}}'`,
+  })
 })
 
 const testSubstanceSchema = strictObject({
