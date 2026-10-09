@@ -637,12 +637,6 @@
     "key": "orchestrator/src/run/run-control.ts\u0000continueRun"
   },
   {
-    "file": "orchestrator/src/run/run-diff.ts",
-    "function": "runDiffCommand",
-    "line": 19,
-    "score": 45
-  },
-  {
     "file": "orchestrator/src/run/run-inbox.ts",
     "function": "runInboxCommand",
     "line": 68,
