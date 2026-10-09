@@ -7,11 +7,131 @@ import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import {
   ingestTrackers,
+  type TrackerTask,
   trackerCredentials,
   trackerLegError,
+  trackerObservationTimes,
   trackerRegistrations,
-  upsertTrackerTask,
+  writeTrackerCache,
 } from './trackers.ts'
+
+const trackerTask = {
+  externalId: 'tracker-alpha-1',
+  key: 'ALP-1',
+  project: 'alpha' as const,
+  title: 'Observed task',
+  status: 'started',
+  category: 'active' as const,
+  updatedAt: null,
+  assignee: null,
+}
+const storedTrackerTask = {
+  external_id: trackerTask.externalId,
+  key: trackerTask.key,
+  project: trackerTask.project,
+  title: trackerTask.title,
+  status: trackerTask.status,
+  status_category: trackerTask.category,
+  opened_at: '2026-09-01T10:00:00.000Z',
+  closed_at: null,
+  first_seen: '2026-09-01T10:00:00.000Z',
+  last_seen: '2026-09-02T10:00:00.000Z',
+  updated_at: '2026-09-01T10:00:00.000Z',
+  assignee: null,
+}
+
+const cacheTrackerTask = (task: TrackerTask, at = new Date().toISOString()) =>
+  writeTrackerCache([task], at)
+
+describe('tracker observation times', () => {
+  const at = '2026-09-03T10:00:00.000Z'
+
+  test('new and changed observations use the pass time when the tracker has no update time', () => {
+    expect(trackerObservationTimes(trackerTask, undefined, at)).toEqual({
+      openedAt: at,
+      closedAt: null,
+      firstSeen: at,
+      lastSeen: at,
+      updatedAt: at,
+    })
+    expect(
+      trackerObservationTimes({ ...trackerTask, title: 'Changed task' }, storedTrackerTask, at),
+    ).toEqual({
+      openedAt: at,
+      closedAt: null,
+      firstSeen: storedTrackerTask.first_seen,
+      lastSeen: at,
+      updatedAt: at,
+    })
+  })
+
+  test('an unchanged observation sends every stored time', () => {
+    expect(trackerObservationTimes(trackerTask, storedTrackerTask, at)).toEqual({
+      openedAt: storedTrackerTask.opened_at,
+      closedAt: storedTrackerTask.closed_at,
+      firstSeen: storedTrackerTask.first_seen,
+      lastSeen: storedTrackerTask.last_seen,
+      updatedAt: storedTrackerTask.updated_at,
+    })
+  })
+
+  test('an unchanged legacy row repairs missing update and open times once', () => {
+    const legacy = { ...storedTrackerTask, opened_at: null, updated_at: null }
+    const repaired = trackerObservationTimes(trackerTask, legacy, at)
+    expect(repaired).toEqual({
+      openedAt: at,
+      closedAt: legacy.closed_at,
+      firstSeen: legacy.first_seen,
+      lastSeen: legacy.last_seen,
+      updatedAt: at,
+    })
+
+    const secondAt = '2026-09-04T10:00:00.000Z'
+    expect(
+      trackerObservationTimes(
+        trackerTask,
+        { ...legacy, opened_at: repaired.openedAt, updated_at: repaired.updatedAt },
+        secondAt,
+      ),
+    ).toEqual(repaired)
+  })
+
+  test('a tracker update time is retained for new, changed, and unchanged observations', () => {
+    const updatedAt = '2026-09-03T09:30:00.000Z'
+    const supplied = { ...trackerTask, updatedAt }
+    const stored = { ...storedTrackerTask, updated_at: updatedAt, opened_at: updatedAt }
+    expect(trackerObservationTimes(supplied, undefined, at).updatedAt).toBe(updatedAt)
+    expect(trackerObservationTimes({ ...supplied, title: 'Changed task' }, stored, at)).toEqual({
+      openedAt: updatedAt,
+      closedAt: null,
+      firstSeen: stored.first_seen,
+      lastSeen: at,
+      updatedAt,
+    })
+    expect(trackerObservationTimes(supplied, stored, at)).toEqual({
+      openedAt: updatedAt,
+      closedAt: null,
+      firstSeen: stored.first_seen,
+      lastSeen: stored.last_seen,
+      updatedAt,
+    })
+  })
+
+  test('an unchanged done lookup preserves its stored closure time', () => {
+    const done = { ...trackerTask, status: 'completed', category: 'done' as const }
+    const closedAt = '2026-09-02T12:00:00.000Z'
+    const stored = {
+      ...storedTrackerTask,
+      status: done.status,
+      status_category: done.category,
+      closed_at: closedAt,
+    }
+    expect(trackerObservationTimes(done, stored, at).closedAt).toBe(closedAt)
+    expect(
+      trackerObservationTimes({ ...done, title: 'Changed done task' }, stored, at).closedAt,
+    ).toBe(at)
+  })
+})
 
 const recordApiUrl = process.env.ORCH_RECORD_API_URL
 beforeAll(() => {
@@ -128,6 +248,23 @@ describe('tracker register', () => {
 })
 
 describe('tracker assignees', () => {
+  test('a second unchanged observation preserves repaired machine times', () => {
+    const firstAt = '2026-09-23T10:00:00.000Z'
+    const secondAt = '2026-09-24T10:00:00.000Z'
+    cacheTrackerTask(trackerTask, firstAt)
+    const second = cacheTrackerTask(trackerTask, secondAt)[0]!
+
+    expect(
+      db()
+        .query<
+          { opened_at: string; updated_at: string; closed_at: string | null; last_seen: string },
+          []
+        >("SELECT opened_at,updated_at,closed_at,last_seen FROM task WHERE key='ALP-1'")
+        .get(),
+    ).toEqual({ opened_at: firstAt, updated_at: firstAt, closed_at: null, last_seen: secondAt })
+    expect(second.observation.times).toMatchObject({ openedAt: firstAt, updatedAt: firstAt })
+  })
+
   test('resolves an id once and reuses the cached display name', async () => {
     const cache = new Map<string, string | null>()
     let calls = 0
@@ -161,7 +298,7 @@ describe('tracker assignees', () => {
     expect(names).toEqual([null])
     expect(calls).toBe(0)
 
-    upsertTrackerTask({
+    cacheTrackerTask({
       externalId: 'tracker-alp-899',
       key: 'ALP-899',
       project: 'alpha',
@@ -193,8 +330,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask(task, '2026-09-23T10:00:00.000Z')
-    upsertTrackerTask({ ...task, externalId: null }, '2026-09-24T10:00:00.000Z')
+    cacheTrackerTask(task, '2026-09-23T10:00:00.000Z')
+    cacheTrackerTask({ ...task, externalId: null }, '2026-09-24T10:00:00.000Z')
 
     expect(
       db()
@@ -214,8 +351,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...shared, project: 'starship', externalId: 'starship-21' })
-    upsertTrackerTask({ ...shared, project: 'stopal', externalId: 'stopal-21' })
+    cacheTrackerTask({ ...shared, project: 'starship', externalId: 'starship-21' })
+    cacheTrackerTask({ ...shared, project: 'stopal', externalId: 'stopal-21' })
 
     expect(
       db()
@@ -237,7 +374,7 @@ describe('tracker assignees', () => {
       `),
     )
 
-    upsertTrackerTask({
+    cacheTrackerTask({
       externalId: 'tracker-alp-901',
       key: 'ALP-901',
       project: 'alpha',
@@ -265,8 +402,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...task, key: 'REN-1' })
-    upsertTrackerTask({ ...task, key: 'REN-2' })
+    cacheTrackerTask({ ...task, key: 'REN-1' })
+    cacheTrackerTask({ ...task, key: 'REN-2' })
 
     expect(
       db()
@@ -293,13 +430,34 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     }
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
-    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
+    cacheTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
+    cacheTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
 
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
-    expect(error).toHaveBeenCalledTimes(1)
+    const renamed = { ...task, externalId: 'collision-target', key: 'COL-NEW' }
+    const first = writeTrackerCache([renamed], '2026-09-23T10:00:00.000Z')[0]!
+    const afterFirst = db()
+      .query<{ opened_at: string; updated_at: string }, []>(
+        `SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`,
+      )
+      .get()
+    const second = writeTrackerCache([renamed], '2026-09-24T10:00:00.000Z')[0]!
+    expect(error).toHaveBeenCalledTimes(2)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-OLD',
+    })
+    expect(
+      db()
+        .query(`SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`)
+        .get(),
+    ).toEqual(afterFirst)
+    expect({
+      taskKey: second.observation.taskKey,
+      openedAt: second.observation.times.openedAt,
+      updatedAt: second.observation.times.updatedAt,
+    }).toEqual({
+      taskKey: first.observation.taskKey,
+      openedAt: first.observation.times.openedAt,
+      updatedAt: first.observation.times.updatedAt,
     })
     expect(
       db()
@@ -311,8 +469,8 @@ describe('tracker assignees', () => {
     ).toBe(1)
     expect(taskIdentityDoctor().collidedKeyUncertainties).toBe(1)
 
-    upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
+    cacheTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
+    cacheTrackerTask(renamed)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-NEW',
     })
