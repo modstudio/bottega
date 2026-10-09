@@ -1,5 +1,53 @@
 import { describe, expect, test } from 'bun:test'
-import { readOnlyBaseResolutionDirectory, shouldAssertCallerAncestry } from './worktree-caller.ts'
+import {
+  otherWorktreePaths,
+  readOnlyBaseResolutionDirectory,
+  shouldAssertCallerAncestry,
+} from './worktree-caller.ts'
+
+const canonicalize = (path: string): string => `/canonical${path}`
+
+describe('otherWorktreePaths', () => {
+  test('lists an ordinary second worktree', () => {
+    const porcelain = 'worktree /repo\nHEAD abc\n\nworktree /trees/second\nHEAD def\n'
+
+    expect(otherWorktreePaths(porcelain, '/repo', canonicalize)).toEqual([
+      '/canonical/trees/second',
+    ])
+  })
+
+  test("excludes the caller's own entry", () => {
+    const porcelain = 'worktree /repo\nHEAD abc\n'
+
+    expect(otherWorktreePaths(porcelain, '/repo', canonicalize)).toEqual([])
+  })
+
+  test('tolerates a canonicalisation failure and returns the remaining entries', () => {
+    const porcelain =
+      'worktree /repo\nHEAD abc\n\nworktree /missing\nHEAD def\n\nworktree /trees/valid\nHEAD ghi\n'
+    const canonicalizeUnlessMissing = (path: string): string => {
+      if (path === '/missing') throw new Error('missing')
+      return canonicalize(path)
+    }
+
+    expect(otherWorktreePaths(porcelain, '/repo', canonicalizeUnlessMissing)).toEqual([
+      '/canonical/trees/valid',
+    ])
+  })
+
+  test('treats prunable metadata the same for existing and missing paths', () => {
+    const porcelain =
+      'worktree /repo\nHEAD abc\n\nworktree /trees/existing\nprunable reason\n\nworktree /missing\nprunable reason\n'
+    const canonicalizeUnlessMissing = (path: string): string => {
+      if (path === '/missing') throw new Error('missing')
+      return canonicalize(path)
+    }
+
+    expect(otherWorktreePaths(porcelain, '/repo', canonicalizeUnlessMissing)).toEqual([
+      '/canonical/trees/existing',
+    ])
+  })
+})
 
 describe('readOnlyBaseResolutionDirectory', () => {
   test('uses the registered checkout after the caller worktree is gone', () => {
