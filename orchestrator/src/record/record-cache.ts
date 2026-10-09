@@ -215,6 +215,19 @@ function resolveRememberedParents(local: Database, unresolved: Map<string, strin
   }
 }
 
+function pulledDocLifecycle(item: Record<string, unknown>): {
+  status: string
+  kind: string
+  replacementSlug: string | null
+} {
+  // Records from before lifecycle and kind fields existed use the local schema defaults.
+  return {
+    status: item.status == null ? 'current' : String(item.status),
+    kind: item.kind == null ? 'working' : String(item.kind),
+    replacementSlug: item.replacementSlug == null ? null : String(item.replacementSlug),
+  }
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
@@ -238,6 +251,7 @@ function applyDoc(
   const audience = item.audience == null ? 'technical' : String(item.audience)
   const position = item.position == null ? 0 : Number(item.position)
   const featured = item.featured == null ? false : Boolean(item.featured)
+  const { status, kind, replacementSlug } = pulledDocLifecycle(item)
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
   const parentId: number | null =
     parentRecordId == null
@@ -255,7 +269,7 @@ function applyDoc(
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
       .run(
         title,
@@ -265,6 +279,9 @@ function applyDoc(
         parentId,
         position,
         featured,
+        status,
+        kind,
+        replacementSlug,
         updatedAt,
         subject,
         owner,
@@ -280,7 +297,7 @@ function applyDoc(
   if (byAddress) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, updated_at=?, record_id=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
       )
       .run(
         title,
@@ -290,6 +307,9 @@ function applyDoc(
         parentId,
         position,
         featured,
+        status,
+        kind,
+        replacementSlug,
         updatedAt,
         recordId,
         byAddress.id,
@@ -298,8 +318,8 @@ function applyDoc(
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       scope,
@@ -314,6 +334,9 @@ function applyDoc(
       parentId,
       position,
       featured,
+      status,
+      kind,
+      replacementSlug,
       createdAt,
       updatedAt,
       recordId,

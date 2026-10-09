@@ -28,6 +28,7 @@ import { useHeldPanel } from './use-held-panel.ts'
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 export type DocsViewProps = {
+  sourceLabel: string
   /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
   selectedId: string | null
@@ -260,6 +261,7 @@ function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelec
 }
 
 export function DocsView({
+  sourceLabel,
   items,
   selectedId,
   audience,
@@ -382,7 +384,7 @@ export function DocsView({
         <div className="px-4 md:px-8">
           <PageHeader
             title="Docs"
-            subtitle={`${model.userCount + model.technicalCount} documents`}
+            subtitle={`${model.userCount + model.technicalCount} documents · ${sourceLabel}`}
             actions={createAction}
           />
         </div>

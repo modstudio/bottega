@@ -367,6 +367,100 @@ describe('record cache pull', () => {
     ).toBeNull()
   })
 
+  test('carries hosted lifecycle and kind through inserts and updates', async () => {
+    const insertedDraftId = newRecordId()
+    const updatedDraftId = newRecordId()
+    const articleId = newRecordId()
+    const supersededId = newRecordId()
+    const adoptedId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO doc
+          (scope, subject, slug, title, body, delivery, created_at, updated_at)
+         VALUES ('global',NULL,'adopted','Local','local','demand',?,?)`,
+      )
+      .run('2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z')
+    const item = (id: string, slug: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      scope: 'global',
+      subject: null,
+      owner: null,
+      slug,
+      title: slug,
+      body: slug,
+      delivery: 'demand',
+      audience: 'technical',
+      parentId: null,
+      position: 0,
+      featured: false,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      updatedAt: '2026-09-16T00:00:01.000Z',
+      deletedAt: null,
+      ...overrides,
+    })
+    let pull = 0
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => {
+          pull++
+          return {
+            items:
+              pull === 1
+                ? [
+                    item(insertedDraftId, 'inserted-draft', { status: 'draft' }),
+                    item(updatedDraftId, 'updated-draft'),
+                    item(articleId, 'article', { kind: 'article' }),
+                    item(supersededId, 'old', {
+                      status: 'superseded',
+                      replacementSlug: 'new',
+                    }),
+                    item(adoptedId, 'adopted', { status: 'draft', kind: 'article' }),
+                  ]
+                : [
+                    item(updatedDraftId, 'updated-draft', {
+                      status: 'draft',
+                      updatedAt: '2026-09-16T00:00:02.000Z',
+                    }),
+                  ],
+            nextCursor: null,
+          }
+        },
+      }),
+    )
+
+    await pullRecordCache(db())
+    const lifecycle = (id: string) =>
+      db()
+        .query<{ status: string; kind: string; replacement_slug: string | null }, [string]>(
+          'SELECT status,kind,replacement_slug FROM doc WHERE record_id=?',
+        )
+        .get(id)
+    expect(lifecycle(insertedDraftId)).toEqual({
+      status: 'draft',
+      kind: 'working',
+      replacement_slug: null,
+    })
+    expect(lifecycle(articleId)?.kind).toBe('article')
+    expect(lifecycle(supersededId)).toEqual({
+      status: 'superseded',
+      kind: 'working',
+      replacement_slug: 'new',
+    })
+    expect(lifecycle(updatedDraftId)).toEqual({
+      status: 'current',
+      kind: 'working',
+      replacement_slug: null,
+    })
+    expect(lifecycle(adoptedId)).toEqual({
+      status: 'draft',
+      kind: 'article',
+      replacement_slug: null,
+    })
+
+    await pullRecordCache(db())
+    expect(lifecycle(updatedDraftId)?.status).toBe('draft')
+  })
+
   test('applies an update and a soft delete', async () => {
     const docId = newRecordId()
     const client = clientWith({

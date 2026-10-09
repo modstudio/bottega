@@ -3,6 +3,7 @@ import { useMatch, useNavigate } from '@tanstack/react-router'
 import { History, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
+import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
@@ -11,7 +12,7 @@ import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
 import { docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
-import { docsSource } from './types.ts'
+import { docsSource, docsSourceLabel } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
 import { DocsView } from './view.tsx'
 
@@ -27,6 +28,11 @@ export function DocsPage() {
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
   const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
   const source = docsSource(hosted, signedIn)
+  const sourceLabel = docsSourceLabel(
+    source,
+    recordSpaces(whoami.data?.memberships).find((space) => space.id === whoami.data?.activeSpaceId)
+      ?.name,
+  )
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params
   const search = detail?.search
@@ -99,6 +105,7 @@ export function DocsPage() {
   if (source === 'public' && identityResolved && !selected) {
     return (
       <DocsHome
+        sourceLabel={sourceLabel}
         items={catalog.items}
         results={results.items}
         query={searchQuery}
@@ -113,6 +120,7 @@ export function DocsPage() {
   return (
     <>
       <DocsView
+        sourceLabel={sourceLabel}
         items={catalog.items}
         selectedId={selected?.id ?? null}
         audience={audience}
