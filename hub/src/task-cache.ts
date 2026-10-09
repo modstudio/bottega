@@ -9,11 +9,11 @@ import { type RegisteredTaskSpace, taskPullSpaces } from './task-project-space.t
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
-export type HostedTaskChangeTable =
-  | 'hub_task'
-  | 'hub_task_comment'
-  | 'hub_task_document'
-  | 'hub_task_status_event'
+type HostedChangeRow =
+  | HostedChanges['tasks'][number]
+  | HostedChanges['comments'][number]
+  | HostedChanges['documents'][number]
+  | HostedChanges['statusEvents'][number]
 
 export function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
@@ -174,39 +174,34 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   })
 }
 
+export const hostedTaskChangeTables = {
+  hub_task: { machine: 'task', apply: applyHostedTask },
+  hub_task_comment: { machine: 'task_comment', apply: applyComment },
+  hub_task_document: { machine: 'task_document', apply: applyDocument },
+  hub_task_status_event: { machine: 'task_status_event', apply: applyStatusEvent },
+} as const
+
+export type HostedTaskChangeTable = keyof typeof hostedTaskChangeTables
+
+export const HOSTED_TASK_CHANGE_TABLE_QUERY = (
+  Object.keys(hostedTaskChangeTables) as HostedTaskChangeTable[]
+).join(',')
+
+export function isHostedTaskChangeTable(table: string): table is HostedTaskChangeTable {
+  return Object.hasOwn(hostedTaskChangeTables, table)
+}
+
 export function applyHostedChangeUpsert(
   conn: Database,
   table: HostedTaskChangeTable,
-  row:
-    | HostedChanges['tasks'][number]
-    | HostedChanges['comments'][number]
-    | HostedChanges['documents'][number]
-    | HostedChanges['statusEvents'][number],
+  row: HostedChangeRow,
 ) {
-  if (table === 'hub_task') {
-    applyHostedTask(conn, row as HostedChanges['tasks'][number])
-    return
-  }
-  if (table === 'hub_task_comment') {
-    applyComment(conn, row as HostedChanges['comments'][number])
-    return
-  }
-  if (table === 'hub_task_document') {
-    applyDocument(conn, row as HostedChanges['documents'][number])
-    return
-  }
-  applyStatusEvent(conn, row as HostedChanges['statusEvents'][number])
+  const apply = hostedTaskChangeTables[table].apply as (connection: Database, record: HostedChangeRow) => void
+  apply(conn, row)
 }
 
-const MACHINE_TABLE = {
-  hub_task: 'task',
-  hub_task_comment: 'task_comment',
-  hub_task_document: 'task_document',
-  hub_task_status_event: 'task_status_event',
-} as const
-
 export function deleteHostedChangeRow(conn: Database, table: HostedTaskChangeTable, id: string) {
-  conn.query(`DELETE FROM ${MACHINE_TABLE[table]} WHERE record_id=?`).run(id)
+  conn.query(`DELETE FROM ${hostedTaskChangeTables[table].machine} WHERE record_id=?`).run(id)
 }
 
 export function hostedChangeMachineRow(
@@ -217,7 +212,7 @@ export function hostedChangeMachineRow(
   return (
     conn
       .query<Record<string, unknown>, [string]>(
-        `SELECT * FROM ${MACHINE_TABLE[table]} WHERE record_id=?`,
+        `SELECT * FROM ${hostedTaskChangeTables[table].machine} WHERE record_id=?`,
       )
       .get(id) ?? null
   )
@@ -236,7 +231,7 @@ export function hostedChangeRowProject(
     )
   const child = conn
     .query<{ task_record_id: string | null }, [string]>(
-      `SELECT task_record_id FROM ${MACHINE_TABLE[table]} WHERE record_id=?`,
+      `SELECT task_record_id FROM ${hostedTaskChangeTables[table].machine} WHERE record_id=?`,
     )
     .get(id)
   if (!child?.task_record_id) return null

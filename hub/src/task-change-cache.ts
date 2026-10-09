@@ -5,9 +5,11 @@ import {
   applyHostedChangeUpsert,
   applyHostedTaskRows,
   deleteHostedChangeRow,
+  HOSTED_TASK_CHANGE_TABLE_QUERY,
   type HostedTaskChangeTable,
   hostedChangeMachineRow,
   hostedChangeRowProject,
+  isHostedTaskChangeTable,
   reconcileParentRecordIds,
 } from './task-cache.ts'
 import {
@@ -27,13 +29,6 @@ import {
 
 export const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
 export const MAX_HOSTED_CHANGE_PAGES_PER_PASS = 40
-
-const TASK_CHANGE_TABLES = new Set<string>([
-  'hub_task',
-  'hub_task_comment',
-  'hub_task_document',
-  'hub_task_status_event',
-])
 
 type HostedChangeSpaceCounts = {
   spaceId: string
@@ -113,10 +108,6 @@ function hostedChangeDeleteAction(rowSpaceId: string | null, logSpaceId: string)
   return rowSpaceId === logSpaceId ? 'apply' : 'skip'
 }
 
-function isTaskChangeTable(table: string): table is HostedTaskChangeTable {
-  return TASK_CHANGE_TABLES.has(table)
-}
-
 function readCursor(spaceId: string): number | null {
   const value = db()
     .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
@@ -162,7 +153,7 @@ function applyDelete(
   identity: TaskDestinationIdentity,
   counts: HostedChangeSpaceCounts,
 ) {
-  if (!isTaskChangeTable(change.table)) return
+  if (!isHostedTaskChangeTable(change.table)) return
   const rowSpace = spaceOfMachineRow(conn, change.table, change.id, registered, identity)
   if (hostedChangeDeleteAction(rowSpace, spaceId) === 'skip') {
     counts.deletesSkipped += 1
@@ -173,7 +164,7 @@ function applyDelete(
 }
 
 function applyUpsert(conn: Database, change: HostedSpaceChange, counts: HostedChangeSpaceCounts) {
-  if (!isTaskChangeTable(change.table) || change.row === undefined) {
+  if (!isHostedTaskChangeTable(change.table) || change.row === undefined) {
     counts.upsertsNoop += 1
     return
   }
@@ -200,14 +191,17 @@ function applyChangePage(
   return counts
 }
 
+type ChangeRequestOptions = {
+  baseUrl?: string
+  token?: string | null
+  fetch?: TaskFetch
+  recordSpace: string
+  tables: string
+}
+
 async function startSpaceChanges(
   spaceId: string,
-  requestOptions: {
-    baseUrl?: string
-    token?: string | null
-    fetch?: TaskFetch
-    recordSpace: string
-  },
+  requestOptions: ChangeRequestOptions,
   head?: number,
 ): Promise<HostedChangeSpaceCounts> {
   const sequence = head ?? (await hostedSpaceChanges(0, { ...requestOptions, limit: 1 })).head
@@ -222,12 +216,7 @@ async function startSpaceChanges(
 async function followSpaceChanges(
   spaceId: string,
   after: number,
-  requestOptions: {
-    baseUrl?: string
-    token?: string | null
-    fetch?: TaskFetch
-    recordSpace: string
-  },
+  requestOptions: ChangeRequestOptions,
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
 ): Promise<HostedChangeSpaceCounts> {
@@ -261,6 +250,7 @@ async function pullSpaceChanges(
     token: options.token,
     fetch: options.fetch,
     recordSpace: spaceId,
+    tables: HOSTED_TASK_CHANGE_TABLE_QUERY,
   }
   const cursor = readCursor(spaceId)
   if (cursor === null) return startSpaceChanges(spaceId, requestOptions)

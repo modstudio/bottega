@@ -111,6 +111,24 @@ const sequenceNumber = (value: string | number) => {
   return sequence
 }
 
+async function laterRowKeys(
+  tx: SQL,
+  spaceId: string,
+  after: number,
+  tables: readonly string[],
+  ids: readonly string[],
+) {
+  if (!ids.length) return new Set<string>()
+  const later = rows<Pick<Entry, 'table_name' | 'row_id'>>(
+    await tx`SELECT table_name,row_id::text FROM hub_change
+      WHERE hub_change.space_id=${spaceId}::uuid
+      AND hub_change.sequence>${after}
+      AND table_name=ANY(string_to_array(${tables.join(',')},',')::text[])
+      AND row_id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
+  )
+  return new Set(later.map((entry) => `${entry.table_name}:${entry.row_id}`))
+}
+
 export async function readHostedChangesInTransaction(
   tx: SQL,
   identity: TaskIdentity,
@@ -150,20 +168,13 @@ export async function readHostedChangesInTransaction(
   const finalEntries = [...collapsed.values()].sort(
     (a, b) => sequenceNumber(a.sequence) - sequenceNumber(b.sequence),
   )
-  const upsertIds = finalEntries
-    .filter((entry) => entry.op === 'upsert')
-    .map((entry) => entry.row_id)
-  const superseded = new Set<string>()
-  if (upsertIds.length) {
-    const later = rows<Pick<Entry, 'table_name' | 'row_id'>>(
-      await tx`SELECT table_name,row_id::text FROM hub_change
-        WHERE hub_change.space_id=${identity.spaceId}::uuid
-        AND hub_change.sequence>${next}
-        AND table_name=ANY(string_to_array(${[...wanted].join(',')},',')::text[])
-        AND row_id=ANY(string_to_array(${idList(upsertIds)},',')::uuid[])`,
-    )
-    for (const entry of later) superseded.add(`${entry.table_name}:${entry.row_id}`)
-  }
+  const superseded = await laterRowKeys(
+    tx,
+    identity.spaceId,
+    next,
+    [...wanted],
+    finalEntries.map((entry) => entry.row_id),
+  )
   const currentRows = new Map<string, ChangeRow>()
   for (const table of input.tables) {
     const ids = finalEntries
@@ -184,8 +195,8 @@ export async function readHostedChangesInTransaction(
       id: entry.row_id,
       op: entry.op,
     }
-    if (entry.op === 'delete') return [base]
     if (superseded.has(`${entry.table_name}:${entry.row_id}`)) return []
+    if (entry.op === 'delete') return [base]
     const row = currentRows.get(`${entry.table_name}:${entry.row_id}`)
     return row ? [{ ...base, row }] : []
   })
