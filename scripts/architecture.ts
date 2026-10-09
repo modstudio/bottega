@@ -708,13 +708,6 @@ export const modules: ArchitectureModule[] = [
     './worktree-template.ts',
     '../git/git-environment.ts',
   ]),
-  module('orchestrator/src/worktree/worktree-seed.ts', [
-    '../cli/args.ts',
-    '../project/projects.ts',
-    '../recipe/recipe-loader.ts',
-    './worktree-lifecycle.ts',
-    './worktree-preflight.ts',
-  ]),
   module('orchestrator/src/worktree/worktree-readonly.ts', [
     '../project/projects.ts',
     './worktree-provision.ts',

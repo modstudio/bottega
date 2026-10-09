@@ -9,6 +9,13 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/worktree/worktree-seed.ts', [
+    '../cli/args.ts',
+    '../project/projects.ts',
+    '../recipe/recipe-loader.ts',
+    './worktree-lifecycle.ts',
+    './worktree-preflight.ts',
+  ]),
   module('orchestrator/src/ask/ask-failure.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
