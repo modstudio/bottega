@@ -36,7 +36,7 @@ export function DocsPage() {
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params
   const search = detail?.search
-  const [audience, setAudience] = useState<DocsAudience>('user')
+  const [audience, setAudience] = useState<DocsAudience | null>(null)
   const [project, setProject] = useState<string | 'all'>('all')
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -61,13 +61,8 @@ export function DocsPage() {
       null
     )
   }, [catalog.items, params, search?.id])
-  const selectedAudiences = selected?.audiences
   const selectedId = selected?.id
   const selectedProject = selected?.projectName
-  useEffect(() => {
-    if (selectedAudiences && !selectedAudiences.includes(audience))
-      setAudience(selectedAudiences[0])
-  }, [audience, selectedAudiences])
   useEffect(() => {
     if (!selectedId) return
     setProject(selectedProject ?? 'all')
@@ -124,11 +119,7 @@ export function DocsPage() {
         sourceLabel={sourceLabel}
         items={catalog.items}
         selectedId={selected?.id ?? null}
-        audience={audience}
-        onAudience={(next) => {
-          if (source === 'public' && selected) void navigate({ to: '/docs' })
-          setAudience(next)
-        }}
+        onAudienceFilter={setAudience}
         project={project}
         onProject={setProject}
         signedIn={signedIn}
@@ -141,7 +132,6 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
-        onLeaveTree={() => void navigate({ to: '/docs' })}
         ready={!catalog.isPending && emptyChooserSet && identityResolved}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}

@@ -5,18 +5,16 @@ import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Popover } from '@/ui/popover/popover'
 import { Switch } from '@/ui/switch/switch'
-import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
 import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filters.ts'
 import type { DocsLocation } from './location.ts'
-import { docsSelectionInView, docsViewModel, docsVisibleByStatus } from './model.ts'
+import { docsViewModel, docsVisibleByStatus } from './model.ts'
 import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
 import type {
-  DocsAudience,
   DocsDoc,
   DocsSearchMatch,
   DocsTreeGroup,
@@ -32,8 +30,7 @@ export type DocsViewProps = {
   /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
   selectedId: string | null
-  audience: DocsAudience
-  onAudience: (audience: DocsAudience) => void
+  onAudienceFilter: (audience: 'user' | 'technical' | null) => void
   project: string | 'all'
   onProject: (project: string | 'all') => void
   signedIn: boolean
@@ -47,7 +44,6 @@ export type DocsViewProps = {
   onSelect: (item: DocsTreeItem) => void
   /** Opens a document the reader did not pick, replacing the current history entry. */
   onOpenFirst: (item: DocsTreeItem) => void
-  onLeaveTree: () => void
   /** True once the tree and the project chooser have settled. */
   ready: boolean
   searchQuery: string
@@ -61,12 +57,8 @@ export type DocsViewProps = {
 }
 
 function DocsChrome({
-  audience,
-  onAudience,
-  signedIn,
-  userCount,
-  technicalCount,
   showProjectChooser,
+  signedIn,
   project,
   onProject,
   subjects,
@@ -80,12 +72,8 @@ function DocsChrome({
   onShowDrafts,
   canShowDrafts,
 }: {
-  audience: DocsAudience
-  onAudience: (audience: DocsAudience) => void
-  signedIn: boolean
-  userCount: number
-  technicalCount: number
   showProjectChooser: boolean
+  signedIn: boolean
   project: string | 'all'
   onProject: (project: string | 'all') => void
   subjects: readonly string[]
@@ -100,23 +88,11 @@ function DocsChrome({
   canShowDrafts: boolean
 }) {
   const showDraftsId = useId()
-  const tabs = [
-    { value: 'user', label: 'User guide', count: userCount },
-    ...(signedIn ? [{ value: 'technical', label: 'Technical', count: technicalCount }] : []),
-  ]
   return (
     <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
-      <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-end justify-between gap-3 px-5">
-        {/* The tab list's own rule lies on the chrome's, so the selected marker sits on that line. */}
-        <div className="relative z-10">
-          <Tabs
-            label="Audience"
-            value={audience}
-            onChange={(value) => onAudience(value === 'technical' ? 'technical' : 'user')}
-            items={tabs}
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-3 py-2">
+      <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-center justify-between gap-3 px-5 py-2">
+          {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
+          <div className="ml-auto flex flex-wrap items-center gap-3">
           {canShowDrafts ? (
             <label
               htmlFor={showDraftsId}
@@ -165,7 +141,7 @@ function DocsChrome({
             </Popover>
           ) : null}
           {createAction}
-        </div>
+          </div>
       </div>
     </div>
   )
@@ -180,7 +156,7 @@ function DocsRail({
   onSelect,
   onSearch,
   loading,
-  audience,
+  emptyMessage,
 }: {
   tree: readonly TreeNode[]
   groups: readonly DocsTreeGroup[] | null
@@ -190,7 +166,7 @@ function DocsRail({
   onSelect: (item: DocsTreeItem) => void
   onSearch: () => void
   loading?: boolean
-  audience: DocsAudience
+  emptyMessage: string
 }) {
   const hasTree = groups ? groups.length > 0 : tree.length > 0
   const panel = useRef<HTMLElement>(null)
@@ -230,9 +206,7 @@ function DocsRail({
             />
           )
         ) : loading ? null : (
-          <p className="mt-4 text-md text-text-muted">
-            {audience === 'user' ? 'No user docs here yet.' : 'No technical docs here yet.'}
-          </p>
+          <p className="mt-4 text-md text-text-muted">{emptyMessage}</p>
         )}
       </div>
     </nav>
@@ -264,8 +238,7 @@ export function DocsView({
   sourceLabel,
   items,
   selectedId,
-  audience,
-  onAudience,
+  onAudienceFilter,
   project,
   onProject,
   signedIn,
@@ -278,7 +251,6 @@ export function DocsView({
   locationFor,
   onSelect,
   onOpenFirst,
-  onLeaveTree,
   ready,
   searchQuery,
   onSearchQuery,
@@ -296,12 +268,17 @@ export function DocsView({
   const openedId = useRef<string | null>(null)
   const navigationItems = useMemo(() => docsVisibleByStatus(items, showDrafts), [items, showDrafts])
   const selectedItem = items.find((item) => item.id === selectedId) ?? null
-  const model = docsViewModel(navigationItems, audience, project, chosen, selectedId, doc)
+  const model = docsViewModel(navigationItems, project, chosen, selectedId, doc, signedIn)
   useEffect(() => {
-    if (model.stale.scope !== chosen.scope || model.stale.delivery !== chosen.delivery) {
+    if (
+      model.stale.audience !== chosen.audience ||
+      model.stale.scope !== chosen.scope ||
+      model.stale.delivery !== chosen.delivery
+    ) {
       setChosen(model.stale)
+      onAudienceFilter(model.stale.audience as 'user' | 'technical' | null)
     }
-  }, [model.stale, chosen])
+  }, [model.stale, chosen, onAudienceFilter])
   useEffect(() => {
     if (!selectedId) {
       openedId.current = null
@@ -333,43 +310,16 @@ export function DocsView({
   useSearchHotkey(() => setSearchOpen(true))
   const detached =
     selectedItem !== null && !navigationItems.some((item) => item.id === selectedItem.id)
-  const visible = model.selected || detached ? doc : null
+  const visible = doc
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
   // With nothing open, the page shows the first document in view instead of an empty pane.
   const firstId = model.first?.id ?? null
-  const tabChosen = useRef(false)
-  const technicalOnly = audience === 'user' && signedIn && !firstId && model.technicalCount > 0
   useEffect(() => {
     if (!ready || selectedId) return
-    // An empty User guide beside a populated Technical tab opens on Technical, until the
-    // reader picks a tab themselves.
-    if (technicalOnly && !tabChosen.current) {
-      onAudience('technical')
-      return
-    }
     const first = navigationItems.find((item) => item.id === firstId)
     if (first) onOpenFirst(first)
-  }, [ready, selectedId, firstId, technicalOnly, navigationItems, onOpenFirst, onAudience])
-  const leaveIfGone = (
-    nextAudience: DocsAudience,
-    nextProject: string | 'all',
-    nextFilters: FilterSelection,
-  ) => {
-    if (!selectedId) return
-    const selected = docsSelectionInView(items, nextAudience, nextProject, nextFilters, selectedId)
-    if (selected) return
-    const next = docsViewModel(
-      navigationItems,
-      nextAudience,
-      nextProject,
-      nextFilters,
-      selectedId,
-      doc,
-    )
-    if (next.first) onOpenFirst(next.first)
-    else onLeaveTree()
-  }
+  }, [ready, selectedId, firstId, navigationItems, onOpenFirst])
   return (
     <div
       className={classes(
@@ -384,33 +334,24 @@ export function DocsView({
         <div className="px-4 md:px-8">
           <PageHeader
             title="Docs"
-            subtitle={`${model.userCount + model.technicalCount} documents · ${sourceLabel}`}
+            subtitle={`${model.documentCount} documents · ${sourceLabel}`}
             actions={createAction}
           />
         </div>
       )}
       <DocsChrome
-        audience={audience}
-        onAudience={(next) => {
-          tabChosen.current = true
-          onAudience(next)
-          leaveIfGone(next, project, chosen)
-        }}
-        signedIn={signedIn}
-        userCount={model.userCount}
-        technicalCount={model.technicalCount}
         showProjectChooser={showProjectChooser}
+        signedIn={signedIn}
         project={project}
         onProject={(next) => {
           onProject(next)
-          leaveIfGone(audience, next, chosen)
         }}
         subjects={model.subjects}
         offered={model.offered}
         chosen={model.stale}
         onFilters={(next) => {
           setChosen(next)
-          leaveIfGone(audience, project, next)
+          onAudienceFilter(next.audience as 'user' | 'technical' | null)
         }}
         inView={model.inView}
         active={model.active}
@@ -443,7 +384,7 @@ export function DocsView({
           onSelect={onSelect}
           onSearch={() => setSearchOpen(true)}
           loading={loading}
-          audience={audience}
+          emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
         />
         <DocsReading
           doc={visible}
@@ -473,7 +414,13 @@ export function DocsView({
         results={searchResults}
         tree={navigationItems}
         onChoose={onSelect}
-        scopeLabel={`Searching the ${audience === 'user' ? 'User guide' : 'Technical'} docs`}
+        scopeLabel={
+          signedIn
+            ? chosen.audience
+              ? `Searching ${chosen.audience === 'user' ? 'User' : 'Technical'} docs`
+              : 'Searching all docs'
+            : 'Searching the User guide docs'
+        }
       />
     </div>
   )

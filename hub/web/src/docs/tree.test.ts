@@ -8,6 +8,7 @@ import {
   groupRootsBySubject,
   neighbors,
   parentEdgeCycles,
+  treeForAudience,
   treePath,
 } from './tree.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -149,4 +150,38 @@ test('filters do not change neighbor order beyond the visible tree', () => {
   ]
   const tree = buildDocTree(applyFilters(items, { ...EMPTY_FILTERS, scope: 'project' }))
   expect(neighbors(tree, 'a').next).toEqual(expect.objectContaining({ id: 'c' }))
+})
+
+test('audience visibility keeps matching documents and greys every non-matching ancestor', () => {
+  const rows = [
+    item({ id: 'root', title: 'Root', audiences: ['user'] }),
+    item({ id: 'middle', title: 'Middle', parentId: 'root', audiences: ['user'] }),
+    item({
+      id: 'match',
+      title: 'Match',
+      parentId: 'middle',
+      audiences: ['technical'],
+    }),
+    item({ id: 'absent', title: 'Absent', parentId: 'root', audiences: ['user'] }),
+    item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
+  ]
+  const technical = treeForAudience(rows, 'technical')
+  expect(technical.map((node) => node.id)).toEqual(['root', 'both'])
+  expect(technical[0]!.navigationDisabled).toBeTrue()
+  expect(technical[0]!.children[0]!.navigationDisabled).toBeTrue()
+  expect(technical[0]!.children[0]!.children[0]!.navigationDisabled).toBeFalse()
+  expect(technical[0]!.children.map((node) => node.id)).not.toContain('absent')
+  expect(treeForAudience(rows, 'user').map((node) => node.id)).toEqual(['root', 'both'])
+})
+
+test('all audiences shows every document as an enabled row', () => {
+  const tree = treeForAudience(
+    [
+      item({ id: 'user', title: 'User' }),
+      item({ id: 'technical', title: 'Technical', audiences: ['technical'] }),
+    ],
+    null,
+  )
+  expect(tree.map((node) => node.id)).toEqual(['technical', 'user'])
+  expect(tree.every((node) => !node.navigationDisabled)).toBeTrue()
 })

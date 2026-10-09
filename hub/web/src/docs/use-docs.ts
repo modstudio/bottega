@@ -79,7 +79,7 @@ export function useDocsDocument(source: DocsSource, selected: DocsTreeItem | nul
 export function useDocsSearch(
   source: DocsSource,
   query: string,
-  audience: DocsAudience,
+  audience: DocsAudience | null,
   subject: string | undefined,
   includeDrafts: boolean,
 ) {

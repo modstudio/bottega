@@ -51,22 +51,30 @@ const docs: DocsTreeItem[] = [
   }),
 ]
 
-test('a filter is offered only when the documents in view hold two distinct values', () => {
-  const both = offeredFilters(docs)
-  expect(both.map((filter) => filter.key)).toEqual(['scope', 'delivery'])
-  expect(both[0]!.options).toEqual([
-    { value: 'canon', count: 1 },
-    { value: 'machine', count: 1 },
-    { value: 'project', count: 2 },
-  ])
+test('audience is always offered from the shared vocabulary beside varied document filters', () => {
+  const both = offeredFilters(docs, true)
+  expect(both.map((filter) => filter.key)).toEqual(['audience', 'scope', 'delivery'])
+  expect(both[0]).toEqual({
+    key: 'audience',
+    allLabel: 'All audiences',
+    options: [
+      { value: 'user', label: 'User', count: 3 },
+      { value: 'technical', label: 'Technical', count: 1 },
+    ],
+  })
   expect(both[1]!.options).toEqual([
-    { value: 'demand', count: 3 },
-    { value: 'inject', count: 1 },
+    { value: 'canon', label: 'canon', count: 1 },
+    { value: 'machine', label: 'machine', count: 1 },
+    { value: 'project', label: 'project', count: 2 },
   ])
-  expect(offeredFilters(inAudience(docs, 'technical')).map((filter) => filter.key)).toEqual([])
+  expect(both[2]!.options).toEqual([
+    { value: 'demand', label: 'demand', count: 3 },
+    { value: 'inject', label: 'inject', count: 1 },
+  ])
+  expect(offeredFilters(docs, false).map((filter) => filter.key)).toEqual(['scope', 'delivery'])
 })
 
-test('a document with two audiences appears under both tabs', () => {
+test('a document with two audiences matches either audience filter', () => {
   const shared = item({ id: 'shared', title: 'Shared', audiences: ['user', 'technical'] })
   expect(inAudience([shared], 'user')).toEqual([shared])
   expect(inAudience([shared], 'technical')).toEqual([shared])
@@ -74,20 +82,22 @@ test('a document with two audiences appears under both tabs', () => {
 
 test('delivery is not offered when no document carries it', () => {
   const without = docs.map(({ delivery: _delivery, ...row }) => row)
-  expect(offeredFilters(without).map((filter) => filter.key)).toEqual(['scope'])
+  expect(offeredFilters(without, false).map((filter) => filter.key)).toEqual(['scope'])
 })
 
 test('a chosen value the documents in view no longer hold is cleared', () => {
-  const chosen = { scope: 'canon', delivery: 'inject' }
+  const chosen = { audience: null, scope: 'canon', delivery: 'inject' }
   expect(clearStaleFilters(inProject(docs, 'starship'), chosen)).toEqual(EMPTY_FILTERS)
   expect(clearStaleFilters(docs, chosen)).toEqual(chosen)
 })
 
 test('applying filters keeps matching documents and counts active choices', () => {
-  expect(applyFilters(docs, { scope: 'project', delivery: 'demand' }).map((row) => row.id)).toEqual(
-    ['1', '3'],
-  )
-  expect(activeFilterCount({ scope: 'project', delivery: null })).toBe(1)
+  expect(
+    applyFilters(docs, { audience: 'user', scope: 'project', delivery: 'demand' }).map(
+      (row) => row.id,
+    ),
+  ).toEqual(['1', '3'])
+  expect(activeFilterCount({ audience: null, scope: 'project', delivery: null })).toBe(1)
   expect(activeFilterCount(EMPTY_FILTERS)).toBe(0)
 })
 

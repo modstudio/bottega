@@ -25,7 +25,7 @@ function TreeRow({
   const current = node.id === selectedId
   const open = !collapsed.has(node.id)
   const { children, ...item } = node
-  const rowRef = useRef<HTMLButtonElement>(null)
+  const rowRef = useRef<HTMLElement>(null)
   useEffect(() => {
     if (!current) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -50,22 +50,39 @@ function TreeRow({
         ) : gutter ? (
           <span className="size-6 shrink-0" />
         ) : null}
-        <button
-          ref={rowRef}
-          type="button"
-          aria-current={current ? 'page' : undefined}
-          onClick={() => onSelect(item)}
-          title={node.title}
-          className={classes(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
-            current
-              ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
-              : 'text-text-secondary hover:bg-control-hover',
-          )}
-        >
-          <span className="min-w-0 flex-1 truncate">{node.title}</span>
-          <DocStatusBadge status={node.status} />
-        </button>
+        {node.navigationDisabled ? (
+          <span
+            ref={(element) => {
+              rowRef.current = element
+            }}
+            aria-current={current ? 'page' : undefined}
+            aria-disabled="true"
+            title={node.title}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left text-text-muted"
+          >
+            <span className="min-w-0 flex-1 truncate">{node.title}</span>
+            <DocStatusBadge status={node.status} />
+          </span>
+        ) : (
+          <button
+            ref={(element) => {
+              rowRef.current = element
+            }}
+            type="button"
+            aria-current={current ? 'page' : undefined}
+            onClick={() => onSelect(item)}
+            title={node.title}
+            className={classes(
+              'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
+              current
+                ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
+                : 'text-text-secondary hover:bg-control-hover',
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{node.title}</span>
+            <DocStatusBadge status={node.status} />
+          </button>
+        )}
       </div>
       {children.length && open ? (
         <div className="ml-3 border-border-default border-l pl-1">

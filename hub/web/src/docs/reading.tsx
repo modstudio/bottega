@@ -5,6 +5,7 @@ import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
+import { DOC_AUDIENCE_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
 import type { DocsLocation } from './location.ts'
 import { DocStatusBadge } from './status-badge.tsx'
@@ -235,7 +236,7 @@ export function DocsReading({
           ) : null}
           {localActions ? <div className="mt-4">{localActions}</div> : null}
           <div className="mt-6">
-            <Markdown content={readingBody(doc.body)} />
+            <Markdown content={readingBody(doc.title, doc.body)} />
           </div>
           <ReadingAround around={around} onSelect={onSelect} />
         </>
@@ -285,9 +286,7 @@ export function DocsFacts({
           <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
             <dt className="text-text-muted">Audience</dt>
             <dd className="m-0 text-text-secondary">
-              {doc.audiences
-                .map((audience) => (audience === 'user' ? 'User' : 'Technical'))
-                .join(', ')}
+              {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
             </dd>
             <dt className="text-text-muted">Updated</dt>
             <dd className="m-0 text-text-secondary">{updatedLabel(doc.updatedAt)}</dd>
