@@ -65,6 +65,7 @@ if (!adminUrl || !actorUrl) throw new Error('Postgres evidence proof requires te
 
 const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
+const READ_USER = '01990000-0000-7000-8000-000000000652'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const SPACE_C = '01990000-0000-7000-8000-00000000066b'
@@ -113,7 +114,8 @@ const admin = new SQL(adminUrl)
 try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
     VALUES (${USER}::uuid,'hub-evidence@example.test','Hub Evidence',true,now(),now()),
-      (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now())`
+      (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now()),
+      (${READ_USER}::uuid,'hub-read@example.test','Hub Read',true,now(),now())`
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now()),
@@ -126,7 +128,8 @@ try {
     VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_B}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_C}::uuid,${USER}::uuid,'owner','write',now()),
-      (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now())`
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
@@ -863,6 +866,17 @@ try {
       throw new Error('public report unsubscribe detail crossed its bound space')
     if (await unsubscribeHostedEmailRecipient(actorUrl, SPACE_B, emailRows[1]!.unsubscribe_token))
       throw new Error('public report unsubscribe deleted through the wrong bound space')
+    const readMemberDeletedRecipient = await client.begin(async (tx) => {
+      await bindTenant(tx, { userId: READ_USER, spaceId: SPACE_A })
+      return tx`DELETE FROM hub_report_subscription_recipient
+        WHERE space_id=${SPACE_A}::uuid AND unsubscribe_token=${emailRows[1]!.unsubscribe_token}
+        RETURNING id`
+    })
+    if (readMemberDeletedRecipient.length !== 0)
+      throw new Error('read member deleted a report recipient without the unsubscribe capability')
+    await admin`DELETE FROM membership
+      WHERE space_id=${SPACE_A}::uuid AND user_id=${READ_USER}::uuid`
+    await admin`DELETE FROM "user" WHERE id=${READ_USER}::uuid`
     if (
       !(await unsubscribeHostedEmailRecipient(actorUrl, SPACE_A, emailRows[1]!.unsubscribe_token))
     )
@@ -1032,7 +1046,7 @@ try {
       throw new Error('delivery discovery function did not return the enabled subscription')
 
     const pageNotes = await hostedNotes(actorUrl, identity, { stale: false })
-    if (!pageNotes.notes.some((row) => row.id === allocatedNote.number))
+    if (!pageNotes.notes.some((row) => row.number === allocatedNote.number))
       throw new Error('hosted notes page adapter did not return the seeded note')
     const pageRatio = await hostedRatio(actorUrl, identity, 14, FIXED_CLOCK)
     if (!pageRatio.days.some((row) => row.day === '2026-09-17'))
@@ -1324,6 +1338,6 @@ try {
   await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
-  await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid)`
+  await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid)`
   await admin.close()
 }

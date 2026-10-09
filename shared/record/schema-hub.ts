@@ -391,7 +391,12 @@ export const hubReportSubscriptionRecipient = pgTable.withRLS(
       sql`(${table.userId} IS NOT NULL AND ${table.email} IS NULL AND ${table.unsubscribeToken} IS NULL)
         OR (${table.userId} IS NULL AND ${table.email} IS NOT NULL AND ${table.unsubscribeToken} IS NOT NULL)`,
     ),
-    ...tenantPolicies('hub_report_subscription_recipient', table.spaceId),
+    // Public email unsubscribe is a token capability, so it may delete only its matching row.
+    ...tenantPolicies(
+      'hub_report_subscription_recipient',
+      table.spaceId,
+      sql`${table.unsubscribeToken} = nullif(current_setting('app.unsubscribe_token', true), '')`,
+    ),
   ],
 )
 

@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { type SQL, sql } from 'drizzle-orm'
 import {
   type AnyPgColumn,
   bigint,
@@ -26,7 +26,7 @@ export const spaceIdentity = () =>
   uuid('space_id')
     .notNull()
     .references(() => space.id)
-export const tenantPolicies = (table: string, owner: AnyPgColumn) => {
+export const tenantPolicies = (table: string, owner: AnyPgColumn, deleteCapability?: SQL) => {
   const ownsRow = sql`${owner} = nullif(current_setting('app.space_id', true), '')::uuid`
   const mayWrite = sql`EXISTS (
     SELECT 1 FROM membership m
@@ -38,6 +38,9 @@ export const tenantPolicies = (table: string, owner: AnyPgColumn) => {
     string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
   )`
   const writesRow = sql`(${ownsRow}) AND (${mayWrite})`
+  const deletesRow = deleteCapability
+    ? sql`(${writesRow}) OR ((${ownsRow}) AND (${deleteCapability}))`
+    : writesRow
   return [
     pgPolicy(`${table}_space_select`, { for: 'select', using: readsRow }),
     pgPolicy(`${table}_space_insert`, { for: 'insert', withCheck: writesRow }),
@@ -46,7 +49,7 @@ export const tenantPolicies = (table: string, owner: AnyPgColumn) => {
       using: writesRow,
       withCheck: writesRow,
     }),
-    pgPolicy(`${table}_space_delete`, { for: 'delete', using: writesRow }),
+    pgPolicy(`${table}_space_delete`, { for: 'delete', using: deletesRow }),
   ]
 }
 

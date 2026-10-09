@@ -671,15 +671,22 @@ export async function hostedEmailRecipientByToken(url: string, spaceId: string, 
 }
 
 export async function unsubscribeHostedEmailRecipient(url: string, spaceId: string, token: string) {
-  return withHostedTenant(url, { spaceId, userId: PUBLIC_REPORT_USER_ID }, async (tx) => {
-    return Boolean(
-      rows<{ id: string }>(
-        await tx`DELETE FROM hub_report_subscription_recipient
-        WHERE space_id=${spaceId}::uuid AND unsubscribe_token=${token}
-        RETURNING id`,
-      )[0],
-    )
-  })
+  const client = new SQL(url)
+  try {
+    return await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+      await tx`SELECT set_config('app.unsubscribe_token', ${token}, true)`
+      return Boolean(
+        rows<{ id: string }>(
+          await tx`DELETE FROM hub_report_subscription_recipient
+          WHERE space_id=${spaceId}::uuid AND unsubscribe_token=${token}
+          RETURNING id`,
+        )[0],
+      )
+    })
+  } finally {
+    await client.close()
+  }
 }
 
 export async function unsubscribeHostedReportSubscription(
