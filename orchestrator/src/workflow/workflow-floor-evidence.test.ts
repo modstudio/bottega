@@ -263,7 +263,11 @@ test('a missing gate id names the flag', () => {
 
 test('a foreign review is refused and a matching review is allowed', () => {
   const d = database()
-  const foreignRun = insertRun(d, { project: 'other', launchKey: 'DEV-1', branch: 'other-branch' })
+  const foreignRun = insertRun(d, {
+    project: 'other',
+    launchKey: 'DEV-1',
+    branch: 'other-branch',
+  })
   d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
     projectId(d, 'other'),
   )
@@ -294,46 +298,13 @@ test('a foreign review is refused and a matching review is allowed', () => {
   })
 })
 
-test('review evidence requires every applicable lens and permits an extra lens', () => {
-  const d = database()
-  d.query('UPDATE project SET settings=? WHERE name=?').run(
-    JSON.stringify({
-      review: { lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }] },
-    }),
-    'fixture',
-  )
-  d.query(
-    `INSERT INTO review (recorded_at,project_id,tier,path_set)
-     VALUES ('2026-09-01',?,2,'["orchestrator/src/example.ts"]')`,
-  ).run(projectId(d, 'fixture'))
-  for (const lens of ['correctness', 'safety']) {
-    const runId = insertRun(d, {
-      project: 'fixture',
-      launchKey: 'DEV-977',
-      branch: 'DEV-977-work',
-    })
-    d.query(
-      `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-       VALUES (1,?,?,'codex','[]','[]','[]','[]','all','adequate','named','unique')`,
-    ).run(runId, lens)
-  }
-  expect(gather(d, { review: 1 }).review?.allLensesGraded).toBe(false)
-
-  const craftRun = insertRun(d, {
-    project: 'fixture',
-    launchKey: 'DEV-977',
-    branch: 'DEV-977-work',
-  })
-  d.query(
-    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES (1,?,'craft','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
-  ).run(craftRun)
-  expect(gather(d, { review: 1 }).review?.allLensesGraded).toBe(true)
-})
-
 test('a same-project review whose lenses miss the branch and key is refused', () => {
   const d = database()
-  const runId = insertRun(d, { project: 'fixture', launchKey: 'DEV-1', branch: 'other-branch' })
+  const runId = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-1',
+    branch: 'other-branch',
+  })
   d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
     projectId(d, 'fixture'),
   )
@@ -348,7 +319,11 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
 
 test('a review matches when a lens run carries the workflow key on another branch', () => {
   const d = database()
-  const runId = insertRun(d, { project: 'fixture', launchKey: 'DEV-977', branch: 'other-branch' })
+  const runId = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-977',
+    branch: 'other-branch',
+  })
   d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
     projectId(d, 'fixture'),
   )
@@ -361,7 +336,11 @@ test('a review matches when a lens run carries the workflow key on another branc
 
 test('a foreign gate run is refused and a matching gate run is allowed', () => {
   const d = database()
-  const foreign = insertRun(d, { project: 'other', launchKey: 'DEV-1', branch: 'other-branch' })
+  const foreign = insertRun(d, {
+    project: 'other',
+    launchKey: 'DEV-1',
+    branch: 'other-branch',
+  })
   d.query(
     `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code)
      VALUES (?, '2026-09-01','2026-09-01','2026-09-01',0)`,
@@ -444,12 +423,24 @@ test('an architect gate whose commit is not an ancestor is refused', () => {
 
 test('a foreign run is refused and a matching run is allowed', () => {
   const d = database()
-  const foreign = insertRun(d, { project: 'other', launchKey: 'DEV-1', branch: 'other-branch' })
+  const foreign = insertRun(d, {
+    project: 'other',
+    launchKey: 'DEV-1',
+    branch: 'other-branch',
+  })
   expect(() => gather(d, { run: foreign })).toThrow(
     `--run ${foreign} project is other, not this cursor's fixture`,
   )
-  const matching = insertRun(d, { project: 'fixture', branch: 'DEV-977-work', launchKey: 'DEV-1' })
-  expect(gather(d, { run: matching }).run).toEqual({ id: matching, terminal: true, exitCode: 0 })
+  const matching = insertRun(d, {
+    project: 'fixture',
+    branch: 'DEV-977-work',
+    launchKey: 'DEV-1',
+  })
+  expect(gather(d, { run: matching }).run).toEqual({
+    id: matching,
+    terminal: true,
+    exitCode: 0,
+  })
 })
 
 test('a foreign probe is refused and a matching probe is allowed', () => {
@@ -476,7 +467,10 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
     `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
      VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
-  expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({ ref: 'probe:2', exists: true })
+  expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({
+    ref: 'probe:2',
+    exists: true,
+  })
 })
 
 test('exec evidence is branch-bound and carries its exit code', () => {
@@ -554,7 +548,10 @@ test('a foreign doc is refused and a matching doc is allowed', () => {
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id)
      VALUES ('project','fixture','note','t','b','inject','t','t',?)`,
   ).run(projectId(d, 'fixture'))
-  expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({ ref: 'doc:2', exists: true })
+  expect(gather(d, { artifact: 'doc:2' }).artifact).toEqual({
+    ref: 'doc:2',
+    exists: true,
+  })
 })
 
 test('a legacy resume doc without a project id is scoped by its project subject', () => {
@@ -565,7 +562,10 @@ test('a legacy resume doc without a project id is scoped by its project subject'
             ('resume','other','foreign-brief','t','b','demand','t','t',NULL)`,
   ).run()
 
-  expect(gather(d, { artifact: 'doc:1' }).artifact).toEqual({ ref: 'doc:1', exists: true })
+  expect(gather(d, { artifact: 'doc:1' }).artifact).toEqual({
+    ref: 'doc:1',
+    exists: true,
+  })
   expect(() => gather(d, { artifact: 'doc:2' })).toThrow(
     "--artifact doc:2 is scoped to other, not this cursor's fixture",
   )
@@ -581,7 +581,9 @@ test('a foreign task comment is refused and a matching comment is allowed', () =
     exists: true,
   })
   expect(
-    gather(d, { artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556' }).artifact,
+    gather(d, {
+      artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
+    }).artifact,
   ).toEqual({
     ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
     exists: true,
@@ -725,7 +727,10 @@ test('an unavailable pull request read is gathered as unmerged', () => {
 })
 
 test('a missing obligation is gathered as not-found without a floor', () => {
-  expect(gather(database(), { satisfies: 99 }).satisfy).toEqual({ id: 99, found: false })
+  expect(gather(database(), { satisfies: 99 }).satisfy).toEqual({
+    id: 99,
+    found: false,
+  })
 })
 
 test('an obligation preserves its operator ruling requirement', () => {

@@ -1,9 +1,12 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import type { ReviewSettings } from '../project/project-injection.ts'
-import { applicableReviewLenses } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+
+export type TriageReviewGroup = {
+  reviews: readonly TriageReviewRow[]
+  applicableLenses: readonly string[]
+}
 
 export type TriageEvidence = {
   patchId: string
@@ -11,10 +14,9 @@ export type TriageEvidence = {
   tip: string
   tier: 0 | 1 | 2 | 3
   applicableLenses: readonly string[]
-  reviewDeclaration: ReviewSettings | undefined
   branchOwnerSession: string | null
   reviews: readonly TriageReviewRow[]
-  branchReviews: readonly TriageReviewRow[]
+  branchReviewGroups: readonly TriageReviewGroup[]
   reads: readonly {
     id: number
     tip: string
@@ -57,27 +59,16 @@ type CompleteReviewRound = {
 }
 
 function mostRecentCompleteRound(
-  branchReviews: readonly TriageReviewRow[],
-  reviewDeclaration: ReviewSettings | undefined,
+  branchReviewGroups: readonly TriageReviewGroup[],
 ): CompleteReviewRound | null {
-  const groups = new Map<string, TriageReviewRow[]>()
-  for (const review of branchReviews) {
-    if (review.patchId === null || review.pathSet === null) continue
-    const key = JSON.stringify([review.patchId, review.pathSet])
-    const group = groups.get(key) ?? []
-    group.push(review)
-    groups.set(key, group)
-  }
-  for (const reviews of groups.values()) {
+  for (const { reviews, applicableLenses } of branchReviewGroups) {
     if (reviews.some((review) => review.completedAt === null || review.tier === null)) continue
     if (reviews.some((review) => review.findings.some((finding) => finding.disposition === null))) {
       continue
     }
     const tier = Math.max(...reviews.map((review) => review.tier!)) as 0 | 1 | 2 | 3
-    const paths = JSON.parse(reviews[0]!.pathSet!) as string[]
-    const required = applicableReviewLenses(tier, paths, reviewDeclaration)
     const judged = new Set(reviews.flatMap((review) => review.lensIdentities))
-    if (required.some((lens) => !judged.has(lens))) continue
+    if (applicableLenses.some((lens) => !judged.has(lens))) continue
     return {
       reviews,
       tier,
@@ -94,7 +85,10 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const reviewIds = [...new Set(evidence.reviews.map((row) => row.reviewId))].sort((a, b) => a - b)
   const lensRounds = new Set(evidence.reviews.flatMap((row) => row.lensIdentities)).size
   const findings = evidence.reviews.flatMap((review) =>
-    review.findings.map((finding) => ({ ...finding, reviewId: review.reviewId })),
+    review.findings.map((finding) => ({
+      ...finding,
+      reviewId: review.reviewId,
+    })),
   )
   const snapshot = {
     reviewIds,
@@ -128,7 +122,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   ) {
     return { complete: true, snapshot }
   }
-  const earlierRound = mostRecentCompleteRound(evidence.branchReviews, evidence.reviewDeclaration)
+  const earlierRound = mostRecentCompleteRound(evidence.branchReviewGroups)
   const exactRead = earlierRound
     ? evidence.reads.find(
         (read) =>

@@ -96,7 +96,10 @@ export type Project = {
   settings: StoredProjectSettings
 }
 
-export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
+export function resolveBranchRef(value: string): {
+  branch: string
+  runId: number | null
+} {
   if (!/^\d+$/.test(value)) return { branch: value, runId: null }
   const runId = Number(value)
   const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
@@ -179,8 +182,7 @@ export function projects(opts?: { retired?: boolean }, database: Database = db()
 
 export function projectRowByName(name: string, d = db()): Project | null {
   const r = d.query('SELECT * FROM project WHERE name = ?').get(name) as
-    | Parameters<typeof parse>[0]
-    | null
+    Parameters<typeof parse>[0] | null
   return r ? parse(r) : null
 }
 
@@ -259,7 +261,10 @@ export function upsertProject(p: {
   settings?: ProjectSettings
 }): void {
   const database = writableDb()
-  writeProjectRegisterRow(database, { ...p, settings: projectSettingsForStorage(p.settings) })
+  writeProjectRegisterRow(database, {
+    ...p,
+    settings: projectSettingsForStorage(p.settings),
+  })
 }
 
 function projectSettingsForStorage(
@@ -577,6 +582,7 @@ type ProjectSettingsValidationContext = {
   currentProjectName?: string
   projectNameAfterWrite?: string
   register?: Pick<Project, 'name' | 'settings'>[]
+  enabledLensIds?: readonly string[]
 }
 
 function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationContext): string[] {
@@ -612,13 +618,12 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
   return problems
 }
 
-function reviewLensProblems(review: ProjectSettings['review']): string[] {
-  if (!review || !Array.isArray(review.lenses)) return []
-  const enabled = new Set(
-    (db().query('SELECT id FROM lens WHERE enabled=1').all() as { id: string }[]).map(
-      ({ id }) => id,
-    ),
-  )
+function reviewLensProblems(
+  review: ProjectSettings['review'],
+  enabledLensIds: readonly string[] | undefined,
+): string[] {
+  if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
+  const enabled = new Set(enabledLensIds)
   return review.lenses.flatMap((entry, index) =>
     entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
       ? [
@@ -652,7 +657,7 @@ export function validateProjectSettings(
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
-    ...reviewLensProblems(settings.review),
+    ...reviewLensProblems(settings.review, context.enabledLensIds),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

@@ -13,7 +13,6 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { applicableReviewLenses } from '../review/review-applicability.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -102,7 +101,11 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
   }
   const parsed = JSON.parse(result.stdout) as {
-    task?: { key?: string; status?: string | null; status_category?: string | null }
+    task?: {
+      key?: string
+      status?: string | null
+      status_category?: string | null
+    }
     comments?: Array<{ id?: number | string }>
     tracker_comments_verifiable?: boolean
   }
@@ -222,8 +225,8 @@ function productionResolveCheckout(
   const landingCommit = recordedLandingCommit(identity.project, expectedBranch, d)
   const landingIsHeadOrAncestor = Boolean(
     landingCommit &&
-      headCommit &&
-      gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
+    headCommit &&
+    gitOk(cwd, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
   )
   const trunk = projectByName(identity.project, d)?.settings.trunk?.trim()
   const trunkTip = trunk
@@ -282,16 +285,8 @@ function gatherReview(
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
-    .query<
-      {
-        id: number
-        project_name: string | null
-        tier: 0 | 1 | 2 | 3 | null
-        path_set: string | null
-      },
-      [number]
-    >(
-      `SELECT r.id, r.tier, r.path_set, p.name AS project_name
+    .query<{ id: number; project_name: string | null }, [number]>(
+      `SELECT r.id, p.name AS project_name
          FROM review r LEFT JOIN project p ON p.id=r.project_id
         WHERE r.id=?`,
     )
@@ -321,38 +316,17 @@ function gatherReview(
     )
     .get(id) ?? { total: 0, open: 0 }
   const lenses = d
-    .query<
-      {
-        lens: string
-        reproduced: string | null
-        coverage: string | null
-        limits: string | null
-        overlap: string | null
-      },
-      [number]
-    >('SELECT lens,reproduced,coverage,limits,overlap FROM review_lens WHERE review_id=?')
-    .all(id)
-  const project = projectByName(identity.project, d)
-  const required = applicableReviewLenses(
-    review.tier ?? 1,
-    review.path_set ? (JSON.parse(review.path_set) as string[]) : [],
-    project?.settings.review,
-  )
-  const graded = new Set(
-    lenses
-      .filter(
-        (lens) =>
-          lens.reproduced !== null &&
-          lens.coverage !== null &&
-          lens.limits !== null &&
-          lens.overlap !== null,
-      )
-      .map(({ lens }) => lens),
-  )
+    .query<{ total: number; ungraded: number }, [number]>(
+      `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
+                         THEN 1 ELSE 0 END) AS ungraded
+           FROM review_lens WHERE review_id=?`,
+    )
+    .get(id) ?? { total: 0, ungraded: 0 }
   return {
     id,
     allFindingsDisposed: Number(findings.open ?? 0) === 0,
-    allLensesGraded: required.every((lens) => graded.has(lens)),
+    allLensesGraded: lenses.total > 0 && Number(lenses.ungraded ?? 0) === 0,
   }
 }
 
@@ -409,7 +383,11 @@ function sessionOrAdopterFor(
     cursorSession !== null && actorSession !== null
       ? loadAdoptionReasons(cursorId, actorSession, d)
       : []
-  return sessionOrAdopterMatch({ cursorSession, actorSession, adoptionReasons })
+  return sessionOrAdopterMatch({
+    cursorSession,
+    actorSession,
+    adoptionReasons,
+  })
 }
 
 function requireRunBinding(
@@ -558,7 +536,9 @@ function resolveNumericArtifact(
   runHasArtifacts: (runId: number) => boolean,
 ): { ref: string; exists: boolean } {
   const doc = d.query('SELECT id FROM doc WHERE id=?').get(id)
-  const run = d.query('SELECT id FROM run WHERE id=?').get(id) as { id: number } | null
+  const run = d.query('SELECT id FROM run WHERE id=?').get(id) as {
+    id: number
+  } | null
   const runOk = run !== null && runHasArtifacts(id)
   if (doc && runOk)
     throw new Error(`--artifact ${id} matches both a doc and a run; pass doc:${id} or run:${id}`)
@@ -611,7 +591,13 @@ function resolveArtifact(
   if (ref.kind === 'attached-text') {
     const row = d
       .query<
-        { id: number; cursor_id: number; step_ordinal: number; step_slug: string; body: string },
+        {
+          id: number
+          cursor_id: number
+          step_ordinal: number
+          step_slug: string
+          body: string
+        },
         [number]
       >(
         `SELECT id,cursor_id,step_ordinal,step_slug,body
@@ -689,7 +675,9 @@ function gatherTask(
     throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   if (!ports.readTask)
     throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
-  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, { fresh: true })
+  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, {
+    fresh: true,
+  })
   const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null

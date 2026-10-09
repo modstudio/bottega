@@ -14,6 +14,7 @@ import {
   measureChangeGroup,
   reviewsForTriage,
   serializePathSet,
+  type TriageReviewRow,
 } from '../review/review-group.ts'
 import {
   type AdmissionDecision,
@@ -22,7 +23,7 @@ import {
 } from './admission-decision.ts'
 import { validateTriageOverride } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import { decideTriage, type TriageDecision } from './triage-decision.ts'
+import { decideTriage, type TriageDecision, type TriageReviewGroup } from './triage-decision.ts'
 
 type Git = (cwd: string, args: string[]) => string
 
@@ -80,6 +81,26 @@ function resolvePullRequestChange(
 
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   const reviews = reviewsForTriage(database, change.group)
+  const grouped = new Map<string, TriageReviewRow[]>()
+  for (const review of reviews.branchReviews) {
+    if (review.patchId === null || review.pathSet === null) continue
+    const key = JSON.stringify([review.patchId, review.pathSet])
+    const group = grouped.get(key) ?? []
+    group.push(review)
+    grouped.set(key, group)
+  }
+  const branchReviewGroups: TriageReviewGroup[] = [...grouped.values()].map((group) => {
+    const tiers = group.flatMap((review) => (review.tier === null ? [] : [review.tier]))
+    const tier = (tiers.length ? Math.max(...tiers) : 0) as 0 | 1 | 2 | 3
+    return {
+      reviews: group,
+      applicableLenses: applicableReviewLenses(
+        tier,
+        JSON.parse(group[0]!.pathSet!) as string[],
+        change.project.settings.review,
+      ),
+    }
+  })
   return decideTriage({
     patchId: change.group.patchId,
     pathSet: serializePathSet(change.group.pathSet),
@@ -90,10 +111,9 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
       change.group.pathSet,
       change.project.settings.review,
     ),
-    reviewDeclaration: change.project.settings.review,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
-    branchReviews: reviews.branchReviews,
+    branchReviewGroups,
     reads: database
       .query<
         {
@@ -444,7 +464,11 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     if (!project) throw new Error(`project for ${cwd} is not registered`)
     const recordedBranches = recordedRunBranches(database, project)
     const branch = destinationBranch(remoteRef)
-    const classification = decidePrePush({ remoteRef, recordedBranches, triageComplete: null })
+    const classification = decidePrePush({
+      remoteRef,
+      recordedBranches,
+      triageComplete: null,
+    })
     if (!classification.check || branch === null) {
       return {
         known: false,
@@ -458,7 +482,11 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
     const tip = git(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
     const change = resolvePullRequestChange(cwd, tip, database, git, branch)
     const decision = admissionDecision(change, database)
-    const policy = decidePrePush({ remoteRef, recordedBranches, triageComplete: decision.complete })
+    const policy = decidePrePush({
+      remoteRef,
+      recordedBranches,
+      triageComplete: decision.complete,
+    })
     return {
       known: true,
       complete: policy.admit,

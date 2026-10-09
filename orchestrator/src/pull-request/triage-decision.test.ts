@@ -13,16 +13,20 @@ const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => (
   ...overrides,
 })
 
+const branchGroup = (
+  reviews: TriageEvidence['reviews'],
+  applicableLenses: readonly string[] = ['correctness'],
+) => ({ reviews, applicableLenses })
+
 const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   patchId: 'patch-a',
   pathSet: '["a.ts"]',
   tip: 'tip-a',
   tier: 1,
   applicableLenses: ['correctness'],
-  reviewDeclaration: undefined,
   branchOwnerSession: 'owner-session',
   reviews: [review({ patchId: 'patch-a' })],
-  branchReviews: [],
+  branchReviewGroups: [],
   reads: [],
   ...overrides,
 })
@@ -60,7 +64,7 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 2,
           reviews: [],
-          branchReviews: [earlier],
+          branchReviewGroups: [branchGroup([earlier], ['correctness', 'craft'])],
           reads: [
             {
               id: 9,
@@ -97,7 +101,7 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 2,
           reviews: [],
-          branchReviews: [secondLens, firstLens],
+          branchReviewGroups: [branchGroup([secondLens, firstLens], ['correctness', 'craft'])],
           reads: [
             {
               id: 9,
@@ -137,7 +141,11 @@ describe('pull-request triage decision', () => {
 
     expect(
       decideTriage(
-        evidence({ tier: 2, applicableLenses: ['correctness', 'craft'], reviews: [first, second] }),
+        evidence({
+          tier: 2,
+          applicableLenses: ['correctness', 'craft'],
+          reviews: [first, second],
+        }),
       ),
     ).toMatchObject({ complete: false, missingLenses: ['craft'] })
   })
@@ -192,12 +200,18 @@ describe('pull-request triage decision', () => {
       ],
     ],
   ])('path b refuses %s', (_label, reads) => {
-    expect(decideTriage(evidence({ reviews: [], branchReviews: [review()], reads }))).toMatchObject(
-      {
-        complete: false,
-        architectReadRequired: true,
-      },
-    )
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          branchReviewGroups: [branchGroup([review()])],
+          reads,
+        }),
+      ),
+    ).toMatchObject({
+      complete: false,
+      architectReadRequired: true,
+    })
   })
 
   test('path b refuses an incomplete earlier round', () => {
@@ -205,7 +219,7 @@ describe('pull-request triage decision', () => {
       decideTriage(
         evidence({
           reviews: [],
-          branchReviews: [review({ completedAt: null })],
+          branchReviewGroups: [branchGroup([review({ completedAt: null })])],
           reads: [
             {
               id: 9,
@@ -226,7 +240,7 @@ describe('pull-request triage decision', () => {
       decideTriage(
         evidence({
           reviews: [],
-          branchReviews: [review()],
+          branchReviewGroups: [branchGroup([review()])],
           reads: [
             {
               id: 9,
@@ -248,7 +262,7 @@ describe('pull-request triage decision', () => {
         evidence({
           tier: 2,
           reviews: [],
-          branchReviews: [review()],
+          branchReviewGroups: [branchGroup([review()])],
           reads: [
             {
               id: 9,
@@ -261,7 +275,11 @@ describe('pull-request triage decision', () => {
           ],
         }),
       ),
-    ).toMatchObject({ complete: false, finalTierRaised: true, earlierReviewTier: 1 })
+    ).toMatchObject({
+      complete: false,
+      finalTierRaised: true,
+      earlierReviewTier: 1,
+    })
   })
 
   test('reports unfinished exact review, undisposed findings, and missing applicable lenses', () => {
@@ -292,11 +310,19 @@ describe('pull-request triage decision', () => {
     })
     expect(
       decideTriage(
-        evidence({ applicableLenses: ['correctness', 'migration-safety'], reviews: [required] }),
+        evidence({
+          applicableLenses: ['correctness', 'migration-safety'],
+          reviews: [required],
+        }),
       ),
     ).toMatchObject({ complete: true })
     expect(
-      decideTriage(evidence({ applicableLenses: ['correctness', 'craft'], reviews: [required] })),
+      decideTriage(
+        evidence({
+          applicableLenses: ['correctness', 'craft'],
+          reviews: [required],
+        }),
+      ),
     ).toMatchObject({ complete: false, missingLenses: ['craft'] })
   })
 })

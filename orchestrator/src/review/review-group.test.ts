@@ -93,10 +93,14 @@ test('a rebase credits the complete round from the same branch and never another
       tip: 'rebased-tip',
       tier: 2,
       applicableLenses: ['correctness', 'craft'],
-      reviewDeclaration: undefined,
       branchOwnerSession: 'owner',
       reviews: selected.reviews,
-      branchReviews: selected.branchReviews,
+      branchReviewGroups: [
+        {
+          reviews: selected.branchReviews,
+          applicableLenses: ['correctness', 'craft'],
+        },
+      ],
       reads: [
         {
           id: 30,
