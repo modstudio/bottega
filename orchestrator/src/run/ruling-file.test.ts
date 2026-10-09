@@ -69,7 +69,7 @@ const stores = (overrides: Partial<RulingFileStores> = {}): RulingFileStores => 
   writeDoc: async () => ({ id: 12, revision: 'rev-1' }),
   fileNote: async () => ({
     noteRecordId: '11111111-1111-4111-8111-111111111111',
-    noteLabel: 'bottega#44',
+    noteLabel: `${PLATFORM_SLUG}#44`,
   }),
   ...overrides,
 })
@@ -265,7 +265,7 @@ describe('file ruling', () => {
           notes.push({ input, options })
           return {
             noteRecordId: '11111111-1111-4111-8111-111111111111',
-            noteLabel: 'bottega#44',
+            noteLabel: `${PLATFORM_SLUG}#44`,
           }
         },
       }),
@@ -273,7 +273,7 @@ describe('file ruling', () => {
     expect(result.filed_as).toBe('canon-proposal')
     expect(result.filed_ref).toBeNull()
     expect(result.filed_record_id).toBe('11111111-1111-4111-8111-111111111111')
-    expect(result.filed_label).toBe('bottega#44')
+    expect(result.filed_label).toBe(`${PLATFORM_SLUG}#44`)
     expect(notes).toEqual([
       {
         input: { text: expect.stringMatching(/^Canon proposal: /), new: true },
@@ -288,7 +288,7 @@ describe('file ruling', () => {
       filed_as: 'canon-proposal',
       filed_ref: null,
       filed_record_id: '11111111-1111-4111-8111-111111111111',
-      filed_label: 'bottega#44',
+      filed_label: `${PLATFORM_SLUG}#44`,
     })
   })
 

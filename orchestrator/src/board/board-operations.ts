@@ -6,7 +6,6 @@ import {
 } from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
-import { hubNoteLabel } from '../mcp/hub-notes.ts'
 import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
@@ -17,7 +16,11 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
-import { acceptedAnswerNoteText, fileAcceptedAnswerNote } from './board-answer-note.ts'
+import {
+  acceptedAnswerNoteText,
+  fileAcceptedAnswerNote,
+  resolveAcceptedAnswerNoteLabel,
+} from './board-answer-note.ts'
 import { BOARD_CLAIM_DEFAULT_MS } from './board-claim-policy.ts'
 import {
   type ClaimView,
@@ -409,7 +412,9 @@ export async function boardThread(id: string, inputContext?: Context) {
   if (mode === 'local') return localThread(readThread(parsed as number, c.env, c.clock))
   const thread = hostedThread(await hostedClient(c).getBoardThread(parsed as string))
   if (thread.root.noteRecordId) {
-    thread.root.noteLabel = await hubNoteLabel(thread.root.noteRecordId, { cwd: c.cwd })
+    thread.root.noteLabel = await resolveAcceptedAnswerNoteLabel(thread.root.noteRecordId, {
+      cwd: c.cwd,
+    })
   }
   return thread
 }

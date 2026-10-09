@@ -281,6 +281,8 @@ describe('operator MCP tools', () => {
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: expect.stringMatching(/@/),
+      filed_record_id: null,
+      filed_label: null,
       filed_at: expect.any(String),
     })
     expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({

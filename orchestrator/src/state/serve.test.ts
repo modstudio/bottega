@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
@@ -104,7 +105,7 @@ describe('run detail', () => {
         `INSERT INTO question
           (run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
          VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
-                 '11111111-1111-4111-8111-111111111111','bottega#44','2026-09-22')`,
+                 '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
       )
       .run(id)
     expect(runDetail(id)!.questions).toEqual([
@@ -113,7 +114,7 @@ describe('run detail', () => {
         filed_as: 'canon-proposal',
         filed_ref: null,
         filed_record_id: '11111111-1111-4111-8111-111111111111',
-        filed_label: 'bottega#44',
+        filed_label: `${PLATFORM_SLUG}#44`,
         filed_at: '2026-09-22',
       }),
     ])

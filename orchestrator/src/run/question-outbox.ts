@@ -46,7 +46,7 @@ export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
 ] as const
 export const QUESTION_RECORD_PAYLOAD_CONTRACT = {
   columns: QUESTION_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { filedRecordId: null, filedLabel: null },
 } as const
 
 type QuestionRow = Record<string, unknown> & {

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { noteCuratorPrompt } from './note.ts'
 import {
   NOTE_DUPLICATE_PROMPT,
   noteCandidateLine,
@@ -9,8 +10,7 @@ import {
   noteListLine,
   noteSameLine,
   noteStaleLine,
-} from './cli-program.ts'
-import { noteCuratorPrompt } from './note.ts'
+} from './note-cli.ts'
 
 test('new note output preserves its first line and reports the record id', () => {
   expect(
