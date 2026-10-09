@@ -325,17 +325,17 @@ describe('local task tracker', () => {
       conn
         .query(
           `INSERT INTO interval
-        (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
+        (record_id, task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
+       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
         )
-        .run(task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
+        .run('interval-root', task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
       conn
         .query(
           `INSERT INTO interval
-        (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, 'orch:1812:turn:1813', 0)`,
+        (record_id, task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
+       VALUES (?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, 'orch:1812:turn:1813', 0)`,
         )
-        .run(task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
+        .run('interval-turn', task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
     })
 
     const result = taskRecord(task.key.toLowerCase())

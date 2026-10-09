@@ -65,6 +65,38 @@ describe('run ingest', () => {
     })
   })
 
+  test('a second collect of an unchanged run keeps the interval UUID', async () => {
+    await ingestRunFixtures(
+      runFixture({
+        id: 9100,
+        started_at: '2026-09-03T00:00:00.000Z',
+        latency_ms: 1000,
+        status: 'ok',
+      }),
+    )
+    const first = db()
+      .query<{ record_id: string }, []>(
+        `SELECT record_id FROM interval WHERE source = 'orch' AND ref = 'orch:9100'`,
+      )
+      .get()
+    if (!first) throw new Error('expected an interval after the first collect')
+    await ingestRunFixtures(
+      runFixture({
+        id: 9100,
+        started_at: '2026-09-03T00:00:00.000Z',
+        latency_ms: 1000,
+        status: 'ok',
+      }),
+    )
+    expect(
+      db()
+        .query<{ record_id: string }, []>(
+          `SELECT record_id FROM interval WHERE source = 'orch' AND ref = 'orch:9100'`,
+        )
+        .all(),
+    ).toEqual([first])
+  })
+
   test('routing replaces a pending reservation with the real interval', async () => {
     await ingestRunFixtures(runFixture({ id: 9101, agent: '(pending)' }))
     await ingestRunFixtures(

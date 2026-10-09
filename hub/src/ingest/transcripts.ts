@@ -1,12 +1,15 @@
+import type { Database } from 'bun:sqlite'
 import type { Dirent } from 'node:fs'
 import { createReadStream, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { signedInRecordUserId } from '../sync.ts'
+import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
 
@@ -161,6 +164,70 @@ export function spendingSpans(leg: Leg, idleCapMs: number) {
   return spans
 }
 
+type TranscriptIntervalRow = {
+  source: 'claude'
+  ref: string
+  start_at: string
+  end_at: string
+  task_key: string | null
+  project: string | null
+  claude_tokens: number
+  via: string | null
+  session_id: string | null
+  user_id: string | null
+}
+
+function replaceTranscriptWindow(
+  conn: Database,
+  fileRefs: readonly string[],
+  since: string,
+  recomputed: readonly TranscriptIntervalRow[],
+) {
+  const existing: ExistingIntervalRow[] = []
+  const select = conn.query<ExistingIntervalRow, [string, string]>(
+    `SELECT record_id, source, ref, start_at FROM interval
+     WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
+  )
+  for (const ref of fileRefs) existing.push(...select.all(`claude:${ref}:%`, since))
+  const decision = decideCollectorReplace(existing, recomputed)
+  const update = conn.query(
+    `UPDATE interval SET task_key=?, project=?, agent=NULL, end_at=?, claude_tokens=?,
+       vendor_tokens=0, vendor_cost_usd=NULL, via=?, session_id=?, user_id=?
+     WHERE record_id=?`,
+  )
+  const insert = conn.query(
+    `INSERT INTO interval (record_id, task_key, project, source, agent, start_at, end_at,
+                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, session_id, user_id)
+     VALUES (?, ?, ?, 'claude', NULL, ?, ?, ?, 0, NULL, ?, ?, ?, ?)`,
+  )
+  const remove = conn.query(`DELETE FROM interval WHERE record_id=?`)
+  for (const row of decision.updates)
+    update.run(
+      row.task_key,
+      row.project,
+      row.end_at,
+      row.claude_tokens,
+      row.via,
+      row.session_id,
+      row.user_id,
+      row.record_id,
+    )
+  for (const row of decision.inserts)
+    insert.run(
+      newRecordId(),
+      row.task_key,
+      row.project,
+      row.start_at,
+      row.end_at,
+      row.claude_tokens,
+      row.ref,
+      row.via,
+      row.session_id,
+      row.user_id,
+    )
+  for (const recordId of decision.deletes) remove.run(recordId)
+}
+
 /**
  * Claude Code transcripts, as spans of engaged time carrying their token spend.
  */
@@ -182,21 +249,10 @@ export async function ingestTranscripts(
   const userId = attributedUserId === undefined ? await signedInRecordUserId() : attributedUserId
   const sinceMs = new Date(since).getTime()
   const sinceDay = since.slice(0, 10)
-  // A session's spans are REPLACED, not upserted.
-  //
-  // Upserting on (source, ref, start_at) looks right and is not: a later
-  // collect sees messages that landed between two it already recorded, which
-  // splits one span into two with a new start. The new rows insert cleanly and
-  // the original keeps its old, now-too-long end_at — so the session quietly
-  // accumulates time it never spent, and only on the sessions that were still
-  // running when the collector last passed. Deleting the window first costs one
-  // statement and removes the whole class of error.
-  // Cleared by FILE prefix, and the ref is keyed on the file rather than the
-  // session id for one measured reason: several .jsonl files can carry the SAME
-  // sessionId — a sidechain transcript is written alongside its parent. Keyed
-  // on the session, processing the second file deleted the first file's rows,
-  // and 387 of 1040 inserted intervals vanished in the same collect that wrote
-  // them. It read as a gap in the early hours of a day rather than as a bug.
+  // Replace this file's window by (source, ref, start_at): a surviving start
+  // keeps its UUID, a new start inserts, and a start the file no longer
+  // produces is deleted. Scope is the file prefix, not session id, because
+  // several .jsonl files can carry the same sessionId.
   let files = 0
   let rows = 0
 
@@ -218,16 +274,6 @@ export async function ingestTranscripts(
     if (!legs.length) continue
 
     writeTransaction((conn) => {
-      const stmt = conn.query(
-        `INSERT INTO interval (task_key, project, source, agent, start_at, end_at,
-                               claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, session_id, user_id)
-         VALUES (?,?,'claude',NULL,?,?,?,0,NULL,?,?,?,?)`,
-      )
-      const clear = conn.query(
-        `DELETE FROM interval WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
-      )
-      for (const ref of new Set(legs.map((l) => l.ref))) clear.run(`claude:${ref}:%`, since)
-
       // The leg ordinal is part of the ref. Without it two legs of one session
       // can collide on (source, ref, start_at): a zero-length span sits exactly
       // where the next leg begins, which is precisely when the working
@@ -271,22 +317,25 @@ export async function ingestTranscripts(
         }
       }
 
+      const recomputed: TranscriptIntervalRow[] = []
       shaped.forEach(({ leg, i, a, spans }) => {
         for (const s of spans) {
-          stmt.run(
-            a.key,
-            a.project,
-            new Date(s.start).toISOString(),
-            new Date(s.end).toISOString(),
-            s.tokens,
-            `claude:${leg.ref}:${i}`,
-            a.via,
-            leg.sessionId ?? null,
-            userId,
-          )
-          rows++
+          recomputed.push({
+            source: 'claude',
+            ref: `claude:${leg.ref}:${i}`,
+            start_at: new Date(s.start).toISOString(),
+            end_at: new Date(s.end).toISOString(),
+            task_key: a.key,
+            project: a.project,
+            claude_tokens: s.tokens,
+            via: a.via,
+            session_id: leg.sessionId ?? null,
+            user_id: userId,
+          })
         }
       })
+      replaceTranscriptWindow(conn, [...new Set(legs.map((l) => l.ref))], since, recomputed)
+      rows += recomputed.length
     })
   }
 

@@ -925,7 +925,7 @@ try {
         for (const row of rows)
           console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
         for (const interval of intervals)
-          console.log(`${verb} interval ${interval.id} ${interval.ref}`)
+          console.log(`${verb} interval ${interval.record_id} ${interval.ref}`)
         for (const task of tasks)
           console.log(`${verb} task ${task.key} ${task.project} ${task.title}`)
       }

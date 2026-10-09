@@ -9,7 +9,7 @@ export { runRef } from './run-ref.ts'
 type RunAnswer = OrchRun | OrchUnknownRun
 
 type OpenInterval = {
-  id: number
+  record_id: string
   task_key: string | null
   project: string | null
   agent: string | null
@@ -75,8 +75,8 @@ export async function reconcileOpenIntervals(
   const d = db()
   const intervals = d
     .query(
-      `SELECT id, task_key, project, agent, start_at, end_at, ref
-       FROM interval WHERE source = 'orch' AND open = 1 ORDER BY id`,
+      `SELECT record_id, task_key, project, agent, start_at, end_at, ref
+       FROM interval WHERE source = 'orch' AND open = 1 ORDER BY start_at, record_id`,
     )
     .all() as OpenInterval[]
   const refs = intervals.map((interval) => runRef(interval.ref))
@@ -132,8 +132,8 @@ export async function reconcileOpenIntervals(
 
   if (!options.dryRun && closed.length) {
     writeTransaction((conn) => {
-      const close = conn.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
-      for (const interval of closed) close.run(interval.id)
+      const close = conn.query(`UPDATE interval SET open = 0 WHERE record_id = ? AND open = 1`)
+      for (const interval of closed) close.run(interval.record_id)
     })
   }
   return { dryRun: options.dryRun ?? false, closed, leftOpen }
@@ -148,7 +148,7 @@ export function printReconcile(result: ReconcileResult): void {
     console.log(`${verb}:`)
     for (const item of result.closed) {
       console.log(
-        `  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`,
+        `  interval ${item.record_id}  ${item.ref}  ${identity(item)}  ${item.reason}; removes ${human(item.removesMs)} engaged time`,
       )
     }
   }
@@ -156,7 +156,7 @@ export function printReconcile(result: ReconcileResult): void {
   if (!result.leftOpen.length) console.log('  none')
   else
     for (const item of result.leftOpen) {
-      console.log(`  interval ${item.id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
+      console.log(`  interval ${item.record_id}  ${item.ref}  ${identity(item)}  ${item.reason}`)
     }
   console.log(
     `${result.dryRun ? 'dry run: ' : ''}${verb} ${result.closed.length}; left ${result.leftOpen.length} open`,

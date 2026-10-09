@@ -280,7 +280,11 @@ export async function taskApi(
       userId: who.userId,
       activeSpaceId: who.spaceId,
       memberships: who.memberships,
-      capabilities: { targetSpaceTaskMirror: true, targetSpaceIntervalEvidence: true },
+      capabilities: {
+        targetSpaceTaskMirror: true,
+        targetSpaceIntervalEvidence: true,
+        intervalRecordId: true,
+      },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)
   try {

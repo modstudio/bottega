@@ -4,7 +4,12 @@ import {
 } from '../../shared/record-space-membership.ts'
 import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
-import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
+import {
+  deleteIntervalKeys,
+  deleteIntervals,
+  upsertDays,
+  upsertIntervals,
+} from './hosted-evidence.ts'
 
 const TEST_REFUSAL =
   'hub evidence API refuses real identity and database clients unless stubs are injected in tests'
@@ -14,6 +19,7 @@ type Dependencies = {
   putIntervals?: typeof upsertIntervals
   putDays?: typeof upsertDays
   removeIntervals?: typeof deleteIntervals
+  removeIntervalKeys?: typeof deleteIntervalKeys
 }
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Tenant = {
@@ -47,7 +53,7 @@ async function identity(
     : null
 }
 
-function batch(body: unknown, field: 'rows' | 'keys'): unknown[] | null {
+function batch(body: unknown, field: 'rows' | 'keys' | 'ids'): unknown[] | null {
   if (!body || typeof body !== 'object') return null
   const value = (body as Record<string, unknown>)[field]
   return Array.isArray(value) && value.length <= 500 ? value : null
@@ -90,17 +96,31 @@ async function deleteIntervalBatch(
   who: Tenant,
   dependencies: Dependencies,
 ) {
+  const ids = batch(body, 'ids')
   const keys = batch(body, 'keys')
-  if (!keys) return Response.json({ error: 'keys must contain at most 500 items' }, { status: 400 })
-  if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervals)
-    throw new Error(TEST_REFUSAL)
-  return Response.json(
-    await (dependencies.removeIntervals ?? deleteIntervals)(
-      config.recordDatabaseUrl,
-      who,
-      keys as IntervalKey[],
-    ),
-  )
+  if (ids) {
+    if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervals)
+      throw new Error(TEST_REFUSAL)
+    return Response.json(
+      await (dependencies.removeIntervals ?? deleteIntervals)(
+        config.recordDatabaseUrl,
+        who,
+        ids as string[],
+      ),
+    )
+  }
+  if (keys) {
+    if (process.env.NODE_ENV === 'test' && !dependencies.removeIntervalKeys)
+      throw new Error(TEST_REFUSAL)
+    return Response.json(
+      await (dependencies.removeIntervalKeys ?? deleteIntervalKeys)(
+        config.recordDatabaseUrl,
+        who,
+        keys as IntervalKey[],
+      ),
+    )
+  }
+  return Response.json({ error: 'ids or keys must contain at most 500 items' }, { status: 400 })
 }
 
 export async function evidenceApi(

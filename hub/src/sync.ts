@@ -5,6 +5,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
 import { projects } from './projects.ts'
 import {
+  assertIntervalRecordId,
   assertTargetSpaceIntervalEvidence,
   hostedSignedInUserId,
   hostedTaskIdentity,
@@ -81,19 +82,15 @@ export function batches<T>(rows: T[], size = 500): T[][] {
   return result
 }
 
-function intervalKey(row: IntervalEvidence) {
-  return JSON.stringify([row.source, row.ref, row.start_at])
-}
-
 function localIntervals() {
   const rows = db()
-    .query<IntervalEvidence, []>(
-      `SELECT task_key, project AS project_name, source, agent, job, start_at, end_at,
+    .query<IntervalEvidence & { id: string }, []>(
+      `SELECT record_id AS id, task_key, project AS project_name, source, agent, job, start_at, end_at,
               claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id
          FROM interval ORDER BY source, ref, start_at`,
     )
     .all()
-  return rows.map((row) => ({ key: intervalKey(row), row }))
+  return rows.map((row) => ({ key: row.id, row }))
 }
 
 function localDays() {
@@ -222,9 +219,30 @@ function forgetIntervals(keys: string[]) {
   })
 }
 
+function isIntervalRecordId(key: string): boolean {
+  return key[0] !== '['
+}
+
 function intervalKeyValue(key: string): IntervalKey {
   const values = JSON.parse(key) as [string, string, string]
   return { source: values[0], ref: values[1], start_at: values[2] }
+}
+
+function intervalDeleteBodies(keys: string[]): Array<{ ids: string[] } | { keys: IntervalKey[] }> {
+  const ids = keys.filter(isIntervalRecordId)
+  const tuples = keys.filter((key) => !isIntervalRecordId(key)).map(intervalKeyValue)
+  const bodies: Array<{ ids: string[] } | { keys: IntervalKey[] }> = []
+  if (ids.length) bodies.push({ ids })
+  if (tuples.length) bodies.push({ keys: tuples })
+  return bodies
+}
+
+function intervalMoveDeleteKeys(rows: IntervalDelivery[]): string[] {
+  // Deletes a moved interval by tuple as well as UUID while hosted rows may still carry a server-minted id.
+  return rows.flatMap((row) => [
+    row.key,
+    JSON.stringify([row.row.source, row.row.ref, row.row.start_at]),
+  ])
 }
 
 function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
@@ -235,6 +253,39 @@ function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
 
 type DeliveryRequest = { fetch: SyncFetch; baseUrl: string; token: string }
 
+async function putIntervalRows(
+  rows: IntervalDelivery[],
+  destinationSpaceId: string,
+  requestOptions: DeliveryRequest,
+) {
+  await request(
+    requestOptions.fetch,
+    requestOptions.baseUrl,
+    requestOptions.token,
+    '/v1/evidence/intervals',
+    'PUT',
+    { rows: rows.map((row) => row.row) },
+    destinationSpaceId,
+  )
+}
+
+async function deleteIntervalRows(
+  keys: string[],
+  spaceId: string,
+  requestOptions: DeliveryRequest,
+) {
+  for (const body of intervalDeleteBodies(keys))
+    await request(
+      requestOptions.fetch,
+      requestOptions.baseUrl,
+      requestOptions.token,
+      '/v1/evidence/intervals',
+      'DELETE',
+      body,
+      spaceId,
+    )
+}
+
 async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: DeliveryRequest) {
   const issues: IntervalSyncIssue[] = []
   for (const [destinationSpaceId, destinationRows] of groupedBy(
@@ -243,30 +294,20 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
   )) {
     try {
       for (const group of batches(destinationRows)) {
-        await request(
-          requestOptions.fetch,
-          requestOptions.baseUrl,
-          requestOptions.token,
-          '/v1/evidence/intervals',
-          'PUT',
-          { rows: group.map((row) => row.row) },
-          destinationSpaceId,
-        )
-        const movedRows = group.filter(
+        const moved = group.filter(
           (row) =>
             row.acknowledgedSpaceId !== null && row.acknowledgedSpaceId !== row.destinationSpaceId,
         )
-        for (const [oldSpaceId, moved] of groupedBy(movedRows, (row) => row.acknowledgedSpaceId!))
-          await request(
-            requestOptions.fetch,
-            requestOptions.baseUrl,
-            requestOptions.token,
-            '/v1/evidence/intervals',
-            'DELETE',
-            { keys: moved.map((row) => intervalKeyValue(row.key)) },
-            oldSpaceId,
-          )
-        acknowledgeIntervals(group)
+        const unmoved = group.filter((row) => !moved.includes(row))
+        if (unmoved.length) {
+          await putIntervalRows(unmoved, destinationSpaceId, requestOptions)
+          acknowledgeIntervals(unmoved)
+        }
+        for (const [oldSpaceId, movedRows] of groupedBy(moved, (row) => row.acknowledgedSpaceId!)) {
+          await deleteIntervalRows(intervalMoveDeleteKeys(movedRows), oldSpaceId, requestOptions)
+          await putIntervalRows(movedRows, destinationSpaceId, requestOptions)
+          acknowledgeIntervals(movedRows)
+        }
       }
     } catch (error) {
       for (const project of new Set(destinationRows.map((row) => row.row.project_name)))
@@ -284,15 +325,16 @@ async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: Delive
   )) {
     try {
       for (const group of batches(destinationRows)) {
-        await request(
-          requestOptions.fetch,
-          requestOptions.baseUrl,
-          requestOptions.token,
-          '/v1/evidence/intervals',
-          'DELETE',
-          { keys: group.map((row) => intervalKeyValue(row.local_key)) },
-          destinationSpaceId,
-        )
+        for (const body of intervalDeleteBodies(group.map((row) => row.local_key)))
+          await request(
+            requestOptions.fetch,
+            requestOptions.baseUrl,
+            requestOptions.token,
+            '/v1/evidence/intervals',
+            'DELETE',
+            body,
+            destinationSpaceId,
+          )
         forgetIntervals(group.map((row) => row.local_key))
       }
     } catch (error) {
@@ -357,6 +399,7 @@ export async function syncEvidence(
   const requestOptions = { baseUrl, token, fetch: fetchImpl }
   const identity = await hostedTaskIdentity(requestOptions)
   assertTargetSpaceIntervalEvidence(identity)
+  assertIntervalRecordId(identity)
   const interval = intervalDeliveries(
     intervalRows,
     intervalLedger,
