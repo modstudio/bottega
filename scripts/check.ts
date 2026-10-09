@@ -271,6 +271,7 @@ if (
     './scripts/architecture.test.ts',
     './scripts/import-scanner.test.ts',
     './shared/test-substance/test-substance.test.ts',
+    './shared/test-substance/test-substance-php.test.ts',
     './shared/test-substance/self-comparison.test.ts',
     './shared/ratchet.test.ts',
     './scripts/quality/ceiling-decision.test.ts',

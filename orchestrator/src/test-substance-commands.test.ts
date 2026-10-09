@@ -75,6 +75,24 @@ describe('test-substance judge verb', () => {
     expect(result).toEqual({ status: 'ok', findings: [], reason: '' })
   })
 
+  test('accepts and forwards PHP policy rules', async () => {
+    let received: readonly string[] | undefined
+    await testSubstanceJudgeCommand(
+      JSON.stringify({
+        file: '/project/tests/Feature/FooTest.php',
+        before: null,
+        after: '<?php',
+        phpPolicyRules: ['createMock'],
+      }),
+      false,
+      async (input) => {
+        received = input.phpPolicyRules
+        return decision('ok')
+      },
+    )
+    expect(received).toEqual(['createMock'])
+  })
+
   test('raw tool input with a marker but unsupported extension returns ok without reading', async () => {
     const result = await testSubstanceJudgeCommand(
       JSON.stringify(payload('Write', { file_path: '/missing/example.test.mtsx', content: 'x' })),
