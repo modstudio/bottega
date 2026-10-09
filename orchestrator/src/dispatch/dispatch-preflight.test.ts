@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { assertDispatchLens, preflight } from './dispatch-preflight.ts'
+import { lensDispatchNotices } from './dispatch-commands.ts'
+import { preflight } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 
@@ -51,9 +52,31 @@ test('preflight uses the recipe default from the explicit base creation will use
   expect(preflight('implement', path, undefined, undefined, 'base-default')).toBe('full')
 })
 
-test('preflight refuses an unknown catalogue lens with the listing remedy', () => {
-  expect(() => assertDispatchLens('review-lens', 'not-in-the-catalogue', null)).toThrow(
-    'lens "not-in-the-catalogue" is not an enabled catalogue lens; run orch lens list',
-  )
-  expect(() => assertDispatchLens('review-lens-inline', 'not-in-the-catalogue', null)).not.toThrow()
+test('unknown catalogue lens passes preflight and produces a caller-prompt notice', () => {
+  expect(() =>
+    preflight(
+      'review-lens',
+      process.cwd(),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+      'not-in-the-catalogue',
+      undefined,
+      false,
+      undefined,
+      true,
+    ),
+  ).not.toThrow()
+  expect(
+    lensDispatchNotices({
+      jobName: 'review-lens',
+      lens: 'not-in-the-catalogue',
+      resolved: null,
+      stack: 'node',
+    }),
+  ).toEqual([
+    "! lens not-in-the-catalogue has no catalogue row and runs with the caller's prompt only; orch lens list shows the catalogue",
+  ])
 })

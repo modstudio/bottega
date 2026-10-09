@@ -38,14 +38,30 @@ export function genericLensProfileNotices(
     )
 }
 
-function reportGenericLensProfileNotices(input: {
+export function lensDispatchNotices(input: {
+  jobName: string
+  lens: string | undefined
+  resolved: ReturnType<typeof resolveLens>
+  stack: string | null
+}): string[] {
+  if (input.lens && !input.resolved && input.jobName !== 'review-lens-inline') {
+    return [
+      `! lens ${input.lens} has no catalogue row and runs with the caller's prompt only; ` +
+        'orch lens list shows the catalogue',
+    ]
+  }
+  return genericLensProfileNotices(input.resolved, input.stack)
+}
+
+function reportLensDispatchNotices(input: {
+  jobName: string
   lens: string | undefined
   project: string | null
   stack: string | null
   report: (...values: unknown[]) => void
 }): void {
   const resolved = input.lens ? resolveLens(input.lens, input.project) : null
-  for (const notice of genericLensProfileNotices(resolved, input.stack)) input.report(notice)
+  for (const notice of lensDispatchNotices({ ...input, resolved })) input.report(notice)
 }
 
 function reportDefaultSeed(
@@ -322,7 +338,8 @@ export async function dispatchCommand(
     error,
   )
   const lens = flag('lens')
-  reportGenericLensProfileNotices({
+  reportLensDispatchNotices({
+    jobName,
     lens,
     project: dispatchProjectName,
     stack: dispatchProject?.stack ?? null,

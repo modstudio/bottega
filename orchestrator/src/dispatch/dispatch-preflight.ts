@@ -36,18 +36,6 @@ import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
-export function assertDispatchLens(
-  jobName: string,
-  lens: string | undefined,
-  projectName: string | null,
-) {
-  if (!lens) return
-  const resolved = resolveLens(lens, projectName)
-  if (!resolved && jobName !== 'review-lens-inline') {
-    throw new Error(`lens "${lens}" is not an enabled catalogue lens; run orch lens list`)
-  }
-}
-
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
 export function resolvedFindingsLens(
   findings: boolean | undefined,
@@ -170,7 +158,6 @@ export function preflight(
   if (lens && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(lens)) {
     throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
   }
-  assertDispatchLens(jobName, lens, repo ?? projectAt(cwd)?.name ?? null)
   assertImplicitReviewTarget({
     jobName,
     findings: j.findings,
