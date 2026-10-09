@@ -15,14 +15,16 @@ const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => 
 })
 
 describe('document tree write rules', () => {
-  test('user audience is accepted in both public scopes and refused elsewhere', () => {
-    expect(documentTreeWriteRefusal(base({ audiences: ['user'] }))).toBeNull()
-    expect(
-      documentTreeWriteRefusal(base({ scope: 'global', subject: null, audiences: ['user'] })),
-    ).toBeNull()
-    expect(documentTreeWriteRefusal(base({ scope: 'canon', audiences: ['user'] }))).toContain(
-      'project and global',
-    )
+  test('internal and customer audiences are accepted in project and global scopes only', () => {
+    for (const audience of ['internal', 'customer'] as const) {
+      expect(documentTreeWriteRefusal(base({ audiences: [audience] }))).toBeNull()
+      expect(
+        documentTreeWriteRefusal(base({ scope: 'global', subject: null, audiences: [audience] })),
+      ).toBeNull()
+      expect(documentTreeWriteRefusal(base({ scope: 'canon', audiences: [audience] }))).toContain(
+        'project and global',
+      )
+    }
   })
 
   test('parent must exist, be live, and share the address', () => {
@@ -65,13 +67,13 @@ describe('document tree write rules', () => {
   test('parent and child audiences are independent', () => {
     expect(
       documentTreeWriteRefusal(
-        base({ audiences: ['user'], parent: { ...base(), slug: 'parent' } }),
+        base({ audiences: ['customer'], parent: { ...base(), slug: 'parent' } }),
       ),
     ).toBeNull()
     expect(
       documentTreeWriteRefusal(
         base({
-          audiences: ['user'],
+          audiences: ['internal'],
           children: [{ slug: 'leaf' }],
         }),
       ),

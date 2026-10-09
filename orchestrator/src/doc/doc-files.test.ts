@@ -76,7 +76,7 @@ test('nested document slugs round-trip through export and import', async () => {
       title: 'Old',
       status: 'superseded' as const,
       kind: 'working' as const,
-      audiences: ['technical', 'user'] as ['technical', 'user'],
+      audiences: ['technical', 'customer'] as ['technical', 'customer'],
       replacement_slug: '.agents/current.md',
       body: 'old',
     },

@@ -145,7 +145,7 @@ export const doc = pgTable.withRLS(
     pgPolicy('doc_public_select', {
       for: 'select',
       to: RECORD_PUBLIC_ROLE,
-      using: sql`'user' = ANY(${table.audiences})
+      using: sql`'customer' = ANY(${table.audiences})
         AND ${table.status} = 'current'
         AND ${table.ownerUserId} IS NULL
         AND ${table.deletedAt} IS NULL

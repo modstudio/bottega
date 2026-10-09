@@ -14,7 +14,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     replacementSlug: null,
     delivery: 'demand',
@@ -29,7 +29,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     replacementSlug: null,
     delivery: 'demand',
@@ -44,7 +44,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'global',
     subject: null,
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     replacementSlug: null,
     delivery: 'inject',
@@ -122,9 +122,9 @@ test('the docs page shows one tree with audience in the filter control', () => {
 
 test('About shows every audience on a document', () => {
   const html = render({
-    doc: { ...items[1]!, audiences: ['user', 'technical'], body: 'Body.' },
+    doc: { ...items[1]!, audiences: ['technical', 'internal'], body: 'Body.' },
   })
-  expect(html).toContain('User, Technical')
+  expect(html).toContain('Technical, Internal')
 })
 
 test('signed out keeps User guide wording and hides the audience filter, project chooser and address', () => {
@@ -157,7 +157,7 @@ test('All projects groups roots by subject, and a single project does not', () =
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'global',
     subject: null,
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     replacementSlug: null,
   }

@@ -21,7 +21,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     parentId: null,
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    audiences: ['user'],
+    audiences: ['internal'],
     ...partial,
     status: partial.status ?? 'current',
     replacementSlug: partial.replacementSlug ?? null,
@@ -50,15 +50,15 @@ const docs: DocsTreeItem[] = [
   }),
 ]
 
-test('audience is always offered from the shared vocabulary beside varied document filters', () => {
+test('only carried audiences are offered beside varied document filters', () => {
   const both = offeredFilters(docs, true)
   expect(both.map((filter) => filter.key)).toEqual(['audience', 'scope', 'delivery'])
   expect(both[0]).toEqual({
     key: 'audience',
     allLabel: 'All audiences',
     options: [
-      { value: 'user', label: 'User', count: 3 },
       { value: 'technical', label: 'Technical', count: 1 },
+      { value: 'internal', label: 'Internal', count: 3 },
     ],
   })
   expect(both[1]!.options).toEqual([
@@ -74,8 +74,8 @@ test('audience is always offered from the shared vocabulary beside varied docume
 })
 
 test('a document with two audiences matches either audience filter', () => {
-  const shared = item({ id: 'shared', title: 'Shared', audiences: ['user', 'technical'] })
-  expect(applyFilters([shared], { ...EMPTY_FILTERS, audience: 'user' })).toEqual([shared])
+  const shared = item({ id: 'shared', title: 'Shared', audiences: ['technical', 'customer'] })
+  expect(applyFilters([shared], { ...EMPTY_FILTERS, audience: 'customer' })).toEqual([shared])
   expect(applyFilters([shared], { ...EMPTY_FILTERS, audience: 'technical' })).toEqual([shared])
 })
 
@@ -88,11 +88,12 @@ test('a chosen value the documents in view no longer hold is cleared', () => {
   const chosen = { audience: null, scope: 'canon', delivery: 'inject' }
   expect(clearStaleFilters(inProject(docs, 'starship'), chosen)).toEqual(EMPTY_FILTERS)
   expect(clearStaleFilters(docs, chosen)).toEqual(chosen)
+  expect(clearStaleFilters(docs, { ...EMPTY_FILTERS, audience: 'customer' })).toEqual(EMPTY_FILTERS)
 })
 
 test('applying filters keeps matching documents and counts active choices', () => {
   expect(
-    applyFilters(docs, { audience: 'user', scope: 'project', delivery: 'demand' }).map(
+    applyFilters(docs, { audience: 'internal', scope: 'project', delivery: 'demand' }).map(
       (row) => row.id,
     ),
   ).toEqual(['1', '3'])

@@ -1,7 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
-  DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
@@ -20,7 +19,13 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
-import { DocSchema, DocSearchSchema, DocTreeItemSchema, DocTreeSchema } from './doc-contract.ts'
+import {
+  DocSchema,
+  DocSearchSchema,
+  DocTreeItemSchema,
+  DocTreeSchema,
+  HostedDocAudiencesSchema,
+} from './doc-contract.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -262,7 +267,7 @@ const docRevisionSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
-  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
+  audiences: HostedDocAudiencesSchema,
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),

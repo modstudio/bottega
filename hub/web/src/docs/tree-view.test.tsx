@@ -14,7 +14,7 @@ const rows: DocsTreeItem[] = [
     updatedAt: '2026-10-09T00:00:00.000Z',
     scope: 'project',
     subject: 'starship',
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     replacementSlug: null,
   },

@@ -18,7 +18,7 @@ export const DOC_SCOPES = [
   'settings',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
-export const DOC_AUDIENCES = ['user', 'technical'] as const
+export const DOC_AUDIENCES = ['technical', 'internal', 'customer'] as const
 export type DocAudience = (typeof DOC_AUDIENCES)[number]
 export type DocAudiences = [DocAudience, ...DocAudience[]]
 

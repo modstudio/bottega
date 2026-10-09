@@ -225,7 +225,7 @@ export function listDocsStore(
     if (treeColumns(database)) {
       where.push('EXISTS (SELECT 1 FROM json_each(d.audiences) WHERE value = ?)')
       values.push(filters.audience)
-    } else if (filters.audience === 'user') where.push('0')
+    } else if (filters.audience !== 'technical') where.push('0')
   }
   if (filters.status !== undefined) {
     validStatus(filters.status)

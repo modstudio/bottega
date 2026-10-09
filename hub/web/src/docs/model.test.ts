@@ -12,7 +12,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     parentId: null,
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    audiences: ['user'],
+    audiences: ['internal'],
     ...partial,
     status: partial.status ?? 'current',
     replacementSlug: partial.replacementSlug ?? null,
@@ -75,7 +75,8 @@ test('All projects groups roots; a single project does not', () => {
 })
 
 test('a selected document outside the visible tree is not the displayed document', () => {
-  const hidden = docsViewModel(items, 'atlas', { ...EMPTY_FILTERS, audience: 'technical' }, 'r', {
+  const mixed = [{ ...items[0]!, audiences: ['technical'] as ['technical'] }, ...items.slice(1)]
+  const hidden = docsViewModel(mixed, 'atlas', { ...EMPTY_FILTERS, audience: 'technical' }, 'r', {
     ...items[1]!,
     body: '## Open\n',
   })
@@ -86,14 +87,14 @@ test('a selected document outside the visible tree is not the displayed document
 
 test('document counts follow the audience filter without counting retained ancestors', () => {
   const catalogue = [
-    item({ id: 'parent', title: 'Parent', audiences: ['user'] }),
+    item({ id: 'parent', title: 'Parent', audiences: ['internal'] }),
     item({
       id: 'child',
       title: 'Child',
       parentId: 'parent',
       audiences: ['technical'],
     }),
-    item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
+    item({ id: 'both', title: 'Both', audiences: ['technical', 'internal'] }),
   ]
   expect(docsViewModel(catalogue, 'atlas', EMPTY_FILTERS, null, null).documentCount).toBe(3)
   const technical = docsViewModel(

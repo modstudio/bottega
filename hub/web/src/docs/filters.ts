@@ -2,8 +2,9 @@ import { DOC_AUDIENCES } from '../../../../shared/docs.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 
 export const DOC_AUDIENCE_LABELS: Record<DocsAudience, string> = {
-  user: 'User',
   technical: 'Technical',
+  internal: 'Internal',
+  customer: 'Customer',
 }
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
@@ -62,7 +63,7 @@ function valuesFor(items: readonly DocsTreeItem[], key: FilterKey): Map<string, 
   return counts
 }
 
-/** Audience is offered whenever asked for; scope and delivery when the documents hold at least two distinct values. */
+/** Audience is offered when carried; scope and delivery when documents hold at least two values. */
 export function offeredFilters(
   items: readonly DocsTreeItem[],
   includeAudience: boolean,
@@ -70,15 +71,12 @@ export function offeredFilters(
   const offered: OfferedFilter[] = []
   if (includeAudience) {
     const counts = valuesFor(items, 'audience')
-    offered.push({
-      key: 'audience',
-      allLabel: 'All audiences',
-      options: DOC_AUDIENCES.map((value) => ({
-        value,
-        label: DOC_AUDIENCE_LABELS[value],
-        count: counts.get(value) ?? 0,
-      })),
-    })
+    const options = DOC_AUDIENCES.filter((value) => counts.has(value)).map((value) => ({
+      value,
+      label: DOC_AUDIENCE_LABELS[value],
+      count: counts.get(value)!,
+    }))
+    if (options.length) offered.push({ key: 'audience', allLabel: 'All audiences', options })
   }
   for (const key of ['scope', 'delivery'] as const) {
     const counts = valuesFor(items, key)
@@ -102,8 +100,10 @@ export function clearStaleFilters(
   for (const key of ['audience', 'scope', 'delivery'] as const) {
     const value = next[key]
     if (!value) continue
-    if (key === 'audience') next[key] = selectedAudience(next)
-    else if (!valuesFor(items, key).has(value)) next[key] = null
+    if (key === 'audience') {
+      const audience = selectedAudience(next)
+      next[key] = audience && valuesFor(items, key).has(audience) ? audience : null
+    } else if (!valuesFor(items, key).has(value)) next[key] = null
   }
   return next
 }

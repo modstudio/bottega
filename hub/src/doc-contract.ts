@@ -1,5 +1,13 @@
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, normalizeDocAudiences } from '../../shared/docs.ts'
+
+export const HostedDocAudiencesSchema = z
+  .array(z.union([z.enum(DOC_AUDIENCES), z.literal('user')]))
+  .nonempty()
+  .transform((audiences) => {
+    const tolerated = audiences.map((audience) => (audience === 'user' ? 'internal' : audience))
+    return normalizeDocAudiences([...new Set(tolerated)])
+  })
 
 export const DocTreeItemSchema = z.object({
   id: z.string(),
@@ -10,7 +18,7 @@ export const DocTreeItemSchema = z.object({
   updatedAt: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
-  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
+  audiences: HostedDocAudiencesSchema,
   delivery: z.enum(['inject', 'demand']).optional(),
   summary: z.string().optional(),
   featured: z.boolean().optional(),
@@ -25,7 +33,7 @@ const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),
-  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
+  audiences: HostedDocAudiencesSchema,
   status: z.enum(DOC_STATUSES).default('current'),
   kind: z.enum(DOC_KINDS).default('working'),
   snippet: z.string(),

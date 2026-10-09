@@ -45,7 +45,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audiences: ['user'],
+    audiences: ['internal'],
     delivery: 'demand',
     status: 'draft',
     replacementSlug: null,
@@ -61,7 +61,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audiences: ['user'],
+    audiences: ['internal'],
     delivery: 'demand',
     status: 'draft',
     replacementSlug: null,
@@ -92,7 +92,7 @@ test('local, hosted and public records carry lifecycle fields through the shared
     id: 'public',
     slug: 'public',
     title: 'Public',
-    audiences: ['user'],
+    audiences: ['internal'],
   })
   expect([local.status, local.replacementSlug]).toEqual(['superseded', 'replacement'])
   expect([hosted.status, hosted.replacementSlug]).toEqual(['draft', null])
@@ -137,7 +137,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       updatedAt: '2026-10-06T00:00:00.000Z',
       scope: 'project',
       subject: 'atlas',
-      audiences: ['user'],
+      audiences: ['internal'],
     }).projectName,
   ).toBe('atlas')
 })
@@ -153,7 +153,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
       id: '1',
       slug: 'a',
       title: 'A',
-      audiences: ['user'],
+      audiences: ['internal'],
       snippet: 'x',
       matchPosition: 0,
     }),
@@ -161,7 +161,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     id: '1',
     slug: 'a',
     title: 'A',
-    audiences: ['user'],
+    audiences: ['internal'],
     status: 'current',
     snippet: 'x',
     matchPosition: 0,
