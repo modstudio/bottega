@@ -313,6 +313,13 @@ test('an upsert the timestamp pull already delivered is a no-op; a new one is ch
   const report = await pull(fetch)
   expect(report?.upsertsNoop).toBe(1)
   expect(report?.upsertsChanged).toBe(1)
+  expect(
+    db()
+      .query<{ family: string; row_id: string }, []>(
+        'SELECT family,row_id FROM hosted_change_evidence',
+      )
+      .all(),
+  ).toEqual([{ family: 'task', row_id: '01990000-0000-7000-8000-000000001249' }])
 })
 
 test('a delete from the row own space removes the row and its children', async () => {

@@ -162,6 +162,13 @@
       "when": 1790272800013,
       "tag": "0022_note_project_counter",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791583736000,
+      "tag": "0023_hosted_change_evidence",
+      "breakpoints": true
     }
   ]
 }

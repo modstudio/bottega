@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import type { HostedChangeEvidenceFamily } from './hosted-change-evidence.ts'
 import type { HostedSpaceChange, HostedSpaceChangePage, TaskFetch } from './task-client.ts'
 import type { RegisteredTaskSpace, TaskDestinationIdentity } from './task-project-space.ts'
 
@@ -11,6 +12,7 @@ export type HostedChangeRequestOptions = {
 }
 
 export type HostedChangeFamily = {
+  evidenceFamily: HostedChangeEvidenceFamily
   cursorPrefix: string
   tables: string
   spaces: (

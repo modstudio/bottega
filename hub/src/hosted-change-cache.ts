@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
+import { pruneHostedChangeEvidence, recordHostedChangeEvidence } from './hosted-change-evidence.ts'
 import type { HostedChangeFamily, HostedChangeRequestOptions } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { createHostedTaskChangeFamily } from './hosted-task-change-family.ts'
@@ -96,10 +97,28 @@ function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string
 export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>
   machineSpace === logSpace ? 'apply' : 'skip'
 
+export type HostedChangeUpsertDecision =
+  | { kind: 'no-op'; differingColumns: [] }
+  | { kind: 'changed'; differingColumns: string[] }
+
 export const classifyHostedChangeUpsert = (
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
-) => (JSON.stringify(before) === JSON.stringify(after) ? 'no-op' : 'changed')
+): HostedChangeUpsertDecision => {
+  if (JSON.stringify(before) === JSON.stringify(after))
+    return { kind: 'no-op', differingColumns: [] }
+  const beforeRow = before ?? {}
+  const afterRow = after ?? {}
+  const differingColumns = [...new Set([...Object.keys(beforeRow), ...Object.keys(afterRow)])]
+    .filter(
+      (column) =>
+        !(column in beforeRow) ||
+        !(column in afterRow) ||
+        JSON.stringify(beforeRow[column]) !== JSON.stringify(afterRow[column]),
+    )
+    .sort()
+  return { kind: 'changed', differingColumns }
+}
 
 function applyOneChange(
   conn: Database,
@@ -114,10 +133,27 @@ function applyOneChange(
       family.rowSpace(conn, change.table, change.id),
       spaceId,
     )
-    if (decision === 'skip') counts.deletesSkipped += 1
-    else {
+    if (decision === 'skip') {
+      counts.deletesSkipped += 1
+      recordHostedChangeEvidence(conn, {
+        family: family.evidenceFamily,
+        spaceId,
+        table: change.table,
+        rowId: change.id,
+        kind: 'skipped-delete',
+        differingColumns: [],
+      })
+    } else {
       family.delete(conn, change.table, change.id)
       counts.deletesApplied += 1
+      recordHostedChangeEvidence(conn, {
+        family: family.evidenceFamily,
+        spaceId,
+        table: change.table,
+        rowId: change.id,
+        kind: 'applied-delete',
+        differingColumns: [],
+      })
     }
     return
   }
@@ -128,8 +164,19 @@ function applyOneChange(
   const before = family.machineRow(conn, change.table, change.id)
   family.apply(conn, change.table, change.row)
   const after = family.machineRow(conn, change.table, change.id)
-  if (classifyHostedChangeUpsert(before, after) === 'no-op') counts.upsertsNoop += 1
-  else counts.upsertsChanged += 1
+  const decision = classifyHostedChangeUpsert(before, after)
+  if (decision.kind === 'no-op') counts.upsertsNoop += 1
+  else {
+    counts.upsertsChanged += 1
+    recordHostedChangeEvidence(conn, {
+      family: family.evidenceFamily,
+      spaceId,
+      table: change.table,
+      rowId: change.id,
+      kind: 'changed-upsert',
+      differingColumns: decision.differingColumns,
+    })
+  }
 }
 
 function applyPage(
@@ -232,6 +279,7 @@ function noteFamily(
     return 'destinationSpaceId' in destination ? destination.destinationSpaceId : null
   }
   return {
+    evidenceFamily: 'note',
     cursorPrefix: HOSTED_NOTE_CHANGES_CURSOR_KEY,
     tables: NOTE_TABLES,
     spaces: notePullSpaces,
@@ -291,6 +339,7 @@ async function pullChanges(
   ) => HostedChangeFamily,
   options: PullOptions,
 ) {
+  pruneHostedChangeEvidence()
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(shared)
   if (identity.capabilities?.spaceChanges !== true) return null

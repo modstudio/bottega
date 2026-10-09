@@ -19,6 +19,10 @@ import {
 } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
+import {
+  HOSTED_CHANGE_EVIDENCE_USAGE,
+  runHostedChangeEvidenceCommand,
+} from './hosted-change-evidence-cli.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { NOTE_USAGE, noteHelpRequested, runNoteCommand } from './note-cli.ts'
@@ -99,6 +103,9 @@ const hubHelpRequested = () => {
     '--body',
     '--body-file',
     '--days',
+    '--family',
+    '--kind',
+    '--space',
     '--version',
   ])
   let expectingValue = false
@@ -150,6 +157,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub migrate                 apply pending checksummed schema migrations
   hub sync [--dry-run]        push changed local evidence to the hosted hub
   hub doctor                  report the live structural schema hash and user_version
+  ${HOSTED_CHANGE_EVIDENCE_USAGE}
+                              inspect timestamp-pull misses recorded by the change-log follower
   hub tasks [--hours N]       what has been worked on, newest window first
   hub login [--port 7778]     print a one-time local dashboard login URL
   hub serve [--port 7778]     the dashboard
@@ -635,6 +644,7 @@ try {
     cmd === 'reconcile' ||
     cmd === 'rulings' ||
     cmd === 'doctor' ||
+    cmd === 'changes' ||
     cmd === 'note'
   if (usesDatabase) requireDatabase()
 
@@ -652,6 +662,9 @@ try {
     }
     case 'doctor':
       for (const line of hubDoctorLines()) console.log(line)
+      break
+    case 'changes':
+      runHostedChangeEvidenceCommand(argv)
       break
     case 'collect':
       if (has('watch')) {

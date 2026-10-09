@@ -25,6 +25,7 @@ export function createHostedTaskChangeFamily(
   identity: TaskDestinationIdentity,
 ): HostedChangeFamily {
   return {
+    evidenceFamily: 'task',
     cursorPrefix: HOSTED_CHANGES_CURSOR_KEY,
     tables: HOSTED_TASK_CHANGE_TABLE_QUERY,
     spaces: taskPullSpaces,
