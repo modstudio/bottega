@@ -55,12 +55,12 @@ function git(cwd: string, argv: string[]): string {
   return result.stdout.toString().trim()
 }
 
-/** Selects only review rows for the branch's current measured change. */
+/** Selects every review round recorded by runs on the branch. */
 export function readProjectReview(
   database: Database,
   group: ChangeGroup,
 ): { complete: boolean; rows: ReviewRecordRow[] } {
-  const selectedReviews = reviewsForTriage(database, group).reviews
+  const selectedReviews = reviewsForTriage(database, group).branchReviews
   const selectedIds = new Set(selectedReviews.map(({ reviewId }) => reviewId))
   const rows = database
     .query<

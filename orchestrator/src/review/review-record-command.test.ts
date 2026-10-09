@@ -134,7 +134,7 @@ test('a failed project command reports its output', () => {
   )
 })
 
-test('selects only the current branch change and requires every selected lens to be graded and triaged', () => {
+test('selects every review round on the branch and requires every selected lens to be graded and triaged', () => {
   const database = db()
   const addReview = (project: string, branch: string, lens: string, patchId: string) => {
     const run = addRun({ agent: 'codex', job: 'review-lens', lens, repo: project })
@@ -166,7 +166,7 @@ test('selects only the current branch change and requires every selected lens to
     return { review: review.id, lens: reviewLens.id, run }
   }
 
-  const correctness = addReview('fixture', 'DEV-1246', 'correctness', 'target-patch')
+  const correctness = addReview('fixture', 'DEV-1246', 'correctness', 'earlier-patch')
   const craft = addReview('fixture', 'DEV-1246', 'craft', 'target-patch')
   addReview('fixture', 'DEV-other', 'distractor-branch', 'target-patch')
   addReview('other-project', 'DEV-1246', 'distractor-project', 'target-patch')
