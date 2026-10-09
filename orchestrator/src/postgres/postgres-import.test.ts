@@ -50,6 +50,18 @@ test('project-level autonomy is deliberately not imported', () => {
   expect(unknown).toEqual([])
 })
 
+test('project import refuses without a signed-in user before opening its sources', async () => {
+  // Production break watched: remove the principal guard from importProjects.
+  await expect(
+    importProjects({
+      orchDb: 'missing',
+      hubDb: 'missing',
+      databaseUrl: 'missing',
+      spaceId: 'space',
+    }),
+  ).rejects.toThrow('a signed-in user is required; run `orch record sign-in`, then retry')
+})
+
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
@@ -72,6 +84,7 @@ realPostgres('project import against copied live SQLite data', () => {
   const sql = new SQL(databaseUrl!)
   const recordSession = memoryRecordSession()
   let recordToken = ''
+  let recordUserId = ''
 
   beforeAll(async () => {
     installRecordSessionRunner(recordSession.runner)
@@ -93,6 +106,7 @@ realPostgres('project import against copied live SQLite data', () => {
     })
     if (!signedUp.token) throw new Error('live-copy signup returned no bearer token')
     recordToken = signedUp.token
+    recordUserId = signedUp.user.id
     recordSession.setToken(recordToken)
     await sql`
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
@@ -136,6 +150,7 @@ realPostgres('project import against copied live SQLite data', () => {
       ...sources,
       databaseUrl: databaseUrl!,
       spaceId: PLATFORM_SPACE_ID,
+      principal: { userId: recordUserId },
     })
     expect(first.projects).toBe(sourceProjects.length)
     expect(first.sequences).toBe(
@@ -229,6 +244,7 @@ realPostgres('project import against copied live SQLite data', () => {
       ...sources,
       databaseUrl: databaseUrl!,
       spaceId: PLATFORM_SPACE_ID,
+      principal: { userId: recordUserId },
     })
     expect(second).toEqual(first)
     expect(await targetState(sql)).toEqual(before)
@@ -259,6 +275,7 @@ realPostgres('project import against copied live SQLite data', () => {
       hubDb: retiredHubDb,
       databaseUrl: databaseUrl!,
       spaceId: PLATFORM_SPACE_ID,
+      principal: { userId: recordUserId },
     })
     expect(result.skippedSequences).toContainEqual({
       name: 'task:RETIRED',
@@ -434,6 +451,7 @@ realPostgres('project import against copied live SQLite data', () => {
         hubDb: unownedHubDb,
         databaseUrl: databaseUrl!,
         spaceId: PLATFORM_SPACE_ID,
+        principal: { userId: recordUserId },
       }),
     ).rejects.toThrow('cannot import sequence task:NOPE: matched no project')
     expect(await targetState(sql)).toEqual(before)

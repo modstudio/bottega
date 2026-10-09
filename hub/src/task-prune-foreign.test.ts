@@ -29,8 +29,8 @@ const identity = {
   userId: 'user-active',
   activeSpaceId: 'space-active',
   memberships: [
-    { spaceId: 'space-active', slug: 'active' },
-    { spaceId: 'space-other', slug: 'other' },
+    { spaceId: 'space-active', slug: 'active', permission: 'write' },
+    { spaceId: 'space-other', slug: 'other', permission: 'write' },
   ],
 }
 

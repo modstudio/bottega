@@ -15,7 +15,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
       user: { id: newRecordId() },
       activeSpaceId: 'space-active',
       personalSpaceId: 'space-active',
-      memberships: [{ space_id: 'space-active', slug: 'active' }],
+      memberships: [{ space_id: 'space-active', slug: 'active', permission: 'write' }],
     }),
     inviteMember: async () => ({ id: newRecordId() }),
     putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
@@ -89,8 +89,8 @@ describe('record cache pull', () => {
           activeSpaceId: 'space-active',
           personalSpaceId: 'space-active',
           memberships: [
-            { space_id: 'space-active', slug: 'active' },
-            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-active', slug: 'active', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
           ],
         }),
         addProjectSubject: async (_input, target) => {
@@ -149,9 +149,9 @@ describe('record cache pull', () => {
           activeSpaceId: 'space-active',
           personalSpaceId: 'space-active',
           memberships: [
-            { space_id: 'space-active', slug: 'active' },
-            { space_id: 'space-alpha', slug: 'alpha' },
-            { space_id: 'space-beta', slug: 'beta' },
+            { space_id: 'space-active', slug: 'active', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
+            { space_id: 'space-beta', slug: 'beta', permission: 'write' },
           ],
         }),
         listDocs: async (_query, destination) => {
@@ -193,8 +193,8 @@ describe('record cache pull', () => {
           activeSpaceId: 'space-active',
           personalSpaceId: 'space-active',
           memberships: [
-            { space_id: 'space-active', slug: 'active' },
-            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-active', slug: 'active', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
           ],
         }),
         listDocs: async (_query, destination) => ({
@@ -249,8 +249,8 @@ describe('record cache pull', () => {
           activeSpaceId: 'space-active',
           personalSpaceId: 'space-active',
           memberships: [
-            { space_id: 'space-active', slug: 'active' },
-            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-active', slug: 'active', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
           ],
         }),
         listProjectSubjects: async (_query, destination) => ({
@@ -313,8 +313,8 @@ describe('record cache pull', () => {
           activeSpaceId: 'space-active',
           personalSpaceId: 'space-active',
           memberships: [
-            { space_id: 'space-active', slug: 'active' },
-            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-active', slug: 'active', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
           ],
         }),
         listProjectSubjects: async (query, destination) => {
@@ -368,9 +368,9 @@ describe('record cache pull', () => {
           activeSpaceId,
           personalSpaceId: activeSpaceId,
           memberships: [
-            { space_id: 'space-a', slug: 'a' },
-            { space_id: 'space-b', slug: 'b' },
-            { space_id: 'space-alpha', slug: 'alpha' },
+            { space_id: 'space-a', slug: 'a', permission: 'write' },
+            { space_id: 'space-b', slug: 'b', permission: 'write' },
+            { space_id: 'space-alpha', slug: 'alpha', permission: 'write' },
           ],
         }),
         listDocs: async (query, destination) => {

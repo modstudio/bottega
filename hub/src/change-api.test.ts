@@ -10,8 +10,8 @@ const whoami = async () =>
     user: { id: 'user-1' },
     activeSpaceId: 'space-a',
     memberships: [
-      { space_id: 'space-a', slug: 'active' },
-      { space_id: 'space-b', slug: 'other' },
+      { space_id: 'space-a', slug: 'active', permission: 'write' },
+      { space_id: 'space-b', slug: 'other', permission: 'write' },
     ],
   })
 const request = (query: string, space = 'space-b') =>
@@ -35,8 +35,8 @@ test('change route binds a requested member space and parses its bounded request
       spaceId: 'space-b',
       spaceIds: ['space-a', 'space-b'],
       memberships: [
-        { spaceId: 'space-a', slug: 'active' },
-        { spaceId: 'space-b', slug: 'other' },
+        { spaceId: 'space-a', slug: 'active', permission: 'write' },
+        { spaceId: 'space-b', slug: 'other', permission: 'write' },
       ],
     },
     input: { after: 0, limit: 500, tables: ['hub_task', 'hub_note'] },

@@ -77,7 +77,16 @@ export function asSpace(
   spaceId: string,
   statement: string,
 ): PsqlResult {
-  return psql(user, password, `SET app.space_id = '${spaceId}';\n${statement}`)
+  return psql(
+    user,
+    password,
+    `SET app.space_id = '${spaceId}';
+SELECT user_id::text AS actor_user_id FROM membership
+  WHERE space_id = '${spaceId}' AND permission = 'write'
+  ORDER BY created_at LIMIT 1 \\gset
+SET app.user_id = :'actor_user_id';
+${statement}`,
+  )
 }
 
 export function asSpaces(
@@ -90,6 +99,12 @@ export function asSpaces(
   return psql(
     user,
     password,
-    `SET app.space_id = '${activeSpaceId}';\nSET app.space_ids = '${spaceIds.join(',')}';\n${statement}`,
+    `SET app.space_id = '${activeSpaceId}';
+SET app.space_ids = '${spaceIds.join(',')}';
+SELECT user_id::text AS actor_user_id FROM membership
+  WHERE space_id = '${activeSpaceId}' AND permission = 'write'
+  ORDER BY created_at LIMIT 1 \\gset
+SET app.user_id = :'actor_user_id';
+${statement}`,
   )
 }

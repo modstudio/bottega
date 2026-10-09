@@ -169,7 +169,7 @@ export function registerHostedConfigProofs(
       'SELECT key, value FROM config_entry ORDER BY key;',
     )
     expect(result.code, result.stderr).toBe(0)
-    expect(result.stdout).toBe('wide|wide-a')
+    expect(result.stdout.split('\n')).toEqual(['user-x|x-a', 'wide|wide-a'])
   })
 
   test('record actor cannot see config records from another space', () => {

@@ -28,6 +28,7 @@ export type ProjectImportOptions = {
   hubDb: string
   databaseUrl: string
   spaceId: string
+  principal?: { userId: string }
 }
 
 function object(value: unknown, location: string): JsonObject {
@@ -107,10 +108,14 @@ function sequenceImportDecision(
 
 export async function importProjects(options: ProjectImportOptions): Promise<ProjectImportResult> {
   if (!options.spaceId) throw new Error('spaceId is required')
+  if (!options.principal?.userId)
+    throw new Error('a signed-in user is required; run `orch record sign-in`, then retry')
+  const userId = options.principal.userId
   const source = readSources(options.orchDb, options.hubDb)
   const postgres = new SQL(options.databaseUrl)
   try {
     return await postgres.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`
       await tx`SELECT set_config('app.space_id', ${options.spaceId}, true)`
       const spaces = await tx`SELECT id FROM space WHERE id = ${options.spaceId}::uuid`
       if (spaces.length !== 1) throw new Error(`target space does not exist: ${options.spaceId}`)

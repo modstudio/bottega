@@ -316,7 +316,7 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: OPERATOR_USER_ID,
+    userId: USER_A,
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
@@ -855,11 +855,10 @@ realPostgres('RLS proof against real Postgres', () => {
         `SELECT has_table_privilege('public_probe', 'project', 'SELECT');`,
       ),
     ).toBe('f')
-    const result = asSpace(
+    const result = psql(
       'public_probe',
       'public-password',
-      SPACE_A,
-      `SELECT name FROM public.project WHERE id = '${PROJECT_A}';`,
+      `SET app.space_id='${SPACE_A}';SELECT name FROM public.project WHERE id='${PROJECT_A}';`,
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('permission denied for schema public')

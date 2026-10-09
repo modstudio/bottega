@@ -1,6 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../../shared/docs.ts'
+import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import {
   createHostedReportSubscription,
@@ -69,6 +71,32 @@ async function hostedIdentity(ctx: Context) {
   const membershipSpaceIds = who.memberships.map((row) => String(row.space_id))
   return {
     client,
+    identity: {
+      userId: who.user.id,
+      spaceId: who.activeSpaceId,
+      spaceIds:
+        who.activeSpaceId === who.personalSpaceId ? membershipSpaceIds : [who.activeSpaceId],
+    },
+  }
+}
+
+async function hostedWriteIdentity(ctx: Context) {
+  const client = recordClient(ctx)
+  const who = await client.whoami()
+  if (!who.activeSpaceId)
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'record session has no active space',
+    })
+  const memberships = parseRecordSpaceMemberships(who.memberships)
+  const access = recordSpaceAccessDecision('write', who.activeSpaceId, memberships)
+  if (!access.allowed)
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `${access.error}\n${access.remedy}`,
+    })
+  const membershipSpaceIds = memberships.map((membership) => membership.spaceId)
+  return {
     identity: {
       userId: who.user.id,
       spaceId: who.activeSpaceId,
@@ -415,7 +443,7 @@ export const recordRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx)
       return createHostedReportSubscription(recordDatabaseUrl(), identity, input)
     }),
   updateReportSubscription: t.procedure
@@ -428,20 +456,20 @@ export const recordRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx)
       const { id, ...update } = input
       return updateHostedReportSubscription(recordDatabaseUrl(), identity, id, update)
     }),
   removeReportSubscription: t.procedure
     .input(z.object({ id: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx)
       return unsubscribeHostedReportSubscription(recordDatabaseUrl(), identity, input.id)
     }),
   sendReportSubscriptionTest: t.procedure
     .input(z.object({ id: uuid }).strict())
     .mutation(async ({ ctx, input }) => {
-      const { identity } = await hostedIdentity(ctx)
+      const { identity } = await hostedWriteIdentity(ctx)
       return sendHostedReportSubscriptionTest(recordDatabaseUrl(), identity, input.id)
     }),
   task: t.procedure

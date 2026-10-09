@@ -1,5 +1,12 @@
-import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
-import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
+import {
+  parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
+} from '../../shared/record-space-membership.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+  recordSpaceRequestDecision,
+} from '../../shared/record-space-request.ts'
 import {
   acknowledgeHostedNote,
   createHostedNote,
@@ -18,7 +25,7 @@ const TEST_REFUSAL =
   'hub note API refuses real identity and database clients unless stubs are injected in tests'
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
-type Identity = { userId: string; spaceId: string }
+type Identity = { userId: string; spaceId: string; memberships: RecordSpaceMembership[] }
 type RouteContext = {
   request: Request
   url: URL
@@ -50,13 +57,14 @@ async function authenticate(
     memberships?: unknown
   } | null
   if (!response.ok || !identity?.user?.id || !identity.activeSpaceId) return null
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
   const decision = recordSpaceRequestDecision(
     request.headers.get('x-record-space'),
     identity.activeSpaceId,
-    parseRecordSpaceMemberships(identity.memberships),
+    memberships,
   )
   if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
-  return { userId: identity.user.id, spaceId: decision.spaceId! }
+  return { userId: identity.user.id, spaceId: decision.spaceId!, memberships }
 }
 
 async function readRoute(context: RouteContext): Promise<Response | null> {
@@ -188,6 +196,12 @@ export async function noteApi(
       },
       403,
     )
+  const access = recordSpaceAccessDecision(
+    recordRequestNature(request.method),
+    who.spaceId,
+    who.memberships,
+  )
+  if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
   const body =
     request.method === 'GET'
       ? null

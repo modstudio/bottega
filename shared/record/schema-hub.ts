@@ -59,6 +59,7 @@ export const hubChangeHead = pgTable.withRLS(
       .references(() => space.id),
     sequence: bigint({ mode: 'bigint' }).notNull(),
   },
+  // Triggers write change-log heads inside a statement whose row policy already judged the caller.
   (table) => [
     pgPolicy('hub_change_head_space_select', {
       for: 'select',
@@ -94,6 +95,7 @@ export const hubChange = pgTable.withRLS(
     op: text().notNull(),
     at: timestamp({ withTimezone: true }).defaultNow(),
   },
+  // Triggers write change rows inside a statement whose row policy already judged the caller.
   (table) => [
     primaryKey({ columns: [table.spaceId, table.sequence] }),
     check('hub_change_op_check', sql`${table.op} IN ('upsert','delete')`),
@@ -389,7 +391,12 @@ export const hubReportSubscriptionRecipient = pgTable.withRLS(
       sql`(${table.userId} IS NOT NULL AND ${table.email} IS NULL AND ${table.unsubscribeToken} IS NULL)
         OR (${table.userId} IS NULL AND ${table.email} IS NOT NULL AND ${table.unsubscribeToken} IS NOT NULL)`,
     ),
-    ...tenantPolicies('hub_report_subscription_recipient', table.spaceId),
+    // Public email unsubscribe is a token capability, so it may delete only its matching row.
+    ...tenantPolicies(
+      'hub_report_subscription_recipient',
+      table.spaceId,
+      sql`${table.unsubscribeToken} = nullif(current_setting('app.unsubscribe_token', true), '')`,
+    ),
   ],
 )
 
@@ -412,6 +419,7 @@ export const hubSend = pgTable.withRLS(
     periodStart: timestamp('period_start', { withTimezone: true }),
     periodEnd: timestamp('period_end', { withTimezone: true }),
   },
+  // Scheduled delivery writes sends as a system principal with no membership.
   (table) => [
     unique('hub_send_space_id_unique').on(table.spaceId, table.id),
     uniqueIndex('hub_send_subscription_period_unique')
@@ -454,6 +462,7 @@ export const hubSendRecipient = pgTable.withRLS(
     email: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
+  // Scheduled delivery writes recipients as a system principal with no membership.
   (table) => [
     foreignKey({
       columns: [table.spaceId, table.sendId],

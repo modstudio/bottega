@@ -85,6 +85,7 @@ export const boardClaim = pgTable.withRLS(
       WHERE p.id = ${table.projectId} AND m.user_id = ${currentUser}
         AND m.permission = 'write'
     )`
+    // Board policies already distinguish write membership from read membership.
     return [
       index('board_claim_project_subject_idx').on(
         table.projectId,
@@ -174,6 +175,7 @@ export const boardMessage = pgTable.withRLS(
       (cardinality(${table.scopeProjectIds}) > 0 AND ${readsScope}) OR
       (${currentUser} = ANY(${table.recipientUserIds}) AND ${readsScope})`
     const writesRow = sql`${table.authorUserId} = ${currentUser} AND ${writesScope}`
+    // Board policies already distinguish write membership from read membership.
     return [
       index('board_message_revision_idx').on(table.revision),
       index('board_message_delivery_idx').on(table.expiresAt, table.withdrawnAt, table.createdAt),
@@ -253,6 +255,7 @@ export const boardMessageTag = pgTable.withRLS(
       SELECT 1 FROM ${boardMessage} message
       WHERE message.id = ${table.messageId} AND message.author_user_id = ${currentUser}
     )`
+    // Board policies already distinguish write membership from read membership.
     return [
       primaryKey({ columns: [table.messageId, table.kind, table.value, table.origin] }),
       index('board_message_tag_message_idx').on(table.messageId),
@@ -307,6 +310,7 @@ export const boardReceipt = pgTable.withRLS(
       WHERE message.id = ${table.messageId} AND message.author_user_id = ${currentUser}
     )`
     const writesReceipt = sql`${ownReceipt} AND ${visibleMessage}`
+    // Board policies already distinguish write membership from read membership.
     return [
       primaryKey({ columns: [table.messageId, table.readerUserId, table.readerSession] }),
       pgPolicy('board_receipt_actor_select', {

@@ -2,7 +2,11 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
-import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+  recordSpaceRequestDecision,
+} from '../../shared/record-space-request.ts'
 import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
 import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
 
@@ -128,6 +132,33 @@ async function deleteIntervalBatch(
   return Response.json({ error: 'ids must contain at most 500 items' }, { status: 400 })
 }
 
+function evidenceTenant(request: Request, pathname: string, who: Tenant): Tenant | Response {
+  const intervalRoute =
+    pathname === '/v1/evidence/intervals' &&
+    (request.method === 'PUT' || request.method === 'DELETE')
+  const decision = recordSpaceRequestDecision(
+    intervalRoute ? request.headers.get('x-record-space') : null,
+    who.spaceId,
+    who.memberships,
+  )
+  if (!decision.allowed)
+    return Response.json(
+      {
+        error: `record space '${decision.requestedSpace}' is not among the caller's memberships`,
+        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      },
+      { status: 403 },
+    )
+  const access = recordSpaceAccessDecision(
+    recordRequestNature(request.method),
+    decision.spaceId!,
+    who.memberships,
+  )
+  return access.allowed
+    ? { ...who, spaceId: decision.spaceId! }
+    : Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
+}
+
 export async function evidenceApi(
   request: Request,
   config: Config,
@@ -147,23 +178,8 @@ export async function evidenceApi(
       { error: 'authorization and an active space are required' },
       { status: 401 },
     )
-  const intervalRoute =
-    url.pathname === '/v1/evidence/intervals' &&
-    (request.method === 'PUT' || request.method === 'DELETE')
-  const decision = recordSpaceRequestDecision(
-    intervalRoute ? request.headers.get('x-record-space') : null,
-    who.spaceId,
-    who.memberships,
-  )
-  if (!decision.allowed)
-    return Response.json(
-      {
-        error: `record space '${decision.requestedSpace}' is not among the caller's memberships`,
-        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
-      },
-      { status: 403 },
-    )
-  const tenant = { ...who, spaceId: decision.spaceId! }
+  const tenant = evidenceTenant(request, url.pathname, who)
+  if (tenant instanceof Response) return tenant
   const body = await request.json().catch(() => null)
   try {
     if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')

@@ -24,6 +24,7 @@ export type RecordSyncResult = {
   configured: boolean
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
+  readOnlyDeferred?: { spaceId: string; rows: number }[]
   backfill?: RunRecordBackfillResult & {
     scores: number
     reviews: ReviewRecordBackfillResult

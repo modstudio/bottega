@@ -29,6 +29,7 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -90,7 +91,7 @@ async function syncMemberships(
   return postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const rows = await tx`
-      SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
+      SELECT m.space_id, s.slug, m.permission FROM membership m JOIN space s ON s.id=m.space_id
       WHERE m.user_id=${principal.userId}::uuid
     `
     return parseRecordSpaceMemberships(rows)
@@ -866,6 +867,7 @@ type OutboxAttempt = {
   projectSpaces?: Record<string, string>
   now: () => string
   blocked: BlockedOutboxRow[]
+  readOnlyDeferred: Map<string, number>
 }
 
 /**
@@ -878,7 +880,7 @@ type OutboxAttempt = {
  */
 async function pushOutboxRow(
   attempt: OutboxAttempt,
-): Promise<'pushed' | 'skipped' | 'deferred' | 'failed' | 'stop'> {
+): Promise<'pushed' | 'skipped' | 'deferred' | 'read-only' | 'failed' | 'stop'> {
   const { row, local, identity } = attempt
   try {
     if (!(row.kind in recordKinds)) {
@@ -899,6 +901,21 @@ async function pushOutboxRow(
         attempt.projectSpaces,
       ),
     )
+    const access = recordSpaceAccessDecision('write', rowPrincipal.spaceId, attempt.memberships)
+    if (!access.allowed) {
+      const detail = `${access.error}; ${access.remedy}`
+      local
+        .query(
+          `UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=? AND payload=?
+           AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+        )
+        .run(detail, row.id, row.payload)
+      attempt.readOnlyDeferred.set(
+        rowPrincipal.spaceId,
+        (attempt.readOnlyDeferred.get(rowPrincipal.spaceId) ?? 0) + 1,
+      )
+      return 'read-only'
+    }
     const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
     if (String(record.machineId) !== identity.id) {
       throw new OutboxRowError(
@@ -963,8 +980,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         userId: current.user.id,
         spaceId: current.activeSpaceId,
       })))
-    const memberships =
-      options.memberships ?? (options.principal ? [] : await syncMemberships(postgres, principal))
+    const memberships = options.memberships ?? (await syncMemberships(postgres, principal))
     await upsertMachine(postgres, (options.now ?? nowIso)(), identity, principal)
     const rows = writableLocal
       .query<OutboxRow, []>(
@@ -983,6 +999,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     // stop every other project's evidence from ever reaching the record.
     const blockedProjects = new Set<string>()
     const blocked: BlockedOutboxRow[] = []
+    const readOnlyDeferred = new Map<string, number>()
     for (const row of rows) {
       const outcome = await pushOutboxRow({
         row,
@@ -996,6 +1013,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         projectSpaces: options.projectSpaces,
         now: options.now ?? nowIso,
         blocked,
+        readOnlyDeferred,
       })
       if (outcome === 'pushed') pushed++
       if (outcome === 'failed' || outcome === 'stop') failed++
@@ -1016,6 +1034,11 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       configured: true,
       quarantined: quarantinedOutboxRows(writableLocal),
       blocked,
+      ...(readOnlyDeferred.size
+        ? {
+            readOnlyDeferred: [...readOnlyDeferred].map(([spaceId, rows]) => ({ spaceId, rows })),
+          }
+        : {}),
       ...(backfill ? { backfill } : {}),
     }
   } finally {

@@ -3,8 +3,8 @@ import { projectRecordDestination } from './record-project-destination.ts'
 
 describe('project record destination', () => {
   const memberships = [
-    { spaceId: 'stable-active', slug: 'active' },
-    { spaceId: 'stable-declared', slug: 'declared' },
+    { spaceId: 'stable-active', slug: 'active', permission: 'write' },
+    { spaceId: 'stable-declared', slug: 'declared', permission: 'write' },
   ]
 
   test('uses the active space when the register declares none', () => {

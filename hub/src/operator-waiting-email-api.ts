@@ -1,6 +1,11 @@
 // concern: operator-waiting-email-api
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
+import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+} from '../../shared/record-space-request.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -52,6 +57,13 @@ export async function operatorWaitingEmailApi(
       { error: 'authorization and an active space are required' },
       { status: 401 },
     )
+  const access = recordSpaceAccessDecision(
+    recordRequestNature(request.method),
+    identity.activeSpaceId,
+    parseRecordSpaceMemberships(identity.memberships),
+  )
+  if (!access.allowed)
+    return Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
   const parsed = operatorWaitingEmailRequestSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success)
     return Response.json({ error: 'invalid operator waiting email body' }, { status: 400 })

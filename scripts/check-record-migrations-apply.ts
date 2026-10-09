@@ -24,6 +24,7 @@ const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
 const unmanagedProjectId = '01990000-0000-7000-8000-000000000014'
+const platformOperatorId = '01990000-0000-7000-8000-000000000002'
 
 class CheckFailure extends Error {}
 
@@ -170,6 +171,7 @@ function sqlTag(transaction: Transaction): SQL {
 async function proofManagedCanonProjects(transaction: Transaction): Promise<void> {
   await transaction.exec(`
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
     INSERT INTO project (id, space_id, name, managed_context, created_at) VALUES
       ('${managedProjectId}', '${PLATFORM_SPACE_ID}', 'managed-proof', true, now()),
       ('${unmanagedProjectId}', '${PLATFORM_SPACE_ID}', 'unmanaged-proof', false, now());

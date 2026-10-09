@@ -45,8 +45,8 @@ describe('hosted-only task safety', () => {
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
             memberships: [
-              { space_id: 'space-a', slug: 'active' },
-              { space_id: 'space-b', slug: 'declared' },
+              { space_id: 'space-a', slug: 'active', permission: 'write' },
+              { space_id: 'space-b', slug: 'declared', permission: 'write' },
             ],
           }),
         create: async (_url, identity) => {
@@ -62,8 +62,8 @@ describe('hosted-only task safety', () => {
       spaceId: 'space-b',
       spaceIds: ['space-a', 'space-b'],
       memberships: [
-        { spaceId: 'space-a', slug: 'active' },
-        { spaceId: 'space-b', slug: 'declared' },
+        { spaceId: 'space-a', slug: 'active', permission: 'write' },
+        { spaceId: 'space-b', slug: 'declared', permission: 'write' },
       ],
     })
   })
@@ -87,7 +87,7 @@ describe('hosted-only task safety', () => {
             Response.json({
               user: { id: 'user-1' },
               activeSpaceId: 'space-a',
-              memberships: [{ space_id: 'space-a', slug: 'active' }],
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
             }),
           create: async () => {
             writes++
@@ -119,7 +119,7 @@ describe('hosted-only task safety', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
-            memberships: [{ space_id: 'space-a', slug: 'active' }],
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
           }),
         create: async (_url, identity) => {
           boundSpace = identity.spaceId
@@ -142,7 +142,7 @@ describe('hosted-only task safety', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
-            memberships: [{ space_id: 'space-a', slug: 'active' }],
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
           }),
         list: async (_url, _identity) => {
           reads++
@@ -197,7 +197,7 @@ describe('hosted-only task safety', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
-            memberships: [{ space_id: 'space-a', slug: 'active' }],
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
           }),
         mirror: async () => {
           writes++
@@ -219,7 +219,7 @@ describe('hosted-only task safety', () => {
       userId: string
       spaceId: string
       spaceIds?: readonly string[]
-      memberships?: Array<{ spaceId: string; slug: string }>
+      memberships?: Array<{ spaceId: string; slug: string; permission: string }>
     }> = []
     const response = await taskApi(
       new Request('https://hub.example.test/v1/tasks/mirror', {
@@ -238,8 +238,8 @@ describe('hosted-only task safety', () => {
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
             memberships: [
-              { space_id: 'space-a', slug: 'active' },
-              { space_id: 'space-b', slug: 'other' },
+              { space_id: 'space-a', slug: 'active', permission: 'write' },
+              { space_id: 'space-b', slug: 'other', permission: 'write' },
             ],
           }),
         mirror: async (_url, identity) => {
@@ -256,8 +256,8 @@ describe('hosted-only task safety', () => {
         spaceId: 'space-b',
         spaceIds: ['space-a', 'space-b'],
         memberships: [
-          { spaceId: 'space-a', slug: 'active' },
-          { spaceId: 'space-b', slug: 'other' },
+          { spaceId: 'space-a', slug: 'active', permission: 'write' },
+          { spaceId: 'space-b', slug: 'other', permission: 'write' },
         ],
       },
     ])
@@ -275,7 +275,7 @@ describe('hosted-only task safety', () => {
           Response.json({
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
-            memberships: [{ space_id: 'space-a', slug: 'active' }],
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
           }),
         counts: async () => {
           reads++
@@ -494,8 +494,8 @@ describe('hosted-only task safety', () => {
             user: { id: 'user-1' },
             activeSpaceId: 'space-a',
             memberships: [
-              { space_id: 'space-a', slug: 'workshop' },
-              { space_id: 'space-b', slug: 'stopal' },
+              { space_id: 'space-a', slug: 'workshop', permission: 'write' },
+              { space_id: 'space-b', slug: 'stopal', permission: 'write' },
             ],
           }),
       },
@@ -506,8 +506,8 @@ describe('hosted-only task safety', () => {
       userId: 'user-1',
       activeSpaceId: 'space-a',
       memberships: [
-        { spaceId: 'space-a', slug: 'workshop' },
-        { spaceId: 'space-b', slug: 'stopal' },
+        { spaceId: 'space-a', slug: 'workshop', permission: 'write' },
+        { spaceId: 'space-b', slug: 'stopal', permission: 'write' },
       ],
       capabilities: {
         targetSpaceTaskMirror: true,
@@ -527,8 +527,8 @@ describe('hosted-only task safety', () => {
         user: { id: 'user-1' },
         activeSpaceId: 'space-a',
         memberships: [
-          { space_id: 'space-a', slug: 'active' },
-          { space_id: 'space-b', slug: 'other' },
+          { space_id: 'space-a', slug: 'active', permission: 'write' },
+          { space_id: 'space-b', slug: 'other', permission: 'write' },
         ],
       })
     const presence = await taskApi(
@@ -574,6 +574,44 @@ describe('hosted-only task safety', () => {
       documents: 3,
       statusEvents: 4,
     })
+  })
+
+  test('every task write route refuses a read-only membership before dispatch', async () => {
+    // Production break watched: remove the access decision before task route dispatch.
+    for (const [method, pathname] of [
+      ['POST', '/v1/tasks'],
+      ['PATCH', '/v1/tasks/DEV-1'],
+      ['POST', '/v1/tasks/DEV-1/close'],
+      ['POST', '/v1/tasks/DEV-1/comments'],
+      ['POST', '/v1/tasks/DEV-1/documents'],
+      ['PATCH', '/v1/tasks/DEV-1/documents/document-1'],
+      ['DELETE', '/v1/tasks/DEV-1/documents/document-1'],
+      ['PUT', '/v1/tasks/mirror'],
+      ['POST', '/v1/tasks/presence'],
+      ['DELETE', '/v1/tasks'],
+    ]) {
+      const response = await taskApi(
+        new Request(`https://hub.example.test${pathname}`, {
+          method,
+          headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        }),
+        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://test' },
+        {
+          fetch: async () =>
+            Response.json({
+              user: { id: 'user-a' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active', permission: 'read' }],
+            }),
+        },
+      )
+      expect(response?.status).toBe(403)
+      expect(await response?.json()).toEqual({
+        error: 'record space space-a membership is read-only',
+        remedy: 'A space owner or admin can change the membership permission.',
+      })
+    }
   })
 
   test('task clients carry presence pairs and bulk-delete confirmation in request bodies', async () => {

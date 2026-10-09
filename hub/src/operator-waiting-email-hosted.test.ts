@@ -85,7 +85,13 @@ test('hosted endpoint binds space and user from the credential', async () => {
       Response.json({
         user: { id: '01990000-0000-7000-8000-000000000701' },
         activeSpaceId: '01990000-0000-7000-8000-00000000070a',
-        memberships: [],
+        memberships: [
+          {
+            space_id: '01990000-0000-7000-8000-00000000070a',
+            slug: 'active',
+            permission: 'write',
+          },
+        ],
       })) as unknown as typeof fetch,
     mail: { send: async () => undefined },
     send,
