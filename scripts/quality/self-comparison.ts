@@ -31,14 +31,32 @@ export const selfComparisonRule: Rule.RuleModule = {
   },
   create(context) {
     const source = context.sourceCode
+    const evaluated = new WeakSet<Rule.Node>()
+
+    function markEvaluated(node: Rule.Node) {
+      let current: Rule.Node | null = node
+      while (current) {
+        evaluated.add(current)
+        current = current.parent
+      }
+    }
+
     return {
-      CallExpression(node) {
+      AwaitExpression(node) {
+        markEvaluated(node)
+      },
+      NewExpression(node) {
+        markEvaluated(node)
+      },
+      'CallExpression:exit'(node) {
+        markEvaluated(node)
         if (node.callee.type !== 'MemberExpression') return
         const matcher = propertyName(node.callee as Rule.Node)
         if (!matcher || !EQUALITY_MATCHERS.has(matcher)) return
         const received = expectArgument(node.callee.object as Rule.Node)
         const expected = node.arguments[0]
         if (!received || !expected || expected.type === 'SpreadElement') return
+        if (evaluated.has(received) || evaluated.has(expected as Rule.Node)) return
         if (source.getText(received) !== source.getText(expected as Rule.Node)) return
         context.report({ node, messageId: 'selfComparison' })
       },

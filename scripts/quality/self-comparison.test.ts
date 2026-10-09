@@ -18,3 +18,7 @@ test('self-comparison flags identical expression text', () => {
 test('self-comparison accepts different expression text', () => {
   expect(messages('expect(subject.value).toEqual(expected.value)')).toEqual([])
 })
+
+test('self-comparison accepts two calls with identical expression text', () => {
+  expect(messages("expect(subject('value')).toEqual(subject('value'))")).toEqual([])
+})

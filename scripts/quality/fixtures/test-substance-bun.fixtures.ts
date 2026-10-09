@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test'
+import { expectImported } from './test-substance-fixture-helper'
+
+function expectThroughHelper() {
+  expect(subject).toBe(expected)
+}
 
 describe('fixture', () => {
   test('has no assertion', () => {})
+  test('asserts through a same-file helper', () => expectThroughHelper())
+  test('asserts through an imported helper', () => expectImported())
   test('is trivial', () => expect(true).toBe(true))
   test.only('is focused', () => expect(subject).toBe(expected))
   test.skip('is disabled', () => expect(subject).toBe(expected))

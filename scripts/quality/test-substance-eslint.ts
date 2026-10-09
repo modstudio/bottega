@@ -5,6 +5,7 @@ import jestPlugin from 'eslint-plugin-jest'
 import sonarPlugin from 'eslint-plugin-sonarjs'
 import ts from 'typescript'
 import { expectWithoutMatcherRule } from './expect-without-matcher'
+import { noAssertionRule } from './no-assertion'
 import { selfComparisonRule } from './self-comparison'
 import { applyTestWaivers, OUTSIDE_TEST, type TestFinding, type TestWaiver } from './test-substance'
 
@@ -24,7 +25,6 @@ type TestLocation = {
 }
 
 const SONAR_RULES = [
-  'assertions-in-tests',
   'no-trivial-assertions',
   'async-test-assertions',
   'no-exclusive-tests',
@@ -33,7 +33,7 @@ const SONAR_RULES = [
 const SHARED_RUNNER_RULES = ['no-disabled-tests', 'no-focused-tests'] as const
 
 const SHARED_GUARDED_RULES = [
-  'assertions-in-tests',
+  'no-assertion',
   'no-trivial-assertions',
   'no-exclusive-tests',
   'no-duplicate-test-title',
@@ -136,9 +136,11 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
     plugins['test-substance'] = {
       rules: {
         'expect-without-matcher': expectWithoutMatcherRule,
+        'no-assertion': noAssertionRule,
         'self-comparison': selfComparisonRule,
       },
     }
+    configuredRules['test-substance/no-assertion'] = 'error'
     configuredRules['test-substance/self-comparison'] = 'error'
     if (runner === 'bun') configuredRules['test-substance/expect-without-matcher'] = 'error'
   }
