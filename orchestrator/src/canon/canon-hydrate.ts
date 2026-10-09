@@ -33,13 +33,26 @@ export function hydrationDrift(plan: HydrationPlan, paths?: Iterable<string>): H
     .sort((left, right) => left.path.localeCompare(right.path))
 }
 
-/** A read-only hydration check may inspect main; every writing hydration remains worktree-only. */
+/** A read-only hydration check or dry-run may inspect main; every writing hydration remains worktree-only. */
 export function mainCheckoutHydrationRefusal(input: {
   mainCheckout: boolean
   check: boolean
+  dryRun: boolean
 }): boolean {
-  return input.mainCheckout && !input.check
+  return input.mainCheckout && !input.check && !input.dryRun
 }
+
+/** An empty store is not a plan to delete managed canon already in the tree. */
+export function emptyStoreHydrationRefusal(input: {
+  rowCount: number
+  deleteCount: number
+}): boolean {
+  return input.rowCount === 0 && input.deleteCount > 0
+}
+
+export const EMPTY_PROJECT_CANON_STORE_REFUSAL =
+  'this store holds no project canon while the tree has managed canon paths; ' +
+  'keep them by importing with `orch canon import --project`; or remove the files yourself'
 
 /** Repository rows share a tree namespace; user rows occupy their separate Claude-home namespace. */
 export function composeCanonRows<

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -193,5 +193,68 @@ test('project canon import dry-run prints the plan and writes neither store', as
     expect(output).toContain('would import 1 canon rows, remove 0')
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('project canon hydrate dry-run prints the plan and leaves the tree unchanged', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-hydrate-dry-run-'))
+  try {
+    spawnFixtureGitSync(['init'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    upsertProject({ name: 'canon-hydrate-dry-run', path: root, canon: true, settings: {} })
+    const output: string[] = []
+    const values = new Map<string, string | true>([
+      ['project', 'canon-hydrate-dry-run'],
+      ['cwd', root],
+      ['dry-run', true],
+    ])
+
+    await dispatchCanonCommand(
+      ['canon', 'hydrate'],
+      {
+        has: (name) => values.has(name),
+        flag: (name) =>
+          typeof values.get(name) === 'string' ? String(values.get(name)) : undefined,
+      },
+      { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: () => root },
+    )
+
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+    expect(output).toContain('delete AGENTS.md')
+    expect(output).toContain('would hydrate 1 paths')
+    expect(output.some((line) => line.startsWith('hydrated '))).toBe(false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('project canon hydrate refuses an empty store that would delete managed tree files', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-hydrate-empty-store-'))
+  const main = mkdtempSync(join(tmpdir(), 'canon-hydrate-empty-main-'))
+  try {
+    spawnFixtureGitSync(['init'], { cwd: main })
+    spawnFixtureGitSync(['init'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    upsertProject({ name: 'canon-hydrate-empty-store', path: main, canon: true, settings: {} })
+    const output: string[] = []
+
+    await expect(
+      dispatchCanonCommand(
+        ['canon', 'hydrate'],
+        {
+          has: (name) => name === 'project' || name === 'cwd',
+          flag: (name) =>
+            name === 'project' ? 'canon-hydrate-empty-store' : name === 'cwd' ? root : undefined,
+        },
+        { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: () => root },
+      ),
+    ).rejects.toThrow('refusing canon hydrate: this store holds no project canon')
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+    expect(output).toContain('delete AGENTS.md')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
   }
 })

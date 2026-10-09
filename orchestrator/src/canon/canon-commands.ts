@@ -30,6 +30,8 @@ import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import {
   composeCanonRows,
+  EMPTY_PROJECT_CANON_STORE_REFUSAL,
+  emptyStoreHydrationRefusal,
   hydrationDrift,
   mainCheckoutHydrationRefusal,
   planHydration,
@@ -271,6 +273,7 @@ async function canonHydrateCommand(
     mainCheckoutHydrationRefusal({
       mainCheckout: realpathSync(root) === realpathSync(project.path),
       check: flags.has('check'),
+      dryRun: flags.has('dry-run'),
     })
   ) {
     throw new Error(
@@ -279,8 +282,9 @@ async function canonHydrateCommand(
         'cleared by: pass --cwd for a worktree',
     )
   }
+  const rows = canonRows(project.name)
   const plan = planHydration({
-    rows: canonRows(project.name),
+    rows,
     tree: collectCanonTree(root),
   })
   printHydrationPlan(plan, presentation.log)
@@ -288,6 +292,13 @@ async function canonHydrateCommand(
   if (flags.has('check')) {
     if (count) presentation.exitCode(1)
     return
+  }
+  if (flags.has('dry-run')) {
+    presentation.log(`would hydrate ${count} paths`)
+    return
+  }
+  if (emptyStoreHydrationRefusal({ rowCount: rows.length, deleteCount: plan.deletes.length })) {
+    throw new Error(`refusing canon hydrate: ${EMPTY_PROJECT_CANON_STORE_REFUSAL}`)
   }
   applyHydration(root, plan)
   presentation.log(`hydrated ${count} paths`)
