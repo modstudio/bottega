@@ -205,13 +205,13 @@ try {
     const tokens = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
-      return tx<{ id: string; vendor_tokens: number }[]>`
+      return tx<{ id: string; vendor_tokens: string | number }[]>`
         SELECT id::text AS id, vendor_tokens FROM hub_interval`
     })
     if (
       tokens.length !== 1 ||
       tokens[0]!.id !== clientIntervalId ||
-      tokens[0]!.vendor_tokens !== 250
+      Number(tokens[0]!.vendor_tokens) !== 250
     )
       throw new Error('known id did not update in place')
     await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
@@ -1313,6 +1313,56 @@ try {
       Number(proof.events) !== 1
     )
       throw new Error(`task prune Postgres evidence failed: ${JSON.stringify(proof)}`)
+
+    const aboveInt32 = 2_147_483_648
+    const wideDay = {
+      ...day,
+      id: newRecordId(),
+      day: '2026-09-20',
+      claude_tokens: aboveInt32,
+      cache_read: aboveInt32,
+      canon_tokens: aboveInt32,
+      other_tokens: aboveInt32,
+    }
+    const wideInterval = {
+      ...interval,
+      id: newRecordId(),
+      start_at: '2026-09-20T12:00:00.000Z',
+      end_at: '2026-09-20T12:05:00.000Z',
+      claude_tokens: aboveInt32,
+      vendor_tokens: aboveInt32,
+      ref: 'orch:wide-token-proof',
+    }
+    await upsertDays(actorUrl, identity, [wideDay])
+    await upsertIntervals(actorUrl, identity, [wideInterval])
+    const wideRows = await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${USER}, true)`
+      await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
+      return tx<
+        {
+          day_claude_tokens: string | number
+          cache_read: string | number
+          canon_tokens: string | number
+          other_tokens: string | number
+          interval_claude_tokens: string | number
+          vendor_tokens: string | number
+        }[]
+      >`SELECT d.claude_tokens AS day_claude_tokens,d.cache_read,d.canon_tokens,d.other_tokens,
+          i.claude_tokens AS interval_claude_tokens,i.vendor_tokens
+        FROM hub_day d CROSS JOIN hub_interval i
+        WHERE d.id=${wideDay.id}::uuid AND i.id=${wideInterval.id}::uuid`
+    })
+    const wide = wideRows[0]
+    if (
+      !wide ||
+      Number(wide.day_claude_tokens) !== aboveInt32 ||
+      Number(wide.cache_read) !== aboveInt32 ||
+      Number(wide.canon_tokens) !== aboveInt32 ||
+      Number(wide.other_tokens) !== aboveInt32 ||
+      Number(wide.interval_claude_tokens) !== aboveInt32 ||
+      Number(wide.vendor_tokens) !== aboveInt32
+    )
+      throw new Error('widened token columns did not round-trip above the 32-bit range')
   } finally {
     await client.close()
   }
