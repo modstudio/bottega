@@ -42,7 +42,7 @@ export function recordConnectionResolverRefusal(name: string, depthSet: boolean)
 
 export function assertRecordConnectionResolutionAllowed(
   names: readonly string[],
-  env: { ORCH_DEPTH?: string },
+  env: Record<string, string | undefined>,
 ): void {
   for (const name of names) {
     const refusal = recordConnectionResolverRefusal(name, env.ORCH_DEPTH !== undefined)

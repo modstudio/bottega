@@ -16,7 +16,7 @@ import {
   workerHomeLinksEnvFile,
 } from './sandbox.ts'
 
-export const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
+const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
 export type ConfinementJobKind = (typeof CONFINEMENT_JOB_KINDS)[number]
 
 export type ConfinementReportAgent = {
@@ -28,7 +28,7 @@ export type ConfinementReportAgent = {
   mcp: boolean
 }
 
-export type ConfinementAccess = {
+type ConfinementAccess = {
   access: 'open' | 'denied'
   reason: string
 }
