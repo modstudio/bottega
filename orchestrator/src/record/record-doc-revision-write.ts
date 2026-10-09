@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
+import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 
 export async function insertRecordDocRevision(
   tx: SQL,
@@ -51,7 +52,7 @@ export async function insertRecordDocRevision(
       ) VALUES (
         ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${input.audiences}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+        ${input.delivery}, ${bindRecordDocAudiences(tx, input.audiences)}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
     `
   }

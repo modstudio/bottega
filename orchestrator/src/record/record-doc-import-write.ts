@@ -1,5 +1,6 @@
 /** Writes one normalized hosted document import. Must not know validation or transaction ownership. */
 import type { SQL } from 'bun'
+import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import type { NormalizedRecordDocImport } from './record-doc-mapping.ts'
 
 export async function writeImportedRecordDoc(
@@ -17,7 +18,7 @@ export async function writeImportedRecordDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          audiences=${doc.audiences}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
+          audiences=${bindRecordDocAudiences(tx, doc.audiences)}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
           owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
@@ -32,7 +33,7 @@ export async function writeImportedRecordDoc(
       created_at, updated_at, deleted_at
     ) VALUES (
       ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
-      ${doc.title}, ${doc.body}, ${doc.delivery}, ${doc.audiences}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${bindRecordDocAudiences(tx, doc.audiences)}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
   `

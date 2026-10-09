@@ -7,6 +7,7 @@ import {
   docSummary,
 } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 
 export type RecordDoc = {
   id: string
@@ -219,7 +220,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     title: String(row.title),
     body: String(row.body),
     delivery: String(row.delivery) as DocDelivery,
-    audiences: row.audiences as DocAudiences,
+    audiences: recordDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
@@ -246,7 +247,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     title: String(row.title),
     body: String(row.body),
     delivery: String(row.delivery) as DocDelivery,
-    audiences: row.audiences as DocAudiences,
+    audiences: recordDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),

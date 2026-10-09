@@ -8,6 +8,7 @@ import {
   docSummary,
 } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
 
@@ -66,7 +67,7 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     updatedAt: iso(row.updated_at),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
-    audiences: row.audiences as DocAudiences,
+    audiences: recordDocAudiences(row.audiences),
     summary: docSummary(String(row.body)),
     featured: row.featured == null ? false : Boolean(row.featured),
   }
@@ -79,7 +80,7 @@ export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDoc
     title: String(row.title),
     snippet: String(row.snippet),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
-    audiences: row.audiences as DocAudiences,
+    audiences: recordDocAudiences(row.audiences),
     ...(row.space_name == null ? {} : { spaceName: String(row.space_name) }),
   }
 }

@@ -3,6 +3,7 @@
 import type { SQL } from 'bun'
 import type { DocAudiences } from '../../../shared/docs.ts'
 import { documentTreeWriteRefusal } from '../doc/doc-tree-rules.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 
 /** The live row at an address, else its most recently deleted one, locked for the write. */
 export async function existingDocAtAddress(
@@ -66,7 +67,7 @@ export async function recordTreeWriteRefusal(
           scope: String(parentRows[0].scope),
           subject: parentRows[0].subject == null ? null : String(parentRows[0].subject),
           owner: parentRows[0].owner_user_id == null ? null : String(parentRows[0].owner_user_id),
-          audiences: parentRows[0].audiences as DocAudiences,
+          audiences: recordDocAudiences(parentRows[0].audiences),
           deleted: parentRows[0].deleted_at != null,
         }
       : null,

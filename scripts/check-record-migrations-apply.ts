@@ -5,6 +5,8 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
+import { bindRecordDocAudiences } from '../orchestrator/src/record/record-doc-audience-sql.ts'
+import { recordDocAudiences } from '../orchestrator/src/record/record-doc-audiences.ts'
 import {
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
@@ -24,6 +26,7 @@ const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
 const unmanagedProjectId = '01990000-0000-7000-8000-000000000014'
+const audiencesRoundTripDocId = '01990000-0000-7000-8000-000000000015'
 
 class CheckFailure extends Error {}
 
@@ -157,13 +160,36 @@ async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
 }
 
 function sqlTag(transaction: Transaction): SQL {
-  return (async (parts: TemplateStringsArray, ...values: unknown[]) => {
+  const tag = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const statement = parts.reduce(
       (sql, part, index) => `${sql}${index === 0 ? '' : `$${index}`}${part}`,
       '',
     )
     return (await transaction.query(statement, values)).rows
-  }) as unknown as SQL
+  }
+  tag.array = (values: readonly unknown[]) => [...values]
+  return tag as unknown as SQL
+}
+
+async function proofAudienceWriteRead(transaction: Transaction): Promise<void> {
+  await transaction.exec(`SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);`)
+  const sql = sqlTag(transaction)
+  await sql`
+    INSERT INTO doc (id, space_id, scope, subject, slug, title, body, delivery, audiences, created_at, updated_at)
+    VALUES (
+      ${audiencesRoundTripDocId}::uuid, ${PLATFORM_SPACE_ID}::uuid, 'global', NULL,
+      'audiences-round-trip', 'Audiences round trip', 'body', 'demand',
+      ${bindRecordDocAudiences(sql, ['user', 'technical'])}, now(), now()
+    )
+  `
+  const rows = await sql`SELECT audiences FROM doc WHERE id=${audiencesRoundTripDocId}::uuid`
+  await transaction.exec(`SELECT set_config('app.space_id', '', true);`)
+  if (
+    rows.length !== 1 ||
+    JSON.stringify(recordDocAudiences(rows[0]?.audiences)) !== '["user","technical"]'
+  ) {
+    throw new CheckFailure('DEV-1238 audience write/read did not preserve the Postgres text array')
+  }
 }
 
 async function proofManagedCanonProjects(transaction: Transaction): Promise<void> {
@@ -222,6 +248,7 @@ async function main(): Promise<void> {
           }
           if (migration.name === audienceBackfill) await proofAudienceBackfill(transaction)
         }
+        await proofAudienceWriteRead(transaction)
         await proofManagedCanonProjects(transaction)
       })
     } catch (error) {

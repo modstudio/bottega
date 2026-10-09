@@ -53,12 +53,19 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-status.ts',
     './record-doc-errors.ts',
   ]),
-  module('orchestrator/src/record/record-doc-import-write.ts', ['bun', './record-doc-mapping.ts']),
+  module('orchestrator/src/record/record-doc-audience-sql.ts', ['bun', '../../../shared/docs.ts']),
+  module('orchestrator/src/record/record-doc-audiences.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/record/record-doc-import-write.ts', [
+    'bun',
+    './record-doc-audience-sql.ts',
+    './record-doc-mapping.ts',
+  ]),
   module('orchestrator/src/record/record-doc-revision-write.ts', [
     'bun',
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
     '../doc/doc-write-allowed.ts',
+    './record-doc-audience-sql.ts',
   ]),
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-write-decision.ts', []),
@@ -168,6 +175,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/docs.ts',
     '../../../shared/record/tenant.ts',
+    './record-doc-audiences.ts',
   ]),
   module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-api-settings.ts', [

@@ -22,6 +22,8 @@ import {
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -76,7 +78,7 @@ function storedDocAudiences(
 ): DocAudiences {
   return (
     input.audiences ??
-    (existing?.audiences == null ? ['technical'] : (existing.audiences as DocAudiences))
+    (existing?.audiences == null ? ['technical'] : recordDocAudiences(existing.audiences))
   )
 }
 
@@ -318,7 +320,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audiences=${audiences}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -329,7 +331,7 @@ export async function upsertRecordDoc(
           id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${audiences}, ${featured}, ${status}, ${kind}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -415,7 +417,7 @@ async function writeCanonRows(
     if (prior) {
       await tx`
         UPDATE doc SET title=${row.title}, body=${row.body}, delivery='demand',
-          audiences=${['technical']}, parent_id=NULL, position=0, updated_at=${at}::timestamptz
+          audiences=${bindRecordDocAudiences(tx, ['technical'])}, parent_id=NULL, position=0, updated_at=${at}::timestamptz
         WHERE space_id=${input.spaceId}::uuid AND id=${id}::uuid
       `
     } else {
@@ -424,7 +426,7 @@ async function writeCanonRows(
           id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, project_id, created_at, updated_at
         ) VALUES (
           ${id}::uuid, ${input.spaceId}::uuid, 'canon', ${address.subject}, ${address.owner}::uuid,
-          ${row.slug}, ${row.title}, ${row.body}, 'demand', ${['technical']}, ${address.projectId}::uuid,
+          ${row.slug}, ${row.title}, ${row.body}, 'demand', ${bindRecordDocAudiences(tx, ['technical'])}, ${address.projectId}::uuid,
           ${at}::timestamptz, ${at}::timestamptz
         )
       `
@@ -627,7 +629,7 @@ export async function deleteRecordDoc(
         scope: String(doc.scope),
         subject: doc.subject == null ? null : String(doc.subject),
         owner: doc.owner_user_id == null ? null : String(doc.owner_user_id),
-        audiences: doc.audiences as DocAudiences,
+        audiences: recordDocAudiences(doc.audiences),
         parentId: doc.parent_id == null ? null : String(doc.parent_id),
         parentWasSpecified: false,
         removing: true,
@@ -650,7 +652,7 @@ export async function deleteRecordDoc(
       title: String(doc.title),
       body: String(doc.body),
       delivery: String(doc.delivery) as DocDelivery,
-      audiences: doc.audiences as DocAudiences,
+      audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
@@ -707,7 +709,7 @@ export async function consumeRecordDoc(
       title: String(doc.title),
       body: consumed.body,
       delivery: String(doc.delivery) as DocDelivery,
-      audiences: doc.audiences as DocAudiences,
+      audiences: recordDocAudiences(doc.audiences),
       parentId: doc.parent_id == null ? null : String(doc.parent_id),
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
@@ -778,7 +780,7 @@ export async function restoreRecordDoc(
     }
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
-    const audiences = revision.audiences as DocAudiences
+    const audiences = recordDocAudiences(revision.audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
@@ -816,7 +818,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${audiences}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -956,7 +958,7 @@ export async function importRecordDoc(
         subject: doc.subject,
         owner: doc.owner ?? null,
         slug: doc.slug,
-        audiences: doc.audiences,
+        audiences: recordDocAudiences(doc.audiences),
         parentId: doc.parentId,
         parentWasSpecified: true,
         removing: doc.deletedAt !== null,
@@ -984,7 +986,7 @@ export async function importRecordDoc(
           title: revision.title,
           body: revision.body,
           delivery: revision.delivery,
-          audiences: revision.audiences,
+          audiences: recordDocAudiences(revision.audiences),
           parentId: revision.parentId,
           position: revision.position,
           featured: revision.featured,
