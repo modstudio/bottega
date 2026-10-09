@@ -20,15 +20,8 @@ function functionArgument(
     if (!ts.isIdentifier(argument)) continue
     const symbol = source.locals?.get(argument.escapedText)
     for (const declaration of symbol?.declarations ?? []) {
-      if (ts.isFunctionDeclaration(declaration) && declaration.body) return declaration
-      if (
-        ts.isVariableDeclaration(declaration) &&
-        declaration.initializer &&
-        (ts.isArrowFunction(declaration.initializer) ||
-          ts.isFunctionExpression(declaration.initializer))
-      ) {
-        return declaration.initializer
-      }
+      const callable = callableDeclaration(declaration)
+      if (callable) return callable
     }
   }
   return undefined
@@ -46,6 +39,25 @@ function isImportedAssertion(name: ts.Identifier, source: ts.SourceFile) {
   )
 }
 
+function callableDeclaration(declaration: ts.Declaration): ts.FunctionLikeDeclaration | undefined {
+  if (ts.isFunctionDeclaration(declaration) && declaration.body) return declaration
+  if (
+    ts.isVariableDeclaration(declaration) &&
+    declaration.initializer &&
+    (ts.isArrowFunction(declaration.initializer) ||
+      ts.isFunctionExpression(declaration.initializer))
+  ) {
+    return declaration.initializer
+  }
+  return undefined
+}
+
+function localFunctions(name: ts.Identifier, source: ts.SourceFile) {
+  return (source.locals?.get(name.escapedText)?.declarations ?? [])
+    .map(callableDeclaration)
+    .filter((declaration): declaration is ts.FunctionLikeDeclaration => Boolean(declaration))
+}
+
 function reachesAssertion(node: ts.Node, source: ts.SourceFile, seen: Set<ts.Node>): boolean {
   if (seen.has(node)) return false
   seen.add(node)
@@ -55,32 +67,11 @@ function reachesAssertion(node: ts.Node, source: ts.SourceFile, seen: Set<ts.Nod
     if (found) return
     if (ts.isCallExpression(child) && ts.isIdentifier(child.expression)) {
       const name = child.expression
-      if (name.text === 'expect' || name.text.startsWith('assert')) {
-        found = true
-        return
-      }
-      const symbol = source.locals?.get(name.escapedText)
-      for (const declaration of symbol?.declarations ?? []) {
-        if (
-          ts.isFunctionDeclaration(declaration) &&
-          declaration.body &&
-          reachesAssertion(declaration.body, source, seen)
-        ) {
-          found = true
-          return
-        }
-        if (
-          ts.isVariableDeclaration(declaration) &&
-          declaration.initializer &&
-          (ts.isArrowFunction(declaration.initializer) ||
-            ts.isFunctionExpression(declaration.initializer)) &&
-          reachesAssertion(declaration.initializer, source, seen)
-        ) {
-          found = true
-          return
-        }
-      }
-      if (isImportedAssertion(name, source)) {
+      const directAssertion = name.text === 'expect' || name.text.startsWith('assert')
+      const localAssertion = localFunctions(name, source).some((declaration) =>
+        reachesAssertion(declaration, source, seen),
+      )
+      if (directAssertion || localAssertion || isImportedAssertion(name, source)) {
         found = true
         return
       }
