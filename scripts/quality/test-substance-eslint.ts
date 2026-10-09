@@ -195,7 +195,7 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   if (runner !== 'bun')
     return (await eslint(runner, true).lintText(content, { filePath: file }))[0]!
 
-  // SonarJS recognises Vitest's API but not bun:test. Preserve the test source and
+  // SonarJS recognizes Vitest's API but not bun:test. Preserve the test source and
   // substitute only its module name for the SonarJS pass; the Jest pass sees the
   // original bun:test import and settings.
   const sonarContent = content.replace(/(['"])bun:test\1/g, '$1vitest$1')
