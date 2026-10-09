@@ -92,14 +92,6 @@ export const modules: ArchitectureModule[] = [
   ...docModules,
   ...subjectModules,
   ...metricModules,
-  module('orchestrator/src/doc/local-doc-write.ts', [
-    '../../../shared/docs.ts',
-    '../../../shared/record/schema.ts',
-    '../database/db.ts',
-    './doc-read-store.ts',
-    './doc-revision-store.ts',
-    './doc-write-allowed.ts',
-  ]),
   module('orchestrator/src/doc/doc-write-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',

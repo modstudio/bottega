@@ -39,8 +39,8 @@ const outcomePresentation = () => {
 const recordedArtifact = (project: string) => {
   const row = db()
     .query<{ id: number }, [string, string, string]>(
-      `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id,record_id)
-       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', 't', 't', id, ?
+      `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_id,record_id)
+       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', '["technical"]', 't', 't', id, ?
          FROM project WHERE name=?
        RETURNING id`,
     )

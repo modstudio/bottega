@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { recordDocImportSchema } from './record-api-doc-schemas.ts'
+import { recordDocImportSchema, recordDocUpsertSchema } from './record-api-doc-schemas.ts'
 import { normalizeRecordDocImport } from './record-doc-mapping.ts'
 
-test('legacy doc imports default omitted tree fields and allow the service to mint the id', () => {
+test('doc imports require audience sets and allow the service to mint the id', () => {
   const shared = {
     scope: 'global',
     subject: null,
@@ -10,6 +10,7 @@ test('legacy doc imports default omitted tree fields and allow the service to mi
     title: 'Legacy',
     body: 'body',
     delivery: 'demand' as const,
+    audiences: ['technical'] as const,
   }
   const parsed = recordDocImportSchema.parse({
     doc: {
@@ -30,21 +31,42 @@ test('legacy doc imports default omitted tree fields and allow the service to mi
   })
 
   expect(parsed.doc).toMatchObject({
-    audience: 'technical',
+    audiences: ['technical'],
     parentId: null,
     position: 0,
     featured: false,
   })
   expect(parsed.doc.id).toBeUndefined()
   expect(parsed.revisions[0]).toMatchObject({
-    audience: 'technical',
+    audiences: ['technical'],
     parentId: null,
     position: 0,
     featured: false,
   })
   const mintedId = '01990000-0000-7000-8000-000000000099'
   expect(normalizeRecordDocImport(parsed, mintedId)).toMatchObject({
-    doc: { id: mintedId, audience: 'technical', parentId: null, position: 0, featured: false },
-    revisions: [{ audience: 'technical', parentId: null, position: 0, featured: false }],
+    doc: { id: mintedId, audiences: ['technical'], parentId: null, position: 0, featured: false },
+    revisions: [{ audiences: ['technical'], parentId: null, position: 0, featured: false }],
   })
+})
+
+test('hosted writes reject invalid audience sets and normalize their order', () => {
+  const input = {
+    scope: 'global',
+    subject: null,
+    slug: 'audiences',
+    title: 'Audiences',
+    body: 'Body.',
+    delivery: 'demand',
+    reason: 'test audiences',
+    author: 'test',
+  }
+  expect(recordDocUpsertSchema.safeParse({ ...input, audiences: [] }).success).toBe(false)
+  expect(recordDocUpsertSchema.safeParse({ ...input, audiences: ['user', 'user'] }).success).toBe(
+    false,
+  )
+  expect(recordDocUpsertSchema.safeParse({ ...input, audiences: ['other'] }).success).toBe(false)
+  expect(
+    recordDocUpsertSchema.parse({ ...input, audiences: ['technical', 'user'] }).audiences,
+  ).toEqual(['user', 'technical'])
 })

@@ -22,7 +22,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     parentId: null,
     position: 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    audience: 'user',
+    audiences: ['user'],
     ...partial,
     status: partial.status ?? 'current',
     replacementSlug: partial.replacementSlug ?? null,
@@ -47,7 +47,7 @@ const docs: DocsTreeItem[] = [
     scope: 'machine',
     delivery: 'demand',
     subject: null,
-    audience: 'technical',
+    audiences: ['technical'],
   }),
 ]
 
@@ -64,6 +64,12 @@ test('a filter is offered only when the documents in view hold two distinct valu
     { value: 'inject', count: 1 },
   ])
   expect(offeredFilters(inAudience(docs, 'technical')).map((filter) => filter.key)).toEqual([])
+})
+
+test('a document with two audiences appears under both tabs', () => {
+  const shared = item({ id: 'shared', title: 'Shared', audiences: ['user', 'technical'] })
+  expect(inAudience([shared], 'user')).toEqual([shared])
+  expect(inAudience([shared], 'technical')).toEqual([shared])
 })
 
 test('delivery is not offered when no document carries it', () => {
@@ -91,7 +97,7 @@ test('project chooser lists project names, not every subject', () => {
   expect(inProject(docs, 'all')).toHaveLength(docs.length)
   const withAgent = [
     ...docs,
-    item({ id: '5', title: 'Agent', scope: 'agent', subject: 'writer', audience: 'technical' }),
+    item({ id: '5', title: 'Agent', scope: 'agent', subject: 'writer', audiences: ['technical'] }),
   ]
   expect(projectSubjects(withAgent)).toEqual(['atlas', 'starship'])
 })

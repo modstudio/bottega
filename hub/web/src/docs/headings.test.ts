@@ -45,7 +45,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audience: 'user',
+    audiences: ['user'],
     delivery: 'demand',
     status: 'draft',
     replacementSlug: null,
@@ -61,7 +61,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audience: 'user',
+    audiences: ['user'],
     delivery: 'demand',
     status: 'draft',
     replacementSlug: null,
@@ -77,6 +77,7 @@ test('local, hosted and public records carry lifecycle fields through the shared
     id: 'local',
     slug: 'local',
     title: 'Local',
+    audiences: ['technical'],
     status: 'superseded',
     replacementSlug: 'replacement',
   })
@@ -84,9 +85,15 @@ test('local, hosted and public records carry lifecycle fields through the shared
     id: 'hosted',
     slug: 'hosted',
     title: 'Hosted',
+    audiences: ['technical'],
     status: 'draft',
   })
-  const published = mapTreeItem({ id: 'public', slug: 'public', title: 'Public' })
+  const published = mapTreeItem({
+    id: 'public',
+    slug: 'public',
+    title: 'Public',
+    audiences: ['user'],
+  })
   expect([local.status, local.replacementSlug]).toEqual(['superseded', 'replacement'])
   expect([hosted.status, hosted.replacementSlug]).toEqual(['draft', null])
   expect([published.status, published.replacementSlug]).toEqual(['current', null])
@@ -103,7 +110,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       updatedAt: '2026-10-06T00:00:00.000Z',
       scope: 'agent',
       subject: 'writer',
-      audience: 'technical',
+      audiences: ['technical'],
       projectName: null,
     }).projectName,
   ).toBeUndefined()
@@ -117,7 +124,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       updatedAt: '2026-10-06T00:00:00.000Z',
       scope: 'agent',
       subject: 'writer',
-      audience: 'technical',
+      audiences: ['technical'],
     }).projectName,
   ).toBeUndefined()
   expect(
@@ -130,7 +137,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       updatedAt: '2026-10-06T00:00:00.000Z',
       scope: 'project',
       subject: 'atlas',
-      audience: 'user',
+      audiences: ['user'],
     }).projectName,
   ).toBe('atlas')
 })
@@ -142,11 +149,19 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     after: ' is disposable',
   })
   expect(
-    mapSearchMatch({ id: '1', slug: 'a', title: 'A', snippet: 'x', matchPosition: 0 }),
+    mapSearchMatch({
+      id: '1',
+      slug: 'a',
+      title: 'A',
+      audiences: ['user'],
+      snippet: 'x',
+      matchPosition: 0,
+    }),
   ).toEqual({
     id: '1',
     slug: 'a',
     title: 'A',
+    audiences: ['user'],
     status: 'current',
     snippet: 'x',
     matchPosition: 0,

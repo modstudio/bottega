@@ -15,7 +15,7 @@ export type DocsHomeModel = {
 }
 
 export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
-  const roots = buildDocTree(items.filter((item) => item.audience === 'user'))
+  const roots = buildDocTree(items.filter((item) => item.audiences.includes('user')))
   const ordered = roots.flatMap(function visit(node): DocsTreeItem[] {
     return [node, ...node.children.flatMap(visit)]
   })

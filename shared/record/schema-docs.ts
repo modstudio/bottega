@@ -84,7 +84,7 @@ export const doc = pgTable.withRLS(
     title: text().notNull(),
     body: text().notNull(),
     delivery: text().notNull(),
-    audience: text().notNull().default('technical'),
+    audiences: text().array().notNull(),
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
     kind: text().notNull().default('working'),
@@ -109,8 +109,8 @@ export const doc = pgTable.withRLS(
     ),
     check('doc_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
     check(
-      'doc_audience_check',
-      sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
+      'doc_audiences_check',
+      sql`cardinality(${table.audiences}) > 0 AND ${table.audiences} <@ ARRAY[${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))}]::text[]`,
     ),
     check(
       'doc_status_check',
@@ -145,7 +145,7 @@ export const doc = pgTable.withRLS(
     pgPolicy('doc_public_select', {
       for: 'select',
       to: RECORD_PUBLIC_ROLE,
-      using: sql`${table.audience} = 'user'
+      using: sql`'user' = ANY(${table.audiences})
         AND ${table.status} = 'current'
         AND ${table.ownerUserId} IS NULL
         AND ${table.deletedAt} IS NULL
@@ -196,7 +196,7 @@ export const docRevision = pgTable.withRLS(
     title: text().notNull(),
     body: text().notNull(),
     delivery: text().notNull(),
-    audience: text().notNull().default('technical'),
+    audiences: text().array().notNull(),
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
     kind: text().notNull().default('working'),
@@ -215,8 +215,8 @@ export const docRevision = pgTable.withRLS(
     ),
     check('doc_revision_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
     check(
-      'doc_revision_audience_check',
-      sql`${table.audience} IN (${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))})`,
+      'doc_revision_audiences_check',
+      sql`cardinality(${table.audiences}) > 0 AND ${table.audiences} <@ ARRAY[${sql.raw(DOC_AUDIENCES.map((value) => `'${value}'`).join(','))}]::text[]`,
     ),
     check(
       'doc_revision_status_check',

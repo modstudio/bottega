@@ -1,7 +1,8 @@
 // concern: local-doc-tree-service
 /** Applies document tree policy to local-store facts and maps local parents to hosted ids. */
-import { DOC_AUDIENCES, type DocAudience } from '../../../shared/docs.ts'
+import type { DocAudiences } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
+import { decodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { Doc } from './doc-read-store.ts'
 import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
 
@@ -10,7 +11,7 @@ type TreeWriteInput = {
   subject: string | null
   owner?: string | null
   slug: string
-  audience?: DocAudience
+  audiences?: DocAudiences
   parentSlug?: string | null
   position?: number
   featured?: boolean
@@ -20,7 +21,7 @@ type TreeWriteInput = {
 }
 
 export type LocalDocTreeFields = {
-  audience: DocAudience
+  audiences: DocAudiences
   parentId: number | null
   parentSlug: string | null
   position: number
@@ -33,20 +34,16 @@ function treeDoc(
   slug: string,
   owner: string | null,
 ): Doc | null {
-  return db()
+  const row = db()
     .query(
       `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
-    .get(scope, subject, owner, slug) as Doc | null
+    .get(scope, subject, owner, slug) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
+  return row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
 }
 
 export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): LocalDocTreeFields {
-  const audience = input.audience ?? prior?.audience ?? 'technical'
-  if (!DOC_AUDIENCES.includes(audience)) {
-    throw new Error(
-      `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
-    )
-  }
+  const audiences = input.audiences ?? prior?.audiences ?? ['technical']
   if (input.position !== undefined && !Number.isInteger(input.position)) {
     throw new Error('--position must be an integer')
   }
@@ -57,9 +54,9 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     ? treeDoc(input.scope, input.subject, parentSlug, input.owner ?? null)
     : null
   const children = prior
-    ? (db()
-        .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
-        .all(prior.id) as Array<{ slug: string; audience: DocAudience }>)
+    ? (db().query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug').all(prior.id) as Array<{
+        slug: string
+      }>)
     : []
   const ancestorSlugs: string[] = []
   let ancestor = parent
@@ -67,21 +64,23 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
   while (ancestor && !seen.has(ancestor.id)) {
     seen.add(ancestor.id)
     ancestorSlugs.push(ancestor.slug)
-    ancestor = ancestor.parent_id
-      ? (db()
-          .query(
-            `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
-          )
-          .get(ancestor.parent_id) as Doc | null)
-      : null
+    if (!ancestor.parent_id) {
+      ancestor = null
+      continue
+    }
+    const row = db()
+      .query(
+        `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
+      )
+      .get(ancestor.parent_id) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
+    ancestor = row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
   }
   const refusal = documentTreeWriteRefusal({
     slug: input.slug,
     scope: input.scope,
     subject: input.subject,
     owner: input.owner ?? null,
-    audience,
-    priorAudience: prior?.audience,
+    audiences,
     parent,
     requestedParentSlug,
     ancestorSlugs,
@@ -89,7 +88,7 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
   })
   if (refusal) throw new Error(refusal)
   return {
-    audience,
+    audiences,
     parentId: parent?.id ?? null,
     parentSlug,
     position: input.position ?? prior?.position ?? 0,
@@ -99,8 +98,8 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
 
 export function assertLocalDocRemovalAllowed(doc: Doc): void {
   const children = db()
-    .query('SELECT slug,audience FROM doc WHERE parent_id=? ORDER BY slug')
-    .all(doc.id) as Array<{ slug: string; audience: DocAudience }>
+    .query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug')
+    .all(doc.id) as Array<{ slug: string }>
   const refusal = documentTreeWriteRefusal({
     ...doc,
     parent: null,

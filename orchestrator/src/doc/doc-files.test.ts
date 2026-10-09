@@ -65,6 +65,7 @@ test('nested document slugs round-trip through export and import', async () => {
       title: 'Current',
       status: 'current' as const,
       kind: 'article' as const,
+      audiences: ['technical'] as ['technical'],
       replacement_slug: null,
       body: 'new',
     },
@@ -75,6 +76,7 @@ test('nested document slugs round-trip through export and import', async () => {
       title: 'Old',
       status: 'superseded' as const,
       kind: 'working' as const,
+      audiences: ['technical', 'user'] as ['technical', 'user'],
       replacement_slug: '.agents/current.md',
       body: 'old',
     },
@@ -104,6 +106,7 @@ test('import writes replacements before superseded documents regardless of file 
     title: 'Current',
     body: 'new',
     kind: 'article',
+    audiences: ['technical'],
   })
   await setDoc({
     scope: 'global',

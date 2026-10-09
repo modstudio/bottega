@@ -22,9 +22,9 @@ export function registerOwnedCanonPrivacyProof(
       `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
        VALUES ('${membership}','${spaceId}','${otherUserId}','member','write',now());
        INSERT INTO doc
-         (id,space_id,scope,subject,owner_user_id,slug,title,body,delivery,created_at,updated_at)
+         (id,space_id,scope,subject,owner_user_id,slug,title,body,delivery,audiences,created_at,updated_at)
        VALUES
-         ('${ownedDoc}','${spaceId}','canon',NULL,'${ownerUserId}','AGENTS.md','private','private','demand',now(),now());`,
+         ('${ownedDoc}','${spaceId}','canon',NULL,'${ownerUserId}','AGENTS.md','private','private','demand',ARRAY['technical'],now(),now());`,
     )
     const visible = psql(
       RECORD_ACTOR_ROLE,

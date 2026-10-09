@@ -1,8 +1,14 @@
 // concern: record-public-docs
 /** Owns public-role document reads and hosted document search. Must not know HTTP or sessions. */
 import { SQL } from 'bun'
-import { type DocAudience, type DocStatus, docSummary } from '../../../shared/docs.ts'
+import {
+  type DocAudience,
+  type DocAudiences,
+  type DocStatus,
+  docSummary,
+} from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
 
@@ -18,6 +24,7 @@ export type PublicRecordDoc = {
   updatedAt: string
   scope: string
   subject: string | null
+  audiences: DocAudiences
   summary?: string
   featured?: boolean
 }
@@ -31,6 +38,7 @@ export type RecordDocSearchMatch = {
   snippet: string
   spaceName?: string
   status: DocStatus
+  audiences: DocAudiences
 }
 
 export type RecordDocSearchInput = {
@@ -59,6 +67,7 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     updatedAt: iso(row.updated_at),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
+    audiences: recordDocAudiences(row.audiences),
     summary: docSummary(String(row.body)),
     featured: row.featured == null ? false : Boolean(row.featured),
   }
@@ -71,6 +80,7 @@ export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDoc
     title: String(row.title),
     snippet: String(row.snippet),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    audiences: recordDocAudiences(row.audiences),
     ...(row.space_name == null ? {} : { spaceName: String(row.space_name) }),
   }
 }
@@ -104,7 +114,7 @@ export async function listPublicRecordDocs(input: {
 }): Promise<PublicRecordDocTreeItem[]> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences
       FROM doc
       ORDER BY position, title, id
     `
@@ -121,7 +131,7 @@ export async function getPublicRecordDoc(input: {
 }): Promise<PublicRecordDoc | null> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences
       FROM doc
       WHERE id=${input.id}::uuid
     `
@@ -140,7 +150,7 @@ export async function searchPublicRecordDocs(input: {
       WITH search_query AS (
         SELECT websearch_to_tsquery('english', ${query}) AS value
       ), limited AS (
-        SELECT d.id, d.slug, d.title, d.body, q.value,
+        SELECT d.id, d.slug, d.title, d.body, d.audiences, q.value,
                ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         CROSS JOIN search_query q
@@ -148,7 +158,7 @@ export async function searchPublicRecordDocs(input: {
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, 'current' AS status, ts_headline('english', body, value) AS snippet, rank
+      SELECT id, slug, title, audiences, 'current' AS status, ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, id
     `
@@ -168,7 +178,7 @@ export async function searchRecordDocs(
       WITH search_query AS (
         SELECT websearch_to_tsquery('english', ${query}) AS value
       ), limited AS (
-        SELECT d.id, d.slug, d.title, d.body, d.status, s.name AS space_name, q.value,
+        SELECT d.id, d.slug, d.title, d.body, d.status, d.audiences, s.name AS space_name, q.value,
                ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         JOIN space s ON s.id=d.space_id
@@ -176,7 +186,7 @@ export async function searchRecordDocs(
         WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
           AND d.deleted_at IS NULL
           AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
-          AND (${input.audience ?? null}::text IS NULL OR d.audience=${input.audience ?? null})
+          AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
           AND (
             ${input.subject === undefined}::boolean
             OR (${input.subject === null}::boolean AND d.subject IS NULL)
@@ -187,7 +197,7 @@ export async function searchRecordDocs(
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, status, space_name,
+      SELECT id, slug, title, status, audiences, space_name,
              ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, id

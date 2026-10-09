@@ -8,9 +8,10 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
-  type DocAudience,
+  type DocAudiences,
   type DocKind,
   type DocStatus,
+  normalizeDocAudiences,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
@@ -102,10 +103,15 @@ function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined
   throw new Error('--delivery must be inject or demand')
 }
 
-function docAudience(value: string | undefined): DocAudience | undefined {
+function docAudiences(value: string | undefined): DocAudiences | undefined {
   if (value === undefined) return undefined
-  if (DOC_AUDIENCES.includes(value as DocAudience)) return value as DocAudience
-  throw new Error(`--audience must be ${DOC_AUDIENCES.join(' or ')}`)
+  try {
+    return normalizeDocAudiences(value.split(',').map((audience) => audience.trim()))
+  } catch (error) {
+    throw new Error(
+      `--audience must be a comma-separated set of ${DOC_AUDIENCES.join(' or ')}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 function docStatus(value: string | undefined): DocStatus | undefined {
@@ -274,13 +280,13 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `kind: ${doc.kind}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudience: ${doc.audience}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
 
 function setTreeOptions(flags: DocFlags): {
-  audience: ReturnType<typeof docAudience>
+  audiences: ReturnType<typeof docAudiences>
   parentSlug: string | null | undefined
   position: number | undefined
   featured: boolean | undefined
@@ -289,7 +295,7 @@ function setTreeOptions(flags: DocFlags): {
   replacementSlug: string | null | undefined
 } {
   const { has, flag } = flags
-  const audience = docAudience(flag('audience'))
+  const audiences = docAudiences(flag('audience'))
   if (has('parent') && has('no-parent')) throw new Error('use --parent or --no-parent, not both')
   const parentSlug = has('no-parent') ? null : has('parent') ? flag('parent') : undefined
   if (has('parent') && !parentSlug?.trim()) throw new Error('--parent requires a slug')
@@ -300,7 +306,7 @@ function setTreeOptions(flags: DocFlags): {
   if (has('replacement') && !replacementSlug?.trim())
     throw new Error('--replacement requires a slug')
   return {
-    audience,
+    audiences,
     parentSlug,
     position: docPosition(flag('position')),
     featured,

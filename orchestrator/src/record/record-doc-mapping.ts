@@ -1,7 +1,13 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
-import { type DocAudience, type DocKind, type DocStatus, docSummary } from '../../../shared/docs.ts'
+import {
+  type DocAudiences,
+  type DocKind,
+  type DocStatus,
+  docSummary,
+} from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
+import { recordDocAudiences } from './record-doc-audiences.ts'
 
 export type RecordDoc = {
   id: string
@@ -14,7 +20,7 @@ export type RecordDoc = {
   title: string
   body: string
   delivery: DocDelivery
-  audience: DocAudience
+  audiences: DocAudiences
   parentId: string | null
   position: number
   featured?: boolean
@@ -39,7 +45,7 @@ export type RecordDocRevision = {
   title: string
   body: string
   delivery: DocDelivery
-  audience: DocAudience
+  audiences: DocAudiences
   parentId: string | null
   position: number
   featured?: boolean
@@ -63,7 +69,7 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience?: DocAudience
+    audiences?: DocAudiences
     parentId?: string | null
     position?: number
     featured?: boolean
@@ -84,7 +90,7 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience?: DocAudience
+    audiences?: DocAudiences
     parentId?: string | null
     position?: number
     featured?: boolean
@@ -101,10 +107,17 @@ export type RecordDocImportInput = {
 export type NormalizedRecordDocImport = {
   doc: Omit<
     RecordDocImportInput['doc'],
-    'id' | 'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
+    | 'id'
+    | 'audiences'
+    | 'parentId'
+    | 'position'
+    | 'featured'
+    | 'status'
+    | 'kind'
+    | 'replacementSlug'
   > & {
     id: string
-    audience: DocAudience
+    audiences: DocAudiences
     parentId: string | null
     position: number
     featured: boolean
@@ -115,9 +128,9 @@ export type NormalizedRecordDocImport = {
   revisions: Array<
     Omit<
       RecordDocImportInput['revisions'][number],
-      'audience' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
+      'audiences' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
     > & {
-      audience: DocAudience
+      audiences: DocAudiences
       parentId: string | null
       position: number
       featured: boolean
@@ -143,7 +156,7 @@ export function normalizeRecordDocImport(
     doc: {
       ...input.doc,
       id: input.doc.id ?? mintedId,
-      audience: input.doc.audience ?? 'technical',
+      audiences: input.doc.audiences ?? ['technical'],
       parentId: input.doc.parentId ?? null,
       position: input.doc.position ?? 0,
       featured: input.doc.featured ?? false,
@@ -153,7 +166,7 @@ export function normalizeRecordDocImport(
     },
     revisions: input.revisions.map((revision) => ({
       ...revision,
-      audience: revision.audience ?? 'technical',
+      audiences: revision.audiences ?? ['technical'],
       parentId: revision.parentId ?? null,
       position: revision.position ?? 0,
       featured: revision.featured ?? false,
@@ -207,7 +220,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     title: String(row.title),
     body: String(row.body),
     delivery: String(row.delivery) as DocDelivery,
-    audience: String(row.audience) as DocAudience,
+    audiences: recordDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),
@@ -234,7 +247,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     title: String(row.title),
     body: String(row.body),
     delivery: String(row.delivery) as DocDelivery,
-    audience: String(row.audience) as DocAudience,
+    audiences: recordDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
     featured: row.featured == null ? false : Boolean(row.featured),

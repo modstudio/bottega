@@ -110,6 +110,8 @@ test('a project doc branch-only citation requires the subject worktree named by 
     'demand',
     '--kind',
     'article',
+    '--audience',
+    'technical',
     '--reason',
     'test branch citation',
   ]

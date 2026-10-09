@@ -88,6 +88,7 @@ export async function searchLocalDocs(
       id: String(row.id),
       slug: row.slug,
       title: row.title,
+      audiences: row.audiences,
       status: row.status ?? 'current',
       kind: row.kind ?? 'working',
       ...docSnippet(row.body, query),

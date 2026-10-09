@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-audiences-codec.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
     '../project/projects.ts',
     '../record/record-api-client.ts',
@@ -42,8 +43,18 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/local-doc-tree-service.ts', [
     '../../../shared/docs.ts',
     '../database/db.ts',
+    './doc-audiences-codec.ts',
     './doc-read-store.ts',
     './doc-tree-rules.ts',
+  ]),
+  module('orchestrator/src/doc/local-doc-write.ts', [
+    '../../../shared/docs.ts',
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    './doc-audiences-codec.ts',
+    './doc-read-store.ts',
+    './doc-revision-store.ts',
+    './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-owner.ts', [
     '../record/record-attribution.ts',

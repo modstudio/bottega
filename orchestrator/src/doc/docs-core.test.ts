@@ -930,8 +930,8 @@ describe('scoped operator docs', () => {
   test('docsForRun refuses a document whose provenance was bypassed', () => {
     db()
       .query(
-        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at, record_id)
-       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', ?, ?, ?)`,
+        `INSERT INTO doc (scope, subject, slug, title, body, audiences, created_at, updated_at, record_id)
+       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', '["technical"]', ?, ?, ?)`,
       )
       .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z', newRecordId())
     expect(() => docsForRun({ job: 'file-question', cwd: '/elsewhere' })).toThrow(

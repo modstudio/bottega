@@ -1,8 +1,9 @@
 // concern: local-doc-revisions
 /** Owns local revision ordering and compare-and-set facts. Must not know hosted transport or CLI. */
 
-import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
+import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
@@ -17,7 +18,7 @@ type RevisionDoc = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
-  audience: DocAudience
+  audiences: DocAudiences
   parent_id: number | null
   position: number
   featured: boolean
@@ -83,7 +84,7 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audience, parent_id, position, featured, status, kind, replacement_slug, author, reason, session_id, at, record_id)
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, author, reason, session_id, at, record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -97,7 +98,7 @@ export function insertLocalRevision(
       doc.title,
       doc.body,
       doc.delivery,
-      doc.audience,
+      encodeStoredDocAudiences(doc.audiences),
       doc.parent_id,
       doc.position,
       doc.featured,
@@ -130,9 +131,15 @@ export function listStoredDocRevisions(
 
 export function getStoredDocRevision(id: number, owner: string | null = null): DocRevision | null {
   const row = db().query('SELECT * FROM doc_revision WHERE id=? AND owner IS ?').get(id, owner) as
-    | (DocRevision & { featured: boolean | number })
+    | (Omit<DocRevision, 'audiences'> & { featured: boolean | number; audiences: string })
     | null
-  return row ? { ...row, featured: Boolean(row.featured) } : null
+  return row
+    ? {
+        ...row,
+        featured: Boolean(row.featured),
+        audiences: decodeStoredDocAudiences(row.audiences),
+      }
+    : null
 }
 
 export function diffStoredDocRevisions(a: number, b: number, owner: string | null = null): string {

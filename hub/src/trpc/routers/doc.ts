@@ -1,6 +1,12 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_SCOPES, DOC_STATUSES } from '../../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_KINDS,
+  DOC_SCOPES,
+  DOC_STATUSES,
+  normalizeDocAudiences,
+} from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocsTree } from '../../local-docs.ts'
 import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
@@ -12,6 +18,14 @@ const t = initTRPC.context<Context>().create()
 const scope = z.enum(DOC_SCOPES)
 const subject = z.string().nullable()
 const expectedRevision = z.string().trim().min(1, 'Expected revision is required').optional()
+const audiences = z
+  .array(z.enum(DOC_AUDIENCES))
+  .nonempty()
+  .refine(
+    (values) => new Set(values).size === values.length,
+    'Audiences must not contain duplicates',
+  )
+  .transform(normalizeDocAudiences)
 export const docRouter = t.router({
   list: t.procedure
     .input(
@@ -66,7 +80,7 @@ export const docRouter = t.router({
         body: z.string(),
         reason: z.string().trim().min(1, 'Reason is required'),
         delivery: z.enum(['inject', 'demand']).optional(),
-        audience: z.enum(DOC_AUDIENCES).optional(),
+        audiences: audiences.optional(),
         status: z.enum(DOC_STATUSES).optional(),
         kind: z.enum(DOC_KINDS).optional(),
         replacementSlug: z.string().nullable().optional(),

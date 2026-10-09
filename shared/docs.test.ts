@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { DOC_SUMMARY_MAX_LENGTH, docSummary } from './docs.ts'
+import { DOC_SUMMARY_MAX_LENGTH, docSummary, normalizeDocAudiences } from './docs.ts'
+
+describe('normalizeDocAudiences', () => {
+  test('refuses empty, duplicate, and unknown sets and orders valid input', () => {
+    expect(() => normalizeDocAudiences([])).toThrow('must not be empty')
+    expect(() => normalizeDocAudiences(['user', 'user'])).toThrow('duplicate')
+    expect(() => normalizeDocAudiences(['other'])).toThrow('unknown')
+    expect(normalizeDocAudiences(['technical', 'user'])).toEqual(['user', 'technical'])
+  })
+})
 
 describe('docSummary', () => {
   test('skips front matter and a leading heading', () => {

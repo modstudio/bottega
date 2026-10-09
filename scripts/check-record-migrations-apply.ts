@@ -19,6 +19,7 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const rerun = 'bun scripts/check-record-migrations-apply.ts'
 const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
 const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
+const audienceBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -136,14 +137,34 @@ async function proofLatestRevision(transaction: Transaction): Promise<string | n
   return result.rows[0]?.latest_revision_id ?? null
 }
 
+async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec(
+    `SELECT set_config('app.space_id', '01990000-0000-7000-8000-000000000001', true);`,
+  )
+  const docs = await transaction.query<{ total: number; invalid: number }>(
+    'SELECT count(*)::int AS total, count(*) FILTER (WHERE audiences IS DISTINCT FROM ARRAY[audience])::int AS invalid FROM doc',
+  )
+  const revisions = await transaction.query<{ total: number; invalid: number }>(
+    'SELECT count(*)::int AS total, count(*) FILTER (WHERE audiences IS DISTINCT FROM ARRAY[audience])::int AS invalid FROM doc_revision',
+  )
+  await transaction.exec(`SELECT set_config('app.space_id', '', true);`)
+  if (docs.rows[0]?.total === 0 || revisions.rows[0]?.total === 0) {
+    throw new CheckFailure('DEV-1238 audience backfill proof rows are not visible')
+  }
+  if (docs.rows[0]?.invalid !== 0 || revisions.rows[0]?.invalid !== 0) {
+    throw new CheckFailure('DEV-1238 audience backfill did not produce singleton sets')
+  }
+}
+
 function sqlTag(transaction: Transaction): SQL {
-  return (async (parts: TemplateStringsArray, ...values: unknown[]) => {
+  const tag = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const statement = parts.reduce(
       (sql, part, index) => `${sql}${index === 0 ? '' : `$${index}`}${part}`,
       '',
     )
     return (await transaction.query(statement, values)).rows
-  }) as unknown as SQL
+  }
+  return tag as unknown as SQL
 }
 
 async function proofManagedCanonProjects(transaction: Transaction): Promise<void> {
@@ -200,6 +221,7 @@ async function main(): Promise<void> {
           ) {
             throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
           }
+          if (migration.name === audienceBackfill) await proofAudienceBackfill(transaction)
         }
         await proofManagedCanonProjects(transaction)
       })

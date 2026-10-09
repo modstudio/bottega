@@ -39,7 +39,7 @@ export function searchSubject(
 }
 
 export function inAudience(items: readonly DocsTreeItem[], audience: DocsAudience): DocsTreeItem[] {
-  return items.filter((item) => item.audience === audience)
+  return items.filter((item) => item.audiences.includes(audience))
 }
 
 function valuesFor(items: readonly DocsTreeItem[], key: FilterKey): Map<string, number> {

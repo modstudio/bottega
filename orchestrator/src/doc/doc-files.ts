@@ -5,9 +5,11 @@ import {
   DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
+  type DocAudiences,
   type DocKind,
   type DocScope,
   type DocStatus,
+  normalizeDocAudiences,
 } from '../../../shared/docs.ts'
 import type { Doc } from './doc-read-store.ts'
 import { importedDocDelivery } from './doc-write-allowed.ts'
@@ -19,6 +21,7 @@ type ImportedDoc = {
   title: string
   status?: DocStatus
   kind?: DocKind
+  audiences?: DocAudiences
   replacementSlug?: string | null
   body: string
   delivery?: 'inject' | 'demand'
@@ -27,7 +30,15 @@ type ImportedDoc = {
 type DocFileAddress = Pick<Doc, 'scope' | 'subject' | 'slug'>
 type ExportedDoc = Pick<
   Doc,
-  'scope' | 'subject' | 'slug' | 'title' | 'status' | 'kind' | 'replacement_slug' | 'body'
+  | 'scope'
+  | 'subject'
+  | 'slug'
+  | 'title'
+  | 'status'
+  | 'kind'
+  | 'audiences'
+  | 'replacement_slug'
+  | 'body'
 >
 
 const DOC_FILE_SUFFIX = '.md'
@@ -63,7 +74,7 @@ export function exportDocFiles(dir: string, docs: ExportedDoc[]): number {
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(
       target,
-      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nkind: ${JSON.stringify(doc.kind)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
+      `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nkind: ${JSON.stringify(doc.kind)}\naudiences: ${JSON.stringify(doc.audiences)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
     )
   }
   return docs.length
@@ -75,7 +86,7 @@ function importedDoc(
 ): Omit<ImportedDoc, 'scope' | 'subject' | 'slug' | 'delivery'> {
   const raw = readFileSync(path, 'utf8')
   const match = raw.match(
-    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\n(?:kind:\s*(.+)\r?\n)?replacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
+    /^---\r?\ntitle:\s*(.+)\r?\n(?:status:\s*(.+)\r?\n(?:kind:\s*(.+)\r?\n)?(?:audiences:\s*(.+)\r?\n)?replacement:\s*(.+)\r?\n)?---\r?\n(?:\r?\n)?([\s\S]*)$/,
   )
   if (!match) throw new Error(`${fileName}: expected YAML frontmatter with a title`)
   let title: unknown
@@ -87,7 +98,8 @@ function importedDoc(
   if (typeof title !== 'string') throw new Error(`${fileName}: title must be a string`)
   const status = match[2] === undefined ? undefined : JSON.parse(match[2])
   const kind = match[3] === undefined ? undefined : JSON.parse(match[3])
-  const replacementSlug = match[4] === undefined ? undefined : JSON.parse(match[4])
+  const audiences = match[4] === undefined ? undefined : normalizeDocAudiences(JSON.parse(match[4]))
+  const replacementSlug = match[5] === undefined ? undefined : JSON.parse(match[5])
   if (status !== undefined && !DOC_STATUSES.includes(status)) {
     throw new Error(`${fileName}: status must be ${DOC_STATUSES.join(', ')}`)
   }
@@ -101,7 +113,7 @@ function importedDoc(
   ) {
     throw new Error(`${fileName}: replacement must be a string or null`)
   }
-  return { title, status, kind, replacementSlug, body: match[5]! }
+  return { title, status, kind, audiences, replacementSlug, body: match[6]! }
 }
 
 export async function importDocFiles(

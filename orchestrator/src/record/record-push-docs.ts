@@ -1,9 +1,10 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
+import { decodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { projectRowByName } from '../project/projects.ts'
 import type {
@@ -27,7 +28,7 @@ type LocalDoc = {
   title: string
   body: string
   delivery: DocDelivery
-  audience: DocAudience
+  audiences: string
   parent_id: number | null
   position: number
   featured: boolean
@@ -51,7 +52,7 @@ type LocalRevision = {
   title: string
   body: string
   delivery: DocDelivery
-  audience: DocAudience
+  audiences: string
   parent_id: number | null
   position: number
   featured: boolean
@@ -114,7 +115,7 @@ function asRevision(
     title: row.title,
     body: row.body,
     delivery: row.delivery,
-    audience: row.audience,
+    audiences: decodeStoredDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
     position: row.position,
     featured: Boolean(row.featured),
@@ -151,7 +152,7 @@ function groupFromLive(
         title: doc.title,
         body: doc.body,
         delivery: doc.delivery,
-        audience: doc.audience,
+        audiences: decodeStoredDocAudiences(doc.audiences),
         parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
         position: doc.position,
         featured: Boolean(doc.featured),
@@ -197,7 +198,7 @@ function groupFromDeleted(
         title: last.title,
         body: last.body,
         delivery: last.delivery,
-        audience: last.audience,
+        audiences: decodeStoredDocAudiences(last.audiences),
         featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,
@@ -215,13 +216,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )

@@ -4,6 +4,8 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
+  type DocAudience,
+  type DocAudiences,
   type DocKind,
   type DocStatus,
 } from '../../shared/docs.ts'
@@ -222,8 +224,6 @@ const docSchema = DocSchema.extend({
   subject: z.string().nullable(),
   owner: z.string().uuid().nullable(),
   delivery: z.enum(['inject', 'demand']),
-  // A record that predates the tree fields omits them; such a document is a technical root.
-  audience: z.enum(DOC_AUDIENCES).default('technical'),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
@@ -239,12 +239,10 @@ const docSchema = DocSchema.extend({
 
 const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
 
-const publicDocTreeItemSchema = DocTreeItemSchema.omit({ audience: true }).transform((doc) => ({
+const publicDocTreeItemSchema = DocTreeItemSchema.transform((doc) => ({
   ...doc,
   summary: doc.summary ?? '',
   featured: doc.featured ?? false,
-  // The record public role's policy admits only user-audience documents.
-  audience: 'user' as const,
 }))
 const publicDocSchema = publicDocTreeItemSchema
   .and(z.object({ body: z.string() }))
@@ -264,7 +262,7 @@ const docRevisionSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
-  audience: z.enum(DOC_AUDIENCES).default('technical'),
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
@@ -281,7 +279,7 @@ const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 type RecordDocListInput = {
   scope?: string
   subject?: string
-  audience?: 'user' | 'technical'
+  audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
   limit?: number
@@ -545,7 +543,7 @@ export function createRecordClient(options: RecordClientOptions) {
       query: string
       scope?: string
       subject?: string
-      audience?: 'user' | 'technical'
+      audience?: DocAudience
       includeDrafts?: boolean
       acrossReadableSpaces?: boolean
     }) =>
@@ -571,6 +569,7 @@ export function createRecordClient(options: RecordClientOptions) {
       title: string
       body: string
       delivery: 'inject' | 'demand'
+      audiences?: DocAudiences
       reason: string
       author: string
       expectedRevision?: string

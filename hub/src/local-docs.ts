@@ -22,7 +22,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     updatedAt: row.updated_at,
     scope: row.scope,
     subject: row.subject,
-    audience: row.audience,
+    audiences: row.audiences,
     delivery: row.delivery,
     summary: docSummary(row.body),
     featured: Boolean(row.featured),
