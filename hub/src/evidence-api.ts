@@ -2,9 +2,9 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
+import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
 import { deleteIntervals, upsertDays, upsertIntervals } from './hosted-evidence.ts'
-import { taskRequestSpaceDecision } from './record-space-request.ts'
 
 const TEST_REFUSAL =
   'hub evidence API refuses real identity and database clients unless stubs are injected in tests'
@@ -125,7 +125,7 @@ export async function evidenceApi(
   const intervalRoute =
     url.pathname === '/v1/evidence/intervals' &&
     (request.method === 'PUT' || request.method === 'DELETE')
-  const decision = taskRequestSpaceDecision(
+  const decision = recordSpaceRequestDecision(
     intervalRoute ? request.headers.get('x-record-space') : null,
     who.spaceId,
     who.memberships,
@@ -138,7 +138,7 @@ export async function evidenceApi(
       },
       { status: 403 },
     )
-  const tenant = { ...who, spaceId: decision.spaceId }
+  const tenant = { ...who, spaceId: decision.spaceId! }
   const body = await request.json().catch(() => null)
   try {
     if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')

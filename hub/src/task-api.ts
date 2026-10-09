@@ -2,6 +2,7 @@ import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
 } from '../../shared/record-space-membership.ts'
+import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
@@ -15,7 +16,6 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
-import { taskRequestSpaceDecision } from './record-space-request.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -53,7 +53,7 @@ async function identity(
   const user = value?.user as Record<string, unknown> | undefined
   const memberships = parseRecordSpaceMemberships(value?.memberships)
   if (typeof user?.id !== 'string' || typeof value?.activeSpaceId !== 'string') return null
-  const decision = taskRequestSpaceDecision(
+  const decision = recordSpaceRequestDecision(
     honorRequestedSpace ? request.headers.get('x-record-space') : null,
     value.activeSpaceId,
     memberships,
@@ -61,7 +61,7 @@ async function identity(
   if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
   return {
     userId: user.id,
-    spaceId: decision.spaceId,
+    spaceId: decision.spaceId!,
     spaceIds: memberships.map((row) => row.spaceId),
     memberships,
   }
