@@ -17,7 +17,7 @@ function insertSend(recordId: string) {
   })
 }
 
-test('report push sends the existing record id without a legacy local id', async () => {
+test('report push sends the existing record id', async () => {
   const recordId = '01990000-0000-7000-8000-000000000201'
   insertSend(recordId)
   let sent: Record<string, unknown> | undefined
@@ -34,7 +34,6 @@ test('report push sends the existing record id without a legacy local id', async
   await pushReports({ baseUrl: 'https://hub.example.test', token: 'test', fetch })
 
   expect(sent?.id).toBe(recordId)
-  expect(sent).not.toHaveProperty('legacy_local_id')
 })
 
 test('send mirror counts only rows written when an id conflicts', () => {

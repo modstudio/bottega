@@ -1,12 +1,20 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
+import { getTableColumns } from 'drizzle-orm'
+import { hubSend, hubTaskComment, hubTaskDocument, hubTaskStatusEvent } from './schema-hub.ts'
 
 const migration = (name: string) =>
   readFileSync(new URL(`./migrations/${name}/migration.sql`, import.meta.url), 'utf8').replaceAll(
     '--> statement-breakpoint',
     '',
   )
+
+test('hosted task children and sends have no legacy local identity column', () => {
+  for (const table of [hubTaskComment, hubTaskDocument, hubTaskStatusEvent, hubSend]) {
+    expect(getTableColumns(table)).not.toHaveProperty('legacyLocalId')
+  }
+})
 
 test('hosted document migration numbers live rows in UUID order and advances tasks', async () => {
   const database = new PGlite()
