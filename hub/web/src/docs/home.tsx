@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Badge } from '@/ui/badge/badge'
 import { Kbd } from '@/ui/kbd/kbd'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { SearchDialog } from './search.tsx'
@@ -29,6 +30,7 @@ export function docsHomeModel(items: readonly DocsTreeItem[]): DocsHomeModel {
 }
 
 export function DocsHome({
+  sourceLabel,
   items,
   results,
   query,
@@ -37,6 +39,7 @@ export function DocsHome({
   loading,
   error,
 }: {
+  sourceLabel: string
   items: readonly DocsTreeItem[]
   results: readonly DocsSearchMatch[]
   query: string
@@ -61,7 +64,10 @@ export function DocsHome({
   return (
     <main className="site-page docs-home">
       <div className="wrap doc-hero">
-        <span className="eyebrow">Documentation</span>
+        <div className="flex items-center gap-2">
+          <span className="eyebrow">Documentation</span>
+          <Badge icon={false}>{<>{sourceLabel}</>}</Badge>
+        </div>
         <h1>How can we help?</h1>
         <p>
           Install {PLATFORM_NAME}, dispatch your first run, and connect the projects you already

@@ -45,3 +45,9 @@ export function docsSource(hosted: boolean, signedIn: boolean): DocsSource {
   if (!hosted) return 'local'
   return signedIn ? 'hosted' : 'public'
 }
+
+export function docsSourceLabel(source: DocsSource, activeSpaceName?: string): string {
+  if (source === 'local') return 'Local store'
+  if (source === 'public') return 'Public'
+  return activeSpaceName ? `Hosted record · ${activeSpaceName}` : 'Hosted record'
+}

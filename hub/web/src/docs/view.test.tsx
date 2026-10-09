@@ -68,6 +68,7 @@ const items: DocsTreeItem[] = [
 function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
   return renderToStaticMarkup(
     <DocsView
+      sourceLabel="Local store"
       items={items}
       selectedId="2"
       audience="user"
@@ -110,6 +111,7 @@ test('the docs page shows audience tabs, the tree, breadcrumb and previous/next'
   expect(html).toContain('Your first run')
   expect(html).toContain('Open a task')
   expect(html).toContain('Docs')
+  expect(html).toContain('Local store')
   expect(html).toContain('Install →')
   expect(html).toContain('On this page')
   expect(html).toContain('project / atlas / first-run')
