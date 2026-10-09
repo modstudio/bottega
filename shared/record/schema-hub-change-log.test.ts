@@ -15,6 +15,13 @@ const movedTaskId = '01990000-0000-7000-8000-000000001244'
 const sendId = '01990000-0000-7000-8000-000000001245'
 const recipientId = '01990000-0000-7000-8000-000000001246'
 const wrongSpaceRecipientId = '01990000-0000-7000-8000-000000001247'
+const pruneSpaceA = '01990000-0000-7000-8000-000000001248'
+const pruneSpaceB = '01990000-0000-7000-8000-000000001249'
+const oldPruneTaskA = '01990000-0000-7000-8000-000000001250'
+const newPruneTaskA = '01990000-0000-7000-8000-000000001251'
+const oldPruneTaskB = '01990000-0000-7000-8000-000000001252'
+const newPruneTaskB = '01990000-0000-7000-8000-000000001253'
+const afterPruneTask = '01990000-0000-7000-8000-000000001254'
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -321,4 +328,137 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
       [spaceB],
     ),
   ).rejects.toThrow()
+})
+
+test('actor pruning crosses spaces under forced row security while preserving heads', async () => {
+  await resetSession(database)
+  await database.exec(`
+    INSERT INTO space (id,name,slug,created_at) VALUES
+      ('${pruneSpaceA}','Prune A','prune-a',now()),
+      ('${pruneSpaceB}','Prune B','prune-b',now());
+  `)
+  for (const [spaceId, oldTaskId, newTaskId, suffix] of [
+    [pruneSpaceA, oldPruneTaskA, newPruneTaskA, 'A'],
+    [pruneSpaceB, oldPruneTaskB, newPruneTaskB, 'B'],
+  ] as const) {
+    await bindActor(database, spaceId)
+    await database.query(
+      `INSERT INTO hub_task (
+        id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
+      ) VALUES
+        ($1,$2,'fixture-project',$3,'fixture-project','old','local',now(),now(),now(),now()),
+        ($4,$2,'fixture-project',$5,'fixture-project','new','local',now(),now(),now(),now())`,
+      [oldTaskId, spaceId, `DEV-1240-OLD-${suffix}`, newTaskId, `DEV-1240-NEW-${suffix}`],
+    )
+    await resetSession(database)
+  }
+  await database.exec(`SET ROLE ${RECORD_OWNER_ROLE}`)
+  await database.query(
+    `UPDATE hub_change
+     SET at=CASE WHEN row_id IN ($1,$2) THEN now() - interval '31 days'
+                 ELSE now() - interval '29 days' END
+     WHERE space_id IN ($3,$4)`,
+    [oldPruneTaskA, oldPruneTaskB, pruneSpaceA, pruneSpaceB],
+  )
+  await resetSession(database)
+
+  expect(
+    (
+      await database.query<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>(
+        `SELECT rolname,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=$1`,
+        [RECORD_OWNER_ROLE],
+      )
+    ).rows,
+  ).toEqual([{ rolname: RECORD_OWNER_ROLE, rolsuper: false, rolbypassrls: false }])
+  expect(
+    (
+      await database.query<{ relforcerowsecurity: boolean }>(
+        `SELECT relforcerowsecurity FROM pg_class WHERE oid='hub_change'::regclass`,
+      )
+    ).rows,
+  ).toEqual([{ relforcerowsecurity: true }])
+
+  await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
+  expect(
+    (await database.query<{ deleted: number }>(`SELECT hub_change_prune()::int AS deleted`)).rows,
+  ).toEqual([{ deleted: 2 }])
+  await database.exec(`SELECT set_config('app.space_id','${pruneSpaceA}',false)`)
+  expect(
+    (
+      await database.query<{ deleted: string }>(
+        `DELETE FROM hub_change RETURNING row_id::text AS deleted`,
+      )
+    ).rows,
+  ).toEqual([])
+  await resetSession(database)
+
+  const retained = (
+    await database.query<{ space_id: string; row_id: string }>(
+      `SELECT space_id::text,row_id::text FROM hub_change
+       WHERE space_id IN ($1,$2) ORDER BY space_id,sequence`,
+      [pruneSpaceA, pruneSpaceB],
+    )
+  ).rows
+  expect(retained).toEqual([
+    { space_id: pruneSpaceA, row_id: newPruneTaskA },
+    { space_id: pruneSpaceB, row_id: newPruneTaskB },
+  ])
+  expect(
+    (
+      await database.query<{ space_id: string; sequence: number }>(
+        `SELECT space_id::text,sequence::int FROM hub_change_head
+         WHERE space_id IN ($1,$2) ORDER BY space_id`,
+        [pruneSpaceA, pruneSpaceB],
+      )
+    ).rows,
+  ).toEqual([
+    { space_id: pruneSpaceA, sequence: 2 },
+    { space_id: pruneSpaceB, sequence: 2 },
+  ])
+
+  await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
+  expect(
+    (
+      await database.query<{ overload: string | null }>(
+        `SELECT to_regprocedure('public.hub_change_prune(interval)')::text AS overload`,
+      )
+    ).rows,
+  ).toEqual([{ overload: null }])
+  await expect(database.query(`SELECT hub_change_prune(interval '30 days')`)).rejects.toThrow()
+  await resetSession(database)
+  expect(
+    (
+      await database.query<{ entries: number }>(
+        `SELECT count(*)::int AS entries FROM hub_change WHERE space_id IN ($1,$2)`,
+        [pruneSpaceA, pruneSpaceB],
+      )
+    ).rows,
+  ).toEqual([{ entries: 2 }])
+
+  await database.exec(`SET ROLE ${RECORD_OWNER_ROLE}`)
+  await database.query(
+    `UPDATE hub_change SET at=now() - interval '31 days'
+     WHERE space_id IN ($1,$2)`,
+    [pruneSpaceA, pruneSpaceB],
+  )
+  await resetSession(database)
+  await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
+  await database.query(`SELECT hub_change_prune()`)
+  await resetSession(database)
+  await bindActor(database, pruneSpaceA)
+  await database.query(
+    `INSERT INTO hub_task (
+      id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
+    ) VALUES ($1,$2,'fixture-project','DEV-1240-AFTER','fixture-project','after prune',
+      'local',now(),now(),now(),now())`,
+    [afterPruneTask, pruneSpaceA],
+  )
+  expect(
+    (
+      await database.query<{ sequence: number; row_id: string }>(
+        `SELECT sequence::int,row_id::text FROM hub_change WHERE space_id=$1`,
+        [pruneSpaceA],
+      )
+    ).rows,
+  ).toEqual([{ sequence: 3, row_id: afterPruneTask }])
 })
