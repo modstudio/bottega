@@ -365,7 +365,8 @@ function taskBranchGit(cwd: string, ...args: string[]): string {
   return p.stdout.toString().trim()
 }
 
-function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
+/** Exit zero is true, exit one is false; any other exit throws naming the command. */
+export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
   const process = Bun.spawnSync(
     ['git', '-C', cwd, 'merge-base', '--is-ancestor', ancestor, descendant],
     {
@@ -382,17 +383,17 @@ function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string)
   )
 }
 
-function taskBranchContainedTips(
-  repoRoot: string,
-  candidates: readonly Pick<TaskBranchCandidate, 'tip'>[],
+/** Tips that are a strict ancestor of another candidate tip. Equal tips are not contained. */
+export function taskBranchContainedTips(
+  tips: readonly string[],
+  isAncestor: (ancestor: string, descendant: string) => boolean,
 ): Set<string> {
-  if (candidates.length < 2) return new Set()
-  const tips = [...new Set(candidates.map((candidate) => candidate.tip))]
+  const unique = [...new Set(tips)]
   const contained = new Set<string>()
-  for (const tip of tips) {
-    for (const other of tips) {
+  for (const tip of unique) {
+    for (const other of unique) {
       if (tip === other) continue
-      if (taskBranchIsAncestor(repoRoot, tip, other)) contained.add(tip)
+      if (isAncestor(tip, other)) contained.add(tip)
     }
   }
   return contained
@@ -543,7 +544,10 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
   const maximal = selectMaximalTaskBranchCandidates(
     candidates,
     launchKey,
-    taskBranchContainedTips(repoRoot, candidates),
+    taskBranchContainedTips(
+      candidates.map((candidate) => candidate.tip),
+      (ancestor, descendant) => taskBranchIsAncestor(repoRoot, ancestor, descendant),
+    ),
   )
   if (maximal.length === 0) return null
   if (maximal.length === 1) return maximal[0]!

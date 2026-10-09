@@ -5,7 +5,7 @@
  */
 
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
+import { resolveTaskBranch, type TaskBranchCandidate, taskBranchIsAncestor } from './task-branch.ts'
 
 export type TaskBranchSessionReuseDecision = { action: 'reuse' } | { action: 'refuse' }
 
@@ -113,10 +113,6 @@ function taskBranchGit(cwd: string, args: string[], allowExitOne = false): strin
   return process.stdout.toString().trim()
 }
 
-function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {
-  return taskBranchGit(cwd, ['merge-base', '--is-ancestor', ancestor, descendant], true) !== null
-}
-
 /** Gather the caller's Git facts once and apply the pure reuse decision. */
 function compatibleTaskBranch(
   cwd: string,
@@ -126,8 +122,8 @@ function compatibleTaskBranch(
   const callerBranch = taskBranchGit(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'], true)
   const decision = decideTaskBranchReuse({
     callerOnTrunk: callerBranch === candidate.trunk,
-    candidateIsAncestorOfCaller: isAncestor(cwd, candidate.tip, callerHead),
-    callerIsAncestorOfCandidate: isAncestor(cwd, callerHead, candidate.tip),
+    candidateIsAncestorOfCaller: taskBranchIsAncestor(cwd, candidate.tip, callerHead),
+    callerIsAncestorOfCandidate: taskBranchIsAncestor(cwd, callerHead, candidate.tip),
     callerBranch,
     callerHead,
     candidateBranch: candidate.branch,
