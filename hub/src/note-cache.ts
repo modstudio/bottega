@@ -116,24 +116,24 @@ function pullCursor(spaceId: string, activeSpaceId: string) {
 }
 
 type NoteParentChange = { id: string; deleted: boolean }
+type NoteParentBatchState = 'live' | 'deleted'
 
 export async function completeAcknowledgementNotes(
   noteChanges: readonly NoteParentChange[],
   acknowledgements: readonly HostedAcknowledgement[],
   options: NoteClientOptions,
 ) {
-  const finalNoteChanges = new Map(noteChanges.map((note) => [note.id, note.deleted]))
+  const finalNoteChanges = new Map<string, NoteParentBatchState>(
+    noteChanges.map((note) => [note.id, note.deleted ? 'deleted' : 'live']),
+  )
   const completed = new Set<string>()
   const fetched: HostedNote[] = []
   for (const acknowledgement of acknowledgements) {
     if (acknowledgement.deleted_at) continue
     if (completed.has(acknowledgement.note_id)) continue
-    const incomingDeleted = finalNoteChanges.get(acknowledgement.note_id)
-    const present =
-      incomingDeleted === false ||
-      (incomingDeleted === undefined &&
-        Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id)))
-    if (present) continue
+    const batchState = finalNoteChanges.get(acknowledgement.note_id)
+    if (batchState !== undefined) continue
+    if (db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id)) continue
     fetched.unshift(await hostedGetNote(acknowledgement.note_id, options))
     completed.add(acknowledgement.note_id)
   }

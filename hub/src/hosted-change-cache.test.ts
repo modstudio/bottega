@@ -404,11 +404,15 @@ test('a failed missing-parent fetch leaves the note page and cursor untouched', 
   ).toBeNull()
 })
 
-test('a deleted note upsert with a live acknowledgement matches the timestamp pull state', async () => {
+test('a deleted note upsert skips its live acknowledgement without fetching in both pulls', async () => {
   const deletedNote = note({ deleted_at: at })
+  let timestampParentFetches = 0
   const fetch = routeFetch({
     notes: () => fullNotes([deletedNote], [acknowledgement()]),
-    getNote: () => deletedNote,
+    getNote: () => {
+      timestampParentFetches += 1
+      return deletedNote
+    },
   })
   const timestampRows = await hostedNotePullRows(null, { ...options, fetch })
   writeTransaction((conn) => applyHostedNoteRows(conn, timestampRows))
@@ -418,10 +422,12 @@ test('a deleted note upsert with a live acknowledgement matches the timestamp pu
       db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId) ??
       null,
   }
+  expect(timestampParentFetches).toBe(0)
 
   resetFixtureStore()
   storeCursor('12')
-  await pull(
+  let followerParentFetches = 0
+  const report = await pull(
     routeFetch({
       changes: () =>
         page({
@@ -443,9 +449,15 @@ test('a deleted note upsert with a live acknowledgement matches the timestamp pu
             },
           ],
         }),
-      getNote: () => deletedNote,
+      getNote: () => {
+        followerParentFetches += 1
+        return deletedNote
+      },
     }),
   )
+  expect(followerParentFetches).toBe(0)
+  expect(cursor()).toBe('14')
+  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 2 })
   expect({
     note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
     acknowledgement:
