@@ -30,6 +30,9 @@ type ExportedDoc = Pick<
   'scope' | 'subject' | 'slug' | 'title' | 'status' | 'kind' | 'replacement_slug' | 'body'
 >
 
+const DOC_FILE_SUFFIX = '.md'
+const NULL_SUBJECT_DIRECTORY = '_'
+
 function unsafeDocPathPart(value: string): boolean {
   return (
     isAbsolute(value) ||
@@ -40,17 +43,18 @@ function unsafeDocPathPart(value: string): boolean {
 }
 
 export function docFileRelativePath(doc: DocFileAddress): string {
-  const subject = doc.subject ?? '_'
+  const subject = doc.subject ?? NULL_SUBJECT_DIRECTORY
   if (unsafeDocPathPart(subject) || unsafeDocPathPart(doc.slug)) {
     throw new Error(
       `refusing doc file path for scope ${JSON.stringify(doc.scope)}, subject ${JSON.stringify(doc.subject)}, slug ${JSON.stringify(doc.slug)}: subject and slug must be relative with no .. segment`,
     )
   }
-  return join(doc.scope, subject, `${doc.slug}.md`)
+  return join(doc.scope, subject, `${doc.slug}${DOC_FILE_SUFFIX}`)
 }
 
 export function docSlugFromFilePath(subjectDirectory: string, filePath: string): string {
-  return relative(subjectDirectory, filePath).split(sep).join('/').slice(0, -3)
+  const relativePath = relative(subjectDirectory, filePath).split(sep).join('/')
+  return relativePath.slice(0, relativePath.lastIndexOf(DOC_FILE_SUFFIX))
 }
 
 export function exportDocFiles(dir: string, docs: ExportedDoc[]): number {
@@ -127,7 +131,7 @@ async function importSubjectFiles(
   subjectDirectory: string,
   write: (doc: ImportedDoc) => Promise<void>,
 ): Promise<number> {
-  const subject = subjectDirectory === '_' ? null : subjectDirectory
+  const subject = subjectDirectory === NULL_SUBJECT_DIRECTORY ? null : subjectDirectory
   const documents: ImportedDoc[] = []
   const subjectPath = join(dir, scope, subjectDirectory)
   for (const filePath of docFilesWithin(subjectPath)) {
@@ -136,7 +140,7 @@ async function importSubjectFiles(
       scope,
       subject,
       slug,
-      ...importedDoc(filePath, `${slug}.md`),
+      ...importedDoc(filePath, `${slug}${DOC_FILE_SUFFIX}`),
       delivery: importedDocDelivery(scope),
     })
   }
@@ -164,7 +168,7 @@ function docFilesWithin(directory: string): string[] {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) files.push(...docFilesWithin(path))
-    else if (entry.isFile() && entry.name.endsWith('.md')) files.push(path)
+    else if (entry.isFile() && entry.name.endsWith(DOC_FILE_SUFFIX)) files.push(path)
   }
   return files
 }

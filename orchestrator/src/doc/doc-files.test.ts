@@ -14,35 +14,36 @@ import { exportDocs, getDoc } from './docs.ts'
 
 const subjectDirectory = join('export', 'canon', 'alephbeis')
 
-for (const [name, slug, relativePath, productionBreak] of [
-  ['flat slug', 'principles', join('canon', 'alephbeis', 'principles.md'), 'omit the .md suffix'],
+for (const [name, slug, relativePath] of [
   [
-    'slug with slashes',
+    'a flat slug maps to a file and back',
+    'principles',
+    join('canon', 'alephbeis', 'principles.md'),
+  ],
+  [
+    'a slug with slashes maps to nested directories and back',
     'contexts/code-architecture',
     join('canon', 'alephbeis', 'contexts', 'code-architecture.md'),
-    'use only the slug basename',
   ],
   [
-    'slug ending in .md',
+    'a slug ending in .md gains one suffix and maps back unchanged',
     'contexts/code-architecture.md',
     join('canon', 'alephbeis', 'contexts', 'code-architecture.md.md'),
-    'avoid appending a second .md suffix',
   ],
   [
-    'slug starting with a dot directory',
+    'a slug starting with a dot directory preserves every path segment',
     '.agents/contexts/code-architecture',
     join('canon', 'alephbeis', '.agents', 'contexts', 'code-architecture.md'),
-    'drop the leading dot from a path segment',
   ],
 ] as const) {
-  test(`${name} mapping mutation: ${productionBreak}`, () => {
+  test(name, () => {
     const path = docFileRelativePath({ scope: 'canon', subject: 'alephbeis', slug })
     expect(path).toBe(relativePath)
     expect(docSlugFromFilePath(subjectDirectory, join('export', path))).toBe(slug)
   })
 }
 
-test('path refusal mutation: allow an absolute or parent path through validation', () => {
+test('absolute paths and paths with parent segments are refused', () => {
   expect(() =>
     docFileRelativePath({ scope: 'canon', subject: 'alephbeis', slug: '../principles' }),
   ).toThrow('scope "canon", subject "alephbeis", slug "../principles"')
@@ -54,7 +55,7 @@ test('path refusal mutation: allow an absolute or parent path through validation
   ).toThrow('scope "canon", subject "alephbeis", slug "/principles"')
 })
 
-test('recursive round-trip mutation: scan only files directly inside the subject directory', async () => {
+test('nested document slugs round-trip through export and import', async () => {
   const target = mkdtempSync(join(tmpdir(), 'orch-doc-nested-import-'))
   const docs = [
     {
