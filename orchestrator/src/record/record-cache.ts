@@ -7,7 +7,11 @@ import { projects } from '../project/projects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
-import { declaredRecordSpace, projectRecordDestination } from './record-project-destination.ts'
+import {
+  declaredRecordSpace,
+  noActiveRecordSpaceRefusal,
+  projectRecordDestination,
+} from './record-project-destination.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
@@ -176,6 +180,7 @@ export async function pullRecordCache(
   if (!hasMeta) return { docs: 0, skippedDocs: 0, scores: 0 }
   const client = recordApiClient()
   const identity = await client.whoami()
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   const cache = recordCacheSpaces(identity)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   let scores = 0

@@ -49,6 +49,33 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
 }
 
 describe('record cache pull', () => {
+  test('refuses a pull when the record session has no active space', async () => {
+    let queried = false
+    installRecordApiClient(
+      clientWith({
+        whoami: async () => ({
+          user: { id: newRecordId() },
+          activeSpaceId: null,
+          personalSpaceId: null,
+          memberships: [],
+        }),
+        listDocs: async () => {
+          queried = true
+          return { items: [], nextCursor: null }
+        },
+        listScores: async () => {
+          queried = true
+          return { items: [], nextCursor: null }
+        },
+      }),
+    )
+
+    await expect(pullRecordCache(db())).rejects.toThrow(
+      'record session has no active space; run `orch record space switch <slug>`',
+    )
+    expect(queried).toBe(false)
+  })
+
   test('pulls each distinct live or retired project destination only when it is a membership', async () => {
     upsertProject({ name: 'alpha-one', path: '/w/alpha-one', settings: { space: 'alpha' } })
     upsertProject({ name: 'alpha-two', path: '/w/alpha-two', settings: { space: 'alpha' } })
