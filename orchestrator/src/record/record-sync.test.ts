@@ -959,10 +959,9 @@ test('a read-only destination is deferred per row and retried after permission c
   })
   expect(
     local
-      .query<
-        { attempts: number; last_error: string; quarantined_at: string | null },
-        []
-      >('SELECT attempts,last_error,quarantined_at FROM outbox WHERE id=1')
+      .query<{ attempts: number; last_error: string; quarantined_at: string | null }, []>(
+        'SELECT attempts,last_error,quarantined_at FROM outbox WHERE id=1',
+      )
       .get(),
   ).toEqual({
     attempts: 1,

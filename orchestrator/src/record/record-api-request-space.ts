@@ -4,8 +4,8 @@
 import type { Context, Hono, Next } from 'hono'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
-  recordSpaceAccessDecision,
   recordRequestNature,
+  recordSpaceAccessDecision,
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'

@@ -108,7 +108,8 @@ const day = {
   lines_generated: 0,
   collected_at: '2026-09-17T12:06:00.000Z',
 }
-const FIXED_CLOCK = Date.parse('2026-09-17T20:00:00.000Z')
+// The proof seeds a second day on September 18; keep both days behind the reporting clock.
+const FIXED_CLOCK = Date.parse('2026-09-19T20:00:00.000Z')
 
 const admin = new SQL(adminUrl)
 try {
