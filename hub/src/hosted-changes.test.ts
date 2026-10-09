@@ -279,6 +279,30 @@ test('paging, filters, resets, tenant isolation, and send recipient images follo
   })
   expect(pruned).toMatchObject({ oldest: 2, resetRequired: true, changes: [] })
 
+  await database.exec(
+    `RESET ROLE; SET ROLE record_owner; DELETE FROM hub_change WHERE space_id='${spaceD}'`,
+  )
+  await bind(database, spaceD)
+  const fullyPruned = await readHostedChangesInTransaction(sql, identity(spaceD), {
+    after: 0,
+    limit: 500,
+    tables: allReadable,
+  })
+  expect(fullyPruned).toMatchObject({ head: 2, oldest: null, resetRequired: true, changes: [] })
+  const atHead = await readHostedChangesInTransaction(sql, identity(spaceD), {
+    after: 2,
+    limit: 500,
+    tables: allReadable,
+  })
+  expect(atHead).toMatchObject({
+    head: 2,
+    oldest: null,
+    next: 2,
+    more: false,
+    resetRequired: false,
+    changes: [],
+  })
+
   await bind(database, spaceA)
   const forbidden = await readHostedChangesInTransaction(sql, identity(spaceB), {
     after: 0,

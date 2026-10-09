@@ -123,7 +123,9 @@ export async function readHostedChangesInTransaction(
   )[0]!
   const head = sequenceNumber(metadata.head)
   const oldest = metadata.oldest === null ? null : sequenceNumber(metadata.oldest)
-  const resetRequired = input.after > head || (oldest !== null && input.after < oldest - 1)
+  const resetRequired =
+    input.after > head ||
+    (input.after < head && (oldest === null || input.after < oldest - 1))
   if (resetRequired)
     return { head, oldest, next: input.after, more: false, resetRequired: true, changes: [] }
 
