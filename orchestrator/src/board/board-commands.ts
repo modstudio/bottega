@@ -20,8 +20,7 @@ import {
   boardWithdraw,
 } from './board-operations.ts'
 import { listBoardOverview } from './board-overview.ts'
-import { pendingBoardAcknowledgements } from './board-push-service.ts'
-import { renderPendingAcknowledgement } from './board-render.ts'
+import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
@@ -71,18 +70,29 @@ export function registerBoardCommands(program: Command): void {
   board
     .command('pending')
     .requiredOption('--session <id>')
+    .option('--recently-injected <ids>', 'comma-separated message ids not yet due for reminder')
     .option('--json')
     .action(async (options) => {
-      const notices = await pendingBoardAcknowledgements({
+      const delivery = await pendingBoardDelivery({
         session: options.session,
-        deliver: true,
         budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+        includeAcknowledgementReminders: true,
+        recentlyInjectedIds: options.recentlyInjected
+          ? String(options.recentlyInjected).split(',').filter(Boolean)
+          : [],
       })
       console.log(
         JSON.stringify({
-          notices: notices.map((notice) => ({
+          delivery: delivery.delivery.map((notice) => ({
             id: notice.id,
-            text: renderPendingAcknowledgement(notice),
+            text: notice.text,
+            requiresAcknowledgement: notice.requiresAcknowledgement,
+          })),
+          overflow: delivery.overflow,
+          pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
+            id: notice.id,
+            text: notice.text,
+            requiresAcknowledgement: true,
           })),
         }),
       )
@@ -189,11 +199,16 @@ export function registerBoardCommands(program: Command): void {
         }),
       )
     })
-  board.command('delivered <ids>').action(async (ids) => {
-    const parsed = String(ids).split(',')
-    if (!parsed.length) throw new Error('board delivered ids are required')
-    await markBoardNoticesDelivered(parsed)
-  })
+  board
+    .command('delivered <ids>')
+    .option('--session <id>', 'session whose hook emitted the messages')
+    .action(async (ids, options) => {
+      const parsed = String(ids).split(',')
+      if (!parsed.length) throw new Error('board delivered ids are required')
+      if (options.session)
+        await markBoardDeliveryDelivered({ session: options.session, ids: parsed })
+      else await markBoardNoticesDelivered(parsed)
+    })
   board
     .command('ack <id>')
     .action(async (id) => console.log(JSON.stringify(await boardAcknowledge(String(id)))))

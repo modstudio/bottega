@@ -2,11 +2,12 @@
 /** Adds addressed board context after a run row exists, without changing its compiled canon pack. */
 import { writeFileSync } from 'node:fs'
 import { claimRunBoardNotices } from '../board/board-delivery.ts'
+import { BOARD_DELIVERY_MAX_CHARS, BOARD_DELIVERY_MAX_MESSAGES } from '../board/board-render.ts'
 import { db } from '../database/db.ts'
 import { sha } from './run-process.ts'
 
-export const BOARD_PACK_MAX_NOTICES = 5
-export const BOARD_PACK_MAX_CHARS = 2_000
+export const BOARD_PACK_MAX_NOTICES = BOARD_DELIVERY_MAX_MESSAGES
+export const BOARD_PACK_MAX_CHARS = BOARD_DELIVERY_MAX_CHARS
 
 type RunNotice = Awaited<ReturnType<typeof claimRunBoardNotices>>['notices'][number]
 

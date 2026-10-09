@@ -9,7 +9,7 @@ import {
   takeClaim,
 } from './board-claim-service.ts'
 import { BOARD_POST_RATE_LIMIT } from './board-policy.ts'
-import { claimInterruptNotices, postNotice, reapBoardMessages } from './board-service.ts'
+import { claimNotices, postNotice, reapBoardMessages } from './board-service.ts'
 
 function fixtureProject() {
   const cwd = resolve(import.meta.dir, '../../..')
@@ -27,6 +27,7 @@ function presence(session: string, task: string | null, clock: number) {
 }
 
 const env = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
+const claimNoticesFor = (session: string, clock: number) => claimNotices(false, env(session), clock)
 
 test('a conflicting take is refused and tells the holder with an interrupting notice', () => {
   const { cwd } = fixtureProject()
@@ -36,9 +37,9 @@ test('a conflicting take is refused and tells the holder with an interrupting no
   expect(() => takeClaim({ subject: 'path:src/a.ts' }, env('other'), clock + 1, cwd)).toThrow(
     /session holder.*orch board ask --audience session:holder/,
   )
-  const notices = claimInterruptNotices('holder', clock + 2)
+  const notices = claimNoticesFor('holder', clock + 2)
   expect(notices).toHaveLength(1)
-  expect(notices[0]!.detail).toContain('Conflicting claim attempt')
+  expect(notices[0]!.text).toContain('Conflicting claim attempt')
 })
 
 test('a lapsed claim is taken over, linked, closed, and its holder is told', () => {
@@ -54,7 +55,7 @@ test('a lapsed claim is taken over, linked, closed, and its holder is told', () 
     closeReason: 'lapsed',
     supersededByClaimId: next.id,
   })
-  expect(claimInterruptNotices('holder', clock + 3)).toHaveLength(1)
+  expect(claimNoticesFor('holder', clock + 3)).toHaveLength(1)
 })
 
 test('a broad path claim refuses every live conflict and tells every architect holder', () => {
@@ -67,8 +68,8 @@ test('a broad path claim refuses every live conflict and tells every architect h
   expect(() => takeClaim({ subject: 'path:src/**' }, env('requester'), clock + 1, cwd)).toThrow(
     /session first-holder.*session second-holder/,
   )
-  expect(claimInterruptNotices('first-holder', clock + 2)).toHaveLength(1)
-  expect(claimInterruptNotices('second-holder', clock + 2)).toHaveLength(1)
+  expect(claimNoticesFor('first-holder', clock + 2)).toHaveLength(1)
+  expect(claimNoticesFor('second-holder', clock + 2)).toHaveLength(1)
 })
 
 test('a holder may take an overlapping path claim without closing or notifying itself', () => {
@@ -82,7 +83,7 @@ test('a holder may take an overlapping path claim without closing or notifying i
     expect.objectContaining({ id: narrow.id, live: true }),
     expect.objectContaining({ id: broad.id, live: true }),
   ])
-  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
+  expect(claimNoticesFor('holder', clock + 2)).toEqual([])
 })
 
 test('an overlapping take ignores the holder own claim but refuses and tells another holder', () => {
@@ -98,8 +99,8 @@ test('an overlapping take ignores the holder own claim but refuses and tells ano
   expect(listClaims(undefined, false, env('holder'), clock + 1, cwd).claims).toContainEqual(
     expect.objectContaining({ id: own.id, live: true }),
   )
-  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
-  expect(claimInterruptNotices('other', clock + 2)).toHaveLength(1)
+  expect(claimNoticesFor('holder', clock + 2)).toEqual([])
+  expect(claimNoticesFor('other', clock + 2)).toHaveLength(1)
 })
 
 test('a broad path takeover closes and links every stale conflict', () => {
@@ -126,8 +127,8 @@ test('a broad path takeover closes and links every stale conflict', () => {
     broad.id,
     broad.id,
   ])
-  expect(claimInterruptNotices('first-holder', clock + 3)).toHaveLength(1)
-  expect(claimInterruptNotices('second-holder', clock + 3)).toHaveLength(1)
+  expect(claimNoticesFor('first-holder', clock + 3)).toHaveLength(1)
+  expect(claimNoticesFor('second-holder', clock + 3)).toHaveLength(1)
 })
 
 test('a tied claim follows the chain latest turn and renewal restarts its lease', () => {
@@ -194,7 +195,7 @@ test('a rate-limited claim notice does not replace the conflict refusal', () => 
   expect(() => takeClaim({ subject: 'resource:gpu' }, env('requester'), clock + 1, cwd)).toThrow(
     /claim conflicts with: session holder/,
   )
-  expect(claimInterruptNotices('holder', clock + 2)).toEqual([])
+  expect(claimNoticesFor('holder', clock + 2)).toEqual([])
 })
 
 test('claims survive board message reaping', () => {

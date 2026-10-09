@@ -328,6 +328,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
     '../board/board-delivery.ts',
+    '../board/board-hosted-cache.ts',
+    '../board/board-push-service.ts',
     '../board/board-service.ts',
     '../database/db.ts',
     './monitor-conditions.ts',

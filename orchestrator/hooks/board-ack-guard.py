@@ -52,7 +52,7 @@ def main() -> int:
             or not os.path.exists(store_path())
         ):
             return 0
-        notices = pending(session)
+        _delivery, _overflow, notices = pending(session)
         path, count = block_count(session)
         if not notices:
             write_marker(path, {"blocks": 0})

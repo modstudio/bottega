@@ -3,7 +3,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   acknowledgementRefusal,
   architectIdentity,
-  audienceRefusal,
   BOARD_POST_RATE_LIMIT,
   messageCanBeReaped,
   messageIsLive,
@@ -12,7 +11,6 @@ import {
   postDecision,
   resolveAudience,
   runAudienceRefusal,
-  shouldInterrupt,
   validatePostNoticeInput,
 } from './board-policy.ts'
 import { boardActor } from './board-store.ts'
@@ -75,7 +73,6 @@ test('audiences resolve at delivery, including a late joiner', () => {
       200,
     ),
   ).toEqual(['one', 'late'])
-  expect(audienceRefusal(audience, 'architect')).toContain('project:<name>')
 })
 
 test('machine audiences resolve by live presence', () => {
@@ -201,45 +198,6 @@ test('run audience policy permits the owner and operator but identifies a foreig
   expect(runAudienceRefusal(audience, 'architect', 'foreign', null)).toContain(
     'run 42 has no owning session',
   )
-})
-
-test('every addressed ack-required notice interrupts except the reader own post and a foreign operator', () => {
-  expect(
-    shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: true }),
-  ).toBe(true)
-  expect(
-    shouldInterrupt({ authorKind: 'operator', audienceKind: 'architects', ackRequired: false }),
-  ).toBe(false)
-  expect(
-    shouldInterrupt({ authorKind: 'architect', audienceKind: 'project', ackRequired: true }),
-  ).toBe(true)
-  expect(
-    shouldInterrupt({ authorKind: 'architect', audienceKind: 'machine', ackRequired: true }),
-  ).toBe(true)
-  expect(
-    shouldInterrupt({
-      authorKind: 'architect',
-      audienceKind: 'project',
-      ackRequired: true,
-      ownPost: true,
-    }),
-  ).toBe(false)
-  expect(
-    shouldInterrupt({
-      authorKind: 'operator',
-      authorIsSignedInUser: false,
-      audienceKind: 'project',
-      ackRequired: true,
-    }),
-  ).toBe(false)
-  expect(
-    shouldInterrupt({
-      authorKind: 'architect',
-      audienceKind: 'session',
-      ackRequired: false,
-      claimConflict: true,
-    }),
-  ).toBe(true)
 })
 
 test('acknowledgement authority is operator-wide and architect-project-local', () => {

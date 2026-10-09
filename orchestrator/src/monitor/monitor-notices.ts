@@ -1,7 +1,12 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { claimBoardInterrupts, markBoardInterruptsDelivered } from '../board/board-delivery.ts'
+import { markBoardDeliveriesDelivered } from '../board/board-delivery.ts'
+import {
+  hostedBoardVerificationWarning,
+  takeHostedBoardVerificationTransition,
+} from '../board/board-hosted-cache.ts'
+import { pendingBoardDelivery } from '../board/board-push-service.ts'
 import { requireRealSession } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
@@ -229,23 +234,31 @@ export async function claimMonitorNoticesWithHosted(
   ownerSession: string,
   input: { refreshBoard?: boolean } = {},
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
-  const board = await claimBoardInterrupts(ownerSession, { refresh: input.refreshBoard })
+  const board = await pendingBoardDelivery({
+    session: ownerSession,
+    budgetMs: input.refreshBoard === false ? 0 : 500,
+  })
+  const verification =
+    input.refreshBoard === false
+      ? hostedBoardVerificationWarning()
+      : takeHostedBoardVerificationTransition()
+  const overflow = board.delivery.length ? board.overflow : null
   return {
     notices: [
       ...claimMonitorNotices(ownerSession),
-      ...board.notices.map(
+      ...board.delivery.map(
         (notice): MonitorNotice => ({
-          noticeId: notice.noticeId,
+          noticeId: `board:${notice.id}`,
           kind: 'board-notice',
-          subject: notice.noticeId,
+          subject: `board:${notice.id}`,
           since: null,
           ageMs: null,
-          detail: notice.detail,
+          detail: notice.text,
           ownerSession,
         }),
       ),
     ],
-    warning: board.warning,
+    warning: [overflow, verification].filter(Boolean).join(' ') || null,
   }
 }
 
@@ -260,7 +273,10 @@ export function markMonitorNoticesDelivered(
     const match = /^(condition|landing|board):(.+)$/.exec(token)
     if (!match)
       throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
-    return { source: match[1] as 'condition' | 'landing' | 'board', id: match[2]! }
+    return {
+      source: match[1] as 'condition' | 'landing' | 'board',
+      id: match[2]!,
+    }
   })
   if (
     !parsed.length ||
@@ -298,5 +314,5 @@ export async function markMonitorNoticesDeliveredWithHosted(
 ): Promise<void> {
   markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
   const board = ids.map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '').filter((id) => id !== '')
-  await markBoardInterruptsDelivered(ownerSession, board, deliveredAt)
+  await markBoardDeliveriesDelivered(ownerSession, board, deliveredAt)
 }

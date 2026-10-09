@@ -267,9 +267,9 @@ test('status results have one pinned shape in local and hosted modes', async () 
   expect(hosted).toEqual({
     message: { ...message, text: null },
     receipts: [receipt],
-    reached: null,
-    acknowledged: null,
-    unacknowledged: null,
+    reached: 1,
+    acknowledged: 0,
+    unacknowledged: [],
   })
 })
 

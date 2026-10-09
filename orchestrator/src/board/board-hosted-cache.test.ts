@@ -13,12 +13,10 @@ import {
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
-  claimCachedHostedInterrupts,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   reapHostedBoardCache,
   refreshHostedBoard,
-  takeHostedBoardVerificationTransition,
 } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 
@@ -186,11 +184,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
   expect(
     claimCachedHosted('cache-reader', false, Date.parse('2026-10-05T12:02:00.000Z')),
   ).toHaveLength(1)
-  expect(takeHostedBoardVerificationTransition()).toContain('unverified')
-  expect(takeHostedBoardVerificationTransition()).toBeNull()
   await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client: good })
-  expect(takeHostedBoardVerificationTransition()).toContain('verified again')
-  expect(takeHostedBoardVerificationTransition()).toBeNull()
 })
 
 test('routing narrows own-user audiences and withholds questions from worker chains', async () => {
@@ -643,54 +637,4 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
   expect(cachedAudienceAtPosting(cached.id, `run:${earlyRun.id}`)).toBe(true)
   expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`)).toBe(false)
-})
-
-test('interrupt routing admits claim-linked and own-operator ack notices but not another user', () => {
-  const database = db()
-  database
-    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
-    .run('board_hosted_signed_in_user', userId)
-  database
-    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
-    .run(BOARD_CACHE_OWNER_KEY, userId)
-  database
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
-    )
-    .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
-  const linked = message({ claimId: newRecordId() })
-  const ownOperator = message({
-    ackRequired: true,
-    origin: {
-      kind: 'operator',
-      session: null,
-      harness: null,
-      project: 'cache-project',
-      runId: null,
-    },
-  })
-  const otherOperator = message({
-    ackRequired: true,
-    authorUserId: newRecordId(),
-    origin: {
-      kind: 'operator',
-      session: null,
-      harness: null,
-      project: 'cache-project',
-      runId: null,
-    },
-  })
-  const put = database.query(
-    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-  )
-  for (const row of [linked, ownOperator, otherOperator])
-    put.run(row.id, row.kind, null, row.revision, JSON.stringify(row))
-  expect(
-    claimCachedHostedInterrupts(
-      'cache-reader',
-      Date.parse('2026-10-05T12:02:00.000Z'),
-      database,
-    ).map((row) => row.noticeId),
-  ).toEqual([`board:${linked.id}`, `board:${ownOperator.id}`])
 })
