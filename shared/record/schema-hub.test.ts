@@ -134,9 +134,12 @@ test('hosted note migration scopes numbers and counters to each project', async 
   await database.close()
 })
 
-test('stopal note move preserves identities, is idempotent, and refuses collisions', async () => {
+test('stopal note move bypasses forced row security as the non-bypass table owner', async () => {
   const database = new PGlite()
   await database.exec(`
+    CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
+    GRANT CREATE ON SCHEMA public TO record_owner;
+    SET ROLE record_owner;
     CREATE TABLE space(id uuid PRIMARY KEY, slug text UNIQUE NOT NULL);
     CREATE TABLE project(id uuid PRIMARY KEY, space_id uuid NOT NULL, name text NOT NULL);
     CREATE TABLE seq(
@@ -162,10 +165,36 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
       ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,NULL,'2026-01-01');
     INSERT INTO hub_note_acknowledgement VALUES
       ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000101','2026-01-01');
+    CREATE POLICY space_select ON space FOR SELECT USING (
+      id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    CREATE POLICY project_select ON project FOR SELECT USING (
+      space_id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    CREATE POLICY note_all ON hub_note USING (
+      space_id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    CREATE POLICY acknowledgement_all ON hub_note_acknowledgement USING (
+      space_id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    CREATE POLICY seq_all ON seq USING (
+      space_id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    ALTER TABLE space ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE project ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE hub_note ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE hub_note_acknowledgement ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE seq ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE space FORCE ROW LEVEL SECURITY;
+    ALTER TABLE project FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_note FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_note_acknowledgement FORCE ROW LEVEL SECURITY;
+    ALTER TABLE seq FORCE ROW LEVEL SECURITY;
   `)
   const move = migration('20261009150000_dev_1212_move_stopal_notes')
   await database.exec(move)
   await database.exec(move)
+  await database.exec('RESET ROLE')
   expect(
     (
       await database.query<{ id: string; space_id: string }>(
@@ -203,8 +232,10 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
     INSERT INTO hub_note VALUES
       ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000001','stopal',9,NULL,'2026-01-01'),
       ('01990000-0000-7000-8000-000000000103','01990000-0000-7000-8000-000000000002','stopal',9,NULL,'2026-01-01');
+    SET ROLE record_owner;
   `)
   await expect(database.exec(move)).rejects.toThrow('destination project-number collision')
+  await database.exec('RESET ROLE')
   expect(
     (
       await database.query<{ space_id: string }>(
