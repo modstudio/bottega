@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
+import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
 import { acknowledgeNotice, postNotice } from './board-service.ts'
@@ -106,7 +107,7 @@ function runHook(
       ORCH_DB: fixture.databasePath,
       ORCH_BOARD_BIN: fixture.command,
       TMPDIR: fixture.root,
-      BOARD_PUSH_REFRESH_SECONDS: '60',
+      BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
       BOARD_PUSH_REMIND_SECONDS: '300',
       BOARD_PUSH_RETRY_SECONDS: '15',
       BOARD_ACK_STOP_BLOCKS: '3',
@@ -115,6 +116,85 @@ function runHook(
       ...extra,
     },
   })
+}
+
+type RepeatedHookResult = {
+  outputs: string[]
+  delivered: Array<[string, string[]]>
+  emittedLimit: number | null
+  atomicWritten: boolean
+  atomicValue: unknown
+  atomicTemporaryFiles: string[]
+}
+
+function runHookRepeatedResult(
+  path: string,
+  payload: string,
+  fixture: ReturnType<typeof createHookFixture>,
+  times: number,
+  pendingValues: Array<
+    Array<{ id: string; text: string; requiresAcknowledgement: boolean }>
+  > | null = null,
+  markFailure = false,
+) {
+  const runner = [
+    'import contextlib, importlib.util, io, json, os, sys',
+    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
+    'spec = importlib.util.spec_from_file_location("board_hook_test", sys.argv[1])',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'pending_values = json.loads(sys.argv[4])',
+    'if pending_values is not None:',
+    '    pending_iterator = iter(pending_values)',
+    '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
+    'delivered = []',
+    'def mark_delivered(session, ids):',
+    '    delivered.append([session, ids])',
+    '    if json.loads(sys.argv[5]): raise RuntimeError("delivery stamp failed")',
+    'module.mark_delivered = mark_delivered',
+    'atomic_path = os.path.join(os.environ["ORCH_BOARD_HOOK_STATE"], "atomic-test")',
+    'module.write_marker(atomic_path, {"previous": True})',
+    'atomic_written = module.write_marker(atomic_path, {"partial": "value", "broken": object()})',
+    'atomic_value = module.read_marker(atomic_path)',
+    'atomic_temporary_files = [name for name in os.listdir(os.path.dirname(atomic_path)) if name.startswith(".marker-")]',
+    'outputs = []',
+    'for _ in range(int(sys.argv[3])):',
+    '    output = io.StringIO()',
+    '    sys.stdin = io.StringIO(sys.argv[2])',
+    '    with contextlib.redirect_stdout(output): module.main()',
+    '    outputs.append(output.getvalue())',
+    'print(json.dumps({"outputs": outputs, "delivered": delivered, "emittedLimit": getattr(module, "STOP_EMITTED_ID_LIMIT", None), "atomicWritten": atomic_written, "atomicValue": atomic_value, "atomicTemporaryFiles": atomic_temporary_files}))',
+  ].join('\n')
+  const result = Bun.spawnSync(
+    [
+      'python3',
+      '-c',
+      runner,
+      path,
+      payload,
+      String(times),
+      JSON.stringify(pendingValues),
+      JSON.stringify(markFailure),
+    ],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        ORCH_RUN_ID: '',
+        ORCH_DB: fixture.databasePath,
+        ORCH_BOARD_BIN: fixture.command,
+        BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
+        BOARD_PUSH_REMIND_SECONDS: '300',
+        BOARD_PUSH_RETRY_SECONDS: '15',
+        BOARD_ACK_STOP_BLOCKS: '3',
+        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
+        ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
+      },
+    },
+  )
+  expect(result.exitCode).toBe(0)
+  return JSON.parse(result.stdout.toString()) as RepeatedHookResult
 }
 
 function runHookRepeated(
@@ -126,46 +206,7 @@ function runHookRepeated(
     Array<{ id: string; text: string; requiresAcknowledgement: boolean }>
   > | null = null,
 ) {
-  const runner = [
-    'import contextlib, importlib.util, io, json, os, sys',
-    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
-    'spec = importlib.util.spec_from_file_location("board_hook_test", sys.argv[1])',
-    'module = importlib.util.module_from_spec(spec)',
-    'spec.loader.exec_module(module)',
-    'pending_values = json.loads(sys.argv[4])',
-    'if pending_values is not None:',
-    '    pending_iterator = iter(pending_values)',
-    '    module.pending = lambda session, recently_injected=None: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
-    '    module.mark_delivered = lambda session, ids: None',
-    'results = []',
-    'for _ in range(int(sys.argv[3])):',
-    '    output = io.StringIO()',
-    '    sys.stdin = io.StringIO(sys.argv[2])',
-    '    with contextlib.redirect_stdout(output): module.main()',
-    '    results.append(output.getvalue())',
-    'print(json.dumps(results))',
-  ].join('\n')
-  const result = Bun.spawnSync(
-    ['python3', '-c', runner, path, payload, String(times), JSON.stringify(pendingValues)],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: {
-        ...process.env,
-        ORCH_RUN_ID: '',
-        ORCH_DB: fixture.databasePath,
-        ORCH_BOARD_BIN: fixture.command,
-        BOARD_PUSH_REFRESH_SECONDS: '60',
-        BOARD_PUSH_REMIND_SECONDS: '300',
-        BOARD_PUSH_RETRY_SECONDS: '15',
-        BOARD_ACK_STOP_BLOCKS: '3',
-        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
-        ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
-      },
-    },
-  )
-  expect(result.exitCode).toBe(0)
-  return JSON.parse(result.stdout.toString()) as string[]
+  return runHookRepeatedResult(path, payload, fixture, times, pendingValues).outputs
 }
 
 const hookOutput = JSON.stringify({
@@ -643,6 +684,47 @@ test('recent reminders are removed before bounding without changing pending ackn
   )
 })
 
+test('ordinary-only delivery excludes required notices before bounding', async () => {
+  const clock = Date.parse('2026-10-08T12:40:00.000Z')
+  const session = 'ordinary-only-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const required = Array.from({ length: BOARD_DELIVERY_MAX_MESSAGES }, (_, index) =>
+    postNotice(
+      {
+        audience: `session:${session}`,
+        title: `Required ${index}`,
+        body: 'Acknowledge me',
+        ackRequired: true,
+      },
+      {},
+      clock + index,
+    ),
+  )
+  const ordinary = postNotice(
+    { audience: `session:${session}`, title: 'Ordinary', body: 'Show me' },
+    {},
+    clock + required.length,
+  )
+
+  const result = await pendingBoardDelivery({
+    session,
+    budgetMs: 0,
+    includeAcknowledgementReminders: true,
+    excludeAcknowledgementRequired: true,
+    clock: clock + required.length + 1,
+  })
+
+  expect(result.delivery.map((notice) => notice.id)).toEqual([String(ordinary.id)])
+  expect(result.pendingAcknowledgements.map((notice) => notice.id)).toEqual(
+    required.map((notice) => String(notice.id)),
+  )
+})
+
 test('recently-injected ids do not suppress messages never delivered to the session', async () => {
   const clock = Date.parse('2026-10-08T12:45:00.000Z')
   const session = 'unread-reminder-reader'
@@ -823,35 +905,75 @@ test('PostToolUse runs correctly without following an unreadable marker symlink'
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
 
-test('Stop blocks three times and allows the fourth with a system message', () => {
+test('Stop keeps its acknowledgement budget while carrying fresh ordinary delivery', () => {
   const item = createHookFixture(hookOutput)
-  const pendingValues = Array.from({ length: 4 }, () => JSON.parse(hookOutput).delivery)
-  const values = runHookRepeated(
+  const required = JSON.parse(hookOutput).delivery
+  const pendingValues = [
+    [{ id: '8', text: 'ordinary within budget', requiresAcknowledgement: false }, ...required],
+    required,
+    required,
+    required,
+    [{ id: '9', text: 'ordinary after budget', requiresAcknowledgement: false }, ...required],
+    required,
+    [],
+  ]
+  const result = runHookRepeatedResult(
     guardHook,
     JSON.stringify({ session_id: 'reader' }),
     item,
-    4,
+    pendingValues.length,
     pendingValues,
-  ).map((value) => JSON.parse(value))
+  )
+  const values = result.outputs.map((value) => (value ? JSON.parse(value) : null))
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
-  expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
+  expect(values[0].reason).toStartWith('ordinary within budget')
+  expect(values[0].reason).toContain('This architect session has 1 unacknowledged board notice.')
   expect(values[3].systemMessage).toStartWith(
     'This architect session is stopping with 1 unacknowledged board notice.',
   )
+  expect(values[4]).toEqual({
+    decision: 'block',
+    reason: 'ordinary after budget',
+  })
+  expect(values[5].decision).toBeUndefined()
+  expect(values[5].systemMessage).toContain('unacknowledged board notice')
+  expect(result.outputs[6]).toBe('')
+  expect(result.delivered).toEqual([
+    ['reader', ['8']],
+    ['reader', ['9']],
+  ])
 })
 
-test('Stop ignores ordinary delivery while retaining acknowledgement-required notices', () => {
+test('Stop records and bounds emitted ids, blocks once per message, and preserves markers atomically', () => {
   const item = createHookFixture(hookOutput)
-  const values = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
-    [
-      { id: '1', text: 'ordinary', requiresAcknowledgement: false },
-      { id: '2', text: 'required', requiresAcknowledgement: true },
-    ],
+  const first = { id: '1', text: 'first', requiresAcknowledgement: false }
+  const second = { id: '2', text: 'second', requiresAcknowledgement: false }
+  const later = Array.from({ length: 99 }, (_, index) => [
+    { id: String(index + 3), text: `message ${index + 3}`, requiresAcknowledgement: false },
   ])
-  const result = JSON.parse(values[0]!)
-  expect(result.decision).toBe('block')
-  expect(result.reason).toContain('required')
-  expect(result.reason).not.toContain('ordinary')
+  const pendingValues = [[first], [first], [first, second], [first, second], ...later]
+  const hook = runHookRepeatedResult(
+    guardHook,
+    JSON.stringify({ session_id: 'reader' }),
+    item,
+    pendingValues.length,
+    pendingValues,
+    true,
+  )
+  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'first' })
+  expect(hook.outputs[1]).toBe('')
+  expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
+  expect(hook.outputs[3]).toBe('')
+  const markerRoot = join(item.root, 'board-hook-state', 'stop')
+  const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
+  const value = JSON.parse(readFileSync(marker, 'utf8'))
+
+  expect(hook.emittedLimit).toBeGreaterThan(0)
+  expect(value.emitted_ids).toHaveLength(hook.emittedLimit!)
+  expect(value.emitted_ids.at(-1)).toBe('101')
+  expect(hook.atomicWritten).toBeFalse()
+  expect(hook.atomicValue).toEqual({ previous: true })
+  expect(hook.atomicTemporaryFiles).toEqual([])
 })
 
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {

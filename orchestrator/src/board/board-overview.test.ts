@@ -12,7 +12,8 @@ import {
   type GatheredBoardOverviewRow,
   listBoardOverview,
 } from './board-overview.ts'
-import { postNotice, readNotices } from './board-service.ts'
+import { pendingBoardDelivery } from './board-push-service.ts'
+import { postNotice } from './board-service.ts'
 import type { BoardThreadState } from './board-thread-policy.ts'
 
 const clock = Date.parse('2026-10-05T12:00:00.000Z')
@@ -103,15 +104,16 @@ test('the pure overview applies kind, open, ended filters and newest-first opaqu
   ])
 })
 
-test('an unadopted overview ignores caller audience and stamps no delivery receipt', async () => {
+test('listing an unadopted board leaves its printed root unread for the session', async () => {
+  const session = 'overview-reader'
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES ('overview-addressed','claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
     )
-    .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
+    .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
   const posted = postNotice(
-    { audience: 'session:overview-addressed', title: 'Addressed elsewhere', body: 'body' },
+    { audience: `session:${session}`, title: 'Unread body', body: 'body' },
     {},
     clock,
   )
@@ -119,22 +121,15 @@ test('an unadopted overview ignores caller audience and stamps no delivery recei
   const listed = await listBoardOverview(
     {},
     {
-      env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'overview-caller' },
+      env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: session },
       clock,
     },
   )
-  expect(listed.messages.map((row) => row.id)).toContain(String(posted.id))
+  const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 1 })
+
+  expect(listed.messages.map((row) => row.id)).toEqual([String(posted.id)])
   expect(listed.warning).toBeNull()
-  expect(
-    db()
-      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
-      .get(posted.id, 'overview-addressed'),
-  ).toEqual({ delivered_at: null })
-  expect(
-    readNotices(false, { CLAUDE_CODE_SESSION_ID: 'overview-addressed' }, clock).map(
-      (row) => row.id,
-    ),
-  ).toEqual([posted.id])
+  expect(pending.delivery.map((message) => message.id)).toEqual([String(posted.id)])
 })
 
 test('an adopted overview combines local and cached roots with null hosted reach and warning', async () => {

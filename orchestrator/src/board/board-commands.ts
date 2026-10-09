@@ -71,12 +71,14 @@ export function registerBoardCommands(program: Command): void {
     .command('pending')
     .requiredOption('--session <id>')
     .option('--recently-injected <ids>', 'comma-separated message ids not yet due for reminder')
+    .option('--exclude-acknowledgement-required')
     .option('--json')
     .action(async (options) => {
       const delivery = await pendingBoardDelivery({
         session: options.session,
         budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
         includeAcknowledgementReminders: true,
+        excludeAcknowledgementRequired: Boolean(options.excludeAcknowledgementRequired),
         recentlyInjectedIds: options.recentlyInjected
           ? String(options.recentlyInjected).split(',').filter(Boolean)
           : [],
