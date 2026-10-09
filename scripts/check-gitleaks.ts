@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { planGitleaksScans } from './check-gitleaks-plan'
+import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
 import { resolveLandingBase } from './landing-base'
 
 const gitleaks = Bun.which('gitleaks')
@@ -58,10 +58,18 @@ for (const scan of scans) {
   try {
     const result = Bun.spawnSync([gitleaks, ...scan.args], {
       stdout: 'inherit',
-      stderr: 'inherit',
+      stderr: 'pipe',
     })
-    if (result.exitCode !== 0) {
-      console.error(`check-gitleaks: ${scan.mode} scan failed with exit code ${result.exitCode}`)
+    const log = result.stderr.toString()
+    process.stderr.write(result.stderr)
+    const decision = decideGitleaksScan(
+      scan.mode === 'history'
+        ? { mode: 'history', expectedCommitCount: rangeCommitCount, exitCode: result.exitCode, log }
+        : { mode: 'working-tree', exitCode: result.exitCode, log },
+    )
+    if (decision.status === 'refused') {
+      console.error(`check-gitleaks: ${scan.mode} scan refused: ${decision.message}`)
+      console.error(`check-gitleaks: command: ${[gitleaks, ...scan.args].join(' ')}`)
       failed = true
     }
   } catch (error) {
