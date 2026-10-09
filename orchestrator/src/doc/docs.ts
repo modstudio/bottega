@@ -7,7 +7,7 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  type DocAudience,
+  type DocAudiences,
   type DocKind,
   type DocScope,
   type DocStatus,
@@ -152,7 +152,7 @@ function assertInjectSize(input: {
         title: input.title,
         body: input.body,
         delivery: 'inject',
-        audience: 'technical',
+        audiences: ['technical'],
         featured: false,
         status: 'current',
         kind: 'working',
@@ -253,7 +253,7 @@ type DocWriteInput = {
   title: string
   body: string
   delivery?: 'inject' | 'demand'
-  audience?: DocAudience
+  audiences?: DocAudiences
   parentSlug?: string | null
   position?: number
   featured?: boolean
@@ -410,7 +410,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         title: input.title,
         body: input.body,
         delivery,
-        audience: tree.audience,
+        audiences: tree.audiences,
         parentRecordId: localParentRecordId({
           scope: input.scope,
           subject: input.subject,
@@ -488,7 +488,7 @@ export async function setDocStatus(
     title: current.title,
     body: current.body,
     delivery: current.delivery,
-    audience: current.audience,
+    audiences: current.audiences,
     parentSlug: current.parent_slug,
     position: current.position,
     featured: current.featured,
@@ -553,7 +553,7 @@ export async function removeDoc(
           title: doc.title,
           body: doc.body,
           delivery: doc.delivery,
-          audience: doc.audience,
+          audiences: doc.audiences,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
           featured: doc.featured,
@@ -640,7 +640,7 @@ export async function consumeDoc(
           title: doc.title,
           body: doc.body,
           delivery: doc.delivery,
-          audience: doc.audience,
+          audiences: doc.audiences,
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
           featured: doc.featured,
@@ -946,7 +946,7 @@ export async function restoreDoc(
       title: revision.title,
       body: revision.body,
       delivery: revision.delivery,
-      audience: revision.audience,
+      audiences: revision.audiences,
       parentSlug: restoredParentSlug,
       position: revision.position,
       featured: revision.featured,
@@ -1003,7 +1003,7 @@ export async function restoreDoc(
           title: revision.title,
           body: revision.body,
           delivery: revision.delivery,
-          audience: revision.audience,
+          audiences: revision.audiences,
           parentRecordId: localParentRecordId({
             scope,
             subject,

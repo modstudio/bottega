@@ -1,7 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudience, DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -49,7 +49,7 @@ export type RecordDocUpsertInput = {
   title: string
   body: string
   delivery: DocDelivery
-  audience: DocAudience
+  audiences: DocAudiences
   parentRecordId?: string | null
   position: number
   featured?: boolean
@@ -78,7 +78,7 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience?: DocAudience
+    audiences?: DocAudiences
     parentId?: string | null
     position?: number
     featured?: boolean
@@ -99,7 +99,7 @@ export type RecordDocImportInput = {
     title: string
     body: string
     delivery: DocDelivery
-    audience?: DocAudience
+    audiences?: DocAudiences
     parentId?: string | null
     position?: number
     featured?: boolean

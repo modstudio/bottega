@@ -6,6 +6,7 @@ import {
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
+  type DocAudiences,
   type DocKind,
   type DocScope,
   type DocStatus,
@@ -23,7 +24,7 @@ export type Doc = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
-  audience: DocAudience
+  audiences: DocAudiences
   featured: boolean
   status: DocStatus
   kind: DocKind
@@ -43,7 +44,7 @@ export type DocMetadata = Pick<
   | 'subject'
   | 'slug'
   | 'title'
-  | 'audience'
+  | 'audiences'
   | 'featured'
   | 'status'
   | 'kind'
@@ -79,7 +80,7 @@ export type DocRevision = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
-  audience: DocAudience
+  audiences: DocAudiences
   featured: boolean
   status: DocStatus
   kind: DocKind
@@ -100,14 +101,18 @@ export type DocRevisionMetadata = Pick<
 const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
-const docRow = <T extends { featured: boolean | number }>(row: T): T => ({
+const docRow = <T extends { featured: boolean | number; audiences: string | DocAudiences }>(
+  row: T,
+): Omit<T, 'audiences'> & { audiences: DocAudiences } => ({
   ...row,
   featured: Boolean(row.featured),
+  audiences:
+    typeof row.audiences === 'string' ? (JSON.parse(row.audiences) as DocAudiences) : row.audiences,
 })
 
 function treeColumns(database: Database): boolean {
   return Boolean(
-    database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
+    database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audiences'").get(),
   )
 }
 
@@ -129,7 +134,7 @@ function docTreeSelect(database: Database): { columns: string; join: string; pos
         position: 'd.position',
       }
     : {
-        columns: `d.*, 'technical' AS audience, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}${kind}`,
+        columns: `d.*, '["technical"]' AS audiences, 0 AS featured, NULL AS parent_id, NULL AS parent_slug, 0 AS position${status}${kind}`,
         join: '',
         position: '0+0',
       }
@@ -217,7 +222,7 @@ export function listDocsStore(
   if (filters.audience !== undefined) {
     validAudience(filters.audience)
     if (treeColumns(database)) {
-      where.push('d.audience = ?')
+      where.push('EXISTS (SELECT 1 FROM json_each(d.audiences) WHERE value = ?)')
       values.push(filters.audience)
     } else if (filters.audience === 'user') where.push('0')
   }
@@ -253,7 +258,7 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
   return (
     db()
       .query(
-        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audience, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
       )
       .all(...values) as Array<DocMetadata & { featured: boolean | number }>
@@ -270,7 +275,7 @@ function metadataFilters(filters: DocListFilters): { where: string[]; values: st
   const { where, values } = addressFilters(filters)
   if (filters.audience !== undefined) {
     validAudience(filters.audience)
-    where.push('d.audience = ?')
+    where.push('EXISTS (SELECT 1 FROM json_each(d.audiences) WHERE value = ?)')
     values.push(filters.audience)
   }
   if (filters.status !== undefined) {

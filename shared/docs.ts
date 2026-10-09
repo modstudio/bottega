@@ -20,6 +20,23 @@ export const DOC_SCOPES = [
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const DOC_AUDIENCES = ['user', 'technical'] as const
 export type DocAudience = (typeof DOC_AUDIENCES)[number]
+export type DocAudiences = [DocAudience, ...DocAudience[]]
+
+/** Validate and order a document audience set at an input boundary. */
+export function normalizeDocAudiences(input: readonly string[]): DocAudiences {
+  if (input.length === 0) throw new Error('doc audiences must not be empty')
+  const seen = new Set<string>()
+  for (const audience of input) {
+    if (!DOC_AUDIENCES.includes(audience as DocAudience)) {
+      throw new Error(
+        `unknown doc audience "${audience}"; valid audiences: ${DOC_AUDIENCES.join(', ')}`,
+      )
+    }
+    if (seen.has(audience)) throw new Error(`duplicate doc audience "${audience}"`)
+    seen.add(audience)
+  }
+  return DOC_AUDIENCES.filter((audience) => seen.has(audience)) as DocAudiences
+}
 export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as const
 export type DocStatus = (typeof DOC_STATUSES)[number]
 export const DOC_KINDS = ['working', 'article'] as const
