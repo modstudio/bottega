@@ -8,7 +8,7 @@ import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
-  HUB_CHANGES_NOT_YET_READABLE,
+  hubChangeReadability,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
 } from './hosted-changes.ts'
@@ -109,10 +109,18 @@ afterAll(async () => {
 })
 
 test('every logged table is readable or explicitly deferred', () => {
-  expect(HUB_CHANGES_NOT_YET_READABLE).toEqual(['hub_interval', 'hub_day'])
-  expect(
-    [...Object.keys(READABLE_HUB_CHANGES), ...HUB_CHANGES_NOT_YET_READABLE].toSorted(),
-  ).toEqual([...HUB_CHANGE_SOURCES.rows].toSorted())
+  expect(HUB_CHANGE_SOURCES.rows.map((table) => [table, hubChangeReadability(table)])).toEqual([
+    ['hub_task', 'readable'],
+    ['hub_task_comment', 'readable'],
+    ['hub_task_document', 'readable'],
+    ['hub_task_status_event', 'readable'],
+    ['hub_send', 'readable'],
+    ['hub_interval', 'not-yet-readable'],
+    ['hub_day', 'not-yet-readable'],
+    ['hub_note', 'readable'],
+    ['hub_note_acknowledgement', 'readable'],
+  ])
+  expect(hubChangeReadability('future_logged_table')).toBeNull()
 })
 
 test('change pages preserve trigger order, current pull shapes, collapse, deletes, and moves', async () => {

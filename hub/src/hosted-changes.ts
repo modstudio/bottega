@@ -112,8 +112,14 @@ export const READABLE_HUB_CHANGES = {
   },
 } as const
 
-export const HUB_CHANGES_NOT_YET_READABLE = ['hub_interval', 'hub_day'] as const
+const HUB_CHANGES_NOT_YET_READABLE = ['hub_interval', 'hub_day'] as const
 export type ReadableHubChangeTable = keyof typeof READABLE_HUB_CHANGES
+
+export function hubChangeReadability(table: string): 'readable' | 'not-yet-readable' | null {
+  if (table in READABLE_HUB_CHANGES) return 'readable'
+  if ((HUB_CHANGES_NOT_YET_READABLE as readonly string[]).includes(table)) return 'not-yet-readable'
+  return null
+}
 
 type Entry = {
   sequence: string | number
@@ -155,7 +161,7 @@ export async function readHostedChangesInTransaction(
   const collapsed = new Map<string, Entry>()
   for (const entry of entries) {
     if (
-      !(entry.table_name in READABLE_HUB_CHANGES) ||
+      hubChangeReadability(entry.table_name) !== 'readable' ||
       !wanted.has(entry.table_name as ReadableHubChangeTable)
     )
       continue
