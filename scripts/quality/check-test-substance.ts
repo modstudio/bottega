@@ -57,8 +57,7 @@ function afterContent(mode: Mode, file: string) {
     : git(['show', `HEAD:${file}`]).stdout
 }
 
-async function guardFixtures() {
-  const failures: string[] = []
+async function guardJavaScriptFixtures(failures: string[]) {
   for (const runner of ['bun', 'vitest'] as const) {
     const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
     const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
@@ -72,6 +71,9 @@ async function guardFixtures() {
         failures.push(`${runner}: ${rule} produced no finding on its fixture`)
     }
   }
+}
+
+async function guardPhpFixture(failures: string[]) {
   const phpFile = `${fixtureDirectory}test-substance-php.fixtures.php`
   const phpReport = await phpTestSubstanceReport(phpFile, readFileSync(phpFile, 'utf8'))
   const phpCounts = new Map<string, number>()
@@ -93,6 +95,12 @@ async function guardFixtures() {
       failures.push(`php: clean counterpart ${finding.testName} produced ${finding.rule}`)
     }
   }
+}
+
+async function guardFixtures() {
+  const failures: string[] = []
+  await guardJavaScriptFixtures(failures)
+  await guardPhpFixture(failures)
   return failures
 }
 

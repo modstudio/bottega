@@ -89,55 +89,55 @@ function commentLine(content: string): boolean {
   )
 }
 
+function quotedTokenEnd(content: string, start: number): number {
+  const quote = content[start]
+  for (let index = start + 1; index < content.length; index += 1) {
+    if (content[index] === '\\') index += 1
+    else if (content[index] === quote) return index + 1
+  }
+  return content.length
+}
+
+function heredocTokenEnd(content: string, start: number): number | undefined {
+  const opening = content.slice(start).match(/^<<<['"]?([A-Za-z_]\w*)['"]?\r?\n/)
+  if (!opening) return undefined
+  const bodyStart = start + opening[0].length
+  const closing = content.slice(bodyStart).match(new RegExp(`^\\s*${opening[1]};?\\r?$`, 'm'))
+  return closing ? bodyStart + closing.index! + closing[0].length : content.length
+}
+
+function lineTokenEnd(content: string, start: number): number {
+  const end = content.indexOf('\n', start)
+  return end < 0 ? content.length : end
+}
+
+function maskedTokenEnd(content: string, start: number): number | undefined {
+  const current = content[start]
+  const next = content[start + 1]
+  if (current === "'" || current === '"') return quotedTokenEnd(content, start)
+  if (current === '/' && next === '/') return lineTokenEnd(content, start + 2)
+  if (current === '#' && next !== '[') return lineTokenEnd(content, start + 1)
+  if (current === '/' && next === '*') {
+    const end = content.indexOf('*/', start + 2)
+    return end < 0 ? content.length : end + 2
+  }
+  return heredocTokenEnd(content, start)
+}
+
+function maskToken(chars: string[], start: number, end: number): void {
+  for (let index = start; index < end; index += 1) {
+    if (chars[index] !== '\n' && chars[index] !== '\r') chars[index] = ' '
+  }
+}
+
 /** Mask tokens which must not influence class and brace discovery, preserving offsets and lines. */
 function structuralContent(content: string): string {
   const chars = [...content]
-  let state: 'code' | 'single' | 'double' | 'line' | 'block' | 'heredoc' = 'code'
-  let heredocEnd = ''
   for (let index = 0; index < chars.length; index += 1) {
-    const current = chars[index]!
-    const next = chars[index + 1]
-    if (state === 'code') {
-      const heredoc = content.slice(index).match(/^<<<['"]?([A-Za-z_]\w*)['"]?\r?\n/)
-      if (heredoc) {
-        heredocEnd = heredoc[1]!
-        state = 'heredoc'
-      } else if (current === "'") state = 'single'
-      else if (current === '"') state = 'double'
-      else if (current === '/' && next === '/') state = 'line'
-      else if (current === '#' && next !== '[') state = 'line'
-      else if (current === '/' && next === '*') state = 'block'
-      else continue
-    } else if (state === 'single' || state === 'double') {
-      if (current === '\\') {
-        chars[index] = ' '
-        if (chars[index + 1] !== '\n') chars[index + 1] = ' '
-        index += 1
-        continue
-      }
-      if ((state === 'single' && current === "'") || (state === 'double' && current === '"')) {
-        chars[index] = ' '
-        state = 'code'
-        continue
-      }
-    } else if (state === 'line') {
-      if (current === '\n') {
-        state = 'code'
-        continue
-      }
-    } else if (state === 'block') {
-      if (current === '*' && next === '/') {
-        chars[index] = ' '
-        chars[index + 1] = ' '
-        index += 1
-        state = 'code'
-        continue
-      }
-    } else if (state === 'heredoc' && current === '\n') {
-      const following = content.slice(index + 1).match(/^\s*([A-Za-z_]\w*);?\r?(?=\n|$)/)
-      if (following?.[1] === heredocEnd) state = 'code'
-    }
-    if (current !== '\n' && current !== '\r') chars[index] = ' '
+    const end = maskedTokenEnd(content, index)
+    if (end === undefined) continue
+    maskToken(chars, index, end)
+    index = Math.max(index, end - 1)
   }
   return chars.join('')
 }
