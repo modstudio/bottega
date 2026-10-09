@@ -13,7 +13,8 @@ const migrationsFolder = join(
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const firstId = '01990000-0000-7000-8000-000000001251'
 const secondId = '01990000-0000-7000-8000-000000001252'
-const identity = { userId: 'mirror-user', spaceId }
+const userId = '01990000-0000-7000-8000-000000001249'
+const identity = { userId, spaceId }
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -49,7 +50,12 @@ async function createRecordDatabase(): Promise<PGlite> {
     RESET ROLE;
     INSERT INTO space (id,name,slug,created_at)
     VALUES ('${spaceId}','Mirror test','mirror-test',now());
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${userId}','mirror@example.test','Mirror user',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000001248','${spaceId}','${userId}','member','write',now());
     SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${userId}',false);
     SELECT set_config('app.space_id','${spaceId}',false);
     SELECT set_config('app.space_ids','${spaceId}',false);
   `)

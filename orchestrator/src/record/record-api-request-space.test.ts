@@ -77,7 +77,7 @@ test('read-only members are refused before remaining tenant write routes run', a
     ['/v1/runs/run-id/void', 'POST'],
     ['/v1/runs/run-id/unvoid', 'POST'],
     ['/v1/snapshots/state', 'PUT'],
-  ]) {
+  ] as const) {
     const response = await app.request(path, { method })
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({
@@ -128,7 +128,7 @@ test('remaining tenant write routes judge and bind the requested destination spa
     ['/v1/runs/run-id/void', 'POST'],
     ['/v1/runs/run-id/unvoid', 'POST'],
     ['/v1/snapshots/state', 'PUT'],
-  ]) {
+  ] as const) {
     const response = await app.request(path, {
       method,
       headers: { 'x-record-space': 'space-b' },

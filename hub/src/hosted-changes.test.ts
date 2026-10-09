@@ -31,6 +31,7 @@ const intervalId = '01990000-0000-7000-8000-000000001312'
 const sendId = '01990000-0000-7000-8000-000000001313'
 const recipientId = '01990000-0000-7000-8000-000000001314'
 const noteId = '01990000-0000-7000-8000-000000001315'
+const userId = '01990000-0000-7000-8000-000000001299'
 
 async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
   for (const statement of migration.sql) await transaction.exec(statement)
@@ -71,6 +72,16 @@ async function createDatabase() {
       ('${spaceE}','Changes E','changes-e',now()),
       ('${spaceF}','Changes F','changes-f',now()),
       ('${spaceG}','Changes G','changes-g',now());
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${userId}','changes@example.test','Change reader',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+      ('01990000-0000-7000-8000-000000001290','${spaceA}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001291','${spaceB}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001292','${spaceC}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001293','${spaceD}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001294','${spaceE}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001295','${spaceF}','${userId}','member','write',now()),
+      ('01990000-0000-7000-8000-000000001296','${spaceG}','${userId}','member','write',now());
   `)
   return database
 }
@@ -99,13 +110,13 @@ async function bind(database: PGlite, spaceId: string) {
   await database.exec(`
     RESET ROLE;
     SET ROLE ${RECORD_ACTOR_ROLE};
-    SELECT set_config('app.user_id','change-reader',false);
+    SELECT set_config('app.user_id','${userId}',false);
     SELECT set_config('app.space_id','${spaceId}',false);
     SELECT set_config('app.space_ids','${spaceId}',false);
   `)
 }
 
-const identity = (spaceId: string) => ({ userId: 'change-reader', spaceId, spaceIds: [spaceId] })
+const identity = (spaceId: string) => ({ userId, spaceId, spaceIds: [spaceId] })
 const allReadable = Object.keys(READABLE_HUB_CHANGES) as (keyof typeof READABLE_HUB_CHANGES)[]
 let database: PGlite
 

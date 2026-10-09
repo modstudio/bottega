@@ -200,8 +200,8 @@ test('project push writes every registered project to the hosted record', async 
       activeSpaceId: 'space-active',
       personalSpaceId: 'space-active',
       memberships: [
-        { space_id: 'space-active', slug: 'active' },
-        { space_id: 'space-other', slug: 'other' },
+        { space_id: 'space-active', slug: 'active', permission: 'write' },
+        { space_id: 'space-other', slug: 'other', permission: 'write' },
       ],
     }),
     upsertProject: async (input, destination) => {

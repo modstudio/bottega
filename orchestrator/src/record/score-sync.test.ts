@@ -42,6 +42,13 @@ const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
     userId: '01990000-0000-7000-8000-000000000002',
     spaceId: '01990000-0000-7000-8000-000000000001',
   },
+  memberships: [
+    {
+      spaceId: '01990000-0000-7000-8000-000000000001',
+      slug: 'active',
+      permission: 'write',
+    },
+  ],
 })
 
 test('a grade-less legacy review score replaces its hosted note when its axes are unchanged', async () => {

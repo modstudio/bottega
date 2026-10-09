@@ -24,8 +24,8 @@ test('a project-addressed document client binds every call to the declared space
       activeSpaceId: 'active-space',
       personalSpaceId: 'active-space',
       memberships: [
-        { space_id: 'active-space', slug: 'active' },
-        { space_id: 'docs-space', slug: 'docs-team' },
+        { space_id: 'active-space', slug: 'active', permission: 'write' },
+        { space_id: 'docs-space', slug: 'docs-team', permission: 'write' },
       ],
     }),
     listDocs: async (_query, destination) => {
@@ -138,8 +138,8 @@ test('a retired project still supplies its declared document destination', async
       activeSpaceId: 'active-space',
       personalSpaceId: 'active-space',
       memberships: [
-        { space_id: 'active-space', slug: 'active' },
-        { space_id: 'retired-space', slug: 'retired-team' },
+        { space_id: 'active-space', slug: 'active', permission: 'write' },
+        { space_id: 'retired-space', slug: 'retired-team', permission: 'write' },
       ],
     }),
     getDoc: async (_id, requestDestination) => {
