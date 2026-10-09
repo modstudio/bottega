@@ -3,11 +3,11 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   type PublicDocDesignationFacts,
   publicDocDesignationRefusal,
+  publicDocDesignationSignInRefusal,
 } from './record-public-doc-designation.ts'
 
 const complete: PublicDocDesignationFacts = {
   action: 'designate',
-  userId: 'user',
   spaceId: 'space',
   projectId: 'project',
   alreadyDesignated: false,
@@ -17,11 +17,12 @@ const complete: PublicDocDesignationFacts = {
 }
 
 describe('public document designation decision', () => {
-  test('break: deleting the user guard allows an owner write without a signed-in record user', () => {
-    expect(publicDocDesignationRefusal({ ...complete, userId: null })).toBe(RECORD_SIGN_IN_REMEDY)
+  test('all public document designation verbs require a signed-in record user', () => {
+    expect(publicDocDesignationSignInRefusal(null)).toBe(RECORD_SIGN_IN_REMEDY)
+    expect(publicDocDesignationSignInRefusal('user')).toBeNull()
   })
 
-  test('break: deleting lookup refusals turns unknown spaces and projects into silent zero-row success', () => {
+  test('writes refuse unknown spaces and projects', () => {
     expect(publicDocDesignationRefusal({ ...complete, spaceId: null })).toContain(
       'not a member of record space',
     )
@@ -30,7 +31,7 @@ describe('public document designation decision', () => {
     )
   })
 
-  test('break: treating every zero-row designate as failure rejects an idempotent designation', () => {
+  test('designating an already designated project is idempotent', () => {
     expect(
       publicDocDesignationRefusal({
         ...complete,
@@ -40,13 +41,13 @@ describe('public document designation decision', () => {
     ).toBeNull()
   })
 
-  test('break: removing the exact-row check accepts a raced zero-row designate', () => {
+  test('designate refuses unless it inserts exactly one row', () => {
     expect(publicDocDesignationRefusal({ ...complete, affectedRows: 0 })).toContain(
       'changed 0 public document designations instead of one',
     )
   })
 
-  test('break: removing the absent guard makes clearing a missing designation report success', () => {
+  test('clear refuses a project that is not publicly designated', () => {
     expect(
       publicDocDesignationRefusal({
         ...complete,

@@ -5,11 +5,10 @@ import { SQL } from 'bun'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
-type PublicDocDesignationAction = 'designate' | 'clear' | 'list'
+type PublicDocDesignationAction = 'designate' | 'clear'
 
 export type PublicDocDesignationFacts = {
   action: PublicDocDesignationAction
-  userId: string | null
   spaceId: string | null
   projectId: string | null
   alreadyDesignated: boolean
@@ -27,8 +26,6 @@ export type PublicDocDesignation = {
 }
 
 export function publicDocDesignationRefusal(facts: PublicDocDesignationFacts): string | null {
-  if (!facts.userId) return RECORD_SIGN_IN_REMEDY
-  if (facts.action === 'list') return null
   if (!facts.spaceId) {
     return `the signed-in user is not a member of record space "${facts.spaceSlug}"; join it with an invitation, then retry`
   }
@@ -43,6 +40,10 @@ export function publicDocDesignationRefusal(facts: PublicDocDesignationFacts): s
     return `${facts.action} changed ${facts.affectedRows} public document designations instead of one; run \`orch record public-doc list\` and retry`
   }
   return null
+}
+
+export function publicDocDesignationSignInRefusal(userId: string | null): string | null {
+  return userId ? null : RECORD_SIGN_IN_REMEDY
 }
 
 type SqlClient = SQL
@@ -67,12 +68,29 @@ function refuse(message: string | null): void {
   if (message) throw new Error(message)
 }
 
+async function withPublicDocOwnerSession<T>(
+  input: { actorUrl: string; ownerUrl: string },
+  dependencies: DesignationDependencies,
+  run: (tx: SQL) => Promise<T>,
+): Promise<T> {
+  const userId = await dependencies.currentUserId(input.actorUrl)
+  refuse(publicDocDesignationSignInRefusal(userId))
+  const client = dependencies.openOwner(input.ownerUrl)
+  try {
+    return await client.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${userId!}, true)`
+      await tx`SELECT set_config('app.space_id', '', true)`
+      return run(tx)
+    })
+  } finally {
+    await client.close()
+  }
+}
+
 async function lookupTarget(
   tx: SQL,
-  input: { userId: string; spaceSlug: string; projectName: string },
+  input: { spaceSlug: string; projectName: string },
 ): Promise<{ spaceId: string | null; projectId: string | null; alreadyDesignated: boolean }> {
-  await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-  await tx`SELECT set_config('app.space_id', '', true)`
   const spaces = await tx`SELECT id FROM space WHERE slug=${input.spaceSlug}`
   const spaceId = spaces[0]?.id ? String(spaces[0].id) : null
   if (!spaceId) return { spaceId: null, projectId: null, alreadyDesignated: false }
@@ -93,165 +111,105 @@ export async function designatePublicDocProject(
   input: { actorUrl: string; ownerUrl: string; spaceSlug: string; projectName: string },
   dependencies: DesignationDependencies = defaultDependencies,
 ): Promise<{ changed: boolean; spaceId: string; projectId: string }> {
-  const userId = await dependencies.currentUserId(input.actorUrl)
-  refuse(
-    publicDocDesignationRefusal({
-      action: 'list',
-      userId,
-      spaceId: null,
-      projectId: null,
-      alreadyDesignated: false,
+  return withPublicDocOwnerSession(input, dependencies, async (tx) => {
+    const target = await lookupTarget(tx, {
+      spaceSlug: input.spaceSlug,
+      projectName: input.projectName,
+    })
+    const facts = {
+      action: 'designate' as const,
+      ...target,
       affectedRows: null,
       spaceSlug: input.spaceSlug,
       projectName: input.projectName,
-    }),
-  )
-  const client = dependencies.openOwner(input.ownerUrl)
-  try {
-    return await client.begin(async (tx) => {
-      const target = await lookupTarget(tx, {
-        userId: userId!,
-        spaceSlug: input.spaceSlug,
-        projectName: input.projectName,
-      })
-      const facts = {
-        action: 'designate' as const,
-        userId,
-        ...target,
-        affectedRows: null,
-        spaceSlug: input.spaceSlug,
-        projectName: input.projectName,
-      }
-      refuse(publicDocDesignationRefusal(facts))
-      if (target.alreadyDesignated) {
-        return { changed: false, spaceId: target.spaceId!, projectId: target.projectId! }
-      }
-      const inserted = await tx`
-        INSERT INTO public_doc_space (space_id, project_id)
-        VALUES (${target.spaceId!}::uuid, ${target.projectId!}::uuid)
-        ON CONFLICT DO NOTHING RETURNING space_id
-      `
-      refuse(publicDocDesignationRefusal({ ...facts, affectedRows: inserted.length }))
-      return { changed: true, spaceId: target.spaceId!, projectId: target.projectId! }
-    })
-  } finally {
-    await client.close()
-  }
+    }
+    refuse(publicDocDesignationRefusal(facts))
+    if (target.alreadyDesignated) {
+      return { changed: false, spaceId: target.spaceId!, projectId: target.projectId! }
+    }
+    const inserted = await tx`
+      INSERT INTO public_doc_space (space_id, project_id)
+      VALUES (${target.spaceId!}::uuid, ${target.projectId!}::uuid)
+      ON CONFLICT DO NOTHING RETURNING space_id
+    `
+    refuse(publicDocDesignationRefusal({ ...facts, affectedRows: inserted.length }))
+    return { changed: true, spaceId: target.spaceId!, projectId: target.projectId! }
+  })
 }
 
 export async function clearPublicDocProject(
   input: { actorUrl: string; ownerUrl: string; spaceSlug: string; projectName: string },
   dependencies: DesignationDependencies = defaultDependencies,
 ): Promise<{ spaceId: string; projectId: string }> {
-  const userId = await dependencies.currentUserId(input.actorUrl)
-  refuse(
-    publicDocDesignationRefusal({
-      action: 'list',
-      userId,
-      spaceId: null,
-      projectId: null,
-      alreadyDesignated: false,
+  return withPublicDocOwnerSession(input, dependencies, async (tx) => {
+    const target = await lookupTarget(tx, {
+      spaceSlug: input.spaceSlug,
+      projectName: input.projectName,
+    })
+    const facts = {
+      action: 'clear' as const,
+      ...target,
       affectedRows: null,
       spaceSlug: input.spaceSlug,
       projectName: input.projectName,
-    }),
-  )
-  const client = dependencies.openOwner(input.ownerUrl)
-  try {
-    return await client.begin(async (tx) => {
-      const target = await lookupTarget(tx, {
-        userId: userId!,
-        spaceSlug: input.spaceSlug,
-        projectName: input.projectName,
-      })
-      const facts = {
-        action: 'clear' as const,
-        userId,
-        ...target,
-        affectedRows: null,
-        spaceSlug: input.spaceSlug,
-        projectName: input.projectName,
-      }
-      refuse(publicDocDesignationRefusal(facts))
-      const removed = await tx`
-        DELETE FROM public_doc_space
-        WHERE space_id=${target.spaceId!}::uuid AND project_id=${target.projectId!}::uuid
-        RETURNING space_id
-      `
-      refuse(publicDocDesignationRefusal({ ...facts, affectedRows: removed.length }))
-      return { spaceId: target.spaceId!, projectId: target.projectId! }
-    })
-  } finally {
-    await client.close()
-  }
+    }
+    refuse(publicDocDesignationRefusal(facts))
+    const removed = await tx`
+      DELETE FROM public_doc_space
+      WHERE space_id=${target.spaceId!}::uuid AND project_id=${target.projectId!}::uuid
+      RETURNING space_id
+    `
+    refuse(publicDocDesignationRefusal({ ...facts, affectedRows: removed.length }))
+    return { spaceId: target.spaceId!, projectId: target.projectId! }
+  })
 }
 
 export async function listPublicDocProjects(
   input: { actorUrl: string; ownerUrl: string },
   dependencies: DesignationDependencies = defaultDependencies,
 ): Promise<PublicDocDesignation[]> {
-  const userId = await dependencies.currentUserId(input.actorUrl)
-  refuse(
-    publicDocDesignationRefusal({
-      action: 'list',
-      userId,
-      spaceId: null,
-      projectId: null,
-      alreadyDesignated: false,
-      affectedRows: null,
-      spaceSlug: '',
-      projectName: '',
-    }),
-  )
-  const client = dependencies.openOwner(input.ownerUrl)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${userId!}, true)`
+  return withPublicDocOwnerSession(input, dependencies, async (tx) => {
+    const rows = await tx`
+      SELECT space_id, project_id FROM public_doc_space ORDER BY space_id, project_id
+    `
+    const designations: PublicDocDesignation[] = []
+    for (const row of rows) {
+      const spaceId = String(row.space_id)
+      const projectId = String(row.project_id)
       await tx`SELECT set_config('app.space_id', '', true)`
-      const rows = await tx`
-        SELECT space_id, project_id FROM public_doc_space ORDER BY space_id, project_id
-      `
-      const designations: PublicDocDesignation[] = []
-      for (const row of rows) {
-        const spaceId = String(row.space_id)
-        const projectId = String(row.project_id)
-        await tx`SELECT set_config('app.space_id', '', true)`
-        const spaces = await tx`SELECT slug FROM space WHERE id=${spaceId}::uuid`
-        if (!spaces[0]) {
-          designations.push({
-            space_id: spaceId,
-            project_id: projectId,
-            space_slug: null,
-            project_name: null,
-            resolvable: false,
-          })
-          continue
-        }
-        await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
-        const projects = await tx`
-          SELECT name FROM project WHERE space_id=${spaceId}::uuid AND id=${projectId}::uuid
-        `
-        if (!projects[0]) {
-          designations.push({
-            space_id: spaceId,
-            project_id: projectId,
-            space_slug: null,
-            project_name: null,
-            resolvable: false,
-          })
-          continue
-        }
+      const spaces = await tx`SELECT slug FROM space WHERE id=${spaceId}::uuid`
+      if (!spaces[0]) {
         designations.push({
           space_id: spaceId,
           project_id: projectId,
-          space_slug: String(spaces[0].slug),
-          project_name: String(projects[0].name),
-          resolvable: true,
+          space_slug: null,
+          project_name: null,
+          resolvable: false,
         })
+        continue
       }
-      return designations
-    })
-  } finally {
-    await client.close()
-  }
+      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+      const projects = await tx`
+        SELECT name FROM project WHERE space_id=${spaceId}::uuid AND id=${projectId}::uuid
+      `
+      if (!projects[0]) {
+        designations.push({
+          space_id: spaceId,
+          project_id: projectId,
+          space_slug: null,
+          project_name: null,
+          resolvable: false,
+        })
+        continue
+      }
+      designations.push({
+        space_id: spaceId,
+        project_id: projectId,
+        space_slug: String(spaces[0].slug),
+        project_name: String(projects[0].name),
+        resolvable: true,
+      })
+    }
+    return designations
+  })
 }

@@ -57,7 +57,7 @@ export function registerPublicDocProofs(input: {
     `)
   })
 
-  test('break: using owner lookups without tenant bindings silently inserts no public designation', async () => {
+  test('public document designation commands honor tenant visibility under forced row security', async () => {
     const [sessionUserId, token, setToken] = input.session()
     const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
     if (!ownerUrl) throw new Error('ORCH_RECORD_MIGRATE_URL is required')
@@ -83,6 +83,25 @@ export function registerPublicDocProofs(input: {
     ).rejects.toThrow('does not exist in space')
     expect(input.admin('SELECT count(*) FROM public_doc_space;')).toBe('0')
 
+    const privateTarget = { ...target, spaceSlug: 'space-b', projectName: 'beta' }
+    await expect(designatePublicDocProject(privateTarget)).rejects.toThrow(
+      'not a member of record space',
+    )
+    expect(input.admin('SELECT count(*) FROM public_doc_space;')).toBe('0')
+    input.admin(`
+      INSERT INTO public_doc_space (space_id, project_id)
+      VALUES ('${privateSpaceId}', '${privateProjectId}');
+    `)
+    await expect(clearPublicDocProject(privateTarget)).rejects.toThrow(
+      'not a member of record space',
+    )
+    expect(
+      input.admin(`
+        SELECT count(*) FROM public_doc_space
+        WHERE space_id='${privateSpaceId}' AND project_id='${privateProjectId}';
+      `),
+    ).toBe('1')
+
     expect(await designatePublicDocProject(target)).toEqual({
       changed: true,
       spaceId: publicSpaceId,
@@ -91,10 +110,6 @@ export function registerPublicDocProofs(input: {
     expect((await designatePublicDocProject(target)).changed).toBeFalse()
     expect(asPublic(`SELECT id FROM doc WHERE id='${PUBLIC_DOC}'; COMMIT;`).stdout).toBe(PUBLIC_DOC)
 
-    input.admin(`
-      INSERT INTO public_doc_space (space_id, project_id)
-      VALUES ('${privateSpaceId}', '${privateProjectId}');
-    `)
     expect(await listPublicDocProjects({ actorUrl, ownerUrl })).toEqual([
       {
         space_id: publicSpaceId,
