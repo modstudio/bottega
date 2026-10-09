@@ -12,6 +12,7 @@ import {
   trackerObservationTimes,
   trackerRegistrations,
   upsertTrackerTask,
+  writeTrackerCache,
 } from './trackers.ts'
 
 const trackerTask = {
@@ -427,10 +428,26 @@ describe('tracker assignees', () => {
     upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-OLD' })
     upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-NEW' })
 
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
-    expect(error).toHaveBeenCalledTimes(1)
+    const renamed = { ...task, externalId: 'collision-target', key: 'COL-NEW' }
+    const first = writeTrackerCache([renamed], '2026-09-23T10:00:00.000Z')[0]!
+    const afterFirst = db()
+      .query<{ opened_at: string; updated_at: string }, []>(
+        `SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`,
+      )
+      .get()
+    const second = writeTrackerCache([renamed], '2026-09-24T10:00:00.000Z')[0]!
+    expect(error).toHaveBeenCalledTimes(2)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-OLD',
+    })
+    expect(
+      db()
+        .query(`SELECT opened_at,updated_at FROM task WHERE external_id='collision-target'`)
+        .get(),
+    ).toEqual(afterFirst)
+    expect({ taskKey: second.observation.taskKey, times: second.observation.times }).toEqual({
+      taskKey: first.observation.taskKey,
+      times: first.observation.times,
     })
     expect(
       db()
@@ -443,7 +460,7 @@ describe('tracker assignees', () => {
     expect(taskIdentityDoctor().collidedKeyUncertainties).toBe(1)
 
     upsertTrackerTask({ ...task, externalId: 'collision-holder', key: 'COL-FREED' })
-    upsertTrackerTask({ ...task, externalId: 'collision-target', key: 'COL-NEW' })
+    upsertTrackerTask(renamed)
     expect(db().query(`SELECT key FROM task WHERE external_id='collision-target'`).get()).toEqual({
       key: 'COL-NEW',
     })

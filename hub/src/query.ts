@@ -344,11 +344,9 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
   /**
    * RECENCY COMES FROM WORK, NEVER FROM A TIMESTAMP ON THE TASK.
    *
-   * `updated_at` and `last_seen` are bumped every time ingest sees a row, so
-   * every task a tracker still returns looks freshly touched: filtering on them
-   * returned 3,551 cards, the whole estate wearing a recency filter that
-   * excluded nothing. The `interval` table is the only record of work actually
-   * happening, and it is what "recent" has to mean here.
+   * `updated_at` and `last_seen` describe when the tracker or collector observed
+   * a task, not when work happened. The `interval` table is the record of work
+   * actually happening, and it is what "recent" means here.
    */
   /**
    * SPEND THE BUDGET ON OPEN WORK — also borrowed from that sibling project, and the reason a capped

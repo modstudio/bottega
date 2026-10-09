@@ -133,8 +133,6 @@ type ExistingTask = {
   assignee: string | null
 }
 
-const trackerTaskLabel = (project: string, key: string) => `${project}\0${key}`
-
 const TRACKER_LABEL_COLLISION = 'tracker label collision'
 
 type TrackerIdentityRow = ExistingTask & {
@@ -143,10 +141,10 @@ type TrackerIdentityRow = ExistingTask & {
   source: string
 }
 
-function differs(t: TrackerTask, old: ExistingTask | undefined): boolean {
+function differs(t: TrackerTask, old: ExistingTask | undefined, effectiveKey = t.key): boolean {
   if (!old) return true
   return (
-    old.key !== t.key ||
+    old.key !== effectiveKey ||
     old.project !== t.project ||
     (t.externalId !== null && old.external_id !== t.externalId) ||
     old.title !== t.title ||
@@ -170,8 +168,9 @@ export function trackerObservationTimes(
   task: TrackerTask,
   stored: ExistingTask | undefined,
   at: string,
+  effectiveKey = task.key,
 ): TrackerObservationTimes {
-  if (stored && !differs(task, stored)) {
+  if (stored && !differs(task, stored, effectiveKey)) {
     const repairedUpdateTime = stored.updated_at ?? at
     return {
       openedAt: stored.opened_at ?? repairedUpdateTime,
@@ -273,7 +272,7 @@ function updateTrackerTask(
   conn: Database,
   t: TrackerTask,
   row: TrackerIdentityRow,
-  at: string,
+  effectiveKey: string,
   times: TrackerObservationTimes,
 ) {
   conn
@@ -284,7 +283,7 @@ function updateTrackerTask(
     )
     .run(
       t.externalId,
-      trackerLabelAfterCollisionCheck(conn, t, row),
+      effectiveKey,
       t.title,
       t.status,
       t.category,
@@ -292,7 +291,7 @@ function updateTrackerTask(
       times.updatedAt,
       t.assignee,
       times.closedAt,
-      at,
+      times.lastSeen,
       row.record_id,
     )
 }
@@ -346,11 +345,20 @@ function refreshTrackerClaim(conn: Database, t: TrackerTask, at: string) {
 /** Write the tracker-owned fields without ever replacing a locally-owned task. */
 function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
   const row = trackerIdentityRow(conn, t)
-  if (row?.source === 'local') return
-  const times = trackerObservationTimes(t, row ?? undefined, at)
-  if (row) updateTrackerTask(conn, t, row, at, times)
+  if (row?.source === 'local') {
+    return {
+      stored: row,
+      times: trackerObservationTimes(t, row, at, row.key),
+      changed: false,
+    }
+  }
+  const effectiveKey = row ? trackerLabelAfterCollisionCheck(conn, t, row) : t.key
+  const changed = differs(t, row ?? undefined, effectiveKey)
+  const times = trackerObservationTimes(t, row ?? undefined, at, effectiveKey)
+  if (row) updateTrackerTask(conn, t, row, effectiveKey, times)
   else insertTrackerTask(conn, t, times)
   refreshTrackerClaim(conn, t, at)
+  return { stored: row, times, changed }
 }
 
 export function upsertTrackerTask(t: TrackerTask, at = nowIso()) {
@@ -368,7 +376,10 @@ export type TrackerTaskObservation = {
   } | null
 }
 
-type CachedTrackerTaskObservation = TrackerTaskObservation & { times: TrackerObservationTimes }
+type CachedTrackerTaskObservation = TrackerTaskObservation & {
+  times: TrackerObservationTimes
+  changed: boolean
+}
 
 const PENDING_TRACKER_STATUS_EVENTS_SETTING = 'tracker.status-events.pending-mirror'
 export const PENDING_TRACKER_STATUS_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
@@ -416,8 +427,7 @@ function observeTrackerTaskOn(
   at: string,
   pendingMirror = false,
 ): CachedTrackerTaskObservation {
-  const stored = trackerIdentityRow(conn, task)
-  const times = trackerObservationTimes(task, stored ?? undefined, at)
+  const { stored, times, changed } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
   const recordsTransition =
     stored !== null &&
@@ -425,11 +435,10 @@ function observeTrackerTaskOn(
     stored.status_category !== null &&
     stored.status_category !== task.category
 
-  upsertTrackerTaskOn(conn, task, at)
   const observed = trackerIdentityRow(conn, task)
   const taskRecordId = observed?.source === 'local' ? null : (observed?.record_id ?? null)
   const taskKey = observed?.key ?? task.key
-  if (!recordsTransition) return { at, taskRecordId, taskKey, times, event: null }
+  if (!recordsTransition) return { at, taskRecordId, taskKey, times, changed, event: null }
 
   const recordId = newRecordId()
   const inserted = conn
@@ -461,6 +470,7 @@ function observeTrackerTaskOn(
     taskRecordId,
     taskKey,
     times,
+    changed,
     event,
   }
 }
@@ -471,7 +481,11 @@ export function observeTrackerTask(
   pendingMirror = false,
 ): TrackerTaskObservation {
   return writeTransaction((conn) => {
-    const { times: _times, ...observation } = observeTrackerTaskOn(conn, task, at, pendingMirror)
+    const {
+      times: _times,
+      changed: _changed,
+      ...observation
+    } = observeTrackerTaskOn(conn, task, at, pendingMirror)
     return observation
   })
 }
@@ -671,8 +685,6 @@ async function backfillTrackerTasks(
   source: TrackerSource,
   client: Mcp,
   missing: { task_key: string; project: string }[],
-  local: ReadonlySet<string>,
-  existing: ReadonlyMap<string, ExistingTask>,
   at: string,
 ): Promise<{ filled: number; activity: boolean }> {
   let filled = 0
@@ -682,11 +694,9 @@ async function backfillTrackerTasks(
     try {
       const task = await lookupTrackerTask(source, client, task_key)
       if (!task) continue
-      const identity = trackerTaskLabel(task.project, task.key)
-      const times = trackerObservationTimes(task, existing.get(identity), at)
-      upsertTrackerTask(task, at)
+      const { times, changed } = writeTransaction((conn) => upsertTrackerTaskOn(conn, task, at))
       filled++
-      if (!local.has(identity) && differs(task, existing.get(identity))) activity = true
+      if (changed) activity = true
       const localRow = trackerIdentityRow(db(), task)!
       try {
         await mirror.mirrorTasks([
@@ -731,25 +741,6 @@ export async function ingestTrackers(
   const trackers = only
     ? registrations.filter((tracker) => only.has(tracker.project))
     : registrations
-
-  const local = new Set(
-    d
-      .query<{ key: string; project: string }, []>(
-        `SELECT key, project FROM task WHERE source = 'local'`,
-      )
-      .all()
-      .map((row) => trackerTaskLabel(row.project, row.key)),
-  )
-  const existing = new Map(
-    d
-      .query<ExistingTask & { key: string }, []>(
-        `SELECT key, external_id, project, title, status, status_category, opened_at, closed_at,
-          first_seen, last_seen, updated_at, assignee
-         FROM task WHERE source <> 'local'`,
-      )
-      .all()
-      .map((row) => [trackerTaskLabel(row.project, row.key), row]),
-  )
 
   const missing = d
     .query<{ task_key: string; project: string }, []>(
@@ -818,12 +809,8 @@ export async function ingestTrackers(
             // against a `before` that the first already superseded, recording a
             // transition that did not happen. Last wins: the lookup is the fresher read.
             const unique = new Map(tasks.map((t) => [t.key, t]))
-            let activity = [...unique.values()].some((t) => {
-              const identity = trackerTaskLabel(t.project, t.key)
-              return !local.has(identity) && differs(t, existing.get(identity))
-            })
-
             const observations = writeTrackerCache(unique.values(), at)
+            let activity = observations.some(({ observation }) => observation.changed)
             const changed = observations.filter(({ observation }) => observation.event).length
             const mirrorError = await mirrorTrackerSnapshot(mirror, observations)
             const pendingMirrorError = mirrorError
@@ -833,7 +820,7 @@ export async function ingestTrackers(
             // Use the connection which already proved reachable for the handful of
             // closed tasks recent work names. A failed full sync is not immediately
             // retried here: that doubled traffic precisely when a server was down.
-            const backfill = await backfillTrackerTasks(mirror, s, m, missing, local, existing, at)
+            const backfill = await backfillTrackerTasks(mirror, s, m, missing, at)
             activity ||= backfill.activity
             return {
               result: {
