@@ -1,7 +1,12 @@
 // concern: record-doc-api-schemas
 /** Validates hosted document import payloads at the HTTP edge. */
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_KINDS,
+  DOC_STATUSES,
+  normalizeDocAudiences,
+} from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
@@ -15,9 +20,14 @@ const revisionOpSchema = z.enum([
   'import',
   'backfill',
 ])
+const audiencesSchema = z
+  .array(z.enum(DOC_AUDIENCES))
+  .nonempty()
+  .refine((values) => new Set(values).size === values.length, 'doc audiences must not contain duplicates')
+  .transform(normalizeDocAudiences)
 
 const recordDocTreeFieldShape = {
-  audience: z.enum(DOC_AUDIENCES).optional(),
+  audiences: audiencesSchema.optional(),
   parentRecordId: z.string().uuid().nullable().optional(),
   position: z.number().int().optional(),
   featured: z.boolean().optional(),
@@ -57,7 +67,7 @@ export const recordDocImportSchema = z.object({
     title: z.string(),
     body: z.string(),
     delivery: deliverySchema,
-    audience: z.enum(DOC_AUDIENCES).optional().default('technical'),
+    audiences: audiencesSchema,
     parentId: z.string().uuid().nullable().optional().default(null),
     position: z.number().int().optional().default(0),
     featured: z.boolean().optional().default(false),
@@ -79,7 +89,7 @@ export const recordDocImportSchema = z.object({
       title: z.string(),
       body: z.string(),
       delivery: deliverySchema,
-      audience: z.enum(DOC_AUDIENCES).optional().default('technical'),
+      audiences: audiencesSchema,
       parentId: z.string().uuid().nullable().optional().default(null),
       position: z.number().int().optional().default(0),
       featured: z.boolean().optional().default(false),

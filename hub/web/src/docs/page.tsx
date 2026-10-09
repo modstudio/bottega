@@ -61,12 +61,12 @@ export function DocsPage() {
       null
     )
   }, [catalog.items, params, search?.id])
-  const selectedAudience = selected?.audience
+  const selectedAudiences = selected?.audiences
   const selectedId = selected?.id
   const selectedProject = selected?.projectName
   useEffect(() => {
-    if (selectedAudience) setAudience(selectedAudience)
-  }, [selectedAudience])
+    if (selectedAudiences && !selectedAudiences.includes(audience)) setAudience(selectedAudiences[0])
+  }, [audience, selectedAudiences])
   useEffect(() => {
     if (!selectedId) return
     setProject(selectedProject ?? 'all')

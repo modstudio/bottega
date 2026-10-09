@@ -7,7 +7,7 @@ const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => 
   scope: 'project',
   subject: PLATFORM_SLUG,
   owner: null,
-  audience: 'technical',
+  audiences: ['technical'],
   parent: null,
   ancestorSlugs: [],
   children: [],
@@ -16,11 +16,11 @@ const base = (overrides: Partial<DocumentTreeWrite> = {}): DocumentTreeWrite => 
 
 describe('document tree write rules', () => {
   test('user audience is accepted in both public scopes and refused elsewhere', () => {
-    expect(documentTreeWriteRefusal(base({ audience: 'user' }))).toBeNull()
+    expect(documentTreeWriteRefusal(base({ audiences: ['user'] }))).toBeNull()
     expect(
-      documentTreeWriteRefusal(base({ scope: 'global', subject: null, audience: 'user' })),
+      documentTreeWriteRefusal(base({ scope: 'global', subject: null, audiences: ['user'] })),
     ).toBeNull()
-    expect(documentTreeWriteRefusal(base({ scope: 'canon', audience: 'user' }))).toContain(
+    expect(documentTreeWriteRefusal(base({ scope: 'canon', audiences: ['user'] }))).toContain(
       'project and global',
     )
   })
@@ -56,25 +56,25 @@ describe('document tree write rules', () => {
       documentTreeWriteRefusal(
         base({
           scope: 'canon',
-          children: [{ slug: 'child', audience: 'technical' }],
+          children: [{ slug: 'child' }],
         }),
       ),
     ).toContain('canon documents cannot have children child')
   })
 
-  test('parent and child audiences must match in both directions', () => {
+  test('parent and child audiences are independent', () => {
     expect(
-      documentTreeWriteRefusal(base({ audience: 'user', parent: { ...base(), slug: 'parent' } })),
-    ).toContain('must equal')
+      documentTreeWriteRefusal(base({ audiences: ['user'], parent: { ...base(), slug: 'parent' } })),
+    ).toBeNull()
     expect(
       documentTreeWriteRefusal(
         base({
-          priorAudience: 'technical',
-          audience: 'user',
-          children: [{ slug: 'leaf', audience: 'technical' }],
+          priorAudiences: ['technical'],
+          audiences: ['user'],
+          children: [{ slug: 'leaf' }],
         }),
       ),
-    ).toContain('children leaf')
+    ).toBeNull()
   })
 
   test('self and ancestor cycles are refused while unrelated parents pass', () => {
@@ -94,7 +94,7 @@ describe('document tree write rules', () => {
   test('removing a parent is refused and removing a leaf passes', () => {
     expect(
       documentTreeWriteRefusal(
-        base({ removing: true, children: [{ slug: 'leaf', audience: 'technical' }] }),
+        base({ removing: true, children: [{ slug: 'leaf' }] }),
       ),
     ).toContain('has children leaf')
     expect(documentTreeWriteRefusal(base({ removing: true }))).toBeNull()

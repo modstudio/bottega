@@ -176,7 +176,7 @@ export async function searchRecordDocs(
         WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
           AND d.deleted_at IS NULL
           AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
-          AND (${input.audience ?? null}::text IS NULL OR d.audience=${input.audience ?? null})
+          AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
           AND (
             ${input.subject === undefined}::boolean
             OR (${input.subject === null}::boolean AND d.subject IS NULL)

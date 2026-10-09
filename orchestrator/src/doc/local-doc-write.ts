@@ -32,9 +32,15 @@ function getDoc(input: Address): Doc | null {
       `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(input.scope, input.subject, input.owner, input.slug) as
-    | (Doc & { featured: boolean | number })
+    | (Omit<Doc, 'audiences'> & { featured: boolean | number; audiences: string })
     | null
-  return row ? { ...row, featured: Boolean(row.featured) } : null
+  return row
+    ? {
+        ...row,
+        audiences: JSON.parse(row.audiences) as DocAudiences,
+        featured: Boolean(row.featured),
+      }
+    : null
 }
 
 type SetInput = Address & {
@@ -219,14 +225,14 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
           input.title,
           input.body,
           input.delivery,
-          input.audience,
+          JSON.stringify(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,
@@ -240,7 +246,7 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
@@ -252,7 +258,7 @@ export function commitDocRestore(
           input.title,
           input.body,
           input.delivery,
-          input.audience,
+          JSON.stringify(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,

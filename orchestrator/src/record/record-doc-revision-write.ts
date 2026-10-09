@@ -1,7 +1,7 @@
 // concern: record-doc-revision-write
 /** Owns complete hosted document revision snapshots and the live revision pointer. */
 import type { SQL } from 'bun'
-import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 
@@ -20,7 +20,7 @@ export async function insertRecordDocRevision(
     title: string
     body: string
     delivery: DocDelivery
-    audience: DocAudience
+    audiences: DocAudiences
     parentId: string | null
     position: number
     featured?: boolean
@@ -46,12 +46,12 @@ export async function insertRecordDocRevision(
   if (!existing[0]) {
     await tx`
       INSERT INTO doc_revision (
-        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audience, featured, status, kind, replacement_slug, parent_id, position,
+        id, space_id, doc_id, scope, subject, owner_user_id, slug, project_id, op, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position,
         author, reason, session_id, at
       ) VALUES (
         ${id}::uuid, ${input.spaceId}::uuid, ${input.docId}::uuid, ${input.scope}, ${input.subject}, ${input.owner}::uuid,
         ${input.slug}, ${input.projectId}::uuid, ${input.op}, ${input.title}, ${input.body},
-        ${input.delivery}, ${input.audience}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
+        ${input.delivery}, ${input.audiences}, ${input.featured ?? false}, ${input.status ?? 'current'}, ${input.kind ?? 'working'}, ${input.replacementSlug ?? null}, ${input.parentId}::uuid, ${input.position}, ${input.author}, ${input.reason}, ${input.sessionId}, ${input.at}::timestamptz
       )
     `
   }

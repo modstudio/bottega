@@ -553,8 +553,8 @@ describe('record cache pull', () => {
     db()
       .query(
         `INSERT INTO doc
-          (scope, subject, slug, title, body, delivery, created_at, updated_at, record_id)
-         VALUES ('global',NULL,'adopted','Local','local','demand',?,?,?)`,
+          (scope, subject, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
+         VALUES ('global',NULL,'adopted','Local','local','demand','["technical"]',?,?,?)`,
       )
       .run('2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z', newRecordId())
     const item = (id: string, slug: string, overrides: Record<string, unknown> = {}) => ({
@@ -633,6 +633,11 @@ describe('record cache pull', () => {
       kind: 'article',
       replacement_slug: null,
     })
+    expect(
+      db()
+        .query<{ audiences: string }, [string]>('SELECT audiences FROM doc WHERE record_id=?')
+        .get(insertedDraftId),
+    ).toEqual({ audiences: '["technical"]' })
 
     await pullRecordCache(db())
     expect(lifecycle(updatedDraftId)?.status).toBe('draft')

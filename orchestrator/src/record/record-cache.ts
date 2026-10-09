@@ -312,7 +312,11 @@ function applyDoc(
   const body = String(item.body)
   const delivery = String(item.delivery)
   // A record that predates the tree fields omits them; such a document is technical and a root.
-  const audience = item.audience == null ? 'technical' : String(item.audience)
+  const audiences = JSON.stringify(
+    Array.isArray(item.audiences)
+      ? item.audiences.map(String)
+      : [item.audience == null ? 'technical' : String(item.audience)],
+  )
   const position = item.position == null ? 0 : Number(item.position)
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)
@@ -333,13 +337,13 @@ function applyDoc(
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
       .run(
         title,
         body,
         delivery,
-        audience,
+        audiences,
         parentId,
         position,
         featured,
@@ -361,13 +365,13 @@ function applyDoc(
   if (byAddress) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audience=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
       )
       .run(
         title,
         body,
         delivery,
-        audience,
+        audiences,
         parentId,
         position,
         featured,
@@ -382,7 +386,7 @@ function applyDoc(
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audience, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
@@ -394,7 +398,7 @@ function applyDoc(
       title,
       body,
       delivery,
-      audience,
+      audiences,
       parentId,
       position,
       featured,

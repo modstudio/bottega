@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d28250b3-4fee-4184-8f19-334c48a1d87e",
+  "id": "baaea717-75df-4247-a9e1-065839785d29",
   "prevIds": [
     "72b257b1-8cf4-48db-ae2a-6e4f76325cc1"
   ],
@@ -5638,6 +5638,19 @@
       "type": "text",
       "typeSchema": null,
       "notNull": true,
+      "dimensions": 0,
+      "default": "'technical'",
+      "generated": null,
+      "identity": null,
+      "name": "audience",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "doc"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
       "dimensions": 1,
       "default": null,
       "generated": null,
@@ -5966,6 +5979,19 @@
       "type": "text",
       "typeSchema": null,
       "notNull": true,
+      "dimensions": 0,
+      "default": "'technical'",
+      "generated": null,
+      "identity": null,
+      "name": "audience",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "doc_revision"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
       "dimensions": 1,
       "default": null,
       "generated": null,
@@ -13936,6 +13962,13 @@
       "table": "doc"
     },
     {
+      "value": "\"audience\" IN ('user','technical')",
+      "name": "doc_audience_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "doc"
+    },
+    {
       "value": "cardinality(\"audiences\") > 0 AND \"audiences\" <@ ARRAY['user','technical']::text[]",
       "name": "doc_audiences_check",
       "entityType": "checks",
@@ -13987,6 +14020,13 @@
     {
       "value": "\"delivery\" IN ('inject','demand')",
       "name": "doc_revision_delivery_check",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "doc_revision"
+    },
+    {
+      "value": "\"audience\" IN ('user','technical')",
+      "name": "doc_revision_audience_check",
       "entityType": "checks",
       "schema": "public",
       "table": "doc_revision"
@@ -15442,7 +15482,7 @@
       "roles": [
         "record_public"
       ],
-      "using": "'user' = ANY(\"doc\".\"audiences\")\n        AND \"doc\".\"status\" = 'current'\n        AND \"doc\".\"owner_user_id\" IS NULL\n        AND \"doc\".\"deleted_at\" IS NULL\n        AND EXISTS (\n          SELECT 1 FROM public_doc_space public_space\n          WHERE public_space.space_id = \"doc\".\"space_id\"\n            AND public_space.project_id = \"doc\".\"project_id\"\n        )",
+      "using": "\"doc\".\"audience\" = 'user'\n        AND \"doc\".\"status\" = 'current'\n        AND \"doc\".\"owner_user_id\" IS NULL\n        AND \"doc\".\"deleted_at\" IS NULL\n        AND EXISTS (\n          SELECT 1 FROM public_doc_space public_space\n          WHERE public_space.space_id = \"doc\".\"space_id\"\n            AND public_space.project_id = \"doc\".\"project_id\"\n        )",
       "withCheck": null,
       "name": "doc_public_select",
       "entityType": "policies",

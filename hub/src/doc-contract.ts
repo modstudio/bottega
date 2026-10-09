@@ -10,7 +10,7 @@ export const DocTreeItemSchema = z.object({
   updatedAt: z.string(),
   scope: z.string(),
   subject: z.string().nullable(),
-  audience: z.enum(DOC_AUDIENCES),
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   delivery: z.enum(['inject', 'demand']).optional(),
   summary: z.string().optional(),
   featured: z.boolean().optional(),

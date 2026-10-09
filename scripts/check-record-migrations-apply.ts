@@ -19,6 +19,7 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const rerun = 'bun scripts/check-record-migrations-apply.ts'
 const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
 const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
+const audienceBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -136,6 +137,21 @@ async function proofLatestRevision(transaction: Transaction): Promise<string | n
   return result.rows[0]?.latest_revision_id ?? null
 }
 
+async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
+  const docs = await transaction.query<{ invalid: number }>(
+    'SELECT count(*)::int AS invalid FROM doc WHERE audiences IS DISTINCT FROM ARRAY[audience]',
+  )
+  const revisions = await transaction.query<{ invalid: number }>(
+    'SELECT count(*)::int AS invalid FROM doc_revision WHERE audiences IS DISTINCT FROM ARRAY[audience]',
+  )
+  if (
+    docs.rows[0]?.invalid !== 0 ||
+    revisions.rows[0]?.invalid !== 0
+  ) {
+    throw new CheckFailure('DEV-1238 audience backfill did not produce singleton sets')
+  }
+}
+
 function sqlTag(transaction: Transaction): SQL {
   return (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const statement = parts.reduce(
@@ -200,6 +216,7 @@ async function main(): Promise<void> {
           ) {
             throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
           }
+          if (migration.name === audienceBackfill) await proofAudienceBackfill(transaction)
         }
         await proofManagedCanonProjects(transaction)
       })

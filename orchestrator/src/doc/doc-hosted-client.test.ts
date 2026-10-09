@@ -80,7 +80,7 @@ test('a project-addressed document client binds every call to the declared space
     title: 'Guide',
     body: 'Body',
     delivery: 'demand',
-    audience: 'technical',
+    audiences: ['technical'],
     position: 0,
     projectName: 'routed-docs',
     reason: 'test',

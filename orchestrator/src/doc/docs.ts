@@ -380,6 +380,11 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
+  if (!prior && kind === 'article' && input.audiences === undefined) {
+    throw new Error(
+      'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
+    )
+  }
   const tree = localDocTreeFields(input, prior)
   const lifecycle = localDocumentLifecycle(input, prior)
   const projectName = docWriteProjectName(input.scope, input.subject)

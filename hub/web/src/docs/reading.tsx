@@ -285,7 +285,7 @@ export function DocsFacts({
           <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
             <dt className="text-text-muted">Audience</dt>
             <dd className="m-0 text-text-secondary">
-              {doc.audience === 'user' ? 'User' : 'Technical'}
+              {doc.audiences.map((audience) => (audience === 'user' ? 'User' : 'Technical')).join(', ')}
             </dd>
             <dt className="text-text-muted">Updated</dt>
             <dd className="m-0 text-text-secondary">{updatedLabel(doc.updatedAt)}</dd>

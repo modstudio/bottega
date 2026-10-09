@@ -12,7 +12,7 @@ const doc = {
   title: 'Preferences',
   body: '# Prefer concise reports',
   delivery: 'inject' as const,
-  audience: 'technical' as const,
+  audiences: ['technical'] as ['technical'],
   parent_id: null,
   parent_slug: null,
   position: 0,

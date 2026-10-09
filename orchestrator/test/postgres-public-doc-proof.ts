@@ -34,22 +34,22 @@ export function registerPublicDocProofs(input: {
         VALUES ('${publicSpaceId}', '${publicProjectId}');
       INSERT INTO doc (
         id, space_id, scope, subject, owner_user_id, slug, title, body, delivery,
-        audience, featured, project_id, created_at, updated_at, deleted_at
+        audiences, featured, project_id, created_at, updated_at, deleted_at
       ) VALUES
         ('${PUBLIC_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'public-guide', 'Public guide', 'public searchable body', 'demand', 'user', true, '${publicProjectId}', now(), now(), NULL),
+         'public-guide', 'Public guide', 'public searchable body', 'demand', ARRAY['user','technical'], true, '${publicProjectId}', now(), now(), NULL),
         ('${TECHNICAL_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', 'technical', false, '${publicProjectId}', now(), now(), NULL),
+         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', ARRAY['technical'], false, '${publicProjectId}', now(), now(), NULL),
         ('${OWNED_DOC}', '${publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
-         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', 'user', false, '${publicProjectId}', now(), now(), NULL),
+         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', ARRAY['user'], false, '${publicProjectId}', now(), now(), NULL),
         ('${DELETED_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', 'user', false, '${publicProjectId}', now(), now(), now()),
+         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', ARRAY['user'], false, '${publicProjectId}', now(), now(), now()),
         ('${PRIVATE_SPACE_DOC}', '${privateSpaceId}', 'global', NULL, NULL,
-         'private-guide', 'Private guide', 'hidden private body', 'demand', 'user', false, '${privateProjectId}', now(), now(), NULL),
+         'private-guide', 'Private guide', 'hidden private body', 'demand', ARRAY['user'], false, '${privateProjectId}', now(), now(), NULL),
         ('${OTHER_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', 'user', false, '${otherProjectId}', now(), now(), NULL),
+         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', ARRAY['user'], false, '${otherProjectId}', now(), now(), NULL),
         ('${NO_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', 'user', false, NULL, now(), now(), NULL);
+         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', ARRAY['user'], false, NULL, now(), now(), NULL);
     `)
   })
 
@@ -77,7 +77,7 @@ export function registerPublicDocProofs(input: {
         title: 'Mismatched project',
         body: 'must never become public',
         delivery: 'demand',
-        audience: 'user',
+        audiences: ['user'],
         projectName: 'alpha',
         reason: 'prove project/address consistency',
         author: 'postgres proof',

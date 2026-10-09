@@ -25,6 +25,7 @@ import {
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
+  type DocAudiences,
   type DocKind,
   type DocScope,
   type DocStatus,
@@ -568,7 +569,7 @@ export type DocRow = {
   title: string
   body: string
   delivery: 'inject' | 'demand'
-  audience: DocAudience
+  audiences: DocAudiences
   parent_id: number | null
   parent_slug: string | null
   position: number
@@ -589,7 +590,7 @@ const DocRowSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
-  audience: z.enum(DOC_AUDIENCES),
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   parent_id: z.number().nullable(),
   parent_slug: z.string().nullable(),
   position: z.number().int(),
@@ -876,7 +877,7 @@ export type DocSubjects = {
 export type DocListFilters = {
   scope?: string
   subject?: string | null
-  audience?: 'user' | 'technical'
+  audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
   match?: string
@@ -891,7 +892,7 @@ export type DocSetInput = {
   body: string
   reason: string
   delivery?: 'inject' | 'demand'
-  audience?: 'user' | 'technical'
+  audiences?: DocAudiences
   status?: DocStatus
   kind?: DocKind
   replacementSlug?: string | null
@@ -921,6 +922,7 @@ export type DocArgvInput = {
   reason?: string
   delivery?: 'inject' | 'demand'
   audience?: 'user' | 'technical'
+  audiences?: DocAudiences
   status?: DocStatus
   kind?: DocKind
   replacementSlug?: string | null
@@ -948,7 +950,7 @@ function docAddressFlags(input: DocArgvInput): string[] {
 function docSetFlags(input: DocArgvInput): string[] {
   return [
     ...(input.delivery ? ['--delivery', input.delivery] : []),
-    ...(input.audience ? ['--audience', input.audience] : []),
+    ...(input.audiences ? ['--audience', input.audiences.join(',')] : []),
     ...(input.status ? ['--status', input.status] : []),
     ...(input.kind ? ['--kind', input.kind] : []),
     ...(input.replacementSlug ? ['--replacement', input.replacementSlug] : []),

@@ -135,7 +135,7 @@ test('set and restore repair the project id on an existing document', () => {
     title: 'Resume',
     body: '---\nstatus: open\n---\n\nBody.',
     delivery: 'demand' as const,
-    audience: 'technical' as const,
+    audiences: ['technical'] as ['technical'],
     parentId: null,
     position: 0,
     identity: { author: 'test', reason: 'repair project id', session: null },

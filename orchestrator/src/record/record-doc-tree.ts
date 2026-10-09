@@ -1,7 +1,7 @@
 // concern: record-doc-tree
 /** Gathers hosted document tree facts for the pure document policy. */
 import type { SQL } from 'bun'
-import type { DocAudience } from '../../../shared/docs.ts'
+import type { DocAudiences } from '../../../shared/docs.ts'
 import { documentTreeWriteRefusal } from '../doc/doc-tree-rules.ts'
 
 /** The live row at an address, else its most recently deleted one, locked for the write. */
@@ -33,8 +33,8 @@ export async function recordTreeWriteRefusal(
     subject: string | null
     owner: string | null
     slug: string
-    audience: DocAudience
-    priorAudience?: DocAudience
+    audiences: DocAudiences
+    priorAudiences?: DocAudiences
     parentId: string | null
     parentWasSpecified: boolean
     removing?: boolean
@@ -44,7 +44,7 @@ export async function recordTreeWriteRefusal(
     ? await tx`SELECT * FROM doc WHERE space_id=${input.spaceId}::uuid AND id=${input.parentId}::uuid FOR UPDATE`
     : []
   const children =
-    await tx`SELECT slug,audience FROM doc WHERE space_id=${input.spaceId}::uuid AND parent_id=${input.id}::uuid AND deleted_at IS NULL`
+    await tx`SELECT slug FROM doc WHERE space_id=${input.spaceId}::uuid AND parent_id=${input.id}::uuid AND deleted_at IS NULL`
   const ancestors = input.parentId
     ? await tx`
         WITH RECURSIVE ancestor AS (
@@ -60,15 +60,15 @@ export async function recordTreeWriteRefusal(
     scope: input.scope,
     subject: input.subject,
     owner: input.owner,
-    audience: input.audience,
-    priorAudience: input.priorAudience,
+    audiences: input.audiences,
+    priorAudiences: input.priorAudiences,
     parent: parentRows[0]
       ? {
           slug: String(parentRows[0].slug),
           scope: String(parentRows[0].scope),
           subject: parentRows[0].subject == null ? null : String(parentRows[0].subject),
           owner: parentRows[0].owner_user_id == null ? null : String(parentRows[0].owner_user_id),
-          audience: String(parentRows[0].audience) as DocAudience,
+          audiences: parentRows[0].audiences as DocAudiences,
           deleted: parentRows[0].deleted_at != null,
         }
       : null,
@@ -76,7 +76,6 @@ export async function recordTreeWriteRefusal(
     ancestorSlugs: ancestors.map((row: Record<string, unknown>) => String(row.slug)),
     children: children.map((row: Record<string, unknown>) => ({
       slug: String(row.slug),
-      audience: String(row.audience) as DocAudience,
     })),
     removing: input.removing,
   })
@@ -101,9 +100,9 @@ export function recordCanonTreeWriteRefusal(
     subject: input.subject,
     owner: input.owner,
     slug: input.slug,
-    audience: 'technical',
-    priorAudience:
-      input.prior?.audience == null ? undefined : (String(input.prior.audience) as DocAudience),
+    audiences: ['technical'],
+    priorAudiences:
+      input.prior?.audiences == null ? undefined : (input.prior.audiences as DocAudiences),
     parentId: input.prior?.parent_id == null ? null : String(input.prior.parent_id),
     parentWasSpecified: false,
     removing: input.removing,

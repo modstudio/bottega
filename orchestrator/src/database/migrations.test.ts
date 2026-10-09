@@ -148,6 +148,51 @@ test('document identity migration backfills UUIDs and makes record_id required a
   }
 })
 
+test('document audiences migration backfills live and revision scalar audiences', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-doc-audiences-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0093_doc_audiences')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO doc
+         (scope,subject,slug,title,body,delivery,created_at,updated_at,record_id,audience)
+         VALUES ('global',NULL,'audiences','Audiences','Body','demand','2026-10-09','2026-10-09',
+                 '01990000-0000-7000-8000-000000000101','user')`,
+      )
+      .run()
+    const doc = database.query<{ id: number }, []>('SELECT id FROM doc').get()!
+    database
+      .query(
+        `INSERT INTO doc_revision
+         (doc_id,scope,subject,slug,op,title,body,delivery,author,reason,at,audience)
+         VALUES (?,'global',NULL,'audiences','create','Audiences','Body','demand','test','prove backfill','2026-10-09','technical')`,
+      )
+      .run(doc.id)
+    expect(applyMigrations(database)).toEqual(['0093_doc_audiences'])
+    expect(database.query('SELECT audiences FROM doc').get()).toEqual({ audiences: '["user"]' })
+    expect(database.query('SELECT audiences FROM doc_revision').get()).toEqual({
+      audiences: '["technical"]',
+    })
+    expect(
+      database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
+    ).toBeNull()
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('note UUID reference migration preserves rows and turns old integers into display labels', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-note-uuid-'))
   mkdirSync(join(folder, 'meta'))

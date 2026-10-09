@@ -13,7 +13,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audience: 'user',
+    audiences: ['user'],
     status: 'current',
     replacementSlug: null,
     delivery: 'demand',
@@ -28,7 +28,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'project',
     subject: 'atlas',
-    audience: 'user',
+    audiences: ['user'],
     status: 'current',
     replacementSlug: null,
     delivery: 'demand',
@@ -43,7 +43,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'global',
     subject: null,
-    audience: 'user',
+    audiences: ['user'],
     status: 'current',
     replacementSlug: null,
     delivery: 'inject',
@@ -57,7 +57,7 @@ const items: DocsTreeItem[] = [
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'canon',
     subject: 'atlas',
-    audience: 'technical',
+    audiences: ['technical'],
     status: 'current',
     replacementSlug: null,
     delivery: 'inject',
@@ -119,6 +119,13 @@ test('the docs page shows audience tabs, the tree, breadcrumb and previous/next'
   expect(html).toContain('Filter')
 })
 
+test('About shows every audience on a document', () => {
+  const html = render({
+    doc: { ...items[1]!, audiences: ['user', 'technical'], body: 'Body.' },
+  })
+  expect(html).toContain('User, Technical')
+})
+
 test('signed out hides the technical tab, project chooser and address', () => {
   const html = render({
     signedIn: false,
@@ -150,7 +157,7 @@ test('All projects groups roots by subject, and a single project does not', () =
     updatedAt: '2026-10-06T00:00:00.000Z',
     scope: 'global',
     subject: null,
-    audience: 'user',
+    audiences: ['user'],
     status: 'current',
     replacementSlug: null,
   }

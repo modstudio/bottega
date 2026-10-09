@@ -85,6 +85,7 @@ describe('record client', () => {
       updatedAt: '2026-10-06T12:00:00.000Z',
       scope: 'global',
       subject: null,
+      audiences: ['user'] as ['user'],
     }
     const fetch: RecordFetch = async (url, init) => {
       const headers = new Headers(init?.headers)
@@ -102,12 +103,11 @@ describe('record client', () => {
     }
     const client = clientWith(fetch, { cookie: 'sid=private', authorization: 'Bearer private' })
     expect(await client.publicDocs()).toEqual({
-      items: [{ ...item, audience: 'user', summary: '', featured: false }],
+      items: [{ ...item, summary: '', featured: false }],
     })
     expect(await client.publicDoc(id)).toEqual({
       ...item,
       body: 'Welcome body',
-      audience: 'user',
       summary: '',
       featured: false,
     })
@@ -329,13 +329,14 @@ describe('record client', () => {
         title: 'Guide',
         body: 'Body.',
         delivery: 'demand',
+        audiences: ['technical'],
         projectName: 'atlas',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-02T00:00:00.000Z',
         deletedAt: null,
       })
     const doc = await clientWith(fetch).doc('01990000-0000-7000-8000-0000000000d1')
-    expect(doc).toMatchObject({ audience: 'technical', parentId: null, position: 0 })
+    expect(doc).toMatchObject({ audiences: ['technical'], parentId: null, position: 0 })
   })
 
   test('scores and voids hosted runs without sending a scorer identity', async () => {

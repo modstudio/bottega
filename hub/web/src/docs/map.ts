@@ -1,8 +1,15 @@
-import { DOC_STATUSES, type DocStatus, docScopeHasProjectSubject } from '../../../../shared/docs.ts'
-import type { DocsAudience, DocsDoc, DocsSearchMatch, DocsTreeItem } from './types.ts'
+import {
+  DOC_STATUSES,
+  type DocAudiences,
+  type DocStatus,
+  docScopeHasProjectSubject,
+  normalizeDocAudiences,
+} from '../../../../shared/docs.ts'
+import type { DocsDoc, DocsSearchMatch, DocsTreeItem } from './types.ts'
 
-function audienceOf(value: unknown): DocsAudience {
-  return value === 'user' ? 'user' : 'technical'
+function audiencesOf(value: unknown): DocAudiences {
+  if (!Array.isArray(value)) throw new Error('document audiences must be an array')
+  return normalizeDocAudiences(value.map(String))
 }
 
 function deliveryOf(value: unknown): DocsTreeItem['delivery'] {
@@ -38,7 +45,7 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     updatedAt: String(row.updatedAt ?? ''),
     scope,
     subject,
-    audience: audienceOf(row.audience),
+    audiences: audiencesOf(row.audiences),
     status: statusOf(row.status),
     replacementSlug: typeof row.replacementSlug === 'string' ? row.replacementSlug : null,
     delivery: deliveryOf(row.delivery),

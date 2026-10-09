@@ -20,7 +20,7 @@ const canonDoc: RecordDoc = {
   title: 'Preferences',
   body: 'Use concise prose.',
   delivery: 'inject',
-  audience: 'technical',
+  audiences: ['technical'],
   parentId: null,
   position: 0,
   summary: 'Use concise prose.',

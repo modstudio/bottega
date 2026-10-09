@@ -1,4 +1,4 @@
-import type { DocStatus } from '../../../../shared/docs.ts'
+import type { DocAudiences, DocStatus } from '../../../../shared/docs.ts'
 
 export type DocsAudience = 'user' | 'technical'
 type DocsDelivery = 'inject' | 'demand'
@@ -13,7 +13,7 @@ export type DocsTreeItem = {
   updatedAt: string
   scope: string
   subject: string | null
-  audience: DocsAudience
+  audiences: DocAudiences
   status: DocStatus
   replacementSlug: string | null
   delivery?: DocsDelivery

@@ -1,6 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_KINDS,
+  DOC_STATUSES,
+  normalizeDocAudiences,
+} from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
@@ -22,6 +27,11 @@ const text = (value: unknown) => ({
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
+const audiencesSchema = z
+  .array(z.enum(DOC_AUDIENCES))
+  .nonempty()
+  .refine((values) => new Set(values).size === values.length, 'audiences must not contain duplicates')
+  .transform(normalizeDocAudiences)
 
 function rethrowMcpDocWriteError(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error)
@@ -154,7 +164,7 @@ export function registerDocTools(
         title: z.string(),
         body: z.string(),
         delivery: z.enum(['inject', 'demand']).optional(),
-        audience: z.enum(DOC_AUDIENCES).optional(),
+        audiences: audiencesSchema.optional(),
         parent: z.string().trim().min(1).nullable().optional(),
         position: z.number().int().optional(),
         featured: z.boolean().optional(),
@@ -185,7 +195,7 @@ export function registerDocTools(
       title,
       body,
       delivery,
-      audience,
+      audiences,
       parent,
       position,
       featured,
@@ -209,7 +219,7 @@ export function registerDocTools(
           title,
           body,
           delivery,
-          audience,
+          audiences,
           parentSlug: parent,
           position,
           featured,
