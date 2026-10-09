@@ -12,16 +12,80 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import { project, RECORD_OWNER_ROLE, space, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
+
+export const hubChangeHead = pgTable.withRLS(
+  'hub_change_head',
+  {
+    spaceId: uuid('space_id')
+      .primaryKey()
+      .references(() => space.id),
+    sequence: bigint({ mode: 'bigint' }).notNull(),
+  },
+  (table) => [
+    pgPolicy('hub_change_head_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_space_update', {
+      for: 'update',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+)
+
+export const hubChange = pgTable.withRLS(
+  'hub_change',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    sequence: bigint({ mode: 'bigint' }).notNull(),
+    tableName: text('table_name').notNull(),
+    rowId: uuid('row_id').notNull(),
+    op: text().notNull(),
+    at: timestamp({ withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.sequence] }),
+    check('hub_change_op_check', sql`${table.op} IN ('upsert','delete')`),
+    pgPolicy('hub_change_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+)
 
 export const hubTask = pgTable.withRLS(
   'hub_task',

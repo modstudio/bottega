@@ -1,0 +1,276 @@
+import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { PGlite, type Transaction } from '@electric-sql/pglite'
+import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
+
+const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
+const spaceA = '01990000-0000-7000-8000-000000001240'
+const spaceB = '01990000-0000-7000-8000-000000001241'
+const taskId = '01990000-0000-7000-8000-000000001242'
+const intervalId = '01990000-0000-7000-8000-000000001243'
+const movedTaskId = '01990000-0000-7000-8000-000000001244'
+const sendId = '01990000-0000-7000-8000-000000001245'
+const recipientId = '01990000-0000-7000-8000-000000001246'
+
+const syncedTables = [
+  'hub_task',
+  'hub_task_comment',
+  'hub_task_document',
+  'hub_task_status_event',
+  'hub_send',
+  'hub_interval',
+  'hub_day',
+  'hub_note',
+  'hub_note_acknowledgement',
+] as const
+
+async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
+  for (const statement of migration.sql) await transaction.exec(statement)
+  await transaction.query(
+    'INSERT INTO drizzle.__drizzle_migrations (hash,created_at,name) VALUES ($1,$2,$3)',
+    [migration.hash, migration.folderMillis, migration.name],
+  )
+}
+
+async function createRecordDatabase(): Promise<PGlite> {
+  const database = new PGlite()
+  await database.exec(`
+    CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_actor LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_auth LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_public NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_reader LOGIN NOSUPERUSER NOBYPASSRLS;
+    GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;
+    GRANT CREATE ON DATABASE postgres TO record_owner;
+    ALTER SCHEMA public OWNER TO record_owner;
+    SET ROLE record_owner;
+    CREATE SCHEMA drizzle;
+    CREATE TABLE drizzle.__drizzle_migrations (
+      id serial PRIMARY KEY, hash text NOT NULL, created_at bigint, name text
+    );
+  `)
+  await database.transaction(async (transaction) => {
+    for (const migration of readMigrationFiles({ migrationsFolder })) {
+      await applyMigration(transaction, migration)
+    }
+  })
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at) VALUES
+      ('${spaceA}','Change log A','change-log-a',now()),
+      ('${spaceB}','Change log B','change-log-b',now());
+  `)
+  return database
+}
+
+async function bindActor(database: PGlite, spaceId: string) {
+  await database.exec(`
+    SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);
+  `)
+}
+
+async function resetSession(database: PGlite) {
+  await database.exec(`
+    RESET ROLE;
+    SELECT set_config('app.space_id','',false);
+    SELECT set_config('app.space_ids','',false);
+  `)
+}
+
+let database: PGlite
+
+beforeAll(async () => {
+  database = await createRecordDatabase()
+})
+
+afterAll(async () => {
+  if (database) await database.close()
+})
+
+test('change-log triggers cover every synced table and recipient changes map to sends', async () => {
+  const rows = (
+    await database.query<{
+      table_name: string
+      function_name: string
+      enabled: string
+      trigger_type: number
+    }>(
+      `
+      SELECT c.relname table_name, p.proname function_name, t.tgenabled enabled,
+        t.tgtype::int trigger_type
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid=t.tgrelid
+      JOIN pg_proc p ON p.oid=t.tgfoid
+      WHERE NOT t.tgisinternal
+        AND c.relname = ANY($1::text[])
+      ORDER BY c.relname
+    `,
+      [[...syncedTables, 'hub_send_recipient']],
+    )
+  ).rows
+
+  expect(rows).toHaveLength(syncedTables.length + 1)
+  for (const table of syncedTables) {
+    expect(rows).toContainEqual({
+      table_name: table,
+      function_name: 'hub_change_log_row',
+      enabled: 'O',
+      trigger_type: 29,
+    })
+  }
+  expect(rows).toContainEqual({
+    table_name: 'hub_send_recipient',
+    function_name: 'hub_change_log_send_recipient',
+    enabled: 'O',
+    trigger_type: 29,
+  })
+})
+
+test('tenant and owner writes append gapless, space-scoped change entries', async () => {
+  await bindActor(database, spaceA)
+  await database.exec(`
+    INSERT INTO hub_task (
+      id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
+    ) VALUES (
+      '${taskId}','${spaceA}','bottega','DEV-1240','bottega','first','local',
+      now(),now(),now(),now()
+    );
+    UPDATE hub_task SET title='second' WHERE id='${taskId}';
+    UPDATE hub_task SET title=title WHERE id='${taskId}';
+    UPDATE hub_task SET deleted_at=now() WHERE id='${taskId}';
+  `)
+  expect(
+    (
+      await database.query<{ sequence: number; op: string }>(
+        `SELECT sequence::int,op FROM hub_change WHERE space_id=$1 ORDER BY sequence`,
+        [spaceA],
+      )
+    ).rows,
+  ).toEqual([
+    { sequence: 1, op: 'upsert' },
+    { sequence: 2, op: 'upsert' },
+    { sequence: 3, op: 'upsert' },
+  ])
+
+  await database.exec(`
+    BEGIN;
+    UPDATE hub_task SET title='rolled back' WHERE id='${taskId}';
+    ROLLBACK;
+  `)
+  expect(
+    (
+      await database.query<{ sequence: number; entries: number }>(
+        `SELECT h.sequence::int,count(c.*)::int entries
+         FROM hub_change_head h
+         LEFT JOIN hub_change c ON c.space_id=h.space_id
+         WHERE h.space_id=$1 GROUP BY h.sequence`,
+        [spaceA],
+      )
+    ).rows,
+  ).toEqual([{ sequence: 3, entries: 3 }])
+  await database.exec(`UPDATE hub_task SET title='after rollback' WHERE id='${taskId}'`)
+  expect(
+    (
+      await database.query<{ sequence: number }>(
+        `SELECT sequence::int FROM hub_change WHERE space_id=$1 ORDER BY sequence`,
+        [spaceA],
+      )
+    ).rows,
+  ).toEqual([1, 2, 3, 4].map((sequence) => ({ sequence })))
+
+  await database.exec(`
+    INSERT INTO hub_interval (
+      id,space_id,source,start_at,end_at,ref,updated_at
+    ) VALUES ('${intervalId}','${spaceA}','codex',now(),now(),'interval-proof',now());
+    DELETE FROM hub_interval WHERE id='${intervalId}';
+  `)
+  expect(
+    (
+      await database.query<{ table_name: string; row_id: string; op: string }>(
+        `SELECT table_name,row_id::text,op FROM hub_change
+         WHERE space_id=$1 ORDER BY sequence DESC LIMIT 1`,
+        [spaceA],
+      )
+    ).rows[0],
+  ).toEqual({ table_name: 'hub_interval', row_id: intervalId, op: 'delete' })
+
+  await database.exec(`
+    INSERT INTO hub_task (
+      id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at
+    ) VALUES (
+      '${movedTaskId}','${spaceA}','bottega','DEV-1240-MOVE','bottega','move','local',
+      now(),now(),now(),now()
+    );
+  `)
+  await resetSession(database)
+  await database.exec(`
+    SET ROLE ${RECORD_OWNER_ROLE};
+    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+    UPDATE hub_task SET space_id='${spaceB}' WHERE id='${movedTaskId}';
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+  `)
+  expect(
+    (
+      await database.query<{ space_id: string; op: string }>(
+        `SELECT space_id::text,op FROM hub_change WHERE row_id=$1 ORDER BY space_id`,
+        [movedTaskId],
+      )
+    ).rows,
+  ).toEqual([
+    { space_id: spaceA, op: 'upsert' },
+    { space_id: spaceA, op: 'delete' },
+    { space_id: spaceB, op: 'upsert' },
+  ])
+
+  await resetSession(database)
+  await bindActor(database, spaceA)
+  await database.exec(`
+    INSERT INTO hub_send (
+      id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine
+    ) VALUES ('${sendId}','${spaceA}',now(),'day','one','bottega',1,'pending',0,now(),'test');
+    INSERT INTO hub_send_recipient (id,space_id,send_id,name,email,created_at)
+    VALUES ('${recipientId}','${spaceA}','${sendId}','Test','test@example.com',now());
+  `)
+  expect(
+    (
+      await database.query<{ row_id: string; occurrences: number }>(
+        `SELECT row_id::text,count(*)::int occurrences FROM hub_change
+         WHERE table_name='hub_send' AND row_id=$1 GROUP BY row_id`,
+        [sendId],
+      )
+    ).rows,
+  ).toEqual([{ row_id: sendId, occurrences: 2 }])
+
+  await resetSession(database)
+  await database.exec(`
+    SET ROLE ${RECORD_OWNER_ROLE};
+    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+    UPDATE hub_task SET title='owner update' WHERE id='${movedTaskId}';
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+  `)
+  expect(
+    (
+      await database.query<{ op: string }>(
+        `SELECT op FROM hub_change WHERE space_id=$1 AND row_id=$2 ORDER BY sequence DESC LIMIT 1`,
+        [spaceB, movedTaskId],
+      )
+    ).rows,
+  ).toEqual([{ op: 'upsert' }])
+
+  await resetSession(database)
+  await bindActor(database, spaceA)
+  expect(
+    (await database.query(`SELECT 1 FROM hub_change WHERE space_id=$1`, [spaceB])).rows,
+  ).toEqual([])
+  await expect(
+    database.query(
+      `INSERT INTO hub_change_head(space_id,sequence) VALUES ($1,1)
+       ON CONFLICT(space_id) DO UPDATE SET sequence=hub_change_head.sequence+1`,
+      [spaceB],
+    ),
+  ).rejects.toThrow()
+})
