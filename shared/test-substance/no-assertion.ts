@@ -118,6 +118,7 @@ function locallyReexportedFunction(
   const exportedName = statement.exportClause.elements.find((element) => element.name.text === name)
   if (!exportedName) return undefined
   const localIdentifier = exportedName.propertyName ?? exportedName.name
+  if (!ts.isIdentifier(localIdentifier)) return undefined
   let symbol = symbolAt(localIdentifier, parsed)
   if (symbol && symbol.flags & ts.SymbolFlags.Alias)
     symbol = parsed.checker.getAliasedSymbol(symbol)
