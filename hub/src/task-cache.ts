@@ -174,7 +174,7 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   })
 }
 
-export const hostedTaskChangeTables = {
+const hostedTaskChangeTables = {
   hub_task: { machine: 'task', apply: applyHostedTask },
   hub_task_comment: { machine: 'task_comment', apply: applyComment },
   hub_task_document: { machine: 'task_document', apply: applyDocument },
@@ -196,7 +196,10 @@ export function applyHostedChangeUpsert(
   table: HostedTaskChangeTable,
   row: HostedChangeRow,
 ) {
-  const apply = hostedTaskChangeTables[table].apply as (connection: Database, record: HostedChangeRow) => void
+  const apply = hostedTaskChangeTables[table].apply as (
+    connection: Database,
+    record: HostedChangeRow,
+  ) => void
   apply(conn, row)
 }
 

@@ -550,7 +550,7 @@ test('the page bound stops a pass and the next pass continues from the stored cu
   const { fetch } = routeFetch({
     changes: (_space, after) => {
       afters.push(after ?? '')
-      return changePage({ next: Number(after) + 1, more: true })
+      return changePage({ head: 100, next: Number(after) + 1, more: true })
     },
   })
   await pull(fetch)
@@ -561,4 +561,132 @@ test('the page bound stops a pass and the next pass continues from the stored cu
   afters.length = 0
   await pull(fetch)
   expect(afters[0]).toBe(String(MAX_HOSTED_CHANGE_PAGES_PER_PASS))
+})
+
+const followPage = () =>
+  changePage({
+    next: 15,
+    changes: [{ sequence: 15, table: 'hub_task', id: taskId, op: 'upsert', row: hostedTask() }],
+  })
+
+const malformedPages: Array<{ name: string; page: unknown; error: RegExp }> = [
+  { name: 'head', page: { ...followPage(), head: -1 }, error: /malformed: head/ },
+  { name: 'next', page: { ...followPage(), next: 1.5 }, error: /malformed: next/ },
+  {
+    name: 'sequence',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: -1, table: 'hub_task', id: taskId, op: 'delete' }],
+    },
+    error: /malformed: changes\[0\]\.sequence/,
+  },
+  { name: 'oldest', page: { ...followPage(), oldest: -1 }, error: /malformed: oldest/ },
+  { name: 'more', page: { ...followPage(), more: 1 }, error: /malformed: more/ },
+  {
+    name: 'resetRequired',
+    page: { ...followPage(), resetRequired: 1 },
+    error: /malformed: resetRequired/,
+  },
+  {
+    name: 'next below after',
+    page: { ...followPage(), next: 11 },
+    error: /malformed: next 11 is below after 12/,
+  },
+  {
+    name: 'next above head',
+    page: { ...followPage(), head: 10 },
+    error: /malformed: next 15 is above head 10/,
+  },
+  {
+    name: 'table',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 15, table: 'hub_note', id: taskId, op: 'delete' }],
+    },
+    error: /malformed: changes\[0\]\.table/,
+  },
+  {
+    name: 'op',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 15, table: 'hub_task', id: taskId, op: 'patch' }],
+    },
+    error: /malformed: changes\[0\]\.op/,
+  },
+  {
+    name: 'id',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 15, table: 'hub_task', op: 'delete' }],
+    },
+    error: /malformed: changes\[0\]\.id/,
+  },
+  {
+    name: 'upsert row',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 15, table: 'hub_task', id: taskId, op: 'upsert' }],
+    },
+    error: /malformed: changes\[0\] upsert must include a row/,
+  },
+  {
+    name: 'upsert row id',
+    page: {
+      ...followPage(),
+      changes: [
+        {
+          sequence: 15,
+          table: 'hub_task',
+          id: taskId,
+          op: 'upsert',
+          row: hostedTask({ id: commentId }),
+        },
+      ],
+    },
+    error: /malformed: changes\[0\] row id must equal the change id/,
+  },
+  {
+    name: 'delete row',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 15, table: 'hub_task', id: taskId, op: 'delete', row: hostedTask() }],
+    },
+    error: /malformed: changes\[0\] delete must not include a row/,
+  },
+  {
+    name: 'resetRequired changes',
+    page: { ...followPage(), resetRequired: true },
+    error: /malformed: resetRequired page must not include changes/,
+  },
+]
+
+for (const { name, page, error } of malformedPages) {
+  test(`a malformed ${name} refuses and leaves the cursor and rows untouched`, async () => {
+    storeChangeCursor('space-one', '12')
+    seedTask()
+    const { fetch } = routeFetch({ changes: () => page as HostedSpaceChangePage })
+    await expect(pull(fetch)).rejects.toThrow(error)
+    expect(cursor('space-one')).toBe('12')
+    expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()
+  })
+}
+
+test('a reset page may have next above head', async () => {
+  storeChangeCursor('space-one', '5')
+  const { fetch } = routeFetch({
+    changes: (_space, after) => {
+      if (after === '5') return changePage({ head: 3, next: 5, resetRequired: true })
+      return changePage({ head: 3, next: Number(after ?? 0) })
+    },
+    tasks: (_space, taskCursorValue) => {
+      expect(taskCursorValue).toBeNull()
+      return { ...emptyTasks('reset-full'), tasks: [hostedTask({ title: 'reset-above' })] }
+    },
+  })
+  await pull(fetch)
+  expect(cursor('space-one')).toBe('3')
+  expect(
+    db().query<{ title: string }, [string]>(`SELECT title FROM task WHERE record_id=?`).get(taskId)
+      ?.title,
+  ).toBe('reset-above')
 })
