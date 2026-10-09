@@ -225,8 +225,9 @@
   {
     "file": "orchestrator/src/dispatch/dispatch-preflight.ts",
     "function": "preflight",
-    "line": 42,
-    "score": 46
+    "line": 127,
+    "score": 45,
+    "key": "orchestrator/src/dispatch/dispatch-preflight.ts\u0000preflight"
   },
   {
     "file": "orchestrator/src/dispatch/prompt-retarget.ts",

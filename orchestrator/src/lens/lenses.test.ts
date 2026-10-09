@@ -5,7 +5,14 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
-import { listLenses, resolveLens, selectProjectProfile, setLens, setProfile } from './lenses.ts'
+import {
+  chooseLensProfile,
+  listLenses,
+  resolveLens,
+  selectProjectProfile,
+  setLens,
+  setProfile,
+} from './lenses.ts'
 
 describe('lens catalogue', () => {
   test('six seeded cores render their default profile for every registered project', () => {
@@ -22,11 +29,98 @@ describe('lens catalogue', () => {
     for (const lens of listLenses())
       for (const project of ['one', 'two']) {
         const resolved = resolveLens(lens.id, project)!
-        expect(resolved.profiles).toEqual([{ axis: 'framework', name: 'default', version: 1 }])
+        expect(resolved.profiles).toEqual([
+          { axis: 'framework', name: 'default', version: 1, source: 'generic' },
+        ])
         expect(resolved.body).toBe(
-          `QUESTION\n${lens.question}\n\nEXCLUDES\n${lens.excludes}\n\nFRAMEWORK GUIDANCE\nNo framework-specific guidance for this stack.\n\nCOMMANDS\nNone.`,
+          'FRAMEWORK GUIDANCE\nNo framework-specific guidance for this stack.\n\nCOMMANDS\nNone.',
         )
       }
+  })
+
+  test('profile choice follows lens selection, axis selection, stack, then generic', () => {
+    const base = { enabledProfileNames: ['default', 'node'], stack: 'node' }
+    expect(chooseLensProfile({ ...base, lensSelection: null, axisSelection: null })).toEqual({
+      name: 'node',
+      version: null,
+      source: 'stack',
+    })
+    expect(
+      chooseLensProfile({
+        ...base,
+        lensSelection: null,
+        axisSelection: { name: 'shared', version: 2 },
+      }),
+    ).toEqual({ name: 'shared', version: 2, source: 'project' })
+    expect(
+      chooseLensProfile({
+        ...base,
+        lensSelection: { name: 'specific', version: 3 },
+        axisSelection: { name: 'shared', version: 2 },
+      }),
+    ).toEqual({ name: 'specific', version: 3, source: 'project' })
+    expect(
+      chooseLensProfile({
+        ...base,
+        lensSelection: null,
+        axisSelection: null,
+        enabledProfileNames: ['default'],
+      }),
+    ).toEqual({ name: 'default', version: null, source: 'generic' })
+  })
+
+  test('an enabled stack profile wins while a disabled one falls through to generic', () => {
+    upsertProject({ name: 'stacked', path: '/tmp/stacked', stack: 'node', settings: {} })
+    setProfile({
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'node',
+      body: '{"framework_guidance":"Node.","commands":"bun test"}',
+      enabled: true,
+      reason: 'stack fixture',
+    })
+    expect(resolveLens('correctness', 'stacked')).toMatchObject({
+      profiles: [{ name: 'node', source: 'stack' }],
+      body: expect.stringContaining('FRAMEWORK GUIDANCE\nNode.'),
+    })
+    setProfile({
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'node',
+      body: '{"framework_guidance":"Node.","commands":"bun test"}',
+      enabled: false,
+      reason: 'disable stack fixture',
+    })
+    expect(resolveLens('correctness', 'stacked')!.profiles[0]).toMatchObject({
+      name: 'default',
+      source: 'generic',
+    })
+  })
+
+  test('renders declared slots in schema order and omits empty sections', () => {
+    setLens({
+      id: 'custom-sections',
+      title: 'Custom sections',
+      question: 'What does it find?',
+      excludes: 'Everything else.',
+      slots: JSON.stringify({
+        type: 'object',
+        properties: { looks_for: { type: 'string' }, empty_slot: { type: 'string' } },
+        additionalProperties: false,
+      }),
+      enabled: true,
+      requiresExecution: false,
+      reason: 'custom section fixture',
+    })
+    setProfile({
+      lensId: 'custom-sections',
+      axis: 'framework',
+      name: 'default',
+      body: '{"looks_for":"Boundary leaks.","empty_slot":""}',
+      enabled: true,
+      reason: 'custom section fixture',
+    })
+    expect(resolveLens('custom-sections', null)!.body).toBe('LOOKS FOR\nBoundary leaks.')
   })
 
   test('profile validation refuses undeclared slots and project selection binds one shared row', () => {
@@ -82,7 +176,10 @@ describe('lens catalogue', () => {
         .get(),
     ).toEqual({ n: 1 })
     expect(resolveLens('correctness', 'one')!.body).toContain('Node.\n\nCOMMANDS\nbun test')
-    expect(resolveLens('correctness', 'two')!.profiles[0]!.name).toBe('node')
+    expect(resolveLens('correctness', 'two')!.profiles[0]).toMatchObject({
+      name: 'node',
+      source: 'project',
+    })
     selectProjectProfile({
       project: 'one',
       axis: 'framework',

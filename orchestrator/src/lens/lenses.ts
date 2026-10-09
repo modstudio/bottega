@@ -25,6 +25,24 @@ type ProfileRow = {
   enabled: number
 }
 
+export type LensProfileSource = 'project' | 'stack' | 'generic'
+type ProfileSelection = { name: string; version: number | null }
+
+/** Decide one axis's profile without consulting the store. */
+export function chooseLensProfile(input: {
+  lensSelection: ProfileSelection | null
+  axisSelection: ProfileSelection | null
+  enabledProfileNames: string[]
+  stack: string | null
+}): ProfileSelection & { source: LensProfileSource } {
+  const selected = input.lensSelection ?? input.axisSelection
+  if (selected) return { ...selected, source: 'project' }
+  if (input.stack && input.enabledProfileNames.includes(input.stack)) {
+    return { name: input.stack, version: null, source: 'stack' }
+  }
+  return { name: 'default', version: null, source: 'generic' }
+}
+
 const stableId = (value: string, what: string) => {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value))
     throw new Error(`${what} "${value}" must be a lowercase stable id of at most 64 characters`)
@@ -352,7 +370,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
   const core = d.query('SELECT * FROM lens WHERE id=?').get(id) as CoreRow | null
   if (!core) return null
   if (!core.enabled) throw new Error(disabledLensRefusal(id, `lens "${id}" is disabled`))
-  const project = projectName ? projectByName(projectName) : null
+  const project = projectName ? projectByName(projectName, d) : null
   const axes = d
     .query(`SELECT axis FROM (
     SELECT DISTINCT axis FROM lens_profile WHERE lens_id=? AND enabled=1
@@ -361,30 +379,48 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       WHERE project_id=? AND (lens_id=? OR lens_id IS NULL)
   ) ORDER BY axis`)
     .all(id, project?.id ?? -1, id) as { axis: LensAxis }[]
-  const profiles: ProfileRow[] = []
+  const profiles: (ProfileRow & { source: LensProfileSource })[] = []
   for (const { axis } of axes) {
-    const selection = project
+    const selections = project
       ? (d
           .query(
-            `SELECT profile_name,selected_version FROM project_lens_profile WHERE project_id=? AND axis=? AND (lens_id=? OR lens_id IS NULL) ORDER BY lens_id IS NULL LIMIT 1`,
+            `SELECT lens_id,profile_name,selected_version FROM project_lens_profile
+             WHERE project_id=? AND axis=? AND (lens_id=? OR lens_id IS NULL)`,
           )
-          .get(project.id, axis, id) as {
+          .all(project.id, axis, id) as {
+          lens_id: string | null
           profile_name: string
           selected_version: number | null
-        } | null)
-      : null
-    const name = selection?.profile_name ?? 'default'
+        }[])
+      : []
+    const selection = (lensId: string | null): ProfileSelection | null => {
+      const row = selections.find((candidate) => candidate.lens_id === lensId)
+      return row ? { name: row.profile_name, version: row.selected_version } : null
+    }
+    const enabledProfileNames = (
+      d
+        .query('SELECT name FROM lens_profile WHERE lens_id=? AND axis=? AND enabled=1')
+        .all(id, axis) as { name: string }[]
+    ).map((row) => row.name)
+    const choice = chooseLensProfile({
+      lensSelection: selection(id),
+      axisSelection: selection(null),
+      enabledProfileNames,
+      stack: project?.stack ?? null,
+    })
     const profile = d
       .query('SELECT * FROM lens_profile WHERE lens_id=? AND axis=? AND name=?')
-      .get(id, axis, name) as ProfileRow | null
+      .get(id, axis, choice.name) as ProfileRow | null
     if (!profile)
-      throw new Error(disabledLensRefusal(id, `lens "${id}" has no ${axis} profile "${name}"`))
-    const chosen = versionedProfile(profile, selection?.selected_version ?? null, d)
+      throw new Error(
+        disabledLensRefusal(id, `lens "${id}" has no ${axis} profile "${choice.name}"`),
+      )
+    const chosen = versionedProfile(profile, choice.version, d)
     if (!chosen.enabled)
       throw new Error(
-        disabledLensRefusal(id, `lens "${id}" selected disabled ${axis} profile "${name}"`),
+        disabledLensRefusal(id, `lens "${id}" selected disabled ${axis} profile "${choice.name}"`),
       )
-    profiles.push(chosen)
+    profiles.push({ ...chosen, source: choice.source })
   }
   const values: Record<string, string> = {}
   for (const profile of profiles)
@@ -394,8 +430,12 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       values[slot] = value
     }
   const declared = slotNames(core.slots)
-  const render = (slot: string) => values[slot] ?? ''
-  const body = `QUESTION\n${core.question}\n\nEXCLUDES\n${core.excludes}\n\nFRAMEWORK GUIDANCE\n${render('framework_guidance')}\n\nCOMMANDS\n${render('commands')}`
+  const body = declared.names
+    .flatMap((slot) => {
+      const value = values[slot]
+      return value?.trim() ? [`${slot.replaceAll('_', ' ').toUpperCase()}\n${value}`] : []
+    })
+    .join('\n\n')
   return {
     id: core.id,
     title: core.title,
@@ -404,7 +444,12 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     slots: declared.names,
     version: core.version,
     requires_execution: !!core.requires_execution,
-    profiles: profiles.map((p) => ({ axis: p.axis, name: p.name, version: p.version })),
+    profiles: profiles.map((p) => ({
+      axis: p.axis,
+      name: p.name,
+      version: p.version,
+      source: p.source,
+    })),
     body,
   }
 }

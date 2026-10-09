@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { reviewCommand } from './review-commands.ts'
+import { printReviewTier, reviewCommand } from './review-commands.ts'
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -101,4 +101,34 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
+})
+
+test('review tier prints each lens profile source', () => {
+  const output: string[] = []
+  printReviewTier(
+    {
+      tier: 1,
+      risk: 1,
+      size: 0,
+      reasons: [],
+      lenses: ['correctness'],
+      lens_profiles: [
+        {
+          id: 'correctness',
+          profiles: [
+            {
+              axis: 'framework',
+              name: 'default',
+              version: 1,
+              source: 'generic',
+            },
+          ],
+        },
+      ],
+    },
+    false,
+    (...values) => output.push(values.join(' ')),
+  )
+
+  expect(output).toContain('lens correctness  framework=generic')
 })

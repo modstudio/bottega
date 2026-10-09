@@ -60,7 +60,8 @@ export function bindReviewInstructions(input: {
       : null)
   if (artifact) prompt += `\n\n${reviewArtifactBlock(artifact)}`
   const resolvedLens = resolveLens(input.lens!, input.repo)
-  if (resolvedLens) return `${prompt}\n\n${resolvedLens.body}`
+  if (resolvedLens?.body) return `${prompt}\n\n${resolvedLens.body}`
+  if (resolvedLens) return prompt
   console.error(`lens ${input.lens}: no catalogue row; dispatching the free-form lens unchanged`)
   return prompt
 }

@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { reviewLensPrompt } from '../dispatch/review-lens-prompt.ts'
+import { setLens, setProfile } from '../lens/lenses.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -54,5 +56,49 @@ describe('review instructions', () => {
     expect(prompt).toContain('HEAD: caf69b0d11111111111111111111111111111111')
     expect(prompt).toContain('Base: b0583f6522222222222222222222222222222222')
     expect(prompt).not.toContain('Branch:')
+  })
+
+  test('a known lens question appears once in the bound reviewer prompt', () => {
+    const question = 'Does this exact question appear once?'
+    setLens({
+      id: 'question-once',
+      title: 'Question once',
+      question,
+      excludes: 'Other questions.',
+      slots: JSON.stringify({
+        type: 'object',
+        properties: { looks_for: { type: 'string' } },
+        additionalProperties: false,
+      }),
+      enabled: true,
+      requiresExecution: false,
+      reason: 'prompt fixture',
+    })
+    setProfile({
+      lensId: 'question-once',
+      axis: 'framework',
+      name: 'default',
+      body: '{"looks_for":"Duplication."}',
+      enabled: true,
+      reason: 'prompt fixture',
+    })
+    const initial = reviewLensPrompt({
+      lens: { question, excludes: 'Other questions.' },
+      supplied: 'Inspect the change.',
+    })
+    const prompt = bindReviewInstructions({
+      prompt: initial,
+      findings: true,
+      firstTurn: true,
+      reviewTarget: null,
+      readsRepo: false,
+      checkoutCommit: null,
+      coverageBase: null,
+      lens: 'question-once',
+      repo: null,
+    })
+
+    expect(prompt.split(question)).toHaveLength(2)
+    expect(prompt).toContain('LOOKS FOR\nDuplication.')
   })
 })

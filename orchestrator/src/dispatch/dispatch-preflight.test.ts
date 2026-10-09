@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { preflight } from './dispatch-preflight.ts'
+import { assertDispatchLens, preflight } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 
@@ -49,4 +49,11 @@ test('preflight uses the recipe default from the explicit base creation will use
   })
 
   expect(preflight('implement', path, undefined, undefined, 'base-default')).toBe('full')
+})
+
+test('preflight refuses an unknown catalogue lens with the listing remedy', () => {
+  expect(() => assertDispatchLens('review-lens', 'not-in-the-catalogue', null)).toThrow(
+    'lens "not-in-the-catalogue" is not an enabled catalogue lens; run orch lens list',
+  )
+  expect(() => assertDispatchLens('review-lens-inline', 'not-in-the-catalogue', null)).not.toThrow()
 })

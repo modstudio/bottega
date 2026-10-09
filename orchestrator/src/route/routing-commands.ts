@@ -198,7 +198,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
     const p = projectAt(process.cwd())
     const resolved = resolveLens(flag('lens')!, p?.name ?? null)
     log(
-      `lens profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`,
+      `lens profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version} source=${x.source}`).join(', ') : 'free-form (no catalogue row)'}`,
     )
   }
   const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
@@ -377,7 +377,7 @@ export function pickCommand(
   if (lens) {
     const resolved = resolveLens(lens, projectAt(process.cwd())?.name ?? null)
     log(
-      `selected profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`,
+      `selected profiles: ${resolved ? resolved.profiles.map((x) => `${x.axis}=${x.name}@${x.version} source=${x.source}`).join(', ') : 'free-form (no catalogue row)'}`,
     )
   }
   const counts = (rows: typeof ev.cands) =>
