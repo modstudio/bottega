@@ -658,6 +658,38 @@ const malformedPages: Array<{ name: string; page: unknown; error: RegExp }> = [
     page: { ...followPage(), resetRequired: true },
     error: /malformed: resetRequired page must not include changes/,
   },
+  {
+    name: 'sequence not greater than after',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 1, table: 'hub_task', id: taskId, op: 'delete' }],
+    },
+    error: /malformed: changes\[0\]\.sequence 1 is not greater than after 12/,
+  },
+  {
+    name: 'sequence above next',
+    page: {
+      ...followPage(),
+      changes: [{ sequence: 16, table: 'hub_task', id: taskId, op: 'delete' }],
+    },
+    error: /malformed: changes\[0\]\.sequence 16 is above next 15/,
+  },
+  {
+    name: 'sequences not strictly increasing',
+    page: {
+      ...followPage(),
+      changes: [
+        { sequence: 15, table: 'hub_task', id: taskId, op: 'delete' },
+        { sequence: 15, table: 'hub_task', id: commentId, op: 'delete' },
+      ],
+    },
+    error: /malformed: changes\[1\]\.sequence 15 does not increase from changes\[0\]\.sequence 15/,
+  },
+  {
+    name: 'more without advancing next',
+    page: { ...followPage(), next: 12, more: true, changes: [] },
+    error: /malformed: more is true but next 12 is not greater than after 12/,
+  },
 ]
 
 for (const { name, page, error } of malformedPages) {

@@ -351,6 +351,28 @@ function parseHostedSpaceChange(
   }
 }
 
+function assertFollowChangeSequences(
+  changes: readonly HostedSpaceChange[],
+  after: number,
+  next: number,
+) {
+  let previous: number | undefined
+  for (const [index, change] of changes.entries()) {
+    const { sequence } = change
+    if (sequence <= after)
+      throw malformedChangePage(
+        `changes[${index}].sequence ${sequence} is not greater than after ${after}`,
+      )
+    if (sequence > next)
+      throw malformedChangePage(`changes[${index}].sequence ${sequence} is above next ${next}`)
+    if (previous !== undefined && sequence <= previous)
+      throw malformedChangePage(
+        `changes[${index}].sequence ${sequence} does not increase from changes[${index - 1}].sequence ${previous}`,
+      )
+    previous = sequence
+  }
+}
+
 function parseHostedSpaceChangePage(
   value: Record<string, unknown>,
   after: number,
@@ -369,14 +391,13 @@ function parseHostedSpaceChangePage(
   }
   if (next < after) throw malformedChangePage(`next ${next} is below after ${after}`)
   if (next > head) throw malformedChangePage(`next ${next} is above head ${head}`)
-  return {
-    head,
-    oldest,
-    next,
-    more,
-    resetRequired,
-    changes: value.changes.map((change, index) => parseHostedSpaceChange(change, index, tables)),
-  }
+  if (more && next <= after)
+    throw malformedChangePage(`more is true but next ${next} is not greater than after ${after}`)
+  const changes = value.changes.map((change, index) =>
+    parseHostedSpaceChange(change, index, tables),
+  )
+  assertFollowChangeSequences(changes, after, next)
+  return { head, oldest, next, more, resetRequired, changes }
 }
 
 export async function hostedSpaceChanges(after: number, options: HostedSpaceChangeOptions) {
