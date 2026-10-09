@@ -19,7 +19,9 @@ export function recordSpaceMembership<T extends RecordSpaceMembership>(
   memberships: readonly T[],
 ): T | undefined {
   const value = declared.trim()
-  return hasRecordIdShape(value)
-    ? memberships.find((membership) => membership.spaceId.toLowerCase() === value.toLowerCase())
-    : memberships.find((membership) => membership.slug === value)
+  const id = memberships.find(
+    (membership) => membership.spaceId.toLowerCase() === value.toLowerCase(),
+  )
+  if (id || hasRecordIdShape(value)) return id
+  return memberships.find((membership) => membership.slug === value)
 }
