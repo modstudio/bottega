@@ -108,7 +108,9 @@ function docAudiences(value: string | undefined): DocAudiences | undefined {
   try {
     return normalizeDocAudiences(value.split(',').map((audience) => audience.trim()))
   } catch (error) {
-    throw new Error(`--audience must be a comma-separated set of ${DOC_AUDIENCES.join(' or ')}: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `--audience must be a comma-separated set of ${DOC_AUDIENCES.join(' or ')}: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 

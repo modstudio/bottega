@@ -292,6 +292,11 @@ function pulledDocLifecycle(item: Record<string, unknown>): {
   }
 }
 
+function pulledDocAudiences(item: Record<string, unknown>): string {
+  if (Array.isArray(item.audiences)) return JSON.stringify(item.audiences.map(String))
+  return JSON.stringify([item.audience == null ? 'technical' : String(item.audience)])
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
@@ -312,11 +317,7 @@ function applyDoc(
   const body = String(item.body)
   const delivery = String(item.delivery)
   // A record that predates the tree fields omits them; such a document is technical and a root.
-  const audiences = JSON.stringify(
-    Array.isArray(item.audiences)
-      ? item.audiences.map(String)
-      : [item.audience == null ? 'technical' : String(item.audience)],
-  )
+  const audiences = pulledDocAudiences(item)
   const position = item.position == null ? 0 : Number(item.position)
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)

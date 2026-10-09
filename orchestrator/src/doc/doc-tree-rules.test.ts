@@ -64,7 +64,9 @@ describe('document tree write rules', () => {
 
   test('parent and child audiences are independent', () => {
     expect(
-      documentTreeWriteRefusal(base({ audiences: ['user'], parent: { ...base(), slug: 'parent' } })),
+      documentTreeWriteRefusal(
+        base({ audiences: ['user'], parent: { ...base(), slug: 'parent' } }),
+      ),
     ).toBeNull()
     expect(
       documentTreeWriteRefusal(
@@ -93,9 +95,7 @@ describe('document tree write rules', () => {
 
   test('removing a parent is refused and removing a leaf passes', () => {
     expect(
-      documentTreeWriteRefusal(
-        base({ removing: true, children: [{ slug: 'leaf' }] }),
-      ),
+      documentTreeWriteRefusal(base({ removing: true, children: [{ slug: 'leaf' }] })),
     ).toContain('has children leaf')
     expect(documentTreeWriteRefusal(base({ removing: true }))).toBeNull()
   })

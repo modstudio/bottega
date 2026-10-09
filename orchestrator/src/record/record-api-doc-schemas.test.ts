@@ -62,9 +62,9 @@ test('hosted writes reject invalid audience sets and normalize their order', () 
     author: 'test',
   }
   expect(recordDocUpsertSchema.safeParse({ ...input, audiences: [] }).success).toBe(false)
-  expect(
-    recordDocUpsertSchema.safeParse({ ...input, audiences: ['user', 'user'] }).success,
-  ).toBe(false)
+  expect(recordDocUpsertSchema.safeParse({ ...input, audiences: ['user', 'user'] }).success).toBe(
+    false,
+  )
   expect(recordDocUpsertSchema.safeParse({ ...input, audiences: ['other'] }).success).toBe(false)
   expect(
     recordDocUpsertSchema.parse({ ...input, audiences: ['technical', 'user'] }).audiences,

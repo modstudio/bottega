@@ -65,7 +65,8 @@ export function DocsPage() {
   const selectedId = selected?.id
   const selectedProject = selected?.projectName
   useEffect(() => {
-    if (selectedAudiences && !selectedAudiences.includes(audience)) setAudience(selectedAudiences[0])
+    if (selectedAudiences && !selectedAudiences.includes(audience))
+      setAudience(selectedAudiences[0])
   }, [audience, selectedAudiences])
   useEffect(() => {
     if (!selectedId) return

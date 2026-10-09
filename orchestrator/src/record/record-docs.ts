@@ -1,12 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import {
-  type DocAudience,
-  type DocAudiences,
-  type DocKind,
-  type DocStatus,
-} from '../../../shared/docs.ts'
+import type { DocAudience, DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -79,7 +74,10 @@ function storedDocAudiences(
   input: { audiences?: DocAudiences },
   existing?: StoredDocRow,
 ): DocAudiences {
-  return input.audiences ?? (existing?.audiences == null ? ['technical'] : (existing.audiences as DocAudiences))
+  return (
+    input.audiences ??
+    (existing?.audiences == null ? ['technical'] : (existing.audiences as DocAudiences))
+  )
 }
 
 function storedDocParentId(
@@ -268,7 +266,9 @@ export async function upsertRecordDoc(
     )
     const kind = storedDocKind(input, existing[0])
     if (!existing[0] && kind === 'article' && input.audiences === undefined) {
-      throw new RecordDocError('creating an article requires audiences; supply the audiences parameter')
+      throw new RecordDocError(
+        'creating an article requires audiences; supply the audiences parameter',
+      )
     }
     assertWrite(refuseArticleDelivery({ ...input, kind }))
     assertWrite(

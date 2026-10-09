@@ -4,8 +4,8 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
-  type DocKind,
   type DocAudiences,
+  type DocKind,
   type DocStatus,
 } from '../../shared/docs.ts'
 import {

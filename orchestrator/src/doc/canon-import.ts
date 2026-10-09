@@ -9,7 +9,7 @@ import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
-import { listDocsStore } from './doc-read-store.ts'
+import { getDocStore, listDocsStore } from './doc-read-store.ts'
 import {
   assertLocalRevisionWrite,
   docWriteIdentity,
@@ -118,16 +118,16 @@ export async function importCanon(input: {
           .run(row.title, row.body, 'demand', at, result.id, existing.id)
         stored = { ...existing, title: row.title, body: row.body, record_id: result.id }
       } else {
-        const inserted = db()
+        db()
           .query(
             `INSERT INTO doc
-             (scope, subject, owner, project_id, slug, title, body, delivery, created_at, updated_at, record_id)
-             VALUES ('canon',?,?,?, ?,?,?, 'demand',?,?,?) RETURNING id`,
+             (scope, subject, owner, project_id, slug, title, body, delivery, audiences, created_at, updated_at, record_id)
+             VALUES ('canon',?,?,?, ?,?,?, 'demand','["technical"]',?,?,?)`,
           )
           .get(subject, owner, projectId, row.slug, row.title, row.body, at, at, result.id) as {
           id: number
         }
-        stored = db().query('SELECT * FROM doc WHERE id=?').get(inserted.id) as Doc
+        stored = getDocStore('canon', subject, row.slug, owner)!
       }
       insertLocalRevision(stored, 'import', identity, at, result.revisionId)
     }

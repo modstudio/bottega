@@ -29,16 +29,16 @@ function putCanon(
   const id = (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, status, created_at, updated_at, record_id)
-         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, audiences, status, created_at, updated_at, record_id)
+         VALUES ('canon', ?, ?, ?, ?, ?, 'demand', '["technical"]', ?, ?, ?, ?) RETURNING id`,
       )
       .get(subject, projectId, slug, slug, body, status, AT, AT, newRecordId()) as { id: number }
   ).id
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, status, author, reason, at)
-       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', ?, 'test', 'test write', ?)`,
+       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, status, author, reason, at)
+       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?)`,
     )
     .run(id, subject, projectId, slug, slug, body, status, AT)
 }

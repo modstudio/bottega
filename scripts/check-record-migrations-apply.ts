@@ -144,10 +144,7 @@ async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
   const revisions = await transaction.query<{ invalid: number }>(
     'SELECT count(*)::int AS invalid FROM doc_revision WHERE audiences IS DISTINCT FROM ARRAY[audience]',
   )
-  if (
-    docs.rows[0]?.invalid !== 0 ||
-    revisions.rows[0]?.invalid !== 0
-  ) {
+  if (docs.rows[0]?.invalid !== 0 || revisions.rows[0]?.invalid !== 0) {
     throw new CheckFailure('DEV-1238 audience backfill did not produce singleton sets')
   }
 }

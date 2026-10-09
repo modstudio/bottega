@@ -170,13 +170,13 @@ describe('lens catalogue', () => {
       VALUES (8005,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
       .run()
     live
-      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,created_at,updated_at,project_id,record_id)
-      VALUES (8006,'project','one','probe','Probe','body','now','now',NULL,?)`)
+      .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_id,record_id)
+      VALUES (8006,'project','one','probe','Probe','body','["technical"]','now','now',NULL,?)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO doc_revision
-      (id,doc_id,scope,subject,slug,op,title,body,author,reason,at,project_id)
-      VALUES (8007,8006,'project','one','probe','create','Probe','body','test','test','now',NULL)`)
+      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_id)
+      VALUES (8007,8006,'project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL)`)
       .run()
 
     expect(applyMigrations(live)).toEqual([])

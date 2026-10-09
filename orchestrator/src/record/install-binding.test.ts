@@ -68,8 +68,8 @@ test('the binding migration backfills only from successful hosted-record evidenc
   const hostedDoc = migratedBinding((database) => {
     database
       .query(
-        `INSERT INTO doc(scope,subject,slug,title,body,delivery,created_at,updated_at,record_id)
-         VALUES ('global',NULL,'hosted','Hosted','body','inject','2026-10-05','2026-10-05','record-2')`,
+        `INSERT INTO doc(scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'hosted','Hosted','body','inject','["technical"]','2026-10-05','2026-10-05','record-2')`,
       )
       .run()
   })

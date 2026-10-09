@@ -23,7 +23,10 @@ const revisionOpSchema = z.enum([
 const audiencesSchema = z
   .array(z.enum(DOC_AUDIENCES))
   .nonempty()
-  .refine((values) => new Set(values).size === values.length, 'doc audiences must not contain duplicates')
+  .refine(
+    (values) => new Set(values).size === values.length,
+    'doc audiences must not contain duplicates',
+  )
   .transform(normalizeDocAudiences)
 
 const recordDocTreeFieldShape = {

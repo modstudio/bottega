@@ -21,7 +21,10 @@ const expectedRevision = z.string().trim().min(1, 'Expected revision is required
 const audiences = z
   .array(z.enum(DOC_AUDIENCES))
   .nonempty()
-  .refine((values) => new Set(values).size === values.length, 'Audiences must not contain duplicates')
+  .refine(
+    (values) => new Set(values).size === values.length,
+    'Audiences must not contain duplicates',
+  )
   .transform(normalizeDocAudiences)
 export const docRouter = t.router({
   list: t.procedure

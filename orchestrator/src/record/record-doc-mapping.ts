@@ -1,6 +1,11 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
-import { type DocAudiences, type DocKind, type DocStatus, docSummary } from '../../../shared/docs.ts'
+import {
+  type DocAudiences,
+  type DocKind,
+  type DocStatus,
+  docSummary,
+} from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 
 export type RecordDoc = {
@@ -101,7 +106,14 @@ export type RecordDocImportInput = {
 export type NormalizedRecordDocImport = {
   doc: Omit<
     RecordDocImportInput['doc'],
-    'id' | 'audiences' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
+    | 'id'
+    | 'audiences'
+    | 'parentId'
+    | 'position'
+    | 'featured'
+    | 'status'
+    | 'kind'
+    | 'replacementSlug'
   > & {
     id: string
     audiences: DocAudiences

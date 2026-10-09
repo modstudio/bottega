@@ -53,9 +53,9 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     ? treeDoc(input.scope, input.subject, parentSlug, input.owner ?? null)
     : null
   const children = prior
-    ? (db()
-        .query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug')
-        .all(prior.id) as Array<{ slug: string }>)
+    ? (db().query('SELECT slug FROM doc WHERE parent_id=? ORDER BY slug').all(prior.id) as Array<{
+        slug: string
+      }>)
     : []
   const ancestorSlugs: string[] = []
   let ancestor = parent

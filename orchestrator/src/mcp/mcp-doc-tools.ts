@@ -30,7 +30,10 @@ const text = (value: unknown) => ({
 const audiencesSchema = z
   .array(z.enum(DOC_AUDIENCES))
   .nonempty()
-  .refine((values) => new Set(values).size === values.length, 'audiences must not contain duplicates')
+  .refine(
+    (values) => new Set(values).size === values.length,
+    'audiences must not contain duplicates',
+  )
   .transform(normalizeDocAudiences)
 
 function rethrowMcpDocWriteError(error: unknown): never {

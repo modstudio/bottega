@@ -14,6 +14,7 @@ test('kind selects lint and an omitted kind keeps the current value', async () =
     body: 'There are 2 prices.',
     delivery: 'demand',
     kind: 'article',
+    audiences: ['technical'],
     reason: 'create article profile fixture',
   })
   const updated = await setDoc({
@@ -51,6 +52,7 @@ test('used-to warnings store for both document kinds', async () => {
         body: 'The page used to show totals. This field is used to compute the price.',
         delivery: 'demand',
         kind,
+        audiences: ['technical'],
         reason: 'prove history warnings do not refuse writes',
       }),
     ).resolves.toMatchObject({ kind })
@@ -67,6 +69,7 @@ test('an article cannot be created or changed to effective inject delivery', asy
       body: 'Current.',
       delivery: 'inject',
       kind: 'article',
+      audiences: ['technical'],
       reason: 'prove create refusal',
     }),
   ).rejects.toThrow('kind article requires effective delivery demand')
@@ -100,6 +103,7 @@ test('an article cannot be created or changed to effective inject delivery', asy
     body: 'Current.',
     delivery: 'demand',
     kind: 'article',
+    audiences: ['technical'],
     reason: 'create demand article',
   })
   await expect(
