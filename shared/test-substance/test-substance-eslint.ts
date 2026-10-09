@@ -170,13 +170,25 @@ function valueImportBindings(statement: ts.ImportDeclaration) {
   return bindings
 }
 
-function statementCallRoots(source: ts.SourceFile) {
+function statementCallRoots(source: ts.SourceFile, relativeBindings: Set<string>) {
   const roots = new Set<string>()
+
+  function visitCallback(node: ts.CallExpression) {
+    for (const argument of node.arguments) {
+      if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) visit(argument.body)
+    }
+  }
+
   function visit(node: ts.Node) {
     if (ts.isFunctionLike(node)) return
     if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)) {
       const root = callRootName(node.expression.expression)
-      if (root) roots.add(root)
+      if (root) {
+        roots.add(root)
+        if (relativeBindings.has(root) || root === 'describe' || root === 'test' || root === 'it') {
+          visitCallback(node.expression)
+        }
+      }
       return
     }
     ts.forEachChild(node, visit)
@@ -220,8 +232,9 @@ function runnerFor(file: string, content: string): Runner {
   const [direct] = importedRunners(source)
   if (direct) return direct
 
-  const called = statementCallRoots(source)
   const { relativeImports, valueBindings } = valueImports(source)
+  const relativeBindings = new Set(relativeImports.flatMap(({ bindings }) => bindings))
+  const called = statementCallRoots(source, relativeBindings)
   if (['test', 'it', 'describe'].some((name) => called.has(name) && !valueBindings.has(name))) {
     return 'unrecognised'
   }

@@ -155,6 +155,24 @@ async function guardSpecialJavaScriptFixtures(failures: string[]) {
     failures.push('type-only import incorrectly supplied the browser runner')
   }
 
+  const nestedMixedRunnerFile = `${fixtureDirectory}test-substance-nested-mixed-runner.fixtures.ts`
+  const nestedMixedRunnerReport = await testSubstanceReport(
+    nestedMixedRunnerFile,
+    readFileSync(nestedMixedRunnerFile, 'utf8'),
+  )
+  if (nestedMixedRunnerReport.runner !== 'unrecognised') {
+    failures.push('nested calls from mixed runner modules did not stay unrecognised')
+  }
+
+  const nestedBunRunnerFile = `${fixtureDirectory}test-substance-nested-bun-runner.fixtures.ts`
+  const nestedBunRunnerReport = await testSubstanceReport(
+    nestedBunRunnerFile,
+    readFileSync(nestedBunRunnerFile, 'utf8'),
+  )
+  if (nestedBunRunnerReport.runner !== 'bun' || nestedBunRunnerReport.findings.length) {
+    failures.push('nested calls from one Bun module were not judged cleanly with Bun rules')
+  }
+
   const directiveFile = `${fixtureDirectory}test-substance-inline-directive.fixture.txt`
   const directiveReport = await testSubstanceReport(
     `${fixtureDirectory}inline-directive.test.ts`,

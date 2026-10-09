@@ -1,3 +1,3 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 
-export { expect, test }
+export { describe, expect, test }
