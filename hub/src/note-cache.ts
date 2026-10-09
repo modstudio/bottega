@@ -115,25 +115,40 @@ function pullCursor(spaceId: string, activeSpaceId: string) {
   return { selected, legacy }
 }
 
-async function completeAcknowledgementNotes(
-  changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
+type NoteParentChange = { id: string; deleted: boolean }
+
+export async function completeAcknowledgementNotes(
+  noteChanges: readonly NoteParentChange[],
+  acknowledgements: readonly HostedAcknowledgement[],
   options: NoteClientOptions,
 ) {
-  const incoming = new Set(changes.notes.map((note) => note.id))
-  for (const acknowledgement of changes.acknowledgements) {
+  const finalNoteChanges = new Map(noteChanges.map((note) => [note.id, note.deleted]))
+  const completed = new Set<string>()
+  const fetched: HostedNote[] = []
+  for (const acknowledgement of acknowledgements) {
     if (acknowledgement.deleted_at) continue
+    if (completed.has(acknowledgement.note_id)) continue
+    const incomingDeleted = finalNoteChanges.get(acknowledgement.note_id)
     const present =
-      incoming.has(acknowledgement.note_id) ||
-      Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id))
+      incomingDeleted === false ||
+      (incomingDeleted === undefined &&
+        Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id)))
     if (present) continue
-    changes.notes.unshift(await hostedGetNote(acknowledgement.note_id, options))
-    incoming.add(acknowledgement.note_id)
+    fetched.unshift(await hostedGetNote(acknowledgement.note_id, options))
+    completed.add(acknowledgement.note_id)
   }
+  return fetched
 }
 
 export async function hostedNotePullRows(cursor: string | null, options: NoteClientOptions) {
   const changes = await hostedNoteChanges(cursor, options)
-  await completeAcknowledgementNotes(changes, options)
+  changes.notes.unshift(
+    ...(await completeAcknowledgementNotes(
+      changes.notes.map((note) => ({ id: note.id, deleted: Boolean(note.deleted_at) })),
+      changes.acknowledgements,
+      options,
+    )),
+  )
   return changes
 }
 

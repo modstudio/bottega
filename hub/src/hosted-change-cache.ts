@@ -1,31 +1,21 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
+import type { HostedChangeFamily, HostedChangeRequestOptions } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { createHostedTaskChangeFamily } from './hosted-task-change-family.ts'
 import {
   applyHostedAcknowledgement,
   applyHostedNote,
   applyHostedNoteRows,
+  completeAcknowledgementNotes,
   hostedNotePullRows,
 } from './note-cache.ts'
-import { hostedGetNote } from './note-client.ts'
 import { notePullSpaces } from './note-project-space.ts'
 import { projects } from './projects.ts'
-import {
-  applyHostedChangeUpsert,
-  applyHostedTaskRows,
-  deleteHostedChangeRow,
-  HOSTED_TASK_CHANGE_TABLE_QUERY,
-  type HostedTaskChangeTable,
-  hostedChangeMachineRow,
-  hostedChangeRowProject,
-  isHostedTaskChangeTable,
-  reconcileParentRecordIds,
-} from './task-cache.ts'
 import {
   type HostedSpaceChange,
   type HostedSpaceChangePage,
   hostedSpaceChanges,
-  hostedTaskChanges,
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
@@ -33,10 +23,8 @@ import {
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
   taskProjectDestination,
-  taskPullSpaces,
 } from './task-project-space.ts'
 
-export const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
 export const HOSTED_NOTE_CHANGES_CURSOR_KEY = 'collect.hosted-note-changes.cursor'
 export const MAX_HOSTED_CHANGE_PAGES_PER_PASS = 40
 
@@ -53,34 +41,6 @@ type PullOptions = {
   token?: string | null
   fetch?: TaskFetch
   registeredProjects?: readonly RegisteredTaskSpace[]
-}
-type RequestOptions = {
-  baseUrl?: string
-  token?: string | null
-  fetch?: TaskFetch
-  recordSpace: string
-  tables: string
-}
-type Family = {
-  cursorPrefix: string
-  tables: string
-  spaces: (
-    registered: readonly RegisteredTaskSpace[],
-    identity: TaskDestinationIdentity,
-  ) => string[]
-  fullPull: (options: RequestOptions) => Promise<(conn: Database) => void>
-  preparePage?: (
-    page: HostedSpaceChangePage,
-    options: RequestOptions,
-  ) => Promise<Array<(conn: Database) => void>>
-  tableOrder: (table: string) => number
-  accepts: (table: string) => boolean
-  machineRow: (conn: Database, table: string, id: string) => Record<string, unknown> | null
-  rowSpace: (conn: Database, table: string, id: string) => string | null
-  apply: (conn: Database, table: string, row: NonNullable<HostedSpaceChange['row']>) => void
-  delete: (conn: Database, table: string, id: string) => void
-  finish?: (conn: Database) => void
-  failureLabel: string
 }
 
 const emptyCounts = (spaceId: string): SpaceCounts => ({
@@ -118,7 +78,7 @@ export function hostedChangeLegLine(report: HostedChangeLegReport): string {
     .join('; ')
 }
 
-function readCursor(family: Family, spaceId: string): number | null {
+function readCursor(family: HostedChangeFamily, spaceId: string): number | null {
   const value = db()
     .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
     .get(`${family.cursorPrefix}.${spaceId}`)?.value
@@ -126,26 +86,35 @@ function readCursor(family: Family, spaceId: string): number | null {
   const cursor = Number(value)
   return Number.isSafeInteger(cursor) ? cursor : null
 }
-function storeCursor(conn: Database, family: Family, spaceId: string, cursor: number) {
+function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string, cursor: number) {
   conn
     .query(
       'INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     )
     .run(`${family.cursorPrefix}.${spaceId}`, String(cursor))
 }
-const sameRow = (before: Record<string, unknown> | null, after: Record<string, unknown> | null) =>
-  JSON.stringify(before) === JSON.stringify(after)
+export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>
+  machineSpace === logSpace ? 'apply' : 'skip'
+
+export const classifyHostedChangeUpsert = (
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+) => (JSON.stringify(before) === JSON.stringify(after) ? 'no-op' : 'changed')
 
 function applyOneChange(
   conn: Database,
   change: HostedSpaceChange,
   spaceId: string,
-  family: Family,
+  family: HostedChangeFamily,
   counts: SpaceCounts,
 ) {
   if (!family.accepts(change.table)) return
   if (change.op === 'delete') {
-    if (family.rowSpace(conn, change.table, change.id) !== spaceId) counts.deletesSkipped += 1
+    const decision = classifyHostedChangeDelete(
+      family.rowSpace(conn, change.table, change.id),
+      spaceId,
+    )
+    if (decision === 'skip') counts.deletesSkipped += 1
     else {
       family.delete(conn, change.table, change.id)
       counts.deletesApplied += 1
@@ -159,7 +128,7 @@ function applyOneChange(
   const before = family.machineRow(conn, change.table, change.id)
   family.apply(conn, change.table, change.row)
   const after = family.machineRow(conn, change.table, change.id)
-  if (sameRow(before, after)) counts.upsertsNoop += 1
+  if (classifyHostedChangeUpsert(before, after) === 'no-op') counts.upsertsNoop += 1
   else counts.upsertsChanged += 1
 }
 
@@ -167,7 +136,7 @@ function applyPage(
   conn: Database,
   page: HostedSpaceChangePage,
   spaceId: string,
-  family: Family,
+  family: HostedChangeFamily,
   prepared: Array<(conn: Database) => void>,
 ) {
   const counts = emptyCounts(spaceId)
@@ -186,7 +155,12 @@ function applyPage(
   return counts
 }
 
-async function startSpace(family: Family, spaceId: string, options: RequestOptions, head?: number) {
+async function startSpace(
+  family: HostedChangeFamily,
+  spaceId: string,
+  options: HostedChangeRequestOptions,
+  head?: number,
+) {
   const sequence = head ?? (await hostedSpaceChanges(0, { ...options, limit: 1 })).head
   const applySnapshot = await family.fullPull(options)
   writeTransaction((conn) => {
@@ -196,10 +170,10 @@ async function startSpace(family: Family, spaceId: string, options: RequestOptio
   return emptyCounts(spaceId)
 }
 async function followSpace(
-  family: Family,
+  family: HostedChangeFamily,
   spaceId: string,
   after: number,
-  options: RequestOptions,
+  options: HostedChangeRequestOptions,
 ) {
   let counts = emptyCounts(spaceId)
   let cursor = after
@@ -220,7 +194,7 @@ async function followSpace(
   return counts
 }
 async function pullFamily(
-  family: Family,
+  family: HostedChangeFamily,
   options: PullOptions,
   identity: TaskDestinationIdentity,
   registered: readonly RegisteredTaskSpace[],
@@ -246,43 +220,13 @@ async function pullFamily(
   return sumCounts(results)
 }
 
-function taskFamily(
-  registered: readonly RegisteredTaskSpace[],
-  identity: TaskDestinationIdentity,
-): Family {
-  return {
-    cursorPrefix: HOSTED_CHANGES_CURSOR_KEY,
-    tables: HOSTED_TASK_CHANGE_TABLE_QUERY,
-    spaces: taskPullSpaces,
-    fullPull: async (options) => {
-      const snapshot = await hostedTaskChanges(null, options)
-      return (conn) => applyHostedTaskRows(conn, snapshot)
-    },
-    tableOrder: () => 0,
-    accepts: isHostedTaskChangeTable,
-    machineRow: (conn, table, id) =>
-      hostedChangeMachineRow(conn, table as HostedTaskChangeTable, id),
-    rowSpace: (conn, table, id) => {
-      const project = hostedChangeRowProject(conn, table as HostedTaskChangeTable, id)
-      if (project === null) return null
-      const destination = taskProjectDestination(project, registered, identity)
-      return 'destinationSpaceId' in destination ? destination.destinationSpaceId : null
-    },
-    apply: (conn, table, row) =>
-      applyHostedChangeUpsert(conn, table as HostedTaskChangeTable, row as never),
-    delete: (conn, table, id) => deleteHostedChangeRow(conn, table as HostedTaskChangeTable, id),
-    finish: reconcileParentRecordIds,
-    failureLabel: 'hosted task change',
-  }
-}
-
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'
 const isNoteTable = (table: string) => table === 'hub_note' || table === 'hub_note_acknowledgement'
 const machineTable = (table: string) => (table === 'hub_note' ? 'note' : 'note_acknowledgement')
 function noteFamily(
   registered: readonly RegisteredTaskSpace[],
   identity: TaskDestinationIdentity,
-): Family {
+): HostedChangeFamily {
   const projectSpace = (project: string) => {
     const destination = taskProjectDestination(project, registered, identity)
     return 'destinationSpaceId' in destination ? destination.destinationSpaceId : null
@@ -296,25 +240,18 @@ function noteFamily(
       return (conn) => applyHostedNoteRows(conn, snapshot)
     },
     preparePage: async (page, options) => {
-      const incoming = new Set(
-        page.changes
-          .filter((change) => change.table === 'hub_note' && change.op === 'upsert')
-          .map((change) => change.id),
-      )
-      const fetched = new Map<string, HostedNote>()
-      for (const change of page.changes) {
-        if (change.table !== 'hub_note_acknowledgement' || change.op !== 'upsert') continue
-        const acknowledgement = change.row as HostedAcknowledgement
-        if (acknowledgement.deleted_at || incoming.has(acknowledgement.note_id)) continue
-        if (db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id))
-          continue
-        if (!fetched.has(acknowledgement.note_id))
-          fetched.set(
-            acknowledgement.note_id,
-            await hostedGetNote(acknowledgement.note_id, options),
-          )
-      }
-      return [...fetched.values()].map((note) => (conn: Database) => applyHostedNote(conn, note))
+      const noteChanges = page.changes
+        .filter((change) => change.table === 'hub_note')
+        .map((change) => ({
+          id: change.id,
+          deleted:
+            change.op === 'delete' || Boolean((change.row as HostedNote | undefined)?.deleted_at),
+        }))
+      const acknowledgements = page.changes
+        .filter((change) => change.table === 'hub_note_acknowledgement' && change.op === 'upsert')
+        .map((change) => change.row as HostedAcknowledgement)
+      const fetched = await completeAcknowledgementNotes(noteChanges, acknowledgements, options)
+      return fetched.map((note) => (conn: Database) => applyHostedNote(conn, note))
     },
     tableOrder: (table) => (table === 'hub_note' ? 0 : 1),
     accepts: isNoteTable,
@@ -351,7 +288,7 @@ async function pullChanges(
   makeFamily: (
     registered: readonly RegisteredTaskSpace[],
     identity: TaskDestinationIdentity,
-  ) => Family,
+  ) => HostedChangeFamily,
   options: PullOptions,
 ) {
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
@@ -360,5 +297,6 @@ async function pullChanges(
   const registered = options.registeredProjects ?? projects()
   return pullFamily(makeFamily(registered, identity), options, identity, registered)
 }
-export const pullHostedTaskChanges = (options: PullOptions = {}) => pullChanges(taskFamily, options)
+export const pullHostedTaskChanges = (options: PullOptions = {}) =>
+  pullChanges(createHostedTaskChangeFamily, options)
 export const pullHostedNoteChanges = (options: PullOptions = {}) => pullChanges(noteFamily, options)

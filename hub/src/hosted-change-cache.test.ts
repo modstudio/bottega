@@ -2,9 +2,19 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import { HOSTED_NOTE_CHANGES_CURSOR_KEY, pullHostedNoteChanges } from './hosted-change-cache.ts'
+import {
+  classifyHostedChangeDelete,
+  classifyHostedChangeUpsert,
+  HOSTED_NOTE_CHANGES_CURSOR_KEY,
+  pullHostedNoteChanges,
+} from './hosted-change-cache.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
-import { applyHostedAcknowledgement, applyHostedNote } from './note-cache.ts'
+import {
+  applyHostedAcknowledgement,
+  applyHostedNote,
+  applyHostedNoteRows,
+  hostedNotePullRows,
+} from './note-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -123,6 +133,14 @@ function storeCursor(value: string, space = 'space-one') {
 }
 const pull = (fetch: TestFetch, registeredProjects = registered.slice(0, 1)) =>
   pullHostedNoteChanges({ ...options, fetch, registeredProjects })
+
+test('change classifications depend only on the gathered row values', () => {
+  expect(classifyHostedChangeDelete('space-one', 'space-one')).toBe('apply')
+  expect(classifyHostedChangeDelete(null, 'space-one')).toBe('skip')
+  expect(classifyHostedChangeDelete('space-two', 'space-one')).toBe('skip')
+  expect(classifyHostedChangeUpsert({ text: 'same' }, { text: 'same' })).toBe('no-op')
+  expect(classifyHostedChangeUpsert({ text: 'before' }, { text: 'after' })).toBe('changed')
+})
 
 test('the note family starts and resets through the full note pull including counters', async () => {
   let fullPulls = 0
@@ -358,6 +376,83 @@ test('an acknowledgement on a later page uses the note from an earlier page', as
   expect(
     db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId),
   ).not.toBeNull()
+})
+
+test('a failed missing-parent fetch leaves the note page and cursor untouched', async () => {
+  storeCursor('12')
+  const fetch = routeFetch({
+    changes: () =>
+      page({
+        next: 13,
+        changes: [
+          {
+            sequence: 13,
+            table: 'hub_note_acknowledgement',
+            id: acknowledgementId,
+            op: 'upsert',
+            row: acknowledgement(),
+          },
+        ],
+      }),
+    getNote: () => Response.json({ error: 'parent unavailable' }, { status: 503 }),
+  })
+  await expect(pull(fetch)).rejects.toThrow('parent unavailable')
+  expect(cursor()).toBe('12')
+  expect(db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId)).toBeNull()
+  expect(
+    db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId),
+  ).toBeNull()
+})
+
+test('a deleted note upsert with a live acknowledgement matches the timestamp pull state', async () => {
+  const deletedNote = note({ deleted_at: at })
+  const fetch = routeFetch({
+    notes: () => fullNotes([deletedNote], [acknowledgement()]),
+    getNote: () => deletedNote,
+  })
+  const timestampRows = await hostedNotePullRows(null, { ...options, fetch })
+  writeTransaction((conn) => applyHostedNoteRows(conn, timestampRows))
+  const timestampState = {
+    note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
+    acknowledgement:
+      db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId) ??
+      null,
+  }
+
+  resetFixtureStore()
+  storeCursor('12')
+  await pull(
+    routeFetch({
+      changes: () =>
+        page({
+          next: 14,
+          changes: [
+            {
+              sequence: 13,
+              table: 'hub_note',
+              id: noteId,
+              op: 'upsert',
+              row: deletedNote,
+            },
+            {
+              sequence: 14,
+              table: 'hub_note_acknowledgement',
+              id: acknowledgementId,
+              op: 'upsert',
+              row: acknowledgement(),
+            },
+          ],
+        }),
+      getNote: () => deletedNote,
+    }),
+  )
+  expect({
+    note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
+    acknowledgement:
+      db().query('SELECT 1 FROM note_acknowledgement WHERE record_id=?').get(acknowledgementId) ??
+      null,
+  }).toEqual(timestampState)
+  expect(timestampState).toEqual({ note: null, acknowledgement: null })
 })
 
 test('a note collision refuses the page and leaves its cursor in place', async () => {

@@ -2,11 +2,8 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import {
-  HOSTED_CHANGES_CURSOR_KEY,
-  MAX_HOSTED_CHANGE_PAGES_PER_PASS,
-  pullHostedTaskChanges,
-} from './hosted-change-cache.ts'
+import { MAX_HOSTED_CHANGE_PAGES_PER_PASS, pullHostedTaskChanges } from './hosted-change-cache.ts'
+import { HOSTED_CHANGES_CURSOR_KEY } from './hosted-task-change-family.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { applyHostedTask, pullHostedTasks } from './task-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
