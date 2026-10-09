@@ -1,6 +1,6 @@
 /** Owns document export and import filesystem representation. Must not know stores or transport. */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import {
   DOC_KINDS,
   DOC_SCOPES,
@@ -24,12 +24,41 @@ type ImportedDoc = {
   delivery?: 'inject' | 'demand'
 }
 
-export function exportDocFiles(dir: string, docs: Doc[]): number {
+type DocFileAddress = Pick<Doc, 'scope' | 'subject' | 'slug'>
+type ExportedDoc = Pick<
+  Doc,
+  'scope' | 'subject' | 'slug' | 'title' | 'status' | 'kind' | 'replacement_slug' | 'body'
+>
+
+function unsafeDocPathPart(value: string): boolean {
+  return (
+    isAbsolute(value) ||
+    /^[\\/]/.test(value) ||
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.split(/[\\/]+/).includes('..')
+  )
+}
+
+export function docFileRelativePath(doc: DocFileAddress): string {
+  const subject = doc.subject ?? '_'
+  if (unsafeDocPathPart(subject) || unsafeDocPathPart(doc.slug)) {
+    throw new Error(
+      `refusing doc file path for scope ${JSON.stringify(doc.scope)}, subject ${JSON.stringify(doc.subject)}, slug ${JSON.stringify(doc.slug)}: subject and slug must be relative with no .. segment`,
+    )
+  }
+  return join(doc.scope, subject, `${doc.slug}.md`)
+}
+
+export function docSlugFromFilePath(subjectDirectory: string, filePath: string): string {
+  return relative(subjectDirectory, filePath).split(sep).join('/').slice(0, -3)
+}
+
+export function exportDocFiles(dir: string, docs: ExportedDoc[]): number {
   for (const doc of docs) {
-    const target = join(dir, doc.scope, doc.subject ?? '_')
-    mkdirSync(target, { recursive: true })
+    const target = join(dir, docFileRelativePath(doc))
+    mkdirSync(dirname(target), { recursive: true })
     writeFileSync(
-      join(target, `${doc.slug}.md`),
+      target,
       `---\ntitle: ${JSON.stringify(doc.title)}\nstatus: ${JSON.stringify(doc.status)}\nkind: ${JSON.stringify(doc.kind)}\nreplacement: ${JSON.stringify(doc.replacement_slug)}\n---\n\n${doc.body}`,
     )
   }
@@ -100,13 +129,14 @@ async function importSubjectFiles(
 ): Promise<number> {
   const subject = subjectDirectory === '_' ? null : subjectDirectory
   const documents: ImportedDoc[] = []
-  for (const file of readdirSync(join(dir, scope, subjectDirectory), { withFileTypes: true })) {
-    if (!file.isFile() || !file.name.endsWith('.md')) continue
+  const subjectPath = join(dir, scope, subjectDirectory)
+  for (const filePath of docFilesWithin(subjectPath)) {
+    const slug = docSlugFromFilePath(subjectPath, filePath)
     documents.push({
       scope,
       subject,
-      slug: file.name.slice(0, -3),
-      ...importedDoc(join(dir, scope, subjectDirectory, file.name), file.name),
+      slug,
+      ...importedDoc(filePath, `${slug}.md`),
       delivery: importedDocDelivery(scope),
     })
   }
@@ -127,4 +157,14 @@ async function importSubjectFiles(
     await write(document)
   }
   return documents.length
+}
+
+function docFilesWithin(directory: string): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...docFilesWithin(path))
+    else if (entry.isFile() && entry.name.endsWith('.md')) files.push(path)
+  }
+  return files
 }
