@@ -6,31 +6,10 @@ import { hostedSendChanges, type ReportClientOptions } from './report-client.ts'
 const SEND_CURSOR_KEY = 'collect.hosted-sends.cursor'
 
 function cacheHostedSend(conn: Database, row: HostedSend) {
-  const existing = conn
-    .query<{ id: number }, [string]>('SELECT id FROM send WHERE record_id=?')
-    .get(row.id)
-  if (existing) {
-    conn
-      .query(`UPDATE send SET at=?,window=?,recipients=?,projects=?,items=?,status=?,error=?,test=?
-      WHERE id=?`)
-      .run(
-        row.at,
-        row.window,
-        row.recipients,
-        row.projects,
-        row.items,
-        row.status,
-        row.error,
-        row.test,
-        existing.id,
-      )
-    return
-  }
-  conn
-    .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
-    VALUES (?,?,?,?,?,?,?,?,?)`)
+  const updated = conn
+    .query(`UPDATE send SET at=?,window=?,recipients=?,projects=?,items=?,status=?,error=?,test=?
+      WHERE record_id=?`)
     .run(
-      row.id,
       row.at,
       row.window,
       row.recipients,
@@ -39,7 +18,23 @@ function cacheHostedSend(conn: Database, row: HostedSend) {
       row.status,
       row.error,
       row.test,
+      row.id,
     )
+  if (!updated.changes)
+    conn
+      .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(
+        row.id,
+        row.at,
+        row.window,
+        row.recipients,
+        row.projects,
+        row.items,
+        row.status,
+        row.error,
+        row.test,
+      )
 }
 
 export async function pullHostedReports(options: ReportClientOptions = {}) {

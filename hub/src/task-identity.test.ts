@@ -69,8 +69,8 @@ describe('task identity doctor', () => {
       INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen) VALUES
         ('alpha','alpha-id','SHARED-1','2026-01-01','2026-01-02'),
         ('beta','beta-id','SHARED-1','2026-01-01','2026-01-03');
-      INSERT INTO task_comment(task_key,task_record_id,body,created_at)
-      VALUES ('SHARED-1','shared-record','legacy','2026-01-01');
+      INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+      VALUES ('comment-record','SHARED-1','shared-record','legacy','2026-01-01');
     `)
     const result = taskIdentityDoctor(conn)
     expect(result).toMatchObject({

@@ -22,7 +22,6 @@ import {
 
 type Options = { dryRun?: boolean; baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 type ChildRow = {
-  id: number
   record_id: string | null
   task_key: string
   task_record_id: string | null
@@ -120,10 +119,10 @@ function persistMirrorBatch(
   })
 }
 
-function requiredChildRecordId(table: string, row: ChildRow) {
+function requiredDocumentRecordId(row: ChildRow & { id: number }) {
   if (row.record_id) return row.record_id
   throw new Error(
-    `${table} local row ${row.id} has no record id; migrate the Hub store before pushing`,
+    `task_document local row ${row.id} has no record id; migrate the Hub store before pushing`,
   )
 }
 
@@ -153,13 +152,20 @@ export async function pushTasks(options: Options = {}) {
   }))
   const taskByKey = new Map(tasks.map((row) => [row.key, row]))
   const taskByRecordId = new Map(tasks.map((row) => [row.id, row]))
-  const child = (table: string): MirroredChild[] => {
-    const rows = db().query<ChildRow, []>(`SELECT * FROM ${table} ORDER BY id`).all()
+  const uuidChild = (
+    table: 'task_comment' | 'task_status_event',
+    order: string,
+  ): MirroredChild[] => {
+    const rows = db()
+      .query<ChildRow & { record_id: string }, []>(
+        `SELECT * FROM ${table} ORDER BY ${order},record_id`,
+      )
+      .all()
     return rows.map((row) => {
       const { task_record_id: taskId, ...hosted } = row
       return {
         ...hosted,
-        id: requiredChildRecordId(table, row),
+        id: row.record_id,
         task_id: taskId,
         project_name:
           (taskId ? taskByRecordId.get(taskId) : undefined)?.project_name ??
@@ -169,12 +175,27 @@ export async function pushTasks(options: Options = {}) {
       }
     })
   }
-  const comments = child('task_comment').map((row) => ({
+  const documentRows = db()
+    .query<ChildRow & { id: number }, []>(`SELECT * FROM task_document ORDER BY id`)
+    .all()
+  const documents = documentRows.map((row) => {
+    const { task_record_id: taskId, ...hosted } = row
+    return {
+      ...hosted,
+      id: requiredDocumentRecordId(row),
+      task_id: taskId,
+      project_name:
+        (taskId ? taskByRecordId.get(taskId) : undefined)?.project_name ??
+        taskByKey.get(row.task_key)?.project_name ??
+        '',
+      deleted_at: null,
+    }
+  })
+  const comments = uuidChild('task_comment', 'created_at').map((row) => ({
     ...row,
     updated_at: row.created_at,
   }))
-  const documents = child('task_document')
-  const statusEvents = child('task_status_event').map((row) => ({
+  const statusEvents = uuidChild('task_status_event', 'at').map((row) => ({
     ...row,
     created_at: row.at,
     updated_at: row.at,

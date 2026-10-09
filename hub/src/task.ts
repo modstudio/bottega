@@ -46,8 +46,7 @@ export type TaskRow = {
 }
 
 export type TaskComment = {
-  id: number
-  record_id: string | null
+  id: string
   task_key: string
   task_record_id: string
   body: string
@@ -495,8 +494,8 @@ export function showTask(
   const task = taskByRecordId(recordId)
   const comments = db()
     .query<TaskComment, [string]>(
-      `SELECT id, record_id, task_key, task_record_id, body, created_at FROM task_comment
-      WHERE task_record_id = ? ORDER BY created_at, id`,
+      `SELECT record_id AS id, task_key, task_record_id, body, created_at FROM task_comment
+      WHERE task_record_id = ? ORDER BY created_at, record_id`,
     )
     .all(recordId)
   return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
@@ -779,7 +778,7 @@ export async function commentTask(
         .get(current.record_id)
       if (!row) throw new Error(`no task record ${current.record_id}`)
       if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-      const inserted = conn
+      conn
         .query(
           `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
         )
@@ -788,8 +787,7 @@ export async function commentTask(
         .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
         .run(at, at, row.record_id)
       return {
-        id: Number(inserted.lastInsertRowid),
-        record_id: recordId,
+        id: recordId,
         task_key: row.key,
         task_record_id: row.record_id,
         body,
@@ -802,8 +800,8 @@ export async function commentTask(
     body,
     hostedOptionsForProject(current.project, options.hosted),
   )
-  const result = writeTransaction((conn) => {
-    const inserted = conn
+  writeTransaction((conn) => {
+    conn
       .query(
         `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
       )
@@ -811,11 +809,9 @@ export async function commentTask(
     conn
       .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
       .run(comment.updated_at, comment.updated_at, current.record_id)
-    return inserted
   })
   return {
-    id: Number(result.lastInsertRowid),
-    record_id: comment.id,
+    id: comment.id,
     task_key: current.key,
     task_record_id: current.record_id,
     body,

@@ -389,20 +389,22 @@ describe('local task tracker', () => {
     expect(taskRecord(task.key).task.key).toBe(task.key)
   })
 
-  test('task detail joins children by task record id, not their shared label', () => {
+  test('task detail joins comments by task identity and orders equal timestamps by UUID', () => {
     const recordId = seed('SAME-77', 'alpha')
     const otherRecordId = seed('SAME-77', 'beta')
     writeTransaction((conn) => {
       conn
         .query(
-          `INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES
-           ('SAME-77',?,'alpha comment','2026-09-01'),
-           ('SAME-77',?,'beta comment','2026-09-02')`,
+          `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at) VALUES
+           ('01990000-0000-7000-8000-000000000002','SAME-77',?,'alpha second','2026-09-01'),
+           ('01990000-0000-7000-8000-000000000003','SAME-77',?,'beta comment','2026-09-01'),
+           ('01990000-0000-7000-8000-000000000001','SAME-77',?,'alpha first','2026-09-01')`,
         )
-        .run(recordId, otherRecordId)
+        .run(recordId, otherRecordId, recordId)
     })
-    expect(showTask('SAME-77', { recordId }).comments.map((row) => row.body)).toEqual([
-      'alpha comment',
+    expect(showTask('SAME-77', { recordId }).comments.map((row) => [row.id, row.body])).toEqual([
+      ['01990000-0000-7000-8000-000000000001', 'alpha first'],
+      ['01990000-0000-7000-8000-000000000002', 'alpha second'],
     ])
   })
 })

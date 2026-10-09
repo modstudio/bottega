@@ -144,8 +144,10 @@ test('fixture task reclaim deletes the task and all child rows in one fixture-st
         '',
       )
     connection
-      .query('INSERT INTO task_comment(task_key,task_record_id,body,created_at) VALUES (?,?,?,?)')
-      .run('ALP-899', 'fixture-task-record', 'comment', '')
+      .query(
+        'INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)',
+      )
+      .run('fixture-comment-record', 'ALP-899', 'fixture-task-record', 'comment', '')
     connection
       .query(
         `INSERT INTO task_document(task_key,task_record_id,title,body,version,created_at,updated_at)
@@ -153,8 +155,10 @@ test('fixture task reclaim deletes the task and all child rows in one fixture-st
       )
       .run('ALP-899', 'fixture-task-record', 'document', 'body', 'v1', '', '')
     connection
-      .query('INSERT INTO task_status_event(task_key,task_record_id,at,to_status) VALUES (?,?,?,?)')
-      .run('ALP-899', 'fixture-task-record', '', 'open')
+      .query(
+        'INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status) VALUES (?,?,?,?,?)',
+      )
+      .run('fixture-event-record', 'ALP-899', 'fixture-task-record', '', 'open')
   })
 
   const dryRun = await reclaimFixtureQuestions(true, new Set())
