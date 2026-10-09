@@ -56,6 +56,23 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('signals.sources.0.list')])
   })
 
+  test('validates review declarations and enabled catalogue lenses', () => {
+    expect(
+      validateProjectSettings({
+        review: {
+          lenses: [
+            { lens: 'correctness' },
+            { lens: 'migration-safety', paths: ['**/migrations/**'] },
+            { lens: 'craft', minTier: 2 },
+          ],
+        },
+      }),
+    ).toEqual([])
+    expect(validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } })).toEqual([
+      'review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from orch lens list',
+    ])
+  })
+
   test('validates a rung live command as a non-empty string', () => {
     expect(
       validateProjectSettings({

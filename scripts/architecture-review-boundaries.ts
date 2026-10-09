@@ -8,6 +8,13 @@ export type ReviewBoundarySpec = {
 
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
+    name: 'review-applicability-boundary',
+    file: 'orchestrator/src/review/review-applicability.ts',
+    allowed: [],
+    typeOnlyAllowed: ['../project/project-injection.ts'],
+    reason: 'Keep project lens selection independent of stores, processes, and clocks.',
+  },
+  {
     name: 'review-command-dispatcher-boundary',
     file: 'orchestrator/src/review/review-command-dispatcher.ts',
     allowed: [
@@ -58,6 +65,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       './review.ts',
       './review-calibration.ts',
+      './review-applicability.ts',
       './review-coverage.ts',
       './review-evidence-sql.ts',
       './review-pins.ts',

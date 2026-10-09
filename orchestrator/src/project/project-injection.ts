@@ -46,6 +46,16 @@ const signalsSchema = strictObject({
   ),
 })
 
+const reviewSchema = strictObject({
+  lenses: z.array(
+    strictObject({
+      lens: z.string().trim().min(1),
+      paths: z.array(z.string().trim().min(1)).optional(),
+      minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+    }),
+  ),
+})
+
 const gateSchema = z.string().trim().min(1)
 const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
@@ -62,6 +72,7 @@ const trackerSchema = strictObject({
 export type ReleaseSettings = z.infer<typeof releaseSchema>
 export type DocsSettings = z.infer<typeof docsSchema>
 export type SignalsSettings = z.infer<typeof signalsSchema>
+export type ReviewSettings = z.infer<typeof reviewSchema>
 type ResolvedDocs = DocsSettings & {
   server?: string
   read: string[]
@@ -193,6 +204,7 @@ type InjectionSettings = {
   release?: ReleaseSettings
   docs?: DocsSettings
   signals?: SignalsSettings
+  review?: ReviewSettings
   mainStack?: { consumers: string[]; requiredServices?: string[] }
 }
 
@@ -210,6 +222,7 @@ const injectionSources = [
   'release',
   'docs',
   'signals',
+  'review',
   'stack',
   'mainStack',
 ] as const
@@ -225,6 +238,7 @@ type InjectionValues<Project extends InjectableProject> = {
   release: NonNullable<Project['settings']['release']>
   docs: ResolvedDocs
   signals: NonNullable<Project['settings']['signals']>
+  review: NonNullable<Project['settings']['review']>
   stack: NonNullable<Project['stack']>
   mainStack: { requiredServices: string[]; requiredServicesText: string }
 }
@@ -242,6 +256,7 @@ const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
   release: `--settings '{"release":{"rungs":[],"mergeMethod":"<merge-method>","requiredChecks":[]}}'`,
   docs: `--settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'`,
   signals: `--settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
+  review: `--settings '{"review":{"lenses":[{"lens":"<catalogue-lens-id>"}]}}'`,
   mainStack: `--settings '{"mainStack":{"consumers":[],"requiredServices":[]}}'`,
 }
 
@@ -338,7 +353,7 @@ export function resolveDeclaredFacts<Project extends InjectableProject>(
 
 type ValidatedInjectionSettings = Pick<
   InjectionSettings,
-  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate'
+  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate' | 'review'
 >
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
@@ -349,6 +364,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['release', releaseSchema],
     ['docs', docsSchema],
     ['signals', signalsSchema],
+    ['review', reviewSchema],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
   ] as const) {

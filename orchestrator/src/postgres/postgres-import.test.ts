@@ -55,7 +55,7 @@ async function targetState(sql: SQL): Promise<unknown> {
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, docs, signals, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, docs, signals, review, release, states, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -168,6 +168,7 @@ realPostgres('project import against copied live SQLite data', () => {
       requireCleanMain: 'require_clean_main',
       secretPaths: 'secret_paths',
       signals: 'signals',
+      review: 'review',
       states: 'states',
       tracker: 'tracker',
       trunk: 'landing_branch',

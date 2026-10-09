@@ -13,6 +13,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { applicableReviewLenses } from '../review/review-applicability.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -281,8 +282,16 @@ function gatherReview(
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
-    .query<{ id: number; project_name: string | null }, [number]>(
-      `SELECT r.id, p.name AS project_name
+    .query<
+      {
+        id: number
+        project_name: string | null
+        tier: 0 | 1 | 2 | 3 | null
+        path_set: string | null
+      },
+      [number]
+    >(
+      `SELECT r.id, r.tier, r.path_set, p.name AS project_name
          FROM review r LEFT JOIN project p ON p.id=r.project_id
         WHERE r.id=?`,
     )
@@ -312,17 +321,38 @@ function gatherReview(
     )
     .get(id) ?? { total: 0, open: 0 }
   const lenses = d
-    .query<{ total: number; ungraded: number }, [number]>(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
-                       THEN 1 ELSE 0 END) AS ungraded
-         FROM review_lens WHERE review_id=?`,
-    )
-    .get(id) ?? { total: 0, ungraded: 0 }
+    .query<
+      {
+        lens: string
+        reproduced: string | null
+        coverage: string | null
+        limits: string | null
+        overlap: string | null
+      },
+      [number]
+    >('SELECT lens,reproduced,coverage,limits,overlap FROM review_lens WHERE review_id=?')
+    .all(id)
+  const project = projectByName(identity.project, d)
+  const required = applicableReviewLenses(
+    review.tier ?? 1,
+    review.path_set ? (JSON.parse(review.path_set) as string[]) : [],
+    project?.settings.review,
+  )
+  const graded = new Set(
+    lenses
+      .filter(
+        (lens) =>
+          lens.reproduced !== null &&
+          lens.coverage !== null &&
+          lens.limits !== null &&
+          lens.overlap !== null,
+      )
+      .map(({ lens }) => lens),
+  )
   return {
     id,
     allFindingsDisposed: Number(findings.open ?? 0) === 0,
-    allLensesGraded: lenses.total > 0 && Number(lenses.ungraded ?? 0) === 0,
+    allLensesGraded: required.every((lens) => graded.has(lens)),
   }
 }
 

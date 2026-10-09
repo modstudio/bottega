@@ -18,6 +18,8 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   pathSet: '["a.ts"]',
   tip: 'tip-a',
   tier: 1,
+  applicableLenses: ['correctness'],
+  reviewDeclaration: undefined,
   branchOwnerSession: 'owner-session',
   reviews: [review({ patchId: 'patch-a' })],
   branchReviews: [],
@@ -27,7 +29,9 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 
 describe('pull-request triage decision', () => {
   test('tier zero needs no review', () => {
-    expect(decideTriage(evidence({ tier: 0, reviews: [] }))).toMatchObject({ complete: true })
+    expect(decideTriage(evidence({ tier: 0, applicableLenses: [], reviews: [] }))).toMatchObject({
+      complete: true,
+    })
   })
 
   test('path a admits unchanged complete exact evidence', () => {
@@ -49,7 +53,7 @@ describe('pull-request triage decision', () => {
     const earlier = review({
       reviewId: 3,
       tier: 2,
-      lensIdentities: ['correctness', 'safety'],
+      lensIdentities: ['correctness', 'craft'],
     })
     expect(
       decideTriage(
@@ -86,7 +90,7 @@ describe('pull-request triage decision', () => {
       recordedAt: '2026-09-25T00:30:00Z',
       completedAt: '2026-09-25T01:30:00Z',
       tier: 2,
-      lensIdentities: ['safety'],
+      lensIdentities: ['craft'],
     })
     expect(
       decideTriage(
@@ -131,10 +135,11 @@ describe('pull-request triage decision', () => {
       patchId: 'patch-a',
     })
 
-    expect(decideTriage(evidence({ tier: 2, reviews: [first, second] }))).toMatchObject({
-      complete: false,
-      roundsOwed: 1,
-    })
+    expect(
+      decideTriage(
+        evidence({ tier: 2, applicableLenses: ['correctness', 'craft'], reviews: [first, second] }),
+      ),
+    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
   })
 
   test('an unfinished review blocks an otherwise complete identical patch group', () => {
@@ -259,16 +264,39 @@ describe('pull-request triage decision', () => {
     ).toMatchObject({ complete: false, finalTierRaised: true, earlierReviewTier: 1 })
   })
 
-  test('reports unfinished exact review, undisposed findings, and rounds owed', () => {
+  test('reports unfinished exact review, undisposed findings, and missing applicable lenses', () => {
     const incomplete = review({
       completedAt: null,
       findings: [{ id: 12, ordinal: 1, disposition: null }],
     })
-    expect(decideTriage(evidence({ tier: 3, reviews: [incomplete] }))).toMatchObject({
+    expect(
+      decideTriage(
+        evidence({
+          tier: 3,
+          applicableLenses: ['correctness', 'craft', 'safety'],
+          reviews: [incomplete],
+        }),
+      ),
+    ).toMatchObject({
       complete: false,
       unfinishedReviewIds: [4],
       undisposedFindings: [{ id: 12, reviewId: 4, ordinal: 1 }],
-      roundsOwed: 2,
+      missingLenses: ['correctness', 'craft', 'safety'],
     })
+  })
+
+  test('requires every applicable lens and allows an extra lens', () => {
+    const required = review({
+      lensIdentities: ['correctness', 'migration-safety'],
+      patchId: 'patch-a',
+    })
+    expect(
+      decideTriage(
+        evidence({ applicableLenses: ['correctness', 'migration-safety'], reviews: [required] }),
+      ),
+    ).toMatchObject({ complete: true })
+    expect(
+      decideTriage(evidence({ applicableLenses: ['correctness', 'craft'], reviews: [required] })),
+    ).toMatchObject({ complete: false, missingLenses: ['craft'] })
   })
 })

@@ -14,6 +14,7 @@ import {
   reviewsForTriage,
   serializePathSet,
 } from '../review/review-group.ts'
+import { applicableReviewLenses } from '../review/review-applicability.ts'
 import {
   type AdmissionDecision,
   type AdmissionOverride,
@@ -84,6 +85,12 @@ function triageDecision(change: PullRequestChange, database: Database): TriageDe
     pathSet: serializePathSet(change.group.pathSet),
     tip: change.tip,
     tier: change.tier,
+    applicableLenses: applicableReviewLenses(
+      change.tier,
+      change.group.pathSet,
+      change.project.settings.review,
+    ),
+    reviewDeclaration: change.project.settings.review,
     branchOwnerSession: branchRunOwnerSession(database, change.project.name, change.branch),
     reviews: reviews.reviews,
     branchReviews: reviews.branchReviews,
@@ -150,7 +157,7 @@ function admissionDecision(change: PullRequestChange, database: Database): Admis
   )
 }
 
-function refusal(
+export function triageRefusal(
   change: PullRequestChange,
   decision: Exclude<TriageDecision, { complete: true }>,
 ): string {
@@ -172,9 +179,9 @@ function refusal(
       `findings without a disposition: ${decision.undisposedFindings.map((finding) => finding.id).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `orch review triage ${finding.reviewId} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
-  if (decision.roundsOwed) {
+  for (const lens of decision.missingLenses) {
     lines.push(
-      `${decision.roundsOwed} lens round${decision.roundsOwed === 1 ? '' : 's'} still owed for tier ${change.tier}; cleared by: run and record ${decision.roundsOwed} more review lens round${decision.roundsOwed === 1 ? '' : 's'}`,
+      `applicable lens ${lens} has not run and been judged; cleared by: orch do review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.finalTierRaised) {
@@ -373,7 +380,7 @@ export function createPullRequest(
     if (reason !== null) insertOverride(change, reason, database)
     const decision = admissionDecision(change, database)
     if (!decision.complete && !decision.triage.complete) {
-      throw new Error(refusal(change, decision.triage))
+      throw new Error(triageRefusal(change, decision.triage))
     }
     recordTriageIntent(change, decision.triage, decision.overrideId, database)
     return decision
@@ -456,7 +463,8 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       known: true,
       complete: policy.admit,
       infrastructureError: null,
-      refusal: !policy.admit && !decision.triage.complete ? refusal(change, decision.triage) : null,
+      refusal:
+        !policy.admit && !decision.triage.complete ? triageRefusal(change, decision.triage) : null,
       pendingIntent: pendingIntent(database, project.name, branch),
       overrideId: decision.overrideId,
     }

@@ -5,6 +5,7 @@ import {
   finalizeTriageIntent,
   type PullRequestChange,
   recordTriageIntent,
+  triageRefusal,
 } from './pr-admission.ts'
 
 test('refuses a secret-shaped override reason before resolving the checkout', () => {
@@ -105,4 +106,38 @@ test('records the exact triage snapshot and outboxes it', () => {
     admissionPath: 'exact_review',
     readId: null,
   })
+})
+
+test('a missing applicable lens refusal names the lens and dispatch command', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1221-review-lenses',
+    tip: 'tip',
+    group: { patchId: 'patch' },
+    tier: 2,
+  } as PullRequestChange
+  const message = triageRefusal(change, {
+    complete: false,
+    snapshot: {
+      reviewIds: [4],
+      patchId: 'patch',
+      tier: 2,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readId: null,
+    },
+    missingReview: false,
+    unfinishedReviewIds: [],
+    undisposedFindings: [],
+    missingLenses: ['craft'],
+    architectReadRequired: false,
+    earlierReviewId: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+  })
+  expect(message).toContain('applicable lens craft has not run and been judged')
+  expect(message).toContain(
+    'orch do review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft',
+  )
 })

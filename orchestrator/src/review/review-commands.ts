@@ -8,6 +8,7 @@ import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { applicableReviewLenses } from './review-applicability.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { coverageAudit } from './review-coverage.ts'
@@ -94,7 +95,12 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function resolveTierTarget(value: string): { repo: string; from: string; to: string } {
+function resolveTierTarget(value: string): {
+  repo: string
+  from: string
+  to: string
+  project: NonNullable<ReturnType<typeof projectAt>>
+} {
   if (/^\d+$/.test(value)) {
     return (() => {
       const runId = Number(value)
@@ -134,7 +140,7 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
         }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      if (!branchLive) return { repo: project.path, from: row.base_commit, to: reviewed }
+      if (!branchLive) return { repo: project.path, from: row.base_commit, to: reviewed, project }
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
       const from = (() => {
@@ -147,7 +153,7 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
       if (!from) {
         throw new Error(`cannot find merge-base between branch ${row.branch} and trunk ${trunk}`)
       }
-      return { repo: project.path, from, to: reviewed }
+      return { repo: project.path, from, to: reviewed, project }
     })()
   }
 
@@ -162,7 +168,7 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
-    return { repo, ...resolveTierRangeInRepo(repo, range.from, range.to) }
+    return { repo, ...resolveTierRangeInRepo(repo, range.from, range.to), project }
   }
 
   const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
@@ -186,7 +192,38 @@ function resolveTierTarget(value: string): { repo: string; from: string; to: str
   return {
     repo,
     ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
+    project,
   }
+}
+
+function reviewTierOutput(value: string) {
+  const { repo, from, to, project } = resolveTierTarget(value)
+  const files = diffNumstat(repo, from, to)
+  const tier = classifyReviewTier({ files })
+  return {
+    ...tier,
+    lenses: applicableReviewLenses(
+      tier.tier,
+      files.map(({ path }) => path),
+      project.settings.review,
+    ),
+  }
+}
+
+function printReviewTier(
+  output: ReturnType<typeof reviewTierOutput>,
+  json: boolean,
+  log: (...values: unknown[]) => void,
+): void {
+  if (json) {
+    log(JSON.stringify(output))
+    return
+  }
+  log(`tier ${output.tier}`)
+  log(`risk ${output.risk}`)
+  log(`size ${output.size}`)
+  for (const lens of output.lenses) log(`lens ${lens}`)
+  for (const reason of output.reasons) log(reason)
 }
 
 export async function reviewCommand(
@@ -281,15 +318,7 @@ export async function reviewCommand(
   if (sub === 'tier') {
     const value = argv[2]
     if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
-    const { repo, from, to } = resolveTierTarget(value)
-    const tier = classifyReviewTier({ files: diffNumstat(repo, from, to) })
-    if (has('json')) log(JSON.stringify(tier))
-    else {
-      log(`tier ${tier.tier}`)
-      log(`risk ${tier.risk}`)
-      log(`size ${tier.size}`)
-      for (const reason of tier.reasons) log(reason)
-    }
+    printReviewTier(reviewTierOutput(value), has('json'), log)
     return
   }
   if (sub === 'coverage-audit') {

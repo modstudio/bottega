@@ -294,6 +294,43 @@ test('a foreign review is refused and a matching review is allowed', () => {
   })
 })
 
+test('review evidence requires every applicable lens and permits an extra lens', () => {
+  const d = database()
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({
+      review: { lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }] },
+    }),
+    'fixture',
+  )
+  d.query(
+    `INSERT INTO review (recorded_at,project_id,tier,path_set)
+     VALUES ('2026-09-01',?,2,'["orchestrator/src/example.ts"]')`,
+  ).run(projectId(d, 'fixture'))
+  for (const lens of ['correctness', 'safety']) {
+    const runId = insertRun(d, {
+      project: 'fixture',
+      launchKey: 'DEV-977',
+      branch: 'DEV-977-work',
+    })
+    d.query(
+      `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+       VALUES (1,?,?,'codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    ).run(runId, lens)
+  }
+  expect(gather(d, { review: 1 }).review?.allLensesGraded).toBe(false)
+
+  const craftRun = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-977',
+    branch: 'DEV-977-work',
+  })
+  d.query(
+    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES (1,?,'craft','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+  ).run(craftRun)
+  expect(gather(d, { review: 1 }).review?.allLensesGraded).toBe(true)
+})
+
 test('a same-project review whose lenses miss the branch and key is refused', () => {
   const d = database()
   const runId = insertRun(d, { project: 'fixture', launchKey: 'DEV-1', branch: 'other-branch' })

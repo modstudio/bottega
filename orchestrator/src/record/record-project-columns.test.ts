@@ -25,6 +25,11 @@ const samples = {
     column: 'signals',
     value: '{"sources":[{"name":"errors","list":"error_list"}]}',
   },
+  review: {
+    setting: { lenses: [{ lens: 'correctness' }] },
+    column: 'review',
+    value: '{"lenses":[{"lens":"correctness"}]}',
+  },
   states: { setting: { todo: 'open' }, column: 'states', value: '{"todo":"open"}' },
   tracker: { setting: { kind: 'hub' }, column: 'tracker', value: '{"kind":"hub"}' },
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },

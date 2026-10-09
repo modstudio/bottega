@@ -612,6 +612,22 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
   return problems
 }
 
+function reviewLensProblems(review: ProjectSettings['review']): string[] {
+  if (!review || !Array.isArray(review.lenses)) return []
+  const enabled = new Set(
+    (db().query('SELECT id FROM lens WHERE enabled=1').all() as { id: string }[]).map(
+      ({ id }) => id,
+    ),
+  )
+  return review.lenses.flatMap((entry, index) =>
+    entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
+      ? [
+          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from orch lens list`,
+        ]
+      : [],
+  )
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -636,6 +652,7 @@ export function validateProjectSettings(
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
+    ...reviewLensProblems(settings.review),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
