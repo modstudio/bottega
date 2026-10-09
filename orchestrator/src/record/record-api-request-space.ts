@@ -19,7 +19,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
     if (requested === null) return next()
     const decision = recordSpaceRequestDecision(
       requested,
-      context.get('identity').activeSpaceId ?? '',
+      context.get('identity').activeSpaceId,
       parseRecordSpaceMemberships(context.get('identity').memberships),
     )
     if (!decision.allowed) {
@@ -31,7 +31,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
         403,
       )
     }
-    context.set('destinationSpaceId', decision.spaceId)
+    if (decision.spaceId !== null) context.set('destinationSpaceId', decision.spaceId)
     await next()
   }
   app.use('/v1/projects', requestedSpace)

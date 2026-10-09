@@ -29,4 +29,11 @@ describe('record space decisions', () => {
       `record space slug ${slug} is shaped like a record id and would make space selection ambiguous`,
     )
   })
+
+  test('refuses a padded slug shaped like a record id', () => {
+    const slug = '  01990000-0000-7000-8000-000000000003  '
+    expect(() => refuseDuplicateRecordSpaceSlug(slug, [])).toThrow(
+      'is shaped like a record id and would make space selection ambiguous',
+    )
+  })
 })
