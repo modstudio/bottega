@@ -83,6 +83,7 @@ const LATEST_MIGRATIONS = [
   '0016_interval_ledger_destination',
   '0017_uuid_row_identity',
   '0018_task_document_number',
+  '0019_interval_record_id',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>

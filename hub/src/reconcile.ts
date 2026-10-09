@@ -9,7 +9,7 @@ export { runRef } from './run-ref.ts'
 type RunAnswer = OrchRun | OrchUnknownRun
 
 type OpenInterval = {
-  id: number
+  record_id: string
   task_key: string | null
   project: string | null
   agent: string | null
@@ -75,8 +75,8 @@ export async function reconcileOpenIntervals(
   const d = db()
   const intervals = d
     .query(
-      `SELECT id, task_key, project, agent, start_at, end_at, ref
-       FROM interval WHERE source = 'orch' AND open = 1 ORDER BY id`,
+      `SELECT record_id, task_key, project, agent, start_at, end_at, ref
+       FROM interval WHERE source = 'orch' AND open = 1 ORDER BY start_at, record_id`,
     )
     .all() as OpenInterval[]
   const refs = intervals.map((interval) => runRef(interval.ref))
@@ -132,8 +132,8 @@ export async function reconcileOpenIntervals(
 
   if (!options.dryRun && closed.length) {
     writeTransaction((conn) => {
-      const close = conn.query(`UPDATE interval SET open = 0 WHERE id = ? AND open = 1`)
-      for (const interval of closed) close.run(interval.id)
+      const close = conn.query(`UPDATE interval SET open = 0 WHERE record_id = ? AND open = 1`)
+      for (const interval of closed) close.run(interval.record_id)
     })
   }
   return { dryRun: options.dryRun ?? false, closed, leftOpen }

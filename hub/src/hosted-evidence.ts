@@ -3,6 +3,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = {
+  id?: string
   task_key: string | null
   project_name: string | null
   source: string
@@ -38,6 +39,24 @@ export type DayEvidence = {
 }
 export type IntervalKey = { source: string; ref: string; start_at: string }
 
+export type HostedIntervalPut =
+  | { kind: 'update'; id: string }
+  | { kind: 'rekey'; fromId: string; toId: string }
+  | { kind: 'insert'; id: string }
+  | { kind: 'insert-legacy' }
+
+/** Choose insert, update, or re-key from the incoming id and hosted rows in this space. */
+export function decideHostedIntervalPut(
+  incomingId: string | undefined,
+  existingId: string | null,
+  existingTupleId: string | null,
+): HostedIntervalPut {
+  if (!incomingId) return { kind: 'insert-legacy' }
+  if (existingId) return { kind: 'update', id: incomingId }
+  if (existingTupleId) return { kind: 'rekey', fromId: existingTupleId, toId: incomingId }
+  return { kind: 'insert', id: incomingId }
+}
+
 async function tenant<T>(url: string, identity: EvidenceIdentity, work: (tx: SQL) => Promise<T>) {
   const client = new SQL(url)
   try {
@@ -51,32 +70,114 @@ async function tenant<T>(url: string, identity: EvidenceIdentity, work: (tx: SQL
   }
 }
 
+function intervalValues(row: IntervalEvidence) {
+  return {
+    task_key: row.task_key,
+    project_name: row.project_name,
+    source: row.source,
+    agent: row.agent,
+    job: row.job,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    claude_tokens: row.claude_tokens,
+    vendor_tokens: row.vendor_tokens,
+    vendor_cost_usd: row.vendor_cost_usd,
+    ref: row.ref,
+    via: row.via,
+    open: row.open,
+    session_id: row.session_id,
+    user_id: row.user_id,
+  }
+}
+
+async function writeHostedInterval(
+  tx: SQL,
+  identity: EvidenceIdentity,
+  id: string,
+  row: IntervalEvidence,
+) {
+  const value = intervalValues(row)
+  await tx`
+    INSERT INTO hub_interval
+      (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
+       claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
+    VALUES
+      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name},
+       ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
+       ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
+       ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
+       ${value.user_id}::uuid, now())
+    ON CONFLICT (id) DO UPDATE SET
+      task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
+      job=excluded.job, start_at=excluded.start_at, end_at=excluded.end_at,
+      claude_tokens=excluded.claude_tokens, vendor_tokens=excluded.vendor_tokens,
+      vendor_cost_usd=excluded.vendor_cost_usd, ref=excluded.ref, via=excluded.via,
+      open=excluded.open, session_id=excluded.session_id, user_id=excluded.user_id,
+      updated_at=now()
+  `
+}
+
+async function writeLegacyInterval(tx: SQL, identity: EvidenceIdentity, row: IntervalEvidence) {
+  const value = intervalValues(row)
+  await tx`
+    INSERT INTO hub_interval
+      (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
+       claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
+    VALUES
+      (${newRecordId()}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name},
+       ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
+       ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
+       ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
+       ${value.user_id}::uuid, now())
+    ON CONFLICT (space_id, source, ref, start_at) DO UPDATE SET
+      task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
+      job=excluded.job, end_at=excluded.end_at, claude_tokens=excluded.claude_tokens,
+      vendor_tokens=excluded.vendor_tokens, vendor_cost_usd=excluded.vendor_cost_usd,
+      via=excluded.via, open=excluded.open, session_id=excluded.session_id,
+      user_id=excluded.user_id, updated_at=now()
+  `
+}
+
+async function upsertOneInterval(
+  tx: SQL,
+  identity: EvidenceIdentity,
+  row: IntervalEvidence,
+): Promise<number> {
+  const byId = row.id
+    ? await tx<{ id: string }[]>`
+        SELECT id::text AS id FROM hub_interval
+        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
+    : []
+  const byTuple = await tx<{ id: string }[]>`
+    SELECT id::text AS id FROM hub_interval
+    WHERE space_id=${identity.spaceId}::uuid AND source=${row.source} AND ref=${row.ref}
+      AND start_at=${row.start_at}::timestamptz`
+  const decision = decideHostedIntervalPut(row.id, byId[0]?.id ?? null, byTuple[0]?.id ?? null)
+  if (decision.kind === 'insert-legacy') {
+    await writeLegacyInterval(tx, identity, row)
+    return 0
+  }
+  if (decision.kind === 'rekey') {
+    // Re-keys a hosted interval to the client's record_id.
+    await tx`
+      UPDATE hub_interval SET id=${decision.toId}::uuid WHERE id=${decision.fromId}::uuid
+        AND space_id=${identity.spaceId}::uuid`
+    await writeHostedInterval(tx, identity, decision.toId, row)
+    return 1
+  }
+  await writeHostedInterval(tx, identity, decision.id, row)
+  return 0
+}
+
 export async function upsertIntervals(
   url: string,
   identity: EvidenceIdentity,
   rows: IntervalEvidence[],
 ) {
   return tenant(url, identity, async (tx) => {
-    for (const row of rows) {
-      await tx`
-        INSERT INTO hub_interval
-          (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
-           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
-        VALUES
-          (${newRecordId()}::uuid, ${identity.spaceId}::uuid, ${row.task_key}, ${row.project_name},
-           ${row.source}, ${row.agent}, ${row.job}, ${row.start_at}::timestamptz,
-           ${row.end_at}::timestamptz, ${row.claude_tokens}, ${row.vendor_tokens},
-           ${row.vendor_cost_usd}, ${row.ref}, ${row.via}, ${row.open}, ${row.session_id},
-           ${row.user_id}::uuid, now())
-        ON CONFLICT (space_id, source, ref, start_at) DO UPDATE SET
-          task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
-          job=excluded.job, end_at=excluded.end_at, claude_tokens=excluded.claude_tokens,
-          vendor_tokens=excluded.vendor_tokens, vendor_cost_usd=excluded.vendor_cost_usd,
-          via=excluded.via, open=excluded.open, session_id=excluded.session_id,
-          user_id=excluded.user_id, updated_at=now()
-      `
-    }
-    return { upserted: rows.length }
+    let rekeyed = 0
+    for (const row of rows) rekeyed += await upsertOneInterval(tx, identity, row)
+    return { upserted: rows.length, rekeyed }
   })
 }
 
@@ -108,7 +209,22 @@ export async function upsertDays(url: string, identity: EvidenceIdentity, rows: 
   })
 }
 
-export async function deleteIntervals(
+export async function deleteIntervals(url: string, identity: EvidenceIdentity, ids: string[]) {
+  return tenant(url, identity, async (tx) => {
+    let deleted = 0
+    for (const id of ids) {
+      const rows = await tx`
+        DELETE FROM hub_interval
+        WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid
+        RETURNING id
+      `
+      deleted += rows.length
+    }
+    return { deleted }
+  })
+}
+
+export async function deleteIntervalKeys(
   url: string,
   identity: EvidenceIdentity,
   keys: IntervalKey[],

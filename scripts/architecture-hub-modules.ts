@@ -46,6 +46,7 @@ export const hubModuleSpecs = [
     ],
   },
   { file: 'hub/src/task-document-label.ts', allowed: [] },
+  { file: 'hub/src/ingest/interval-replace.ts', allowed: [] },
   {
     file: 'hub/src/task-write-destination.ts',
     allowed: [
