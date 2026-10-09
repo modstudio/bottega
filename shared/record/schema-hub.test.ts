@@ -161,8 +161,10 @@ test('stopal note move bypasses forced row security as the non-bypass table owne
     INSERT INTO project VALUES
       ('01990000-0000-7000-8000-000000000011','01990000-0000-7000-8000-000000000001','stopal'),
       ('01990000-0000-7000-8000-000000000012','01990000-0000-7000-8000-000000000002','stopal');
+    INSERT INTO hub_task VALUES
+      ('01990000-0000-7000-8000-000000000301','01990000-0000-7000-8000-000000000002');
     INSERT INTO hub_note VALUES
-      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,NULL,'2026-01-01');
+      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,'01990000-0000-7000-8000-000000000301','2026-01-01');
     INSERT INTO hub_note_acknowledgement VALUES
       ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000101','2026-01-01');
     CREATE POLICY space_select ON space FOR SELECT USING (
@@ -170,6 +172,11 @@ test('stopal note move bypasses forced row security as the non-bypass table owne
     );
     CREATE POLICY project_select ON project FOR SELECT USING (
       space_id = nullif(current_setting('app.space_id', true), '')::uuid
+    );
+    CREATE POLICY task_select ON hub_task FOR SELECT USING (
+      space_id = nullif(current_setting('app.space_id', true), '')::uuid OR space_id = ANY(
+        string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
+      )
     );
     CREATE POLICY note_all ON hub_note USING (
       space_id = nullif(current_setting('app.space_id', true), '')::uuid
@@ -182,17 +189,23 @@ test('stopal note move bypasses forced row security as the non-bypass table owne
     );
     ALTER TABLE space ENABLE ROW LEVEL SECURITY;
     ALTER TABLE project ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task ENABLE ROW LEVEL SECURITY;
     ALTER TABLE hub_note ENABLE ROW LEVEL SECURITY;
     ALTER TABLE hub_note_acknowledgement ENABLE ROW LEVEL SECURITY;
     ALTER TABLE seq ENABLE ROW LEVEL SECURITY;
     ALTER TABLE space FORCE ROW LEVEL SECURITY;
     ALTER TABLE project FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
     ALTER TABLE hub_note FORCE ROW LEVEL SECURITY;
     ALTER TABLE hub_note_acknowledgement FORCE ROW LEVEL SECURITY;
     ALTER TABLE seq FORCE ROW LEVEL SECURITY;
   `)
   const move = migration('20261009150000_dev_1212_move_stopal_notes')
-  await database.exec(move)
+  const notices: string[] = []
+  await database.exec(move, { onNotice: (notice) => notices.push(notice.message ?? '') })
+  expect(notices).not.toContain(
+    'DEV-1212 stopal notes retain 1 promoted-task links outside the destination space',
+  )
   await database.exec(move)
   await database.exec('RESET ROLE')
   expect(
