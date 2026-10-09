@@ -625,7 +625,11 @@ export function createAskMcpServer(
             z.string().optional(),
           )
           .describe('Optional relative path:line inside this run tree.'),
-        same_as: z.string().min(1).optional().describe('A note label, UUID, or project-local number.'),
+        same_as: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('A note label, UUID, or project-local number.'),
       }),
     },
     async ({ text: noteText, file, same_as }) => {

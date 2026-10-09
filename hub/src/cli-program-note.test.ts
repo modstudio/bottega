@@ -19,10 +19,7 @@ test('new note output preserves its first line and reports the record id', () =>
       sightings: 1,
       record_id: '01990000-0000-7000-8000-000000000007',
     }),
-  ).toEqual([
-    'note workshop#7 filed; 1 sighting',
-    'record 01990000-0000-7000-8000-000000000007',
-  ])
+  ).toEqual(['note workshop#7 filed; 1 sighting', 'record 01990000-0000-7000-8000-000000000007'])
 })
 
 test('every note text surface uses the project label', () => {
@@ -36,9 +33,7 @@ test('every note text surface uses the project label', () => {
   expect(noteStaleLine({ label: note.label, reason: 'anchor vanished' })).toBe(
     'note workshop#7: anchor vanished',
   )
-  expect(noteCandidateLine({ ...note, score: 0.75 })).toBe(
-    'workshop#7 score 0.750  Boundary drift',
-  )
+  expect(noteCandidateLine({ ...note, score: 0.75 })).toBe('workshop#7 score 0.750  Boundary drift')
   expect(NOTE_DUPLICATE_PROMPT).toContain('note label')
   expect(noteCuratorPrompt([note])).toContain(
     'genuine-duplicate-of-project#number, earned-promotion',

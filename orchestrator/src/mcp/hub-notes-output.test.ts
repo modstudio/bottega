@@ -23,8 +23,6 @@ test('the note filer reads the UUID, label, and candidate identities from JSON',
   ).toMatchObject({
     noteRecordId: '01990000-0000-7000-8000-000000000007',
     noteLabel: 'workshop#7',
-    candidateNotes: [
-      { recordId: '01990000-0000-7000-8000-000000000003', label: 'workshop#3' },
-    ],
+    candidateNotes: [{ recordId: '01990000-0000-7000-8000-000000000003', label: 'workshop#3' }],
   })
 })

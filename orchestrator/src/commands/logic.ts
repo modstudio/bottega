@@ -242,11 +242,7 @@ export function register(program: Command): void {
     .option('--new')
     .allowExcessArguments(false)
     .action((text, options) =>
-      noteCommand(
-        text,
-        { sameAs: options.sameAs, new: Boolean(options.new) },
-        presentation,
-      ),
+      noteCommand(text, { sameAs: options.sameAs, new: Boolean(options.new) }, presentation),
     )
   program
     .command('state')

@@ -91,9 +91,7 @@ test('worker note request lifecycle permits exactly one terminal transition', ()
       status: 'filed',
       noteRecordId: '01990000-0000-7000-8000-000000000071',
       noteLabel: 'workshop#71',
-      candidateNotes: [
-        { recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' },
-      ],
+      candidateNotes: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
     }),
   ).toMatchObject({
     status: 'filed',

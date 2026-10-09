@@ -279,7 +279,9 @@ export async function promoteHostedNote(
     )[0]
     if (!note) return null
     if (note.promoted_task)
-      throw new Error(`note ${note.project}#${note.number} is already promoted to ${note.promoted_task}`)
+      throw new Error(
+        `note ${note.project}#${note.number} is already promoted to ${note.promoted_task}`,
+      )
     if (input.task !== undefined) {
       const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
         await tx`SELECT key_prefixes,tracker FROM project

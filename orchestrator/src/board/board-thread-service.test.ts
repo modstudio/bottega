@@ -197,13 +197,8 @@ test('only the asker or operator accepts and the reply must belong to the questi
     cwd,
   )
   await expect(
-    acceptAnswer(
-      question.id,
-      reply.id,
-      architect('permission-other'),
-      clock + 3,
-      cwd,
-      async () => filed(1),
+    acceptAnswer(question.id, reply.id, architect('permission-other'), clock + 3, cwd, async () =>
+      filed(1),
     ),
   ).rejects.toThrow(/question author/)
   await expect(

@@ -6,6 +6,7 @@ import {
 } from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
+import { hubNoteLabel } from '../mcp/hub-notes.ts'
 import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
@@ -52,7 +53,6 @@ import {
   readThread,
   replyToThread,
 } from './board-thread-service.ts'
-import { hubNoteLabel } from '../mcp/hub-notes.ts'
 
 type Environment = Record<string, string | undefined>
 type Context = { env?: Environment; clock?: number; cwd?: string; client?: RecordApiClient }

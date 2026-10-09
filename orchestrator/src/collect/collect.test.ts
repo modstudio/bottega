@@ -531,9 +531,7 @@ describe('collection records', () => {
       type: 'note',
       noteRecordId: '01990000-0000-7000-8000-000000000071',
       noteLabel: 'workshop#71',
-      candidates: [
-        { recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' },
-      ],
+      candidates: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
     })
     expect(recordedResult(id).errors.join('\n')).toContain(
       'notes:     workshop#71 (near workshop#8)',
