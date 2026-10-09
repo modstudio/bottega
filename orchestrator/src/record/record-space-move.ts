@@ -2,6 +2,7 @@
 /** Owns the atomic hosted move of one project's attributable rows. */
 
 import { SQL } from 'bun'
+import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { currentRecordUserSession } from './record-session.ts'
 import { type RecordMembership, recordMemberships } from './record-space.ts'
@@ -23,7 +24,7 @@ export function destinationOwnedByCaller(
   value: string,
   memberships: readonly RecordMembership[],
 ): RecordMembership {
-  const destination = memberships.find((row) => row.spaceId === value || row.slug === value)
+  const destination = recordSpaceMembership(value, memberships)
   if (!destination) {
     throw new Error(
       `destination record space ${value} does not exist or is not visible to the caller; create it or join it as owner, then retry`,
