@@ -9,6 +9,7 @@ test('hosted notes render their records without disposition controls', () => {
     notes: [
       {
         id: 7,
+        label: 'workshop#7',
         space_id: '00000000-0000-4000-8000-000000000001',
         space_name: 'Workshop',
         project: 'workshop',

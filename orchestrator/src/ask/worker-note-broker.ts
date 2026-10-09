@@ -77,14 +77,17 @@ function finish(request: PendingNote, outcome: WorkerNoteOutcome): void {
   const update = workerNoteTransition('requested', outcome)
   db()
     .query(
-      `UPDATE worker_note_request SET status=?,finished_at=?,note_id=?,candidate_ids=?,
-       refusal_class=?,detail=? WHERE id=? AND status='requested'`,
+      `UPDATE worker_note_request SET status=?,finished_at=?,note_record_id=?,note_label=?,
+       candidate_ids=?,candidate_labels=?,refusal_class=?,detail=?
+       WHERE id=? AND status='requested'`,
     )
     .run(
       update.status,
       nowIso(),
-      update.noteId,
+      update.noteRecordId,
+      update.noteLabel,
       update.candidateIds,
+      update.candidateLabels,
       update.refusalClass,
       update.detail,
       request.id,

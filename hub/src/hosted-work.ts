@@ -3,6 +3,7 @@ import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
+import { formatNoteLabel } from './note-label.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import {
   type BoardSourceRow,
@@ -438,6 +439,7 @@ export async function hostedNotes(
     return {
       notes: noteRows.map((row) => ({
         id: number(row.number),
+        label: formatNoteLabel(row.project, number(row.number)),
         space_id: row.space_id,
         space_name: row.space_name,
         project: row.project,

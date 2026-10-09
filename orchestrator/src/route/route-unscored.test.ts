@@ -190,6 +190,17 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     expect(hook).not.toContain('timeout=300')
   })
 
+  test('Stop note reminders parse labels and suggest label-addressed commands', () => {
+    const hook = readFileSync(
+      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
+      'utf8',
+    )
+    expect(hook).toContain('row["label"]')
+    expect(hook).toContain('hub note keep {note_label}')
+    expect(hook).toContain('hub note drop {note_label}')
+    expect(hook).toContain('hub note promote {note_label}')
+  })
+
   const predicateDrift = (tsWhere: string, hookWhere: string) => {
     const ts = comparableConjuncts(tsWhere, false)
     const hook = comparableConjuncts(hookWhere, true)

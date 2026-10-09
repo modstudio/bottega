@@ -428,8 +428,9 @@ type AskServerDependencies = {
     run: WorkerNoteRun,
     input: WorkerNoteInput,
   ): Promise<{
-    noteId: number
-    candidateIds: number[]
+    noteRecordId: string
+    noteLabel: string
+    candidateNotes: { recordId: string; label: string }[]
     anchorDropped?: string
   }>
   gate?: GateWaitDependencies
@@ -624,18 +625,22 @@ export function createAskMcpServer(
             z.string().optional(),
           )
           .describe('Optional relative path:line inside this run tree.'),
+        same_as: z.string().min(1).optional().describe('A note label, UUID, or project-local number.'),
       }),
     },
-    async ({ text: noteText, file }) => {
+    async ({ text: noteText, file, same_as }) => {
       try {
         if (!authorized()) throw new Error(unauthorized())
-        const input = validateWorkerNoteInput({ text: noteText, file })
+        const input = validateWorkerNoteInput({ text: noteText, file, sameAs: same_as })
         const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
-        const near = filed.candidateIds.length
-          ? ` Near-duplicate candidate ids: ${filed.candidateIds.join(', ')}.`
-          : ' No near-duplicate candidates were found.'
-        const anchor = filed.anchorDropped ? ` ${filed.anchorDropped}` : ''
-        return text(`Note ${filed.noteId} filed.${near}${anchor}`)
+        return text(
+          JSON.stringify({
+            noteRecordId: filed.noteRecordId,
+            noteLabel: filed.noteLabel,
+            candidates: filed.candidateNotes,
+            ...(filed.anchorDropped ? { anchorDropped: filed.anchorDropped } : {}),
+          }),
+        )
       } catch (error) {
         const message = error instanceof Error ? error.message : 'The note was not filed.'
         return text(

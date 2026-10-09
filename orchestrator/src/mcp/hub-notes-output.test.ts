@@ -1,14 +1,30 @@
 import { expect, test } from 'bun:test'
 import { parseFiledNoteOutput } from './hub-notes.ts'
 
-test('the note filer returns the additional record id without changing existing parsing', () => {
+test('the note filer reads the UUID, label, and candidate identities from JSON', () => {
   expect(
     parseFiledNoteOutput(
-      'near 3 score 0.750  similar\nnote 7 filed; 1 sighting\nrecord 01990000-0000-7000-8000-000000000007',
+      JSON.stringify({
+        record_id: '01990000-0000-7000-8000-000000000007',
+        number: 7,
+        label: 'workshop#7',
+        sightings: 1,
+        candidates: [
+          {
+            record_id: '01990000-0000-7000-8000-000000000003',
+            number: 3,
+            label: 'workshop#3',
+            text: 'similar',
+            score: 0.75,
+          },
+        ],
+      }),
     ),
   ).toMatchObject({
-    noteId: 7,
-    recordId: '01990000-0000-7000-8000-000000000007',
-    candidateIds: [3],
+    noteRecordId: '01990000-0000-7000-8000-000000000007',
+    noteLabel: 'workshop#7',
+    candidateNotes: [
+      { recordId: '01990000-0000-7000-8000-000000000003', label: 'workshop#3' },
+    ],
   })
 })

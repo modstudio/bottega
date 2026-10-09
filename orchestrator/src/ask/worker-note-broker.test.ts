@@ -24,16 +24,33 @@ test('host broker derives run facts and completes a requested note', async () =>
   const seen: unknown[] = []
   const broker = startWorkerNoteBroker(runId, async (run, input) => {
     seen.push(run, input)
-    return { noteId: 71, candidateIds: [8, 13] }
+    return {
+      noteRecordId: '01990000-0000-7000-8000-000000000071',
+      noteLabel: 'workshop#71',
+      candidateNotes: [
+        { recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' },
+        { recordId: '01990000-0000-7000-8000-000000000013', label: 'workshop#13' },
+      ],
+    }
   })
   try {
     let filed = false
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const row = db()
-        .query(`SELECT status,note_id,candidate_ids FROM worker_note_request WHERE id=?`)
-        .get(request.id) as { status: string; note_id: number | null; candidate_ids: string }
+        .query(
+          `SELECT status,note_record_id,note_label,candidate_ids,candidate_labels
+           FROM worker_note_request WHERE id=?`,
+        )
+        .get(request.id) as Record<string, unknown>
       if (row.status === 'filed') {
-        expect(row).toEqual({ status: 'filed', note_id: 71, candidate_ids: '[8,13]' })
+        expect(row).toEqual({
+          status: 'filed',
+          note_record_id: '01990000-0000-7000-8000-000000000071',
+          note_label: 'workshop#71',
+          candidate_ids:
+            '["01990000-0000-7000-8000-000000000008","01990000-0000-7000-8000-000000000013"]',
+          candidate_labels: '["workshop#8","workshop#13"]',
+        })
         filed = true
         break
       }
@@ -79,7 +96,11 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
     if (attempts === 1) throw new Error('database is locked')
     return transaction(operation)
   }) as typeof database.transaction)
-  const broker = startWorkerNoteBroker(runId, async () => ({ noteId: 72, candidateIds: [] }))
+  const broker = startWorkerNoteBroker(runId, async () => ({
+    noteRecordId: '01990000-0000-7000-8000-000000000072',
+    noteLabel: 'workshop#72',
+    candidateNotes: [],
+  }))
   try {
     let filed = false
     for (let attempt = 0; attempt < 100; attempt += 1) {

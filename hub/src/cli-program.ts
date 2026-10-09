@@ -666,9 +666,7 @@ async function note() {
     else if (!rows.length) console.log('no notes')
     else
       for (const row of rows) {
-        console.log(
-          `${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`,
-        )
+        console.log(noteListLine(row))
       }
     return
   }
@@ -679,15 +677,13 @@ async function note() {
     if (!session) throw new Error('hub note keep requires a session environment')
     for (const id of ids) {
       const result = await acknowledgeNote(reference(id), session)
-      console.log(
-        `note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`,
-      )
+      console.log(noteKeepLine(result.note, result.alreadyAcknowledged))
     }
     return
   }
   if (sub === 'same') {
     const row = await mergeNote(reference(argv[2] ?? ''), reference(argv[3] ?? ''))
-    console.log(`note ${row.id} now has ${row.sightings} sightings`)
+    console.log(noteSameLine(row))
     return
   }
   if (sub === 'promote') {
@@ -699,12 +695,12 @@ async function note() {
     const reason = flag('reason')
     if (!reason) throw new Error('hub note drop <id> --reason "..."')
     const row = await dropNote(reference(argv[2] ?? ''), reason)
-    console.log(`note ${row.id} dropped: ${row.stale_reason}`)
+    console.log(noteDropLine(row))
     return
   }
   if (sub === 'stale') {
     const result = await staleNotes()
-    for (const row of result.reasons) console.log(`note ${row.id}: ${row.reason}`)
+    for (const row of result.reasons) console.log(noteStaleLine(row))
     console.log(`${result.marked} marked stale; ${result.deleted} deleted`)
     return
   }
@@ -740,8 +736,12 @@ async function note() {
     anchor: explicitNoteAnchor(),
   })
   if (!result.note) {
+    if (has('json')) {
+      console.log(JSON.stringify(noteFiledJson(null, result.candidates)))
+      return
+    }
     const lines = result.candidates.map(
-      (candidate) => `${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`,
+      noteCandidateLine,
     )
     if (!process.stdin.isTTY) {
       throw new Error(
@@ -749,29 +749,59 @@ async function note() {
       )
     }
     console.log(`possible duplicate notes:\n${lines.join('\n')}`)
-    const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
-    result = /^\d+$/.test(answer)
+    const answer = prompt(NOTE_DUPLICATE_PROMPT)?.trim() ?? ''
+    result = answer && answer !== 'new'
       ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
       : answer === 'new'
         ? await createNote({ text, area: flag('area'), forceNew: true })
         : result
     if (!result.note) throw new Error('note not filed')
   }
-  for (const candidate of result.candidates) {
-    console.log(`near ${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
+  if (has('json')) console.log(JSON.stringify(noteFiledJson(result.note, result.candidates)))
+  else {
+    for (const candidate of result.candidates) {
+      console.log(`near ${noteCandidateLine(candidate)}`)
+    }
+    for (const line of noteFiledOutput(result.note)) console.log(line)
   }
-  for (const line of noteFiledOutput(result.note)) console.log(line)
 }
 
 export function noteFiledOutput(note: {
-  id: number
+  label: string
   sightings: number
   record_id: string | null
 }): string[] {
   return [
-    `note ${note.id} filed; ${note.sightings} sighting${note.sightings === 1 ? '' : 's'}`,
+    `note ${note.label} filed; ${note.sightings} sighting${note.sightings === 1 ? '' : 's'}`,
     ...(note.record_id ? [`record ${note.record_id}`] : []),
   ]
+}
+
+export const NOTE_DUPLICATE_PROMPT = "Enter a note label for the same finding, or 'new':"
+export const noteListLine = (note: { label: string; sightings: number; text: string }) =>
+  `${note.label.padEnd(20)} x${note.sightings}  ${note.text}`
+export const noteKeepLine = (note: { label: string }, already: boolean) =>
+  `note ${note.label} ${already ? 'already kept' : 'kept'} for this session`
+export const noteSameLine = (note: { label: string; sightings: number }) =>
+  `note ${note.label} now has ${note.sightings} sightings`
+export const noteDropLine = (note: { label: string; stale_reason: string | null }) =>
+  `note ${note.label} dropped: ${note.stale_reason}`
+export const noteStaleLine = (note: { label: string; reason: string }) =>
+  `note ${note.label}: ${note.reason}`
+export const noteCandidateLine = (note: { label: string; score: number; text: string }) =>
+  `${note.label} score ${note.score.toFixed(3)}  ${note.text}`
+
+export function noteFiledJson(
+  note: { record_id: string; number: number; label: string; sightings: number } | null,
+  candidates: { record_id: string; number: number; label: string; text: string; score: number }[],
+) {
+  return {
+    record_id: note?.record_id ?? null,
+    number: note?.number ?? null,
+    label: note?.label ?? null,
+    sightings: note?.sightings ?? null,
+    candidates,
+  }
 }
 
 function refuseAmbiguousNoteVerb(sub: string | undefined): void {

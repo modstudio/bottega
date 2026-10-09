@@ -244,7 +244,7 @@ export function register(program: Command): void {
     .action((text, options) =>
       noteCommand(
         text,
-        { sameAs: options.sameAs ? Number(options.sameAs) : undefined, new: Boolean(options.new) },
+        { sameAs: options.sameAs, new: Boolean(options.new) },
         presentation,
       ),
     )

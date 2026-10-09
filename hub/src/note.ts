@@ -125,7 +125,14 @@ export type NoteRow = {
   promoted_task: string | null
 }
 
-export type NoteCandidate = { id: number; project: string; text: string; score: number }
+export type NoteCandidate = {
+  record_id: string
+  number: number
+  label: string
+  project: string
+  text: string
+  score: number
+}
 export type NoteAcknowledgement = { note: NoteRow; alreadyAcknowledged: boolean }
 
 const git = (cwd: string, ...args: string[]): string | null => {
@@ -408,7 +415,7 @@ export async function acknowledgeNote(
     })
     return { note: getNote(note.record_id), alreadyAcknowledged: false }
   }
-  const hosted = await hostedAcknowledgeNote(note.number, sessionId, options.hosted)
+  const hosted = await hostedAcknowledgeNote(note.record_id, sessionId, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, hosted.note)
     applyHostedAcknowledgement(conn, hosted.acknowledgement)
@@ -445,7 +452,14 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
     text,
   ).map((candidate) => {
     const note = byId.get(candidate.key)!
-    return { id: note.id, project: note.project, text: note.text, score: candidate.score }
+    return {
+      record_id: note.record_id,
+      number: note.number,
+      label: note.label,
+      project: note.project,
+      text: note.text,
+      score: candidate.score,
+    }
   })
 }
 
@@ -478,7 +492,7 @@ export async function mergeNote(
     })
     return getNote(targetRecordId)
   }
-  const result = await hostedMergeNotes(target.number, sourceNote.number, options.hosted)
+  const result = await hostedMergeNotes(target.record_id, sourceNote.record_id, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, result.note)
     conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
@@ -527,7 +541,7 @@ export async function createNote(
         text,
         area: input.area?.trim() || null,
         anchor: JSON.stringify(anchor),
-        sameAs: existing.number,
+        sameAs: existing.record_id,
       },
       options.hosted,
     )
@@ -636,7 +650,7 @@ export async function promoteNote(
     })
     return getNote(note.record_id)
   }
-  const hosted = await hostedPromoteNote(note.number, options.existingTaskKey, options.hosted)
+  const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, options.hosted)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
     applyHostedNote(conn, hosted.note)
@@ -672,7 +686,7 @@ export async function dropNote(
     })
     return getNote(recordId)
   }
-  const hosted = await hostedDropNote(current.number, reason.trim(), options.hosted)
+  const hosted = await hostedDropNote(current.record_id, reason.trim(), options.hosted)
   writeTransaction((conn) => applyHostedNote(conn, hosted))
   return getNote(recordId)
 }
@@ -680,7 +694,7 @@ export async function dropNote(
 export type StaleResult = {
   marked: number
   deleted: number
-  reasons: { id: number; reason: string }[]
+  reasons: { id: number; recordId: string; label: string; reason: string }[]
 }
 
 type StaleDeps = {
@@ -758,18 +772,21 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
   const reasons = notes.flatMap((note) => {
     const reason = vanishedReason(note, existingRuns, runGit)
-    return reason ? [{ id: note.id, reason }] : []
+    return reason
+      ? [{ id: note.id, recordId: note.record_id, label: note.label, reason }]
+      : []
   })
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
   const markedIds = new Set(reasons.map((row) => row.id))
-  const deletedIds = db()
-    .query<{ id: number; stale_at: string | null }, [string]>(
-      `SELECT id,stale_at FROM note WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
+  const deletedRows = db()
+    .query<{ id: number; record_id: string; stale_at: string | null }, [string]>(
+      `SELECT id,record_id,stale_at FROM note
+       WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
     )
     .all(cutoff)
     .filter((row) => row.stale_at !== null || markedIds.has(row.id))
-    .map((row) => row.id)
+  const deletedIds = deletedRows.map((row) => row.id)
   const url = deps.hosted?.baseUrl ?? process.env.HUB_HOSTED_URL
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
     throw new Error(
@@ -803,8 +820,8 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   }
   const result = await hostedReapNotes(
     {
-      stale: reasons.map((row) => ({ number: row.id, reason: row.reason, at })),
-      deleted: deletedIds,
+      stale: reasons.map((row) => ({ recordId: row.recordId, reason: row.reason, at })),
+      deleted: deletedRows.map((row) => row.record_id),
       confirmation: deletedIds.length,
       cutoff,
     },
@@ -847,14 +864,18 @@ export async function curateNotes(
   for (const project of projects()) {
     const notes = listActionableNotes({ project: project.name })
     if (!notes.length) continue
-    const prompt = [
-      'Re-read every open note below against this checkout. Return proposals only; make no changes.',
-      'For each note return: still-holds, genuine-duplicate-of-N, earned-promotion, and area, with reasons.',
-      'A human will act through hub note same, drop, or promote.',
-      '',
-      ...notes.map((note) => `${note.id}: ${note.text}`),
-    ].join('\n')
+    const prompt = noteCuratorPrompt(notes)
     results.push({ project: project.name, result: await dispatchNoteCurator(project.path, prompt) })
   }
   return results
+}
+
+export function noteCuratorPrompt(notes: Pick<NoteRow, 'label' | 'text'>[]): string {
+  return [
+    'Re-read every open note below against this checkout. Return proposals only; make no changes.',
+    'For each note return: still-holds, genuine-duplicate-of-project#number, earned-promotion, and area, with reasons.',
+    'A human will act through hub note same, drop, or promote.',
+    '',
+    ...notes.map((note) => `${note.label}: ${note.text}`),
+  ].join('\n')
 }

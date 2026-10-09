@@ -49,7 +49,7 @@ export async function promoteNoteCommand(
   } catch (error) {
     if (!created) throw error
     throw new Error(
-      `tracker task ${existingTaskKey} was created, but note promotion failed: ${(error as Error).message}. Finish with: hub note promote ${note.id} --task ${existingTaskKey}`,
+      `tracker task ${existingTaskKey} was created, but note promotion failed: ${(error as Error).message}. Finish with: hub note promote ${note.label} --task ${existingTaskKey}`,
     )
   }
 }

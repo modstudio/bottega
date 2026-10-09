@@ -45,7 +45,7 @@ describe('scoped operator docs', () => {
     try {
       const filed = await client.callTool({
         name: 'note',
-        arguments: { text: 'outside defect', same_as: 1, new: true },
+        arguments: { text: 'outside defect', same_as: 'workshop#1', new: true },
       })
       expect(filed.isError).toBe(true)
       expect((filed.content as { text: string }[])[0]!.text).toBe('The note was not filed.')

@@ -150,7 +150,9 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     { audience: 'operator', title: 'Local question', body: 'Question body' },
     { env: noRecordEnv, clock },
   )
-  db().query('UPDATE board_message SET note_id=42 WHERE id=?').run(Number(question.id))
+  db()
+    .query('UPDATE board_message SET note_record_id=?,note_label=? WHERE id=?')
+    .run('01990000-0000-7000-8000-000000000042', 'fixture#42', Number(question.id))
   const local = await boardThread(question.id, { env: noRecordEnv, clock })
   expect(local).toEqual({
     root: {
@@ -169,7 +171,8 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       acceptedReplyId: null,
       acceptedBy: null,
       acceptedAt: null,
-      noteId: '42',
+      noteRecordId: '01990000-0000-7000-8000-000000000042',
+      noteLabel: 'fixture#42',
       notePendingError: null,
       revision: null,
       scopeProjectIds: null,
@@ -193,7 +196,11 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       getBoardThread: async () => ({ root: message, replies: [] }),
     },
   })
-  expect(hosted).toEqual({ root: { ...message, text: null }, replies: [] })
+  const { noteId: _noteId, ...hostedRoot } = message
+  expect(hosted).toEqual({
+    root: { ...hostedRoot, noteRecordId: null, noteLabel: null, text: null },
+    replies: [],
+  })
 })
 
 test('status results have one pinned shape in local and hosted modes', async () => {
@@ -220,7 +227,8 @@ test('status results have one pinned shape in local and hosted modes', async () 
       acceptedReplyId: null,
       acceptedBy: null,
       acceptedAt: null,
-      noteId: null,
+      noteRecordId: null,
+      noteLabel: null,
       notePendingError: null,
       revision: null,
       scopeProjectIds: null,
@@ -264,8 +272,14 @@ test('status results have one pinned shape in local and hosted modes', async () 
       getBoardStatus: async () => ({ message, receipts: [receipt] }),
     },
   })
+  const { noteId: _noteId, ...hostedMessageFields } = message
   expect(hosted).toEqual({
-    message: { ...message, text: null },
+    message: {
+      ...hostedMessageFields,
+      noteRecordId: null,
+      noteLabel: null,
+      text: null,
+    },
     receipts: [receipt],
     reached: 1,
     acknowledged: 0,

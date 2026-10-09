@@ -94,14 +94,14 @@ export async function listHostedNotes(
   })
 }
 
-export async function getHostedNote(url: string, identity: TaskIdentity, number: number) {
+export async function getHostedNote(url: string, identity: TaskIdentity, recordId: string) {
   return tenant(
     url,
     identity,
     async (tx) =>
       rows<HostedNote>(
         await tx`SELECT hub_note.*,number::int number FROM hub_note
-    WHERE space_id=${identity.spaceId}::uuid AND number=${number} AND deleted_at IS NULL`,
+    WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid AND deleted_at IS NULL`,
       )[0] ?? null,
   )
 }
@@ -147,14 +147,14 @@ export async function createHostedNote(
     text: string
     area?: string | null
     anchor: string
-    sameAs?: number
+    sameAs?: string
   },
 ) {
   return tenant(url, identity, async (tx) => {
     if (input.sameAs) {
       const current = rows<HostedNote>(
         await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-        AND number=${input.sameAs} AND deleted_at IS NULL FOR UPDATE`,
+        AND id=${input.sameAs}::uuid AND deleted_at IS NULL FOR UPDATE`,
       )[0]
       if (!current) return null
       if (current.project !== input.project)
@@ -163,7 +163,7 @@ export async function createHostedNote(
       return rows<HostedNote>(
         await tx`UPDATE hub_note SET anchors=${anchors},sightings=sightings+1,
         last_seen_at=now(),stale_at=NULL,stale_reason=NULL,updated_at=now()
-        WHERE space_id=${identity.spaceId}::uuid AND number=${input.sameAs} RETURNING *,number::int number`,
+        WHERE space_id=${identity.spaceId}::uuid AND id=${input.sameAs}::uuid RETURNING *,number::int number`,
       )[0]!
     }
     await lockNoteNumbers(tx, identity)
@@ -193,7 +193,7 @@ export async function createHostedNote(
 export async function patchHostedNote(
   url: string,
   identity: TaskIdentity,
-  number: number,
+  recordId: string,
   changes: Partial<
     Pick<
       HostedNote,
@@ -211,7 +211,7 @@ export async function patchHostedNote(
   return tenant(url, identity, async (tx) => {
     const current = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-      AND number=${number} AND deleted_at IS NULL FOR UPDATE`,
+      AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!current) return null
     const promotedTask =
@@ -231,7 +231,7 @@ export async function patchHostedNote(
       stale_at=${changes.stale_at === undefined ? current.stale_at : changes.stale_at}::timestamptz,
       stale_reason=${changes.stale_reason === undefined ? current.stale_reason : changes.stale_reason},
       promoted_task=${promotedTask},promoted_task_id=${promotedTaskId}::uuid,updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
     )[0]!
   })
 }
@@ -239,13 +239,13 @@ export async function patchHostedNote(
 export async function acknowledgeHostedNote(
   url: string,
   identity: TaskIdentity,
-  number: number,
+  recordId: string,
   session: string,
 ) {
   return tenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-      AND number=${number} AND deleted_at IS NULL`,
+      AND id=${recordId}::uuid AND deleted_at IS NULL`,
     )[0]
     if (!note) return null
     const old = rows<HostedAcknowledgement>(
@@ -268,18 +268,18 @@ export async function acknowledgeHostedNote(
 export async function promoteHostedNote(
   url: string,
   identity: TaskIdentity,
-  number: number,
+  recordId: string,
   input: { task?: string } = {},
   createTask = createHostedTaskInTransaction,
 ): Promise<{ note: HostedNote; task: HostedTask | null } | null> {
   return tenant(url, identity, async (tx) => {
     const note = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-      AND number=${number} AND deleted_at IS NULL FOR UPDATE`,
+      AND id=${recordId}::uuid AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!note) return null
     if (note.promoted_task)
-      throw new Error(`note ${number} is already promoted to ${note.promoted_task}`)
+      throw new Error(`note ${note.project}#${note.number} is already promoted to ${note.promoted_task}`)
     if (input.task !== undefined) {
       const project = rows<{ key_prefixes: string[]; tracker: { protocol?: string } | null }>(
         await tx`SELECT key_prefixes,tracker FROM project
@@ -310,7 +310,7 @@ export async function promoteHostedNote(
     const { task } = selected
     const promoted = rows<HostedNote>(
       await tx`UPDATE hub_note SET promoted_task=${selected.key},promoted_task_id=${task?.id ?? null}::uuid,last_seen_at=now(),updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND number=${number} RETURNING *,number::int number`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${recordId}::uuid RETURNING *,number::int number`,
     )[0]!
     return { note: promoted, task }
   })
@@ -346,10 +346,10 @@ export async function selectPromotionTask(
 export async function dropHostedNote(
   url: string,
   identity: TaskIdentity,
-  number: number,
+  recordId: string,
   reason: string,
 ) {
-  return patchHostedNote(url, identity, number, {
+  return patchHostedNote(url, identity, recordId, {
     stale_at: new Date().toISOString(),
     stale_reason: `dropped: ${reason}`,
     last_seen_at: new Date().toISOString(),
@@ -359,28 +359,28 @@ export async function dropHostedNote(
 export async function mergeHostedNotes(
   url: string,
   identity: TaskIdentity,
-  targetNumber: number,
-  sourceNumber: number,
+  targetRecordId: string,
+  sourceRecordId: string,
 ) {
   return tenant(url, identity, async (tx) => {
     const found = rows<HostedNote>(
       await tx`SELECT hub_note.*,number::int number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-      AND number IN (${targetNumber},${sourceNumber}) AND deleted_at IS NULL FOR UPDATE`,
+      AND id IN (${targetRecordId}::uuid,${sourceRecordId}::uuid) AND deleted_at IS NULL FOR UPDATE`,
     )
-    const target = found.find((n) => Number(n.number) === targetNumber),
-      source = found.find((n) => Number(n.number) === sourceNumber)
+    const target = found.find((note) => note.id === targetRecordId),
+      source = found.find((note) => note.id === sourceRecordId)
     if (!target || !source) return null
     if (target.project !== source.project)
       throw new Error('notes from different projects cannot be merged')
     const updated = rows<HostedNote>(
       await tx`UPDATE hub_note SET anchors=${JSON.stringify([...JSON.parse(target.anchors), ...JSON.parse(source.anchors)])},
       sightings=${target.sightings + source.sightings},last_seen_at=${target.last_seen_at > source.last_seen_at ? target.last_seen_at : source.last_seen_at}::timestamptz,updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND number=${targetNumber} RETURNING *,number::int number`,
+      WHERE space_id=${identity.spaceId}::uuid AND id=${targetRecordId}::uuid RETURNING *,number::int number`,
     )[0]!
-    await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND number=${sourceNumber}`
+    await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${sourceRecordId}::uuid`
     await tx`UPDATE hub_note_acknowledgement SET deleted_at=now(),updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND note_id=${source.id}::uuid AND deleted_at IS NULL`
-    return { note: updated, deleted: sourceNumber }
+    return { note: updated, deleted: sourceRecordId }
   })
 }
 
@@ -388,8 +388,8 @@ export async function reapHostedNotes(
   url: string,
   identity: TaskIdentity,
   input: {
-    stale: Array<{ number: number; reason: string; at: string }>
-    deleted: number[]
+    stale: Array<{ recordId: string; reason: string; at: string }>
+    deleted: string[]
     confirmation: number
     cutoff: string
   },
@@ -397,12 +397,12 @@ export async function reapHostedNotes(
   return tenant(url, identity, async (tx) => {
     for (const row of input.stale)
       await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
-      stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND number=${row.number}
+      stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
       AND stale_at IS NULL AND deleted_at IS NULL`
     const found = input.deleted.length
-      ? rows<{ number: number }>(
-          await tx`SELECT number FROM hub_note WHERE space_id=${identity.spaceId}::uuid
-          AND number IN ${tx(input.deleted)} AND deleted_at IS NULL
+      ? rows<{ id: string }>(
+          await tx`SELECT id FROM hub_note WHERE space_id=${identity.spaceId}::uuid
+          AND id IN ${tx(input.deleted)} AND deleted_at IS NULL
           AND stale_at IS NOT NULL AND sightings=1 AND promoted_task IS NULL
           AND last_seen_at <= ${input.cutoff}::timestamptz FOR UPDATE`,
         )
@@ -412,11 +412,11 @@ export async function reapHostedNotes(
     confirmCount(found.length, input.confirmation, 'bulk-only')
     if (found.length)
       await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid
-      AND number IN ${tx(found.map((row) => row.number))}`
+      AND id IN ${tx(found.map((row) => row.id))}`
     if (found.length)
       await tx`UPDATE hub_note_acknowledgement a SET deleted_at=now(),updated_at=now()
         FROM hub_note n WHERE a.space_id=${identity.spaceId}::uuid AND n.space_id=a.space_id
-        AND n.id=a.note_id AND n.number IN ${tx(found.map((row) => row.number))} AND a.deleted_at IS NULL`
+        AND n.id=a.note_id AND n.id IN ${tx(found.map((row) => row.id))} AND a.deleted_at IS NULL`
     return { marked: input.stale.length, deleted: found.length }
   })
 }

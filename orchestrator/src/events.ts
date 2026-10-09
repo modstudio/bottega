@@ -27,6 +27,13 @@ const PEEK_TEXT_CHARS = 120
 
 export type RunLogEvent =
   | { ts: string; type: 'text'; text: string }
+  | {
+      ts: string
+      type: 'note'
+      noteRecordId: string
+      noteLabel: string
+      candidates: { recordId: string; label: string }[]
+    }
   | { ts: string; type: 'note'; noteId: number; candidateIds: number[] }
   | {
       ts: string
@@ -49,7 +56,7 @@ export type RunLogEvent =
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
-  | { type: 'note'; noteId: number; candidateIds: number[] }
+  | { type: 'note'; noteLabel: string; candidateLabels: string[] }
   | { type: 'tool_call'; title: string; target?: string }
   | { type: 'tool_result'; status?: string; bytes?: number }
   | { type: 'usage'; tokens: number }
@@ -476,7 +483,19 @@ export function readEventLog(path: string): RunLogEvent[] {
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'note') {
-    return { type: 'note', noteId: event.noteId, candidateIds: event.candidateIds }
+    // Run files live for KEEP_RUN_FILES_DAYS, so accept the numeric event shape until they age out.
+    if ('noteLabel' in event) {
+      return {
+        type: 'note',
+        noteLabel: event.noteLabel,
+        candidateLabels: event.candidates.map((candidate) => candidate.label),
+      }
+    }
+    return {
+      type: 'note',
+      noteLabel: String(event.noteId),
+      candidateLabels: event.candidateIds.map(String),
+    }
   }
   if (event.type === 'tool_call') {
     return { type: 'tool_call', title: event.title, target: event.locations?.[0]?.path }
@@ -577,7 +596,7 @@ export function peekRun(
 function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'text') return `  text ${event.text}`
   if (event.type === 'note') {
-    return `  note ${event.noteId}${event.candidateIds.length ? ` near ${event.candidateIds.join(',')}` : ''}`
+    return `  note ${event.noteLabel}${event.candidateLabels.length ? ` near ${event.candidateLabels.join(',')}` : ''}`
   }
   if (event.type === 'tool_call') {
     return `  tool ${event.title}${event.target ? ` ${event.target}` : ''}`
