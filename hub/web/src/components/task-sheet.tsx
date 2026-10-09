@@ -52,13 +52,13 @@ function DocumentEditor({ document }: { document: TaskRecordResponse['documents'
         <span className="text-xs text-text-muted">version {document.version}</span>
       </div>
       <Input
-        aria-label={`Title for document ${document.id}`}
+        aria-label={`Title for document ${document.label}`}
         value={title}
         onChange={(event) => setTitle(event.target.value)}
       />
       <Textarea
         className="min-h-48"
-        aria-label={`Body for document ${document.id}`}
+        aria-label={`Body for document ${document.label}`}
         value={body}
         onChange={(event) => setBody(event.target.value)}
       />

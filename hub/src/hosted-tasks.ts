@@ -7,6 +7,7 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
+import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = {
@@ -30,6 +31,7 @@ export type HostedTask = {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  next_document_number: number
 }
 export type HostedComment = {
   id: string
@@ -43,6 +45,7 @@ export type HostedComment = {
 }
 export type HostedDocument = {
   id: string
+  number: number | null
   task_key: string
   task_id?: string | null
   project_name: string
@@ -162,7 +165,7 @@ export async function getHostedTask(url: string, identity: TaskIdentity, key: st
       await tx`
       SELECT d.* FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')}
         WHERE t.id=${task.id}::uuid AND d.space_id=${identity.spaceId}::uuid
-        AND d.deleted_at IS NULL ORDER BY d.created_at,d.id`,
+        AND d.deleted_at IS NULL ORDER BY d.number`,
     )
     return { task, comments, documents }
   })
@@ -312,17 +315,20 @@ export async function createHostedDocument(
   input: { title: string; body?: string; role?: string | null; version: string },
 ) {
   return withHostedTenant(url, identity, async (tx) => {
-    const project = rows<{ id: string; project_name: string }>(
-      await tx`SELECT id,project_name FROM hub_task
-      WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL`,
+    const project = rows<{ id: string; project_name: string; next_document_number: number }>(
+      await tx`SELECT id,project_name,next_document_number FROM hub_task
+      WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL FOR UPDATE`,
     )[0]
     if (!project) return null
-    return rows<HostedDocument>(
+    const document = rows<HostedDocument>(
       await tx`INSERT INTO hub_task_document
-      (id,space_id,project_name,task_key,task_id,role,title,body,version,created_at,updated_at)
+      (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at)
       VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.project_name},${key},${project.id}::uuid,
-       ${input.role ?? null},${input.title},${input.body ?? ''},${input.version},now(),now()) RETURNING *`,
+       ${project.next_document_number},${input.role ?? null},${input.title},${input.body ?? ''},${input.version},now(),now()) RETURNING *`,
     )[0]!
+    await tx`UPDATE hub_task SET next_document_number=${project.next_document_number + 1}
+      WHERE id=${project.id}::uuid`
+    return document
   })
 }
 
@@ -547,7 +553,8 @@ async function mirrorTaskRow(
       body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
       closed_at=${row.closed_at}::timestamptz,source=${row.source},
       first_seen=${row.first_seen}::timestamptz,last_seen=${row.last_seen}::timestamptz,
-      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
+      updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz,
+      next_document_number=GREATEST(next_document_number,${row.next_document_number})
       WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
         (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))
       RETURNING id`,
@@ -566,9 +573,9 @@ async function mirrorTaskRow(
   const changed = rows<{ id: string }>(
     await tx`INSERT INTO hub_task
     (id,space_id,project_name,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
-     opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at)
-    VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
-    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at
+     opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at,next_document_number)
+    VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
+    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,${row.next_document_number})
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
       (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git')))
     RETURNING id`,
@@ -628,10 +635,26 @@ async function mirrorDocumentRow(
   identity: TaskIdentity,
   row: HostedDocument,
 ): Promise<void> {
+  const number = row.number
+  if (!row.deleted_at && number === null)
+    throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)
   const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string }>(
     await tx`SELECT id,space_id FROM hub_task_document WHERE id=${row.id}::uuid`,
   )[0]
+  const numberHolder =
+    number === null
+      ? null
+      : rows<{ id: string }>(
+          await tx`SELECT id FROM hub_task_document
+          WHERE space_id=${identity.spaceId}::uuid AND task_id=${taskId}::uuid
+            AND number=${number} AND id<>${row.id}::uuid`,
+        )[0]
+  if (numberHolder) {
+    throw new Error(
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, number!)} belongs to UUID ${numberHolder.id}, not incoming UUID ${row.id}; run \`hub task doc list ${row.task_key}\``,
+    )
+  }
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: `document ${row.id}` },
     selectedMirrorIdentity(existing, () => `document ${row.id}`),
@@ -640,15 +663,21 @@ async function mirrorDocumentRow(
   applyMirrorDecision(decision)
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_document SET
-      task_key=${row.task_key},task_id=${taskId}::uuid,role=${row.role},
+      task_key=${row.task_key},task_id=${taskId}::uuid,number=${number},role=${row.role},
       title=${row.title},body=${row.body},version=${row.version},
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
       WHERE id=${row.id}::uuid`
+    if (!row.deleted_at)
+      await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1})
+        WHERE id=${taskId}::uuid`
     return
   }
   await tx`INSERT INTO hub_task_document
-    (id,space_id,project_name,task_key,task_id,role,title,body,version,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${number},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+  if (!row.deleted_at)
+    await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1})
+      WHERE id=${taskId}::uuid`
 }
 
 async function mirrorStatusEventRow(

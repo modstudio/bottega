@@ -201,19 +201,19 @@ async function handoff(key: string, title: string, body: string) {
     const documents = JSON.parse(
       await hub(['task', 'doc', 'list', key, '--project', PLATFORM_SLUG, '--json']),
     ) as {
-      id: number
+      id: string
       role: string | null
     }[]
     const existing = documents.find((document) => document.role === 'handoff')
     if (existing) {
-      const current = JSON.parse(
-        await hub(['task', 'doc', 'show', String(existing.id), '--json']),
-      ) as { version: string }
+      const current = JSON.parse(await hub(['task', 'doc', 'show', existing.id, '--json'])) as {
+        version: string
+      }
       await hub([
         'task',
         'doc',
         'set',
-        String(existing.id),
+        existing.id,
         '--title',
         title,
         '--role',
@@ -307,15 +307,19 @@ Return only the bound structured result. The bounded issue pack contains exactly
 ${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
 }
 
-async function priorIssueRecord(shown: {
-  comments?: { body?: unknown }[]
-  documents?: { id?: unknown; role?: unknown }[]
-}): Promise<string> {
+export async function priorIssueRecord(
+  shown: {
+    comments?: { body?: unknown }[]
+    documents?: { id?: unknown; role?: unknown }[]
+  },
+  showDocument: (id: string) => Promise<string> = async (id) =>
+    hub(['task', 'doc', 'show', id, '--json']),
+): Promise<string> {
   const comments = taskCommentBodies(shown)
   const documents: string[] = []
   for (const document of shown.documents ?? []) {
-    if (document.role !== 'handoff' || typeof document.id !== 'number') continue
-    const full = JSON.parse(await hub(['task', 'doc', 'show', String(document.id), '--json'])) as {
+    if (document.role !== 'handoff' || typeof document.id !== 'string') continue
+    const full = JSON.parse(await showDocument(document.id)) as {
       body?: unknown
     }
     if (typeof full.body === 'string') documents.push(full.body)

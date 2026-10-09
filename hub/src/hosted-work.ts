@@ -3,6 +3,7 @@ import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
+import { formatTaskDocumentLabel } from './task-document-label.ts'
 import {
   type BoardSourceRow,
   type CompletedRow,
@@ -299,12 +300,21 @@ export async function hostedTaskDetail(
         WHERE t.id=${String(task.id)}::uuid AND c.space_id=${spaceId}::uuid
         AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`,
     )
-    const documents = rows<Record<string, unknown>>(
+    const documents = rows<{
+      id: string
+      number: string | number
+      role: string | null
+      title: string
+      body: string
+      version: string
+      created_at: SqlTime
+      updated_at: SqlTime
+    }>(
       await tx`
-      SELECT d.id,d.role,d.title,d.body,d.version,d.created_at,d.updated_at
+      SELECT d.id,d.number,d.role,d.title,d.body,d.version,d.created_at,d.updated_at
       FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')}
       WHERE t.id=${String(task.id)}::uuid AND d.space_id=${spaceId}::uuid AND d.deleted_at IS NULL
-      ORDER BY d.created_at,d.id`,
+      ORDER BY d.number`,
     )
     const statusHistory = rows<Record<string, unknown>>(
       await tx`
@@ -360,7 +370,17 @@ export async function hostedTaskDetail(
     return {
       task: shapedTask,
       comments: comments.map(timeFields),
-      documents: documents.map(timeFields),
+      documents: documents.map((document) => ({
+        id: document.id,
+        number: Number(document.number),
+        label: formatTaskDocumentLabel(key, Number(document.number)),
+        role: document.role,
+        title: document.title,
+        body: document.body,
+        version: document.version,
+        created_at: iso(document.created_at)!,
+        updated_at: iso(document.updated_at)!,
+      })),
       statusHistory: statusHistory.map(timeFields),
       intervals: shapedIntervals,
       measures: computeMeasures(

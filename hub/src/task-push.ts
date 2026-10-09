@@ -119,13 +119,6 @@ function persistMirrorBatch(
   })
 }
 
-function requiredDocumentRecordId(row: ChildRow & { id: number }) {
-  if (row.record_id) return row.record_id
-  throw new Error(
-    `task_document local row ${row.id} has no record id; migrate the Hub store before pushing`,
-  )
-}
-
 export async function pushTasks(options: Options = {}) {
   const taskRows = db().query<TaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
   const tasks = taskRows.map((row) => ({
@@ -149,6 +142,7 @@ export async function pushTasks(options: Options = {}) {
     created_at: row.first_seen,
     updated_at: row.updated_at ?? row.last_seen,
     deleted_at: null,
+    next_document_number: row.next_document_number,
   }))
   const taskByKey = new Map(tasks.map((row) => [row.key, row]))
   const taskByRecordId = new Map(tasks.map((row) => [row.id, row]))
@@ -176,13 +170,15 @@ export async function pushTasks(options: Options = {}) {
     })
   }
   const documentRows = db()
-    .query<ChildRow & { id: number }, []>(`SELECT * FROM task_document ORDER BY id`)
+    .query<ChildRow & { record_id: string; number: number }, []>(
+      `SELECT * FROM task_document ORDER BY task_record_id,number`,
+    )
     .all()
   const documents = documentRows.map((row) => {
     const { task_record_id: taskId, ...hosted } = row
     return {
       ...hosted,
-      id: requiredDocumentRecordId(row),
+      id: row.record_id,
       task_id: taskId,
       project_name:
         (taskId ? taskByRecordId.get(taskId) : undefined)?.project_name ??

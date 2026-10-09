@@ -34,6 +34,28 @@ export const hubModuleSpecs = [
     ],
   },
   {
+    file: 'hub/src/task-document.ts',
+    allowed: [
+      'node:crypto',
+      '../../shared/record/schema.ts',
+      './db.ts',
+      './task-client.ts',
+      './task-document-label.ts',
+      './task-identity.ts',
+      './task-write-destination.ts',
+    ],
+  },
+  { file: 'hub/src/task-document-label.ts', allowed: [] },
+  {
+    file: 'hub/src/task-write-destination.ts',
+    allowed: [
+      './hosted-write-mode.ts',
+      './install-binding.ts',
+      './projects.ts',
+      './task-client.ts',
+    ],
+  },
+  {
     file: 'hub/src/service-revision.ts',
     allowed: ['../../shared/install-root.ts', '../../shared/process-identity.ts', './db.ts'],
   },

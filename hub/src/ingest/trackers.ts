@@ -134,6 +134,7 @@ const TRACKER_LABEL_COLLISION = 'tracker label collision'
 
 type TrackerIdentityRow = {
   record_id: string
+  next_document_number: number
   key: string
   source: string
   external_id: string | null
@@ -157,7 +158,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   let row = t.externalId
     ? conn
         .query<TrackerIdentityRow, [string, string]>(
-          'SELECT record_id,key,source,external_id,status_category FROM task WHERE project=? AND external_id=?',
+          'SELECT record_id,next_document_number,key,source,external_id,status_category FROM task WHERE project=? AND external_id=?',
         )
         .get(t.project, t.externalId)
     : null
@@ -165,7 +166,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   if (!row && t.externalId) {
     row = conn
       .query<TrackerIdentityRow, [string, string]>(
-        `SELECT record_id,key,source,external_id,status_category FROM task
+        `SELECT record_id,next_document_number,key,source,external_id,status_category FROM task
          WHERE project=? AND key=? AND external_id IS NULL`,
       )
       .get(t.project, t.key)
@@ -173,7 +174,7 @@ function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow 
   if (!row && !t.externalId) {
     row = conn
       .query<TrackerIdentityRow, [string, string]>(
-        'SELECT record_id,key,source,external_id,status_category FROM task WHERE project=? AND key=?',
+        'SELECT record_id,next_document_number,key,source,external_id,status_category FROM task WHERE project=? AND key=?',
       )
       .get(t.project, t.key)
   }
@@ -425,6 +426,11 @@ function trackerTaskMirrorRow(
   taskKey: string,
   at: string,
 ) {
+  const nextDocumentNumber = db()
+    .query<{ next_document_number: number }, [string]>(
+      `SELECT next_document_number FROM task WHERE record_id=?`,
+    )
+    .get(taskRecordId)!.next_document_number
   return {
     record_id: taskRecordId,
     key: taskKey,
@@ -441,6 +447,7 @@ function trackerTaskMirrorRow(
     first_seen: at,
     last_seen: at,
     updated_at: task.updatedAt ?? at,
+    next_document_number: nextDocumentNumber,
   }
 }
 

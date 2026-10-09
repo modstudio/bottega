@@ -10,12 +10,27 @@ import type { Project } from '../project/projects.ts'
 import {
   ISSUE_DIAGNOSIS_SCHEMA,
   parseIssueReply,
+  priorIssueRecord,
   requestText,
   validatedTrackerTaskKey,
 } from './issue.ts'
 import type { FiledIssue } from './issue-file.ts'
 
 describe('filed issue coordinator inputs', () => {
+  test('includes a UUID-addressed handoff in the prior issue record', async () => {
+    const id = '01990000-0000-7000-8000-000000001214'
+    const requested: string[] = []
+    const record = await priorIssueRecord(
+      { comments: [{ body: 'Earlier comment' }], documents: [{ id, role: 'handoff' }] },
+      async (documentId) => {
+        requested.push(documentId)
+        return JSON.stringify({ body: 'Binding handoff ruling' })
+      },
+    )
+    expect(requested).toEqual([id])
+    expect(record).toBe('Earlier comment\n\n---\n\nBinding handoff ruling')
+  })
+
   test('seed request names the task-comment command that records the answer', () => {
     const issue = {
       key: 'DEV-9',

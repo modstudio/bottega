@@ -23,6 +23,8 @@ test('hosted task detail renders all history without mutation controls', () => {
     documents: [
       {
         id: 'document',
+        number: 3,
+        label: 'DEV-701/3',
         role: null,
         title: 'Plan',
         body: 'Document body',
@@ -99,6 +101,7 @@ test('hosted task detail renders all history without mutation controls', () => {
     </QueryClientProvider>,
   )
   expect(html).toContain('A comment')
+  expect(html).toContain('DEV-701/3')
   expect(html).toContain('Status history')
   expect(html).toContain('Intervals')
   expect(html).toContain('No time was recorded for this task')

@@ -24,6 +24,7 @@ type CollectedTaskRow = Pick<
   | 'first_seen'
   | 'last_seen'
   | 'updated_at'
+  | 'next_document_number'
 > & {
   record_id: string
   key: string
@@ -50,6 +51,7 @@ function hostedTaskBody(row: CollectedTaskRow): HostedTask {
     created_at: row.first_seen,
     updated_at: row.updated_at,
     deleted_at: null,
+    next_document_number: row.next_document_number,
   }
 }
 

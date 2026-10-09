@@ -204,11 +204,11 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
   })
   try {
     const mirrored = [...tasks.values()].map((t) => ({
-      record_id: db()
-        .query<{ record_id: string }, [string, string]>(
-          `SELECT record_id FROM task WHERE project=? AND key=?`,
+      ...db()
+        .query<{ record_id: string; next_document_number: number }, [string, string]>(
+          `SELECT record_id,next_document_number FROM task WHERE project=? AND key=?`,
         )
-        .get(t.project, t.key)!.record_id,
+        .get(t.project, t.key)!,
       key: t.key,
       project: t.project,
       title: null,

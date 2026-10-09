@@ -1,29 +1,35 @@
 import type { Database } from 'bun:sqlite'
-import { randomBytes } from 'node:crypto'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
-import { declaredProjectSpace, projectWriteDecisionFor } from './hosted-write-mode.ts'
-import { persistInstallBinding, readInstallBinding } from './install-binding.ts'
+import { persistInstallBinding } from './install-binding.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
 import {
   hostedCloseTask,
   hostedCommentTask,
-  hostedCreateDocument,
   hostedCreateTask,
-  hostedDeleteDocument,
-  hostedPatchDocument,
   hostedPatchTask,
-  type TaskFetch,
 } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
-import { resolveTask, taskIdentityDecision, taskRecordIdFor } from './task-identity.ts'
+import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
+import {
+  resolveTask,
+  type TaskScope,
+  taskByRecordId,
+  taskIdentityDecision,
+  taskRecordId,
+  taskRecordIdFor,
+} from './task-identity.ts'
+import {
+  type HostedTaskWriteOptions,
+  hostedTaskWriteOptions,
+  registeredTaskProject,
+  taskWriteMode,
+} from './task-write-destination.ts'
 import { taskCreationDestination } from './tracker-new.ts'
-
-export type TaskScope = { project?: string; recordId?: string }
 
 export type TaskRow = {
   record_id: string
@@ -43,6 +49,7 @@ export type TaskRow = {
   source: 'mcp' | 'git' | 'local'
   first_seen: string
   last_seen: string
+  next_document_number: number
 }
 
 export type TaskComment = {
@@ -112,39 +119,6 @@ export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateC
     .slice(0, DUPLICATE_LIMIT)
 }
 
-const TASK_DOCUMENT_ROLES = ['handoff'] as const
-type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
-export type TaskDocumentSummary = {
-  id: number
-  record_id: string | null
-  task_key: string
-  task_record_id: string
-  role: TaskDocumentRole | null
-  title: string
-  updated_at: string
-}
-export type TaskDocument = TaskDocumentSummary & {
-  body: string
-  version: string
-  created_at: string
-}
-
-const documentVersion = () => randomBytes(8).toString('hex')
-
-function documentRole(value: string | null | undefined): TaskDocumentRole | null {
-  if (value == null) return null
-  if (!(TASK_DOCUMENT_ROLES as readonly string[]).includes(value)) {
-    throw new Error(`invalid document role '${value}': expected ${TASK_DOCUMENT_ROLES.join('|')}`)
-  }
-  return value as TaskDocumentRole
-}
-
-function documentId(value: number | string): number {
-  const id = typeof value === 'number' ? value : Number(value)
-  if (!Number.isSafeInteger(id) || id < 1) throw new Error(`invalid document id '${value}'`)
-  return id
-}
-
 function status(value: string | undefined): StatusCategory {
   const candidate = value ?? 'open'
   if (!(TASK_STATUSES as readonly string[]).includes(candidate)) {
@@ -153,21 +127,7 @@ function status(value: string | undefined): StatusCategory {
   return candidate as StatusCategory
 }
 
-function registeredProject(name: string) {
-  const project = projects().find((candidate) => candidate.name === name)
-  if (!project) throw new Error(`unknown project '${name}'`)
-  return project
-}
-
-function taskRecordId(key: string, scope: TaskScope = {}) {
-  return scope.recordId ?? resolveTask(db(), key, scope.project)
-}
-
-function taskByRecordId(recordId: string): TaskRow {
-  const task = db().query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
-  if (!task) throw new Error(`no task record ${recordId}`)
-  return task
-}
+const registeredProject = registeredTaskProject
 
 function assertParent(key: string | null | undefined, project?: string) {
   if (!key) return null
@@ -175,12 +135,8 @@ function assertParent(key: string | null | undefined, project?: string) {
 }
 
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
-type HostedOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
-
-function hostedOptionsForProject(projectName: string, options?: HostedOptions) {
-  const recordSpace = declaredProjectSpace(registeredProject(projectName).settings.space)
-  return recordSpace ? { ...options, recordSpace } : options
-}
+type HostedOptions = HostedTaskWriteOptions
+const hostedOptionsForProject = hostedTaskWriteOptions
 
 type DoneTransitionOptions = {
   abandonReason?: string
@@ -188,18 +144,7 @@ type DoneTransitionOptions = {
   comment?: typeof commentTask
 }
 
-function writeMode(
-  projectName: string,
-  hosted?: HostedOptions,
-): 'hosted-configured' | 'local-authoritative' {
-  const decision = projectWriteDecisionFor(
-    registeredProject(projectName),
-    readInstallBinding(),
-    hosted?.baseUrl ?? process.env.HUB_HOSTED_URL,
-  )
-  if (decision.mode === 'refused') throw new Error(decision.reason)
-  return decision.mode
-}
+const writeMode = taskWriteMode
 
 function mintLocalTaskKey(conn: Database, prefix: string): string {
   const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
@@ -333,14 +278,15 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   conn
     .query(`INSERT INTO task
     (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
-     updated_at,source,first_seen,last_seen)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     updated_at,source,first_seen,last_seen,next_document_number)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
       title=excluded.title,status=excluded.status,status_category=excluded.status_category,
       parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,
       opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
-      source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen`)
+      source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
     .run(
       row.id,
       row.key,
@@ -358,6 +304,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       row.source,
       row.first_seen,
       row.last_seen,
+      row.next_document_number,
     )
   persistInstallBinding(conn)
 }
@@ -491,7 +438,7 @@ export function showTask(
 } {
   const upper = key.toUpperCase()
   const recordId = taskRecordId(upper, scope)
-  const task = taskByRecordId(recordId)
+  const task = taskByRecordId<TaskRow>(recordId)
   const comments = db()
     .query<TaskComment, [string]>(
       `SELECT record_id AS id, task_key, task_record_id, body, created_at FROM task_comment
@@ -817,215 +764,4 @@ export async function commentTask(
     body,
     created_at: comment.created_at,
   }
-}
-
-export function listTaskDocuments(key: string, scope: TaskScope = {}): TaskDocumentSummary[] {
-  const upper = key.toUpperCase()
-  const recordId = taskRecordId(upper, scope)
-  return db()
-    .query<TaskDocumentSummary, [string]>(
-      `SELECT id, record_id, task_key, task_record_id, role, title, updated_at FROM task_document
-      WHERE task_record_id = ? ORDER BY created_at, id`,
-    )
-    .all(recordId)
-}
-
-export function getTaskDocument(idValue: number | string): TaskDocument {
-  const id = documentId(idValue)
-  const document = db()
-    .query<TaskDocument, [number]>(
-      `SELECT id, record_id, task_key, task_record_id, role, title, body, version, created_at, updated_at
-       FROM task_document WHERE id = ?`,
-    )
-    .get(id)
-  if (!document) throw new Error(`no task document ${id}`)
-  return document
-}
-
-export async function createTaskDocument(
-  input: {
-    task: string
-    title: string
-    body?: string
-    role?: string
-  },
-  scope: TaskScope,
-  options: { hosted?: HostedOptions } = {},
-): Promise<TaskDocument> {
-  const upper = input.task.toUpperCase()
-  const task = showTask(upper, scope).task
-  if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
-  const mode = writeMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    const at = nowIso()
-    return writeTransaction((conn) => {
-      const row = conn
-        .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
-        .get(task.record_id)
-      if (!row) throw new Error(`no task record ${task.record_id}`)
-      if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-      const result = conn
-        .query(
-          `INSERT INTO task_document (record_id,task_key,task_record_id,role,title,body,version,created_at,updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          newRecordId(),
-          row.key,
-          row.record_id,
-          documentRole(input.role),
-          input.title,
-          input.body ?? '',
-          documentVersion(),
-          at,
-          at,
-        )
-      return getTaskDocument(Number(result.lastInsertRowid))
-    })
-  }
-  const version = documentVersion()
-  const hosted = await hostedCreateDocument(
-    task.key,
-    { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
-    hostedOptionsForProject(task.project, options.hosted),
-  )
-  const result = writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO task_document (record_id,task_key,task_record_id,role,title,body,version,created_at,updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        hosted.id,
-        task.key,
-        task.record_id,
-        documentRole(input.role),
-        input.title,
-        input.body ?? '',
-        hosted.version,
-        hosted.created_at,
-        hosted.updated_at,
-      ),
-  )
-  return getTaskDocument(Number(result.lastInsertRowid))
-}
-
-export async function updateTaskDocument(
-  idValue: number | string,
-  changes: {
-    title?: string
-    body?: string
-    role?: string | null
-    expectedVersion?: string
-  },
-  options: { hosted?: HostedOptions } = {},
-): Promise<TaskDocument> {
-  const id = documentId(idValue)
-  const current = getTaskDocument(id)
-  if (!current.task_record_id)
-    throw new Error(`task document ${id} has no task record id; run hub collect --only tasks`)
-  const task = taskByRecordId(current.task_record_id)
-  if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
-  const role = changes.role === undefined ? current.role : documentRole(changes.role)
-  const expectedVersion = changes.expectedVersion
-  if (changes.body !== undefined && !expectedVersion)
-    throw new Error('a body update requires --version from `hub task doc show`')
-  const mode = writeMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    const at = nowIso()
-    writeTransaction((conn) => {
-      const row = conn
-        .query<TaskDocument, [number]>(
-          `SELECT id, record_id, task_key, task_record_id, role, title, body, version, created_at, updated_at
-           FROM task_document WHERE id = ?`,
-        )
-        .get(id)
-      if (!row) throw new Error(`no task document ${id}`)
-      const nextRole = changes.role === undefined ? row.role : documentRole(changes.role)
-      if (changes.body !== undefined) {
-        const result = conn
-          .query(
-            `UPDATE task_document
-              SET title = ?, role = ?, body = ?, version = ?, updated_at = ?
-            WHERE id = ? AND version = ?`,
-          )
-          .run(
-            changes.title ?? row.title,
-            nextRole,
-            changes.body,
-            documentVersion(),
-            at,
-            id,
-            expectedVersion ?? row.version,
-          )
-        if (result.changes !== 1) {
-          throw new Error(
-            `task document ${id} changed since version ${expectedVersion}; read it again`,
-          )
-        }
-        return
-      }
-      conn
-        .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`)
-        .run(changes.title ?? row.title, nextRole, at, id)
-    })
-    return getTaskDocument(id)
-  }
-  if (!current.record_id)
-    throw new Error(
-      `task document ${id} has not been synchronized; run the hosted push and collector`,
-    )
-  const hosted = await hostedPatchDocument(
-    task.key,
-    current.record_id,
-    {
-      ...changes,
-      role,
-      version: documentVersion(),
-    },
-    hostedOptionsForProject(task.project, options.hosted),
-  )
-  writeTransaction((conn) =>
-    conn
-      .query(`UPDATE task_document SET role=?,title=?,body=?,version=?,updated_at=? WHERE id=?`)
-      .run(hosted.role, hosted.title, hosted.body, hosted.version, hosted.updated_at, id),
-  )
-  return getTaskDocument(id)
-}
-
-export async function deleteTaskDocument(
-  idValue: number | string,
-  options: { hosted?: HostedOptions } = {},
-): Promise<TaskDocument> {
-  const id = documentId(idValue)
-  const removed = getTaskDocument(id)
-  if (!removed.task_record_id)
-    throw new Error(`task document ${id} has no task record id; run hub collect --only tasks`)
-  const task = taskByRecordId(removed.task_record_id)
-  if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
-  const mode = writeMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    return writeTransaction((conn) => {
-      const row = conn
-        .query<TaskDocument, [number]>(
-          `SELECT id, record_id, task_key, task_record_id, role, title, body, version, created_at, updated_at
-           FROM task_document WHERE id = ?`,
-        )
-        .get(id)
-      if (!row) throw new Error(`no task document ${id}`)
-      conn.query(`DELETE FROM task_document WHERE id = ?`).run(id)
-      return row
-    })
-  }
-  if (!removed.record_id)
-    throw new Error(
-      `task document ${id} has not been synchronized; run the hosted push and collector`,
-    )
-  await hostedDeleteDocument(
-    task.key,
-    removed.record_id,
-    hostedOptionsForProject(task.project, options.hosted),
-  )
-  writeTransaction((conn) => conn.query(`DELETE FROM task_document WHERE id = ?`).run(id))
-  return removed
 }

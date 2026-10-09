@@ -2,13 +2,8 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
-import {
-  commentTask,
-  getTaskDocument,
-  setTask,
-  taskRecord,
-  updateTaskDocument,
-} from '../../task.ts'
+import { commentTask, setTask, taskRecord } from '../../task.ts'
+import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -127,7 +122,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     setDocument: t.procedure
       .input(
         z.object({
-          id: z.number().int().positive(),
+          id: z.uuid(),
           title: z.string().trim().min(1).max(500),
           body: z.string(),
           version: z.string().min(1),

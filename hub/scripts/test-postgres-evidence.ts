@@ -269,6 +269,7 @@ try {
       created_at: stamp,
       updated_at: stamp,
       deleted_at: null,
+      next_document_number: 1,
     }
     await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
     await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
@@ -277,7 +278,7 @@ try {
       title: 'Allocated fixture',
     })
     if (created.key !== 'DEV-701') throw new Error(`task allocation returned ${created.key}`)
-    await patchHostedTask(actorUrl, identity, created.key, {
+    const closed = await patchHostedTask(actorUrl, identity, created.key, {
       status: 'done',
       status_category: 'done',
     })
@@ -293,6 +294,37 @@ try {
       throw new Error('soft-deleted document was visible in the default list')
     if (visible.statusEvents.length !== 1)
       throw new Error('status patch did not append exactly one event')
+    await admin`UPDATE hub_task SET next_document_number=9 WHERE id=${created.id}::uuid`
+    await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [{ ...closed, next_document_number: 2 }],
+    })
+    const preservedDocumentCounter = (
+      await admin<{ next_document_number: number }[]>`
+        SELECT next_document_number FROM hub_task WHERE id=${created.id}::uuid
+      `
+    )[0]?.next_document_number
+    if (preservedDocumentCounter !== 9)
+      throw new Error(`task mirror lowered the document counter to ${preservedDocumentCounter}`)
+    const collidingDocumentId = newRecordId()
+    await mirrorHostedTasks(actorUrl, identity, {
+      tasks: [],
+      documents: [
+        {
+          ...document,
+          id: collidingDocumentId,
+          task_id: created.id,
+          deleted_at: null,
+        },
+      ],
+    }).then(
+      () => {
+        throw new Error('task document mirror reused a soft-deleted document number')
+      },
+      (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.includes(document.id) || !message.includes(collidingDocumentId)) throw error
+      },
+    )
     await upsertIntervals(actorUrl, identity, [
       { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture', user_id: USER },
     ])
@@ -1157,6 +1189,7 @@ try {
           created_at: '2026-09-17T10:00:00.000Z',
           updated_at: '2026-09-17T12:50:00.000Z',
           deleted_at: null,
+          next_document_number: 1,
         },
       ],
     })

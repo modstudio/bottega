@@ -8,15 +8,11 @@ import {
   closeTask,
   commentTask,
   createTask,
-  createTaskDocument,
-  deleteTaskDocument,
   duplicateCandidates,
   duplicateScore,
-  getTaskDocument,
   setTask,
   showTask,
   taskRecord,
-  updateTaskDocument,
 } from './task.ts'
 
 beforeAll(resetFixtureStore)
@@ -66,6 +62,7 @@ const hosted = {
         created_at: at,
         updated_at: at,
         deleted_at: null,
+        next_document_number: 1,
       })
     }
     if (url.pathname.endsWith('/comments'))
@@ -87,6 +84,7 @@ const hosted = {
         title: body.title,
         body: body.body,
         version: body.version,
+        number: showTask(key).task.next_document_number,
         created_at: at,
         updated_at: at,
         deleted_at: null,
@@ -223,53 +221,6 @@ describe('local task tracker', () => {
     expect(after.assignee).toBe('Local Owner')
   })
 
-  test('updates a synchronized document through its hosted record id', async () => {
-    const taskRecordId = seed('DEV-884', 'workshop')
-    const at = new Date().toISOString()
-    const recordId = 'hosted-document-884'
-    const inserted = writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO task_document
-          (record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
-          VALUES (?, 'DEV-884', ?, 'Before', 'Body', 'version-before', ?, ?)`,
-        )
-        .run(recordId, taskRecordId, at, at),
-    )
-    const requests: Array<{ method: string | undefined; pathname: string }> = []
-
-    await updateTaskDocument(
-      Number(inserted.lastInsertRowid),
-      { title: 'After' },
-      {
-        hosted: {
-          baseUrl: 'https://hub.example.test',
-          token: 'test',
-          fetch: async (input, init) => {
-            const url = new URL(input)
-            requests.push({ method: init?.method, pathname: url.pathname })
-            return Response.json({
-              id: recordId,
-              task_key: 'DEV-884',
-              project_name: 'workshop',
-              role: null,
-              title: 'After',
-              body: 'Body',
-              version: 'version-after',
-              created_at: at,
-              updated_at: at,
-              deleted_at: null,
-            })
-          },
-        },
-      },
-    )
-
-    expect(requests).toEqual([
-      { method: 'PATCH', pathname: `/v1/tasks/DEV-884/documents/${recordId}` },
-    ])
-  })
-
   test('duplicate title matching is deterministic, thresholded, and capped at three', () => {
     const tasks = [
       ['DEV-4', 'open', 'alpha beta gamma delta epsilon'],
@@ -295,6 +246,7 @@ describe('local task tracker', () => {
       source: 'local' as const,
       first_seen: '',
       last_seen: '',
+      next_document_number: 1,
     }))
 
     expect(duplicateCandidates(tasks, 'alpha beta gamma delta')).toEqual([
@@ -337,22 +289,39 @@ describe('local task tracker', () => {
     )
     const comment = await commentTask(task.key, {}, 'A useful comment', { hosted })
     expect(comment.task_record_id).toBe(task.record_id)
-    const ordinary = await createTaskDocument(
-      { task: task.key, title: 'Notes', body: '# Notes' },
-      {},
-      { hosted },
-    )
-    const handoff = await createTaskDocument(
-      {
-        task: task.key,
-        title: 'Handoff',
-        body: '# Handoff',
-        role: 'handoff',
-      },
-      {},
-      { hosted },
-    )
+    const ordinaryId = Bun.randomUUIDv7()
+    const handoffId = Bun.randomUUIDv7()
     writeTransaction((conn) => {
+      const at = new Date().toISOString()
+      const insertDocument = conn.query(
+        `INSERT INTO task_document
+        (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      )
+      insertDocument.run(
+        ordinaryId,
+        task.key,
+        task.record_id,
+        1,
+        null,
+        'Notes',
+        '# Notes',
+        'ordinary-version',
+        at,
+        at,
+      )
+      insertDocument.run(
+        handoffId,
+        task.key,
+        task.record_id,
+        2,
+        'handoff',
+        'Handoff',
+        '# Handoff',
+        'handoff-version',
+        at,
+        at,
+      )
       conn
         .query(
           `INSERT INTO interval
@@ -380,7 +349,7 @@ describe('local task tracker', () => {
       documents: { allowed: true },
     })
     expect(result.comments).toEqual([comment])
-    expect(result.documents.map((document) => document.id)).toEqual([handoff.id, ordinary.id])
+    expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
     expect(result.documents[0]?.body).toBe('# Handoff')
     expect(result.runs).toEqual([
       expect.objectContaining({ id: 1813, agent: 'codex', vendor_tokens: 45 }),
@@ -412,7 +381,7 @@ describe('local task tracker', () => {
 describe('declared project space task writes', () => {
   beforeEach(resetFixtureStore)
 
-  test('every canonical write sends the space declared by the project register', async () => {
+  test('every canonical task write sends the space declared by the project register', async () => {
     const requests: Array<{ method: string; pathname: string; space: string | null }> = []
     const fetch = async (input: string, init?: RequestInit) => {
       const url = new URL(input)
@@ -447,6 +416,7 @@ describe('declared project space task writes', () => {
           created_at: current.first_seen,
           updated_at: at,
           deleted_at: null,
+          next_document_number: current.next_document_number,
         })
       }
 
@@ -473,43 +443,10 @@ describe('declared project space task writes', () => {
           created_at: current.first_seen,
           updated_at: at,
           deleted_at: null,
+          next_document_number: current.next_document_number,
         })
       }
 
-      const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
-      if (method === 'PATCH' && documentMatch) {
-        const document = db()
-          .query<
-            {
-              record_id: string
-              task_key: string
-              title: string
-              body: string
-              role: string | null
-              version: string
-              created_at: string
-            },
-            [string]
-          >(
-            `SELECT record_id,task_key,title,body,role,version,created_at
-             FROM task_document WHERE record_id = ?`,
-          )
-          .get(decodeURIComponent(documentMatch[2]!))!
-        const at = new Date().toISOString()
-        return Response.json({
-          id: document.record_id,
-          task_key: document.task_key,
-          project_name: 'gamma',
-          role: body.role ?? document.role,
-          title: body.title ?? document.title,
-          body: body.body ?? document.body,
-          version: body.version,
-          created_at: document.created_at,
-          updated_at: at,
-          deleted_at: null,
-        })
-      }
-      if (method === 'DELETE' && documentMatch) return Response.json({ deleted: 1 })
       return hosted.fetch(input, init)
     }
     const options = { hosted: { ...hosted, fetch } }
@@ -527,18 +464,6 @@ describe('declared project space task writes', () => {
       { ...options, classify: async () => branchClassification(created.key) },
     )
     await commentTask(created.key, {}, 'declared space comment', options)
-    const document = await createTaskDocument(
-      { task: created.key, title: 'Declared space notes', body: 'first body' },
-      {},
-      options,
-    )
-    await updateTaskDocument(
-      document.id,
-      { body: 'second body', expectedVersion: document.version },
-      options,
-    )
-    await deleteTaskDocument(document.id, options)
-
     expect(requests).toEqual([
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
@@ -562,25 +487,6 @@ describe('declared project space task writes', () => {
         pathname: `/v1/tasks/${created.key}/comments`,
         space: 'declared-gamma-space',
       },
-      {
-        method: 'POST',
-        pathname: `/v1/tasks/${created.key}/documents`,
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'PATCH',
-        pathname: expect.stringMatching(
-          new RegExp(`^/v1/tasks/${created.key}/documents/[0-9a-f-]+$`),
-        ),
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'DELETE',
-        pathname: expect.stringMatching(
-          new RegExp(`^/v1/tasks/${created.key}/documents/[0-9a-f-]+$`),
-        ),
-        space: 'declared-gamma-space',
-      },
     ])
   })
 })
@@ -596,7 +502,7 @@ describe('local-authoritative task writes', () => {
     else process.env.HUB_HOSTED_URL = previousHostedUrl
   })
 
-  test('mints the next key, then update close comment and documents write hub.db', async () => {
+  test('mints the next key, then update close and comment write hub.db', async () => {
     const created = await createTask({
       project: 'beta',
       title: `Local-authoritative write ${crypto.randomUUID()}`,
@@ -611,27 +517,6 @@ describe('local-authoritative task writes', () => {
     const comment = await commentTask(created.key, {}, 'a local comment')
     expect(comment.body).toBe('a local comment')
     expect(comment.task_record_id).toBe(created.record_id)
-
-    const document = await createTaskDocument(
-      {
-        task: created.key,
-        title: 'Notes',
-        body: 'first body',
-      },
-      {},
-    )
-    expect(document.body).toBe('first body')
-    const updated = await updateTaskDocument(document.id, {
-      body: 'second body',
-      expectedVersion: document.version,
-    })
-    expect(updated.body).toBe('second body')
-    expect(updated.version).not.toBe(document.version)
-    await expect(
-      updateTaskDocument(document.id, { body: 'stale', expectedVersion: document.version }),
-    ).rejects.toThrow(`task document ${document.id} changed since version ${document.version}`)
-    await deleteTaskDocument(document.id)
-    expect(() => getTaskDocument(document.id)).toThrow(`no task document ${document.id}`)
 
     const closed = await closeTask(
       created.key,

@@ -60,16 +60,11 @@ import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   commentTask,
   createTask,
-  createTaskDocument,
   DuplicateTaskError,
-  deleteTaskDocument,
   duplicateCandidates,
-  getTaskDocument,
-  listTaskDocuments,
   listTasks,
   setTask,
   showTask,
-  updateTaskDocument,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
 import {
@@ -79,6 +74,13 @@ import {
   TASK_USAGE,
   taskHelpRequested,
 } from './task-command-arguments.ts'
+import {
+  createTaskDocument,
+  deleteTaskDocument,
+  getTaskDocument,
+  listTaskDocuments,
+  updateTaskDocument,
+} from './task-document.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
 import { hoursAgo } from './time.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
@@ -403,7 +405,9 @@ async function showTaskCommand(
     console.log('\ndocuments:')
     for (const document of shown.documents) {
       const role = document.role ? ` [${document.role}]` : ''
-      console.log(`  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`)
+      console.log(
+        `  ${document.label}${role}  ${document.title} — hub task doc show ${document.label}`,
+      )
     }
   }
   for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
@@ -475,10 +479,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
         },
         { project: taskFlag('project') },
       )
-      // This is a value for the caller to pass back, not presentational output.
-      // Bun inspects a numeric console argument and ANSI-wraps it when
-      // FORCE_COLOR is set, even when NO_COLOR is set too.
-      console.log(String(document.id))
+      console.log(document.label)
       return
     }
     if (action === 'list') {
@@ -488,16 +489,16 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       else
         for (const document of documents) {
           const role = document.role ? ` [${document.role}]` : ''
-          console.log(`${document.id}${role}  ${document.title}`)
+          console.log(`${document.label}${role}  ${document.title}`)
         }
       return
     }
     if (action === 'show') {
-      const document = getTaskDocument(ref)
+      const document = getTaskDocument(ref, { project: taskFlag('project') })
       if (taskHas('json')) console.log(JSON.stringify(document))
       else {
         console.log(
-          `${document.id}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`,
+          `${document.label}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`,
         )
         console.log(`version: ${document.version}`)
         if (document.body) console.log(`\n${document.body}`)
@@ -520,13 +521,15 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       }
       if (!Object.keys(changes).length)
         throw new Error('hub task doc set requires a field to change')
-      const document = await updateTaskDocument(ref, changes)
-      console.log(`${document.id} updated; version ${document.version}`)
+      const document = await updateTaskDocument(ref, changes, {
+        scope: { project: taskFlag('project') },
+      })
+      console.log(`${document.label} updated; version ${document.version}`)
       return
     }
     if (action === 'rm') {
-      const document = await deleteTaskDocument(ref)
-      console.log(`${document.id} removed from ${document.task_key}`)
+      const document = await deleteTaskDocument(ref, { scope: { project: taskFlag('project') } })
+      console.log(`${document.label} removed from ${document.task_key}`)
       return
     }
     throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)

@@ -678,8 +678,8 @@ describe('hosted-only task safety', () => {
         VALUES ('01990000-0000-7000-8000-000000000101','DEV-990','workshop','old','open','open','local',?,?)`)
         .run(at, at)
       conn
-        .query(`INSERT INTO task_document(record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
-        VALUES ('01990000-0000-7000-8000-000000000102','DEV-990','01990000-0000-7000-8000-000000000101','old','body','v1',?,?)`)
+        .query(`INSERT INTO task_document(record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+        VALUES ('01990000-0000-7000-8000-000000000102','DEV-990','01990000-0000-7000-8000-000000000101',1,'old','body','v1',?,?)`)
         .run(at, at)
     })
     applyHostedTaskChanges({
@@ -703,6 +703,7 @@ describe('hosted-only task safety', () => {
           created_at: at,
           updated_at: '2026-09-17T12:01:00.000Z',
           deleted_at: null,
+          next_document_number: 2,
         },
       ],
       comments: [
@@ -722,6 +723,7 @@ describe('hosted-only task safety', () => {
           id: '01990000-0000-7000-8000-000000000102',
           task_key: 'DEV-990',
           project_name: 'workshop',
+          number: 1,
           role: null,
           title: 'old',
           body: 'body',
@@ -782,6 +784,7 @@ describe('hosted-only task safety', () => {
           created_at: at,
           updated_at: at,
           deleted_at: null,
+          next_document_number: 1,
         },
       ],
       comments: [],
@@ -871,6 +874,7 @@ describe('hosted-only task safety', () => {
       created_at: at,
       updated_at: at,
       deleted_at: null,
+      next_document_number: 1,
     }
     applyHostedTaskChanges({
       tasks: [
