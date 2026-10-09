@@ -9,9 +9,104 @@ import {
   ingestTrackers,
   trackerCredentials,
   trackerLegError,
+  trackerObservationTimes,
   trackerRegistrations,
   upsertTrackerTask,
 } from './trackers.ts'
+
+const trackerTask = {
+  externalId: 'tracker-alpha-1',
+  key: 'ALP-1',
+  project: 'alpha' as const,
+  title: 'Observed task',
+  status: 'started',
+  category: 'active' as const,
+  updatedAt: null,
+  assignee: null,
+}
+const storedTrackerTask = {
+  external_id: trackerTask.externalId,
+  key: trackerTask.key,
+  project: trackerTask.project,
+  title: trackerTask.title,
+  status: trackerTask.status,
+  status_category: trackerTask.category,
+  opened_at: '2026-09-01T10:00:00.000Z',
+  closed_at: null,
+  first_seen: '2026-09-01T10:00:00.000Z',
+  last_seen: '2026-09-02T10:00:00.000Z',
+  updated_at: '2026-09-01T10:00:00.000Z',
+  assignee: null,
+}
+
+describe('tracker observation times', () => {
+  const at = '2026-09-03T10:00:00.000Z'
+
+  test('new and changed observations use the pass time when the tracker has no update time', () => {
+    expect(trackerObservationTimes(trackerTask, undefined, at)).toEqual({
+      openedAt: at,
+      closedAt: null,
+      firstSeen: at,
+      lastSeen: at,
+      updatedAt: at,
+    })
+    expect(
+      trackerObservationTimes({ ...trackerTask, title: 'Changed task' }, storedTrackerTask, at),
+    ).toEqual({
+      openedAt: at,
+      closedAt: null,
+      firstSeen: storedTrackerTask.first_seen,
+      lastSeen: at,
+      updatedAt: at,
+    })
+  })
+
+  test('an unchanged observation sends every stored time', () => {
+    expect(trackerObservationTimes(trackerTask, storedTrackerTask, at)).toEqual({
+      openedAt: storedTrackerTask.opened_at,
+      closedAt: storedTrackerTask.closed_at,
+      firstSeen: storedTrackerTask.first_seen,
+      lastSeen: storedTrackerTask.last_seen,
+      updatedAt: storedTrackerTask.updated_at,
+    })
+  })
+
+  test('a tracker update time is retained for new, changed, and unchanged observations', () => {
+    const updatedAt = '2026-09-03T09:30:00.000Z'
+    const supplied = { ...trackerTask, updatedAt }
+    const stored = { ...storedTrackerTask, updated_at: updatedAt, opened_at: updatedAt }
+    expect(trackerObservationTimes(supplied, undefined, at).updatedAt).toBe(updatedAt)
+    expect(trackerObservationTimes({ ...supplied, title: 'Changed task' }, stored, at)).toEqual({
+      openedAt: updatedAt,
+      closedAt: null,
+      firstSeen: stored.first_seen,
+      lastSeen: at,
+      updatedAt,
+    })
+    expect(trackerObservationTimes(supplied, stored, at)).toEqual({
+      openedAt: updatedAt,
+      closedAt: null,
+      firstSeen: stored.first_seen,
+      lastSeen: stored.last_seen,
+      updatedAt,
+    })
+  })
+
+  test('an unchanged done lookup preserves its stored closure time', () => {
+    const done = { ...trackerTask, status: 'completed', category: 'done' as const }
+    const closedAt = '2026-09-02T12:00:00.000Z'
+    const stored = {
+      ...storedTrackerTask,
+      status: done.status,
+      status_category: done.category,
+      closed_at: closedAt,
+    }
+    expect(trackerObservationTimes(done, stored, at).closedAt).toBe(closedAt)
+    expect(trackerObservationTimes({ ...done, title: 'Changed done task' }, stored, at).closedAt).toBe(
+      at,
+    )
+  })
+})
 
 const recordApiUrl = process.env.ORCH_RECORD_API_URL
 beforeAll(() => {

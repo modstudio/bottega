@@ -552,11 +552,17 @@ async function mirrorTaskRow(
       status=${row.status},status_category=${row.status_category},parent_key=${row.parent_key},parent_id=${parentId}::uuid,
       body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
       closed_at=${row.closed_at}::timestamptz,source=${row.source},
-      first_seen=${row.first_seen}::timestamptz,last_seen=${row.last_seen}::timestamptz,
+      first_seen=LEAST(first_seen,${row.first_seen}::timestamptz),last_seen=${row.last_seen}::timestamptz,
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz,
       next_document_number=GREATEST(next_document_number,${row.next_document_number})
       WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
-        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git')))
+        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git'))) AND
+        (ROW(project_name,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
+          opened_at,closed_at,source,updated_at,deleted_at) IS DISTINCT FROM
+         ROW(${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},
+          ${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,
+          ${row.closed_at}::timestamptz,${row.source},${row.updated_at}::timestamptz,
+          ${row.deleted_at}::timestamptz) OR next_document_number < ${row.next_document_number})
       RETURNING id`,
     )
     if (changed.length)
@@ -575,9 +581,16 @@ async function mirrorTaskRow(
     (id,space_id,project_name,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
      opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at,next_document_number)
     VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
-    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,${row.next_document_number})
+    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
-      (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git')))
+      (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))) AND
+      (ROW(hub_task.project_name,hub_task.project,hub_task.title,hub_task.status,
+        hub_task.status_category,hub_task.parent_key,hub_task.parent_id,hub_task.body,hub_task.assignee,
+        hub_task.opened_at,hub_task.closed_at,hub_task.source,hub_task.updated_at,hub_task.deleted_at)
+       IS DISTINCT FROM ROW(excluded.project_name,excluded.project,excluded.title,excluded.status,
+        excluded.status_category,excluded.parent_key,excluded.parent_id,excluded.body,excluded.assignee,
+        excluded.opened_at,excluded.closed_at,excluded.source,excluded.updated_at,excluded.deleted_at)
+       OR hub_task.next_document_number < excluded.next_document_number)
     RETURNING id`,
   )
   if (changed[0] && changed[0].id !== row.id) return taskMirrorAdoption(row, changed[0].id)
