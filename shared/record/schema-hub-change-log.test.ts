@@ -95,20 +95,16 @@ test('change-log triggers cover every synced table and recipient changes map to 
             AND table_name=candidate.table_name
             AND column_name='space_id'
         )
-        AND EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_schema=candidate.table_schema
-            AND table_name=candidate.table_name
-            AND column_name IN ('updated_at','deleted_at')
-        )
       ORDER BY table_name
     `)
   ).rows.map(({ table_name }) => table_name)
-  const classifiedTables = new Set<string>([
+  const classifications = [
     ...HUB_CHANGE_SOURCES.rows,
+    ...Object.keys(HUB_CHANGE_SOURCES.children),
     ...Object.keys(HUB_CHANGE_SOURCE_EXCLUSIONS),
-  ])
-  expect(candidateTables.filter((table) => !classifiedTables.has(table))).toEqual([])
+  ]
+  expect(new Set(classifications).size).toBe(classifications.length)
+  expect(candidateTables).toEqual(classifications.toSorted())
 
   const rows = (
     await database.query<{

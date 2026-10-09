@@ -43,7 +43,12 @@ export const HUB_CHANGE_SOURCES = {
 } as const
 
 export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
-  hub_report_subscription: 'Hosted configuration is not mirrored to local machine stores.',
+  hub_change_head: 'Change-log state tracks the latest allocated sequence for each space.',
+  hub_change: 'Change-log entries form the hosted synchronization feed.',
+  hub_report_subscription: 'Hosted report configuration defines scheduled report delivery.',
+  hub_report_subscription_member: 'Hosted report membership selects subscription recipients.',
+  hub_report_subscription_project: 'Hosted report configuration selects subscription projects.',
+  hub_report_subscription_recipient: 'Hosted report delivery stores subscription recipients.',
 } as const
 
 export const hubChangeHead = pgTable.withRLS(
