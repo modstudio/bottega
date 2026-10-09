@@ -420,6 +420,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/question-open.ts',
     ],
     'Keep failover independent of execution transports, contracts, and worktrees.',
+    ['../run/run-types.ts'],
   ),
   boundary(
     'failure-commands-boundary',
@@ -909,6 +910,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/worktree-types.ts',
     ],
     'Keep task branch identity independent of transports, contracts, and routing.',
+    ['../run/run-types.ts'],
   ),
   boundary(
     'workflows-boundary',

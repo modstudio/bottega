@@ -1,9 +1,65 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideTaskBranchReuse,
+  decideTaskBranchSessionReuse,
   type TaskBranchReuseFacts,
   taskBranchDivergenceRefusal,
+  taskBranchForDispatchingSession,
+  taskBranchSessionRefusal,
 } from './task-branch-reuse.ts'
+
+const candidate = {
+  branch: 'DEV-1225-orch-7000',
+  tip: 'abc123',
+  commitCount: 2,
+  mergeBase: 'def456',
+  projectId: 1,
+  projectName: 'project',
+  nominatingRuns: [
+    { id: 7000, sessionId: 'session-a' },
+    { id: 7001, sessionId: 'session-a' },
+  ],
+  trunk: 'main',
+  worktree: null,
+}
+
+describe('task branch nominating session ownership', () => {
+  test('a candidate nominated by the dispatching session may be reused', () => {
+    expect(decideTaskBranchSessionReuse('session-a', ['session-a'])).toEqual({ action: 'reuse' })
+  })
+
+  test('a candidate nominated only by another session is refused', () => {
+    expect(decideTaskBranchSessionReuse('session-b', ['session-a'])).toEqual({ action: 'refuse' })
+  })
+
+  test('a candidate with any nominator from the dispatching session may be reused', () => {
+    expect(decideTaskBranchSessionReuse('session-b', ['session-a', 'session-b'])).toEqual({
+      action: 'reuse',
+    })
+  })
+
+  test('a dispatch with no session identity cannot reuse a candidate', () => {
+    expect(decideTaskBranchSessionReuse(null, [null])).toEqual({ action: 'refuse' })
+  })
+
+  test('the refusal names branch, tip, runs, sessions, and both explicit-base remedies', () => {
+    const message = taskBranchSessionRefusal(candidate)
+    expect(message).toContain('DEV-1225-orch-7000 tip abc123')
+    expect(message).toContain('runs 7000, 7001: session-a')
+    expect(message).toContain('--base main')
+    expect(message).toContain('--base DEV-1225-orch-7000')
+  })
+
+  test('session enforcement throws the refusal for a candidate nominated only by another session', () => {
+    expect(() => taskBranchForDispatchingSession(candidate, 'session-b')).toThrow(
+      'refusing task branch DEV-1225-orch-7000 tip abc123',
+    )
+  })
+
+  test('session enforcement passes through a candidate nominated by the dispatching session', () => {
+    expect(taskBranchForDispatchingSession(candidate, 'session-a')).toBe(candidate)
+  })
+})
 
 const facts = (overrides: Partial<TaskBranchReuseFacts> = {}): TaskBranchReuseFacts => ({
   callerOnTrunk: false,
