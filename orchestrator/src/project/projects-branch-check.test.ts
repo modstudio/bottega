@@ -7,8 +7,14 @@ const project = 'development'
 test('a detached checkout at a release tag names that tag', () => {
   expect(detachedCheckoutDecision('main', true, ['v0.2.0'], checkout, project)).toBe(
     'release tag v0.2.0 is checked out; a development checkout stays on its landing branch main\n' +
-      `cleared by: git -C ${checkout} switch main`,
+      `cleared by: git -C '${checkout}' switch -- 'main'`,
   )
+})
+
+test('the release-tag remedy can be pasted when the path or branch carries shell characters', () => {
+  expect(
+    detachedCheckoutDecision('main;touch x', true, ['v0.2.0'], "/projects/it's here", project),
+  ).toEndWith("cleared by: git -C '/projects/it'\\''s here' switch -- 'main;touch x'")
 })
 
 test('a detached checkout away from a release tag keeps the existing message', () => {

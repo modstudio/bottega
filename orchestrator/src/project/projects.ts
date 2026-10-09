@@ -807,7 +807,7 @@ export function detachedCheckoutDecision(
   const releaseTag = [...tagsAtHead].sort().find((tag) => releaseTagVersion(tag) !== null)
   return releaseTag
     ? `release tag ${releaseTag} is checked out; a development checkout stays on its landing branch ${landing}\n` +
-        `cleared by: git -C ${checkoutPath} switch ${landing}`
+        `cleared by: git -C ${shellQuote(checkoutPath)} switch -- ${shellQuote(landing)}`
     : `checkout HEAD is detached, not landing branch ${landing}\n` +
         registerBranchRemedy(landing, checkoutPath, projectName)
 }
