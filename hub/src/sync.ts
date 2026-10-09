@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
+import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
 import { projects } from './projects.ts'
 import {
   assertDayRecordId,
@@ -235,31 +235,7 @@ function forgetIntervals(keys: string[]) {
   })
 }
 
-function isIntervalRecordId(key: string): boolean {
-  return key[0] !== '['
-}
-
-function intervalKeyValue(key: string): IntervalKey {
-  const values = JSON.parse(key) as [string, string, string]
-  return { source: values[0], ref: values[1], start_at: values[2] }
-}
-
-function intervalDeleteBodies(keys: string[]): Array<{ ids: string[] } | { keys: IntervalKey[] }> {
-  const ids = keys.filter(isIntervalRecordId)
-  const tuples = keys.filter((key) => !isIntervalRecordId(key)).map(intervalKeyValue)
-  const bodies: Array<{ ids: string[] } | { keys: IntervalKey[] }> = []
-  if (ids.length) bodies.push({ ids })
-  if (tuples.length) bodies.push({ keys: tuples })
-  return bodies
-}
-
-function intervalMoveDeleteKeys(rows: IntervalDelivery[]): string[] {
-  // Deletes a moved interval by tuple as well as UUID while hosted rows may still carry a server-minted id.
-  return rows.flatMap((row) => [
-    row.key,
-    JSON.stringify([row.row.source, row.row.ref, row.row.start_at]),
-  ])
-}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
   const result = new Map<string, T[]>()
@@ -290,16 +266,15 @@ async function deleteIntervalRows(
   spaceId: string,
   requestOptions: DeliveryRequest,
 ) {
-  for (const body of intervalDeleteBodies(keys))
-    await request(
-      requestOptions.fetch,
-      requestOptions.baseUrl,
-      requestOptions.token,
-      '/v1/evidence/intervals',
-      'DELETE',
-      body,
-      spaceId,
-    )
+  await request(
+    requestOptions.fetch,
+    requestOptions.baseUrl,
+    requestOptions.token,
+    '/v1/evidence/intervals',
+    'DELETE',
+    { ids: keys },
+    spaceId,
+  )
 }
 
 async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: DeliveryRequest) {
@@ -320,7 +295,11 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
           acknowledgeIntervals(unmoved)
         }
         for (const [oldSpaceId, movedRows] of groupedBy(moved, (row) => row.acknowledgedSpaceId!)) {
-          await deleteIntervalRows(intervalMoveDeleteKeys(movedRows), oldSpaceId, requestOptions)
+          await deleteIntervalRows(
+            movedRows.map((row) => row.key),
+            oldSpaceId,
+            requestOptions,
+          )
           await putIntervalRows(movedRows, destinationSpaceId, requestOptions)
           acknowledgeIntervals(movedRows)
         }
@@ -341,16 +320,11 @@ async function deleteVanishedIntervals(rows: LedgerRow[], requestOptions: Delive
   )) {
     try {
       for (const group of batches(destinationRows)) {
-        for (const body of intervalDeleteBodies(group.map((row) => row.local_key)))
-          await request(
-            requestOptions.fetch,
-            requestOptions.baseUrl,
-            requestOptions.token,
-            '/v1/evidence/intervals',
-            'DELETE',
-            body,
-            destinationSpaceId,
-          )
+        await deleteIntervalRows(
+          group.map((row) => row.local_key),
+          destinationSpaceId,
+          requestOptions,
+        )
         forgetIntervals(group.map((row) => row.local_key))
       }
     } catch (error) {
@@ -392,6 +366,8 @@ export async function syncEvidence(
   if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
   const intervalRows = localIntervals()
   const intervalLedger = ledger('interval')
+  const invalidIntervalLedger = intervalLedger.filter((row) => !UUID.test(row.local_key))
+  const validIntervalLedger = intervalLedger.filter((row) => UUID.test(row.local_key))
   const day = diffDays(localDays(), ledger('day'))
   const result: SyncResult = {
     interval: {
@@ -419,15 +395,15 @@ export async function syncEvidence(
   if (day.changed.length > 0) assertDayRecordId(identity)
   const interval = intervalDeliveries(
     intervalRows,
-    intervalLedger,
+    validIntervalLedger,
     options.registeredProjects ?? projects(),
     identity,
   )
   const currentKeys = new Set(intervalRows.map((row) => row.key))
-  const deleteSkipped = intervalRows.length === 0 && intervalLedger.length > 0
+  const deleteSkipped = intervalRows.length === 0 && validIntervalLedger.length > 0
   const vanished = deleteSkipped
     ? []
-    : intervalLedger.filter((row) => !currentKeys.has(row.local_key))
+    : validIntervalLedger.filter((row) => !currentKeys.has(row.local_key))
   const vanishedWithDestination = vanished.filter(
     (row): row is LedgerRow & { destination_space_id: string } => row.destination_space_id !== null,
   )
@@ -436,6 +412,11 @@ export async function syncEvidence(
   result.interval.deleted = vanishedWithDestination.length
   result.interval.deleteSkipped = deleteSkipped
   result.interval.issues.push(...interval.refused)
+  for (const row of invalidIntervalLedger)
+    result.interval.issues.push({
+      project: null,
+      reason: `interval ledger row '${row.local_key}' is not keyed by UUID; it was left in place`,
+    })
   if (vanishedWithoutDestination.length > 0)
     result.interval.issues.push({
       project: null,

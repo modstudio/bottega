@@ -72,6 +72,7 @@ const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
 const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
 const PROJECT_MOVE = '01990000-0000-7000-8000-00000000067c'
 const interval: IntervalEvidence = {
+  id: '01990000-0000-7000-8000-000000000690',
   task_key: 'DEV-655',
   project_name: PLATFORM_SLUG,
   source: 'orch',
@@ -87,6 +88,24 @@ const interval: IntervalEvidence = {
   open: 0,
   session_id: 'fixture',
   user_id: null,
+}
+const day = {
+  id: '01990000-0000-7000-8000-000000000691',
+  day: '2026-09-17',
+  claude_tokens: 20,
+  cache_read: 0,
+  messages: 2,
+  tasks: 1,
+  canon_tokens: 0,
+  other_tokens: 0,
+  commits: 1,
+  files: 2,
+  lines_product: 3,
+  lines_test: 4,
+  lines_docs: 5,
+  lines_config: 6,
+  lines_generated: 0,
+  collected_at: '2026-09-17T12:06:00.000Z',
 }
 const FIXED_CLOCK = Date.parse('2026-09-17T20:00:00.000Z')
 
@@ -111,25 +130,7 @@ try {
 
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
   await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-  await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-    {
-      day: '2026-09-17',
-      claude_tokens: 20,
-      cache_read: 0,
-      messages: 2,
-      tasks: 1,
-      canon_tokens: 0,
-      other_tokens: 0,
-      commits: 1,
-      files: 2,
-      lines_product: 3,
-      lines_test: 4,
-      lines_docs: 5,
-      lines_config: 6,
-      lines_generated: 0,
-      collected_at: '2026-09-17T12:06:00.000Z',
-    },
-  ])
+  await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
 
   const client = new SQL(actorUrl)
   try {
@@ -148,6 +149,22 @@ try {
     if ((await count(SPACE_A, 'hub_day')) !== 1) throw new Error('day upsert did not land')
     if ((await count(SPACE_B, 'hub_interval')) !== 0 || (await count(SPACE_B, 'hub_day')) !== 0)
       throw new Error('another space observed hosted hub evidence')
+    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [{ ...day, messages: 3 }])
+    const otherDayId = newRecordId()
+    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...day, id: otherDayId },
+    ]).then(
+      () => {
+        throw new Error('unknown id replaced the UUID already owning its day')
+      },
+      (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.includes(day.id) || !message.includes(otherDayId)) throw error
+      },
+    )
+    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...day, id: newRecordId(), day: '2026-09-18' },
+    ])
     const crossSpaceProjects = await client.begin(async (tx) => {
       await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] })
       return tx`SELECT id FROM project WHERE id IN (${PROJECT_A}::uuid,${PROJECT_B}::uuid)`
@@ -164,17 +181,23 @@ try {
     if ((await count(SPACE_A, 'hub_interval')) !== 0)
       throw new Error('vanished interval was not deleted')
 
-    const clientIntervalId = newRecordId()
+    const clientIntervalId = interval.id
     const otherIntervalId = newRecordId()
     await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-    const rekey = await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-      { ...interval, id: clientIntervalId },
-    ])
-    if (rekey.rekeyed !== 1) throw new Error('known tuple did not re-key to the client id')
-    const update = await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...interval, id: clientIntervalId, vendor_tokens: 250 },
     ])
-    if (update.rekeyed !== 0) throw new Error('known id was re-keyed instead of updated')
+    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: otherIntervalId },
+    ]).then(
+      () => {
+        throw new Error('unknown id replaced the UUID already owning its interval tuple')
+      },
+      (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.includes(clientIntervalId) || !message.includes(otherIntervalId)) throw error
+      },
+    )
     const tokens = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
@@ -1048,6 +1071,7 @@ try {
     const measureWindow = { from: '2026-09-17T12:00:00.000Z', to: '2026-09-17T14:00:00.000Z' }
     const measureIntervals: IntervalEvidence[] = [
       {
+        id: '01990000-0000-7000-8000-000000000692',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
         source: 'orch',
@@ -1065,6 +1089,7 @@ try {
         user_id: USER,
       },
       {
+        id: '01990000-0000-7000-8000-000000000693',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
         source: 'orch',
@@ -1082,6 +1107,7 @@ try {
         user_id: USER,
       },
       {
+        id: '01990000-0000-7000-8000-000000000694',
         task_key: 'DEV-758',
         project_name: PLATFORM_SLUG,
         source: 'claude',
@@ -1099,6 +1125,7 @@ try {
         user_id: USER,
       },
       {
+        id: '01990000-0000-7000-8000-000000000695',
         task_key: null,
         project_name: PLATFORM_SLUG,
         source: 'claude',

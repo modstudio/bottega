@@ -1,9 +1,8 @@
 import { SQL } from 'bun'
-import { newRecordId } from '../../shared/record/schema.ts'
 
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = {
-  id?: string
+  id: string
   task_key: string | null
   project_name: string | null
   source: string
@@ -21,7 +20,7 @@ export type IntervalEvidence = {
   user_id: string | null
 }
 export type DayEvidence = {
-  id?: string
+  id: string
   day: string
   claude_tokens: number
   cache_read: number
@@ -38,34 +37,36 @@ export type DayEvidence = {
   lines_generated: number
   collected_at: string
 }
-export type IntervalKey = { source: string; ref: string; start_at: string }
-
-export type HostedIntervalPut =
-  | { kind: 'update'; id: string }
-  | { kind: 'rekey'; fromId: string; toId: string }
-  | { kind: 'insert'; id: string }
-  | { kind: 'insert-legacy' }
-
-export type HostedDayPut = HostedIntervalPut
-
-// Temporary identity transitions let UUID clients adopt legacy hosted rows; remove both together.
-export function decideHostedIntervalPut(
-  incomingId: string | undefined,
-  existingId: string | null,
-  existingTupleId: string | null,
-): HostedIntervalPut {
-  if (!incomingId) return { kind: 'insert-legacy' }
-  if (existingId) return { kind: 'update', id: incomingId }
-  if (existingTupleId) return { kind: 'rekey', fromId: existingTupleId, toId: incomingId }
-  return { kind: 'insert', id: incomingId }
+export function intervalIdentityConflict(row: IntervalEvidence, existingId: string): Error {
+  return new Error(
+    `interval identity conflict: tuple (${row.source}, ${row.ref}, ${row.start_at}) belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
+  )
 }
 
-export function decideHostedDayPut(
-  incomingId: string | undefined,
+export function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
+  return new Error(
+    `day identity conflict: date ${row.day} belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
+  )
+}
+
+export function hostedIntervalWrite(
+  row: IntervalEvidence,
+  existingId: string | null,
+  existingTupleId: string | null,
+): 'update' | 'insert' {
+  if (existingId) return 'update'
+  if (existingTupleId) throw intervalIdentityConflict(row, existingTupleId)
+  return 'insert'
+}
+
+export function hostedDayWrite(
+  row: DayEvidence,
   existingId: string | null,
   existingDayId: string | null,
-): HostedDayPut {
-  return decideHostedIntervalPut(incomingId, existingId, existingDayId)
+): 'update' | 'insert' {
+  if (existingId) return 'update'
+  if (existingDayId) throw dayIdentityConflict(row, existingDayId)
+  return 'insert'
 }
 
 async function tenant<T>(url: string, identity: EvidenceIdentity, work: (tx: SQL) => Promise<T>) {
@@ -124,42 +125,20 @@ async function insertHostedInterval(
 async function updateHostedInterval(
   tx: SQL,
   identity: EvidenceIdentity,
-  currentId: string,
-  nextId: string,
+  id: string,
   row: IntervalEvidence,
 ) {
   const value = intervalValues(row)
   await tx`
     UPDATE hub_interval SET
-      id=${nextId}::uuid, task_key=${value.task_key}, project_name=${value.project_name},
-      source=${value.source}, agent=${value.agent}, job=${value.job},
+      task_key=${value.task_key}, project_name=${value.project_name}, source=${value.source},
+      agent=${value.agent}, job=${value.job},
       start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
       claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},
       vendor_cost_usd=${value.vendor_cost_usd}, ref=${value.ref}, via=${value.via},
       open=${value.open}, session_id=${value.session_id}, user_id=${value.user_id}::uuid,
       updated_at=now()
-    WHERE id=${currentId}::uuid AND space_id=${identity.spaceId}::uuid
-  `
-}
-
-async function writeLegacyInterval(tx: SQL, identity: EvidenceIdentity, row: IntervalEvidence) {
-  const value = intervalValues(row)
-  await tx`
-    INSERT INTO hub_interval
-      (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
-       claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
-    VALUES
-      (${newRecordId()}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name},
-       ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
-       ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
-       ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
-       ${value.user_id}::uuid, now())
-    ON CONFLICT (space_id, source, ref, start_at) DO UPDATE SET
-      task_key=excluded.task_key, project_name=excluded.project_name, agent=excluded.agent,
-      job=excluded.job, end_at=excluded.end_at, claude_tokens=excluded.claude_tokens,
-      vendor_tokens=excluded.vendor_tokens, vendor_cost_usd=excluded.vendor_cost_usd,
-      via=excluded.via, open=excluded.open, session_id=excluded.session_id,
-      user_id=excluded.user_id, updated_at=now()
+    WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid
   `
 }
 
@@ -167,29 +146,20 @@ async function upsertOneInterval(
   tx: SQL,
   identity: EvidenceIdentity,
   row: IntervalEvidence,
-): Promise<number> {
-  const byId = row.id
-    ? await tx<{ id: string }[]>`
-        SELECT id::text AS id FROM hub_interval
-        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-    : []
+): Promise<void> {
+  const byId = await tx<{ id: string }[]>`
+    SELECT id::text AS id FROM hub_interval
+    WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
   const byTuple = await tx<{ id: string }[]>`
     SELECT id::text AS id FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND source=${row.source} AND ref=${row.ref}
       AND start_at=${row.start_at}::timestamptz`
-  const decision = decideHostedIntervalPut(row.id, byId[0]?.id ?? null, byTuple[0]?.id ?? null)
-  if (decision.kind === 'insert-legacy') {
-    await writeLegacyInterval(tx, identity, row)
-    return 0
+  const write = hostedIntervalWrite(row, byId[0]?.id ?? null, byTuple[0]?.id ?? null)
+  if (write === 'update') {
+    await updateHostedInterval(tx, identity, row.id, row)
+    return
   }
-  if (decision.kind === 'rekey') {
-    await updateHostedInterval(tx, identity, decision.fromId, decision.toId, row)
-    return 1
-  }
-  if (decision.kind === 'update')
-    await updateHostedInterval(tx, identity, decision.id, decision.id, row)
-  else await insertHostedInterval(tx, identity, decision.id, row)
-  return 0
+  await insertHostedInterval(tx, identity, row.id, row)
 }
 
 export async function upsertIntervals(
@@ -198,79 +168,49 @@ export async function upsertIntervals(
   rows: IntervalEvidence[],
 ) {
   return tenant(url, identity, async (tx) => {
-    let rekeyed = 0
-    for (const row of rows) rekeyed += await upsertOneInterval(tx, identity, row)
-    return { upserted: rows.length, rekeyed }
+    for (const row of rows) await upsertOneInterval(tx, identity, row)
+    return { upserted: rows.length }
   })
 }
 
 export async function upsertDays(url: string, identity: EvidenceIdentity, rows: DayEvidence[]) {
   return tenant(url, identity, async (tx) => {
-    let rekeyed = 0
     for (const row of rows) {
-      const byId = row.id
-        ? await tx<{ id: string }[]>`
-            SELECT id::text AS id FROM hub_day
-            WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-        : []
+      const byId = await tx<{ id: string }[]>`
+        SELECT id::text AS id FROM hub_day
+        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
       const byDay = await tx<{ id: string }[]>`
         SELECT id::text AS id FROM hub_day
         WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
-      const decision = decideHostedDayPut(row.id, byId[0]?.id ?? null, byDay[0]?.id ?? null)
-      if (decision.kind === 'insert-legacy') {
+      const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
+      if (write === 'update') {
         await tx`
+          UPDATE hub_day SET
+            day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
+            messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
+            other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
+            lines_product=${row.lines_product}, lines_test=${row.lines_test},
+            lines_docs=${row.lines_docs}, lines_config=${row.lines_config},
+            lines_generated=${row.lines_generated}, collected_at=${row.collected_at}::timestamptz,
+            updated_at=now()
+          WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
+        `
+        continue
+      }
+      await tx`
         INSERT INTO hub_day
           (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
            other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
            lines_generated, collected_at, updated_at)
         VALUES
-          (${newRecordId()}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
+          (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
            ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
            ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
            ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
            ${row.collected_at}::timestamptz, now())
-        ON CONFLICT (space_id, day) DO UPDATE SET
-          claude_tokens=excluded.claude_tokens, cache_read=excluded.cache_read,
-          messages=excluded.messages, tasks=excluded.tasks, canon_tokens=excluded.canon_tokens,
-          other_tokens=excluded.other_tokens, commits=excluded.commits, files=excluded.files,
-          lines_product=excluded.lines_product, lines_test=excluded.lines_test,
-          lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
-          lines_generated=excluded.lines_generated, collected_at=excluded.collected_at,
-          updated_at=now()
       `
-        continue
-      }
-      if (decision.kind === 'insert') {
-        await tx`
-          INSERT INTO hub_day
-            (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
-             other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
-             lines_generated, collected_at, updated_at)
-          VALUES
-            (${decision.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
-             ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
-             ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
-             ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
-             ${row.collected_at}::timestamptz, now())
-        `
-        continue
-      }
-      const currentId = decision.kind === 'rekey' ? decision.fromId : decision.id
-      const nextId = decision.kind === 'rekey' ? decision.toId : decision.id
-      await tx`
-        UPDATE hub_day SET
-          id=${nextId}::uuid, day=${row.day}, claude_tokens=${row.claude_tokens},
-          cache_read=${row.cache_read}, messages=${row.messages}, tasks=${row.tasks},
-          canon_tokens=${row.canon_tokens}, other_tokens=${row.other_tokens},
-          commits=${row.commits}, files=${row.files}, lines_product=${row.lines_product},
-          lines_test=${row.lines_test}, lines_docs=${row.lines_docs},
-          lines_config=${row.lines_config}, lines_generated=${row.lines_generated},
-          collected_at=${row.collected_at}::timestamptz, updated_at=now()
-        WHERE id=${currentId}::uuid AND space_id=${identity.spaceId}::uuid
-      `
-      if (decision.kind === 'rekey') rekeyed++
     }
-    return { upserted: rows.length, rekeyed }
+    return { upserted: rows.length }
   })
 }
 
@@ -281,26 +221,6 @@ export async function deleteIntervals(url: string, identity: EvidenceIdentity, i
       const rows = await tx`
         DELETE FROM hub_interval
         WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid
-        RETURNING id
-      `
-      deleted += rows.length
-    }
-    return { deleted }
-  })
-}
-
-export async function deleteIntervalKeys(
-  url: string,
-  identity: EvidenceIdentity,
-  keys: IntervalKey[],
-) {
-  return tenant(url, identity, async (tx) => {
-    let deleted = 0
-    for (const key of keys) {
-      const rows = await tx`
-        DELETE FROM hub_interval
-        WHERE space_id=${identity.spaceId}::uuid AND source=${key.source} AND ref=${key.ref}
-          AND start_at=${key.start_at}::timestamptz
         RETURNING id
       `
       deleted += rows.length
