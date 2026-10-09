@@ -52,7 +52,7 @@ type RawWindow = Omit<
   task_updated_at: SqlTime | null
   task_closed_at: SqlTime | null
 }
-const interval = (row: RawInterval): IntervalRow => ({
+export const interval = (row: RawInterval): IntervalRow => ({
   ...row,
   start_at: iso(row.start_at)!,
   end_at: iso(row.end_at)!,
@@ -73,6 +73,15 @@ const windowInterval = (row: RawWindow): WindowIntervalRow => ({
 })
 
 const rows = <T>(value: unknown) => value as T[]
+export function hostedDayRow(row: Record<string, unknown>): DayRow {
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      key === 'day' ? value : number(value as string | number | bigint),
+    ]),
+  ) as DayRow
+}
+
 const bounds = (hours: 24 | 48 | 168 | 720, now: number) => ({
   from: new Date(now - hours * 3_600_000).toISOString(),
   to: new Date(now).toISOString(),
@@ -481,15 +490,7 @@ async function hostedCostFacts(
       await tx`SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,
         lines_config,lines_generated FROM hub_day WHERE space_id=${identity.spaceId}::uuid
         AND day >= ${since} ORDER BY day`,
-    ).map(
-      (row) =>
-        Object.fromEntries(
-          Object.entries(row).map(([key, value]) => [
-            key,
-            key === 'day' ? value : number(value as string | number),
-          ]),
-        ) as DayRow,
-    )
+    ).map(hostedDayRow)
     const intervals = rows<{ start_at: SqlTime; end_at: SqlTime; open: string | number }>(
       await tx`SELECT start_at,end_at,open FROM hub_interval WHERE space_id=${identity.spaceId}::uuid
         AND end_at >= ${`${since}T00:00:00.000Z`}::timestamptz ORDER BY start_at`,

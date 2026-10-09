@@ -37,6 +37,16 @@ type RawReportRow = Omit<HostedReportRow, 'start_at' | 'end_at' | 'open' | 'vend
   vendor_tokens: string | number
 }
 
+export function asHostedReportRow(row: RawReportRow): HostedReportRow {
+  return {
+    ...row,
+    start_at: iso(row.start_at),
+    end_at: iso(row.end_at),
+    open: number(row.open),
+    vendor_tokens: number(row.vendor_tokens),
+  }
+}
+
 function span(row: HostedReportRow, period: DeliveryPeriod) {
   const from = new Date(period.from).getTime()
   const to = new Date(period.to).getTime()
@@ -155,13 +165,7 @@ export async function hostedGatherReport(
         AND (${members === null} OR i.user_id = ANY(${memberIds}))
         AND (${projectIds === null} OR p.id = ANY(${tx.array(projectIds ?? [], 'uuid')}))
       ORDER BY i.start_at`,
-    ).map((row) => ({
-      ...row,
-      start_at: iso(row.start_at),
-      end_at: iso(row.end_at),
-      open: number(row.open),
-      vendor_tokens: number(row.vendor_tokens),
-    }))
+    ).map(asHostedReportRow)
     const completed = rows<{ task_id: string }>(
       await tx`
       SELECT t.id AS task_id FROM hub_task_status_event e

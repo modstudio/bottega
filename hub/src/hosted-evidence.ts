@@ -162,29 +162,38 @@ async function upsertOneInterval(
   await insertHostedInterval(tx, identity, row.id, row)
 }
 
+export async function upsertIntervalsInTransaction(
+  tx: SQL,
+  identity: EvidenceIdentity,
+  rows: IntervalEvidence[],
+) {
+  for (const row of rows) await upsertOneInterval(tx, identity, row)
+  return { upserted: rows.length }
+}
+
 export async function upsertIntervals(
   url: string,
   identity: EvidenceIdentity,
   rows: IntervalEvidence[],
 ) {
-  return tenant(url, identity, async (tx) => {
-    for (const row of rows) await upsertOneInterval(tx, identity, row)
-    return { upserted: rows.length }
-  })
+  return tenant(url, identity, (tx) => upsertIntervalsInTransaction(tx, identity, rows))
 }
 
-export async function upsertDays(url: string, identity: EvidenceIdentity, rows: DayEvidence[]) {
-  return tenant(url, identity, async (tx) => {
-    for (const row of rows) {
-      const byId = await tx<{ id: string }[]>`
+export async function upsertDaysInTransaction(
+  tx: SQL,
+  identity: EvidenceIdentity,
+  rows: DayEvidence[],
+) {
+  for (const row of rows) {
+    const byId = await tx<{ id: string }[]>`
         SELECT id::text AS id FROM hub_day
         WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-      const byDay = await tx<{ id: string }[]>`
+    const byDay = await tx<{ id: string }[]>`
         SELECT id::text AS id FROM hub_day
         WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
-      const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
-      if (write === 'update') {
-        await tx`
+    const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
+    if (write === 'update') {
+      await tx`
           UPDATE hub_day SET
             day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
             messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
@@ -195,9 +204,9 @@ export async function upsertDays(url: string, identity: EvidenceIdentity, rows: 
             updated_at=now()
           WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
         `
-        continue
-      }
-      await tx`
+      continue
+    }
+    await tx`
         INSERT INTO hub_day
           (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
            other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
@@ -209,9 +218,12 @@ export async function upsertDays(url: string, identity: EvidenceIdentity, rows: 
            ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
            ${row.collected_at}::timestamptz, now())
       `
-    }
-    return { upserted: rows.length }
-  })
+  }
+  return { upserted: rows.length }
+}
+
+export async function upsertDays(url: string, identity: EvidenceIdentity, rows: DayEvidence[]) {
+  return tenant(url, identity, (tx) => upsertDaysInTransaction(tx, identity, rows))
 }
 
 export async function deleteIntervals(url: string, identity: EvidenceIdentity, ids: string[]) {
