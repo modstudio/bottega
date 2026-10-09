@@ -5,5 +5,6 @@ steps:
   - review-lenses
   - triage-findings
   - apply-findings
+  - record-review
 ---
 

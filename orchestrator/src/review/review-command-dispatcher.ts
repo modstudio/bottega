@@ -4,6 +4,7 @@ import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
 import { recordArchitectReadCommand } from './review-read.ts'
+import { recordProjectReviewCommand } from './review-record-command.ts'
 import { restoreReviewTriageCommand } from './review-triage-restore.ts'
 
 type ReviewFlags = {
@@ -23,6 +24,10 @@ export async function dispatchReviewCommand(
   }
   if (sub === 'read') {
     recordArchitectReadCommand(argv, flags, presentation)
+    return
+  }
+  if (sub === 'record' && argv.length === 3 && !/^\d+$/.test(argv[2]!)) {
+    recordProjectReviewCommand(argv[2]!, flags.flag('cwd'), flags.flag('reason'), presentation)
     return
   }
   if (sub === 'amend') {

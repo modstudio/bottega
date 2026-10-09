@@ -55,6 +55,7 @@ export function register(program: Command): void {
     .option('--category <value>')
     .option('--severity <value>')
     .option('--reason <value>')
+    .option('--cwd <value>')
     .option('--sha <value>')
     .option('--note <value>')
     .option('--open')
