@@ -66,7 +66,10 @@ type DispatchPresentation = {
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
   implicitReviewWarning(cwd: string): string
-  resolveCallerCheckout(cwd?: string): {
+  resolveCallerCheckout(
+    cwd?: string,
+    repo?: string,
+  ): {
     callerCwd: string
     launchCwd: string
     notice: string | null
@@ -137,8 +140,9 @@ function assertDispatchableProject(
   explicitRepo: string | undefined,
   callerCwd: string,
   requestedCwd: boolean,
-): void {
-  if (!projectAt(callerCwd)) {
+): ReturnType<typeof projectAt> {
+  const cwdProject = projectAt(callerCwd)
+  if (!cwdProject) {
     const retiredHere = retiredProjectAt(callerCwd)
     if (retiredHere) throw new Error(retiredProjectRefusal(retiredHere.name))
     if (requestedCwd) throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
@@ -151,6 +155,7 @@ function assertDispatchableProject(
     const refusal = projectRepositoryRefusal(projectByName(explicitRepo)!)
     if (refusal) throw new Error(refusal)
   }
+  return explicitRepo ? projectByName(explicitRepo) : cwdProject
 }
 
 function requiresExecution(
@@ -181,19 +186,16 @@ function assertExecutionRequirement(input: {
 }
 
 async function taskKeyWarningForDispatch(
-  input: { explicitRepo: string | undefined; callerCwd: string; key: string | undefined },
+  input: { project: ReturnType<typeof projectAt>; key: string | undefined },
   lookup: TaskKeyLookup,
   warn: (...values: unknown[]) => void,
 ): Promise<string | null> {
-  const project = input.explicitRepo
-    ? projectByName(input.explicitRepo)
-    : projectAt(input.callerCwd)
-  if (!input.key || !project) return null
+  if (!input.key || !input.project) return null
   const admission = await checkTaskKeyAdmission(
     {
-      project: project.name,
+      project: input.project.name,
       key: input.key,
-      protocol: project.settings.tracker?.protocol ?? '(missing)',
+      protocol: input.project.settings.tracker?.protocol ?? '(missing)',
     },
     lookup,
   )
@@ -255,11 +257,12 @@ export async function dispatchCommand(
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
     throw new Error(`--cwd does not exist: ${requestedCwd}`)
-  const caller = resolveCallerCheckout(requestedCwd)
+  const explicitRepo = flag('repo')
+  const caller = resolveCallerCheckout(requestedCwd, explicitRepo)
   const callerCwd = caller.callerCwd
   reportCallerCheckoutNotice(caller.notice, porcelain, error)
-  const explicitRepo = flag('repo')
-  assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
+  const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
+  const dispatchProjectName = dispatchProject?.name ?? null
   // Project-required inputs are knowable before the prompt is read. Checking
   // them afterwards made a missing key pay for stdin and run setup first.
   const requestedBase = flag('base')
@@ -288,7 +291,7 @@ export async function dispatchCommand(
   )
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(
-    { explicitRepo, callerCwd, key: flag('key') },
+    { project: dispatchProject, key: flag('key') },
     lookupTaskKey,
     error,
   )
@@ -298,7 +301,7 @@ export async function dispatchCommand(
     explicit: has('requires-execution'),
     jobName,
     lens,
-    project: explicitRepo ?? projectAt(callerCwd)?.name ?? null,
+    project: dispatchProjectName,
   })
   if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
   warnTaskBranchBypass(
@@ -333,7 +336,7 @@ export async function dispatchCommand(
   if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
     throw new Error('--keep-tree is only valid for lens and reader jobs')
   }
-  if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
+  if (!porcelain && !dispatchProjectName) {
     error(
       `! this run will not be attributed to any project; use --repo <name> ` +
         `(registered: ${projectNames()})`,
@@ -351,11 +354,7 @@ export async function dispatchCommand(
     )
   }
   const prompt = reviewLensPrompt({
-    lens: resolvedFindingsLens(
-      requested.findings,
-      lens,
-      explicitRepo ?? projectAt(callerCwd)?.name ?? null,
-    ),
+    lens: resolvedFindingsLens(requested.findings, lens, dispatchProjectName),
     supplied: await readPrompt(),
   })
   const keepTree = keepTreeExemptionFromOption(
@@ -402,7 +401,7 @@ export async function dispatchCommand(
       probe: has('probe'),
       seed,
       key: flag('key'),
-      repo: explicitRepo,
+      repo: dispatchProjectName ?? undefined,
       base,
       avoid,
       distinctModels,
@@ -463,7 +462,7 @@ export async function dispatchCommand(
     probe: has('probe'),
     seed,
     key: flag('key'),
-    repo: explicitRepo,
+    repo: dispatchProjectName ?? undefined,
     base,
     avoid,
     distinctModels,

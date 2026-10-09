@@ -231,7 +231,7 @@ export async function run(opts: {
   cwd?: string
   /** Internal override for callers whose execution cwd is not their canon source. */
   canonPack?: Pack
-  /** Shell directory that launched the root run, before implicit caller resolution. */
+  /** Persisted origin: shell cwd in the selected project, else its registered path, else shell cwd. */
   launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
@@ -322,6 +322,7 @@ export async function run(opts: {
   const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
+  const runProjectName = opts.repo ?? repoOf(callerCwd)
   const registeredWorktreeTool = toolFor(callerCwd)
   const seed = preflight(
     opts.job,
@@ -334,7 +335,7 @@ export async function run(opts: {
     opts.lens,
     opts.resolvedReviewTarget ? undefined : opts.review,
     opts.carry,
-    opts.repo,
+    runProjectName ?? undefined,
     opts.resolvedReviewTarget !== undefined,
   )
   const reviewTarget =
@@ -357,7 +358,7 @@ export async function run(opts: {
           callerCwd,
           readerRef,
           opts.automaticFailover,
-          readOnlyBaseProjectPath(opts.repo, callerCwd),
+          readOnlyBaseProjectPath(runProjectName ?? undefined, callerCwd),
         )
       : null
   if (shouldResolveRunBase(opts.base, readOnlyBase))
@@ -442,7 +443,6 @@ export async function run(opts: {
   const resolvedDialect = resolveReplyDialect(requestedJob)
   const generatedSchema = resolvedDialect.schema
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const runProjectName = opts.repo ?? repoOf(callerCwd)
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
@@ -518,7 +518,7 @@ export async function run(opts: {
     checkoutCommit: readOnlyBase,
     coverageBase: implicitReview.coverageBase,
     lens: opts.lens,
-    repo: opts.repo ?? repoOf(callerCwd),
+    repo: runProjectName,
   })
   const evidencePrompt = assessEvidencePrompt({
     findingsJob: Boolean(requestedJob.findings),
@@ -613,7 +613,7 @@ export async function run(opts: {
   let { deferredCwdMcpPreflight, mcpConnection } = prepareRunMcpPreflight({
     mcpRequest,
     callerCwd,
-    projectName: opts.repo,
+    projectName: runProjectName ?? undefined,
     forbidsRepo,
     repoJob,
     discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
@@ -999,11 +999,7 @@ export async function run(opts: {
     callerCheckout && callerCheckout !== isolatedCwd
       ? [{ project: callerProject!.name, path: callerCheckout }]
       : []
-  const candidates = checkoutWatchSet(
-    callerWatch,
-    worktree?.path,
-    opts.repo ?? callerProject?.name ?? null,
-  )
+  const candidates = checkoutWatchSet(callerWatch, worktree?.path, runProjectName)
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
