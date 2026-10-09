@@ -104,5 +104,6 @@ test('document counts follow the audience filter without counting retained ances
     null,
   )
   expect(technical.documentCount).toBe(2)
+  expect(technical.inView).toBe(3)
   expect(technical.tree.find((node) => node.id === 'parent')!.navigationDisabled).toBeTrue()
 })

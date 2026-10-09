@@ -45,7 +45,6 @@ test('a retained ancestor is muted and disabled rather than rendered as an open 
   )
   expect(html).toContain('aria-disabled="true"')
   expect(html).toContain('aria-current="page"')
-  expect(html).toContain('text-text-muted')
   expect(html).not.toContain('<button type="button" aria-current="page" title="Parent"')
   expect(html).toContain('<button type="button" title="Child"')
 })

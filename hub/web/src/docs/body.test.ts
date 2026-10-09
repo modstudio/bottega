@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { leadingHeading, paneTitle, readingBody } from './body.ts'
 
-test('the pane always shows the document title', () => {
+test('the pane shows the body heading as the title and the stored title beneath it', () => {
   expect(paneTitle('Product philosophy: what it is for', '# Product philosophy\n\nText.')).toEqual({
-    title: 'Product philosophy: what it is for',
-    lede: null,
+    title: 'Product philosophy',
+    lede: 'Product philosophy: what it is for',
   })
 })
 
@@ -14,22 +14,18 @@ test('the pane shows the stored title alone when the body has no heading or repe
 })
 
 test('a leading level-one heading is dropped so the pane title is the only one', () => {
-  expect(readingBody('Getting started', '# Getting started\n\nInstall the tool.\n')).toBe(
-    '\nInstall the tool.\n',
-  )
-  expect(readingBody('Title', '\n\n# Title\n\nBody')).toBe('\nBody')
-  expect(readingBody('Title', '# Title')).toBe('')
+  expect(readingBody('# Getting started\n\nInstall the tool.\n')).toBe('\nInstall the tool.\n')
+  expect(readingBody('\n\n# Title\n\nBody')).toBe('\nBody')
+  expect(readingBody('# Title')).toBe('')
 })
 
-test('a different first heading, a level-two heading and a body without a heading are unchanged', () => {
-  expect(readingBody('Stored title', '# Different title\n\nBody.')).toBe(
-    '# Different title\n\nBody.',
-  )
-  expect(readingBody('Open a task', '## Open a task\n\nEvery piece of work carries a key.\n')).toBe(
+test('a body that does not begin with a level-one heading is unchanged', () => {
+  expect(readingBody('## Open a task\n\nEvery piece of work carries a key.\n')).toBe(
     '## Open a task\n\nEvery piece of work carries a key.\n',
   )
-  expect(readingBody('Title', 'Intro\n\n# Later')).toBe('Intro\n\n# Later')
-  expect(readingBody('Title', '')).toBe('')
+  expect(readingBody('Intro\n\n# Later')).toBe('Intro\n\n# Later')
+  expect(readingBody('#No-space heading\n\nBody')).toBe('#No-space heading\n\nBody')
+  expect(readingBody('')).toBe('')
 })
 
 test('the leading heading text is the line readingBody removes, without closing hashes', () => {

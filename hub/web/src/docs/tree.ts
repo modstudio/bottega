@@ -70,19 +70,6 @@ export function treeForAudience(
   })
 }
 
-export function flattenTree(nodes: readonly TreeNode[]): DocsTreeItem[] {
-  const out: DocsTreeItem[] = []
-  const walk = (list: readonly TreeNode[]) => {
-    for (const node of list) {
-      const { children, ...item } = node
-      out.push(item)
-      walk(children)
-    }
-  }
-  walk(nodes)
-  return out
-}
-
 export function treePath(nodes: readonly TreeNode[], id: string): DocsTreeItem[] {
   for (const node of nodes) {
     if (node.id === id) {
@@ -98,13 +85,25 @@ export function treePath(nodes: readonly TreeNode[], id: string): DocsTreeItem[]
   return []
 }
 
+/** The documents a reader can open, in reading order. */
+export function openableItems(nodes: readonly TreeNode[]): DocsTreeItem[] {
+  const out: DocsTreeItem[] = []
+  const walk = (list: readonly TreeNode[]) => {
+    for (const node of list) {
+      const { children, navigationDisabled, ...item } = node
+      if (!navigationDisabled) out.push(item)
+      walk(children)
+    }
+  }
+  walk(nodes)
+  return out
+}
+
 export function neighbors(
   nodes: readonly TreeNode[],
   id: string,
 ): { previous: DocsTreeItem | null; next: DocsTreeItem | null } {
-  const order = flattenTree(nodes).filter(
-    (item) => !(item as DocsTreeItem & { navigationDisabled?: boolean }).navigationDisabled,
-  )
+  const order = openableItems(nodes)
   const index = order.findIndex((item) => item.id === id)
   if (index < 0) return { previous: null, next: null }
   return {

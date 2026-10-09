@@ -196,13 +196,6 @@ test('a directly opened document is shown independently of navigation filters', 
   expect(html).toContain('On this page')
 })
 
-test('a different leading level-one heading remains in the document body', () => {
-  const html = render({
-    doc: { ...items[1]!, body: '# A different heading\n\nBody.' },
-  })
-  expect(html).toContain('<h1>A different heading</h1>')
-})
-
 test('a document omitted from navigation stays pending until its body loads', () => {
   const retired: DocsTreeItem = {
     ...items[1]!,

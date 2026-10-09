@@ -236,7 +236,7 @@ export function DocsReading({
           ) : null}
           {localActions ? <div className="mt-4">{localActions}</div> : null}
           <div className="mt-6">
-            <Markdown content={readingBody(doc.title, doc.body)} />
+            <Markdown content={readingBody(doc.body)} />
           </div>
           <ReadingAround around={around} onSelect={onSelect} />
         </>

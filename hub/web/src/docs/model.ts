@@ -6,13 +6,14 @@ import {
   inProject,
   offeredFilters,
   projectSubjects,
+  selectedAudience,
 } from './filters.ts'
 import { secondLevelHeadings } from './headings.ts'
 import {
   breadcrumb,
-  flattenTree,
   groupRootsBySubject,
   neighbors,
+  openableItems,
   treeForAudience,
   treePath,
 } from './tree.ts'
@@ -53,18 +54,16 @@ export function docsViewModel(
   const stale = clearStaleFilters(forProject, chosen)
   const structural = applyFilters(forProject, { ...stale, audience: null })
   const visible = applyFilters(structural, stale)
-  const tree = treeForAudience(structural, stale.audience as 'user' | 'technical' | null)
+  const tree = treeForAudience(structural, selectedAudience(stale))
   const groups = project === 'all' ? groupRootsBySubject(tree) : null
   const selected = treePath(tree, selectedId ?? '').at(-1) ?? null
   const path = selected ? treePath(tree, selected.id) : []
   const roots = groups ? groups.flatMap((group) => group.children) : tree
-  const first = flattenTree(roots).find(
-    (item) => !(item as DocsTreeItem & { navigationDisabled?: boolean }).navigationDisabled,
-  )
+  const first = openableItems(roots)[0]
   return {
     first: first ?? null,
     documentCount: visible.length,
-    inView: visible.length,
+    inView: forProject.length,
     stale,
     offered: offeredFilters(forProject, includeAudienceFilter),
     tree,

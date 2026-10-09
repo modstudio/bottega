@@ -29,7 +29,7 @@ function TreeDocumentRow({
         aria-current={current ? 'page' : undefined}
         aria-disabled="true"
         title={node.title}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left text-text-muted"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left text-text-secondary"
       >
         <span className="min-w-0 flex-1 truncate">{node.title}</span>
         <DocStatusBadge status={node.status} />
@@ -109,7 +109,7 @@ function TreeRow({
         />
       </div>
       {children.length && open ? (
-        <div className="ml-3 border-border-default border-l pl-1">
+        <div className="ml-3 border-border-default border-l pl-4">
           <TreeList
             nodes={children}
             selectedId={selectedId}

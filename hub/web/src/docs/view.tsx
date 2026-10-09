@@ -7,14 +7,27 @@ import { Popover } from '@/ui/popover/popover'
 import { Switch } from '@/ui/switch/switch'
 import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
-import { EMPTY_FILTERS, type FilterSelection, type OfferedFilter } from './filters.ts'
+import {
+  DOC_AUDIENCE_LABELS,
+  EMPTY_FILTERS,
+  type FilterSelection,
+  type OfferedFilter,
+  selectedAudience,
+} from './filters.ts'
 import type { DocsLocation } from './location.ts'
 import { docsViewModel, docsVisibleByStatus } from './model.ts'
 import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
-import type { DocsDoc, DocsSearchMatch, DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
+import type {
+  DocsAudience,
+  DocsDoc,
+  DocsSearchMatch,
+  DocsTreeGroup,
+  DocsTreeItem,
+  TreeNode,
+} from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -24,7 +37,7 @@ export type DocsViewProps = {
   /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
   selectedId: string | null
-  onAudienceFilter: (audience: 'user' | 'technical' | null) => void
+  onAudienceFilter: (audience: DocsAudience | null) => void
   project: string | 'all'
   onProject: (project: string | 'all') => void
   signedIn: boolean
@@ -236,11 +249,9 @@ function sameFilters(left: FilterSelection, right: FilterSelection): boolean {
   )
 }
 
-function searchScopeLabel(signedIn: boolean, audience: string | null): string {
+function searchScopeLabel(signedIn: boolean, audience: DocsAudience | null): string {
   if (!signedIn) return 'Searching the User guide docs'
-  if (audience === 'user') return 'Searching User docs'
-  if (audience === 'technical') return 'Searching Technical docs'
-  return 'Searching all docs'
+  return audience ? `Searching ${DOC_AUDIENCE_LABELS[audience]} docs` : 'Searching all docs'
 }
 
 export function DocsView({
@@ -281,7 +292,7 @@ export function DocsView({
   useEffect(() => {
     if (!sameFilters(model.stale, chosen)) {
       setChosen(model.stale)
-      onAudienceFilter(model.stale.audience as 'user' | 'technical' | null)
+      onAudienceFilter(selectedAudience(model.stale))
     }
   }, [model.stale, chosen, onAudienceFilter])
   useEffect(() => {
@@ -350,13 +361,18 @@ export function DocsView({
         project={project}
         onProject={(next) => {
           onProject(next)
+          // The open document stays when the new project still holds it; otherwise the
+          // reader lands on that project's first document.
+          if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
+          const first = docsViewModel(navigationItems, next, chosen, null, doc, signedIn).first
+          if (first) onOpenFirst(first)
         }}
         subjects={model.subjects}
         offered={model.offered}
         chosen={model.stale}
         onFilters={(next) => {
           setChosen(next)
-          onAudienceFilter(next.audience as 'user' | 'technical' | null)
+          onAudienceFilter(selectedAudience(next))
         }}
         inView={model.inView}
         active={model.active}
@@ -419,7 +435,7 @@ export function DocsView({
         results={searchResults}
         tree={navigationItems}
         onChoose={onSelect}
-        scopeLabel={searchScopeLabel(signedIn, chosen.audience)}
+        scopeLabel={searchScopeLabel(signedIn, selectedAudience(model.stale))}
       />
     </div>
   )

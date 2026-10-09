@@ -4,9 +4,9 @@ import { applyFilters, EMPTY_FILTERS } from './filters.ts'
 import {
   breadcrumb,
   buildDocTree,
-  flattenTree,
   groupRootsBySubject,
   neighbors,
+  openableItems,
   parentEdgeCycles,
   treeForAudience,
   treePath,
@@ -139,7 +139,7 @@ test('previous and next follow preorder of the visible tree', () => {
   })
   expect(neighbors(tree, 'g').previous).toBeNull()
   expect(neighbors(tree, 'how').next).toBeNull()
-  expect(flattenTree(tree).map((node) => node.id)).toEqual(['g', 'install', 'run', 'how'])
+  expect(openableItems(tree).map((node) => node.id)).toEqual(['g', 'install', 'run', 'how'])
 })
 
 test('filters do not change neighbor order beyond the visible tree', () => {

@@ -11,6 +11,11 @@ export type FilterSelection = Record<FilterKey, string | null>
 type FilterOption = { value: string; label: string; count: number }
 export type OfferedFilter = { key: FilterKey; allLabel: string; options: FilterOption[] }
 
+/** The audience a selection names, or none when it names no known audience. */
+export function selectedAudience(chosen: FilterSelection): DocsAudience | null {
+  return DOC_AUDIENCES.find((audience) => audience === chosen.audience) ?? null
+}
+
 export const EMPTY_FILTERS: FilterSelection = { audience: null, scope: null, delivery: null }
 
 export function projectSubjects(items: readonly DocsTreeItem[]): string[] {
@@ -62,19 +67,19 @@ export function offeredFilters(
   items: readonly DocsTreeItem[],
   includeAudience: boolean,
 ): OfferedFilter[] {
-  const offered: OfferedFilter[] = includeAudience
-    ? [
-        {
-          key: 'audience',
-          allLabel: 'All audiences',
-          options: DOC_AUDIENCES.map((value) => ({
-            value,
-            label: DOC_AUDIENCE_LABELS[value],
-            count: valuesFor(items, 'audience').get(value) ?? 0,
-          })),
-        },
-      ]
-    : []
+  const offered: OfferedFilter[] = []
+  if (includeAudience) {
+    const counts = valuesFor(items, 'audience')
+    offered.push({
+      key: 'audience',
+      allLabel: 'All audiences',
+      options: DOC_AUDIENCES.map((value) => ({
+        value,
+        label: DOC_AUDIENCE_LABELS[value],
+        count: counts.get(value) ?? 0,
+      })),
+    })
+  }
   for (const key of ['scope', 'delivery'] as const) {
     const counts = valuesFor(items, key)
     if (counts.size < 2) continue
@@ -97,9 +102,8 @@ export function clearStaleFilters(
   for (const key of ['audience', 'scope', 'delivery'] as const) {
     const value = next[key]
     if (!value) continue
-    if (key === 'audience') {
-      if (!DOC_AUDIENCES.includes(value as DocsAudience)) next[key] = null
-    } else if (!valuesFor(items, key).has(value)) next[key] = null
+    if (key === 'audience') next[key] = selectedAudience(next)
+    else if (!valuesFor(items, key).has(value)) next[key] = null
   }
   return next
 }
@@ -108,8 +112,9 @@ export function applyFilters(
   items: readonly DocsTreeItem[],
   chosen: FilterSelection,
 ): DocsTreeItem[] {
+  const audience = selectedAudience(chosen)
   return items.filter((item) => {
-    if (chosen.audience && !item.audiences.includes(chosen.audience as DocsAudience)) return false
+    if (audience && !item.audiences.includes(audience)) return false
     if (chosen.scope && item.scope !== chosen.scope) return false
     if (chosen.delivery && item.delivery !== chosen.delivery) return false
     return true
