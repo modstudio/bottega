@@ -593,7 +593,7 @@ export async function promoteNote(
 ): Promise<NoteRow> {
   const note = getNote(recordId)
   if (note.promoted_task)
-    throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
+    throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
   if (options.existingTaskKey && destination !== 'tracker')
@@ -614,7 +614,7 @@ export async function promoteNote(
       writeTransaction((conn) => {
         const row = decode(noteRow(conn, note.record_id))
         if (row.promoted_task)
-          throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
+          throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
         conn
           .query(
             'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE record_id=?',
@@ -626,7 +626,7 @@ export async function promoteNote(
     writeTransaction((conn) => {
       const row = decode(noteRow(conn, note.record_id))
       if (row.promoted_task)
-        throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
+        throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
       const evidence = row.anchors
         .map(
           (anchor, index) =>
@@ -772,9 +772,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
   const reasons = notes.flatMap((note) => {
     const reason = vanishedReason(note, existingRuns, runGit)
-    return reason
-      ? [{ id: note.id, recordId: note.record_id, label: note.label, reason }]
-      : []
+    return reason ? [{ id: note.id, recordId: note.record_id, label: note.label, reason }] : []
   })
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()

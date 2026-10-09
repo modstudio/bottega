@@ -8,7 +8,8 @@ test('hosted notes render their records without disposition controls', () => {
   queryClient.setQueryData(trpc.record.notes.queryOptions({ stale: false }).queryKey, {
     notes: [
       {
-        id: 7,
+        id: '11111111-1111-4111-8111-111111111111',
+        number: 7,
         label: 'workshop#7',
         space_id: '00000000-0000-4000-8000-000000000001',
         space_name: 'Workshop',
@@ -27,7 +28,7 @@ test('hosted notes render their records without disposition controls', () => {
     acknowledgements: [
       {
         space_id: '00000000-0000-4000-8000-000000000001',
-        note_id: 7,
+        note_id: '11111111-1111-4111-8111-111111111111',
         session_id: 'session-1',
         acknowledged_at: '2026-09-17T11:30:00.000Z',
         sightings: 2,
