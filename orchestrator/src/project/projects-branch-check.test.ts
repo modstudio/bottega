@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { detachedCheckoutDecision } from './projects.ts'
 
-const checkout = '/projects/bottega'
+const checkout = '/projects/development'
 
 test('a detached checkout at a release tag names that tag', () => {
   expect(detachedCheckoutDecision('main', true, ['v0.2.0'], checkout)).toEqual({
