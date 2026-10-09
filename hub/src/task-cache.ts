@@ -5,12 +5,17 @@ import { projects } from './projects.ts'
 import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
-import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
+import { type RegisteredTaskSpace, taskPullSpaces } from './task-project-space.ts'
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
+export type HostedTaskChangeTable =
+  | 'hub_task'
+  | 'hub_task_comment'
+  | 'hub_task_document'
+  | 'hub_task_status_event'
 
-function reconcileParentRecordIds(conn: Database) {
+export function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
     if (relationship.table !== 'task') continue
     const unresolved = conn
@@ -153,25 +158,102 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
       .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
 }
 
+export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
+  changes.tasks.forEach((row) => {
+    applyHostedTask(conn, row)
+  })
+  reconcileParentRecordIds(conn)
+  changes.comments.forEach((row) => {
+    applyComment(conn, row)
+  })
+  changes.documents.forEach((row) => {
+    applyDocument(conn, row)
+  })
+  changes.statusEvents.forEach((row) => {
+    applyStatusEvent(conn, row)
+  })
+}
+
+export function applyHostedChangeUpsert(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  row:
+    | HostedChanges['tasks'][number]
+    | HostedChanges['comments'][number]
+    | HostedChanges['documents'][number]
+    | HostedChanges['statusEvents'][number],
+) {
+  if (table === 'hub_task') {
+    applyHostedTask(conn, row as HostedChanges['tasks'][number])
+    return
+  }
+  if (table === 'hub_task_comment') {
+    applyComment(conn, row as HostedChanges['comments'][number])
+    return
+  }
+  if (table === 'hub_task_document') {
+    applyDocument(conn, row as HostedChanges['documents'][number])
+    return
+  }
+  applyStatusEvent(conn, row as HostedChanges['statusEvents'][number])
+}
+
+const MACHINE_TABLE = {
+  hub_task: 'task',
+  hub_task_comment: 'task_comment',
+  hub_task_document: 'task_document',
+  hub_task_status_event: 'task_status_event',
+} as const
+
+export function deleteHostedChangeRow(conn: Database, table: HostedTaskChangeTable, id: string) {
+  conn.query(`DELETE FROM ${MACHINE_TABLE[table]} WHERE record_id=?`).run(id)
+}
+
+export function hostedChangeMachineRow(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  id: string,
+): Record<string, unknown> | null {
+  return (
+    conn
+      .query<Record<string, unknown>, [string]>(
+        `SELECT * FROM ${MACHINE_TABLE[table]} WHERE record_id=?`,
+      )
+      .get(id) ?? null
+  )
+}
+
+export function hostedChangeRowProject(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  id: string,
+): string | null {
+  if (table === 'hub_task')
+    return (
+      conn
+        .query<{ project: string }, [string]>(`SELECT project FROM task WHERE record_id=?`)
+        .get(id)?.project ?? null
+    )
+  const child = conn
+    .query<{ task_record_id: string | null }, [string]>(
+      `SELECT task_record_id FROM ${MACHINE_TABLE[table]} WHERE record_id=?`,
+    )
+    .get(id)
+  if (!child?.task_record_id) return null
+  return (
+    conn
+      .query<{ project: string }, [string]>(`SELECT project FROM task WHERE record_id=?`)
+      .get(child.task_record_id)?.project ?? null
+  )
+}
+
 export function applyHostedTaskChanges(
   changes: HostedChanges,
   cursorKey = CURSOR_KEY,
   clearLegacyCursor = false,
 ) {
   writeTransaction((conn) => {
-    changes.tasks.forEach((row) => {
-      applyHostedTask(conn, row)
-    })
-    reconcileParentRecordIds(conn)
-    changes.comments.forEach((row) => {
-      applyComment(conn, row)
-    })
-    changes.documents.forEach((row) => {
-      applyDocument(conn, row)
-    })
-    changes.statusEvents.forEach((row) => {
-      applyStatusEvent(conn, row)
-    })
+    applyHostedTaskRows(conn, changes)
     conn
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -179,18 +261,6 @@ export function applyHostedTaskChanges(
       .run(cursorKey, changes.cursor)
     if (clearLegacyCursor) conn.query(`DELETE FROM setting WHERE key=?`).run(CURSOR_KEY)
   })
-}
-
-function pullSpaces(
-  registered: readonly RegisteredTaskSpace[],
-  identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
-) {
-  const spaces = new Set([identity.activeSpaceId])
-  for (const project of registered) {
-    const destination = taskProjectDestination(project.name, registered, identity)
-    if ('destinationSpaceId' in destination) spaces.add(destination.destinationSpaceId)
-  }
-  return [...spaces]
 }
 
 const cursorKeyFor = (spaceId: string) => `${CURSOR_KEY}.${spaceId}`
@@ -217,7 +287,7 @@ export async function pullHostedTasks(
 ) {
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
-  const spaces = pullSpaces(options.registeredProjects ?? projects(), identity)
+  const spaces = taskPullSpaces(options.registeredProjects ?? projects(), identity)
   const totals = { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
   let activeCursor = ''
   const failures: string[] = []

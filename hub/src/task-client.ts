@@ -25,6 +25,7 @@ export type HostedTaskIdentity = {
     dayRecordId?: boolean
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
+    spaceChanges?: boolean
   }
 }
 
@@ -275,6 +276,38 @@ export async function hostedTaskChanges(
   }>(`/v1/tasks?${query}`, 'GET', undefined, options)
 }
 
+export const HOSTED_TASK_CHANGE_TABLES =
+  'hub_task,hub_task_comment,hub_task_document,hub_task_status_event' as const
+
+export type HostedSpaceChange = {
+  sequence: number
+  table: string
+  id: string
+  op: 'upsert' | 'delete'
+  row?: HostedTask | HostedComment | HostedDocument | import('./hosted-tasks.ts').HostedStatusEvent
+}
+
+export type HostedSpaceChangePage = {
+  head: number
+  oldest: number | null
+  next: number
+  more: boolean
+  resetRequired: boolean
+  changes: HostedSpaceChange[]
+}
+
+export async function hostedSpaceChanges(
+  after: number,
+  options?: Parameters<typeof request>[3] & { limit?: number; tables?: string },
+) {
+  const query = new URLSearchParams({
+    after: String(after),
+    tables: options?.tables ?? HOSTED_TASK_CHANGE_TABLES,
+  })
+  if (options?.limit !== undefined) query.set('limit', String(options.limit))
+  return request<HostedSpaceChangePage>(`/v1/changes?${query}`, 'GET', undefined, options)
+}
+
 export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<{
     upserted: number
@@ -379,6 +412,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).targetSpaceNotes === true,
+      spaceChanges:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).spaceChanges === true,
     },
   }
 }

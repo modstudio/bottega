@@ -20,6 +20,19 @@ export type ProjectRowsRefusal<T> = {
   rows: T[]
 }
 
+/** Spaces the task pull reads: the active space plus every registered destination. */
+export function taskPullSpaces(
+  registered: readonly RegisteredTaskSpace[],
+  identity: TaskDestinationIdentity,
+): string[] {
+  const spaces = new Set([identity.activeSpaceId])
+  for (const project of registered) {
+    const destination = taskProjectDestination(project.name, registered, identity)
+    if ('destinationSpaceId' in destination) spaces.add(destination.destinationSpaceId)
+  }
+  return [...spaces]
+}
+
 /** Resolve a project's registered destination against the signed-in user's memberships. */
 export function taskProjectDestination(
   projectName: string,
