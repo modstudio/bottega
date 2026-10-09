@@ -27,6 +27,8 @@ export const PHP_POLICY_RULES = [
   'refresh-database',
   'sql-string-matching',
   'skipped',
+  'no-assertions',
+  'type-only-test',
 ] as const
 export type PhpPolicyRule = (typeof PHP_POLICY_RULES)[number]
 

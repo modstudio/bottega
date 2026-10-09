@@ -46,7 +46,12 @@ final class SubstanceFixtureTest
     }
 
     #[Test]
-    public function fixtureVacuousMethod(): void
+    public function testVacuousMethod(): void
+    {
+        self::assertSame('constant', 'different constant');
+    }
+
+    public function testTypeOnlyMethod(): void
     {
         self::assertInstanceOf(Service::class, $service);
     }

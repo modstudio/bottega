@@ -67,11 +67,15 @@ const RULES = [
   },
 ] as const
 
-export const PHP_GUARDED_RULES = [...RULES.map(({ rule }) => rule), 'vacuous-test', 'unused-waiver']
+export const PHP_GUARDED_RULES = [
+  ...RULES.map(({ rule }) => rule),
+  'vacuous-test',
+  'type-only-test',
+  'unused-waiver',
+]
 const PHP_UNIVERSAL_RULES = [
   'self-equal-assertion',
   'tautology',
-  'no-assertions',
   'vacuous-test',
   'unused-waiver',
 ] as const
@@ -453,28 +457,46 @@ function assertions(body: string): Assertion[] {
   return result
 }
 
-function isVacuous(items: Assertion[]): boolean {
-  if (items.length === 0 || items.some((item) => item.kind === 'real')) return false
-  const hasInstanceOf = items.some((item) => item.name === 'assertInstanceOf')
-  const allConstant = items.every((item) => item.kind === 'constant')
-  return hasInstanceOf || allConstant
+function vacuousRule(
+  items: Assertion[],
+  enabledPolicyRules: ReadonlySet<PhpPolicyRule>,
+): 'type-only-test' | 'vacuous-test' | undefined {
+  if (items.length === 0 || items.some((item) => item.kind === 'real')) return undefined
+  if (items.every((item) => item.kind === 'constant')) return 'vacuous-test'
+  if (
+    enabledPolicyRules.has('type-only-test') &&
+    items.some((item) => item.name === 'assertInstanceOf')
+  ) {
+    return 'type-only-test'
+  }
+  return undefined
 }
 
-function vacuousFindings(file: string, content: string, methods: TestMethod[]): TestFinding[] {
-  return methods.flatMap((method) =>
-    isVacuous(assertions(content.slice(method.start, method.bodyEnd)))
-      ? [
-          {
-            file,
-            line: method.declarationLine,
-            rule: 'vacuous-test',
-            testName: method.name,
-            message:
-              'No assertion references a SUT-produced value; assert the computed value or observable effect.',
-          },
-        ]
-      : [],
-  )
+function vacuousFindings(
+  file: string,
+  content: string,
+  methods: TestMethod[],
+  enabledPolicyRules: ReadonlySet<PhpPolicyRule>,
+): TestFinding[] {
+  return methods.flatMap((method) => {
+    const rule = vacuousRule(
+      assertions(content.slice(method.start, method.bodyEnd)),
+      enabledPolicyRules,
+    )
+    if (!rule) return []
+    return [
+      {
+        file,
+        line: method.declarationLine,
+        rule,
+        testName: method.name,
+        message:
+          rule === 'type-only-test'
+            ? 'The method checks only result types; assert the computed value or observable effect.'
+            : 'Every assertion is constant-only; assert the computed value or observable effect.',
+      },
+    ]
+  })
 }
 
 function waivers(file: string, content: string, methods: TestMethod[]): TestWaiver[] {
@@ -509,7 +531,7 @@ export async function phpTestSubstanceReport(
   const enabled = new Set(enabledPolicyRules)
   const findings = [
     ...lineFindings(file, content, methods, enabled),
-    ...vacuousFindings(file, content, methods),
+    ...vacuousFindings(file, content, methods, enabled),
   ]
   const applicableWaivers = waivers(file, content, methods).filter(
     (waiver) => !policyRules.has(waiver.rule) || enabled.has(waiver.rule as PhpPolicyRule),

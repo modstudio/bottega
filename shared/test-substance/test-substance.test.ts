@@ -93,7 +93,7 @@ test('matches supported JavaScript, TypeScript, and PHP test paths', () => {
 })
 
 test('judges only a newly added PHP vacuous method', async () => {
-  const oldMethod = `public function testOld(): void { self::assertInstanceOf(Foo::class, $old); }`
+  const oldMethod = `public function testOld(): void { self::assertSame('old', 'value'); }`
   const before = `<?php class FooTest { ${oldMethod} }`
   const unchanged = await judgeTestSubstance({
     file: '/project/tests/Feature/FooTest.php',
@@ -105,7 +105,7 @@ test('judges only a newly added PHP vacuous method', async () => {
   const added = await judgeTestSubstance({
     file: '/project/tests/Feature/FooTest.php',
     before,
-    after: `<?php class FooTest { ${oldMethod} public function testAdded(): void { self::assertInstanceOf(Foo::class, $new); } }`,
+    after: `<?php class FooTest { ${oldMethod} public function testAdded(): void { self::assertSame('new', 'value'); } }`,
   })
   expect(added).toMatchObject({
     status: 'refused',

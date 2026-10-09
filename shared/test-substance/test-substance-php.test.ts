@@ -41,13 +41,17 @@ $this->getMockBuilder(Foo::class);
 })
 
 describe('PHP vacuous methods', () => {
-  test('flags type-only and constant-only methods but preserves the sole assertNotNull exception', async () => {
+  test('splits constant-only from policy type-only and preserves the sole assertNotNull exception', async () => {
     const report = await findings(`
   public function testTypeOnly(): void {
     self::assertInstanceOf(Foo::class, $value);
     self::assertNotNull($value->id);
   }
   public function testConstantOnly(): void {
+    self::assertSame('a', 'b');
+  }
+  public function testTypeWithConstantNoise(): void {
+    self::assertInstanceOf(Foo::class, $value);
     self::assertSame('a', 'b');
   }
   public function testExists(): void {
@@ -60,7 +64,21 @@ describe('PHP vacuous methods', () => {
 `)
     expect(
       report.filter(({ rule }) => rule === 'vacuous-test').map(({ testName }) => testName),
-    ).toEqual(['testTypeOnly', 'testConstantOnly'])
+    ).toEqual(['testConstantOnly'])
+    expect(
+      report.filter(({ rule }) => rule === 'type-only-test').map(({ testName }) => testName),
+    ).toEqual(['testTypeOnly', 'testTypeWithConstantNoise'])
+
+    const universal = await phpTestSubstanceReport(
+      file,
+      `<?php class FooTest {
+        public function testTypeOnly(): void {
+          self::assertInstanceOf(Foo::class, $value);
+        }
+      }`,
+      [],
+    )
+    expect(universal.findings).toEqual([])
   })
 
   test('treats fluent assertions, receiver expectations, and exception expectations as real', async () => {
