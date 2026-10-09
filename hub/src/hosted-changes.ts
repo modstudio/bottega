@@ -124,8 +124,7 @@ export async function readHostedChangesInTransaction(
   const head = sequenceNumber(metadata.head)
   const oldest = metadata.oldest === null ? null : sequenceNumber(metadata.oldest)
   const resetRequired =
-    input.after > head ||
-    (input.after < head && (oldest === null || input.after < oldest - 1))
+    input.after > head || (input.after < head && (oldest === null || input.after < oldest - 1))
   if (resetRequired)
     return { head, oldest, next: input.after, more: false, resetRequired: true, changes: [] }
 
