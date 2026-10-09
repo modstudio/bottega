@@ -174,7 +174,11 @@ export type RecordApiClient = {
       acrossReadableSpaces?: boolean
     },
     destination?: RecordRequestDestination,
-  ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
+  ): Promise<{
+    items: Record<string, unknown>[]
+    nextCursor: string | null
+    endCursor?: string | null
+  }>
   getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
   listRevisions(
     id: string,
@@ -244,7 +248,7 @@ export type RecordApiClient = {
       limit?: number
     },
     destination?: RecordRequestDestination,
-  ): Promise<{ items: RecordSubject[]; nextCursor: string | null }>
+  ): Promise<{ items: RecordSubject[]; nextCursor: string | null; endCursor?: string | null }>
   addProjectSubject(
     input: { id: string; project: string; name: string; definition: string },
     destination?: RecordRequestDestination,

@@ -37,6 +37,7 @@ import {
   encodeRecordCursor,
   pageRecordItems,
   type RecordCursor,
+  recordCursorOf,
 } from './record-cursor.ts'
 import {
   type RecordCanonImportInput,
@@ -763,12 +764,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       includeDeleted: Boolean(query.data.includeDeleted),
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
-    return context.json(
-      pageRecordItems(items, query.data.limit, (item) => ({
-        at: item.updatedAt,
-        id: item.id,
-      })),
-    )
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
   app.get('/v1/docs/counts', async (context) => {
     const tenant = scope(context)

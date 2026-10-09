@@ -206,7 +206,7 @@ export function newerHostedImportRefusal(
 }
 
 const recordDocIso = (value: unknown) =>
-  value == null ? null : new Date(String(value)).toISOString()
+  value == null ? null : (value instanceof Date ? value : new Date(String(value))).toISOString()
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {
   return {
