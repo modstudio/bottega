@@ -83,6 +83,15 @@ describe('PHP vacuous methods', () => {
 `)
     expect(report.filter(({ rule }) => rule === 'vacuous-test')).toEqual([])
   })
+
+  test('treats a project assertion helper with literal arguments as real', async () => {
+    const report = await findings(`
+  public function testPreviewStatus(): void {
+    $this->assertPreviewStatus(422, ['word_cap' => 96]);
+  }
+`)
+    expect(report.filter(({ rule }) => rule === 'vacuous-test')).toEqual([])
+  })
 })
 
 test('detects a query-builder assertion split after the object operator', async () => {

@@ -97,4 +97,9 @@ final class SubstanceFixtureTest
     {
         self::assertNotNull(Carrier::find($id));
     }
+
+    public function testCleanProjectAssertionHelper(): void
+    {
+        $this->assertPreviewStatus(422, ['word_cap' => 96]);
+    }
 }
