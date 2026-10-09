@@ -20,13 +20,6 @@
     "score": 47
   },
   {
-    "file": "hub/src/ingest/runs.ts",
-    "function": "writeTransaction callback",
-    "line": 118,
-    "score": 32,
-    "key": "hub/src/ingest/runs.ts\u0000writeTransaction callback"
-  },
-  {
     "file": "hub/src/ingest/transcripts.ts",
     "function": "legsOf",
     "line": 62,
