@@ -345,12 +345,42 @@ test('a wider git scan moves the opening date earlier once and mirrors it', asyn
   ).toEqual(['2026-10-03', '2026-06-30'])
 })
 
-test('a git mirror sends the complete stored task row', async () => {
+test('a later git scan mirrors the stored task fields and stable opening date', async () => {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task
+          (record_id,key,project,title,status,status_category,parent_key,opened_at,closed_at,
+           updated_at,source,first_seen,last_seen,next_document_number)
+         VALUES (?,?,?,?,?,?,?,?,?,?, 'git',?,?,?)`,
+      )
+      .run(
+        '33333333-3333-4333-8333-333333333333',
+        'ALP-22',
+        'alpha',
+        'Stored title',
+        'completed',
+        'done',
+        'ALP-2',
+        '2026-06-30',
+        '2026-08-15T16:00:00.000Z',
+        '2026-08-15T16:00:00.000Z',
+        '2026-06-30T08:00:00.000Z',
+        '2026-08-16T09:00:00.000Z',
+        4,
+      )
+    conn.exec(`CREATE TEMP TRIGGER preserve_alp_22_last_seen
+      AFTER UPDATE ON task WHEN NEW.key = 'ALP-22'
+      BEGIN
+        UPDATE task SET last_seen = OLD.last_seen WHERE record_id = NEW.record_id;
+      END`)
+  })
   const spawn = mockGitTaskScans('ALP-22', [['2026-09-15', '2026-10-03']])
   try {
     await ingestGit('2026-09-01')
   } finally {
     spawn.mockRestore()
+    writeTransaction((conn) => conn.exec(`DROP TRIGGER preserve_alp_22_last_seen`))
   }
 
   const stored = db()
@@ -378,6 +408,32 @@ test('a git mirror sends the complete stored task row', async () => {
     deleted_at: null,
     next_document_number: stored.next_document_number,
   })
+})
+
+test('a task removed between git upsert and read-back reports the project and key', async () => {
+  writeTransaction((conn) =>
+    conn.exec(`CREATE TEMP TRIGGER remove_alp_24_after_insert
+      AFTER INSERT ON task WHEN NEW.key = 'ALP-24'
+      BEGIN
+        DELETE FROM task WHERE record_id = NEW.record_id;
+      END`),
+  )
+  const spawn = mockGitTaskScans('ALP-24', [['2026-10-03']])
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  let logged = ''
+  try {
+    await ingestGit('2026-10-01')
+  } finally {
+    logged = errors.mock.calls.map((call) => String(call[0])).join('\n')
+    errors.mockRestore()
+    spawn.mockRestore()
+    writeTransaction((conn) => conn.exec(`DROP TRIGGER remove_alp_24_after_insert`))
+  }
+
+  expect(logged).toContain(
+    'hub: git task mirror skipped: task missing after upsert: project=alpha key=ALP-24',
+  )
+  expect(mirroredTaskRows.some((row) => row.key === 'ALP-24')).toBeFalse()
 })
 
 test('git ingestion preserves tracker fields while refreshing its timestamps', async () => {

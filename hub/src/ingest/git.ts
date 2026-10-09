@@ -216,7 +216,8 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       const stored = db()
         .query<StoredGitTask, [string, string]>(`SELECT * FROM task WHERE project=? AND key=?`)
         .get(task.project, task.key)
-      if (!stored) return []
+      if (!stored)
+        throw new Error(`task missing after upsert: project=${task.project} key=${task.key}`)
       if (stored.source === 'git') return [stored]
       return [
         {
