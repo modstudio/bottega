@@ -26,7 +26,7 @@ test('landing remote-tracking refs selects the landing branch on every remote', 
     { ref: 'refs/remotes/origin/topic', object: 'origin-topic' },
   ]
 
-  expect(landingRemoteTrackingRefs([refs[0]!, refs[2]!], 'develop')).toEqual([refs[0]])
+  expect(landingRemoteTrackingRefs([refs[0]!, refs[2]!], 'develop')).toEqual([refs[0]!])
   expect(landingRemoteTrackingRefs(refs, 'develop')).toEqual(refs.slice(0, 2))
   expect(landingRemoteTrackingRefs(refs, 'main')).toEqual([])
   expect(landingRemoteTrackingRefs(refs, null)).toEqual([])
