@@ -1,12 +1,7 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { EMPTY_FILTERS } from './filters.ts'
-import {
-  docsSelectionInView,
-  docsViewModel,
-  docsVisibleByStatus,
-  resolveDocsReplacement,
-} from './model.ts'
+import { docsViewModel, docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
@@ -53,24 +48,6 @@ test('tree visibility includes drafts only when asked and never includes retired
   ])
 })
 
-test('an addressed document survives controls it matches and leaves controls it does not', () => {
-  const archived = item({
-    id: 'old',
-    title: 'Old guide',
-    status: 'archived',
-    scope: 'project',
-    delivery: 'demand',
-  })
-  const otherScope = item({ id: 'canon', title: 'Canon guide', scope: 'canon' })
-  const catalogue = [...items, archived, otherScope]
-  expect(
-    docsSelectionInView(catalogue, 'user', 'atlas', { scope: 'project', delivery: null }, 'old'),
-  ).toBe(archived)
-  expect(
-    docsSelectionInView(catalogue, 'user', 'atlas', { scope: 'canon', delivery: null }, 'old'),
-  ).toBeNull()
-})
-
 test('replacement resolution requires one row at the same document address', () => {
   const retired = {
     ...item({ id: 'old', title: 'Old guide', status: 'superseded' }),
@@ -86,23 +63,46 @@ test('replacement resolution requires one row at the same document address', () 
 })
 
 test('the breadcrumb is Docs, subject and ancestors, not the document title', () => {
-  const model = docsViewModel(items, 'user', 'atlas', EMPTY_FILTERS, 'r', null)
+  const model = docsViewModel(items, 'atlas', EMPTY_FILTERS, 'r', null)
   expect(model.crumbs.map((crumb) => crumb.label)).toEqual(['Docs', 'atlas', 'Getting started'])
 })
 
 test('All projects groups roots; a single project does not', () => {
-  const all = docsViewModel(items, 'user', 'all', EMPTY_FILTERS, 'g', null)
+  const all = docsViewModel(items, 'all', EMPTY_FILTERS, 'g', null)
   expect(all.groups?.map((group) => group.heading)).toEqual(['atlas', 'starship', 'Shared'])
-  const one = docsViewModel(items, 'user', 'atlas', EMPTY_FILTERS, 'g', null)
+  const one = docsViewModel(items, 'atlas', EMPTY_FILTERS, 'g', null)
   expect(one.groups).toBeNull()
 })
 
 test('a selected document outside the visible tree is not the displayed document', () => {
-  const hidden = docsViewModel(items, 'technical', 'atlas', EMPTY_FILTERS, 'r', {
+  const hidden = docsViewModel(items, 'atlas', { ...EMPTY_FILTERS, audience: 'technical' }, 'r', {
     ...items[1]!,
     body: '## Open\n',
   })
   expect(hidden.selected).toBeNull()
   expect(hidden.crumbs).toEqual([])
   expect(hidden.headings).toEqual([{ id: 'open', title: 'Open' }])
+})
+
+test('document counts follow the audience filter without counting retained ancestors', () => {
+  const catalogue = [
+    item({ id: 'parent', title: 'Parent', audiences: ['user'] }),
+    item({
+      id: 'child',
+      title: 'Child',
+      parentId: 'parent',
+      audiences: ['technical'],
+    }),
+    item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
+  ]
+  expect(docsViewModel(catalogue, 'atlas', EMPTY_FILTERS, null, null).documentCount).toBe(3)
+  const technical = docsViewModel(
+    catalogue,
+    'atlas',
+    { ...EMPTY_FILTERS, audience: 'technical' },
+    null,
+    null,
+  )
+  expect(technical.documentCount).toBe(2)
+  expect(technical.tree.find((node) => node.id === 'parent')!.navigationDisabled).toBeTrue()
 })

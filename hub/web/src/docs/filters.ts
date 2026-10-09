@@ -44,10 +44,6 @@ export function searchSubject(
   return items.some((item) => item.subject === project) ? project : undefined
 }
 
-export function inAudience(items: readonly DocsTreeItem[], audience: DocsAudience): DocsTreeItem[] {
-  return items.filter((item) => item.audiences.includes(audience))
-}
-
 function valuesFor(items: readonly DocsTreeItem[], key: FilterKey): Map<string, number> {
   const counts = new Map<string, number>()
   for (const item of items) {

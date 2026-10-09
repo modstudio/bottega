@@ -71,8 +71,7 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       sourceLabel="Local store"
       items={items}
       selectedId="2"
-      audience="user"
-      onAudience={() => {}}
+      onAudienceFilter={() => {}}
       project="all"
       onProject={() => {}}
       signedIn
@@ -92,7 +91,6 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       })}
       onSelect={() => {}}
       onOpenFirst={() => {}}
-      onLeaveTree={() => {}}
       ready
       searchQuery=""
       onSearchQuery={() => {}}
@@ -103,9 +101,10 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
   )
 }
 
-test('the docs page shows audience tabs, the tree, breadcrumb and previous/next', () => {
+test('the docs page shows one tree with audience in the filter control', () => {
   const html = render()
-  expect(html).toContain('User guide')
+  expect(html).toContain('All audiences')
+  expect(html).toContain('Audience')
   expect(html).toContain('Technical')
   expect(html).toContain('Getting started')
   expect(html).toContain('Your first run')
@@ -126,11 +125,10 @@ test('About shows every audience on a document', () => {
   expect(html).toContain('User, Technical')
 })
 
-test('signed out hides the technical tab, project chooser and address', () => {
+test('signed out keeps User guide wording and hides the audience filter, project chooser and address', () => {
   const html = render({
     signedIn: false,
     showProjectChooser: false,
-    audience: 'user',
     framed: true,
   })
   expect(html).toContain('User guide')
@@ -139,12 +137,12 @@ test('signed out hides the technical tab, project chooser and address', () => {
   expect(html).not.toContain('project / atlas / first-run')
 })
 
-test('the filter button is absent when documents cannot use a filter', () => {
+test('the audience filter remains available when other filters have one value', () => {
   const html = render({
     items: items.filter((item) => item.scope === 'project' && item.delivery === 'demand'),
-    audience: 'user',
   })
-  expect(html).not.toContain('>Filter<')
+  expect(html).toContain('>Filter<')
+  expect(html).toContain('All audiences')
 })
 
 test('All projects groups roots by subject, and a single project does not', () => {
@@ -188,16 +186,21 @@ test('a leading title heading in the body is not rendered again', () => {
   expect(html).not.toContain('<h1>Your first run</h1>')
 })
 
-test('the pane is empty when the selected document is not in the visible tree', () => {
+test('a directly opened document is shown independently of navigation filters', () => {
   const html = render({
-    audience: 'user',
     selectedId: '3',
     doc: { ...items[3]!, body: '## Hidden heading\n' },
   })
-  expect(html).toContain('No document to show.')
-  expect(html).not.toContain('Principles')
-  expect(html).not.toContain('Hidden heading')
-  expect(html).not.toContain('On this page')
+  expect(html).toContain('Principles')
+  expect(html).toContain('Hidden heading')
+  expect(html).toContain('On this page')
+})
+
+test('a different leading level-one heading remains in the document body', () => {
+  const html = render({
+    doc: { ...items[1]!, body: '# A different heading\n\nBody.' },
+  })
+  expect(html).toContain('<h1>A different heading</h1>')
 })
 
 test('a document omitted from navigation stays pending until its body loads', () => {

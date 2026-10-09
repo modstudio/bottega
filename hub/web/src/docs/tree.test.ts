@@ -166,12 +166,13 @@ test('audience visibility keeps matching documents and greys every non-matching 
     item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
   ]
   const technical = treeForAudience(rows, 'technical')
-  expect(technical.map((node) => node.id)).toEqual(['root', 'both'])
-  expect(technical[0]!.navigationDisabled).toBeTrue()
-  expect(technical[0]!.children[0]!.navigationDisabled).toBeTrue()
-  expect(technical[0]!.children[0]!.children[0]!.navigationDisabled).toBeFalse()
-  expect(technical[0]!.children.map((node) => node.id)).not.toContain('absent')
-  expect(treeForAudience(rows, 'user').map((node) => node.id)).toEqual(['root', 'both'])
+  expect(technical.map((node) => node.id)).toEqual(['both', 'root'])
+  const root = technical.find((node) => node.id === 'root')!
+  expect(root.navigationDisabled).toBeTrue()
+  expect(root.children[0]!.navigationDisabled).toBeTrue()
+  expect(root.children[0]!.children[0]!.navigationDisabled).toBeFalse()
+  expect(root.children.map((node) => node.id)).not.toContain('absent')
+  expect(treeForAudience(rows, 'user').map((node) => node.id)).toEqual(['both', 'root'])
 })
 
 test('all audiences shows every document as an enabled row', () => {

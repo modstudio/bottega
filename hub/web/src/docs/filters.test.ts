@@ -6,7 +6,6 @@ import {
   chooserProject,
   clearStaleFilters,
   EMPTY_FILTERS,
-  inAudience,
   inProject,
   offeredFilters,
   projectSubjects,
@@ -76,8 +75,8 @@ test('audience is always offered from the shared vocabulary beside varied docume
 
 test('a document with two audiences matches either audience filter', () => {
   const shared = item({ id: 'shared', title: 'Shared', audiences: ['user', 'technical'] })
-  expect(inAudience([shared], 'user')).toEqual([shared])
-  expect(inAudience([shared], 'technical')).toEqual([shared])
+  expect(applyFilters([shared], { ...EMPTY_FILTERS, audience: 'user' })).toEqual([shared])
+  expect(applyFilters([shared], { ...EMPTY_FILTERS, audience: 'technical' })).toEqual([shared])
 })
 
 test('delivery is not offered when no document carries it', () => {

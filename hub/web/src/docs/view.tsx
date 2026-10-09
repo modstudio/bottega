@@ -14,13 +14,7 @@ import { DocsFacts, DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
-import type {
-  DocsDoc,
-  DocsSearchMatch,
-  DocsTreeGroup,
-  DocsTreeItem,
-  TreeNode,
-} from './types.ts'
+import type { DocsDoc, DocsSearchMatch, DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -91,8 +85,8 @@ function DocsChrome({
   return (
     <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
       <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-center justify-between gap-3 px-5 py-2">
-          {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
-          <div className="ml-auto flex flex-wrap items-center gap-3">
+        {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
+        <div className="ml-auto flex flex-wrap items-center gap-3">
           {canShowDrafts ? (
             <label
               htmlFor={showDraftsId}
@@ -141,7 +135,7 @@ function DocsChrome({
             </Popover>
           ) : null}
           {createAction}
-          </div>
+        </div>
       </div>
     </div>
   )
@@ -234,6 +228,21 @@ function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelec
   return next
 }
 
+function sameFilters(left: FilterSelection, right: FilterSelection): boolean {
+  return (
+    left.audience === right.audience &&
+    left.scope === right.scope &&
+    left.delivery === right.delivery
+  )
+}
+
+function searchScopeLabel(signedIn: boolean, audience: string | null): string {
+  if (!signedIn) return 'Searching the User guide docs'
+  if (audience === 'user') return 'Searching User docs'
+  if (audience === 'technical') return 'Searching Technical docs'
+  return 'Searching all docs'
+}
+
 export function DocsView({
   sourceLabel,
   items,
@@ -270,11 +279,7 @@ export function DocsView({
   const selectedItem = items.find((item) => item.id === selectedId) ?? null
   const model = docsViewModel(navigationItems, project, chosen, selectedId, doc, signedIn)
   useEffect(() => {
-    if (
-      model.stale.audience !== chosen.audience ||
-      model.stale.scope !== chosen.scope ||
-      model.stale.delivery !== chosen.delivery
-    ) {
+    if (!sameFilters(model.stale, chosen)) {
       setChosen(model.stale)
       onAudienceFilter(model.stale.audience as 'user' | 'technical' | null)
     }
@@ -414,13 +419,7 @@ export function DocsView({
         results={searchResults}
         tree={navigationItems}
         onChoose={onSelect}
-        scopeLabel={
-          signedIn
-            ? chosen.audience
-              ? `Searching ${chosen.audience === 'user' ? 'User' : 'Technical'} docs`
-              : 'Searching all docs'
-            : 'Searching the User guide docs'
-        }
+        scopeLabel={searchScopeLabel(signedIn, chosen.audience)}
       />
     </div>
   )
