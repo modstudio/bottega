@@ -65,7 +65,7 @@ for (const scan of scans) {
     const decision = decideGitleaksScan(
       scan.mode === 'history'
         ? { mode: 'history', expectedCommitCount: rangeCommitCount, exitCode: result.exitCode, log }
-        : { mode: 'working-tree', exitCode: result.exitCode, log },
+        : { mode: scan.mode, exitCode: result.exitCode, log },
     )
     if (decision.status === 'refused') {
       console.error(`check-gitleaks: ${scan.mode} scan refused: ${decision.message}`)

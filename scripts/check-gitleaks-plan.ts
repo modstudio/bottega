@@ -5,7 +5,11 @@ export type GitleaksScan = {
 
 export type GitleaksScanCheck =
   | { mode: 'history'; expectedCommitCount: number; exitCode: number; log: string }
-  | { mode: 'working-tree'; exitCode: number; log: string }
+  | {
+      mode: Exclude<GitleaksScan['mode'], 'history'>
+      exitCode: number
+      log: string
+    }
 
 export type GitleaksScanDecision = { status: 'pass' } | { status: 'refused'; message: string }
 
