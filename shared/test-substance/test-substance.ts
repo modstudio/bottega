@@ -26,7 +26,7 @@ export type TestSubstanceJudgment = {
   reason: string
 }
 
-export const TEST_FILE_NAME = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/
+const TEST_FILE_NAME = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/
 
 type Report = {
   findings: TestFinding[]

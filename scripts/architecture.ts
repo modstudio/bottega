@@ -4,6 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import type { ConcernManifest } from './architecture-concern-manifest.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
@@ -28,17 +29,6 @@ import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
-
-type ConcernManifest = {
-  roots: typeof CONCERNS
-  shared: { root: 'shared'; reason: string }
-  exceptions: Array<{
-    from: string
-    to: string
-    dependencyTypes: string[]
-    reason: string
-  }>
-}
 
 export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }

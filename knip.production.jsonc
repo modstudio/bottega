@@ -59,6 +59,7 @@
         "!scripts/quality/test-timing-decision.ts",
         "shared/**/*.ts!",
         "!shared/**/*.test.ts",
+        "!shared/**/*.fixtures.ts",
         "!shared/test-*.ts",
         "scripts/architecture.ts!"
       ],

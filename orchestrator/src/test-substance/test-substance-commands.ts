@@ -43,52 +43,72 @@ function replaced(
   }
 }
 
+function resolveToolFile(payload: ToolPayload, toolInput: Record<string, unknown> | undefined) {
+  const rawPath = toolInput?.file_path ?? toolInput?.path
+  const file =
+    typeof rawPath === 'string'
+      ? resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), rawPath)
+      : '<unknown test file>'
+  return { file, rawPath }
+}
+
+function reconstructWrite(
+  file: string,
+  before: string | null,
+  toolInput: Record<string, unknown>,
+): Reconstruction {
+  return typeof toolInput.content === 'string'
+    ? { status: 'ready', input: { file, before, after: toolInput.content } }
+    : { status: 'unchecked', file, reason: 'Write input has no string content' }
+}
+
+function reconstructEdit(
+  file: string,
+  before: string,
+  toolInput: Record<string, unknown>,
+): Reconstruction {
+  const result = replaced(before, toolInput.old_string, toolInput.new_string, toolInput.replace_all)
+  return result.content === undefined
+    ? { status: 'unchecked', file, reason: result.reason! }
+    : { status: 'ready', input: { file, before, after: result.content } }
+}
+
+function reconstructMultiEdit(file: string, before: string, edits: unknown[]): Reconstruction {
+  let after = before
+  for (const edit of edits) {
+    const value = object(edit)
+    if (!value) return { status: 'unchecked', file, reason: 'MultiEdit contains an invalid edit' }
+    const result = replaced(after, value.old_string, value.new_string, value.replace_all)
+    if (result.content === undefined) {
+      return { status: 'unchecked', file, reason: result.reason! }
+    }
+    after = result.content
+  }
+  return { status: 'ready', input: { file, before, after } }
+}
+
 /** Reconstruct the whole file produced by one editor-tool call, without applying it. */
 export function reconstructTestEdit(
   payload: ToolPayload,
   read: (file: string) => string | null,
 ): Reconstruction {
   const toolInput = object(payload.tool_input)
-  const rawPath = toolInput?.file_path ?? toolInput?.path
-  const file =
-    typeof rawPath === 'string'
-      ? resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), rawPath)
-      : '<unknown test file>'
+  const { file, rawPath } = resolveToolFile(payload, toolInput)
   if (!toolInput || typeof rawPath !== 'string') {
     return { status: 'unchecked', file, reason: 'tool input has no file path' }
   }
   const before = read(file)
   if (payload.tool_name === 'Write') {
-    return typeof toolInput.content === 'string'
-      ? { status: 'ready', input: { file, before, after: toolInput.content } }
-      : { status: 'unchecked', file, reason: 'Write input has no string content' }
+    return reconstructWrite(file, before, toolInput)
   }
   if (before === null) {
     return { status: 'unchecked', file, reason: 'the file to edit does not exist' }
   }
   if (payload.tool_name === 'Edit') {
-    const result = replaced(
-      before,
-      toolInput.old_string,
-      toolInput.new_string,
-      toolInput.replace_all,
-    )
-    return result.content === undefined
-      ? { status: 'unchecked', file, reason: result.reason! }
-      : { status: 'ready', input: { file, before, after: result.content } }
+    return reconstructEdit(file, before, toolInput)
   }
   if (payload.tool_name === 'MultiEdit' && Array.isArray(toolInput.edits)) {
-    let after = before
-    for (const edit of toolInput.edits) {
-      const value = object(edit)
-      if (!value) return { status: 'unchecked', file, reason: 'MultiEdit contains an invalid edit' }
-      const result = replaced(after, value.old_string, value.new_string, value.replace_all)
-      if (result.content === undefined) {
-        return { status: 'unchecked', file, reason: result.reason! }
-      }
-      after = result.content
-    }
-    return { status: 'ready', input: { file, before, after } }
+    return reconstructMultiEdit(file, before, toolInput.edits)
   }
   return { status: 'unchecked', file, reason: 'tool input is not a supported editor shape' }
 }

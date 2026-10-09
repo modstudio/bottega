@@ -46,7 +46,7 @@ def deny(findings):
         )
     lines.extend(
         [
-            "make the test assert on the behaviour it names,",
+            "make the test assert on the behavior it names,",
             "delete the test, or",
             "add a waiver comment `test-substance-allow: <rule> <reason>` above it.",
         ]
