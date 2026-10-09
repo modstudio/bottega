@@ -65,7 +65,11 @@ function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
   )
   if (!output) return []
   return output.split('\n').map((line) => {
-    const [ref, object, symref = ''] = line.split('\t')
+    const fields = line.split('\t')
+    const ref = fields[0]
+    const object = fields[1]
+    if (!ref || !object) throw new Error(`git for-each-ref returned malformed line: ${line}`)
+    const symref = fields[2] ?? ''
     return { ref, object, symref }
   })
 }
