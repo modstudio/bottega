@@ -9,6 +9,10 @@ import {
   guardedRules,
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
+import {
+  PHP_GUARDED_RULES,
+  phpTestSubstanceReport,
+} from '../../shared/test-substance/test-substance-php'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
@@ -66,6 +70,27 @@ async function guardFixtures() {
     for (const rule of guardedRules(runner)) {
       if (!produced.has(rule))
         failures.push(`${runner}: ${rule} produced no finding on its fixture`)
+    }
+  }
+  const phpFile = `${fixtureDirectory}test-substance-php.fixtures.php`
+  const phpReport = await phpTestSubstanceReport(phpFile, readFileSync(phpFile, 'utf8'))
+  const phpCounts = new Map<string, number>()
+  for (const finding of phpReport.findings) {
+    phpCounts.set(finding.rule, (phpCounts.get(finding.rule) ?? 0) + 1)
+  }
+  const expectedPhpCounts = new Map<string, number>(
+    PHP_GUARDED_RULES.map((rule) => [rule, rule === 'sql-string-matching' ? 2 : 1]),
+  )
+  for (const [rule, count] of expectedPhpCounts) {
+    const produced = phpCounts.get(rule) ?? 0
+    if (produced !== count)
+      failures.push(`php: ${rule} expected ${count} finding(s), produced ${produced}`)
+  }
+  for (const finding of phpReport.findings) {
+    if (!expectedPhpCounts.has(finding.rule))
+      failures.push(`php: unexpected ${finding.rule} finding`)
+    if (finding.testName.startsWith('testClean')) {
+      failures.push(`php: clean counterpart ${finding.testName} produced ${finding.rule}`)
     }
   }
   return failures

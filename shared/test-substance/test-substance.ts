@@ -30,16 +30,17 @@ export const TEST_FILE_EXTENSIONS = ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mt
 const TEST_FILE_NAME = new RegExp(
   `(?:^|/)[^/]+\\.(?:test|spec)\\.(?:${TEST_FILE_EXTENSIONS.join('|')})$`,
 )
+const PHP_TEST_FILE_NAME = /(?:^|\/)tests\/.+Test\.php$/
 
 /** The single filename definition used by every test-substance consumer. */
 export function isTestFile(file: string): boolean {
-  return TEST_FILE_NAME.test(file)
+  return TEST_FILE_NAME.test(file) || PHP_TEST_FILE_NAME.test(file)
 }
 
 type Report = {
   findings: TestFinding[]
   parseError?: string
-  runner: 'bun' | 'vitest' | 'unrecognised'
+  runner: 'bun' | 'vitest' | 'php' | 'unrecognised'
 }
 
 type ReportLoader = () => Promise<{
@@ -49,6 +50,10 @@ type ReportLoader = () => Promise<{
 // A compiled binary cannot resolve the lint packages. Treat that artifact limitation as
 // unchecked at the loader boundary, never as ok and never as a crash.
 const loadReport: ReportLoader = () => import('./test-substance-eslint.ts')
+const loadPhpReport: ReportLoader = async () => {
+  const { phpTestSubstanceReport } = await import('./test-substance-php.ts')
+  return { testSubstanceReport: phpTestSubstanceReport }
+}
 
 function detail(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -73,7 +78,7 @@ function isJudgment(value: Report | TestSubstanceJudgment): value is TestSubstan
 /** Judge only findings introduced by the proposed whole-file content. */
 export async function judgeTestSubstance(
   input: TestSubstanceInput,
-  load: ReportLoader = loadReport,
+  load: ReportLoader = input.file.endsWith('.php') ? loadPhpReport : loadReport,
 ): Promise<TestSubstanceJudgment> {
   if (!isTestFile(input.file)) return { status: 'ok', findings: [], reason: '' }
 

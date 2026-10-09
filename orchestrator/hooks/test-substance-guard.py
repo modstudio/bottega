@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Refuse JavaScript and TypeScript test edits that introduce substance findings."""
+"""Refuse supported test-file edits that introduce substance findings."""
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -10,6 +11,9 @@ import sys
 JUDGE_TIMEOUT_SECONDS = 2
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
 JUDGE_ENVIRONMENT_KEYS = ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE")
+TEST_FILE = re.compile(
+    r"(?:^|/)(?:[^/]+\.(?:test|spec)\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts)|tests/.+Test\.php)$"
+)
 
 
 def target_path(payload):
@@ -73,8 +77,8 @@ def main():
 
     path = target_path(payload)
     if path is not None:
-        name = os.path.basename(path)
-        if ".test." not in name and ".spec." not in name:
+        normalized = path.replace(os.sep, "/")
+        if TEST_FILE.search(normalized) is None:
             return 0
     if path is None or payload.get("tool_name") not in EDITOR_TOOLS:
         return unchecked(path or "<unknown test file>", "tool input is not a supported editor shape")
