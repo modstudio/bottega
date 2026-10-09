@@ -700,6 +700,7 @@ export const modules: ArchitectureModule[] = [
     '../project/project-lock.ts',
     './worktree-remove.ts',
     './worktree-caller.ts',
+    './worktree-seed.ts',
     './worktree-tool.ts',
     './worktree-types.ts',
   ]),

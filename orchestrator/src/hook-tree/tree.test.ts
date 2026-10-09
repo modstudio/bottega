@@ -2,7 +2,18 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { removeHookTree } from './tree.ts'
+import { hookTreeSeedRequest, removeHookTree } from './tree.ts'
+
+test('hook-tree seed request carries the command-line seed', () => {
+  expect(
+    hookTreeSeedRequest({
+      requested: 'full',
+      project: null,
+      tool: null,
+      baseRef: 'main',
+    }),
+  ).toMatchObject({ requested: 'full', baseRef: 'main' })
+})
 
 test('tree remove directs an ordinary run through close-out', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })

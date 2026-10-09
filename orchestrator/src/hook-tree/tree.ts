@@ -46,6 +46,21 @@ function validateKey(
   }
 }
 
+export function hookTreeSeedRequest(input: {
+  requested: string | undefined
+  project: Parameters<typeof projectSeedPreflight>[0]['project']
+  tool: Parameters<typeof projectSeedPreflight>[0]['tool']
+  baseRef: string | undefined
+}): Parameters<typeof projectSeedPreflight>[0] {
+  return {
+    requested: input.requested,
+    writesRepo: true,
+    project: input.project,
+    tool: input.tool,
+    baseRef: input.baseRef,
+  }
+}
+
 export function createHookTree(input: {
   cwd: string
   name: string
@@ -64,13 +79,14 @@ export function createHookTree(input: {
   }
   if (!input.name.trim()) throw new Error('--name must contain text')
   validateKey(tool, input.key)
-  const seedDecision = projectSeedPreflight({
-    requested: input.seed,
-    writesRepo: true,
-    project,
-    tool,
-    baseRef: input.base,
-  })
+  const seedDecision = projectSeedPreflight(
+    hookTreeSeedRequest({
+      requested: input.seed,
+      project,
+      tool,
+      baseRef: input.base,
+    }),
+  )
   if (seedDecision.refusal) throw new Error(`project ${project.name}: ${seedDecision.refusal}`)
   validateProjectSeed(project, seedDecision.seed)
   const hookBranch = trackedHookBranch({

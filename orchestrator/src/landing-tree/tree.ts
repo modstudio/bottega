@@ -46,6 +46,23 @@ type RunRow = {
   launch_seed: string | null
 }
 
+export function landingTreeSeedRequest(input: {
+  requested: string | undefined
+  recordedLaunchSeed: string | null
+  project: Parameters<typeof projectSeedPreflight>[0]['project']
+  tool: Parameters<typeof projectSeedPreflight>[0]['tool']
+  baseRef: string | undefined
+}): Parameters<typeof projectSeedPreflight>[0] {
+  return {
+    requested: input.requested,
+    inherited: input.recordedLaunchSeed ?? undefined,
+    writesRepo: true,
+    project: input.project,
+    tool: input.tool,
+    baseRef: input.baseRef,
+  }
+}
+
 function sourceRun(runId: number): { root: RunRow; latest: RunRow } {
   const selected = db().query('SELECT * FROM run WHERE id=?').get(runId) as RunRow | null
   if (!selected) throw new Error(`no run ${runId}; pass an existing writer run id`)
@@ -118,14 +135,15 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
-  const seedDecision = projectSeedPreflight({
-    requested: seed,
-    inherited: root.launch_seed ?? undefined,
-    writesRepo: true,
-    project,
-    tool,
-    baseRef: plan.tip,
-  })
+  const seedDecision = projectSeedPreflight(
+    landingTreeSeedRequest({
+      requested: seed,
+      recordedLaunchSeed: root.launch_seed,
+      project,
+      tool,
+      baseRef: plan.tip,
+    }),
+  )
   if (seedDecision.refusal) throw new Error(`project ${project.name}: ${seedDecision.refusal}`)
   const effectiveSeed = seedDecision.seed
   validateProjectSeed(project, effectiveSeed)

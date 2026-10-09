@@ -66,6 +66,14 @@ export function projectSeedPreflight(input: {
   })
 }
 
+export function projectSeedValidationRequest(
+  project: Project,
+  seed: string | undefined,
+): { cwd: string; seed: string | undefined } | null {
+  return project.settings.worktree?.create ? { cwd: project.path, seed } : null
+}
+
 export function validateProjectSeed(project: Project, seed: string | undefined): void {
-  validateSeedWithTool(project.path, seed)
+  const request = projectSeedValidationRequest(project, seed)
+  if (request) validateSeedWithTool(request.cwd, request.seed)
 }
