@@ -840,7 +840,7 @@ export function registerBranchCheck(
   )
   const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
   const tagResult =
-    head === null
+    headResult.exitCode === 1
       ? Bun.spawnSync(['git', '-C', project.path, 'tag', '--points-at', 'HEAD'], {
           env: inspectionGitEnv(),
           stdout: 'pipe',
