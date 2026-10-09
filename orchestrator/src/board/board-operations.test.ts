@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
@@ -20,7 +21,10 @@ import {
   boardThread,
   boardWithdraw,
 } from './board-operations.ts'
+import { pendingBoardDelivery } from './board-push-service.ts'
+import { postNotice } from './board-service.ts'
 import { originText } from './board-store.ts'
+import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const env = {
   CLAUDE_CODE_SESSION_ID: 'board-route-session',
@@ -30,6 +34,7 @@ const noRecordEnv = {
   [CONFIG_HOME_ENV]: '/definitely-missing-config',
   [HARNESS_ENV_FILE_ENV]: '',
 }
+const postingCwd = resolve(import.meta.dir, '../../..')
 
 const hostedMessage = (id = newRecordId()) => ({
   id,
@@ -202,6 +207,64 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     root: { ...hostedRoot, noteRecordId: unresolvedNoteId, noteLabel: null, text: null },
     replies: [],
   })
+})
+
+test('reading a thread stamps its printed root and replies while acknowledgement remains pending', async () => {
+  db()
+    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('push-project',?,'{}')`)
+    .run(postingCwd)
+  const clock = Date.parse('2026-10-08T13:00:00.000Z')
+  const session = 'thread-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const question = askQuestion(
+    { audience: `session:${session}`, title: 'Read thread', body: 'Question body' },
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock,
+    postingCwd,
+  )
+  const reply = replyToThread(
+    question.id,
+    'Reply body',
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock + 1,
+    postingCwd,
+  )
+  const acknowledgement = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Acknowledge',
+      body: 'Still needs acknowledgement',
+      ackRequired: true,
+    },
+    {},
+    clock + 2,
+  )
+
+  await boardThread(String(question.id), {
+    env: { CLAUDE_CODE_SESSION_ID: session },
+    clock: clock + 3,
+  })
+  await boardThread(String(acknowledgement.id), {
+    env: { CLAUDE_CODE_SESSION_ID: session },
+    clock: clock + 3,
+  })
+  const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 4 })
+
+  expect(pending.delivery).toEqual([])
+  expect(pending.pendingAcknowledgements.map((message) => message.id)).toEqual([
+    String(acknowledgement.id),
+  ])
+  const stamped = db()
+    .query(
+      'SELECT message_id FROM board_receipt WHERE reader_session=? AND delivered_at IS NOT NULL ORDER BY message_id',
+    )
+    .all(session) as { message_id: number }[]
+  expect(stamped.map((row) => row.message_id)).toEqual([question.id, reply.id, acknowledgement.id])
 })
 
 test('status results have one pinned shape in local and hosted modes', async () => {

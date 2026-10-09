@@ -17,7 +17,6 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
-import { boardThread } from './board-operations.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
 import { acknowledgeNotice, postNotice } from './board-service.ts'
@@ -132,6 +131,7 @@ function runHookRepeatedResult(
   pendingValues: Array<
     Array<{ id: string; text: string; requiresAcknowledgement: boolean }>
   > | null = null,
+  markFailure = false,
 ) {
   const runner = [
     'import contextlib, importlib.util, io, json, os, sys',
@@ -144,7 +144,10 @@ function runHookRepeatedResult(
     '    pending_iterator = iter(pending_values)',
     '    module.pending = lambda session, recently_injected=None: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
     'delivered = []',
-    'module.mark_delivered = lambda session, ids: delivered.append([session, ids])',
+    'def mark_delivered(session, ids):',
+    '    delivered.append([session, ids])',
+    '    if json.loads(sys.argv[5]): raise RuntimeError("delivery stamp failed")',
+    'module.mark_delivered = mark_delivered',
     'outputs = []',
     'for _ in range(int(sys.argv[3])):',
     '    output = io.StringIO()',
@@ -154,7 +157,16 @@ function runHookRepeatedResult(
     'print(json.dumps({"outputs": outputs, "delivered": delivered}))',
   ].join('\n')
   const result = Bun.spawnSync(
-    ['python3', '-c', runner, path, payload, String(times), JSON.stringify(pendingValues)],
+    [
+      'python3',
+      '-c',
+      runner,
+      path,
+      payload,
+      String(times),
+      JSON.stringify(pendingValues),
+      JSON.stringify(markFailure),
+    ],
     {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -694,62 +706,6 @@ test('recently-injected ids do not suppress messages never delivered to the sess
   expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.id)])
 })
 
-test('reading a thread stamps its printed root and replies while acknowledgement remains pending', async () => {
-  ensurePostingProject()
-  const clock = Date.parse('2026-10-08T13:00:00.000Z')
-  const session = 'thread-reader'
-  db()
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
-    )
-    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
-  const question = askQuestion(
-    { audience: `session:${session}`, title: 'Read thread', body: 'Question body' },
-    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
-    clock,
-    postingCwd,
-  )
-  const reply = replyToThread(
-    question.id,
-    'Reply body',
-    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
-    clock + 1,
-    postingCwd,
-  )
-  const acknowledgement = postNotice(
-    {
-      audience: `session:${session}`,
-      title: 'Acknowledge',
-      body: 'Still needs acknowledgement',
-      ackRequired: true,
-    },
-    {},
-    clock + 2,
-  )
-
-  await boardThread(String(question.id), {
-    env: { CLAUDE_CODE_SESSION_ID: session },
-    clock: clock + 3,
-  })
-  await boardThread(String(acknowledgement.id), {
-    env: { CLAUDE_CODE_SESSION_ID: session },
-    clock: clock + 3,
-  })
-  const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 4 })
-
-  expect(pending.delivery).toEqual([])
-  expect(pending.pendingAcknowledgements.map((message) => message.id)).toEqual([
-    String(acknowledgement.id),
-  ])
-  const stamped = db()
-    .query(
-      'SELECT message_id FROM board_receipt WHERE reader_session=? AND delivered_at IS NOT NULL ORDER BY message_id',
-    )
-    .all(session) as { message_id: number }[]
-  expect(stamped.map((row) => row.message_id)).toEqual([question.id, reply.id, acknowledgement.id])
-})
-
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
   const item = createHookFixture(hookOutput)
   for (const [payload, extra] of [
@@ -927,18 +883,59 @@ test('Stop keeps its acknowledgement budget and emits one ordinary delivery once
   expect(result.delivered).toEqual([['reader', ['8']]])
 })
 
-test('Stop ignores ordinary delivery while retaining acknowledgement-required notices', () => {
+test('Stop carries ordinary delivery before a pending acknowledgement within budget', () => {
   const item = createHookFixture(hookOutput)
-  const values = runHookRepeated(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
-    [
-      { id: '1', text: 'ordinary', requiresAcknowledgement: false },
-      { id: '2', text: 'required', requiresAcknowledgement: true },
-    ],
+  const pendingValues = [
+    { id: '1', text: 'ordinary', requiresAcknowledgement: false },
+    { id: '2', text: 'required', requiresAcknowledgement: true },
+  ]
+  const hook = runHookRepeatedResult(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
+    pendingValues,
   ])
-  const result = JSON.parse(values[0]!)
+  const result = JSON.parse(hook.outputs[0]!)
   expect(result.decision).toBe('block')
+  expect(result.reason).toStartWith('ordinary')
   expect(result.reason).toContain('required')
-  expect(result.reason).not.toContain('ordinary')
+  expect(hook.delivered).toEqual([['reader', ['1']]])
+})
+
+test('Stop with a spent acknowledgement budget blocks once for fresh ordinary delivery only', () => {
+  const item = createHookFixture(hookOutput)
+  const marker = join(
+    item.root,
+    'board-hook-state',
+    'stop',
+    createHash('sha256').update('reader').digest('hex'),
+  )
+  mkdirSync(join(item.root, 'board-hook-state', 'stop'), { recursive: true })
+  writeFileSync(marker, JSON.stringify({ blocks: 3 }))
+  const required = { id: '2', text: 'required', requiresAcknowledgement: true }
+  const hook = runHookRepeatedResult(guardHook, JSON.stringify({ session_id: 'reader' }), item, 2, [
+    [{ id: '1', text: 'ordinary', requiresAcknowledgement: false }, required],
+    [required],
+  ])
+  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'ordinary' })
+  expect(JSON.parse(hook.outputs[1]!).systemMessage).toContain('required')
+  expect(hook.delivered).toEqual([['reader', ['1']]])
+  expect(JSON.parse(readFileSync(marker, 'utf8')).blocks).toBe(3)
+})
+
+test('Stop records emitted ids before a failing stamp and blocks once per arriving message', () => {
+  const item = createHookFixture(hookOutput)
+  const first = { id: '1', text: 'first', requiresAcknowledgement: false }
+  const second = { id: '2', text: 'second', requiresAcknowledgement: false }
+  const hook = runHookRepeatedResult(
+    guardHook,
+    JSON.stringify({ session_id: 'reader' }),
+    item,
+    4,
+    [[first], [first], [first, second], [first, second]],
+    true,
+  )
+  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'first' })
+  expect(hook.outputs[1]).toBe('')
+  expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
+  expect(hook.outputs[3]).toBe('')
 })
 
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {
