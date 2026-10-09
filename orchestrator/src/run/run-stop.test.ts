@@ -3,12 +3,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
-import {
-  abandonRun,
-  stoppedRunLine,
-  stopRun,
-  stopTerminationRefusal,
-} from './run-stop.ts'
+import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -49,6 +44,13 @@ async function invoke(
 }
 const insert = (status: string, job = 'implement') =>
   addRun({ agent: 'codex', job, status, session: 'orch-test-session' })
+const verifiedVendor = {
+  outcome: 'verified' as const,
+  rootPid: 42922,
+  pids: [42922],
+  pgid: 42922,
+  signalGroup: false,
+}
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
@@ -182,6 +184,7 @@ test('stop refuses when the vendor stays alive after the row is recorded stopped
   const id = insert('running')
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
   const result = await invoke('stop', id, {
+    plan: () => verifiedVendor,
     terminate: () => ({
       outcome: 'still-alive',
       pid: 42922,
@@ -200,6 +203,7 @@ test('stop calls terminate only after the row already reads stopped', async () =
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
   let statusDuringTerminate: string | undefined
   const result = await invoke('stop', id, {
+    plan: () => verifiedVendor,
     terminate: () => {
       statusDuringTerminate = (
         db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }

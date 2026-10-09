@@ -104,10 +104,11 @@ export type ProcessInventory =
   | { ascertainable: true; rows: ProcessRow[] }
   | { ascertainable: false; reason: string }
 
-type TerminateRunProcessesResult =
+export type TerminateRunProcessesResult =
   | { outcome: 'signaled'; signaled: number[] }
   | { outcome: 'identity-mismatch'; pid: number }
   | { outcome: 'no-pid' }
+  | { outcome: 'no-vendor' }
   | { outcome: 'gone' }
   | { outcome: 'still-alive'; pid: number; reason: string }
 
@@ -118,11 +119,20 @@ export type RunProcessRecord = {
   agentStartTime: string | null
 }
 
+export type VerifiedRunProcessTermination = {
+  outcome: 'verified'
+  rootPid: number
+  pids: number[]
+  pgid: number | null
+  signalGroup: boolean
+}
+
 export type RunProcessTerminationPlan =
   | { outcome: 'no-pid' }
+  | { outcome: 'no-vendor' }
   | { outcome: 'gone' }
   | { outcome: 'identity-mismatch'; pid: number }
-  | { outcome: 'verified'; rootPid: number; pids: number[]; pgid: number | null }
+  | VerifiedRunProcessTermination
 
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
@@ -209,16 +219,21 @@ export function isOrchWorkerProcess(
   return false
 }
 
+function vendorLeadsOwnGroup(recorded: RunProcessRecord): boolean {
+  return (
+    recorded.agentPid != null &&
+    recorded.agentPgid != null &&
+    recorded.agentPgid === recorded.agentPid
+  )
+}
+
 function vendorProcessPids(
   table: ProcessRow[],
   vendorPid: number,
   vendorPgid: number | null,
-  coordinatorPid: number | null,
   skipped: Set<number>,
 ): number[] {
-  const coordinatorPgid =
-    coordinatorPid == null ? null : (table.find((row) => row.pid === coordinatorPid)?.pgid ?? null)
-  const includeGroup = vendorPgid != null && vendorPgid > 1 && vendorPgid !== coordinatorPgid
+  const includeGroup = vendorPgid != null && vendorPgid > 1 && vendorPgid === vendorPid
   const depth = new Map<number, number>([[vendorPid, 0]])
   let changed = true
   while (changed) {
@@ -256,31 +271,30 @@ export function planRunProcessTermination(input: {
   inventory: ProcessInventory
   exclude: readonly number[]
   selfPid: number
+  selfPgid?: number | null
 }): RunProcessTerminationPlan {
   const { recorded, vendorIdentity, inventory, exclude, selfPid } = input
   if (!recorded.agentPid && !recorded.pid) return { outcome: 'no-pid' }
-  if (!recorded.agentPid) return { outcome: 'identity-mismatch', pid: recorded.pid! }
+  if (!recorded.agentPid) return { outcome: 'no-vendor' }
   if (vendorIdentity === 'dead') return { outcome: 'gone' }
   if (vendorIdentity !== 'live') return { outcome: 'identity-mismatch', pid: recorded.agentPid }
   const skipped = new Set<number>(
     [...exclude, selfPid, recorded.pid].filter((pid): pid is number => Boolean(pid && pid > 1)),
   )
-  const table = inventory.ascertainable ? inventory.rows : []
-  const pids = vendorProcessPids(
-    table,
-    recorded.agentPid,
-    recorded.agentPgid,
-    recorded.pid,
-    skipped,
-  )
-  if (!skipped.has(recorded.agentPid) && !pids.includes(recorded.agentPid)) {
-    pids.push(recorded.agentPid)
+  if (skipped.has(recorded.agentPid)) {
+    return { outcome: 'identity-mismatch', pid: recorded.agentPid }
   }
+  const table = inventory.ascertainable ? inventory.rows : []
+  const pids = vendorProcessPids(table, recorded.agentPid, recorded.agentPgid, skipped)
+  if (!pids.includes(recorded.agentPid)) pids.push(recorded.agentPid)
   return {
     outcome: 'verified',
     rootPid: recorded.agentPid,
     pids,
     pgid: recorded.agentPgid,
+    signalGroup:
+      vendorLeadsOwnGroup(recorded) &&
+      isGroupKillablePgid(recorded.agentPgid, input.selfPgid ?? null),
   }
 }
 
@@ -322,47 +336,52 @@ function signalProcessGroup(
   }
 }
 
+function firstAlivePid(pids: readonly number[], alive: (pid: number) => boolean): number | null {
+  return pids.find((pid) => alive(pid)) ?? null
+}
+
+function waitWhileAnyAlive(
+  pids: readonly number[],
+  alive: (pid: number) => boolean,
+  wait: (ms: number) => void,
+  deadline: number,
+): number | null {
+  let remaining = firstAlivePid(pids, alive)
+  while (remaining != null && Date.now() < deadline) {
+    wait(Math.min(50, deadline - Date.now()))
+    remaining = firstAlivePid(pids, alive)
+  }
+  return remaining
+}
+
 function reapVerifiedVendor(
-  plan: Extract<RunProcessTerminationPlan, { outcome: 'verified' }>,
+  plan: VerifiedRunProcessTermination,
   deps: TerminateRunProcessesDeps,
-  coordinatorPgid: number | null,
 ): TerminateRunProcessesResult {
   const kill = deps.kill ?? defaultKill
   const alive = deps.alive ?? ((pid: number) => pidAlive(pid))
   const wait = deps.wait ?? waitMs
   const confirmMs = deps.confirmMs ?? 0
-  const selfPgid = deps.selfPgid?.() ?? null
-  const group =
-    plan.pgid != null && plan.pgid !== coordinatorPgid && isGroupKillablePgid(plan.pgid, selfPgid)
-      ? plan.pgid
-      : null
-  if (group != null) signalProcessGroup(group, 'SIGTERM', kill)
+  if (plan.signalGroup && plan.pgid != null) signalProcessGroup(plan.pgid, 'SIGTERM', kill)
   for (const pid of plan.pids) kill(pid, 'SIGTERM')
   if (confirmMs <= 0) return { outcome: 'signaled', signaled: plan.pids }
-  const deadline = Date.now() + confirmMs
-  while (alive(plan.rootPid) && Date.now() < deadline) {
-    wait(Math.min(50, deadline - Date.now()))
+  if (waitWhileAnyAlive(plan.pids, alive, wait, Date.now() + confirmMs) == null) {
+    return { outcome: 'signaled', signaled: plan.pids }
   }
-  if (!alive(plan.rootPid)) return { outcome: 'signaled', signaled: plan.pids }
-  if (group != null) signalProcessGroup(group, 'SIGKILL', kill)
-  for (const pid of plan.pids) kill(pid, 'SIGKILL')
-  const killDeadline = Date.now() + confirmMs
-  while (alive(plan.rootPid) && Date.now() < killDeadline) {
-    wait(Math.min(50, killDeadline - Date.now()))
+  if (plan.signalGroup && plan.pgid != null) signalProcessGroup(plan.pgid, 'SIGKILL', kill)
+  for (const pid of plan.pids) {
+    if (alive(pid)) kill(pid, 'SIGKILL')
   }
-  if (!alive(plan.rootPid)) return { outcome: 'signaled', signaled: plan.pids }
+  const remaining = waitWhileAnyAlive(plan.pids, alive, wait, Date.now() + confirmMs)
+  if (remaining == null) return { outcome: 'signaled', signaled: plan.pids }
   return {
     outcome: 'still-alive',
-    pid: plan.rootPid,
+    pid: remaining,
     reason: 'process did not exit after SIGKILL',
   }
 }
 
-export function terminateRunProcesses(
-  id: number,
-  exclude: number[] = [],
-  deps: TerminateRunProcessesDeps = {},
-): TerminateRunProcessesResult {
+function readRunProcessRecord(id: number): RunProcessRecord {
   const row = db()
     .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
     .get(id) as {
@@ -372,46 +391,55 @@ export function terminateRunProcesses(
     agent_start_time: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  const recorded: RunProcessRecord = {
+  return {
     pid: row.pid,
     agentPid: row.agent_pid,
     agentPgid: row.agent_pgid,
     agentStartTime: row.agent_start_time,
   }
+}
+
+function selfPgidFromInventory(inventory: ProcessInventory, pid: number): number | null {
+  if (!inventory.ascertainable) return null
+  return inventory.rows.find((item) => item.pid === pid)?.pgid ?? null
+}
+
+export function planRecordedRunTermination(
+  id: number,
+  exclude: number[] = [],
+  deps: TerminateRunProcessesDeps = {},
+): RunProcessTerminationPlan {
+  const recorded = readRunProcessRecord(id)
   const inventory = (deps.inventory ?? processTable)()
-  const plan = planRunProcessTermination({
+  const selfPgid = deps.selfPgid?.() ?? selfPgidFromInventory(inventory, process.pid)
+  return planRunProcessTermination({
     recorded,
     vendorIdentity: recordedVendorIdentity(recorded, deps.identity ?? pidRecordIdentity),
     inventory,
     exclude,
     selfPid: process.pid,
+    selfPgid,
   })
-  if (plan.outcome === 'identity-mismatch') {
-    console.error(
-      `orch: run ${id} pid ${plan.pid} identity could not be confirmed; nothing signaled`,
-    )
-    return plan
-  }
-  if (plan.outcome !== 'verified') return plan
-  if (plan.pids.length === 0) return { outcome: 'gone' }
-  const coordinatorPgid =
-    inventory.ascertainable && recorded.pid
-      ? (inventory.rows.find((item) => item.pid === recorded.pid)?.pgid ?? null)
-      : null
-  const selfPgid =
-    deps.selfPgid ??
-    (() =>
-      inventory.ascertainable
-        ? (inventory.rows.find((item) => item.pid === process.pid)?.pgid ?? null)
-        : null)
-  return reapVerifiedVendor(plan, { ...deps, selfPgid }, coordinatorPgid)
 }
 
-export function terminateAndConfirmRunProcesses(
+export function confirmRunProcessTermination(
+  plan: VerifiedRunProcessTermination,
+  deps: TerminateRunProcessesDeps = {},
+): TerminateRunProcessesResult {
+  return reapVerifiedVendor(plan, {
+    ...deps,
+    confirmMs: deps.confirmMs ?? DEFAULT_IDLE_GRACE_MS,
+  })
+}
+
+export function terminateRunProcesses(
   id: number,
   exclude: number[] = [],
+  deps: TerminateRunProcessesDeps = {},
 ): TerminateRunProcessesResult {
-  return terminateRunProcesses(id, exclude, { confirmMs: DEFAULT_IDLE_GRACE_MS })
+  const plan = planRecordedRunTermination(id, exclude, deps)
+  if (plan.outcome !== 'verified') return plan
+  return reapVerifiedVendor(plan, deps)
 }
 
 let signalsBound = false

@@ -84,12 +84,14 @@ test('filed-defect stop verifies the vendor pid, not the shared coordinator comm
     inventory: filedDefectInventory(42402, 42922),
     exclude: [42402],
     selfPid: 9001,
+    selfPgid: 1,
   })
   expect(plan).toEqual({
     outcome: 'verified',
     rootPid: 42922,
     pids: [42922],
     pgid: 42922,
+    signalGroup: true,
   })
 })
 
@@ -343,6 +345,7 @@ test('a descendant that survives SIGTERM is SIGKILLed after the root dies', () =
     .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
     .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
   const killed: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+  const dead = new Set<number>()
   const result = terminateRunProcesses(id, [coordinator], {
     inventory: () => ({
       ascertainable: true,
@@ -360,8 +363,9 @@ test('a descendant that survives SIGTERM is SIGKILLed after the root dies', () =
     identity: () => 'live',
     kill(pid, signal) {
       killed.push({ pid, signal })
+      if (signal === 'SIGKILL') dead.add(Math.abs(pid))
     },
-    alive: (pid) => pid === child,
+    alive: (pid) => pid === child && !dead.has(pid),
     wait: () => {},
     confirmMs: 5,
     selfPgid: () => 1,

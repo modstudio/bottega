@@ -35,13 +35,11 @@ import {
 } from './run-authority.ts'
 import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
-
-export type TerminateRunProcessesResult =
-  | { outcome: 'signaled'; signaled: number[] }
-  | { outcome: 'identity-mismatch'; pid: number }
-  | { outcome: 'no-pid' }
-  | { outcome: 'gone' }
-  | { outcome: 'still-alive'; pid: number; reason: string }
+import type {
+  RunProcessTerminationPlan,
+  TerminateRunProcessesResult,
+  VerifiedRunProcessTermination,
+} from './run-process.ts'
 
 export function stoppedRunLine(id: number): string {
   return `stopped run ${id}`
@@ -61,8 +59,8 @@ export function stopTerminationRefusal(
   if (termination.outcome === 'still-alive') {
     const pid = termination.pid
     return (
-      `run ${row.id} pid ${pid} is still alive after ${termination.reason}; the run remains running; ` +
-      `after checking ps -p ${pid} -o lstart=,command=, run kill -TERM ${pid}`
+      `run ${row.id} is recorded stopped; process ${pid} is still alive; ` +
+      `after checking ps -p ${pid} -o lstart=,command=, run kill -KILL ${pid}`
     )
   }
   return null
@@ -120,9 +118,12 @@ function logStoppedRun(
 }
 
 export type RunStopOptions = CleanupOptions & { note?: string }
-export type RunStopHelpers = {
+type RunControlHelpers = {
   lifecycleCheckpoint: (name: string) => void
-  terminateRunProcesses: (runId: number, exceptPids?: number[]) => TerminateRunProcessesResult
+}
+export type RunStopHelpers = RunControlHelpers & {
+  planRunProcessTermination: (runId: number, exceptPids?: number[]) => RunProcessTerminationPlan
+  terminateRunProcesses: (plan: VerifiedRunProcessTermination) => TerminateRunProcessesResult
 }
 
 type StopRow = {
@@ -232,22 +233,25 @@ export async function stopRun(
   // attributed or reclaimed. Stop the vendor, but let the coordinator see
   // the stopped row and finish recording. The tree remains the continuation
   // substrate; only its recreatable containers are reclaimed at stop.
-  const termination = helpers.terminateRunProcesses(
-    candidate.id,
-    candidate.pid ? [candidate.pid] : [],
-  )
-  const refusal = stopTerminationRefusal(candidate, termination)
-  if (refusal) throw new Error(refusal)
+  const plan = helpers.planRunProcessTermination(candidate.id, candidate.pid ? [candidate.pid] : [])
+  if (plan.outcome === 'identity-mismatch') {
+    throw new Error(stopTerminationRefusal(candidate, plan)!)
+  }
   const { row, cleanupRow } = writeTransaction(() =>
     commitStoppedRun(authority, id, options.auditReason),
   )
+  if (plan.outcome === 'verified') {
+    const termination = helpers.terminateRunProcesses(plan)
+    const refusal = stopTerminationRefusal(row, termination)
+    if (refusal) throw new Error(refusal)
+  }
   logStoppedRun(options, row, cleanupRow, teardownTerminalRunResources(db(), row.id))
 }
 
 export async function abandonRun(
   id: number,
   options: RunStopOptions,
-  helpers: RunStopHelpers,
+  helpers: RunControlHelpers,
 ): Promise<void> {
   let authority = authorizeRunMutation(id, 'abandon')
   helpers.lifecycleCheckpoint('abandon-before-immediate')

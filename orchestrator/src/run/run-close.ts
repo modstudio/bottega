@@ -155,9 +155,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
   }
 
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
-    // The vendor is normally gone already. This is deliberately the same PID
-    // termination primitive used by `orch stop`, excluding this coordinator:
-    // it still has to route and run the successor before it may exit.
+    // Terminate the recorded vendor, excluding this coordinator so it can
+    // still route and run the successor. This does not write a stopped row.
     terminateRunProcesses(claim.id, [process.pid])
 
     const attempts = failoverAttempts(claim.id)
