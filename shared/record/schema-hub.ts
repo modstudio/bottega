@@ -48,6 +48,7 @@ export const hubTask = pgTable.withRLS(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    nextDocumentNumber: integer('next_document_number').notNull().default(1),
   },
   (table) => [
     unique('hub_task_space_key_unique').on(table.spaceId, table.key),
@@ -92,6 +93,7 @@ export const hubTaskDocument = pgTable.withRLS(
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
     taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'cascade' }),
+    number: integer(),
     role: text(),
     title: text().notNull(),
     body: text().notNull(),
@@ -104,6 +106,11 @@ export const hubTaskDocument = pgTable.withRLS(
     unique('hub_task_document_space_id_unique').on(table.spaceId, table.id),
     unique('hub_task_document_legacy_unique').on(table.spaceId, table.legacyLocalId),
     index('hub_task_document_task_id_idx').on(table.taskId),
+    uniqueIndex('hub_task_document_task_number_unique').on(table.taskId, table.number),
+    check(
+      'hub_task_document_live_number_check',
+      sql`${table.deletedAt} IS NOT NULL OR ${table.number} IS NOT NULL`,
+    ),
     check('hub_task_document_role_check', sql`${table.role} IS NULL OR ${table.role} = 'handoff'`),
     ...tenantPolicies('hub_task_document', table.spaceId),
   ],

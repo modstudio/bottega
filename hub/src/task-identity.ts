@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import { taskAdoptionCollisionCount } from './task-adoption.ts'
 
+export type TaskScope = { project?: string; recordId?: string }
+
 const TASK_KEY_PREFIX_SOURCE = '[A-Z][A-Z0-9]*'
 const TASK_KEY_PATTERN = new RegExp(`^(${TASK_KEY_PREFIX_SOURCE})-\\d+$`)
 const TASK_KEY_PREFIX_PATTERN = new RegExp(`^${TASK_KEY_PREFIX_SOURCE}$`)
@@ -140,6 +142,16 @@ export function resolveTask(conn: Database, key: string, project?: string): stri
       ? `task ${upper} exists in ${decision.uncachedOnly[0]!.project} but is not cached on this machine${collision}`
       : `tasks labeled ${upper} exist but are not cached on this machine${collision}`
   throw new Error(`${subject}. Re-collect the missing project to bring it back.\n${detail}`)
+}
+
+export function taskRecordId(key: string, scope: TaskScope = {}) {
+  return scope.recordId ?? resolveTask(db(), key, scope.project)
+}
+
+export function taskByRecordId<T>(recordId: string): T {
+  const task = db().query<T, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
+  if (!task) throw new Error(`no task record ${recordId}`)
+  return task
 }
 
 export function claimTaskIdentity(

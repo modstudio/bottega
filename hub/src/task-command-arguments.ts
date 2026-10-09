@@ -136,17 +136,20 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'doc list',
     shape(1, 'hub task doc list <KEY> [--project X] [--json]', ['--project'], ['--json']),
   ],
-  ['doc show', shape(1, 'hub task doc show <ID> [--json]', [], ['--json'])],
+  [
+    'doc show',
+    shape(1, 'hub task doc show <LABEL|UUID> [--project X] [--json]', ['--project'], ['--json']),
+  ],
   [
     'doc set',
     shape(
       1,
-      'hub task doc set <ID> [--title "..."] [--role handoff|--no-role] [--body "..."|--body-file PATH] [--version TOKEN]',
-      ['--title', '--role', '--body', '--body-file', '--version'],
+      'hub task doc set <LABEL|UUID> [--project X] [--title "..."] [--role handoff|--no-role] [--body "..."|--body-file PATH] [--version TOKEN]',
+      ['--project', '--title', '--role', '--body', '--body-file', '--version'],
       ['--no-role'],
     ),
   ],
-  ['doc rm', shape(1, 'hub task doc rm <ID>')],
+  ['doc rm', shape(1, 'hub task doc rm <LABEL|UUID> [--project X]', ['--project'])],
 ])
 
 export type ResolvedTaskCommand = {

@@ -28,6 +28,8 @@ type HostedDetail = {
   comments: { id: string; body: string; created_at: string }[]
   documents: {
     id: string
+    number: number
+    label: string
     role: string | null
     title: string
     body: string
@@ -57,6 +59,7 @@ function Documents({ rows }: { rows: HostedDetail['documents'] }) {
   return rows.map((document) => (
     <article key={document.id} className="border-b border-border-default py-3">
       <div className="mb-2 flex items-center gap-2">
+        <Identifier>{document.label}</Identifier>
         <strong>{document.title}</strong>
         {document.role ? <Badge tone="info">{document.role}</Badge> : null}
         <span className="text-xs text-text-muted">version {document.version}</span>

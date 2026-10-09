@@ -47,6 +47,7 @@ function changes(options: {
         legacy_local_id: options.legacy.document,
         task_key: taskKey,
         project_name: 'workshop',
+        number: 1,
         role: null,
         title: 'hosted document',
         body: 'hosted body',
@@ -85,8 +86,8 @@ test('matching record ids update and delete child rows', () => {
       .run(TASK_A, AT)
     conn
       .query(
-        `INSERT INTO task_document(id,record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
-         VALUES (402,'matched-document','DEV-1',?,'local','body','v1',?,?)`,
+        `INSERT INTO task_document(record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+         VALUES ('matched-document','DEV-1',?,1,'local','body','v1',?,?)`,
       )
       .run(TASK_A, AT, AT)
     conn
@@ -116,7 +117,11 @@ test('matching record ids update and delete child rows', () => {
       .get()?.body,
   ).toBe('hosted comment')
   expect(
-    db().query<{ title: string }, []>(`SELECT title FROM task_document WHERE id=402`).get()?.title,
+    db()
+      .query<{ title: string }, []>(
+        `SELECT title FROM task_document WHERE record_id='matched-document'`,
+      )
+      .get()?.title,
   ).toBe('hosted document')
   expect(
     db()
@@ -127,6 +132,13 @@ test('matching record ids update and delete child rows', () => {
   ).toBe('active')
   expect(db().query(`SELECT * FROM task_comment`).all()).toHaveLength(1)
   expect(db().query(`SELECT * FROM task_status_event`).all()).toHaveLength(1)
+  expect(
+    db()
+      .query<{ next_document_number: number }, []>(
+        `SELECT next_document_number FROM task WHERE record_id='${TASK_A}'`,
+      )
+      .get()?.next_document_number,
+  ).toBe(2)
 
   applyHostedTaskChanges(
     changes({
@@ -143,4 +155,83 @@ test('matching record ids update and delete child rows', () => {
   expect(db().query(`SELECT * FROM task_comment`).all()).toEqual([])
   expect(db().query(`SELECT * FROM task_document`).all()).toEqual([])
   expect(db().query(`SELECT * FROM task_status_event`).all()).toEqual([])
+})
+
+test('pulled document refuses a number held by another UUID', () => {
+  seedTask(TASK_A, 'DEV-1')
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+         VALUES ('existing-document','DEV-1',?,1,'local','body','v1',?,?)`,
+      )
+      .run(TASK_A, AT, AT),
+  )
+
+  expect(() =>
+    applyHostedTaskChanges(
+      changes({
+        ids: {
+          comment: 'incoming-comment',
+          document: 'incoming-document',
+          event: 'incoming-event',
+        },
+        legacy: { comment: 1, document: 1, event: 1 },
+      }),
+    ),
+  ).toThrow(
+    'DEV-1/1 belongs to UUID existing-document, not incoming UUID incoming-document; run `hub task doc list DEV-1`',
+  )
+})
+
+test('task pull keeps a counter higher than its live document numbers', () => {
+  const taskId = '01990000-0000-7000-8000-000000000050'
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task
+          (record_id,key,project,title,source,first_seen,last_seen,next_document_number)
+         VALUES (?,'BET-50','beta','counter','local',?,?,4)`,
+      )
+      .run(taskId, AT, AT),
+  )
+
+  applyHostedTaskChanges({
+    tasks: [
+      {
+        id: taskId,
+        key: 'BET-50',
+        project: 'beta',
+        project_name: 'beta',
+        title: 'counter',
+        status: 'open',
+        status_category: 'open',
+        parent_key: null,
+        body: null,
+        assignee: null,
+        opened_at: AT,
+        closed_at: null,
+        source: 'local',
+        first_seen: AT,
+        last_seen: AT,
+        created_at: AT,
+        updated_at: AT,
+        deleted_at: null,
+        next_document_number: 9,
+      },
+    ],
+    comments: [],
+    documents: [],
+    statusEvents: [],
+    cursor: AT,
+  })
+
+  expect(
+    db()
+      .query<{ next_document_number: number }, [string]>(
+        `SELECT next_document_number FROM task WHERE record_id=?`,
+      )
+      .get(taskId)?.next_document_number,
+  ).toBe(9)
 })

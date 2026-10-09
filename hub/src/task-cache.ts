@@ -3,17 +3,12 @@ import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
+import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 import { type RegisteredTaskSpace, taskProjectDestination } from './task-project-space.ts'
 
 const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
-
-function localDocumentId(conn: Database, recordId: string) {
-  return conn
-    .query<{ id: number }, [string]>(`SELECT id FROM task_document WHERE record_id=?`)
-    .get(recordId)?.id
-}
 
 function reconcileParentRecordIds(conn: Database) {
   for (const relationship of taskIdentityRelationships) {
@@ -45,14 +40,15 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
   conn
     .query(`INSERT INTO task
       (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
-       closed_at,updated_at,source,first_seen,last_seen)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
+       closed_at,updated_at,source,first_seen,last_seen,next_document_number)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
       key=excluded.key,project=excluded.project,title=excluded.title,
       status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,
       parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,
       closed_at=excluded.closed_at,updated_at=excluded.updated_at,source=excluded.source,
-      first_seen=excluded.first_seen,last_seen=excluded.last_seen`)
+      first_seen=excluded.first_seen,last_seen=excluded.last_seen,
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
     .run(
       row.id,
       row.key,
@@ -70,6 +66,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       row.source,
       row.first_seen,
       row.last_seen,
+      row.next_document_number,
     )
 }
 
@@ -93,44 +90,48 @@ function applyComment(conn: Database, row: HostedChanges['comments'][number]) {
 }
 
 function applyDocument(conn: Database, row: HostedChanges['documents'][number]) {
-  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
-  const id = localDocumentId(conn, row.id)
   if (row.deleted_at) {
-    if (id) conn.query(`DELETE FROM task_document WHERE id=?`).run(id)
-  } else if (id) {
-    conn
-      .query(
-        `UPDATE task_document SET record_id=?,task_key=?,task_record_id=?,role=?,title=?,body=?,version=?,created_at=?,updated_at=? WHERE id=?`,
-      )
-      .run(
-        row.id,
-        row.task_key,
-        taskRecordId,
-        row.role,
-        row.title,
-        row.body,
-        row.version,
-        row.created_at,
-        row.updated_at,
-        id,
-      )
-  } else {
-    conn
-      .query(
-        `INSERT INTO task_document (record_id,task_key,task_record_id,role,title,body,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        row.id,
-        row.task_key,
-        taskRecordId,
-        row.role,
-        row.title,
-        row.body,
-        row.version,
-        row.created_at,
-        row.updated_at,
-      )
+    conn.query(`DELETE FROM task_document WHERE record_id=?`).run(row.id)
+    return
   }
+  const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
+  if (!taskRecordId) throw new Error(`no task ${row.task_key} in project ${row.project_name}`)
+  if (row.number === null)
+    throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)
+  const collision = conn
+    .query<{ record_id: string }, [string, number, string]>(
+      `SELECT record_id FROM task_document WHERE task_record_id=? AND number=? AND record_id<>?`,
+    )
+    .get(taskRecordId, row.number, row.id)
+  if (collision) {
+    throw new Error(
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision.record_id}, not incoming UUID ${row.id}; run \`hub task doc list ${row.task_key}\``,
+    )
+  }
+  conn
+    .query(
+      `INSERT INTO task_document
+          (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
+          task_key=excluded.task_key,task_record_id=excluded.task_record_id,number=excluded.number,
+          role=excluded.role,title=excluded.title,body=excluded.body,version=excluded.version,
+          created_at=excluded.created_at,updated_at=excluded.updated_at`,
+    )
+    .run(
+      row.id,
+      row.task_key,
+      taskRecordId,
+      row.number,
+      row.role,
+      row.title,
+      row.body,
+      row.version,
+      row.created_at,
+      row.updated_at,
+    )
+  conn
+    .query(`UPDATE task SET next_document_number=MAX(next_document_number,?) WHERE record_id=?`)
+    .run(row.number + 1, taskRecordId)
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {

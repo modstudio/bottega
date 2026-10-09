@@ -424,7 +424,12 @@ describe('work.task', () => {
       message: 'task EXT-1 is not local',
     })
     await expect(
-      writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' }),
+      writes.setDocument({
+        id: '01990000-0000-7000-8000-000000000001',
+        title: 'No',
+        body: 'No',
+        version: 'old',
+      }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
   })
 
@@ -454,7 +459,7 @@ describe('work.task', () => {
     })
     await expect(
       router.createCaller({}).setDocument({
-        id: 1,
+        id: '01990000-0000-7000-8000-000000000001',
         title: 'Draft',
         body: 'Kept text',
         version: 'old',
