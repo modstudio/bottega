@@ -9,7 +9,7 @@ import {
   repoRootOf,
   targetGitEnvironment,
 } from '../git/git-environment.ts'
-import type { WorktreeTool } from '../project/projects.ts'
+import { projectAt, type WorktreeTool } from '../project/projects.ts'
 import {
   attributeWorktree,
   type RecordWorktree,
@@ -37,7 +37,11 @@ export function createReadOnlyWorktree(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
   try {
-    const remoteTrackingRefs = snapshotRemoteTrackingRefs(repoRoot)
+    const landingBranch = projectAt(repoRoot)?.settings.trunk?.trim() || null
+    const remoteTrackingRefs = landingRemoteTrackingRefs(
+      snapshotRemoteTrackingRefs(repoRoot),
+      landingBranch,
+    )
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
@@ -56,9 +60,25 @@ export function createReadOnlyWorktree(
   }
 }
 
-type RemoteTrackingRef = { ref: string; object: string }
+export type RemoteTrackingRef = { ref: string; object: string }
 
-/** Preserve revision names reviewers can see without preserving a usable transport. */
+/** Select only each remote's copy of the registered landing branch. */
+export function landingRemoteTrackingRefs(
+  refs: RemoteTrackingRef[],
+  landingBranch: string | null,
+): RemoteTrackingRef[] {
+  if (!landingBranch) return []
+  const prefix = 'refs/remotes/'
+  const suffix = `/${landingBranch}`
+  return refs.filter(
+    ({ ref }) =>
+      ref.startsWith(prefix) &&
+      ref.slice(prefix.length).length > suffix.length &&
+      ref.endsWith(suffix),
+  )
+}
+
+/** Read private candidates before the clone's transport configuration is removed. */
 function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
   const output = git(
     ['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/remotes/'],
@@ -75,9 +95,17 @@ function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
 }
 
 function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
-  if (!refs.length) return
-  const updates = `${refs.map((ref) => `update ${ref.ref} ${ref.object}`).join('\n')}\n`
-  gitInput(['update-ref', '--stdin'], path, new TextEncoder().encode(updates))
+  for (const ref of refs) {
+    try {
+      gitInput(
+        ['update-ref', '--stdin'],
+        path,
+        new TextEncoder().encode(`update ${ref.ref} ${ref.object}\n`),
+      )
+    } catch {
+      // A borrowed revision name is optional; the reader clone remains usable without it.
+    }
+  }
 }
 
 /** Let a project provision a detached read-only checkout at orch's chosen path. */
