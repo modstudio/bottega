@@ -7,7 +7,7 @@ import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
-import { resolveLens } from '../lens/lenses.ts'
+import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
@@ -203,7 +203,7 @@ function reviewTierOutput(value: string) {
   }
 }
 
-export function printReviewTier(
+function printReviewTier(
   output: ReturnType<typeof reviewTierOutput>,
   json: boolean,
   log: (...values: unknown[]) => void,
@@ -216,7 +216,9 @@ export function printReviewTier(
   log(`risk ${output.risk}`)
   log(`size ${output.size}`)
   for (const lens of output.lens_profiles) {
-    const sources = lens.profiles.map((profile) => `${profile.axis}=${profile.source}`).join(', ')
+    const sources = lens.profiles
+      .map((profile) => formatLensProfileSource(profile, 'source'))
+      .join(', ')
     log(`lens ${lens.id}${sources ? `  ${sources}` : ''}`)
   }
   for (const reason of output.reasons) log(reason)

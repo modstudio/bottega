@@ -43,6 +43,20 @@ export function chooseLensProfile(input: {
   return { name: 'default', version: null, source: 'generic' }
 }
 
+export function formatLensProfileSource(
+  profile: {
+    axis: LensAxis
+    name: string
+    version: number
+    source: LensProfileSource
+  },
+  form: 'resolved' | 'source',
+): string {
+  return form === 'resolved'
+    ? `${profile.axis}=${profile.name}@${profile.version} source=${profile.source}`
+    : `${profile.axis}=${profile.source}`
+}
+
 const stableId = (value: string, what: string) => {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value))
     throw new Error(`${what} "${value}" must be a lowercase stable id of at most 64 characters`)
