@@ -128,17 +128,22 @@ export function restoreBranch(
 }
 
 /** A git invocation that throws with git's own words rather than a bare code. */
-function git(args: string[], cwd: string): string {
+function git(
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
+  failureContext = '',
+): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(
-      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
+      `git ${args.join(' ')} failed${failureContext}: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
     )
   }
   return p.stdout.toString().trim()
@@ -161,11 +166,15 @@ export function worktreeListPorcelain(repoRoot: string): string {
 }
 
 /** Same, but a failure is an answer rather than an error. */
-function gitOk(args: string[], cwd: string): string | null {
+function gitOk(
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
+): string | null {
   if (cwdMissing(cwd)) return null
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -190,45 +199,39 @@ function gitResult(args: string[], cwd: string): { ok: boolean; stdout: string; 
 
 /** Measure the checkout's complete visible content without touching its index. */
 export function contentTree(cwd: string): string {
+  return withTemporaryGitIndex(
+    cwd,
+    ({ git }) => {
+      git(['add', '-A', '.'])
+      return git(['write-tree'])
+    },
+    ' while measuring content tree',
+  )
+}
+
+export type TemporaryIndexGit = {
+  git(args: string[]): string
+  gitOk(args: string[]): string | null
+  gitRaw(args: string[]): string
+}
+
+/** Run git against a seeded disposable index and remove it after every outcome. */
+export function withTemporaryGitIndex<T>(
+  cwd: string,
+  action: (git: TemporaryIndexGit) => T,
+  failureContext = '',
+): T {
   const temporary = join(tmpdir(), `orch-index-${process.pid}-${randomUUID()}`)
   mkdirSync(temporary, { recursive: true })
-  const index = join(temporary, 'index')
-  const env = { ...targetGitEnvironment(cwd), GIT_INDEX_FILE: index }
+  const env = { ...targetGitEnvironment(cwd), GIT_INDEX_FILE: join(temporary, 'index') }
+  const bound = {
+    git: (args: string[]) => git(args, cwd, env, failureContext),
+    gitOk: (args: string[]) => gitOk(args, cwd, env),
+    gitRaw: (args: string[]) => gitRaw(args, cwd, env),
+  }
   try {
-    const read = Bun.spawnSync(['git', 'read-tree', 'HEAD'], {
-      cwd,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (read.exitCode !== 0) {
-      throw new Error(
-        `git read-tree HEAD failed while measuring content tree: ${read.stderr.toString().trim() || `exit ${read.exitCode}`}`,
-      )
-    }
-    const add = Bun.spawnSync(['git', 'add', '-A', '.'], {
-      cwd,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (add.exitCode !== 0) {
-      throw new Error(
-        `git add -A . failed while measuring content tree: ${add.stderr.toString().trim() || `exit ${add.exitCode}`}`,
-      )
-    }
-    const write = Bun.spawnSync(['git', 'write-tree'], {
-      cwd,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (write.exitCode !== 0) {
-      throw new Error(
-        `git write-tree failed while measuring content tree: ${write.stderr.toString().trim() || `exit ${write.exitCode}`}`,
-      )
-    }
-    return write.stdout.toString().trim()
+    bound.git(['read-tree', 'HEAD'])
+    return action(bound)
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }
@@ -277,11 +280,15 @@ function gitConfigOk(args: string[], cwd: string): string | null {
  * name or a commit id, where a stray newline is noise. It is only wrong for
  * content.
  */
-function gitRaw(args: string[], cwd: string): string {
+function gitRaw(
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
+): string {
   if (cwdMissing(cwd)) return ''
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })

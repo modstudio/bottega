@@ -8,7 +8,7 @@ import {
   git,
   gitOk,
   gitRaw,
-  targetGitEnvironment,
+  withTemporaryGitIndex,
 } from '../git/git-environment.ts'
 import {
   absentTreeTeardownPlan,
@@ -172,46 +172,9 @@ function changesInIndex(
 
 /** Read the complete visible change without changing the worktree's real index. */
 export function observedChangesIn(w: Worktree, sinceBase = false): Changes {
-  const temporary = mkdtempSync(join(tmpdir(), 'orch-diff-index-'))
-  const index = join(temporary, 'index')
-  const env = { ...targetGitEnvironment(w.path), GIT_INDEX_FILE: index }
-  const invoke = (args: string[], raw: boolean): string | null => {
-    const result = Bun.spawnSync(['git', ...args], {
-      cwd: w.path,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (result.exitCode === 0) {
-      const output = result.stdout.toString()
-      return raw ? output : output.trim()
-    }
-    if (!raw) return null
-    throw new Error(
-      `git ${args.join(' ')} failed: ${result.stderr.toString().trim() || `exit ${result.exitCode}`}`,
-    )
-  }
-  try {
-    const read = invoke(['read-tree', 'HEAD'], true)
-    if (read === null) throw new Error('git read-tree HEAD failed')
-    return changesInIndex(
-      w,
-      sinceBase,
-      (args) => {
-        const output = invoke(args, true)
-        if (output === null) throw new Error(`git ${args.join(' ')} failed`)
-        return output.trim()
-      },
-      (args) => invoke(args, false),
-      (args) => {
-        const output = invoke(args, true)
-        if (output === null) throw new Error(`git ${args.join(' ')} failed`)
-        return output
-      },
-    )
-  } finally {
-    rmSync(temporary, { recursive: true, force: true })
-  }
+  return withTemporaryGitIndex(w.path, ({ git, gitOk, gitRaw }) =>
+    changesInIndex(w, sinceBase, git, gitOk, gitRaw),
+  )
 }
 
 /**
