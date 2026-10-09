@@ -42,6 +42,8 @@ export const HUB_CHANGE_SOURCES = {
   },
 } as const
 
+export const HUB_CHANGE_RETENTION_DAYS = 30
+
 export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
   hub_change_head: 'Change-log state tracks the latest allocated sequence for each space.',
   hub_change: 'Change-log entries form the hosted synchronization feed.',
