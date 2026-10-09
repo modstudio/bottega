@@ -50,14 +50,22 @@ export type SandboxRuntimeConfig = {
 
 export type RunSandbox = 'host' | 'srt'
 
+/** Operator env file denied by every readonly-lens profile. */
+const READONLY_LENS_OPERATOR_ENV_FILE = '~/.claude/.env'
+
+/** Login keychain paths denied by every readonly-lens profile. */
+const READONLY_LENS_LOGIN_KEYCHAIN_PATHS = [
+  '~/Library/Keychains/login.keychain',
+  '~/Library/Keychains/login.keychain-db',
+] as const
+
 /** Sensitive operator paths denied by every readonly-lens profile. */
 export const READONLY_LENS_DENY_PATHS = [
   '~/.ssh', // private SSH keys and host credentials
   '~/.aws', // AWS access keys and session credentials
-  '~/.claude/.env', // MCP and service tokens
+  READONLY_LENS_OPERATOR_ENV_FILE, // MCP and service tokens
   '~/.config/gcloud', // Google Cloud application credentials
-  '~/Library/Keychains/login.keychain', // legacy macOS login keychain
-  '~/Library/Keychains/login.keychain-db', // current macOS login keychain
+  ...READONLY_LENS_LOGIN_KEYCHAIN_PATHS,
 ] as const
 
 /**
@@ -111,14 +119,68 @@ const isAtOrBelow = (path: string, parent: string) => {
   return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
 }
 
+function denyReadCovers(denyRead: readonly string[], path: string): boolean {
+  return denyRead.some((denied) => isAtOrBelow(path, denied))
+}
+
+function readonlyLensOperatorEnvFileDenyPaths(envFilePaths: readonly string[]): string[] {
+  return [...new Set(envFilePaths.map((path) => resolve(path)))]
+}
+
+function readonlyLensLoginKeychainDenyPaths(keychainPaths: readonly string[]): string[] {
+  return [...new Set(keychainPaths.map((path) => resolve(path)))]
+}
+
+/** Whether a readonly-lens denyRead list denies the operator env file. */
+export function readonlyLensDeniesOperatorEnvFile(
+  denyRead: readonly string[],
+  envFilePaths: readonly string[],
+): boolean {
+  return readonlyLensOperatorEnvFileDenyPaths(envFilePaths).some((path) =>
+    denyReadCovers(denyRead, path),
+  )
+}
+
+/** Whether a readonly-lens denyRead list denies the login keychain. */
+export function readonlyLensDeniesLoginKeychain(
+  denyRead: readonly string[],
+  keychainPaths: readonly string[],
+): boolean {
+  return readonlyLensLoginKeychainDenyPaths(keychainPaths).some((path) =>
+    denyReadCovers(denyRead, path),
+  )
+}
+
 function protectedDenyPaths(project: Project | null, environment: ConfigEnvironment): string[] {
   return [
     ...new Set([
       ...mandatorySrtDenyRead(environment),
-      ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
+      ...readonlyLensOperatorEnvFileDenyPaths(resolveEnvFilePaths(environment)),
+      ...readonlyLensLoginKeychainDenyPaths(READONLY_LENS_LOGIN_KEYCHAIN_PATHS.map(expandHome)),
       ...resolveSecretPaths(project),
     ]),
   ]
+}
+
+/** Resolved deny lists a confinement report needs; the report itself reads no home. */
+export function readonlyLensReportInputs(
+  environment: ConfigEnvironment,
+  project: Project | null = null,
+): {
+  denyRead: readonly string[]
+  envFilePaths: string[]
+  keychainPaths: string[]
+} {
+  return {
+    denyRead: [...protectedDenyPaths(project, environment), ...READONLY_LENS_DENY_SOCKETS],
+    envFilePaths: readonlyLensOperatorEnvFileDenyPaths([
+      expandHome(READONLY_LENS_OPERATOR_ENV_FILE),
+      ...resolveEnvFilePaths(environment),
+    ]),
+    keychainPaths: readonlyLensLoginKeychainDenyPaths(
+      READONLY_LENS_LOGIN_KEYCHAIN_PATHS.map(expandHome),
+    ),
+  }
 }
 
 function refuseProtectedOverlap(

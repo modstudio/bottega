@@ -3,25 +3,26 @@ import {
   assertRecordConnectionResolutionAllowed,
   isForwardedChildEnvName,
   RECORD_CONNECTION_ENV_NAMES,
+  RECORD_CONNECTION_WORKER_REFUSAL,
   recordConnectionResolverRefusal,
   withheldClassNamesForwardedFrom,
 } from './record-connection-env.ts'
 
-test('childEnv forwards ORCH_RECORD_URL from the parent into the vendor process', () => {
+test('childEnv does not forward record connection names', () => {
   expect(RECORD_CONNECTION_ENV_NAMES.has('ORCH_RECORD_URL')).toBe(true)
   expect(RECORD_CONNECTION_ENV_NAMES.has('ORCH_RECORD_MIGRATE_URL')).toBe(true)
   expect(isForwardedChildEnvName('ORCH_RECORD_URL')).toBe(false)
   expect(isForwardedChildEnvName('ORCH_RECORD_MIGRATE_URL')).toBe(false)
 })
 
-test('every other ORCH_ name still reaches the vendor process', () => {
+test('ORCH_ names other than record connections are forwarded, and unrelated names are not', () => {
   expect(isForwardedChildEnvName('ORCH_DB')).toBe(true)
   expect(isForwardedChildEnvName('ORCH_RUN_ID')).toBe(true)
   expect(isForwardedChildEnvName('PATH')).toBe(true)
   expect(isForwardedChildEnvName('SECRET_TOKEN')).toBe(false)
 })
 
-test('a parent environment holding both record URLs forwards neither', () => {
+test('a parent environment holding both record connection names forwards neither as withheld-class', () => {
   expect(
     withheldClassNamesForwardedFrom([
       'ORCH_RECORD_URL',
@@ -32,9 +33,9 @@ test('a parent environment holding both record URLs forwards neither', () => {
   ).toEqual([])
 })
 
-test('orch config secret run resolves a record database connection for a worker', () => {
+test('a worker process is refused when resolving a record connection name', () => {
   expect(recordConnectionResolverRefusal('ORCH_RECORD_URL', true)).toBe(
-    'ORCH_RECORD_URL: record database connections are withheld from workers; the architect session runs work that needs one',
+    `ORCH_RECORD_URL: ${RECORD_CONNECTION_WORKER_REFUSAL}`,
   )
   expect(recordConnectionResolverRefusal('ORCH_RECORD_MIGRATE_URL', true)).toContain(
     'ORCH_RECORD_MIGRATE_URL',

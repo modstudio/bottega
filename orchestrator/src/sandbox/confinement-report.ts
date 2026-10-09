@@ -7,14 +7,15 @@
 import { type CodexSandboxRuling, decideCodexSandbox } from './codex-sandbox.ts'
 import {
   RECORD_CONNECTION_ENV_NAMES,
-  recordConnectionResolverRefusal,
+  RECORD_CONNECTION_WORKER_REFUSAL,
   withheldClassNamesForwardedFrom,
 } from './record-connection-env.ts'
 import {
   isReadonlySandboxCandidate,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
-  READONLY_LENS_DENY_PATHS,
   type RunSandbox,
+  readonlyLensDeniesLoginKeychain,
+  readonlyLensDeniesOperatorEnvFile,
   selectReadonlySandboxKind,
   workerHomeLinksEnvFile,
 } from './sandbox.ts'
@@ -69,6 +70,9 @@ export type ConfinementReportRow = ConfinementReportRefusedRow | ConfinementRepo
 export type ConfinementReportInput = {
   agents: readonly ConfinementReportAgent[]
   parentEnvNames: readonly string[]
+  srtDenyRead: readonly string[]
+  envFilePaths: readonly string[]
+  keychainPaths: readonly string[]
   sandboxOverride?: string
   agent?: string
   job?: ConfinementJobKind
@@ -152,10 +156,12 @@ function envFileAccess(
   outerSandbox: RunSandbox,
   harness: string,
   agent: string,
+  denyRead: readonly string[],
+  envFilePaths: readonly string[],
 ): ConfinementAccess {
   if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
   const linksEnvFile = workerHomeLinksEnvFile(harness)
-  if (outerSandbox === 'srt' && READONLY_LENS_DENY_PATHS.includes('~/.claude/.env')) {
+  if (outerSandbox === 'srt' && readonlyLensDeniesOperatorEnvFile(denyRead, envFilePaths)) {
     return {
       access: 'denied',
       reason: linksEnvFile
@@ -169,10 +175,15 @@ function envFileAccess(
   return { access: 'open', reason: OPEN }
 }
 
-function keychainAccess(outerSandbox: RunSandbox, agent: string): ConfinementAccess {
+function keychainAccess(
+  outerSandbox: RunSandbox,
+  agent: string,
+  denyRead: readonly string[],
+  keychainPaths: readonly string[],
+): ConfinementAccess {
   if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
   if (outerSandbox === 'host') return { access: 'open', reason: OPEN }
-  if (READONLY_LENS_DENY_PATHS.some((path) => path.includes('login.keychain'))) {
+  if (readonlyLensDeniesLoginKeychain(denyRead, keychainPaths)) {
     return { access: 'denied', reason: 'srt denyRead includes the login keychain' }
   }
   return { access: 'open', reason: OPEN }
@@ -198,13 +209,12 @@ function loopbackAccess(outerSandbox: RunSandbox, agent: string): ConfinementAcc
 }
 
 function namedSecretAccess(): NamedSecretAccess {
-  const reason = [...RECORD_CONNECTION_ENV_NAMES]
-    .sort()
-    .map((name) => recordConnectionResolverRefusal(name, true))
-    .filter((refusal): refusal is string => refusal !== null)
-    .join('; ')
+  const names = [...RECORD_CONNECTION_ENV_NAMES].sort().join(', ')
   return {
-    recordConnection: { access: 'denied', reason },
+    recordConnection: {
+      access: 'denied',
+      reason: `${names}: ${RECORD_CONNECTION_WORKER_REFUSAL}`,
+    },
     other: { access: 'open', reason: OPEN },
   }
 }
@@ -225,8 +235,7 @@ function reportRow(
   agent: ConfinementReportAgent,
   job: ConfinementJobKind,
   mcp: boolean,
-  parentEnvNames: readonly string[],
-  sandboxOverride: string | undefined,
+  input: ConfinementReportInput,
 ): ConfinementReportRow {
   const refusal = shapeRefusal(agent, job, mcp)
   if (refusal) {
@@ -239,7 +248,7 @@ function reportRow(
     writesRepo,
     worktreePresent: true,
     projectPresent: true,
-    override: sandboxOverride,
+    override: input.sandboxOverride,
     mcp,
   })
   const outer = kind.sandbox
@@ -250,9 +259,9 @@ function reportRow(
     status: 'ok',
     refusal: null,
     confinement: okConfinement(agent, writesRepo, kind),
-    withheldForwarded: withheldClassNamesForwardedFrom(parentEnvNames),
-    envFile: envFileAccess(outer, agent.harness, agent.name),
-    keychain: keychainAccess(outer, agent.name),
+    withheldForwarded: withheldClassNamesForwardedFrom(input.parentEnvNames),
+    envFile: envFileAccess(outer, agent.harness, agent.name, input.srtDenyRead, input.envFilePaths),
+    keychain: keychainAccess(outer, agent.name, input.srtDenyRead, input.keychainPaths),
     namedSecret: namedSecretAccess(),
     loopback: loopbackAccess(outer, agent.name),
   }
@@ -266,7 +275,7 @@ export function reportConfinement(input: ConfinementReportInput): ConfinementRep
   for (const agent of agents) {
     for (const job of jobs) {
       for (const mcp of mcpValues) {
-        rows.push(reportRow(agent, job, mcp, input.parentEnvNames, input.sandboxOverride))
+        rows.push(reportRow(agent, job, mcp, input))
       }
     }
   }
@@ -279,9 +288,8 @@ function accessLine(label: string, channel: ConfinementAccess): string {
 
 function namedSecretLine(named: NamedSecretAccess): string {
   return (
-    `  ${'named-secret'.padEnd(12)} ` +
-    `record-connection ${named.recordConnection.access}: ${named.recordConnection.reason}; ` +
-    `other named secrets ${named.other.access}: ${named.other.reason}`
+    `  ${'named-secret'.padEnd(12)} denied ${named.recordConnection.reason}; ` +
+    'other named secrets are open'
   )
 }
 

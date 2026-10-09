@@ -33,6 +33,8 @@ import {
   probeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
+  readonlyLensDeniesLoginKeychain,
+  readonlyLensDeniesOperatorEnvFile,
   readonlyLensProfile,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
@@ -474,6 +476,33 @@ test('worker HOME refuses an unreadable operator path with a remedy', () => {
   } finally {
     rmSync(fixture, { recursive: true, force: true })
   }
+})
+
+test('readonlyLensDeniesOperatorEnvFile follows the denyRead list, not a tilde-path constant', () => {
+  expect(
+    readonlyLensDeniesOperatorEnvFile(
+      ['/operator/.claude/.env', '/operator/.ssh'],
+      ['/operator/.claude/.env'],
+    ),
+  ).toBe(true)
+  expect(readonlyLensDeniesOperatorEnvFile(['/operator/.ssh'], ['/operator/.claude/.env'])).toBe(
+    false,
+  )
+})
+
+test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain substring', () => {
+  expect(
+    readonlyLensDeniesLoginKeychain(
+      ['/operator/Library/Keychains/login.keychain-db'],
+      ['/operator/Library/Keychains/login.keychain-db'],
+    ),
+  ).toBe(true)
+  expect(
+    readonlyLensDeniesLoginKeychain(
+      ['/operator/.ssh'],
+      ['/operator/Library/Keychains/login.keychain'],
+    ),
+  ).toBe(false)
 })
 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {

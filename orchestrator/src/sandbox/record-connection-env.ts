@@ -7,6 +7,9 @@
 
 export const RECORD_CONNECTION_ENV_NAMES = new Set(['ORCH_RECORD_URL', 'ORCH_RECORD_MIGRATE_URL'])
 
+export const RECORD_CONNECTION_WORKER_REFUSAL =
+  'record database connections are withheld from workers; the architect session runs work that needs one'
+
 const ALLOW_ENV_EXACT = new Set([
   'PATH',
   'HOME',
@@ -34,10 +37,7 @@ export function withheldClassNamesForwardedFrom(envNames: readonly string[]): st
 
 export function recordConnectionResolverRefusal(name: string, depthSet: boolean): string | null {
   if (!depthSet || !RECORD_CONNECTION_ENV_NAMES.has(name)) return null
-  return (
-    `${name}: record database connections are withheld from workers; ` +
-    'the architect session runs work that needs one'
-  )
+  return `${name}: ${RECORD_CONNECTION_WORKER_REFUSAL}`
 }
 
 export function assertRecordConnectionResolutionAllowed(

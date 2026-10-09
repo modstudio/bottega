@@ -12,6 +12,7 @@ import {
   parseConfinementMcpSelector,
   reportConfinement,
 } from '../sandbox/confinement-report.ts'
+import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 
 const CLEAR_USAGE =
@@ -20,6 +21,7 @@ const REPORT_USAGE =
   'orch confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--json]'
 
 function confinementReportCommand(flags: CliFlags): void {
+  const lens = readonlyLensReportInputs(process.env)
   const rows = reportConfinement({
     agents: Object.values(AGENTS).map((agent) => ({
       name: agent.name,
@@ -31,6 +33,9 @@ function confinementReportCommand(flags: CliFlags): void {
     })),
     parentEnvNames: Object.keys(process.env),
     sandboxOverride: process.env.ORCH_SANDBOX,
+    srtDenyRead: lens.denyRead,
+    envFilePaths: lens.envFilePaths,
+    keychainPaths: lens.keychainPaths,
     agent: flags.flag('agent'),
     job: parseConfinementJobSelector(flags.flag('job'), JOBS),
     mcp: parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
@@ -70,27 +75,37 @@ export function register(program: Command): void {
       })
     })
 
-  program
-    .command('confinement [args...]')
+  const confinement = program
+    .command('confinement')
+    .enablePositionalOptions()
+    .allowExcessArguments(false)
+    .action(() => {
+      throw new Error(`${CLEAR_USAGE}\n${REPORT_USAGE}`)
+    })
+
+  confinement
+    .command('clear [run-id]')
     .option('--writer <value>')
     .option('--note <value>')
     .option('--tip <value>')
-    .option('--agent <value>')
-    .option('--job <value>')
-    .option('--mcp [value]')
-    .option('--json')
-    .action((args, options) => {
-      const argv = ['confinement', ...args]
+    .allowExcessArguments(false)
+    .action((runId: string | undefined, options) => {
       const flags = optionFlags(options)
-      if (argv[1] === 'report') {
-        confinementReportCommand(flags)
-        return
-      }
-      if (argv[1] !== 'clear') throw new Error(`${CLEAR_USAGE}\n${REPORT_USAGE}`)
-      const id = Number(argv[2])
+      const id = Number(runId)
       const writer = flags.flag('writer')?.trim()
       const note = flags.flag('note')?.trim()
       if (!id || !writer || !note) throw new Error(CLEAR_USAGE)
       clearConfinement(id, { writer, note, tip: flags.flag('tip')?.trim() ?? null }, { log })
+    })
+
+  confinement
+    .command('report')
+    .option('--agent <value>')
+    .option('--job <value>')
+    .option('--mcp [value]')
+    .option('--json')
+    .allowExcessArguments(false)
+    .action((options) => {
+      confinementReportCommand(optionFlags(options))
     })
 }
