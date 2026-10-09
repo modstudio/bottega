@@ -465,7 +465,7 @@ export const modules: ArchitectureModule[] = [
     '../record/record-write-authority.ts',
     './project-settings.ts',
   ]),
-  module('orchestrator/src/release/release-decision.ts', []),
+  module('orchestrator/src/release/release-decision.ts', ['../../../shared/release-tag.ts']),
   module('orchestrator/src/release/release-service.ts', [
     'node:fs',
     'node:path',
