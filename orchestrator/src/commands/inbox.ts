@@ -1,12 +1,14 @@
 // concern: cli
 /** Registers inbox and diff adapters. Must not own their behavior. */
+import { existsSync } from 'node:fs'
 import type { Command } from 'commander'
 import { cleanupRepoRoot } from '../cleanup/cleanup.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { withWorktreeLease } from '../project/project-lock.ts'
 import { runDiffCommand } from '../run/run-diff.ts'
 import { runInboxCommand } from '../run/run-inbox.ts'
-import { changesIn } from '../worktree/worktree-remove.ts'
+import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
@@ -58,7 +60,15 @@ export function register(program: Command): void {
           throw new Error('orch diff <id> [--quiet] [--since-base]')
         },
         cleanupRepoRoot,
-        changesIn,
+        observedChangesIn,
+        exists: existsSync,
+        withWorktreeLease: (repoRoot, worktreePath, action) =>
+          withWorktreeLease(
+            repoRoot,
+            worktreePath,
+            { session: sessionId(), what: `diff ${id}` },
+            action,
+          ),
         writesRepo: (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo),
       })
     })

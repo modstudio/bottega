@@ -3,7 +3,13 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { borrowedCheckoutOf, git, gitOk, gitRaw } from '../git/git-environment.ts'
+import {
+  borrowedCheckoutOf,
+  git,
+  gitOk,
+  gitRaw,
+  targetGitEnvironment,
+} from '../git/git-environment.ts'
 import {
   absentTreeTeardownPlan,
   projectAt,
@@ -111,10 +117,26 @@ function teardownBuiltInRecipe(
  * together without attributing commits that subsequently landed on trunk.
  */
 export function changesIn(w: Worktree, sinceBase = false): Changes {
-  git(['add', '-A'], w.path)
+  return changesInIndex(
+    w,
+    sinceBase,
+    (args) => git(args, w.path),
+    (args) => gitOk(args, w.path),
+    (args) => gitRaw(args, w.path),
+  )
+}
+
+function changesInIndex(
+  w: Worktree,
+  sinceBase: boolean,
+  run: (args: string[]) => string,
+  runOk: (args: string[]) => string | null,
+  runRaw: (args: string[]) => string,
+): Changes {
+  run(['add', '-A'])
   const configuredTrunk = projectAt(w.repoRoot)?.settings.trunk?.trim()
   const trunk = configuredTrunk || 'main'
-  const mergeBase = sinceBase ? w.base : gitOk(['merge-base', 'HEAD', trunk], w.path)
+  const mergeBase = sinceBase ? w.base : runOk(['merge-base', 'HEAD', trunk])
   if (!mergeBase && configuredTrunk) {
     throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
   }
@@ -123,9 +145,9 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
   // base; registered projects must resolve their declared trunk above.
   const since = mergeBase ?? w.base
   // Raw: this is a patch, and `git apply` counts its bytes.
-  const diff = gitRaw(['diff', '--cached', since], w.path)
-  const names = gitOk(['diff', '--cached', '--name-only', since], w.path) ?? ''
-  const stat = gitOk(['diff', '--cached', '--numstat', since], w.path) ?? ''
+  const diff = runRaw(['diff', '--cached', since])
+  const names = runOk(['diff', '--cached', '--name-only', since]) ?? ''
+  const stat = runOk(['diff', '--cached', '--numstat', since]) ?? ''
 
   let insertions = 0
   let deletions = 0
@@ -145,6 +167,50 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
     since,
     trunk,
     trunkConfigured: Boolean(configuredTrunk),
+  }
+}
+
+/** Read the complete visible change without changing the worktree's real index. */
+export function observedChangesIn(w: Worktree, sinceBase = false): Changes {
+  const temporary = mkdtempSync(join(tmpdir(), 'orch-diff-index-'))
+  const index = join(temporary, 'index')
+  const env = { ...targetGitEnvironment(w.path), GIT_INDEX_FILE: index }
+  const invoke = (args: string[], raw: boolean): string | null => {
+    const result = Bun.spawnSync(['git', ...args], {
+      cwd: w.path,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (result.exitCode === 0) {
+      const output = result.stdout.toString()
+      return raw ? output : output.trim()
+    }
+    if (!raw) return null
+    throw new Error(
+      `git ${args.join(' ')} failed: ${result.stderr.toString().trim() || `exit ${result.exitCode}`}`,
+    )
+  }
+  try {
+    const read = invoke(['read-tree', 'HEAD'], true)
+    if (read === null) throw new Error('git read-tree HEAD failed')
+    return changesInIndex(
+      w,
+      sinceBase,
+      (args) => {
+        const output = invoke(args, true)
+        if (output === null) throw new Error(`git ${args.join(' ')} failed`)
+        return output.trim()
+      },
+      (args) => invoke(args, false),
+      (args) => {
+        const output = invoke(args, true)
+        if (output === null) throw new Error(`git ${args.join(' ')} failed`)
+        return output
+      },
+    )
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
   }
 }
 
