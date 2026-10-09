@@ -5,7 +5,7 @@ import { existsSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
-import { terminateRunProcesses } from '../run/run-process.ts'
+import { terminateAndConfirmRunProcesses, terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { log, optionFlags } from './support.ts'
@@ -88,7 +88,7 @@ export function register(program: Command): void {
       await stopRun(
         Number(id),
         { force: false, auditReason: null, presentation },
-        { lifecycleCheckpoint, terminateRunProcesses },
+        { lifecycleCheckpoint, terminateRunProcesses: terminateAndConfirmRunProcesses },
       )
     })
 

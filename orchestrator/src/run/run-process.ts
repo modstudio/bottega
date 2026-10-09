@@ -5,11 +5,16 @@
  */
 
 import { createHash } from 'node:crypto'
+import {
+  type PidRecordIdentity,
+  pidAlive,
+  pidRecordIdentity,
+} from '../../../shared/process-identity.ts'
 import type { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
-import { terminateProcessGroup } from '../idle-kill.ts'
+import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 
 const ALLOW_ENV_EXACT = new Set([
@@ -100,17 +105,24 @@ export type ProcessInventory =
   | { ascertainable: false; reason: string }
 
 type TerminateRunProcessesResult =
-  | { outcome: 'signaled'; signaled: number[]; acceptableIds: number[] }
-  | { outcome: 'identity-mismatch'; acceptableIds: number[] }
-  | { outcome: 'unascertainable'; acceptableIds: number[]; reason: string }
-  | { outcome: 'no-pid'; acceptableIds: number[] }
-  | { outcome: 'gone'; acceptableIds: number[] }
+  | { outcome: 'signaled'; signaled: number[] }
+  | { outcome: 'identity-mismatch'; pid: number }
+  | { outcome: 'no-pid' }
+  | { outcome: 'gone' }
+  | { outcome: 'still-alive'; pid: number; reason: string }
 
-export function commandNamesRun(command: string, acceptableIds: readonly number[]): boolean {
-  return acceptableIds.some((id) =>
-    new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`).test(command),
-  )
+export type RunProcessRecord = {
+  pid: number | null
+  agentPid: number | null
+  agentPgid: number | null
+  agentStartTime: string | null
 }
+
+export type RunProcessTerminationPlan =
+  | { outcome: 'no-pid' }
+  | { outcome: 'gone' }
+  | { outcome: 'identity-mismatch'; pid: number }
+  | { outcome: 'verified'; rootPid: number; pids: number[]; pgid: number | null }
 
 export function processTable(): ProcessInventory {
   let p: ReturnType<typeof Bun.spawnSync>
@@ -197,60 +209,17 @@ export function isOrchWorkerProcess(
   return false
 }
 
-const MAX_FAILOVER_CONVERSATIONS = 100
-
-/** Run ids whose conversations can share the stopped run's coordinator process. */
-export function acceptableRunProcessIds(id: number): number[] {
-  const member = db().query('SELECT id, parent_run_id FROM run WHERE id=?').get(id) as {
-    id: number
-    parent_run_id: number | null
-  } | null
-  if (!member) throw new Error(`no run ${id}`)
-
-  const pending = [member.parent_run_id ?? member.id]
-  const roots = new Set<number>()
-  const acceptable = new Set<number>()
-  while (pending.length) {
-    if (roots.size >= MAX_FAILOVER_CONVERSATIONS) {
-      throw new Error(`run ${id} automatic failover chain exceeds ${MAX_FAILOVER_CONVERSATIONS}`)
-    }
-    const rootId = pending.shift()!
-    if (roots.has(rootId)) throw new Error(`run ${id} has an automatic failover cycle at ${rootId}`)
-    roots.add(rootId)
-    const conversation = db()
-      .query('SELECT id FROM run WHERE id=? OR parent_run_id=? ORDER BY id')
-      .all(rootId, rootId) as { id: number }[]
-    for (const row of conversation) acceptable.add(row.id)
-    const predecessors = db()
-      .query(
-        `SELECT prior.id, prior.parent_run_id FROM run successor
-         JOIN run prior ON prior.id=successor.retry_of
-         WHERE successor.automatic_failover=1
-           AND (successor.id=? OR successor.parent_run_id=?)
-         ORDER BY prior.id`,
-      )
-      .all(rootId, rootId) as { id: number; parent_run_id: number | null }[]
-    for (const predecessor of predecessors) {
-      const predecessorRoot = predecessor.parent_run_id ?? predecessor.id
-      if (roots.has(predecessorRoot) || pending.includes(predecessorRoot)) {
-        throw new Error(`run ${id} has an automatic failover cycle at ${predecessorRoot}`)
-      }
-      pending.push(predecessorRoot)
-    }
-  }
-  return [...acceptable].sort((a, b) => a - b)
-}
-
-function verifiedProcessTree(
+function vendorProcessPids(
   table: ProcessRow[],
-  acceptableIds: readonly number[],
-  rootPid: number,
-  exclude: number[] = [],
-): number[] | null {
-  const root = table.find((candidate) => candidate.pid === rootPid)
-  if (!root || !commandNamesRun(root.command, acceptableIds)) return null
-  const skipped = new Set(exclude)
-  const depth = new Map<number, number>([[root.pid, 0]])
+  vendorPid: number,
+  vendorPgid: number | null,
+  coordinatorPid: number | null,
+  skipped: Set<number>,
+): number[] {
+  const coordinatorPgid =
+    coordinatorPid == null ? null : (table.find((row) => row.pid === coordinatorPid)?.pgid ?? null)
+  const includeGroup = vendorPgid != null && vendorPgid > 1 && vendorPgid !== coordinatorPgid
+  const depth = new Map<number, number>([[vendorPid, 0]])
   let changed = true
   while (changed) {
     changed = false
@@ -261,56 +230,188 @@ function verifiedProcessTree(
       changed = true
     }
   }
-  return [...depth.entries()]
-    .filter(([pid]) => !skipped.has(pid))
-    .sort((a, b) => b[1] - a[1])
-    .map(([pid]) => pid)
+  if (includeGroup) {
+    for (const row of table) {
+      if (row.pgid === vendorPgid && !depth.has(row.pid)) depth.set(row.pid, 1)
+    }
+  }
+  return [...depth.keys()].filter((pid) => pid > 1 && !skipped.has(pid))
+}
+
+function recordedVendorIdentity(
+  recorded: RunProcessRecord,
+  identity: (
+    pid: number | null | undefined,
+    recordedStartTime: string | null | undefined,
+  ) => PidRecordIdentity,
+): PidRecordIdentity {
+  if (!recorded.agentPid) return recorded.pid ? 'unknown' : 'dead'
+  return identity(recorded.agentPid, recorded.agentStartTime)
+}
+
+/** Decide which vendor pids a stop may signal. Coordinator command lines are not identity. */
+export function planRunProcessTermination(input: {
+  recorded: RunProcessRecord
+  vendorIdentity: PidRecordIdentity
+  inventory: ProcessInventory
+  exclude: readonly number[]
+  selfPid: number
+}): RunProcessTerminationPlan {
+  const { recorded, vendorIdentity, inventory, exclude, selfPid } = input
+  if (!recorded.agentPid && !recorded.pid) return { outcome: 'no-pid' }
+  if (!recorded.agentPid) return { outcome: 'identity-mismatch', pid: recorded.pid! }
+  if (vendorIdentity === 'dead') return { outcome: 'gone' }
+  if (vendorIdentity !== 'live') return { outcome: 'identity-mismatch', pid: recorded.agentPid }
+  const skipped = new Set<number>(
+    [...exclude, selfPid, recorded.pid].filter((pid): pid is number => Boolean(pid && pid > 1)),
+  )
+  const table = inventory.ascertainable ? inventory.rows : []
+  const pids = vendorProcessPids(
+    table,
+    recorded.agentPid,
+    recorded.agentPgid,
+    recorded.pid,
+    skipped,
+  )
+  if (!skipped.has(recorded.agentPid) && !pids.includes(recorded.agentPid)) {
+    pids.push(recorded.agentPid)
+  }
+  return {
+    outcome: 'verified',
+    rootPid: recorded.agentPid,
+    pids,
+    pgid: recorded.agentPgid,
+  }
+}
+
+export type TerminateRunProcessesDeps = {
+  inventory?: () => ProcessInventory
+  identity?: (
+    pid: number | null | undefined,
+    recordedStartTime: string | null | undefined,
+  ) => PidRecordIdentity
+  kill?: (pid: number, signal: NodeJS.Signals | number) => void
+  alive?: (pid: number) => boolean
+  wait?: (ms: number) => void
+  confirmMs?: number
+  selfPgid?: () => number | null
+}
+
+function defaultKill(pid: number, signal: NodeJS.Signals | number): void {
+  try {
+    process.kill(pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+function waitMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function signalProcessGroup(
+  pgid: number,
+  signal: NodeJS.Signals,
+  kill: (pid: number, signal: NodeJS.Signals | number) => void,
+): void {
+  try {
+    kill(-pgid, signal)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'EPERM' && code !== 'ESRCH') throw error
+  }
+}
+
+function reapVerifiedVendor(
+  plan: Extract<RunProcessTerminationPlan, { outcome: 'verified' }>,
+  deps: TerminateRunProcessesDeps,
+  coordinatorPgid: number | null,
+): TerminateRunProcessesResult {
+  const kill = deps.kill ?? defaultKill
+  const alive = deps.alive ?? ((pid: number) => pidAlive(pid))
+  const wait = deps.wait ?? waitMs
+  const confirmMs = deps.confirmMs ?? 0
+  const selfPgid = deps.selfPgid?.() ?? null
+  const group =
+    plan.pgid != null && plan.pgid !== coordinatorPgid && isGroupKillablePgid(plan.pgid, selfPgid)
+      ? plan.pgid
+      : null
+  if (group != null) signalProcessGroup(group, 'SIGTERM', kill)
+  for (const pid of plan.pids) kill(pid, 'SIGTERM')
+  if (confirmMs <= 0) return { outcome: 'signaled', signaled: plan.pids }
+  const deadline = Date.now() + confirmMs
+  while (alive(plan.rootPid) && Date.now() < deadline) {
+    wait(Math.min(50, deadline - Date.now()))
+  }
+  if (!alive(plan.rootPid)) return { outcome: 'signaled', signaled: plan.pids }
+  if (group != null) signalProcessGroup(group, 'SIGKILL', kill)
+  for (const pid of plan.pids) kill(pid, 'SIGKILL')
+  const killDeadline = Date.now() + confirmMs
+  while (alive(plan.rootPid) && Date.now() < killDeadline) {
+    wait(Math.min(50, killDeadline - Date.now()))
+  }
+  if (!alive(plan.rootPid)) return { outcome: 'signaled', signaled: plan.pids }
+  return {
+    outcome: 'still-alive',
+    pid: plan.rootPid,
+    reason: 'process did not exit after SIGKILL',
+  }
 }
 
 export function terminateRunProcesses(
   id: number,
   exclude: number[] = [],
+  deps: TerminateRunProcessesDeps = {},
 ): TerminateRunProcessesResult {
-  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as {
+  const row = db()
+    .query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
+    .get(id) as {
     pid: number | null
     agent_pid: number | null
+    agent_pgid: number | null
+    agent_start_time: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  if (!row.pid) return { outcome: 'no-pid', acceptableIds: [] }
-  const acceptableIds = acceptableRunProcessIds(id)
-  const inventory = processTable()
-  if (!inventory.ascertainable) {
-    console.error(`orch: ${inventory.reason}; nothing signaled`)
-    return { outcome: 'unascertainable', acceptableIds, reason: inventory.reason }
+  const recorded: RunProcessRecord = {
+    pid: row.pid,
+    agentPid: row.agent_pid,
+    agentPgid: row.agent_pgid,
+    agentStartTime: row.agent_start_time,
   }
-  if (!inventory.rows.some((candidate) => candidate.pid === row.pid)) {
-    return { outcome: 'gone', acceptableIds }
-  }
-  // A stop command is itself a descendant of the coordinator it is stopping.
-  // If the reaper signals itself, it can exit before reaching a sibling vendor
-  // process and leave the caller waiting on that vendor forever.
-  const pids = verifiedProcessTree(inventory.rows, acceptableIds, row.pid, [
-    ...exclude,
-    process.pid,
-  ])
-  if (pids === null) {
+  const inventory = (deps.inventory ?? processTable)()
+  const plan = planRunProcessTermination({
+    recorded,
+    vendorIdentity: recordedVendorIdentity(recorded, deps.identity ?? pidRecordIdentity),
+    inventory,
+    exclude,
+    selfPid: process.pid,
+  })
+  if (plan.outcome === 'identity-mismatch') {
     console.error(
-      `orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signaled`,
+      `orch: run ${id} pid ${plan.pid} identity could not be confirmed; nothing signaled`,
     )
-    return { outcome: 'identity-mismatch', acceptableIds }
+    return plan
   }
-  const signaled: number[] = []
-  for (const pid of pids) {
-    try {
-      process.kill(pid, 'SIGTERM')
-      signaled.push(pid)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
-    }
-  }
-  return signaled.length
-    ? { outcome: 'signaled', signaled, acceptableIds }
-    : { outcome: 'gone', acceptableIds }
+  if (plan.outcome !== 'verified') return plan
+  if (plan.pids.length === 0) return { outcome: 'gone' }
+  const coordinatorPgid =
+    inventory.ascertainable && recorded.pid
+      ? (inventory.rows.find((item) => item.pid === recorded.pid)?.pgid ?? null)
+      : null
+  const selfPgid =
+    deps.selfPgid ??
+    (() =>
+      inventory.ascertainable
+        ? (inventory.rows.find((item) => item.pid === process.pid)?.pgid ?? null)
+        : null)
+  return reapVerifiedVendor(plan, { ...deps, selfPgid }, coordinatorPgid)
+}
+
+export function terminateAndConfirmRunProcesses(
+  id: number,
+  exclude: number[] = [],
+): TerminateRunProcessesResult {
+  return terminateRunProcesses(id, exclude, { confirmMs: DEFAULT_IDLE_GRACE_MS })
 }
 
 let signalsBound = false

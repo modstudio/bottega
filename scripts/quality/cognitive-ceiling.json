@@ -677,12 +677,6 @@
     "key": "orchestrator/src/run/run-liveness.ts\u0000reapStale"
   },
   {
-    "file": "orchestrator/src/run/run-stop.ts",
-    "function": "stopRun",
-    "line": 12,
-    "score": 26
-  },
-  {
     "file": "orchestrator/src/run/run-terminal.ts",
     "function": "finishRun",
     "line": 259,
