@@ -96,6 +96,15 @@ describe('project workflow injection', () => {
     expect(missingFindings).toContain(
       'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
     )
+    const shellCommand = validateProjectSettings({
+      review: { lenses: [], record: '/bin/bash -c "record {findings}"' },
+    }).join('\n')
+    expect(shellCommand).toContain(
+      'a review record command is run directly with its arguments; a shell interpreter is not allowed',
+    )
+    expect(shellCommand).toContain(
+      'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
+    )
     expect(
       validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } }, undefined, {
         enabledLensIds: ['correctness'],

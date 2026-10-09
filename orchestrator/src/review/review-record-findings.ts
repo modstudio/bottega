@@ -1,7 +1,5 @@
 // concern: review-record-findings
-/** Decides and writes the one findings shape passed to a project's review recorder. */
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+/** Decides the one findings shape passed to a project's review recorder. */
 
 type ReviewRecordVerdict = 'accept' | 'modify' | 'reject'
 
@@ -59,10 +57,4 @@ export function reviewRecordFindings(rows: readonly ReviewRecordRow[]): ReviewRe
     findings,
     skipped,
   }
-}
-
-/** The sole writer for the project-facing findings file. */
-export function writeReviewRecordFindings(path: string, findings: ReviewRecordFindingsFile): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  writeFileSync(path, `${JSON.stringify(findings, null, 2)}\n`, { mode: 0o600 })
 }

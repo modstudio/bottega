@@ -18,12 +18,17 @@ export const reviewModuleSpecs = [
       '../project/projects.ts',
       '../project/review-record-template.ts',
       './review-group.ts',
+      './review-record-findings-file.ts',
       './review-record-findings.ts',
     ],
   },
   {
     file: 'orchestrator/src/review/review-record-findings.ts',
-    allowed: ['node:fs', 'node:path'],
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/review/review-record-findings-file.ts',
+    allowed: ['node:fs', 'node:path', './review-record-findings.ts'],
   },
 ] as const
 

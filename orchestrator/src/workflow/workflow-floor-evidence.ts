@@ -13,7 +13,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { reviewsForTriage } from '../review/review-group.ts'
+import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -337,12 +337,7 @@ function gatherReview(
       ? grouped.branchReviews.filter(({ reviewId }) => reviewId === id)
       : grouped.reviews
   const unfinishedReviewIds = reviews
-    .filter(
-      ({ findings, lenses }) =>
-        findings.some(({ disposition }) => disposition === null) ||
-        lenses.length === 0 ||
-        lenses.some(({ graded }) => !graded),
-    )
+    .filter((review) => !reviewRoundTriageComplete(review))
     .map(({ reviewId }) => reviewId)
   return {
     id,

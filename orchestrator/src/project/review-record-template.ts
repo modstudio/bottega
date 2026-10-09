@@ -10,7 +10,9 @@ export const REVIEW_RECORD_PLACEHOLDERS = [
 ] as const
 
 type ReviewRecordPlaceholder = (typeof REVIEW_RECORD_PLACEHOLDERS)[number]
-export type ReviewRecordValues = Record<ReviewRecordPlaceholder, string>
+type ReviewRecordValues = Record<ReviewRecordPlaceholder, string>
+
+const SHELL_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish'])
 
 const placeholderPattern = /\{([^{}]+)\}/g
 
@@ -78,6 +80,10 @@ export function reviewRecordTemplateProblem(template: string): string | null {
 }
 
 function reviewRecordTokensProblem(tokens: readonly string[]): string | null {
+  const command = tokens[0]!.split(/[\\/]/).at(-1)!
+  if (SHELL_INTERPRETERS.has(command)) {
+    return 'a review record command is run directly with its arguments; a shell interpreter is not allowed'
+  }
   const placeholders = tokens.flatMap((token) =>
     [...token.matchAll(placeholderPattern)].map((match) => match[1]!),
   )
@@ -91,8 +97,6 @@ function reviewRecordTokensProblem(tokens: readonly string[]): string | null {
 
 export function reviewRecordArgv(template: string, values: ReviewRecordValues): string[] {
   const tokens = tokenizeReviewRecordTemplate(template)
-  const problem = reviewRecordTokensProblem(tokens)
-  if (problem) throw new Error(problem)
   return tokens.map((token) =>
     token.replace(placeholderPattern, (_match, name: ReviewRecordPlaceholder) => values[name]),
   )

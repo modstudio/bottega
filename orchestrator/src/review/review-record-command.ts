@@ -7,12 +7,14 @@ import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { reviewRecordArgv } from '../project/review-record-template.ts'
-import { measureChangeGroup } from './review-group.ts'
 import {
-  type ReviewRecordRow,
-  reviewRecordFindings,
-  writeReviewRecordFindings,
-} from './review-record-findings.ts'
+  type ChangeGroup,
+  measureChangeGroup,
+  reviewRoundTriageComplete,
+  reviewsForTriage,
+} from './review-group.ts'
+import { type ReviewRecordRow, reviewRecordFindings } from './review-record-findings.ts'
+import { writeReviewRecordFindings } from './review-record-findings-file.ts'
 
 type ReviewRecordProject = Pick<Project, 'name' | 'settings'>
 
@@ -28,7 +30,7 @@ type ReviewRecordCommandResult = {
   stderr: string
 }
 
-export type ReviewRecordCommandOperations = {
+type ReviewRecordCommandOperations = {
   project(cwd: string): ReviewRecordProject | null
   review(project: ReviewRecordProject, cwd: string, branch: string): ResolvedReviewRecord
   findingsPath(project: string, branch: string): string
@@ -53,14 +55,17 @@ function git(cwd: string, argv: string[]): string {
   return result.stdout.toString().trim()
 }
 
-function readBranchReview(
+/** Selects only review rows for the branch's current measured change. */
+export function readProjectReview(
   database: Database,
-  project: string,
-  branch: string,
+  group: ChangeGroup,
 ): { complete: boolean; rows: ReviewRecordRow[] } {
+  const selectedReviews = reviewsForTriage(database, group).reviews
+  const selectedIds = new Set(selectedReviews.map(({ reviewId }) => reviewId))
   const rows = database
     .query<
       {
+        review: number
         finding: number | null
         lens: string
         run: number
@@ -71,18 +76,20 @@ function readBranchReview(
       },
       [string, string]
     >(
-      `SELECT rf.id AS finding,rl.lens,rl.run_id AS run,rf.disposition,
+      `SELECT r.id AS review,rf.id AS finding,rl.lens,rl.run_id AS run,rf.disposition,
               rf.rejection_category AS category,
               rf.triaged_severity AS severity,rf.location
          FROM review_lens rl JOIN run ON run.id=rl.run_id
+         JOIN review r ON r.id=rl.review_id
          LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
         WHERE run.repo=? AND run.branch=?
         ORDER BY rl.id,rf.id`,
     )
-    .all(project, branch)
+    .all(group.project, group.branch)
+    .filter(({ review }) => selectedIds.has(review))
   return {
-    complete: rows.every((row) => row.finding === null || row.disposition !== null),
-    rows: rows.map(({ finding: _finding, ...row }) => row),
+    complete: selectedReviews.every(reviewRoundTriageComplete),
+    rows: rows.map(({ review: _review, finding: _finding, ...row }) => row),
   }
 }
 
@@ -95,7 +102,7 @@ function resolveReview(
   const tip = git(cwd, ['rev-parse', '--verify', `${branch}^{commit}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)
   if (!measured) throw new Error(`could not measure the change group for ${branch} at ${tip}`)
-  const branchReview = readBranchReview(database, project.name, branch)
+  const branchReview = readProjectReview(database, measured.group)
   return {
     complete: branchReview.complete,
     tier: measured.tier.tier,
@@ -138,7 +145,7 @@ function displayCommand(argv: readonly string[]): string {
 function recordCommandRemedy(branch: string, cwd: string): string {
   return (
     `cleared by: fix the project's review record command or its inputs, then rerun ` +
-    `orch review record ${branch} --cwd ${cwd} --reason "<one line>"`
+    `orch review project-record ${branch} --cwd ${cwd} --reason "<one line>"`
   )
 }
 
@@ -149,7 +156,8 @@ export function recordProjectReviewCommand(
   presentation: Presentation,
   operations: ReviewRecordCommandOperations = defaultOperations(),
 ): void {
-  if (!cwd) throw new Error('orch review record <branch> --cwd <tree> --reason "<one line>"')
+  if (!cwd)
+    throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
   if (!reason?.trim() || /[\r\n]/.test(reason)) {
     throw new Error('--reason must be one non-empty line')
   }

@@ -26,7 +26,10 @@ export async function dispatchReviewCommand(
     recordArchitectReadCommand(argv, flags, presentation)
     return
   }
-  if (sub === 'record' && argv.length === 3 && !/^\d+$/.test(argv[2]!)) {
+  if (sub === 'project-record') {
+    if (argv.length !== 3) {
+      throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
+    }
     recordProjectReviewCommand(argv[2]!, flags.flag('cwd'), flags.flag('reason'), presentation)
     return
   }

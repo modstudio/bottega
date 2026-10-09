@@ -25,6 +25,15 @@ export type TriageReviewRow = {
   findings: readonly { id: number; ordinal: number; disposition: string | null }[]
 }
 
+/** The triage floor shared by workflow evidence and project review recording. */
+export function reviewRoundTriageComplete(review: TriageReviewRow): boolean {
+  return (
+    review.lenses.length > 0 &&
+    review.lenses.every(({ graded }) => graded) &&
+    review.findings.every(({ disposition }) => disposition !== null)
+  )
+}
+
 export type MeasuredChangeGroup = {
   group: ChangeGroup
   base: string
