@@ -158,6 +158,9 @@ export function preflight(
   if (lens && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(lens)) {
     throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
   }
+  if (lens) {
+    resolveLens(lens, repo ?? projectAt(cwd)?.name ?? null)
+  }
   assertImplicitReviewTarget({
     jobName,
     findings: j.findings,
