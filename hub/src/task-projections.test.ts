@@ -9,6 +9,13 @@ import {
   type WindowIntervalRow,
 } from './task-projections.ts'
 
+const DAY_TOKENS = 8_338_668_790
+
+function expectNumber(value: unknown, expected: number) {
+  expect(typeof value).toBe('number')
+  expect(value).toBe(expected)
+}
+
 const now = Date.parse('2026-09-17T12:00:00.000Z')
 const project = [{ name: 'workshop', settings: { keyPrefixes: ['DEV'] } }]
 const row: WindowIntervalRow = {
@@ -140,4 +147,28 @@ test('local projection keeps one shared label separate by task record id', () =>
     { recordId: 'alpha-record', project: 'alpha' },
     { recordId: 'beta-record', project: 'beta' },
   ])
+})
+
+test('ratio summary returns day token totals above the 32-bit range as a number', () => {
+  const startAt = '2026-10-05T10:00:00.000Z'
+  const endAt = '2026-10-05T12:00:00.000Z'
+  const ratio = projectRatioSummary(
+    [
+      {
+        day: '2026-10-05',
+        claude_tokens: DAY_TOKENS,
+        tasks: 1,
+        commits: 0,
+        files: 0,
+        lines_product: 0,
+        lines_test: 0,
+        lines_docs: 0,
+        lines_config: 0,
+        lines_generated: 0,
+      },
+    ],
+    [{ start_at: startAt, end_at: endAt, open: 0 }],
+    Date.parse('2026-10-09T00:00:00.000Z'),
+  )
+  expectNumber(ratio.tokens, DAY_TOKENS)
 })

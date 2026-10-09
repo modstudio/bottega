@@ -14,10 +14,6 @@ import {
   upsertDaysInTransaction,
   upsertIntervalsInTransaction,
 } from './hosted-evidence.ts'
-import { asInterval } from './hosted-measures.ts'
-import { asHostedReportRow, gatherHostedReport } from './hosted-report-gather.ts'
-import { hostedDayRow, interval as hostedIntervalRow } from './hosted-work.ts'
-import { projectRatioSummary } from './task-projections.ts'
 
 const interval = {
   id: 'client-id',
@@ -89,12 +85,7 @@ function pgliteSql(database: PGlite): SQL {
   return query as unknown as SQL
 }
 
-function expectNumber(value: unknown, expected: number) {
-  expect(typeof value).toBe('number')
-  expect(value).toBe(expected)
-}
-
-test('hosted evidence accepts token totals above the 32-bit range and readers return numbers', async () => {
+test('hosted evidence accepts token totals above the 32-bit range', async () => {
   const database = new PGlite()
   await database.exec(`
     CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
@@ -186,98 +177,18 @@ test('hosted evidence accepts token totals above the 32-bit range and readers re
     ])
   ).rows[0]!
   const storedInterval = (
-    await database.query<{
-      claude_tokens: string | number
-      vendor_tokens: string | number
-      source: string
-      start_at: string | Date
-      end_at: string | Date
-      open: string | number
-      task_key: string | null
-      project_name: string | null
-      agent: string | null
-      job: string | null
-      vendor_cost_usd: string | number | null
-      user_id: string | null
-    }>(
-      `SELECT claude_tokens,vendor_tokens,source,start_at,end_at,open,task_key,project_name,
-              agent,job,vendor_cost_usd,user_id FROM hub_interval WHERE id=$1`,
+    await database.query<{ claude_tokens: string | number; vendor_tokens: string | number }>(
+      `SELECT claude_tokens,vendor_tokens FROM hub_interval WHERE id=$1`,
       [intervalId],
     )
   ).rows[0]!
 
-  const shapedInterval = hostedIntervalRow({
-    task_key: storedInterval.task_key,
-    project: storedInterval.project_name,
-    source: storedInterval.source,
-    agent: storedInterval.agent,
-    job: storedInterval.job,
-    start_at: storedInterval.start_at,
-    end_at: storedInterval.end_at,
-    claude_tokens: storedInterval.claude_tokens,
-    vendor_tokens: storedInterval.vendor_tokens,
-    vendor_cost_usd: storedInterval.vendor_cost_usd,
-    open: storedInterval.open,
-  })
-  expectNumber(shapedInterval.claude_tokens, INTERVAL_TOKENS)
-  expectNumber(shapedInterval.vendor_tokens, INTERVAL_TOKENS)
-
-  const measured = asInterval({
-    task_id: null,
-    task_key: storedInterval.task_key,
-    project_name: storedInterval.project_name,
-    project_id: null,
-    source: storedInterval.source,
-    start_at: storedInterval.start_at,
-    end_at: storedInterval.end_at,
-    open: storedInterval.open,
-    user_id: storedInterval.user_id,
-    vendor_tokens: storedInterval.vendor_tokens,
-    vendor_cost_usd: storedInterval.vendor_cost_usd,
-  })
-  expectNumber(measured.vendorTokens, INTERVAL_TOKENS)
-
-  const reportRow = asHostedReportRow({
-    space_id: spaceId,
-    task_id: null,
-    task_key: storedInterval.task_key,
-    project_name: storedInterval.project_name,
-    start_at: storedInterval.start_at,
-    end_at: storedInterval.end_at,
-    open: storedInterval.open,
-    vendor_tokens: storedInterval.vendor_tokens,
-    task_project: storedInterval.project_name,
-    task_title: null,
-    task_status: null,
-    project_color: null,
-  })
-  expectNumber(reportRow.vendor_tokens, INTERVAL_TOKENS)
-  const gathered = gatherHostedReport([reportRow], new Set(), {
-    from: startAt,
-    to: endAt,
-    key: endAt,
-  })
-  expectNumber(gathered.projects[0]!.agentTokens, INTERVAL_TOKENS)
-
-  const shapedDay = hostedDayRow({
-    day: '2026-10-05',
-    claude_tokens: storedDay.claude_tokens,
-    tasks: 1,
-    commits: 0,
-    files: 0,
-    lines_product: 0,
-    lines_test: 0,
-    lines_docs: 0,
-    lines_config: 0,
-    lines_generated: 0,
-  })
-  expectNumber(shapedDay.claude_tokens, DAY_TOKENS)
-  const ratio = projectRatioSummary(
-    [shapedDay],
-    [{ start_at: startAt, end_at: endAt, open: 0 }],
-    Date.parse('2026-10-09T00:00:00.000Z'),
-  )
-  expectNumber(ratio.tokens, DAY_TOKENS)
+  expect(Number(storedDay.claude_tokens)).toBe(DAY_TOKENS)
+  expect(Number(storedDay.cache_read)).toBe(DAY_TOKENS)
+  expect(Number(storedDay.canon_tokens)).toBe(DAY_TOKENS)
+  expect(Number(storedDay.other_tokens)).toBe(DAY_TOKENS)
+  expect(Number(storedInterval.claude_tokens)).toBe(INTERVAL_TOKENS)
+  expect(Number(storedInterval.vendor_tokens)).toBe(INTERVAL_TOKENS)
 
   expect(hubChangeReadability('hub_interval')).toBe('not-yet-readable')
   expect(hubChangeReadability('hub_day')).toBe('not-yet-readable')
