@@ -24,7 +24,7 @@ function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync
 }
 
 describe('git environment', () => {
-  test('temporary index seeds HEAD and binds the three git invocation behaviours', () => {
+  test('temporary index seeds HEAD and binds the three git invocation behaviors', () => {
     // Production break watched fail: remove GIT_INDEX_FILE from the helper's bound environment.
     const cwd = mkdtempSync(join(tmpdir(), 'temporary-index-git-'))
     let temporary = ''
