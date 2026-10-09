@@ -259,9 +259,7 @@ describe('tracker assignees', () => {
         .query<
           { opened_at: string; updated_at: string; closed_at: string | null; last_seen: string },
           []
-        >(
-          "SELECT opened_at,updated_at,closed_at,last_seen FROM task WHERE key='ALP-1'",
-        )
+        >("SELECT opened_at,updated_at,closed_at,last_seen FROM task WHERE key='ALP-1'")
         .get(),
     ).toEqual({ opened_at: firstAt, updated_at: firstAt, closed_at: null, last_seen: secondAt })
     expect(second.observation.times).toMatchObject({ openedAt: firstAt, updatedAt: firstAt })
