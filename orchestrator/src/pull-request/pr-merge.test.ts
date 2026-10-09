@@ -35,17 +35,18 @@ const pullRequest: PullRequestMergeFacts = {
 
 function adapter(
   input: {
-    view?: () => PullRequestMergeFacts
+    view?: (target: string) => PullRequestMergeFacts
     checks?: PullRequestCheck[]
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
-    merge?: (method: string, subject: string) => string
+    merge?: (method: string, subject: string, headCommit: string) => string
   } = {},
 ): PullRequestMergeAdapter {
   return {
-    view: input.view ?? (() => pullRequest),
+    view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     checks: () => input.checks ?? [],
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
-    merge: (_cwd, _number, method, subject) => input.merge?.(method, subject) ?? 'merge-commit',
+    merge: (_cwd, _number, method, subject, headCommit) =>
+      input.merge?.(method, subject, headCommit) ?? 'merge-commit',
   }
 }
 
@@ -59,9 +60,9 @@ function recordPassingGate(): void {
     .run(pullRequest.headCommit, cwd)
 }
 
-test('an injected forge adapter merges all-passing checks with the registered method and subject', () => {
+test('an injected forge adapter merges all-passing checks with the method, subject, and proven head', () => {
   registerProject(['test'])
-  const calls: [string, string][] = []
+  const calls: [string, string, string][] = []
   const commit = mergePullRequest(
     '42',
     cwd,
@@ -74,14 +75,14 @@ test('an injected forge adapter merges all-passing checks with the registered me
           link: 'https://checks.example/test',
         },
       ],
-      merge: (method, subject) => {
-        calls.push([method, subject])
+      merge: (method, subject, headCommit) => {
+        calls.push([method, subject, headCommit])
         return 'merged-oid'
       },
     }),
   )
   expect(commit).toBe('merged-oid')
-  expect(calls).toEqual([['squash', 'Prove the pull request head (#42)']])
+  expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
 test('an injected forge adapter exposes a pending required check without merging', () => {
@@ -125,6 +126,37 @@ test('a failing forge call refuses because proof was not checked', () => {
   ).toThrow('proof was not checked: forge unavailable')
 })
 
+test('a head commit that changes after checks is refused without merging', () => {
+  registerProject(['test'])
+  let views = 0
+  let merged = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        view: () => ({
+          ...pullRequest,
+          headCommit: views++ === 0 ? 'head-commit' : 'changed-head-commit',
+        }),
+        checks: [
+          {
+            name: 'test',
+            bucket: 'pass',
+            state: 'SUCCESS',
+            link: 'https://checks.example/test',
+          },
+        ],
+        merge: () => {
+          merged = true
+          return 'unexpected'
+        },
+      }),
+    ),
+  ).toThrow('head changed from head-commit to changed-head-commit')
+  expect(merged).toBe(false)
+})
+
 test('the recorded local gate and level landing branch admit a merge', () => {
   registerProject([])
   recordPassingGate()
@@ -139,22 +171,9 @@ test('the recorded local gate and level landing branch admit a merge', () => {
   ).toBe('merge-commit')
 })
 
-test('a missing recorded local gate refuses before reading the landing branch', () => {
+test('a missing recorded local gate refuses with the gate command', () => {
   registerProject([])
-  let readLanding = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        landingState: () => {
-          readLanding = true
-          return { remoteLandingTip: 'base', mergeBase: 'base' }
-        },
-      }),
-    ),
-  ).toThrow('run orch gate run')
-  expect(readLanding).toBe(false)
+  expect(() => mergePullRequest('42', cwd, adapter())).toThrow('run orch gate run')
 })
 
 test('a moved landing branch refuses after reading the recorded local gate', () => {

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { decideMergeProof, type MergeProofInput, type PullRequestCheck } from './merge-decision.ts'
+import {
+  decideMergeProof,
+  decidePullRequestIdentity,
+  type MergeProofInput,
+  type PullRequestCheck,
+} from './merge-decision.ts'
 
 const passing = (name: string): PullRequestCheck => ({
   name,
@@ -8,17 +13,15 @@ const passing = (name: string): PullRequestCheck => ({
   link: `https://checks.example/${name}`,
 })
 
-const input = (values: Partial<MergeProofInput> = {}): MergeProofInput => ({
+type RequiredChecksInput = Extract<MergeProofInput, { kind: 'required-checks' }>
+
+const input = (values: Partial<RequiredChecksInput> = {}): RequiredChecksInput => ({
+  kind: 'required-checks',
   number: 42,
-  state: 'OPEN',
-  baseBranch: 'main',
-  landingBranch: 'main',
   headCommit: 'head-commit',
+  currentHeadCommit: 'head-commit',
   requiredChecks: ['test', 'lint'],
   checks: [passing('test'), passing('lint')],
-  passingGateId: null,
-  remoteLandingTip: null,
-  mergeBase: null,
   ...values,
 })
 
@@ -52,43 +55,51 @@ describe('required-check merge proof', () => {
     })
   })
 
-  test('an undeclared failing check is ignored', () => {
-    expect(
-      decideMergeProof(
-        input({
-          checks: [
-            passing('test'),
-            passing('lint'),
-            {
-              name: 'optional',
-              bucket: 'fail',
-              state: 'FAILURE',
-              link: 'https://checks.example/optional',
-            },
-          ],
-        }),
-      ),
-    ).toEqual({ admitted: true })
+  test('a required name with one passing and one failing check is refused', () => {
+    const decision = decideMergeProof(
+      input({
+        requiredChecks: ['test'],
+        checks: [
+          passing('test'),
+          {
+            name: 'test',
+            bucket: 'fail',
+            state: 'FAILURE',
+            link: 'https://checks.example/test-failure',
+          },
+        ],
+      }),
+    )
+    expect(decision).toEqual({
+      admitted: false,
+      refusal: expect.stringContaining('test: FAILURE (https://checks.example/test-failure)'),
+    })
   })
 })
 
 describe('local-gate merge proof', () => {
-  const local = (values: Partial<MergeProofInput> = {}) =>
-    input({
-      requiredChecks: [],
-      checks: [],
-      passingGateId: 9,
+  type LocalGateInput = Extract<MergeProofInput, { kind: 'local-gate' }>
+  const local = (values: Partial<LocalGateInput> = {}): LocalGateInput => ({
+    kind: 'local-gate',
+    number: 42,
+    headCommit: 'head-commit',
+    currentHeadCommit: 'head-commit',
+    landingBranch: 'main',
+    gate: {
+      recorded: true,
+      id: 9,
       remoteLandingTip: 'base-commit',
       mergeBase: 'base-commit',
-      ...values,
-    })
+    },
+    ...values,
+  })
 
   test('a recorded gate and level landing branch admit the head', () => {
     expect(decideMergeProof(local())).toEqual({ admitted: true })
   })
 
   test('a missing gate record names the gate command', () => {
-    const decision = decideMergeProof(local({ passingGateId: null }))
+    const decision = decideMergeProof(local({ gate: { recorded: false } }))
     expect(decision).toEqual({
       admitted: false,
       refusal: expect.stringContaining('orch gate run'),
@@ -96,7 +107,16 @@ describe('local-gate merge proof', () => {
   })
 
   test('a moved landing branch names the update and regate remedy', () => {
-    const decision = decideMergeProof(local({ remoteLandingTip: 'new-base' }))
+    const decision = decideMergeProof(
+      local({
+        gate: {
+          recorded: true,
+          id: 9,
+          remoteLandingTip: 'new-base',
+          mergeBase: 'base-commit',
+        },
+      }),
+    )
     expect(decision).toEqual({
       admitted: false,
       refusal: expect.stringContaining('bring the branch up to origin/main, run orch gate run'),
@@ -104,15 +124,15 @@ describe('local-gate merge proof', () => {
   })
 })
 
-test('a closed pull request is refused with what was found', () => {
-  expect(decideMergeProof(input({ state: 'CLOSED' }))).toEqual({
-    admitted: false,
-    refusal: expect.stringContaining('is CLOSED, not open'),
-  })
-})
-
 test('a pull request against the wrong base is refused with what was found', () => {
-  expect(decideMergeProof(input({ baseBranch: 'release' }))).toEqual({
+  expect(
+    decidePullRequestIdentity({
+      number: 42,
+      state: 'OPEN',
+      baseBranch: 'release',
+      landingBranch: 'main',
+    }),
+  ).toEqual({
     admitted: false,
     refusal: expect.stringContaining('targets release, not the registered landing branch main'),
   })

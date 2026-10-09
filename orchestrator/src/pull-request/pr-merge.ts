@@ -1,12 +1,20 @@
 // concern: pull-request merge
-/** Resolves forge and local proof facts, then performs an admitted merge. */
+/**
+ * Resolves forge and local proof facts, then performs an admitted merge.
+ * The landing branch can still move between its fetch and the merge because the forge cannot condition a merge on the base tip without branch protection.
+ */
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
-import { decideMergeProof, type MergeProofInput, type PullRequestCheck } from './merge-decision.ts'
+import {
+  decideMergeProof,
+  decidePullRequestIdentity,
+  type MergeProofInput,
+  type PullRequestCheck,
+} from './merge-decision.ts'
 
 export type PullRequestMergeFacts = {
   number: number
@@ -25,7 +33,13 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     landingBranch: string,
   ): { remoteLandingTip: string; mergeBase: string }
-  merge(cwd: string, number: number, method: 'squash' | 'merge' | 'rebase', subject: string): string
+  merge(
+    cwd: string,
+    number: number,
+    method: 'squash' | 'merge' | 'rebase',
+    subject: string,
+    headCommit: string,
+  ): string
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -153,10 +167,20 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       ),
     }
   },
-  merge(cwd, number, method, subject) {
+  merge(cwd, number, method, subject, headCommit) {
     successful(
       cwd,
-      ['gh', 'pr', 'merge', String(number), `--${method}`, '--subject', subject],
+      [
+        'gh',
+        'pr',
+        'merge',
+        String(number),
+        `--${method}`,
+        '--subject',
+        subject,
+        '--match-head-commit',
+        headCommit,
+      ],
       'pull-request merge',
     )
     const value = parsed<{ mergeCommit?: { oid?: unknown } | null }>(
@@ -174,24 +198,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
 }
 
-function admittedIdentity(
-  pullRequest: PullRequestMergeFacts,
-  landingBranch: string,
-): MergeProofInput {
-  return {
-    number: pullRequest.number,
-    state: pullRequest.state,
-    baseBranch: pullRequest.baseBranch,
-    landingBranch,
-    headCommit: pullRequest.headCommit,
-    requiredChecks: [],
-    checks: [],
-    passingGateId: 1,
-    remoteLandingTip: pullRequest.headCommit,
-    mergeBase: pullRequest.headCommit,
-  }
-}
-
 function collectMergeProof(
   pullRequest: PullRequestMergeFacts,
   landingBranch: string,
@@ -201,23 +207,42 @@ function collectMergeProof(
   database: Database,
 ): MergeProofInput {
   if (requiredChecks.length > 0) {
+    const checks = adapter.checks(cwd, pullRequest.number)
+    const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
     return {
-      ...admittedIdentity(pullRequest, landingBranch),
+      kind: 'required-checks',
+      number: pullRequest.number,
+      headCommit: pullRequest.headCommit,
+      currentHeadCommit,
       requiredChecks,
-      checks: adapter.checks(cwd, pullRequest.number),
-      passingGateId: null,
-      remoteLandingTip: null,
-      mergeBase: null,
+      checks,
     }
   }
   const passingGateId = passingGateForCommit(pullRequest.headCommit, cwd, database).gateId
   if (passingGateId === null) {
-    return { ...admittedIdentity(pullRequest, landingBranch), passingGateId: null }
+    const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
+    return {
+      kind: 'local-gate',
+      number: pullRequest.number,
+      headCommit: pullRequest.headCommit,
+      currentHeadCommit,
+      landingBranch,
+      gate: { recorded: false },
+    }
   }
+  const landingState = adapter.landingState(cwd, pullRequest.headCommit, landingBranch)
+  const currentHeadCommit = adapter.view(cwd, String(pullRequest.number)).headCommit
   return {
-    ...admittedIdentity(pullRequest, landingBranch),
-    passingGateId,
-    ...adapter.landingState(cwd, pullRequest.headCommit, landingBranch),
+    kind: 'local-gate',
+    number: pullRequest.number,
+    headCommit: pullRequest.headCommit,
+    currentHeadCommit,
+    landingBranch,
+    gate: {
+      recorded: true,
+      id: passingGateId,
+      ...landingState,
+    },
   }
 }
 
@@ -243,7 +268,12 @@ export function mergePullRequest(
 
   try {
     const pullRequest = adapter.view(cwd, target)
-    const identityDecision = decideMergeProof(admittedIdentity(pullRequest, landingBranch))
+    const identityDecision = decidePullRequestIdentity({
+      number: pullRequest.number,
+      state: pullRequest.state,
+      baseBranch: pullRequest.baseBranch,
+      landingBranch,
+    })
     if (!identityDecision.admitted) {
       throw new Error(`refusing merge: ${identityDecision.refusal}`)
     }
@@ -258,7 +288,13 @@ export function mergePullRequest(
     const decision = decideMergeProof(input)
     if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
     const subject = `${pullRequest.title} (#${pullRequest.number})`
-    return adapter.merge(cwd, pullRequest.number, release.mergeMethod, subject)
+    return adapter.merge(
+      cwd,
+      pullRequest.number,
+      release.mergeMethod,
+      subject,
+      pullRequest.headCommit,
+    )
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
     if (message.startsWith('refusing merge:')) throw cause
