@@ -62,7 +62,7 @@ function valuesFor(items: readonly DocsTreeItem[], key: FilterKey): Map<string, 
   return counts
 }
 
-/** A filter is offered when the documents in view hold at least two distinct values. */
+/** Audience is offered whenever asked for; scope and delivery when the documents hold at least two distinct values. */
 export function offeredFilters(
   items: readonly DocsTreeItem[],
   includeAudience: boolean,

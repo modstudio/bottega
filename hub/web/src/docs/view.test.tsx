@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { EMPTY_FILTERS } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
 import { DocsView } from './view.tsx'
 
@@ -71,7 +72,8 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
       sourceLabel="Local store"
       items={items}
       selectedId="2"
-      onAudienceFilter={() => {}}
+      filters={EMPTY_FILTERS}
+      onFilters={() => {}}
       project="all"
       onProject={() => {}}
       signedIn

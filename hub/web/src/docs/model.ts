@@ -53,7 +53,6 @@ export function docsViewModel(
   const forProject = inProject(items, project)
   const stale = clearStaleFilters(forProject, chosen)
   const structural = applyFilters(forProject, { ...stale, audience: null })
-  const visible = applyFilters(structural, stale)
   const tree = treeForAudience(structural, selectedAudience(stale))
   const groups = project === 'all' ? groupRootsBySubject(tree) : null
   const selected = treePath(tree, selectedId ?? '').at(-1) ?? null
@@ -62,7 +61,7 @@ export function docsViewModel(
   const first = openableItems(roots)[0]
   return {
     first: first ?? null,
-    documentCount: visible.length,
+    documentCount: openableItems(tree).length,
     inView: forProject.length,
     stale,
     offered: offeredFilters(forProject, includeAudienceFilter),

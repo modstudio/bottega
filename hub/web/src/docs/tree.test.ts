@@ -152,7 +152,7 @@ test('filters do not change neighbor order beyond the visible tree', () => {
   expect(neighbors(tree, 'a').next).toEqual(expect.objectContaining({ id: 'c' }))
 })
 
-test('audience visibility keeps matching documents and greys every non-matching ancestor', () => {
+test('audience visibility keeps matching documents and keeps every non-matching ancestor of a match, unopenable', () => {
   const rows = [
     item({ id: 'root', title: 'Root', audiences: ['user'] }),
     item({ id: 'middle', title: 'Middle', parentId: 'root', audiences: ['user'] }),

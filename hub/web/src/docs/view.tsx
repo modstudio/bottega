@@ -9,7 +9,6 @@ import { classes } from '@/ui/text/classes'
 import { FilterPanel } from './filter-panel.tsx'
 import {
   DOC_AUDIENCE_LABELS,
-  EMPTY_FILTERS,
   type FilterSelection,
   type OfferedFilter,
   selectedAudience,
@@ -37,7 +36,9 @@ export type DocsViewProps = {
   /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
   selectedId: string | null
-  onAudienceFilter: (audience: DocsAudience | null) => void
+  /** The chosen filters; the page owns them because search reads the audience. */
+  filters: FilterSelection
+  onFilters: (filters: FilterSelection) => void
   project: string | 'all'
   onProject: (project: string | 'all') => void
   signedIn: boolean
@@ -258,7 +259,8 @@ export function DocsView({
   sourceLabel,
   items,
   selectedId,
-  onAudienceFilter,
+  filters: chosen,
+  onFilters,
   project,
   onProject,
   signedIn,
@@ -282,7 +284,6 @@ export function DocsView({
   error,
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
-  const [chosen, setChosen] = useState<FilterSelection>(EMPTY_FILTERS)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [wide, setWide] = useState(false)
   const openedId = useRef<string | null>(null)
@@ -290,11 +291,8 @@ export function DocsView({
   const selectedItem = items.find((item) => item.id === selectedId) ?? null
   const model = docsViewModel(navigationItems, project, chosen, selectedId, doc, signedIn)
   useEffect(() => {
-    if (!sameFilters(model.stale, chosen)) {
-      setChosen(model.stale)
-      onAudienceFilter(selectedAudience(model.stale))
-    }
-  }, [model.stale, chosen, onAudienceFilter])
+    if (!sameFilters(model.stale, chosen)) onFilters(model.stale)
+  }, [model.stale, chosen, onFilters])
   useEffect(() => {
     if (!selectedId) {
       openedId.current = null
@@ -304,12 +302,9 @@ export function DocsView({
     openedId.current = selectedId
     const item = navigationItems.find((row) => row.id === selectedId)
     if (!item) return
-    setChosen((current) => {
-      const next = filtersHiding(item, current)
-      if (next.scope === current.scope && next.delivery === current.delivery) return current
-      return next
-    })
-  }, [selectedId, navigationItems])
+    const next = filtersHiding(item, chosen)
+    if (!sameFilters(next, chosen)) onFilters(next)
+  }, [selectedId, navigationItems, chosen, onFilters])
   useEffect(() => {
     if (!selectedId) return
     const ancestors = treePath(model.tree, selectedId).slice(0, -1)
@@ -371,8 +366,7 @@ export function DocsView({
         offered={model.offered}
         chosen={model.stale}
         onFilters={(next) => {
-          setChosen(next)
-          onAudienceFilter(selectedAudience(next))
+          onFilters(next)
         }}
         inView={model.inView}
         active={model.active}

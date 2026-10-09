@@ -33,7 +33,7 @@ const rows: DocsTreeItem[] = [
   },
 ]
 
-test('a retained ancestor is muted and disabled rather than rendered as an open control', () => {
+test('a parent kept only for its children cannot be opened rather than rendered as an open control', () => {
   const html = renderToStaticMarkup(
     <TreeList
       nodes={treeForAudience(rows, 'technical')}
