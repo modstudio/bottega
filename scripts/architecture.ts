@@ -99,7 +99,7 @@ export const modules: ArchitectureModule[] = [
     './doc-revision-store.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/doc/doc-canon-tree.ts', [
+  module('orchestrator/src/doc/doc-write-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',
     '../project/projects.ts',

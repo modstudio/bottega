@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { upsertProject } from '../project/projects.ts'
-import { selectCanonWriteTree } from './doc-canon-tree.ts'
+import { selectDocWriteTree } from './doc-write-tree.ts'
 
 const fixtureRoots: string[] = []
 
@@ -29,7 +29,7 @@ test('a --cwd from another registered project is refused with both names', () =>
   upsertProject({ name: 'subject', path: subject, canon: true, settings: {} })
   upsertProject({ name: 'other', path: other, canon: true, settings: {} })
 
-  expect(() => selectCanonWriteTree({ scope: 'canon', subject: 'subject', cwd: other })).toThrow(
-    'project other: canon subject is project subject',
+  expect(() => selectDocWriteTree({ scope: 'canon', subject: 'subject', cwd: other })).toThrow(
+    'project other: document project is subject',
   )
 })

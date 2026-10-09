@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { upsertProject } from '../project/projects.ts'
-import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { docCommand } from './doc-commands.ts'
+import { selectDocWriteTree } from './doc-write-tree.ts'
 import { getDoc } from './docs.ts'
 
 let fixtureRoot: string | null = null
@@ -74,7 +74,7 @@ async function command(args: string[], stdin = '') {
           code = value
         },
       },
-      { selectCanonWriteTree, collectCanonLintInput },
+      { selectDocWriteTree, collectCanonLintInput },
     )
   } catch (error) {
     code = 1
@@ -93,41 +93,45 @@ always: true
 Read [the workflow](.github/workflows/workflows-sync.yml).
 `
 
-test('a branch-only citation requires the subject worktree named by --cwd', async () => {
+test('a project doc branch-only citation requires the subject worktree named by --cwd', async () => {
   const subject = repository()
   upsertProject({ name: 'subject', path: subject.main, canon: true, settings: {} })
   const base = [
     'doc',
     'set',
-    '.agents/rules/branch-citation.md',
+    'branch-citation',
     '--scope',
-    'canon',
+    'project',
     '--subject',
     'subject',
     '--title',
     'Branch citation',
+    '--delivery',
+    'demand',
+    '--kind',
+    'article',
     '--reason',
     'test branch citation',
   ]
 
   const refused = await command(base, body)
   expect(refused.code).toBe(1)
-  expect(refused.out).toBe(`tree: ${subject.main}`)
-  expect(refused.err).toContain('canon/reference-path')
+  expect(refused.out).toBe('')
+  expect(refused.err).toContain('doc/reference-path')
 
   const accepted = await command([...base, '--cwd', subject.worktree], body)
   expect(accepted.code).toBe(0)
   expect(accepted.out).toContain(`tree: ${realpathSync(subject.worktree)}`)
   expect(accepted.err).not.toContain('is not tracked')
-  expect(getDoc('canon', 'subject', '.agents/rules/branch-citation.md')).not.toBeNull()
+  expect(getDoc('project', 'subject', 'branch-citation')).not.toBeNull()
 
-  const revision = getDoc('canon', 'subject', '.agents/rules/branch-citation.md')!.revision!
+  const revision = getDoc('project', 'subject', 'branch-citation')!.revision!
   const removed = await command([
     'doc',
     'rm',
-    '.agents/rules/branch-citation.md',
+    'branch-citation',
     '--scope',
-    'canon',
+    'project',
     '--subject',
     'subject',
     '--cwd',

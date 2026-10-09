@@ -20,7 +20,6 @@ import {
 } from './step-catalogue.ts'
 import {
   abandonWorkflowCursor,
-  abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   cliWorkflowCursorContext,
   composeWorkflowWithCursor,
@@ -31,7 +30,11 @@ import {
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
+import {
+  resolveWorkflowCursorMode,
+  selectWorkflowCursor,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
@@ -46,7 +49,7 @@ import {
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { checkWorkflowRendering, workflowRenderCheckLines } from './workflow-render-check.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { attachWorkflowText, attachWorkflowTextByHandle } from './workflow-text.ts'
+import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import {
@@ -195,10 +198,7 @@ async function attachCommand(
   options: WorkflowCommandOptions,
 ): Promise<void> {
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  const project = flagValue(argv, 'project')
-  if (cursor && !project && argv[2] && !argv[2].startsWith('--'))
-    throw new Error('workflow text is not accepted as an argument; use --file <path> or stdin')
-  if (project && argv[3] && !argv[3].startsWith('--'))
+  if (argv[2] && !argv[2].startsWith('--') && argv[3] && !argv[3].startsWith('--'))
     throw new Error('workflow text is not accepted as an argument; use --file <path> or stdin')
   const file = flagValue(argv, 'file')
   const stdinIsTTY = options.stdinIsTTY?.() ?? process.stdin.isTTY
@@ -211,14 +211,12 @@ async function attachCommand(
         })()
   if (!body.trim()) throw new Error('workflow text must not be empty; provide text to attach')
   const context = cliWorkflowCursorContext()
-  if (cursor && !project) {
-    const reference = attachWorkflowTextByHandle(cursor, body, context)
-    print(reference, reference)
-    return
-  }
-  if (!project) throw new Error('--project is required without a cursor-only handle')
-  const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
-  if (!slug) throw new Error('workflow slug is required without a cursor-only handle')
+  const { project, workflow: slug } = cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    'orch workflow attach',
+  )
   const args = workflowArgs(argv)
   const mode = resolveWorkflowCursorMode(
     slug,
@@ -337,13 +335,17 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
 }
 
 function ruleCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
-  const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  const { project, workflow: slug } = cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    'orch workflow rule',
+  )
   const mode = resolveWorkflowCursorMode(
-    argv[2]!,
+    slug,
     project,
     flagValue(argv, 'mode'),
     args,
@@ -354,7 +356,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     cursor,
   )
   const result = ruleWorkflow(
-    argv[2]!,
+    slug,
     project,
     mode,
     args,
@@ -369,20 +371,18 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
 }
 
 function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
-  const project = flagValue(argv, 'project')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  if (!project && !cursor) throw new Error('--project is required without --cursor')
-  const slug = argv[2]?.startsWith('--') ? '' : (argv[2] ?? '')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
-  if (cursor && !project) {
-    const result = abandonWorkflowCursorByHandle(cursor, flagValue(argv, 'reason'), context)
-    print(result, result)
-    return
-  }
+  const { project, workflow: slug } = cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    'orch workflow abandon',
+  )
   const mode = resolveWorkflowCursorMode(
     slug,
-    project ?? '',
+    project,
     flagValue(argv, 'mode'),
     args,
     context,
@@ -421,15 +421,15 @@ async function stepCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
 ): Promise<void> {
-  const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
   const requestedMode = flagValue(argv, 'mode')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
+  const target = cursorCommandTarget(argv, cursor, context, 'orch workflow step', true)
+  const { project, workflow: slug } = target
   const mode = cursor
     ? resolveWorkflowCursorMode(
-        argv[2]!,
+        slug,
         project,
         requestedMode,
         args,
@@ -444,13 +444,13 @@ async function stepCommand(
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
   }
-  const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
+  const preliminary = composeWorkflow(slug, project, mode, args, undefined, selection)
   const stepSlug = mode
-    ? argv[3]!
-    : resolveWorkflowStepReference(argv[3]!, workflowModeStepLists(argv[2]!, undefined, selection))
+    ? target.step!
+    : resolveWorkflowStepReference(target.step!, workflowModeStepLists(slug, undefined, selection))
   const preliminaryStep = mode
     ? undefined
-    : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection)
+    : getWorkflowStep(slug, project, stepSlug, args, undefined, selection)
   const autonomy = await resolveProjectAutonomy(
     project,
     preliminary.workflow.slug,
@@ -460,7 +460,7 @@ async function stepCommand(
   )
   const step = mode
     ? getWorkflowStepWithCursor(
-        argv[2]!,
+        slug,
         project,
         stepSlug,
         args,
@@ -470,18 +470,22 @@ async function stepCommand(
         autonomy,
         cursor,
       )
-    : getWorkflowStep(argv[2]!, project, stepSlug, args, undefined, selection, autonomy)
+    : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, autonomy)
   print(step, renderWorkflowStep(step))
 }
 
 function nextCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
-  const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  const { project, workflow: slug } = cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    'orch workflow next',
+  )
   const mode = resolveWorkflowCursorMode(
-    argv[2]!,
+    slug,
     project,
     flagValue(argv, 'mode'),
     args,
@@ -492,7 +496,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     cursor,
   )
   const result = nextWorkflowStep(
-    argv[2]!,
+    slug,
     project,
     mode,
     args,
@@ -507,13 +511,17 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
 }
 
 function awaitCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
-  const project = flagValue(argv, 'project')
-  if (!project) throw new Error('--project is required')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  const { project, workflow: slug } = cursorCommandTarget(
+    argv,
+    cursor,
+    context,
+    'orch workflow await',
+  )
   const mode = resolveWorkflowCursorMode(
-    argv[2]!,
+    slug,
     project,
     flagValue(argv, 'mode'),
     args,
@@ -524,7 +532,7 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     cursor,
   )
   const result = awaitWorkflowRuling(
-    argv[2]!,
+    slug,
     project,
     mode,
     args,
@@ -536,8 +544,36 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
   )
   print(
     result,
-    `workflow ${argv[2]} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
+    `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
+}
+
+function cursorCommandTarget(
+  argv: string[],
+  cursor: number | undefined,
+  context: WorkflowCursorContext,
+  caller: string,
+  hasStep = false,
+): { project: string; workflow: string; step?: string } {
+  const project = flagValue(argv, 'project')
+  const first = argv[2]?.startsWith('--') ? undefined : argv[2]
+  const second = argv[3]?.startsWith('--') ? undefined : argv[3]
+  const suppliedWorkflow = hasStep && !second ? undefined : first
+  const step = hasStep ? (second ?? first) : undefined
+  if (cursor !== undefined) {
+    const row = selectWorkflowCursor(
+      { project, workflow: suppliedWorkflow },
+      cursor,
+      context.session,
+      db(),
+    )!
+    if (hasStep && !step) throw new Error(`${caller} requires a step slug or position`)
+    return { project: row.project, workflow: row.workflow_slug, step }
+  }
+  if (!project) throw new Error('--project is required without --cursor')
+  if (!suppliedWorkflow) throw new Error(`workflow slug is required without --cursor`)
+  if (hasStep && !step) throw new Error(`${caller} requires a step slug or position`)
+  return { project, workflow: suppliedWorkflow, step }
 }
 
 function cursorsCommand(argv: string[], print: (value: unknown, line?: string) => void): void {

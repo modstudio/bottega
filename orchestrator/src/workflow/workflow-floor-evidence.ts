@@ -13,6 +13,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { reviewsForTriage } from '../review/review-group.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -285,8 +286,16 @@ function gatherReview(
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
-    .query<{ id: number; project_name: string | null }, [number]>(
-      `SELECT r.id, p.name AS project_name
+    .query<
+      {
+        id: number
+        project_name: string | null
+        patch_id: string | null
+        path_set: string | null
+      },
+      [number]
+    >(
+      `SELECT r.id, p.name AS project_name, r.patch_id, r.path_set
          FROM review r LEFT JOIN project p ON p.id=r.project_id
         WHERE r.id=?`,
     )
@@ -297,36 +306,53 @@ function gatherReview(
       `--review ${id} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
     )
   const bound = d
-    .query<{ ok: number }, [number, string | null, string | null, string]>(
-      `SELECT COUNT(*) AS ok
+    .query<
+      { branch: string | null },
+      [number, string | null, string | null, string, string | null]
+    >(
+      `SELECT ru.branch
          FROM review_lens rl JOIN run ru ON ru.id=rl.run_id
         WHERE rl.review_id=?
-          AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)`,
+          AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)
+        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, rl.id LIMIT 1`,
     )
-    .get(id, identity.branch, identity.branch, identity.workflowKey)
-  if (!bound?.ok)
+    .get(id, identity.branch, identity.branch, identity.workflowKey, identity.branch)
+  if (!bound)
     throw new Error(
       `--review ${id} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
     )
-  const findings = d
-    .query<{ total: number; open: number }, [number]>(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN disposition IS NULL THEN 1 ELSE 0 END) AS open
-         FROM review_finding WHERE review_id=?`,
+  const branch = identity.branch ?? bound.branch
+  const grouped = reviewsForTriage(
+    d,
+    {
+      project: identity.project,
+      branch: branch ?? '',
+      patchId: review.patch_id ?? '',
+      pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
+    },
+    id,
+  )
+  const reviews =
+    review.patch_id === null || review.path_set === null
+      ? grouped.branchReviews.filter(({ reviewId }) => reviewId === id)
+      : grouped.reviews
+  const unfinishedReviewIds = reviews
+    .filter(
+      ({ findings, lenses }) =>
+        findings.some(({ disposition }) => disposition === null) ||
+        lenses.length === 0 ||
+        lenses.some(({ graded }) => !graded),
     )
-    .get(id) ?? { total: 0, open: 0 }
-  const lenses = d
-    .query<{ total: number; ungraded: number }, [number]>(
-      `SELECT COUNT(*) AS total,
-                SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
-                         THEN 1 ELSE 0 END) AS ungraded
-           FROM review_lens WHERE review_id=?`,
-    )
-    .get(id) ?? { total: 0, ungraded: 0 }
+    .map(({ reviewId }) => reviewId)
   return {
     id,
-    allFindingsDisposed: Number(findings.open ?? 0) === 0,
-    allLensesGraded: lenses.total > 0 && Number(lenses.ungraded ?? 0) === 0,
+    allFindingsDisposed: reviews.every(({ findings }) =>
+      findings.every(({ disposition }) => disposition !== null),
+    ),
+    allLensesGraded: reviews.every(
+      ({ lenses }) => lenses.length > 0 && lenses.every(({ graded }) => graded),
+    ),
+    ...(unfinishedReviewIds.length ? { unfinishedReviewIds } : {}),
   }
 }
 

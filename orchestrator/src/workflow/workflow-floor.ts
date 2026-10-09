@@ -70,7 +70,12 @@ export type ValidatedEvidence = {
     boundToCursor: boolean
     boundToStep: boolean
   }
-  review?: { id: number; allFindingsDisposed: boolean; allLensesGraded: boolean }
+  review?: {
+    id: number
+    allFindingsDisposed: boolean
+    allLensesGraded: boolean
+    unfinishedReviewIds?: number[]
+  }
   gate?: {
     id: number
     finished: boolean
@@ -352,6 +357,12 @@ function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEviden
     : 'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it'
 }
 
+function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
+  const unfinished = evidence.review?.unfinishedReviewIds ?? []
+  if (!unfinished.length || !floors.some((floor) => floor.kind === 'ruling')) return null
+  return `floor ruling is unmet: review ids ${unfinished.join(', ')} in this round are unfinished`
+}
+
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
@@ -466,6 +477,8 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     return { action: 'allow', enforcement: 'note-only', refs: [] }
   const rulingRefusal = operatorRulingBindingRefusal(input.floors, input.evidence)
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
+  const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
+  if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
   const met = input.floors.filter((floor) => floorIsMet(floor, input.evidence))
   const bindingRefusal = commandExitBindingRefusal(input.evidence)
   if (

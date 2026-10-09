@@ -5,6 +5,7 @@ const SRC_DIRECTORY = /(^|\/)src\//i
 
 const RULES: [FileKind, RegExp][] = [
   ['docs', /^(?:\.claude\/rules|\.agents\/rules\/contexts)$/],
+  ['generated', /(^|\/)migrations\/.*snapshot\.json$/],
   ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
   [
     'generated',

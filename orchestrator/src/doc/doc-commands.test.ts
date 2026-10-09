@@ -17,13 +17,13 @@ import {
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from '../review/review-commands.ts'
-import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
+import { selectDocWriteTree } from './doc-write-tree.ts'
 import {
   removeDoc as deleteDoc,
   diffDocRevisions,
@@ -96,7 +96,7 @@ async function command(args: string[], stdin = '') {
   try {
     if (args[0] === 'doc')
       await docCommand(args[1] ?? 'list', args, flags, presentation, {
-        selectCanonWriteTree,
+        selectDocWriteTree,
         collectCanonLintInput,
       })
     else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)

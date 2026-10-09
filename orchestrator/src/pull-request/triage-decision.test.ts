@@ -9,6 +9,7 @@ const review = (overrides: Partial<TriageEvidence['reviews'][number]> = {}) => (
   patchId: 'patch-old',
   pathSet: '["a.ts"]',
   lensIdentities: ['correctness'],
+  lenses: [{ id: 1, graded: true }],
   findings: [{ id: 12, ordinal: 1, disposition: 'accepted' }],
   ...overrides,
 })
