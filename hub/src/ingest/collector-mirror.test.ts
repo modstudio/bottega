@@ -380,7 +380,7 @@ test('a git mirror sends the complete stored task row', async () => {
   })
 })
 
-test('git ingestion leaves a tracker-sourced task with the same key unchanged', async () => {
+test('git ingestion preserves tracker fields while refreshing its timestamps', async () => {
   writeTransaction((conn) =>
     conn
       .query(
@@ -404,9 +404,6 @@ test('git ingestion leaves a tracker-sourced task with the same key unchanged', 
         7,
       ),
   )
-  const before = db()
-    .query<Record<string, unknown>, []>(`SELECT * FROM task WHERE key='ALP-23'`)
-    .get()
   const spawn = mockGitTaskScans('ALP-23', [['2025-12-01', '2026-10-03']])
   try {
     await ingestGit('2025-12-01')
@@ -414,7 +411,19 @@ test('git ingestion leaves a tracker-sourced task with the same key unchanged', 
     spawn.mockRestore()
   }
 
-  expect(db().query(`SELECT * FROM task WHERE key='ALP-23'`).get()).toEqual(before)
+  expect(db().query(`SELECT * FROM task WHERE key='ALP-23'`).get()).toEqual(
+    expect.objectContaining({
+      record_id: '22222222-2222-4222-8222-222222222222',
+      title: 'Tracker task',
+      status: 'started',
+      status_category: 'active',
+      opened_at: '2026-01-02T03:04:05.000Z',
+      updated_at: '2026-10-03',
+      source: 'mcp',
+      first_seen: '2026-01-02T03:04:05.000Z',
+      next_document_number: 7,
+    }),
+  )
   expect(mirroredTaskRows.find((row) => row.key === 'ALP-23')).toEqual(
     expect.objectContaining({ source: 'git', opened_at: '2025-12-01' }),
   )

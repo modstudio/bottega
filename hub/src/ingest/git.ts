@@ -176,11 +176,11 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
        last_seen  = excluded.last_seen,
        updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at),
        opened_at  = CASE
+         WHEN task.source != 'git' THEN task.opened_at
          WHEN task.opened_at IS NULL THEN excluded.opened_at
          WHEN excluded.opened_at < task.opened_at THEN excluded.opened_at
          ELSE task.opened_at
-       END
-     WHERE task.source = 'git'`,
+       END`,
     )
 
     const commitStmt = conn.query(
