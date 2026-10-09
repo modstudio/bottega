@@ -4,7 +4,9 @@
  * child-env, worker-home, and resolver decisions dispatch uses. Must not probe
  * homes, sockets, or secret values.
  */
+import { type CodexSandboxRuling, decideCodexSandbox } from './codex-sandbox.ts'
 import {
+  RECORD_CONNECTION_ENV_NAMES,
   recordConnectionResolverRefusal,
   withheldClassNamesForwardedFrom,
 } from './record-connection-env.ts'
@@ -12,12 +14,14 @@ import {
   isReadonlySandboxCandidate,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
   READONLY_LENS_DENY_PATHS,
+  type RunSandbox,
   selectReadonlySandboxKind,
   workerHomeLinksEnvFile,
 } from './sandbox.ts'
 
 const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
 export type ConfinementJobKind = (typeof CONFINEMENT_JOB_KINDS)[number]
+export type ConfinementSandbox = RunSandbox | CodexSandboxRuling['sandbox']
 
 export type ConfinementReportAgent = {
   name: string
@@ -33,19 +37,34 @@ type ConfinementAccess = {
   reason: string
 }
 
-export type ConfinementReportRow = {
+type NamedSecretAccess = {
+  recordConnection: ConfinementAccess
+  other: ConfinementAccess
+}
+
+type ConfinementReportRefusedRow = {
   agent: string
   job: ConfinementJobKind
   mcp: boolean
-  status: 'ok' | 'refused'
-  refusal: string | null
-  confinement: { sandbox: 'host' | 'srt'; reason: string }
+  status: 'refused'
+  refusal: string
+}
+
+type ConfinementReportOkRow = {
+  agent: string
+  job: ConfinementJobKind
+  mcp: boolean
+  status: 'ok'
+  refusal: null
+  confinement: { sandbox: ConfinementSandbox; reason: string }
   withheldForwarded: string[]
   envFile: ConfinementAccess
   keychain: ConfinementAccess
-  namedSecret: ConfinementAccess
+  namedSecret: NamedSecretAccess
   loopback: ConfinementAccess
 }
+
+export type ConfinementReportRow = ConfinementReportRefusedRow | ConfinementReportOkRow
 
 export type ConfinementReportInput = {
   agents: readonly ConfinementReportAgent[]
@@ -59,6 +78,7 @@ export type ConfinementReportInput = {
 const OPEN = 'orch has no denial'
 const JOB_KINDS: readonly ConfinementJobKind[] = CONFINEMENT_JOB_KINDS
 const MCP_VALUES = [false, true] as const
+const CODEX_NO_READ_DENIAL = 'orch passes codex no read denial'
 
 export function confinementJobKindFromNeeds(needs: {
   readsRepo?: boolean
@@ -123,34 +143,52 @@ function confinementReason(
   if (kind.reason) return kind.reason
   if (kind.sandbox === 'srt') return 'readonly sandbox candidate'
   if (!isReadonlySandboxCandidate({ agent, readsRepo: true, writesRepo })) {
-    return agent === 'codex'
-      ? 'codex is not a readonly-sandbox candidate'
-      : 'writing jobs are not readonly-sandbox candidates'
+    return 'writing jobs are not readonly-sandbox candidates'
   }
   return OPEN
 }
 
-function envFileAccess(sandbox: 'host' | 'srt', harness: string): ConfinementAccess {
-  if (workerHomeLinksEnvFile(harness)) {
-    return { access: 'open', reason: `${OPEN}; worker HOME links the operator env file` }
+function envFileAccess(
+  outerSandbox: RunSandbox,
+  harness: string,
+  agent: string,
+): ConfinementAccess {
+  if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
+  const linksEnvFile = workerHomeLinksEnvFile(harness)
+  if (outerSandbox === 'srt' && READONLY_LENS_DENY_PATHS.includes('~/.claude/.env')) {
+    return {
+      access: 'denied',
+      reason: linksEnvFile
+        ? 'srt denyRead includes the operator env file; the worker-home link resolves to it'
+        : 'srt denyRead includes the operator env file',
+    }
   }
-  if (sandbox === 'host') return { access: 'open', reason: OPEN }
-  if (READONLY_LENS_DENY_PATHS.includes('~/.claude/.env')) {
-    return { access: 'denied', reason: 'srt denyRead includes the operator env file' }
+  if (linksEnvFile) {
+    return { access: 'open', reason: `${OPEN}; worker HOME links the operator env file` }
   }
   return { access: 'open', reason: OPEN }
 }
 
-function keychainAccess(sandbox: 'host' | 'srt'): ConfinementAccess {
-  if (sandbox === 'host') return { access: 'open', reason: OPEN }
+function keychainAccess(outerSandbox: RunSandbox, agent: string): ConfinementAccess {
+  if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
+  if (outerSandbox === 'host') return { access: 'open', reason: OPEN }
   if (READONLY_LENS_DENY_PATHS.some((path) => path.includes('login.keychain'))) {
     return { access: 'denied', reason: 'srt denyRead includes the login keychain' }
   }
   return { access: 'open', reason: OPEN }
 }
 
-function loopbackAccess(sandbox: 'host' | 'srt'): ConfinementAccess {
-  if (sandbox === 'host') return { access: 'open', reason: OPEN }
+function codexLoopbackAccess(): ConfinementAccess {
+  const ruling = decideCodexSandbox()
+  if (ruling.workspaceWriteNetworkAccess) {
+    return { access: 'open', reason: 'codex workspace-write network_access' }
+  }
+  return { access: 'denied', reason: 'codex workspace-write has network_access off' }
+}
+
+function loopbackAccess(outerSandbox: RunSandbox, agent: string): ConfinementAccess {
+  if (agent === 'codex') return codexLoopbackAccess()
+  if (outerSandbox === 'host') return { access: 'open', reason: OPEN }
   return {
     access: READONLY_LENS_ALLOW_LOCAL_BINDING ? 'open' : 'denied',
     reason: READONLY_LENS_ALLOW_LOCAL_BINDING
@@ -159,12 +197,28 @@ function loopbackAccess(sandbox: 'host' | 'srt'): ConfinementAccess {
   }
 }
 
-function namedSecretAccess(): ConfinementAccess {
-  const withheld = recordConnectionResolverRefusal('ORCH_RECORD_URL', true)
+function namedSecretAccess(): NamedSecretAccess {
+  const reason = [...RECORD_CONNECTION_ENV_NAMES]
+    .sort()
+    .map((name) => recordConnectionResolverRefusal(name, true))
+    .filter((refusal): refusal is string => refusal !== null)
+    .join('; ')
   return {
-    access: 'open',
-    reason: `${OPEN}; ${withheld}`,
+    recordConnection: { access: 'denied', reason },
+    other: { access: 'open', reason: OPEN },
   }
+}
+
+function okConfinement(
+  agent: ConfinementReportAgent,
+  writesRepo: boolean,
+  kind: { sandbox: RunSandbox; reason: string | null },
+): ConfinementReportOkRow['confinement'] {
+  if (agent.name === 'codex') {
+    const ruling = decideCodexSandbox()
+    return { sandbox: ruling.sandbox, reason: 'codex native sandbox' }
+  }
+  return { sandbox: kind.sandbox, reason: confinementReason(agent.name, writesRepo, kind) }
 }
 
 function reportRow(
@@ -174,6 +228,10 @@ function reportRow(
   parentEnvNames: readonly string[],
   sandboxOverride: string | undefined,
 ): ConfinementReportRow {
+  const refusal = shapeRefusal(agent, job, mcp)
+  if (refusal) {
+    return { agent: agent.name, job, mcp, status: 'refused', refusal }
+  }
   const writesRepo = job === 'writing'
   const kind = selectReadonlySandboxKind({
     agent: agent.name,
@@ -184,20 +242,19 @@ function reportRow(
     override: sandboxOverride,
     mcp,
   })
-  const sandbox = kind.sandbox
-  const refusal = shapeRefusal(agent, job, mcp)
+  const outer = kind.sandbox
   return {
     agent: agent.name,
     job,
     mcp,
-    status: refusal ? 'refused' : 'ok',
-    refusal,
-    confinement: { sandbox, reason: confinementReason(agent.name, writesRepo, kind) },
+    status: 'ok',
+    refusal: null,
+    confinement: okConfinement(agent, writesRepo, kind),
     withheldForwarded: withheldClassNamesForwardedFrom(parentEnvNames),
-    envFile: envFileAccess(sandbox, agent.harness),
-    keychain: keychainAccess(sandbox),
+    envFile: envFileAccess(outer, agent.harness, agent.name),
+    keychain: keychainAccess(outer, agent.name),
     namedSecret: namedSecretAccess(),
-    loopback: loopbackAccess(sandbox),
+    loopback: loopbackAccess(outer, agent.name),
   }
 }
 
@@ -220,12 +277,34 @@ function accessLine(label: string, channel: ConfinementAccess): string {
   return `  ${label.padEnd(12)} ${channel.access}: ${channel.reason}`
 }
 
+function namedSecretLine(named: NamedSecretAccess): string {
+  return (
+    `  ${'named-secret'.padEnd(12)} ` +
+    `record-connection ${named.recordConnection.access}: ${named.recordConnection.reason}; ` +
+    `other named secrets ${named.other.access}: ${named.other.reason}`
+  )
+}
+
+function withheldWarningLine(names: readonly string[]): string {
+  return `  ${'warning'.padEnd(12)} withheld-class forwarded: ${names.join(', ')}`
+}
+
 function rowHeading(row: ConfinementReportRow): string {
   const mcp = row.mcp ? 'yes' : 'no'
   if (row.status === 'refused')
     return `${row.agent}  ${row.job}  mcp=${mcp}  refused  ${row.refusal}`
-  const withheld = row.withheldForwarded.length ? row.withheldForwarded.join(', ') : '(none)'
-  return `${row.agent}  ${row.job}  mcp=${mcp}  ${row.confinement.sandbox}  ${row.confinement.reason}  withheld: ${withheld}`
+  return `${row.agent}  ${row.job}  mcp=${mcp}  ${row.confinement.sandbox}  ${row.confinement.reason}`
+}
+
+function okRowLines(row: ConfinementReportOkRow): string[] {
+  return [
+    rowHeading(row),
+    ...(row.withheldForwarded.length ? [withheldWarningLine(row.withheldForwarded)] : []),
+    accessLine('env-file', row.envFile),
+    accessLine('keychain', row.keychain),
+    namedSecretLine(row.namedSecret),
+    accessLine('loopback', row.loopback),
+  ]
 }
 
 export function formatConfinementReport(
@@ -234,13 +313,7 @@ export function formatConfinementReport(
 ): string[] {
   if (json) return [JSON.stringify(rows)]
   return rows.flatMap((row, index) => {
-    const block = [
-      rowHeading(row),
-      accessLine('env-file', row.envFile),
-      accessLine('keychain', row.keychain),
-      accessLine('named-secret', row.namedSecret),
-      accessLine('loopback', row.loopback),
-    ]
+    const block = row.status === 'refused' ? [rowHeading(row)] : okRowLines(row)
     return index === 0 ? block : ['', ...block]
   })
 }

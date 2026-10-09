@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test'
 import {
   type ConfinementReportAgent,
+  type ConfinementReportRow,
   confinementJobKindFromNeeds,
   formatConfinementReport,
   parseConfinementJobSelector,
   parseConfinementMcpSelector,
   reportConfinement,
 } from './confinement-report.ts'
+import { RECORD_CONNECTION_ENV_NAMES } from './record-connection-env.ts'
 
 const grok: ConfinementReportAgent = {
   name: 'grok',
@@ -52,10 +54,9 @@ const row = (
 test('a Grok reading job without MCP is host-unconfined while srt still applies', () => {
   const reported = row(grok, 'reading', false)
   expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
   expect(reported.confinement.sandbox).toBe('srt')
-  expect(reported.envFile.access).toBe('open')
-  expect(reported.envFile.reason).toContain('orch has no denial')
-  expect(reported.envFile.reason).toContain('worker HOME links the operator env file')
+  expect(reported.envFile.access).toBe('denied')
   expect(reported.keychain).toEqual({
     access: 'denied',
     reason: 'srt denyRead includes the login keychain',
@@ -66,6 +67,8 @@ test('a Grok reading job without MCP is host-unconfined while srt still applies'
 
 test('MCP was requested; srt blocks MCP transports; run is unconfined', () => {
   const reported = row(grok, 'reading', true)
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
   expect(reported.confinement).toEqual({
     sandbox: 'host',
     reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
@@ -78,6 +81,8 @@ test('MCP was requested; srt blocks MCP transports; run is unconfined', () => {
 
 test('writing jobs stay on the host seam and look confined', () => {
   const reported = row(grok, 'writing', false)
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
   expect(reported.confinement.sandbox).toBe('host')
   expect(reported.confinement.reason).toBe('writing jobs are not readonly-sandbox candidates')
   expect(reported.envFile.access).toBe('open')
@@ -85,29 +90,23 @@ test('writing jobs stay on the host seam and look confined', () => {
   expect(reported.loopback.reason).toBe('orch has no denial')
 })
 
-test('codex reading jobs stay on the host seam', () => {
-  const reported = row(codex, 'reading', false)
-  expect(reported.confinement.sandbox).toBe('host')
-  expect(reported.confinement.reason).toBe('codex is not a readonly-sandbox candidate')
-  expect(reported.envFile.reason).toBe('orch has no denial')
-})
-
 test('an SRT profile that denies ~/.claude/.env reports the env file as open', () => {
   const reported = row(reader, 'reading', false)
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
   expect(reported.confinement.sandbox).toBe('srt')
   expect(reported.envFile).toEqual({
     access: 'denied',
     reason: 'srt denyRead includes the operator env file',
   })
-  expect(reported.namedSecret.access).toBe('open')
-  expect(reported.namedSecret.reason).toContain('orch has no denial')
-  expect(reported.namedSecret.reason).toContain('withheld from workers')
 })
 
 test('childEnv forwards ORCH_RECORD_URL and ORCH_RECORD_MIGRATE_URL into the withheld list', () => {
   const reported = row(grok, 'reading', false, {
     parentEnvNames: ['ORCH_RECORD_URL', 'ORCH_RECORD_MIGRATE_URL', 'ORCH_DB'],
   })
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
   expect(reported.withheldForwarded).toEqual([])
 })
 
@@ -121,9 +120,6 @@ test('MCP requested of an agent that lacks MCP is reported as launchable', () =>
   const reported = row(reader, 'reading', true)
   expect(reported.status).toBe('refused')
   expect(reported.refusal).toBe('lacks mcp')
-  expect(reported.confinement.reason).toBe(
-    'MCP was requested; srt blocks MCP transports; run is unconfined',
-  )
 })
 
 test('no selector prints every enabled repository-capable agent x reading or writing x MCP', () => {
@@ -190,5 +186,100 @@ test('--json prints a different document than the row data', () => {
   expect(JSON.parse(formatConfinementReport(rows, true)[0]!)).toEqual(rows)
   const text = formatConfinementReport(rows, false)
   expect(text[0]).toContain('grok  reading  mcp=no  srt')
-  expect(text.some((line) => line.includes('env-file') && line.includes('open'))).toBe(true)
+  expect(text.some((line) => line.includes('env-file') && line.includes('denied'))).toBe(true)
+})
+
+test('envFileAccess returns open for a grok reading run under srt because it checks the home link first', () => {
+  const srt = row(grok, 'reading', false)
+  expect(srt.status).toBe('ok')
+  if (srt.status !== 'ok') return
+  expect(srt.envFile).toEqual({
+    access: 'denied',
+    reason: 'srt denyRead includes the operator env file; the worker-home link resolves to it',
+  })
+  const host = row(grok, 'reading', true)
+  expect(host.status).toBe('ok')
+  if (host.status !== 'ok') return
+  expect(host.envFile).toEqual({
+    access: 'open',
+    reason: 'orch has no denial; worker HOME links the operator env file',
+  })
+})
+
+test('codex rows read host loopback open: orch has no denial', () => {
+  for (const job of ['reading', 'writing'] as const) {
+    for (const mcp of [false, true]) {
+      const reported = row(codex, job, mcp)
+      expect(reported.status).toBe('ok')
+      if (reported.status !== 'ok') continue
+      expect(reported.confinement).toEqual({
+        sandbox: 'workspace-write',
+        reason: 'codex native sandbox',
+      })
+      expect(reported.loopback).toEqual({
+        access: 'denied',
+        reason: 'codex workspace-write has network_access off',
+      })
+      expect(reported.envFile).toEqual({
+        access: 'open',
+        reason: 'orch passes codex no read denial',
+      })
+      expect(reported.keychain).toEqual({
+        access: 'open',
+        reason: 'orch passes codex no read denial',
+      })
+    }
+  }
+})
+
+test('the named-secret line hardcodes ORCH_RECORD_URL into one sentence', () => {
+  const reported = row(grok, 'reading', false)
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
+  expect(reported.namedSecret.recordConnection.access).toBe('denied')
+  expect(reported.namedSecret.other).toEqual({ access: 'open', reason: 'orch has no denial' })
+  for (const name of RECORD_CONNECTION_ENV_NAMES) {
+    expect(reported.namedSecret.recordConnection.reason).toContain(name)
+  }
+  expect(reported.namedSecret.recordConnection.reason).toContain(
+    'record database connections are withheld from workers; the architect session runs work that needs one',
+  )
+  const parsed = JSON.parse(formatConfinementReport([reported], true)[0]!) as ConfinementReportRow[]
+  const named = parsed[0]
+  expect(named?.status).toBe('ok')
+  if (named?.status !== 'ok') return
+  expect(named.namedSecret.recordConnection).toBeDefined()
+  expect(named.namedSecret.other).toBeDefined()
+  expect('reason' in named.namedSecret).toBe(false)
+})
+
+test('a refused shape still prints access lines', () => {
+  const reported = row(reader, 'writing', false)
+  expect(reported).toEqual({
+    agent: 'reader',
+    job: 'writing',
+    mcp: false,
+    status: 'refused',
+    refusal: 'lacks writesRepo',
+  })
+  expect(formatConfinementReport([reported], false)).toEqual([
+    'reader  writing  mcp=no  refused  lacks writesRepo',
+  ])
+  expect(JSON.parse(formatConfinementReport([reported], true)[0]!)).toEqual([reported])
+})
+
+test('withheld: (none) is printed in every heading', () => {
+  const reported = row(grok, 'reading', false)
+  expect(reported.status).toBe('ok')
+  if (reported.status !== 'ok') return
+  const text = formatConfinementReport([reported], false)
+  expect(text[0]).not.toContain('withheld')
+  const warned = formatConfinementReport(
+    [{ ...reported, withheldForwarded: ['ORCH_RECORD_URL'] }],
+    false,
+  )
+  expect(warned[0]).not.toContain('withheld')
+  expect(warned.some((line) => line.includes('warning') && line.includes('ORCH_RECORD_URL'))).toBe(
+    true,
+  )
 })

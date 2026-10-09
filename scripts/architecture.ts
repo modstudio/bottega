@@ -590,7 +590,9 @@ export const modules: ArchitectureModule[] = [
     './sandbox-runtime.ts',
   ]),
   module('orchestrator/src/sandbox/record-connection-env.ts', []),
+  module('orchestrator/src/sandbox/codex-sandbox.ts', []),
   module('orchestrator/src/sandbox/confinement-report.ts', [
+    './codex-sandbox.ts',
     './record-connection-env.ts',
     './sandbox.ts',
   ]),
