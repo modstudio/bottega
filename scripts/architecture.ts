@@ -4,6 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
@@ -589,13 +590,7 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     './sandbox-runtime.ts',
   ]),
-  module('orchestrator/src/sandbox/record-connection-env.ts', []),
-  module('orchestrator/src/sandbox/codex-sandbox.ts', []),
-  module('orchestrator/src/sandbox/confinement-report.ts', [
-    './codex-sandbox.ts',
-    './record-connection-env.ts',
-    './sandbox.ts',
-  ]),
+  ...confinementModules,
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',
     'bun',
