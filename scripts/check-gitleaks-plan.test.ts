@@ -87,11 +87,11 @@ describe('gitleaks scan decision', () => {
     expect(decision).toEqual({
       status: 'refused',
       message:
-        'expected no error-level log line; gitleaks reported: 12:00PM ERR error="stderr is not empty". expected 1 commits scanned; gitleaks reported 0. Run the printed gitleaks command directly and clear whatever makes git write to stderr.',
+        'expected no error-level log line; gitleaks reported: 12:00PM ERR error="stderr is not empty". expected between 1 and 1 commits scanned; gitleaks reported 0. Run the printed gitleaks command directly. Clear whatever makes git write to stderr.',
     })
   })
 
-  test('refuses a history count lower than expected without an error line', () => {
+  test('passes a lower nonzero history count', () => {
     expect(
       decideGitleaksScan({
         mode: 'history',
@@ -99,10 +99,36 @@ describe('gitleaks scan decision', () => {
         exitCode: 0,
         log: 'INF 2 commits scanned.\nINF no leaks found',
       }),
+    ).toEqual({ status: 'pass' })
+  })
+
+  test('refuses a zero history count', () => {
+    expect(
+      decideGitleaksScan({
+        mode: 'history',
+        expectedCommitCount: 3,
+        exitCode: 0,
+        log: 'INF 0 commits scanned.\nINF no leaks found',
+      }),
     ).toEqual({
       status: 'refused',
       message:
-        'expected 3 commits scanned; gitleaks reported 2. Run the printed gitleaks command directly and clear whatever makes git write to stderr.',
+        'expected between 1 and 3 commits scanned; gitleaks reported 0. Run the printed gitleaks command directly. Clear whatever makes git write to stderr.',
+    })
+  })
+
+  test('refuses a history count above expected', () => {
+    expect(
+      decideGitleaksScan({
+        mode: 'history',
+        expectedCommitCount: 3,
+        exitCode: 0,
+        log: 'INF 4 commits scanned.\nINF no leaks found',
+      }),
+    ).toEqual({
+      status: 'refused',
+      message:
+        'expected between 1 and 3 commits scanned; gitleaks reported 4. Run the printed gitleaks command directly. Clear whatever makes git write to stderr.',
     })
   })
 
@@ -117,7 +143,7 @@ describe('gitleaks scan decision', () => {
     ).toEqual({
       status: 'refused',
       message:
-        'expected 1 commits scanned; gitleaks reported no commits-scanned line. Run the printed gitleaks command directly and clear whatever makes git write to stderr.',
+        'expected between 1 and 1 commits scanned; gitleaks reported no commits-scanned line. Run the printed gitleaks command directly. Clear whatever makes git write to stderr.',
     })
   })
 
@@ -131,7 +157,7 @@ describe('gitleaks scan decision', () => {
     ).toEqual({
       status: 'refused',
       message:
-        'expected no error-level log line; gitleaks reported: ERR error="stderr is not empty". Run the printed gitleaks command directly and clear whatever makes git write to stderr.',
+        'expected no error-level log line; gitleaks reported: ERR error="stderr is not empty". Run the printed gitleaks command directly. Clear whatever makes git write to stderr.',
     })
   })
 
@@ -155,7 +181,7 @@ describe('gitleaks scan decision', () => {
     ).toEqual({
       status: 'refused',
       message:
-        'expected exit code 0; gitleaks reported exit code 1. Run the printed gitleaks command directly and clear whatever makes git write to stderr.',
+        'expected exit code 0; gitleaks reported exit code 1. Gitleaks reported leaks or failed; see its output above and run the printed gitleaks command directly.',
     })
   })
 })

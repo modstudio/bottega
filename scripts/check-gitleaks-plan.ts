@@ -47,22 +47,36 @@ export function decideGitleaksScan(check: GitleaksScanCheck): GitleaksScanDecisi
     return match ? Number(match[1]) : undefined
   }, undefined)
   const findings: string[] = []
+  let stderrRemedy = false
 
   if (check.exitCode !== 0) {
     findings.push(`expected exit code 0; gitleaks reported exit code ${check.exitCode}`)
   }
   if (errorLine) {
     findings.push(`expected no error-level log line; gitleaks reported: ${errorLine.trim()}`)
+    stderrRemedy = true
   }
-  if (check.mode === 'history' && reportedCount !== check.expectedCommitCount) {
+  // Gitleaks omits merge commits, so its count is a nonzero floor rather than an exact count.
+  if (
+    check.mode === 'history' &&
+    check.expectedCommitCount > 0 &&
+    (reportedCount === undefined ||
+      reportedCount === 0 ||
+      reportedCount > check.expectedCommitCount)
+  ) {
     findings.push(
-      `expected ${check.expectedCommitCount} commits scanned; gitleaks reported ${reportedCount === undefined ? 'no commits-scanned line' : reportedCount}`,
+      `expected between 1 and ${check.expectedCommitCount} commits scanned; gitleaks reported ${reportedCount === undefined ? 'no commits-scanned line' : reportedCount}`,
     )
+    stderrRemedy = true
   }
 
   if (findings.length === 0) return { status: 'pass' }
+  const remedy =
+    check.exitCode !== 0
+      ? 'Gitleaks reported leaks or failed; see its output above and run the printed gitleaks command directly.'
+      : 'Run the printed gitleaks command directly.'
   return {
     status: 'refused',
-    message: `${findings.join('. ')}. Run the printed gitleaks command directly and clear whatever makes git write to stderr.`,
+    message: `${findings.join('. ')}. ${remedy}${stderrRemedy ? ' Clear whatever makes git write to stderr.' : ''}`,
   }
 }
