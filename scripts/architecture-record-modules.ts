@@ -30,6 +30,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-project-destination.ts',
   ]),
+  module('orchestrator/src/record/record-cache-ownership.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-doc-lifecycle.ts', [
     'bun',
     '../../../shared/docs.ts',

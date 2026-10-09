@@ -725,7 +725,16 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-cache-boundary',
     'orchestrator/src/record/record-cache.ts',
-    ['../database/db.ts', './record-api-client.ts', 'bun:sqlite'],
+    [
+      '../../../shared/record-space-membership.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+      './record-api-client.ts',
+      './record-auth.ts',
+      './record-cache-ownership.ts',
+      './record-project-destination.ts',
+      'bun:sqlite',
+    ],
     'Enforce the record-cache concern boundary.',
   ),
   ...recordReadBoundariesBeforePublish,
