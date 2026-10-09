@@ -66,7 +66,7 @@ export function DocsHome({
       <div className="wrap doc-hero">
         <div className="flex items-center gap-2">
           <span className="eyebrow">Documentation</span>
-          <Badge icon={false}>{<>{sourceLabel}</>}</Badge>
+          <Badge icon={false}>{sourceLabel}</Badge>
         </div>
         <h1>How can we help?</h1>
         <p>

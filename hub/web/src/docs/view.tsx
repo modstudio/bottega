@@ -380,13 +380,15 @@ export function DocsView({
           : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
-      <div className="px-4 md:px-8">
-        <PageHeader
-          title="Docs"
-          subtitle={`${model.userCount + model.technicalCount} documents · ${sourceLabel}`}
-          actions={createAction}
-        />
-      </div>
+      {framed ? null : (
+        <div className="px-4 md:px-8">
+          <PageHeader
+            title="Docs"
+            subtitle={`${model.userCount + model.technicalCount} documents · ${sourceLabel}`}
+            actions={createAction}
+          />
+        </div>
+      )}
       <DocsChrome
         audience={audience}
         onAudience={(next) => {
