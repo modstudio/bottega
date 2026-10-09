@@ -9,7 +9,7 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import { projectOf } from './attribute.ts'
-import { collectOnce, releaseLease, watch, withLease } from './collect.ts'
+import { collectOnce, formatCollectLeg, releaseLease, watch, withLease } from './collect.ts'
 import {
   formatMigrationRepairSummary,
   migrateDatabase,
@@ -186,8 +186,7 @@ async function collect(guard?: import('./collect.ts').LeaseGuard) {
   const only = flag('only')
   const t0 = Date.now()
   const results = await collectOnce(since, only, guard)
-  for (const result of results)
-    console.log(`${result.source.padEnd(18)}${result.ok ? 'ok' : `FAILED: ${result.error}`}`)
+  for (const result of results) console.log(formatCollectLeg(result))
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
   if (results.some((result) => !result.ok)) process.exitCode = 1
 }

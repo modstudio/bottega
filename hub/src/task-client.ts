@@ -25,6 +25,7 @@ export type HostedTaskIdentity = {
     dayRecordId?: boolean
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
+    spaceChanges?: boolean
   }
 }
 
@@ -275,6 +276,145 @@ export async function hostedTaskChanges(
   }>(`/v1/tasks?${query}`, 'GET', undefined, options)
 }
 
+export type HostedSpaceChange = {
+  sequence: number
+  table: string
+  id: string
+  op: 'upsert' | 'delete'
+  row?: HostedTask | HostedComment | HostedDocument | import('./hosted-tasks.ts').HostedStatusEvent
+}
+
+export type HostedSpaceChangePage = {
+  head: number
+  oldest: number | null
+  next: number
+  more: boolean
+  resetRequired: boolean
+  changes: HostedSpaceChange[]
+}
+
+type HostedSpaceChangeOptions = Parameters<typeof request>[3] & { limit?: number; tables: string }
+
+function malformedChangePage(detail: string) {
+  return new Error(`hosted change page is malformed: ${detail}`)
+}
+
+function nonNegativeSafeInteger(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw malformedChangePage(`${name} must be a non-negative safe integer`)
+  return value
+}
+
+function oldestField(value: unknown): number | null {
+  if (value === null) return null
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw malformedChangePage('oldest must be a non-negative safe integer or null')
+  return value
+}
+
+function booleanField(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw malformedChangePage(`${name} must be a boolean`)
+  return value
+}
+
+function parseHostedSpaceChange(
+  value: unknown,
+  index: number,
+  tables: ReadonlySet<string>,
+): HostedSpaceChange {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw malformedChangePage(`changes[${index}] must be an object`)
+  const change = value as Record<string, unknown>
+  const sequence = nonNegativeSafeInteger(change.sequence, `changes[${index}].sequence`)
+  if (typeof change.table !== 'string' || !tables.has(change.table))
+    throw malformedChangePage(`changes[${index}].table is not in the requested set`)
+  if (change.op !== 'upsert' && change.op !== 'delete')
+    throw malformedChangePage(`changes[${index}].op must be upsert or delete`)
+  if (typeof change.id !== 'string' || change.id === '')
+    throw malformedChangePage(`changes[${index}].id is required`)
+  if (change.op === 'delete') {
+    if ('row' in change && change.row !== undefined)
+      throw malformedChangePage(`changes[${index}] delete must not include a row`)
+    return { sequence, table: change.table, id: change.id, op: 'delete' }
+  }
+  const row = change.row
+  if (row === null || typeof row !== 'object' || Array.isArray(row))
+    throw malformedChangePage(`changes[${index}] upsert must include a row`)
+  if ((row as { id?: unknown }).id !== change.id)
+    throw malformedChangePage(`changes[${index}] row id must equal the change id`)
+  return {
+    sequence,
+    table: change.table,
+    id: change.id,
+    op: 'upsert',
+    row: row as HostedSpaceChange['row'],
+  }
+}
+
+function assertFollowChangeSequences(
+  changes: readonly HostedSpaceChange[],
+  after: number,
+  next: number,
+) {
+  let previous: number | undefined
+  for (const [index, change] of changes.entries()) {
+    const { sequence } = change
+    if (sequence <= after)
+      throw malformedChangePage(
+        `changes[${index}].sequence ${sequence} is not greater than after ${after}`,
+      )
+    if (sequence > next)
+      throw malformedChangePage(`changes[${index}].sequence ${sequence} is above next ${next}`)
+    if (previous !== undefined && sequence <= previous)
+      throw malformedChangePage(
+        `changes[${index}].sequence ${sequence} does not increase from changes[${index - 1}].sequence ${previous}`,
+      )
+    previous = sequence
+  }
+}
+
+function parseHostedSpaceChangePage(
+  value: Record<string, unknown>,
+  after: number,
+  tables: ReadonlySet<string>,
+): HostedSpaceChangePage {
+  const head = nonNegativeSafeInteger(value.head, 'head')
+  const next = nonNegativeSafeInteger(value.next, 'next')
+  const oldest = oldestField(value.oldest)
+  const more = booleanField(value.more, 'more')
+  const resetRequired = booleanField(value.resetRequired, 'resetRequired')
+  if (!Array.isArray(value.changes)) throw malformedChangePage('changes must be an array')
+  if (resetRequired) {
+    if (value.changes.length)
+      throw malformedChangePage('resetRequired page must not include changes')
+    return { head, oldest, next, more, resetRequired, changes: [] }
+  }
+  if (next < after) throw malformedChangePage(`next ${next} is below after ${after}`)
+  if (next > head) throw malformedChangePage(`next ${next} is above head ${head}`)
+  if (more && next <= after)
+    throw malformedChangePage(`more is true but next ${next} is not greater than after ${after}`)
+  const changes = value.changes.map((change, index) =>
+    parseHostedSpaceChange(change, index, tables),
+  )
+  assertFollowChangeSequences(changes, after, next)
+  return { head, oldest, next, more, resetRequired, changes }
+}
+
+export async function hostedSpaceChanges(after: number, options: HostedSpaceChangeOptions) {
+  const query = new URLSearchParams({
+    after: String(after),
+    tables: options.tables,
+  })
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  const page = await request<Record<string, unknown>>(
+    `/v1/changes?${query}`,
+    'GET',
+    undefined,
+    options,
+  )
+  return parseHostedSpaceChangePage(page, after, new Set(options.tables.split(',')))
+}
+
 export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
   request<{
     upserted: number
@@ -379,6 +519,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).targetSpaceNotes === true,
+      spaceChanges:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).spaceChanges === true,
     },
   }
 }

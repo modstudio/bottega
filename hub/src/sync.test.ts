@@ -294,6 +294,7 @@ describe('evidence sync planning', () => {
       tasks: async () => {
         ran.push('following leg')
       },
+      changes: async () => null,
       notes: async () => {},
       reports: async () => {},
     })

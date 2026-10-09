@@ -21,7 +21,11 @@ const spaceB = '01990000-0000-7000-8000-000000001301'
 const spaceC = '01990000-0000-7000-8000-000000001302'
 const spaceD = '01990000-0000-7000-8000-000000001303'
 const spaceE = '01990000-0000-7000-8000-000000001304'
+const spaceF = '01990000-0000-7000-8000-000000001305'
+const spaceG = '01990000-0000-7000-8000-000000001306'
 const taskId = '01990000-0000-7000-8000-000000001310'
+const lastDeleteId = '01990000-0000-7000-8000-000000001317'
+const recreatedId = '01990000-0000-7000-8000-000000001318'
 const movedId = '01990000-0000-7000-8000-000000001311'
 const intervalId = '01990000-0000-7000-8000-000000001312'
 const sendId = '01990000-0000-7000-8000-000000001313'
@@ -64,7 +68,9 @@ async function createDatabase() {
       ('${spaceB}','Changes B','changes-b',now()),
       ('${spaceC}','Changes C','changes-c',now()),
       ('${spaceD}','Changes D','changes-d',now()),
-      ('${spaceE}','Changes E','changes-e',now());
+      ('${spaceE}','Changes E','changes-e',now()),
+      ('${spaceF}','Changes F','changes-f',now()),
+      ('${spaceG}','Changes G','changes-g',now());
   `)
   return database
 }
@@ -355,4 +361,45 @@ test('change pages traverse numeric sequences exactly once in ascending order', 
 
   expect(sequences).toEqual(Array.from({ length: head }, (_, index) => index + 1))
   expect(after).toBe(head)
+})
+
+test('a delete is withheld when a later page still has an entry for the same row', async () => {
+  const sql = pgliteSql(database)
+  await bind(database, spaceF)
+  await database.exec(`
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES ('${recreatedId}','${spaceF}','${PLATFORM_NAME}','DEV-f','${PLATFORM_NAME}','first','local',now(),now(),now(),now());
+    DELETE FROM hub_task WHERE id='${recreatedId}';
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES ('${recreatedId}','${spaceF}','${PLATFORM_NAME}','DEV-f','${PLATFORM_NAME}','recreated','local',now(),now(),now(),now());
+  `)
+  const withheld = await readHostedChangesInTransaction(sql, identity(spaceF), {
+    after: 1,
+    limit: 1,
+    tables: ['hub_task'],
+  })
+  expect(withheld).toMatchObject({ next: 2, more: true, changes: [] })
+
+  await bind(database, spaceG)
+  await database.exec(`
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES ('${lastDeleteId}','${spaceG}','${PLATFORM_NAME}','DEV-g','${PLATFORM_NAME}','only','local',now(),now(),now(),now());
+    DELETE FROM hub_task WHERE id='${lastDeleteId}';
+  `)
+  const delivered = await readHostedChangesInTransaction(sql, identity(spaceG), {
+    after: 1,
+    limit: 1,
+    tables: ['hub_task'],
+  })
+  expect(delivered).toEqual({
+    head: 2,
+    oldest: 1,
+    next: 2,
+    more: false,
+    resetRequired: false,
+    changes: [{ sequence: 2, table: 'hub_task', id: lastDeleteId, op: 'delete' }],
+  })
 })
