@@ -20,6 +20,7 @@ const spaceA = '01990000-0000-7000-8000-000000001300'
 const spaceB = '01990000-0000-7000-8000-000000001301'
 const spaceC = '01990000-0000-7000-8000-000000001302'
 const spaceD = '01990000-0000-7000-8000-000000001303'
+const spaceE = '01990000-0000-7000-8000-000000001304'
 const taskId = '01990000-0000-7000-8000-000000001310'
 const movedId = '01990000-0000-7000-8000-000000001311'
 const intervalId = '01990000-0000-7000-8000-000000001312'
@@ -62,7 +63,8 @@ async function createDatabase() {
       ('${spaceA}','Changes A','changes-a',now()),
       ('${spaceB}','Changes B','changes-b',now()),
       ('${spaceC}','Changes C','changes-c',now()),
-      ('${spaceD}','Changes D','changes-d',now());
+      ('${spaceD}','Changes D','changes-d',now()),
+      ('${spaceE}','Changes E','changes-e',now());
   `)
   return database
 }
@@ -310,4 +312,47 @@ test('paging, filters, resets, tenant isolation, and send recipient images follo
     tables: ['hub_task'],
   })
   expect(forbidden).toMatchObject({ head: 0, oldest: null, changes: [] })
+})
+
+test('change pages traverse numeric sequences exactly once in ascending order', async () => {
+  const sql = pgliteSql(database)
+  await bind(database, spaceE)
+  await database.exec(`
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    SELECT
+      ('01990000-0000-7000-8000-' || lpad(series::text,12,'0'))::uuid,
+      '${spaceE}',
+      '${PLATFORM_NAME}',
+      'DEV-' || series,
+      '${PLATFORM_NAME}',
+      'task ' || series,
+      'local',
+      now(),
+      now(),
+      now(),
+      now()
+    FROM generate_series(2000,2122) AS series;
+  `)
+
+  const sequences: number[] = []
+  let after = 0
+  let head = 0
+  while (true) {
+    const page = await readHostedChangesInTransaction(sql, identity(spaceE), {
+      after,
+      limit: 7,
+      tables: ['hub_task'],
+    })
+    const pageSequences = page.changes.map((change) => change.sequence)
+    expect(pageSequences.length).toBeGreaterThan(0)
+    expect(page.next).toBe(pageSequences.at(-1)!)
+    sequences.push(...pageSequences)
+    after = page.next
+    head = page.head
+    if (!page.more) break
+  }
+
+  expect(sequences).toEqual(Array.from({ length: head }, (_, index) => index + 1))
+  expect(after).toBe(head)
 })

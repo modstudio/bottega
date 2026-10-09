@@ -117,9 +117,10 @@ export async function readHostedChangesInTransaction(
   input: { after: number; limit: number; tables: readonly ReadableHubChangeTable[] },
 ) {
   const metadata = rows<{ head: string | number; oldest: string | number | null }>(
-    await tx`SELECT COALESCE((SELECT sequence FROM hub_change_head
-        WHERE space_id=${identity.spaceId}::uuid),0)::text head,
-      (SELECT MIN(sequence)::text FROM hub_change WHERE space_id=${identity.spaceId}::uuid) oldest`,
+    await tx`SELECT COALESCE((SELECT hub_change_head.sequence FROM hub_change_head
+        WHERE hub_change_head.space_id=${identity.spaceId}::uuid),0)::text head,
+      (SELECT MIN(hub_change.sequence)::text FROM hub_change
+        WHERE hub_change.space_id=${identity.spaceId}::uuid) oldest`,
   )[0]!
   const head = sequenceNumber(metadata.head)
   const oldest = metadata.oldest === null ? null : sequenceNumber(metadata.oldest)
@@ -129,9 +130,10 @@ export async function readHostedChangesInTransaction(
     return { head, oldest, next: input.after, more: false, resetRequired: true, changes: [] }
 
   const candidates = rows<Entry>(
-    await tx`SELECT sequence::text,table_name,row_id::text,op FROM hub_change
-      WHERE space_id=${identity.spaceId}::uuid AND sequence>${input.after}
-      ORDER BY sequence LIMIT ${input.limit + 1}`,
+    await tx`SELECT hub_change.sequence::text,table_name,row_id::text,op FROM hub_change
+      WHERE hub_change.space_id=${identity.spaceId}::uuid
+        AND hub_change.sequence>${input.after}
+      ORDER BY hub_change.sequence LIMIT ${input.limit + 1}`,
   )
   const entries = candidates.slice(0, input.limit)
   const next = entries.length ? sequenceNumber(entries.at(-1)!.sequence) : input.after
@@ -155,7 +157,8 @@ export async function readHostedChangesInTransaction(
   if (upsertIds.length) {
     const later = rows<Pick<Entry, 'table_name' | 'row_id'>>(
       await tx`SELECT table_name,row_id::text FROM hub_change
-        WHERE space_id=${identity.spaceId}::uuid AND sequence>${next}
+        WHERE hub_change.space_id=${identity.spaceId}::uuid
+        AND hub_change.sequence>${next}
         AND table_name=ANY(string_to_array(${[...wanted].join(',')},',')::text[])
         AND row_id=ANY(string_to_array(${idList(upsertIds)},',')::uuid[])`,
     )
