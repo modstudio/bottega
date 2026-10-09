@@ -22,7 +22,7 @@ type ResolvedReviewRecord = {
   rows: ReviewRecordRow[]
 }
 
-export type ReviewRecordCommandResult = {
+type ReviewRecordCommandResult = {
   exitCode: number
   stdout: string
   stderr: string

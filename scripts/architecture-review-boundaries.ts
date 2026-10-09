@@ -22,6 +22,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
       './review-read.ts',
+      './review-record-command.ts',
       './review-triage-restore.ts',
     ],
     reason:

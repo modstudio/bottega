@@ -9,54 +9,60 @@ export const REVIEW_RECORD_PLACEHOLDERS = [
   'branch',
 ] as const
 
-export type ReviewRecordPlaceholder = (typeof REVIEW_RECORD_PLACEHOLDERS)[number]
+type ReviewRecordPlaceholder = (typeof REVIEW_RECORD_PLACEHOLDERS)[number]
 export type ReviewRecordValues = Record<ReviewRecordPlaceholder, string>
 
 const placeholderPattern = /\{([^{}]+)\}/g
 
-export function tokenizeReviewRecordTemplate(template: string): string[] {
-  const tokens: string[] = []
-  let token = ''
-  let quote: "'" | '"' | null = null
-  let escaped = false
-  let started = false
-  for (const character of template.trim()) {
-    if (escaped) {
-      token += character
-      escaped = false
-      started = true
-      continue
-    }
-    if (character === '\\' && quote !== "'") {
-      escaped = true
-      started = true
-      continue
-    }
-    if (quote) {
-      if (character === quote) quote = null
-      else token += character
-      started = true
-      continue
-    }
-    if (character === "'" || character === '"') {
-      quote = character
-      started = true
-      continue
-    }
-    if (/\s/.test(character)) {
-      if (started) {
-        tokens.push(token)
-        token = ''
-        started = false
-      }
-      continue
-    }
-    token += character
-    started = true
+type TokenizerState = {
+  tokens: string[]
+  token: string
+  quote: "'" | '"' | null
+  escaped: boolean
+  started: boolean
+}
+
+function consumeTemplateCharacter(state: TokenizerState, character: string): void {
+  if (state.escaped) {
+    state.token += character
+    state.escaped = false
+    state.started = true
+  } else if (character === '\\' && state.quote !== "'") {
+    state.escaped = true
+    state.started = true
+  } else if (state.quote) {
+    if (character === state.quote) state.quote = null
+    else state.token += character
+    state.started = true
+  } else if (character === "'" || character === '"') {
+    state.quote = character
+    state.started = true
+  } else if (/\s/.test(character)) {
+    if (!state.started) return
+    state.tokens.push(state.token)
+    state.token = ''
+    state.started = false
+  } else {
+    state.token += character
+    state.started = true
   }
-  if (escaped) throw new Error('review record template ends with an escape')
-  if (quote) throw new Error(`review record template has an unclosed ${quote} quote`)
-  if (started) tokens.push(token)
+}
+
+function tokenizeReviewRecordTemplate(template: string): string[] {
+  const tokens: string[] = []
+  const state: TokenizerState = {
+    tokens,
+    token: '',
+    quote: null,
+    escaped: false,
+    started: false,
+  }
+  for (const character of template.trim()) {
+    consumeTemplateCharacter(state, character)
+  }
+  if (state.escaped) throw new Error('review record template ends with an escape')
+  if (state.quote) throw new Error(`review record template has an unclosed ${state.quote} quote`)
+  if (state.started) tokens.push(state.token)
   if (!tokens.length || !tokens[0]) throw new Error('review record template must name a command')
   return tokens
 }

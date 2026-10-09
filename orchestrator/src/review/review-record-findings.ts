@@ -3,9 +3,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-export type ReviewRecordVerdict = 'accept' | 'modify' | 'reject'
+type ReviewRecordVerdict = 'accept' | 'modify' | 'reject'
 
-export type ReviewRecordFinding = {
+type ReviewRecordFinding = {
   lens: string
   verdict: ReviewRecordVerdict
   category?: string

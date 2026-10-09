@@ -454,7 +454,9 @@ export const modules: ArchitectureModule[] = [
     'zod',
     '../../../shared/trackers.ts',
     '../../../shared/test-substance/test-substance.ts',
+    './review-record-template.ts',
   ]),
+  module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/project/project-hosted-write.ts', [
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
@@ -551,6 +553,18 @@ export const modules: ArchitectureModule[] = [
     './review-group.ts',
     './review-outbox.ts',
   ]),
+  module('orchestrator/src/review/review-record-command.ts', [
+    'bun:sqlite',
+    'node:path',
+    '../../../shared/state-directory.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+    '../project/review-record-template.ts',
+    './review-group.ts',
+    './review-record-findings.ts',
+  ]),
+  module('orchestrator/src/review/review-record-findings.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/review/review-pins.ts', [
     '../database/db.ts',
     '../git/git-environment.ts',
