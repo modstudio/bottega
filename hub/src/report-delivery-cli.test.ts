@@ -51,3 +51,29 @@ test('scheduled report delivery continues when pruning fails', async () => {
   expect(deliveries).toBe(1)
   expect(errors).toEqual(['change log pruning failed: Error: prune unavailable'])
 })
+
+test('scheduled report delivery skips pruning during a dry run', async () => {
+  let pruned = 0
+  let deliveries = 0
+  const lines: string[] = []
+
+  const result = await runScheduledReportDelivery({
+    deliveryEnabled: false,
+    dryRun: true,
+    prune: async () => {
+      pruned += 1
+      return 4
+    },
+    deliver: async () => {
+      deliveries += 1
+      return delivered
+    },
+    print: (line) => lines.push(line),
+    printError: (line) => lines.push(line),
+  })
+
+  expect(result).toEqual(delivered)
+  expect(pruned).toBe(0)
+  expect(deliveries).toBe(1)
+  expect(lines).toContain('change log pruning skipped for dry run')
+})

@@ -5,11 +5,11 @@ import { SQL } from 'bun'
 
 const rows = <T>(value: unknown) => value as T[]
 
-export async function pruneHostedChanges(databaseUrl: string, retentionDays: number) {
+export async function pruneHostedChanges(databaseUrl: string) {
   const client = new SQL(databaseUrl)
   try {
     const result = rows<{ deleted: number | bigint | string }>(
-      await client`SELECT hub_change_prune(${retentionDays} * interval '1 day') AS deleted`,
+      await client`SELECT hub_change_prune() AS deleted`,
     )[0]
     if (!result)
       throw new Error('hub change pruning returned no result; verify the record migration')

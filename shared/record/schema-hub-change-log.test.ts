@@ -4,11 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
-import {
-  HUB_CHANGE_RETENTION_DAYS,
-  HUB_CHANGE_SOURCE_EXCLUSIONS,
-  HUB_CHANGE_SOURCES,
-} from './schema-hub.ts'
+import { HUB_CHANGE_SOURCE_EXCLUSIONS, HUB_CHANGE_SOURCES } from './schema-hub.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 const spaceA = '01990000-0000-7000-8000-000000001240'
@@ -358,9 +354,11 @@ test('actor pruning crosses spaces under forced row security while preserving he
   }
   await database.exec(`SET ROLE ${RECORD_OWNER_ROLE}`)
   await database.query(
-    `UPDATE hub_change SET at=now() - interval '2 days' - $1 * interval '1 day'
-     WHERE row_id IN ($2,$3)`,
-    [HUB_CHANGE_RETENTION_DAYS, oldPruneTaskA, oldPruneTaskB],
+    `UPDATE hub_change
+     SET at=CASE WHEN row_id IN ($1,$2) THEN now() - interval '31 days'
+                 ELSE now() - interval '29 days' END
+     WHERE space_id IN ($3,$4)`,
+    [oldPruneTaskA, oldPruneTaskB, pruneSpaceA, pruneSpaceB],
   )
   await resetSession(database)
 
@@ -382,12 +380,7 @@ test('actor pruning crosses spaces under forced row security while preserving he
 
   await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
   expect(
-    (
-      await database.query<{ deleted: number }>(
-        `SELECT hub_change_prune($1 * interval '1 day')::int AS deleted`,
-        [HUB_CHANGE_RETENTION_DAYS],
-      )
-    ).rows,
+    (await database.query<{ deleted: number }>(`SELECT hub_change_prune()::int AS deleted`)).rows,
   ).toEqual([{ deleted: 2 }])
   await database.exec(`SELECT set_config('app.space_id','${pruneSpaceA}',false)`)
   expect(
@@ -424,9 +417,14 @@ test('actor pruning crosses spaces under forced row security while preserving he
   ])
 
   await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
-  await expect(database.query(`SELECT hub_change_prune(interval '23 hours')`)).rejects.toThrow(
-    'hub change retention must be at least one day',
-  )
+  expect(
+    (
+      await database.query<{ overload: string | null }>(
+        `SELECT to_regprocedure('public.hub_change_prune(interval)')::text AS overload`,
+      )
+    ).rows,
+  ).toEqual([{ overload: null }])
+  await expect(database.query(`SELECT hub_change_prune(interval '30 days')`)).rejects.toThrow()
   await resetSession(database)
   expect(
     (
@@ -439,15 +437,13 @@ test('actor pruning crosses spaces under forced row security while preserving he
 
   await database.exec(`SET ROLE ${RECORD_OWNER_ROLE}`)
   await database.query(
-    `UPDATE hub_change SET at=now() - interval '2 days' - $1 * interval '1 day'
-     WHERE space_id IN ($2,$3)`,
-    [HUB_CHANGE_RETENTION_DAYS, pruneSpaceA, pruneSpaceB],
+    `UPDATE hub_change SET at=now() - interval '31 days'
+     WHERE space_id IN ($1,$2)`,
+    [pruneSpaceA, pruneSpaceB],
   )
   await resetSession(database)
   await database.exec(`SET ROLE ${RECORD_ACTOR_ROLE}`)
-  await database.query(`SELECT hub_change_prune($1 * interval '1 day')`, [
-    HUB_CHANGE_RETENTION_DAYS,
-  ])
+  await database.query(`SELECT hub_change_prune()`)
   await resetSession(database)
   await bindActor(database, pruneSpaceA)
   await database.query(

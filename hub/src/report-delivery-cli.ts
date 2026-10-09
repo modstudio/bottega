@@ -2,7 +2,6 @@
 
 // concern: hosted-report-delivery-cli
 
-import { HUB_CHANGE_RETENTION_DAYS } from '../../shared/record/schema-hub.ts'
 import { pruneHostedChanges } from './change-pruning.ts'
 import { runReportDeliveryPass } from './report-delivery.ts'
 import { hostedDeliveryRepository, sesReportMailClient } from './report-delivery-hosted.ts'
@@ -19,11 +18,15 @@ export async function runScheduledReportDelivery(input: {
   print(line: string): void
   printError(line: string): void
 }) {
-  try {
-    const deleted = await input.prune()
-    input.print(`change log pruning: ${deleted} deleted`)
-  } catch (cause) {
-    input.printError(`change log pruning failed: ${String(cause)}`)
+  if (input.dryRun) {
+    input.print('change log pruning skipped for dry run')
+  } else {
+    try {
+      const deleted = await input.prune()
+      input.print(`change log pruning: ${deleted} deleted`)
+    } catch (cause) {
+      input.printError(`change log pruning failed: ${String(cause)}`)
+    }
   }
   if (!input.dryRun && !input.deliveryEnabled) {
     input.print(
@@ -48,7 +51,7 @@ export async function runReportDeliveryCommand(
   return runScheduledReportDelivery({
     deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
     dryRun,
-    prune: () => pruneHostedChanges(databaseUrl, HUB_CHANGE_RETENTION_DAYS),
+    prune: () => pruneHostedChanges(databaseUrl),
     deliver: () =>
       runReportDeliveryPass({
         repository: hostedDeliveryRepository(databaseUrl),

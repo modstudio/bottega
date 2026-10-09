@@ -1,10 +1,11 @@
 # Hosted report delivery
 
-This hourly scheduled Machine prunes expired hosted change-log entries and runs the same
-report-delivery pass as a person running `bun run --cwd hub report-deliver`. Report delivery
-discovers only subscription scheduling metadata across spaces; every subscription,
-membership, measure, and send-ledger read or write is performed with that space bound under
-record row-level security. Pruning runs through the guarded record function across spaces.
+This hourly scheduled Machine prunes hosted change-log entries older than thirty days and
+runs the same report-delivery pass as a person running `bun run --cwd hub report-deliver`.
+Report delivery discovers only subscription scheduling metadata across spaces; every
+subscription, membership, measure, and send-ledger read or write is performed with that
+space bound under record row-level security. Pruning runs through the guarded record
+function across spaces.
 
 Run commands from the repository root. Create the app and install secrets without enabling
 delivery:
@@ -37,9 +38,9 @@ fly machine run . \
   --schedule hourly
 ```
 
-Before enabling, run a dry pass from a one-off Machine and inspect its output. Dry-run renders
-the recipients, subject, exact local window, and text body, but writes no send row and uses no
-SES client:
+Before enabling, run a dry pass from a one-off Machine and inspect its output. Dry-run skips
+change-log pruning, renders the recipients, subject, exact local window, and text body, writes
+no send row, and uses no SES client:
 
 ```sh
 fly machine run . \
