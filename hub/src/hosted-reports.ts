@@ -28,6 +28,16 @@ type HostedSendRecipient = {
   email: string
 }
 
+export function serializeHostedSend(
+  row: HostedSend & { recipient_details_json: string },
+): HostedSend {
+  const { recipient_details_json, ...send } = row
+  return {
+    ...send,
+    recipient_details: JSON.parse(recipient_details_json) as HostedSendRecipient[],
+  }
+}
+
 const rows = <T>(value: unknown) => value as T[]
 const iso = (value: string | Date) => new Date(value).toISOString()
 const WEEKDAYS = [
@@ -345,10 +355,7 @@ export async function listHostedSends(
       since,
     )
     return {
-      sends: sends.map(({ recipient_details_json, ...send }) => ({
-        ...send,
-        recipient_details: JSON.parse(recipient_details_json) as HostedSendRecipient[],
-      })),
+      sends: sends.map(serializeHostedSend),
       cursor,
     }
   })

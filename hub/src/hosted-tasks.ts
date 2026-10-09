@@ -70,6 +70,13 @@ export type HostedStatusEvent = {
   deleted_at: string | null
 }
 
+export const hostedTaskPullSerializers = {
+  hub_task: (row: HostedTask) => row,
+  hub_task_comment: (row: HostedComment) => row,
+  hub_task_document: (row: HostedDocument) => row,
+  hub_task_status_event: (row: HostedStatusEvent) => row,
+} as const
+
 export async function withHostedTenant<T>(
   url: string,
   identity: TaskIdentity,
@@ -116,28 +123,28 @@ export async function listHostedTasks(
         AND updated_at > ${since}::timestamptz
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
       ORDER BY updated_at, key`,
-    )
+    ).map(hostedTaskPullSerializers.hub_task)
     const comments = rows<HostedComment>(
       await tx`
       SELECT * FROM hub_task_comment WHERE space_id=${identity.spaceId}::uuid
         AND updated_at > ${since}::timestamptz
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
         ORDER BY updated_at,id`,
-    )
+    ).map(hostedTaskPullSerializers.hub_task_comment)
     const documents = rows<HostedDocument>(
       await tx`
       SELECT * FROM hub_task_document WHERE space_id=${identity.spaceId}::uuid
         AND updated_at > ${since}::timestamptz
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
         ORDER BY updated_at,id`,
-    )
+    ).map(hostedTaskPullSerializers.hub_task_document)
     const statusEvents = rows<HostedStatusEvent>(
       await tx`
       SELECT * FROM hub_task_status_event WHERE space_id=${identity.spaceId}::uuid
         AND updated_at > ${since}::timestamptz
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
         ORDER BY updated_at,id`,
-    )
+    ).map(hostedTaskPullSerializers.hub_task_status_event)
     const changed = [...tasks, ...comments, ...documents, ...statusEvents]
     const cursor = changed.reduce((latest, row) => {
       const stamp = new Date(row.updated_at).toISOString()
