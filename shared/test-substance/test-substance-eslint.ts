@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute } from 'node:path'
 import parser from '@typescript-eslint/parser'
 import vitestPlugin from '@vitest/eslint-plugin'
 import { ESLint, type Linter } from 'eslint'
@@ -8,6 +7,7 @@ import sonarPlugin from 'eslint-plugin-sonarjs'
 import ts from 'typescript'
 import { expectWithoutMatcherRule } from './expect-without-matcher'
 import { noAssertionRule } from './no-assertion'
+import { readRelativeModule } from './relative-module'
 import { selfComparisonRule } from './self-comparison'
 import {
   applyTestWaivers,
@@ -112,16 +112,6 @@ function testLocations(file: string, content: string): TestLocation[] {
   return locations
 }
 
-const RUNNER_EXTENSIONS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
-const MAX_IMPORTED_FILE_BYTES = 1024 * 1024
-
-function hasParseErrors(source: ts.SourceFile) {
-  return Boolean(
-    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics
-      ?.length,
-  )
-}
-
 function directRunner(source: ts.SourceFile): Runner {
   let runner: Runner = 'unrecognised'
   function recognize(specifier: ts.Expression | undefined) {
@@ -145,56 +135,45 @@ function directRunner(source: ts.SourceFile): Runner {
   return runner
 }
 
-function relativeFile(file: string, specifier: string) {
-  const base = resolve(dirname(file), specifier)
-  return [
-    ...RUNNER_EXTENSIONS.map((extension) => `${base}${extension}`),
-    ...RUNNER_EXTENSIONS.slice(1).map((extension) => join(base, `index${extension}`)),
-  ].find(existsSync)
-}
-
-function reexportedRunner(file: string, statement: ts.ImportDeclaration): Runner {
-  if (!ts.isStringLiteralLike(statement.moduleSpecifier)) return 'unrecognised'
-  if (!statement.moduleSpecifier.text.startsWith('.')) return 'unrecognised'
-  const importedTest = statement.importClause?.namedBindings
-  if (!importedTest || !ts.isNamedImports(importedTest)) return 'unrecognised'
-  if (!importedTest.elements.some((element) => element.name.text === 'test')) return 'unrecognised'
-  const importedFile = relativeFile(file, statement.moduleSpecifier.text)
-  if (!importedFile) return 'unrecognised'
-  try {
-    if (statSync(importedFile).size > MAX_IMPORTED_FILE_BYTES) return 'unrecognised'
-    const importedSource = ts.createSourceFile(
-      importedFile,
-      readFileSync(importedFile, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-    )
-    if (hasParseErrors(importedSource)) return 'unrecognised'
-    const runner = directRunner(importedSource)
-    if (runner === 'unrecognised') return runner
-    const exportsTest = importedSource.statements.some(
-      (candidate) =>
-        ts.isExportDeclaration(candidate) &&
-        candidate.exportClause &&
-        ts.isNamedExports(candidate.exportClause) &&
-        candidate.exportClause.elements.some((element) => element.name.text === 'test'),
-    )
-    return exportsTest ? runner : 'unrecognised'
-  } catch {
-    return 'unrecognised'
+function runnerPackages(source: ts.SourceFile) {
+  const packages = new Set<string>()
+  function collect(specifier: ts.Expression | undefined) {
+    if (!specifier || !ts.isStringLiteralLike(specifier)) return
+    if (['bun:test', 'vitest', '@playwright/test'].includes(specifier.text)) {
+      packages.add(specifier.text)
+    }
   }
+  function visit(node: ts.Node) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      collect(node.moduleSpecifier)
+    } else if (ts.isCallExpression(node)) {
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
+      if (isRequire || isDynamicImport) collect(node.arguments[0])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return packages
 }
 
 function runnerFor(file: string, content: string): Runner {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
   const direct = directRunner(source)
   if (direct !== 'unrecognised') return direct
+  const packages = new Set<string>()
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement)) continue
-    const runner = reexportedRunner(file, statement)
-    if (runner !== 'unrecognised') return runner
+    if (!ts.isStringLiteralLike(statement.moduleSpecifier)) continue
+    const imported = readRelativeModule(file, statement.moduleSpecifier.text)
+    if (!imported) continue
+    for (const packageName of runnerPackages(imported.parsed.source)) packages.add(packageName)
   }
-  return 'unrecognised'
+  if (packages.size !== 1) return 'unrecognised'
+  const [packageName] = packages
+  if (packageName === 'bun:test') return 'bun'
+  if (packageName === 'vitest') return 'vitest'
+  return 'browser'
 }
 
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {

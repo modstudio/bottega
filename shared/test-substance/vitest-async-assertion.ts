@@ -21,6 +21,16 @@ function containsAsyncModifier(node: Node | undefined): boolean {
   return false
 }
 
+function isRootedAtExpectCall(node: Node | undefined): boolean {
+  if (!node) return false
+  if (node.type === 'CallExpression') {
+    if (node.callee?.type === 'Identifier' && node.callee.name === 'expect') return true
+    return isRootedAtExpectCall(node.callee)
+  }
+  if (node.type === 'MemberExpression') return isRootedAtExpectCall(node.object)
+  return false
+}
+
 export const vitestAsyncAssertionRule: Rule.RuleModule = {
   meta: {
     type: 'problem',
@@ -31,7 +41,11 @@ export const vitestAsyncAssertionRule: Rule.RuleModule = {
     return {
       ExpressionStatement(node) {
         const expression = (node as Node).expression
-        if (expression?.type === 'CallExpression' && containsAsyncModifier(expression)) {
+        if (
+          expression?.type === 'CallExpression' &&
+          containsAsyncModifier(expression) &&
+          isRootedAtExpectCall(expression)
+        ) {
           context.report({ node, messageId: 'unhandled' })
         }
       },

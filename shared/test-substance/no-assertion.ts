@@ -1,34 +1,17 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute } from 'node:path'
 import type { Rule } from 'eslint'
 import ts from 'typescript'
+import {
+  type InMemoryTypeScriptFile,
+  inMemoryTypeScriptFile,
+  readRelativeModule,
+} from './relative-module'
 
 const TEST_NAMES = new Set(['it', 'test'])
-const MAX_IMPORTED_FILE_BYTES = 1024 * 1024
-const IMPORT_EXTENSIONS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
-
-type BoundNode = ts.Node & { locals?: Map<ts.__String, ts.Symbol> }
-type BoundSourceFile = ts.SourceFile & { locals?: Map<ts.__String, ts.Symbol> }
-type TypeScriptWithBinder = typeof ts & {
-  bindSourceFile(source: ts.SourceFile, options: ts.CompilerOptions): void
-}
 type ImportedFunction = {
   declaration?: ts.FunctionLikeDeclaration
-  source?: BoundSourceFile
+  parsed?: InMemoryTypeScriptFile
   unresolved: boolean
-}
-
-function hasParseErrors(source: ts.SourceFile) {
-  return Boolean(
-    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics
-      ?.length,
-  )
-}
-
-function bind(file: string, content: string): BoundSourceFile {
-  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-  ;(ts as TypeScriptWithBinder).bindSourceFile(source, { target: ts.ScriptTarget.Latest })
-  return source
 }
 
 function rootCallName(expression: ts.Expression): string | undefined {
@@ -63,25 +46,19 @@ function callableDeclaration(declaration: ts.Declaration): ts.FunctionLikeDeclar
   return undefined
 }
 
-function symbolInScope(name: ts.Identifier, from: ts.Node, source: BoundSourceFile) {
-  let current: ts.Node | undefined = from
-  while (current) {
-    const symbol = (current as BoundNode).locals?.get(name.escapedText)
-    if (symbol) return symbol
-    current = current.parent
-  }
-  return source.locals?.get(name.escapedText)
+function symbolAt(name: ts.Identifier, parsed: InMemoryTypeScriptFile) {
+  return parsed.checker.getSymbolAtLocation(name)
 }
 
 function functionArgument(
   call: ts.CallExpression,
-  source: BoundSourceFile,
+  parsed: InMemoryTypeScriptFile,
 ): ts.FunctionLikeDeclaration | undefined {
   for (let index = call.arguments.length - 1; index >= 0; index -= 1) {
     const argument = call.arguments[index]!
     if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) return argument
     if (!ts.isIdentifier(argument)) continue
-    for (const declaration of symbolInScope(argument, call, source)?.declarations ?? []) {
+    for (const declaration of symbolAt(argument, parsed)?.declarations ?? []) {
       const callable = callableDeclaration(declaration)
       if (callable) return callable
     }
@@ -89,8 +66,8 @@ function functionArgument(
   return undefined
 }
 
-function relativeImport(name: ts.Identifier, from: ts.Node, source: BoundSourceFile) {
-  const declaration = symbolInScope(name, from, source)?.declarations?.find(ts.isImportSpecifier)
+function relativeImport(name: ts.Identifier, parsed: InMemoryTypeScriptFile) {
+  const declaration = symbolAt(name, parsed)?.declarations?.find(ts.isImportSpecifier)
   if (!declaration) return undefined
   const importDeclaration = declaration.parent.parent.parent
   if (!ts.isImportDeclaration(importDeclaration)) return undefined
@@ -102,23 +79,8 @@ function relativeImport(name: ts.Identifier, from: ts.Node, source: BoundSourceF
   }
 }
 
-function isRelativeImport(name: ts.Identifier, from: ts.Node, source: BoundSourceFile) {
-  return Boolean(relativeImport(name, from, source))
-}
-
-function resolveImport(testFile: string, specifier: string): string | undefined {
-  const base = resolve(dirname(testFile), specifier)
-  const candidates = [
-    ...IMPORT_EXTENSIONS.map((extension) => `${base}${extension}`),
-    ...IMPORT_EXTENSIONS.slice(1).map((extension) => join(base, `index${extension}`)),
-  ]
-  return candidates.find((candidate) => {
-    try {
-      return existsSync(candidate) && statSync(candidate).isFile()
-    } catch {
-      return false
-    }
-  })
+function isRelativeImport(name: ts.Identifier, parsed: InMemoryTypeScriptFile) {
+  return Boolean(relativeImport(name, parsed))
 }
 
 function hasExportModifier(statement: ts.Statement) {
@@ -140,7 +102,11 @@ function directlyExportedFunction(statement: ts.Statement, name: string) {
   return declaration && callableDeclaration(declaration)
 }
 
-function locallyReexportedFunction(statement: ts.Statement, source: BoundSourceFile, name: string) {
+function locallyReexportedFunction(
+  statement: ts.Statement,
+  parsed: InMemoryTypeScriptFile,
+  name: string,
+) {
   if (
     !ts.isExportDeclaration(statement) ||
     statement.moduleSpecifier ||
@@ -151,16 +117,18 @@ function locallyReexportedFunction(statement: ts.Statement, source: BoundSourceF
   }
   const exportedName = statement.exportClause.elements.find((element) => element.name.text === name)
   if (!exportedName) return undefined
-  const localName = exportedName.propertyName?.text ?? exportedName.name.text
-  const symbol = source.locals?.get(ts.escapeLeadingUnderscores(localName))
+  const localIdentifier = exportedName.propertyName ?? exportedName.name
+  let symbol = symbolAt(localIdentifier, parsed)
+  if (symbol && symbol.flags & ts.SymbolFlags.Alias)
+    symbol = parsed.checker.getAliasedSymbol(symbol)
   return symbol?.declarations?.map(callableDeclaration).find(Boolean)
 }
 
-function exportedFunction(source: BoundSourceFile, name: string) {
-  for (const statement of source.statements) {
+function exportedFunction(parsed: InMemoryTypeScriptFile, name: string) {
+  for (const statement of parsed.source.statements) {
     const callable =
       directlyExportedFunction(statement, name) ??
-      locallyReexportedFunction(statement, source, name)
+      locallyReexportedFunction(statement, parsed, name)
     if (callable) return callable
   }
   return undefined
@@ -168,30 +136,26 @@ function exportedFunction(source: BoundSourceFile, name: string) {
 
 function importedFunction(
   name: ts.Identifier,
-  from: ts.Node,
-  source: BoundSourceFile,
+  parsed: InMemoryTypeScriptFile,
   testFile: string,
   cache: Map<string, ImportedFunction>,
 ): ImportedFunction | undefined {
-  const imported = relativeImport(name, from, source)
+  const imported = relativeImport(name, parsed)
   if (!imported) return undefined
   const key = `${imported.specifier}\0${imported.importedName}`
   const cached = cache.get(key)
   if (cached) return cached
-  const file = resolveImport(testFile, imported.specifier)
-  if (!file) {
+  const module = readRelativeModule(testFile, imported.specifier)
+  if (!module) {
     const result = { unresolved: true }
     cache.set(key, result)
     return result
   }
   try {
-    const metadata = statSync(file)
-    if (metadata.size > MAX_IMPORTED_FILE_BYTES) throw new Error('imported file exceeds size limit')
-    const importedSource = bind(file, readFileSync(file, 'utf8'))
-    if (hasParseErrors(importedSource)) throw new Error('imported file could not be parsed')
-    const declaration = exportedFunction(importedSource, imported.importedName)
+    const importedParsed = module.parsed
+    const declaration = exportedFunction(importedParsed, imported.importedName)
     const result = declaration
-      ? { declaration, source: importedSource, unresolved: false }
+      ? { declaration, parsed: importedParsed, unresolved: false }
       : { unresolved: true }
     cache.set(key, result)
     return result
@@ -204,7 +168,7 @@ function importedFunction(
 
 function reachesAssertion(
   node: ts.Node,
-  source: BoundSourceFile,
+  parsed: InMemoryTypeScriptFile,
   testFile: string,
   seen: Set<ts.Node>,
   imports: Map<string, ImportedFunction>,
@@ -217,19 +181,19 @@ function reachesAssertion(
     const callName = finalCallName(child.expression)
     if (callName && /^(?:expect|assert)/.test(callName)) return true
     if (!ts.isIdentifier(child.expression)) return false
-    const local = symbolInScope(child.expression, child, source)
+    const local = symbolAt(child.expression, parsed)
       ?.declarations?.map(callableDeclaration)
       .find(Boolean)
-    if (local && reachesAssertion(local, source, testFile, seen, imports)) return true
-    if (source.fileName !== testFile && isRelativeImport(child.expression, child, source)) {
+    if (local && reachesAssertion(local, parsed, testFile, seen, imports)) return true
+    if (parsed.source.fileName !== testFile && isRelativeImport(child.expression, parsed)) {
       return true
     }
-    const imported = importedFunction(child.expression, child, source, testFile, imports)
+    const imported = importedFunction(child.expression, parsed, testFile, imports)
     if (imported?.unresolved) return true
     return Boolean(
       imported?.declaration &&
-        imported.source &&
-        reachesAssertion(imported.declaration, imported.source, testFile, seen, imports),
+        imported.parsed &&
+        reachesAssertion(imported.declaration, imported.parsed, testFile, seen, imports),
     )
   }
 
@@ -254,11 +218,12 @@ export function noAssertionRule(testFile: string): Rule.RuleModule {
     create(context) {
       return {
         Program() {
-          const source = bind(testFile, context.sourceCode.text)
+          const parsed = inMemoryTypeScriptFile(testFile, context.sourceCode.text)
+          const { source } = parsed
           function visit(node: ts.Node) {
             if (ts.isCallExpression(node) && TEST_NAMES.has(rootCallName(node.expression) ?? '')) {
-              const body = functionArgument(node, source)
-              if (body && !reachesAssertion(body, source, testFile, new Set(), new Map())) {
+              const body = functionArgument(node, parsed)
+              if (body && !reachesAssertion(body, parsed, testFile, new Set(), new Map())) {
                 const start = source.getLineAndCharacterOfPosition(node.getStart(source))
                 const end = source.getLineAndCharacterOfPosition(node.getEnd())
                 context.report({

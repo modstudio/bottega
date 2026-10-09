@@ -29,6 +29,10 @@ describe('fixture', () => {
   test('has an unawaited assertion', () => {
     expect(Promise.resolve(1)).resolves.toBe(1)
   })
+  test('clean: unrelated rejects property', () => {
+    api.rejects()
+    expect(subject).toBe(expected)
+  })
   test.only('is focused', () => expect(subject).toBe(expected))
   test.skip('is disabled', () => expect(subject).toBe(expected))
   test('has an invalid expect', () => expect(subject))
@@ -63,3 +67,4 @@ function doesNothing() {
 declare const subject: unknown
 declare const expected: unknown
 declare const row: { assertForwarded(): void }
+declare const api: { rejects(): void }

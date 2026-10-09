@@ -119,6 +119,15 @@ async function guardSpecialJavaScriptFixtures(failures: string[]) {
     failures.push('browser fixture was not excluded with the browser-test reason')
   }
 
+  const derivedBrowserFile = `${fixtureDirectory}test-substance-derived-browser.fixtures.ts`
+  const derivedBrowserReport = await testSubstanceReport(
+    derivedBrowserFile,
+    readFileSync(derivedBrowserFile, 'utf8'),
+  )
+  if (derivedBrowserReport.runner !== 'browser' || derivedBrowserReport.findings.length) {
+    failures.push('derived browser fixture was not excluded from judgment')
+  }
+
   const directiveFile = `${fixtureDirectory}test-substance-inline-directive.fixture.txt`
   const directiveReport = await testSubstanceReport(
     `${fixtureDirectory}inline-directive.test.ts`,

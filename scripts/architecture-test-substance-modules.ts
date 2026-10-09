@@ -19,10 +19,10 @@ export const testSubstanceModules = [
       'eslint-plugin-jest',
       'eslint-plugin-sonarjs',
       'typescript',
-      'node:fs',
       'node:path',
       './expect-without-matcher.ts',
       './no-assertion.ts',
+      './relative-module.ts',
       './self-comparison.ts',
       './test-substance.ts',
       './vitest-async-assertion.ts',
@@ -31,7 +31,11 @@ export const testSubstanceModules = [
   { file: 'shared/test-substance/expect-without-matcher.ts', allowed: ['eslint'] },
   {
     file: 'shared/test-substance/no-assertion.ts',
-    allowed: ['node:fs', 'node:path', 'eslint', 'typescript'],
+    allowed: ['node:path', 'eslint', 'typescript', './relative-module.ts'],
+  },
+  {
+    file: 'shared/test-substance/relative-module.ts',
+    allowed: ['node:fs', 'node:path', 'typescript'],
   },
   {
     file: 'shared/test-substance/no-assertion.test.ts',
