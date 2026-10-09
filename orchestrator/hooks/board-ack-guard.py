@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stop hook: hold an architect turn briefly for pending board acknowledgements."""
+"""Stop hook: deliver unread board messages and hold briefly for acknowledgements."""
 from __future__ import annotations
 
 import json
@@ -8,23 +8,29 @@ import sys
 
 from board_hook_common import (
     marker_path,
+    mark_delivered,
     pending,
     read_marker,
     store_path,
     write_marker,
 )
 
+STOP_EMITTED_ID_LIMIT = 100
 
-def block_count(session: str) -> tuple[str, int | None]:
-    """The session's spent Stop blocks, or None when the marker cannot be read."""
+
+def stop_state(session: str) -> tuple[str, int | None, list[str]]:
+    """The session's Stop state, or a None count when the marker cannot be read."""
     path = marker_path("stop", session)
     value = read_marker(path)
     if not isinstance(value, dict):
-        return path, None
+        return path, None, []
     count = value.get("blocks", 0)
     if not isinstance(count, int) or count < 0:
         count = 0
-    return path, count
+    emitted = value.get("emitted_ids", [])
+    if not isinstance(emitted, list) or any(not isinstance(item, str) for item in emitted):
+        emitted = []
+    return path, count, list(dict.fromkeys(emitted))
 
 
 def notice_summary(notices, stopping: bool = False) -> str:
@@ -52,25 +58,54 @@ def main() -> int:
             or not os.path.exists(store_path())
         ):
             return 0
-        _delivery, _overflow, notices = pending(session)
-        path, count = block_count(session)
-        if not notices:
-            write_marker(path, {"blocks": 0})
-            return 0
-        limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
-        # A block is spent only once it is recorded: a marker that cannot be
-        # read or written would otherwise hold the turn without ever counting.
+        delivery, overflow, notices = pending(session, exclude_acknowledgements=True)
+        path, count, emitted = stop_state(session)
         if count is None:
             return 0
-        if count < limit:
-            if not write_marker(path, {"blocks": count + 1}):
-                return 0
+
+        previously_emitted = set(emitted)
+        if emitted:
+            try:
+                mark_delivered(session, emitted)
+                emitted = []
+            except Exception:
+                pass
+
+        ordinary = [item for item in delivery if item["id"] not in previously_emitted]
+        ordinary_ids = [item["id"] for item in ordinary]
+        limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
+        acknowledgement_block = bool(notices) and count < limit
+        next_count = count + 1 if acknowledgement_block else count
+        if not notices:
+            next_count = 0
+        if not write_marker(
+            path,
+            {
+                "blocks": next_count,
+                "emitted_ids": ([*emitted, *ordinary_ids])[-STOP_EMITTED_ID_LIMIT:],
+            },
+        ):
+            return 0
+
+        ordinary_context = "\n\n".join(item["text"] for item in ordinary)
+        if ordinary and overflow:
+            ordinary_context += "\n\n" + overflow
+        if ordinary:
+            reason = ordinary_context
+            if acknowledgement_block:
+                reason += "\n\n" + notice_summary(notices)
             value = {
                 "decision": "block",
-                "reason": notice_summary(notices),
+                "reason": reason,
             }
             sys.stdout.write(json.dumps(value) + "\n")
-        else:
+            sys.stdout.flush()
+            mark_delivered(session, ordinary_ids)
+            write_marker(path, {"blocks": next_count, "emitted_ids": emitted})
+        elif acknowledgement_block:
+            value = {"decision": "block", "reason": notice_summary(notices)}
+            sys.stdout.write(json.dumps(value) + "\n")
+        elif notices:
             value = {"systemMessage": notice_summary(notices, True)}
             sys.stdout.write(json.dumps(value) + "\n")
     except Exception:

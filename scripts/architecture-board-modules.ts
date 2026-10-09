@@ -81,6 +81,7 @@ export const boardModules: BoardModule[] = [
     './board-hosted-cache.ts',
     './board-claim-policy.ts',
     './board-claim-service.ts',
+    './board-delivery.ts',
     './board-mode.ts',
     './board-policy.ts',
     './board-service.ts',

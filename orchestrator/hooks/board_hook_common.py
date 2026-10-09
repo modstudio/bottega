@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+import tempfile
 
 
 def store_path() -> str:
@@ -37,6 +38,7 @@ def read_marker(path: str):
 
 
 def write_marker(path: str, value) -> bool:
+    temporary = None
     try:
         base = os.path.abspath(os.environ["ORCH_BOARD_HOOK_STATE"])
         os.makedirs(base, mode=0o700, exist_ok=True)
@@ -44,8 +46,7 @@ def write_marker(path: str, value) -> bool:
         root = os.path.dirname(path)
         os.makedirs(root, mode=0o700, exist_ok=True)
         os.chmod(root, 0o700, follow_symlinks=False)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_NONBLOCK
-        descriptor = os.open(path, flags, 0o600)
+        descriptor, temporary = tempfile.mkstemp(prefix=".marker-", dir=root)
         try:
             if not stat.S_ISREG(os.fstat(descriptor).st_mode):
                 return False
@@ -53,21 +54,35 @@ def write_marker(path: str, value) -> bool:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 descriptor = -1
                 json.dump(value, handle)
+            os.replace(temporary, path)
+            temporary = None
             return True
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
     except Exception:
         return False
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
 
 
-def pending(session: str, recently_injected: list[str] | None = None):
+def pending(
+    session: str,
+    recently_injected: list[str] | None = None,
+    exclude_acknowledgements: bool = False,
+):
     binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
     )
     command = [binary, "board", "pending", "--session", session, "--json"]
     if recently_injected:
         command.extend(["--recently-injected", ",".join(recently_injected)])
+    if exclude_acknowledgements:
+        command.append("--exclude-acknowledgement-required")
     timeout = float(os.environ["BOARD_PUSH_SLOW_TIMEOUT_SECONDS"])
     result = subprocess.run(
         command,
