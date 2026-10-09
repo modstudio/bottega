@@ -323,6 +323,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       '../../../shared/docs.ts',
       '../database/db.ts',
+      './doc-audiences-codec.ts',
       './doc-read-store.ts',
       './doc-subjects.ts',
       './doc-write-allowed.ts',
@@ -730,8 +731,10 @@ export const importBoundaries: ImportBoundary[] = [
     'record-cache-boundary',
     'orchestrator/src/record/record-cache.ts',
     [
+      '../../../shared/docs.ts',
       '../../../shared/record-space-membership.ts',
       '../database/db.ts',
+      '../doc/doc-audiences-codec.ts',
       '../project/projects.ts',
       '../subject/subjects.ts',
       './record-api-client.ts',
@@ -765,6 +768,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/docs.ts',
       '../../../shared/record/schema.ts',
       '../database/db.ts',
+      '../doc/doc-audiences-codec.ts',
       './record-api-client.ts',
       '../doc/doc-write-allowed.ts',
       '../project/projects.ts',

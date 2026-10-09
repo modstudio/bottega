@@ -96,6 +96,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
+    './doc-audiences-codec.ts',
     './doc-read-store.ts',
     './doc-revision-store.ts',
     './doc-write-allowed.ts',

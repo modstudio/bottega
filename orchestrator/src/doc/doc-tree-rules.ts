@@ -12,7 +12,6 @@ type DocumentTreeNode = {
 }
 
 export type DocumentTreeWrite = DocumentTreeNode & {
-  priorAudiences?: DocAudiences
   parent: DocumentTreeNode | null
   requestedParentSlug?: string | null
   ancestorSlugs: string[]

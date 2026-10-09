@@ -12,6 +12,7 @@ import {
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
+import { decodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevisionOp } from './doc-write-allowed.ts'
 
 export type Doc = {
@@ -107,7 +108,7 @@ const docRow = <T extends { featured: boolean | number; audiences: string | DocA
   ...row,
   featured: Boolean(row.featured),
   audiences:
-    typeof row.audiences === 'string' ? (JSON.parse(row.audiences) as DocAudiences) : row.audiences,
+    typeof row.audiences === 'string' ? decodeStoredDocAudiences(row.audiences) : row.audiences,
 })
 
 function treeColumns(database: Database): boolean {

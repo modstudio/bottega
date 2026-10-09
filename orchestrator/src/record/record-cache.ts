@@ -1,8 +1,10 @@
 // concern: record-cache
 /** Pulls hosted docs and verdicts into the local offline cache. Must not know CLI presentation. */
 import type { Database } from 'bun:sqlite'
+import { normalizeDocAudiences } from '../../../shared/docs.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import { projects } from '../project/projects.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
@@ -293,8 +295,10 @@ function pulledDocLifecycle(item: Record<string, unknown>): {
 }
 
 function pulledDocAudiences(item: Record<string, unknown>): string {
-  if (Array.isArray(item.audiences)) return JSON.stringify(item.audiences.map(String))
-  return JSON.stringify([item.audience == null ? 'technical' : String(item.audience)])
+  const values = Array.isArray(item.audiences)
+    ? item.audiences.map(String)
+    : [item.audience == null ? 'technical' : String(item.audience)]
+  return encodeStoredDocAudiences(normalizeDocAudiences(values))
 }
 
 function applyDoc(

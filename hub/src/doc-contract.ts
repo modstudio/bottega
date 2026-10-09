@@ -25,6 +25,7 @@ const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),
+  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   status: z.enum(DOC_STATUSES).default('current'),
   kind: z.enum(DOC_KINDS).default('working'),
   snippet: z.string(),

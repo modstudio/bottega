@@ -65,6 +65,7 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     slug: String(row.slug ?? ''),
     title: String(row.title ?? ''),
     status: statusOf(row.status),
+    audiences: audiencesOf(row.audiences),
     snippet: String(row.snippet ?? ''),
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,
     matchPosition: typeof row.matchPosition === 'number' ? row.matchPosition : null,

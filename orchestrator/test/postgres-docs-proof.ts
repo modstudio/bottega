@@ -241,7 +241,7 @@ async function proveDocumentStatus(
         title: slug === 'lifecycle' ? 'Lifecycle proof' : 'Replacement proof',
         body: slug === 'lifecycle' ? body : 'replacement destination',
         delivery: 'demand',
-        audience: 'user',
+        audiences: ['user'],
         status,
         replacementSlug,
         projectName,

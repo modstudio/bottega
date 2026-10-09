@@ -303,8 +303,6 @@ export async function upsertRecordDoc(
         subject: input.subject,
         owner: input.owner ?? null,
         audiences,
-        priorAudiences:
-          existing[0]?.audiences == null ? undefined : (existing[0].audiences as DocAudiences),
         parentId,
         parentWasSpecified: input.parentRecordId !== undefined,
       }),
@@ -797,7 +795,6 @@ export async function restoreRecordDoc(
         owner,
         slug,
         audiences,
-        priorAudiences: existing[0].audiences as DocAudiences,
         parentId,
         parentWasSpecified: true,
       }),
@@ -960,8 +957,6 @@ export async function importRecordDoc(
         owner: doc.owner ?? null,
         slug: doc.slug,
         audiences: doc.audiences,
-        priorAudiences:
-          existing?.audiences == null ? undefined : (existing.audiences as DocAudiences),
         parentId: doc.parentId,
         parentWasSpecified: true,
         removing: doc.deletedAt !== null,

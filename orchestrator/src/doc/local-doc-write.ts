@@ -7,6 +7,7 @@
 import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { Doc } from './doc-read-store.ts'
 import {
   assertLocalRevisionWrite,
@@ -37,7 +38,7 @@ function getDoc(input: Address): Doc | null {
   return row
     ? {
         ...row,
-        audiences: JSON.parse(row.audiences) as DocAudiences,
+        audiences: decodeStoredDocAudiences(row.audiences),
         featured: Boolean(row.featured),
       }
     : null
@@ -83,7 +84,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.title,
           input.body,
           input.delivery,
-          JSON.stringify(input.audiences),
+          encodeStoredDocAudiences(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,
@@ -109,7 +110,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.title,
           input.body,
           input.delivery,
-          JSON.stringify(input.audiences),
+          encodeStoredDocAudiences(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,
@@ -232,7 +233,7 @@ export function commitDocRestore(
           input.title,
           input.body,
           input.delivery,
-          JSON.stringify(input.audiences),
+          encodeStoredDocAudiences(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,
@@ -258,7 +259,7 @@ export function commitDocRestore(
           input.title,
           input.body,
           input.delivery,
-          JSON.stringify(input.audiences),
+          encodeStoredDocAudiences(input.audiences),
           input.parentId,
           input.position,
           input.featured ?? false,

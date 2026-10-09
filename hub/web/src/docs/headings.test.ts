@@ -149,11 +149,19 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     after: ' is disposable',
   })
   expect(
-    mapSearchMatch({ id: '1', slug: 'a', title: 'A', snippet: 'x', matchPosition: 0 }),
+    mapSearchMatch({
+      id: '1',
+      slug: 'a',
+      title: 'A',
+      audiences: ['user'],
+      snippet: 'x',
+      matchPosition: 0,
+    }),
   ).toEqual({
     id: '1',
     slug: 'a',
     title: 'A',
+    audiences: ['user'],
     status: 'current',
     snippet: 'x',
     matchPosition: 0,

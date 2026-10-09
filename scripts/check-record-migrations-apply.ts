@@ -138,12 +138,19 @@ async function proofLatestRevision(transaction: Transaction): Promise<string | n
 }
 
 async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
-  const docs = await transaction.query<{ invalid: number }>(
-    'SELECT count(*)::int AS invalid FROM doc WHERE audiences IS DISTINCT FROM ARRAY[audience]',
+  await transaction.exec(
+    `SELECT set_config('app.space_id', '01990000-0000-7000-8000-000000000001', true);`,
   )
-  const revisions = await transaction.query<{ invalid: number }>(
-    'SELECT count(*)::int AS invalid FROM doc_revision WHERE audiences IS DISTINCT FROM ARRAY[audience]',
+  const docs = await transaction.query<{ total: number; invalid: number }>(
+    'SELECT count(*)::int AS total, count(*) FILTER (WHERE audiences IS DISTINCT FROM ARRAY[audience])::int AS invalid FROM doc',
   )
+  const revisions = await transaction.query<{ total: number; invalid: number }>(
+    'SELECT count(*)::int AS total, count(*) FILTER (WHERE audiences IS DISTINCT FROM ARRAY[audience])::int AS invalid FROM doc_revision',
+  )
+  await transaction.exec(`SELECT set_config('app.space_id', '', true);`)
+  if (docs.rows[0]?.total === 0 || revisions.rows[0]?.total === 0) {
+    throw new CheckFailure('DEV-1238 audience backfill proof rows are not visible')
+  }
   if (docs.rows[0]?.invalid !== 0 || revisions.rows[0]?.invalid !== 0) {
     throw new CheckFailure('DEV-1238 audience backfill did not produce singleton sets')
   }

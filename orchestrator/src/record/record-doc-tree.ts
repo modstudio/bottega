@@ -34,7 +34,6 @@ export async function recordTreeWriteRefusal(
     owner: string | null
     slug: string
     audiences: DocAudiences
-    priorAudiences?: DocAudiences
     parentId: string | null
     parentWasSpecified: boolean
     removing?: boolean
@@ -61,7 +60,6 @@ export async function recordTreeWriteRefusal(
     subject: input.subject,
     owner: input.owner,
     audiences: input.audiences,
-    priorAudiences: input.priorAudiences,
     parent: parentRows[0]
       ? {
           slug: String(parentRows[0].slug),
@@ -101,8 +99,6 @@ export function recordCanonTreeWriteRefusal(
     owner: input.owner,
     slug: input.slug,
     audiences: ['technical'],
-    priorAudiences:
-      input.prior?.audiences == null ? undefined : (input.prior.audiences as DocAudiences),
     parentId: input.prior?.parent_id == null ? null : String(input.prior.parent_id),
     parentWasSpecified: false,
     removing: input.removing,

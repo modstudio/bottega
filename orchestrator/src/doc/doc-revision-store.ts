@@ -3,6 +3,7 @@
 
 import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
+import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
 import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
@@ -97,7 +98,7 @@ export function insertLocalRevision(
       doc.title,
       doc.body,
       doc.delivery,
-      JSON.stringify(doc.audiences),
+      encodeStoredDocAudiences(doc.audiences),
       doc.parent_id,
       doc.position,
       doc.featured,
@@ -136,7 +137,7 @@ export function getStoredDocRevision(id: number, owner: string | null = null): D
     ? {
         ...row,
         featured: Boolean(row.featured),
-        audiences: JSON.parse(row.audiences) as DocAudiences,
+        audiences: decodeStoredDocAudiences(row.audiences),
       }
     : null
 }

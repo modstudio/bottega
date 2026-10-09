@@ -1,6 +1,6 @@
-import type { DocAudiences, DocStatus } from '../../../../shared/docs.ts'
+import type { DocAudience, DocAudiences, DocStatus } from '../../../../shared/docs.ts'
 
-export type DocsAudience = 'user' | 'technical'
+export type DocsAudience = DocAudience
 type DocsDelivery = 'inject' | 'demand'
 
 /** Shared tree item, matching `hub/src/doc-contract.ts`, plus delivery when the source has it. */
@@ -30,6 +30,7 @@ export type DocsSearchMatch = {
   slug: string
   title: string
   status: DocStatus
+  audiences: DocAudiences
   snippet: string
   spaceName?: string
   matchPosition: number | null

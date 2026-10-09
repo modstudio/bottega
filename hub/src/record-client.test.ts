@@ -76,7 +76,7 @@ describe('record client', () => {
   test('public doc reads omit credentials and parse every public route', async () => {
     const id = '01990000-0000-7000-8000-000000000031'
     const requests: Array<{ url: string; cookie: string | null; authorization: string | null }> = []
-    const item = {
+    const serverItem = {
       id,
       slug: 'welcome',
       title: 'Welcome',
@@ -86,6 +86,8 @@ describe('record client', () => {
       scope: 'global',
       subject: null,
       audiences: ['user'] as ['user'],
+      summary: 'Welcome summary',
+      featured: false,
     }
     const fetch: RecordFetch = async (url, init) => {
       const headers = new Headers(init?.headers)
@@ -96,20 +98,20 @@ describe('record client', () => {
       })
       if (url.includes('/search'))
         return jsonResponse({
-          items: [{ id, slug: 'welcome', title: 'Welcome', snippet: 'Welcome body' }],
+          items: [
+            { id, slug: 'welcome', title: 'Welcome', audiences: ['user'], snippet: 'Welcome body' },
+          ],
         })
-      if (url.endsWith(`/${id}`)) return jsonResponse({ ...item, body: 'Welcome body' })
-      return jsonResponse({ items: [item] })
+      if (url.endsWith(`/${id}`)) return jsonResponse({ ...serverItem, body: 'Welcome body' })
+      return jsonResponse({ items: [serverItem] })
     }
     const client = clientWith(fetch, { cookie: 'sid=private', authorization: 'Bearer private' })
     expect(await client.publicDocs()).toEqual({
-      items: [{ ...item, summary: '', featured: false }],
+      items: [serverItem],
     })
     expect(await client.publicDoc(id)).toEqual({
-      ...item,
+      ...serverItem,
       body: 'Welcome body',
-      summary: '',
-      featured: false,
     })
     expect(await client.publicDocSearch('welcome')).toEqual({
       items: [
@@ -117,6 +119,7 @@ describe('record client', () => {
           id,
           slug: 'welcome',
           title: 'Welcome',
+          audiences: ['user'],
           status: 'current',
           kind: 'working',
           snippet: 'Welcome body',
@@ -159,6 +162,7 @@ describe('record client', () => {
             id: '01990000-0000-7000-8000-000000000031',
             slug: 'welcome',
             title: 'Welcome',
+            audiences: ['technical'],
             snippet: 'Welcome body',
             spaceName: 'Workshop',
           },

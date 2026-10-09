@@ -2,6 +2,7 @@
 /** Applies document tree policy to local-store facts and maps local parents to hosted ids. */
 import type { DocAudiences } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
+import { decodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { Doc } from './doc-read-store.ts'
 import { documentTreeWriteRefusal } from './doc-tree-rules.ts'
 
@@ -38,7 +39,7 @@ function treeDoc(
       `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(scope, subject, owner, slug) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
-  return row ? { ...row, audiences: JSON.parse(row.audiences) as DocAudiences } : null
+  return row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
 }
 
 export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): LocalDocTreeFields {
@@ -63,13 +64,16 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
   while (ancestor && !seen.has(ancestor.id)) {
     seen.add(ancestor.id)
     ancestorSlugs.push(ancestor.slug)
-    ancestor = ancestor.parent_id
-      ? (db()
-          .query(
-            `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
-          )
-          .get(ancestor.parent_id) as Doc | null)
-      : null
+    if (!ancestor.parent_id) {
+      ancestor = null
+      continue
+    }
+    const row = db()
+      .query(
+        `SELECT d.*, p.slug AS parent_slug, NULL AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.id=?`,
+      )
+      .get(ancestor.parent_id) as (Omit<Doc, 'audiences'> & { audiences: string }) | null
+    ancestor = row ? { ...row, audiences: decodeStoredDocAudiences(row.audiences) } : null
   }
   const refusal = documentTreeWriteRefusal({
     slug: input.slug,
@@ -77,7 +81,6 @@ export function localDocTreeFields(input: TreeWriteInput, prior: Doc | null): Lo
     subject: input.subject,
     owner: input.owner ?? null,
     audiences,
-    priorAudiences: prior?.audiences,
     parent,
     requestedParentSlug,
     ancestorSlugs,

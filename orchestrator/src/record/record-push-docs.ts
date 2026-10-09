@@ -1,9 +1,10 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
+import { decodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { projectRowByName } from '../project/projects.ts'
 import type {
@@ -114,7 +115,7 @@ function asRevision(
     title: row.title,
     body: row.body,
     delivery: row.delivery,
-    audiences: JSON.parse(row.audiences) as DocAudiences,
+    audiences: decodeStoredDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : (recordIds.get(row.parent_id) ?? null),
     position: row.position,
     featured: Boolean(row.featured),
@@ -151,7 +152,7 @@ function groupFromLive(
         title: doc.title,
         body: doc.body,
         delivery: doc.delivery,
-        audiences: JSON.parse(doc.audiences) as DocAudiences,
+        audiences: decodeStoredDocAudiences(doc.audiences),
         parentId: doc.parent_id == null ? null : (recordIds.get(doc.parent_id) ?? null),
         position: doc.position,
         featured: Boolean(doc.featured),
@@ -197,7 +198,7 @@ function groupFromDeleted(
         title: last.title,
         body: last.body,
         delivery: last.delivery,
-        audiences: JSON.parse(last.audiences) as DocAudiences,
+        audiences: decodeStoredDocAudiences(last.audiences),
         featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,

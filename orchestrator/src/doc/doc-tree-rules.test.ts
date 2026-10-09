@@ -71,7 +71,6 @@ describe('document tree write rules', () => {
     expect(
       documentTreeWriteRefusal(
         base({
-          priorAudiences: ['technical'],
           audiences: ['user'],
           children: [{ slug: 'leaf' }],
         }),

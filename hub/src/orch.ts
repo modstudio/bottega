@@ -921,7 +921,7 @@ export type DocArgvInput = {
   body?: string
   reason?: string
   delivery?: 'inject' | 'demand'
-  audience?: 'user' | 'technical'
+  audience?: DocAudience
   audiences?: DocAudiences
   status?: DocStatus
   kind?: DocKind

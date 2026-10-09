@@ -4,6 +4,7 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
+  type DocAudience,
   type DocAudiences,
   type DocKind,
   type DocStatus,
@@ -278,7 +279,7 @@ const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 type RecordDocListInput = {
   scope?: string
   subject?: string
-  audience?: 'user' | 'technical'
+  audience?: DocAudience
   status?: DocStatus
   kind?: DocKind
   limit?: number
@@ -542,7 +543,7 @@ export function createRecordClient(options: RecordClientOptions) {
       query: string
       scope?: string
       subject?: string
-      audience?: 'user' | 'technical'
+      audience?: DocAudience
       includeDrafts?: boolean
       acrossReadableSpaces?: boolean
     }) =>
