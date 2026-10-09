@@ -7,7 +7,13 @@ import ts from 'typescript'
 import { expectWithoutMatcherRule } from './expect-without-matcher'
 import { noAssertionRule } from './no-assertion'
 import { selfComparisonRule } from './self-comparison'
-import { applyTestWaivers, OUTSIDE_TEST, type TestFinding, type TestWaiver } from './test-substance'
+import {
+  applyTestWaivers,
+  OUTSIDE_TEST,
+  TEST_FILE_EXTENSIONS,
+  type TestFinding,
+  type TestWaiver,
+} from './test-substance'
 
 type Runner = 'bun' | 'vitest' | 'unrecognised'
 
@@ -171,7 +177,7 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
     overrideConfigFile: true,
     overrideConfig: [
       {
-        files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'],
+        files: [`**/*.{${TEST_FILE_EXTENSIONS.join(',')}}`],
         languageOptions: {
           parser,
           parserOptions: {

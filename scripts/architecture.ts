@@ -4,7 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
-import type { ConcernManifest } from './architecture-concern-manifest.ts'
+import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
@@ -33,6 +33,16 @@ import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureCycle = { cycle: string[]; reason: string }
+type ConcernManifest = {
+  roots: typeof CONCERNS
+  shared: { root: 'shared'; reason: string }
+  exceptions: Array<{
+    from: string
+    to: string
+    dependencyTypes: string[]
+    reason: string
+  }>
+}
 
 const module = (file: string, allowed: string[]): ArchitectureModule => ({
   file,
@@ -74,10 +84,7 @@ export const modules: ArchitectureModule[] = [
   ...runLivenessModuleSpecs.map((spec) =>
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
-  module('orchestrator/src/caller-classification.ts', []),
-  module('orchestrator/src/artifact-paths.ts', ['node:path']),
-  module('orchestrator/src/refusal-error.ts', []),
-  module('orchestrator/src/worker-store-write.ts', []),
+  ...coreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/doc/doc-search.ts', [
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',

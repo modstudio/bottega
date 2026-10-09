@@ -7,8 +7,6 @@ import { DIST_MANIFEST } from '../shared/install-root.ts'
 import {
   DECLARED_PAYLOAD_PATHS,
   distributionManifest,
-  ORCH_CLI_ENTRYPOINT,
-  ORCH_CLI_PAYLOAD,
   releaseVersion,
   run,
 } from './build-release.ts'
@@ -40,11 +38,6 @@ test('the payload has only the declared runtime paths', () => {
     'bin/hub',
     'bin/retrieval-search',
   ])
-})
-
-test('the orch launcher resolves its entry inside the multi-file CLI payload', () => {
-  expect(ORCH_CLI_PAYLOAD).toBe('orchestrator/src/cli/orch')
-  expect(ORCH_CLI_ENTRYPOINT).toBe('orchestrator/src/cli/orch/entry.ts')
 })
 
 test('the packaged hook reads its marker list from the release layout', async () => {

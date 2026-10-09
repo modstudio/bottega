@@ -57,7 +57,8 @@ new caller names and answers its own question.
 
 A check that can judge a file when it is written runs there as a hook and
 refuses the edit. Refusing an edit costs far less than finding the defect at
-the gate or in review. The gate runs the same check as the backstop.
+the gate or in review. The hook and the gate run the same check; the gate is
+the backstop.
 
 A write-time check that cannot judge allows the edit and says so. Failure of
 the write-time check itself never blocks the edit.

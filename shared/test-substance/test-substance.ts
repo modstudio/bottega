@@ -26,7 +26,15 @@ export type TestSubstanceJudgment = {
   reason: string
 }
 
-const TEST_FILE_NAME = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/
+export const TEST_FILE_EXTENSIONS = ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts'] as const
+const TEST_FILE_NAME = new RegExp(
+  `(?:^|/)[^/]+\\.(?:test|spec)\\.(?:${TEST_FILE_EXTENSIONS.join('|')})$`,
+)
+
+/** The single filename definition used by every test-substance consumer. */
+export function isTestFile(file: string): boolean {
+  return TEST_FILE_NAME.test(file)
+}
 
 type Report = {
   findings: TestFinding[]
@@ -38,28 +46,49 @@ type ReportLoader = () => Promise<{
   testSubstanceReport(file: string, content: string): Promise<Report>
 }>
 
+// A compiled binary cannot resolve the lint packages. Treat that artifact limitation as
+// unchecked at the loader boundary, never as ok and never as a crash.
 const loadReport: ReportLoader = () => import('./test-substance-eslint.ts')
+
+function detail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function runDetector(
+  report: Awaited<ReturnType<ReportLoader>>['testSubstanceReport'],
+  file: string,
+  content: string,
+): Promise<Report | TestSubstanceJudgment> {
+  try {
+    return await report(file, content)
+  } catch (error) {
+    return { status: 'unchecked', findings: [], reason: `detector failed: ${detail(error)}` }
+  }
+}
+
+function isJudgment(value: Report | TestSubstanceJudgment): value is TestSubstanceJudgment {
+  return 'status' in value
+}
 
 /** Judge only findings introduced by the proposed whole-file content. */
 export async function judgeTestSubstance(
   input: TestSubstanceInput,
   load: ReportLoader = loadReport,
 ): Promise<TestSubstanceJudgment> {
-  if (!TEST_FILE_NAME.test(input.file)) return { status: 'ok', findings: [], reason: '' }
+  if (!isTestFile(input.file)) return { status: 'ok', findings: [], reason: '' }
 
-  let after: Report
   let testSubstanceReport: Awaited<ReturnType<ReportLoader>>['testSubstanceReport']
   try {
     ;({ testSubstanceReport } = await load())
-    after = await testSubstanceReport(input.file, input.after)
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
     return {
       status: 'unchecked',
       findings: [],
-      reason: `detectors unavailable in this build: ${detail}`,
+      reason: `detectors unavailable in this build: ${detail(error)}`,
     }
   }
+  const after = await runDetector(testSubstanceReport, input.file, input.after)
+  if (isJudgment(after)) return after
   if (after.parseError) {
     return { status: 'unchecked', findings: [], reason: after.parseError }
   }
@@ -69,7 +98,8 @@ export async function judgeTestSubstance(
 
   let findings = after.findings
   if (input.before !== null) {
-    const before = await testSubstanceReport(input.file, input.before)
+    const before = await runDetector(testSubstanceReport, input.file, input.before)
+    if (isJudgment(before)) return before
     if (!before.parseError) findings = introducedTestFindings(before.findings, after.findings)
   }
   const result = findings.map(({ testName: test, rule, message, line }) => ({

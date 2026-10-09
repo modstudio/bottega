@@ -1,13 +1,16 @@
 // concern: test-substance-command
 /** Validates proposed test edits and delegates their substance judgment to shared policy. */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
+  isTestFile,
   judgeTestSubstance,
   type TestSubstanceInput,
   type TestSubstanceJudgment,
-} from '../../../shared/test-substance/test-substance.ts'
+} from '../../shared/test-substance/test-substance.ts'
+
+export const MAX_TEST_FILE_BYTES = 1024 * 1024
 
 type ToolPayload = {
   tool_name?: unknown
@@ -38,7 +41,7 @@ function replaced(
   return {
     content:
       replaceAll === true
-        ? content.replaceAll(oldString, newString)
+        ? content.split(oldString).join(newString)
         : `${content.slice(0, content.indexOf(oldString))}${newString}${content.slice(content.indexOf(oldString) + oldString.length)}`,
   }
 }
@@ -126,13 +129,38 @@ function parsePublicInput(value: unknown): TestSubstanceInput {
   return { file: input.file, before: input.before, after: input.after }
 }
 
-function readBefore(file: string): string | null {
+type TargetRead =
+  | { status: 'ready'; before: string | null }
+  | { status: 'unchecked'; reason: string }
+
+function readBefore(file: string): TargetRead {
   try {
-    return readFileSync(file, 'utf8')
+    const metadata = statSync(file)
+    if (!metadata.isFile()) return { status: 'unchecked', reason: 'target is not a regular file' }
+    if (metadata.size > MAX_TEST_FILE_BYTES) {
+      return {
+        status: 'unchecked',
+        reason: `target is larger than ${MAX_TEST_FILE_BYTES} bytes`,
+      }
+    }
+    return { status: 'ready', before: readFileSync(file, 'utf8') }
   } catch (error) {
-    if (object(error)?.code === 'ENOENT') return null
-    throw error
+    if (object(error)?.code === 'ENOENT') return { status: 'ready', before: null }
+    return {
+      status: 'unchecked',
+      reason: `target could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+    }
   }
+}
+
+function proposedContentLimit(input: TestSubstanceInput): TestSubstanceJudgment | undefined {
+  return Buffer.byteLength(input.after) > MAX_TEST_FILE_BYTES
+    ? {
+        status: 'unchecked',
+        findings: [],
+        reason: `proposed content is larger than ${MAX_TEST_FILE_BYTES} bytes`,
+      }
+    : undefined
 }
 
 export async function testSubstanceJudgeCommand(
@@ -146,10 +174,26 @@ export async function testSubstanceJudgeCommand(
   } catch {
     throw new Error('input must be valid JSON')
   }
-  if (!rawToolInput) return judge(parsePublicInput(value))
-  const reconstruction = reconstructTestEdit(value as ToolPayload, readBefore)
+  if (!rawToolInput) {
+    const input = parsePublicInput(value)
+    if (!isTestFile(input.file)) return { status: 'ok', findings: [], reason: '' }
+    const tooLarge = proposedContentLimit(input)
+    return tooLarge ?? judge(input)
+  }
+  const payload = value as ToolPayload
+  const toolInput = object(payload.tool_input)
+  const { file, rawPath } = resolveToolFile(payload, toolInput)
+  if (typeof rawPath === 'string' && !isTestFile(file)) {
+    return { status: 'ok', findings: [], reason: '' }
+  }
+  const target = readBefore(file)
+  if (target.status === 'unchecked') {
+    return { status: 'unchecked', findings: [], reason: target.reason }
+  }
+  const reconstruction = reconstructTestEdit(payload, () => target.before)
   if (reconstruction.status === 'unchecked') {
     return { status: 'unchecked', findings: [], reason: reconstruction.reason }
   }
-  return judge(reconstruction.input)
+  const tooLarge = proposedContentLimit(reconstruction.input)
+  return tooLarge ?? judge(reconstruction.input)
 }

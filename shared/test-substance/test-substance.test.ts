@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   applyTestWaivers,
   introducedTestFindings,
+  isTestFile,
   judgeTestSubstance,
   type TestFinding,
   type TestWaiver,
@@ -48,6 +49,44 @@ test('reports unavailable detectors as unchecked', async () => {
     findings: [],
     reason: "detectors unavailable in this build: Cannot find module 'eslint'",
   })
+})
+
+test('reports detector failures for proposed and prior content as unchecked', async () => {
+  const failingAfter = async () => ({
+    testSubstanceReport: async () => {
+      throw new Error('lint exploded')
+    },
+  })
+  expect(
+    await judgeTestSubstance(
+      { file: 'example.test.ts', before: null, after: 'content' },
+      failingAfter,
+    ),
+  ).toEqual({ status: 'unchecked', findings: [], reason: 'detector failed: lint exploded' })
+
+  let calls = 0
+  expect(
+    await judgeTestSubstance(
+      { file: 'example.test.ts', before: 'before', after: 'after' },
+      async () => ({
+        testSubstanceReport: async () => {
+          calls += 1
+          if (calls === 2) throw new Error('prior lint exploded')
+          return { findings: [], runner: 'bun' }
+        },
+      }),
+    ),
+  ).toEqual({ status: 'unchecked', findings: [], reason: 'detector failed: prior lint exploded' })
+})
+
+test('matches only the supported JavaScript and TypeScript test extensions', () => {
+  for (const extension of ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']) {
+    expect(isTestFile(`/project/example.test.${extension}`)).toBe(true)
+    expect(isTestFile(`/project/example.spec.${extension}`)).toBe(true)
+  }
+  for (const extension of ['mtsx', 'ctsx', 'mjsx', 'cjsx']) {
+    expect(isTestFile(`/project/example.test.${extension}`)).toBe(false)
+  }
 })
 
 function finding(testName: string, line = 4): TestFinding {

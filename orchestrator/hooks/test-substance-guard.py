@@ -8,12 +8,8 @@ import sys
 
 
 JUDGE_TIMEOUT_SECONDS = 2
-TEST_SUFFIXES = tuple(
-    f".{kind}.{extension}"
-    for kind in ("test", "spec")
-    for extension in ("js", "jsx", "mjs", "mjsx", "cjs", "cjsx", "ts", "tsx", "mts", "mtsx", "cts", "ctsx")
-)
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
+JUDGE_ENVIRONMENT_KEYS = ("PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE")
 
 
 def target_path(payload):
@@ -65,6 +61,10 @@ def deny(findings):
     return 0
 
 
+def judge_environment():
+    return {key: os.environ[key] for key in JUDGE_ENVIRONMENT_KEYS if key in os.environ}
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -72,8 +72,10 @@ def main():
         return unchecked("<unknown test file>", f"invalid hook input ({error})")
 
     path = target_path(payload)
-    if path is not None and not path.endswith(TEST_SUFFIXES):
-        return 0
+    if path is not None:
+        name = os.path.basename(path)
+        if ".test." not in name and ".spec." not in name:
+            return 0
     if path is None or payload.get("tool_name") not in EDITOR_TOOLS:
         return unchecked(path or "<unknown test file>", "tool input is not a supported editor shape")
 
@@ -84,6 +86,7 @@ def main():
             [orch, "test-substance", "judge", "--tool-input"],
             input=json.dumps(payload),
             capture_output=True,
+            env=judge_environment(),
             text=True,
             timeout=JUDGE_TIMEOUT_SECONDS,
         )

@@ -25,11 +25,11 @@ export const testSubstanceModules = [
   { file: 'shared/test-substance/no-assertion.ts', allowed: ['eslint'] },
   { file: 'shared/test-substance/self-comparison.ts', allowed: ['eslint'] },
   {
-    file: 'orchestrator/src/test-substance/test-substance-commands.ts',
-    allowed: ['node:fs', 'node:path', '../../../shared/test-substance/test-substance.ts'],
+    file: 'orchestrator/src/test-substance-commands.ts',
+    allowed: ['node:fs', 'node:path', '../../shared/test-substance/test-substance.ts'],
   },
   {
     file: 'orchestrator/src/commands/test-substance.ts',
-    allowed: ['commander', '../test-substance/test-substance-commands.ts', './support.ts'],
+    allowed: ['commander', '../test-substance-commands.ts', './support.ts'],
   },
 ] as const
