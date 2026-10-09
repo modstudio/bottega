@@ -296,6 +296,7 @@ describe('evidence sync planning', () => {
       },
       changes: async () => null,
       notes: async () => {},
+      noteChanges: async () => null,
       reports: async () => {},
     })
 
