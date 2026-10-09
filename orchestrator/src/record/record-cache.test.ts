@@ -293,6 +293,9 @@ describe('record cache pull', () => {
     const updatedAt = '2026-10-08T12:00:00.000Z'
     const firstId = newRecordId()
     const secondId = newRecordId()
+    const firstCursorAt = '2026-10-08T12:00:00.000123Z'
+    const secondCursorAt = '2026-10-08T12:00:00.000456Z'
+    const firstNextCursor = btoa(JSON.stringify({ id: firstId, at: firstCursorAt }))
     const subject = (id: string, name: string, position: number) => ({
       id,
       project: 'alpha',
@@ -306,6 +309,7 @@ describe('record cache pull', () => {
       updatedAt,
     })
     const seen: Array<{ order?: string; cursor?: { at: string; id: string } }> = []
+    const seenRequests: Array<string | null | undefined> = []
     installRecordApiClient(
       clientWith({
         whoami: async () => ({
@@ -322,14 +326,20 @@ describe('record cache pull', () => {
             return { items: [], nextCursor: null }
           }
           const cursor = query.cursor ? decodeRecordCursor(query.cursor) : undefined
+          seenRequests.push(query.cursor)
           seen.push({ order: query.order, cursor })
           if (!cursor)
             return {
               items: [subject(firstId, 'First', 0)],
-              nextCursor: encodeRecordCursor({ at: updatedAt, id: firstId }),
+              nextCursor: firstNextCursor,
+              endCursor: encodeRecordCursor({ at: firstCursorAt, id: firstId }),
             }
           if (cursor.id === firstId) {
-            return { items: [subject(secondId, 'Second', 1)], nextCursor: null }
+            return {
+              items: [subject(secondId, 'Second', 1)],
+              nextCursor: null,
+              endCursor: encodeRecordCursor({ at: secondCursorAt, id: secondId }),
+            }
           }
           return { items: [], nextCursor: null }
         },
@@ -343,9 +353,10 @@ describe('record cache pull', () => {
     ).toEqual([{ id: firstId }, { id: secondId }])
     expect(seen).toEqual([
       { order: 'updated', cursor: undefined },
-      { order: 'updated', cursor: { at: updatedAt, id: firstId } },
-      { order: 'updated', cursor: { at: updatedAt, id: secondId } },
+      { order: 'updated', cursor: { at: firstCursorAt, id: firstId } },
+      { order: 'updated', cursor: { at: secondCursorAt, id: secondId } },
     ])
+    expect(seenRequests[1]).toBe(firstNextCursor)
     expect(
       JSON.parse(
         db()
@@ -354,7 +365,7 @@ describe('record cache pull', () => {
           )
           .get()!.value,
       ),
-    ).toEqual({ at: updatedAt, id: secondId })
+    ).toEqual({ at: secondCursorAt, id: secondId })
   })
 
   test('keeps a cursor per space when the active space changes', async () => {

@@ -9,6 +9,8 @@ import { pullRecordCache } from './record-cache.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 
 const updatedAt = '2026-10-09T12:34:56.789Z'
+const firstCursorAt = '2026-10-09T12:34:56.789123Z'
+const secondCursorAt = '2026-10-09T12:34:56.789456Z'
 
 function doc(id: string, slug: string): Record<string, unknown> {
   return {
@@ -35,19 +37,28 @@ function cursor(value?: string | null): RecordCursor | undefined {
 test('pulls every equal-timestamp document exactly once across a page boundary', async () => {
   const firstId = newRecordId()
   const secondId = newRecordId()
+  const firstNextCursor = btoa(JSON.stringify({ id: firstId, at: firstCursorAt }))
   const seen: Array<RecordCursor | undefined> = []
+  const seenRequests: Array<string | null | undefined> = []
   const client = createMemoryRecordApiClient()
   installRecordApiClient({
     ...client,
     listDocs: async (query) => {
+      seenRequests.push(query.cursor)
       const after = cursor(query.cursor)
       seen.push(after)
       if (!after)
         return {
           items: [doc(firstId, 'first')],
-          nextCursor: encodeRecordCursor({ at: updatedAt, id: firstId }),
+          nextCursor: firstNextCursor,
+          endCursor: encodeRecordCursor({ at: firstCursorAt, id: firstId }),
         }
-      if (after.id === firstId) return { items: [doc(secondId, 'second')], nextCursor: null }
+      if (after.id === firstId)
+        return {
+          items: [doc(secondId, 'second')],
+          nextCursor: null,
+          endCursor: encodeRecordCursor({ at: secondCursorAt, id: secondId }),
+        }
       return { items: [], nextCursor: null }
     },
   })
@@ -57,28 +68,12 @@ test('pulls every equal-timestamp document exactly once across a page boundary',
   expect(
     db().query<{ record_id: string }, []>('SELECT record_id FROM doc ORDER BY slug').all(),
   ).toEqual([{ record_id: firstId }, { record_id: secondId }])
-  expect(seen).toEqual([undefined, { at: updatedAt, id: firstId }, { at: updatedAt, id: secondId }])
-})
-
-test('an empty final page ends the document pull', async () => {
-  const id = newRecordId()
-  let calls = 0
-  const client = createMemoryRecordApiClient()
-  installRecordApiClient({
-    ...client,
-    listDocs: async (query) => {
-      calls++
-      return query.cursor
-        ? { items: [], nextCursor: null }
-        : {
-            items: [doc(id, 'only')],
-            nextCursor: encodeRecordCursor({ at: updatedAt, id }),
-          }
-    },
-  })
-
-  expect(await pullRecordCache(db())).toMatchObject({ docs: 1 })
-  expect(calls).toBe(2)
+  expect(seen).toEqual([
+    undefined,
+    { at: firstCursorAt, id: firstId },
+    { at: secondCursorAt, id: secondId },
+  ])
+  expect(seenRequests[1]).toBe(firstNextCursor)
 })
 
 test('resumes the document pull from its persisted cursor after a restart between pages', async () => {
@@ -95,13 +90,18 @@ test('resumes the document pull from its persisted cursor after a restart betwee
       if (!after)
         return {
           items: [doc(firstId, 'first')],
-          nextCursor: encodeRecordCursor({ at: updatedAt, id: firstId }),
+          nextCursor: encodeRecordCursor({ at: firstCursorAt, id: firstId }),
+          endCursor: encodeRecordCursor({ at: firstCursorAt, id: firstId }),
         }
       if (!interrupted) {
         interrupted = true
         throw new Error('simulated restart')
       }
-      return { items: [doc(secondId, 'second')], nextCursor: null }
+      return {
+        items: [doc(secondId, 'second')],
+        nextCursor: null,
+        endCursor: encodeRecordCursor({ at: secondCursorAt, id: secondId }),
+      }
     },
   })
 
@@ -114,9 +114,13 @@ test('resumes the document pull from its persisted cursor after a restart betwee
         )
         .get()!.value,
     ),
-  ).toEqual({ at: updatedAt, id: firstId })
+  ).toEqual({ at: firstCursorAt, id: firstId })
 
   expect(await pullRecordCache(db())).toMatchObject({ docs: 1 })
-  expect(seen).toEqual([undefined, { at: updatedAt, id: firstId }, { at: updatedAt, id: firstId }])
+  expect(seen).toEqual([
+    undefined,
+    { at: firstCursorAt, id: firstId },
+    { at: firstCursorAt, id: firstId },
+  ])
   expect(db().query('SELECT record_id FROM doc').all()).toHaveLength(2)
 })

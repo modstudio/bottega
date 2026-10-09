@@ -10,7 +10,12 @@ import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
-import { encodeRecordCursor, type RecordCursor, RecordCursorSchema } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  encodeRecordCursor,
+  parseStoredRecordCursor,
+  type RecordCursor,
+} from './record-cursor.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
@@ -20,8 +25,6 @@ import {
 const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
-const FIRST_RECORD_ID = '00000000-0000-0000-0000-000000000000'
-
 function readRecordCursor(
   local: Database,
   key: string,
@@ -29,18 +32,10 @@ function readRecordCursor(
 ): RecordCursor | undefined {
   const value = readCursor(local, key)
   if (value === undefined) return undefined
-  let decoded: unknown
-  try {
-    decoded = JSON.parse(value)
-  } catch {
-    decoded = null
-  }
-  const parsed = RecordCursorSchema.safeParse(decoded)
-  if (parsed.success) return parsed.data
-  const migrated = RecordCursorSchema.safeParse({ at: value, id: FIRST_RECORD_ID })
-  if (legacyTimestamp && migrated.success) {
-    writeRecordCursor(local, key, migrated.data)
-    return migrated.data
+  const parsed = parseStoredRecordCursor(value, legacyTimestamp)
+  if ('cursor' in parsed) {
+    if (parsed.migrated) writeRecordCursor(local, key, parsed.cursor)
+    return parsed.cursor
   }
   throw new Error(`invalid record cache cursor for ${key}`)
 }
@@ -147,10 +142,11 @@ async function pullDocsForSpace(
   let docs = 0
   let skippedDocs = 0
   const client = recordApiClient()
+  let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
   for (;;) {
     const page = await client.listDocs(
       {
-        cursor: cursor ? encodeRecordCursor(cursor) : undefined,
+        cursor: requestCursor,
         includeDeleted: true,
         limit: 100,
       },
@@ -166,10 +162,11 @@ async function pullDocsForSpace(
       )
       docs += applied.docs
       skippedDocs += applied.skippedDocs
-      cursor = applied.cursor ?? cursor
+      cursor = page.endCursor ? decodeRecordCursor(page.endCursor) : (applied.cursor ?? cursor)
       if (cursor && input.unresolvedParents.size === 0) writeRecordCursor(local, cursorKey, cursor)
     }, local)
     if (!page.nextCursor) break
+    requestCursor = page.nextCursor
   }
   return { docs, skippedDocs, cursorKey, cursor }
 }
@@ -278,6 +275,7 @@ async function pullSubjects(
           }
           cursor = { at: row.updatedAt, id: row.id }
         }
+        if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
         if (cursor) writeRecordCursor(local, cursorKey, cursor)
       }, local)
       if (!page.nextCursor) break

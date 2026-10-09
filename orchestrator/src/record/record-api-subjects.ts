@@ -4,7 +4,12 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { SubjectDefinitionSchema } from '../../../shared/subjects.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
+import {
+  decodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+  recordCursorOf,
+} from './record-cursor.ts'
 import { type RecordSubject, RecordSubjectError } from './record-subjects.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
@@ -90,9 +95,7 @@ export function registerRecordSubjectRoutes(
       cursor,
       limit: query.data.limit + 1,
     })
-    return context.json(
-      pageRecordItems(rows, query.data.limit, (row) => ({ at: row.updatedAt, id: row.id })),
-    )
+    return context.json(pageRecordItems(rows, query.data.limit, recordCursorOf, true))
   })
   app.put('/v1/subjects', async (context) => {
     const bound = active(context)

@@ -21,7 +21,7 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
-import type { RecordCursor } from './record-cursor.ts'
+import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
@@ -136,7 +136,8 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
     const spaceIds = input.spaceIds?.length ? input.spaceIds : [input.spaceId]
     const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
     const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name
+      SELECT d.*, s.name AS space_name, p.name AS project_name,
+        to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
@@ -162,7 +163,10 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
       ORDER BY d.updated_at, d.id
       LIMIT ${input.limit + 1}
     `
-    return rows.map((row: Record<string, unknown>) => recordDocRow(row))
+    return rows.map((row: Record<string, unknown>) => ({
+      ...recordDocRow(row),
+      [recordCursorAt]: String(row.cursor_at),
+    }))
   })
 }
 

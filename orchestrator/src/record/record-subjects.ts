@@ -8,9 +8,9 @@ import {
   type SubjectOutput,
   subjectState,
 } from '../../../shared/subjects.ts'
-import type { RecordCursor } from './record-cursor.ts'
+import { type RecordCursor, type RecordCursorRow, recordCursorAt } from './record-cursor.ts'
 
-export type RecordSubject = SubjectOutput
+export type RecordSubject = SubjectOutput & RecordCursorRow
 
 export class RecordSubjectError extends Error {
   status: 400 | 404 | 409
@@ -40,6 +40,7 @@ function iso(value: unknown): string {
 }
 
 function mapped(row: Record<string, unknown>): RecordSubject {
+  const updatedAt = iso(row.updated_at)
   return {
     id: String(row.id),
     project: String(row.project),
@@ -50,7 +51,8 @@ function mapped(row: Record<string, unknown>): RecordSubject {
     retiredAt: row.retired_at == null ? null : iso(row.retired_at),
     state: subjectState(row.retired_at == null ? null : iso(row.retired_at)),
     createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
+    updatedAt,
+    [recordCursorAt]: row.cursor_at == null ? updatedAt : String(row.cursor_at),
   }
 }
 
@@ -101,7 +103,9 @@ export async function listRecordSubjects(
 ): Promise<RecordSubject[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT s.*,p.name AS project FROM subject s
+      SELECT s.*,p.name AS project,
+        to_char(s.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+      FROM subject s
       JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id
       WHERE s.space_id=${input.spaceId}::uuid
         AND (${input.project ?? null}::text IS NULL OR p.name=${input.project ?? null})
