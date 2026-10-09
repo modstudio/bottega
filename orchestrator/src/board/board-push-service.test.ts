@@ -24,7 +24,6 @@ import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
 const guardHook = resolve(import.meta.dir, '../../hooks/board-ack-guard.py')
-const commonHook = resolve(import.meta.dir, '../../hooks/board_hook_common.py')
 const postingCwd = resolve(import.meta.dir, '../../..')
 const hookRoots: string[] = []
 
@@ -123,6 +122,9 @@ type RepeatedHookResult = {
   outputs: string[]
   delivered: Array<[string, string[]]>
   emittedLimit: number | null
+  atomicWritten: boolean
+  atomicValue: unknown
+  atomicTemporaryFiles: string[]
 }
 
 function runHookRepeatedResult(
@@ -150,13 +152,18 @@ function runHookRepeatedResult(
     '    delivered.append([session, ids])',
     '    if json.loads(sys.argv[5]): raise RuntimeError("delivery stamp failed")',
     'module.mark_delivered = mark_delivered',
+    'atomic_path = os.path.join(os.environ["ORCH_BOARD_HOOK_STATE"], "atomic-test")',
+    'module.write_marker(atomic_path, {"previous": True})',
+    'atomic_written = module.write_marker(atomic_path, {"partial": "value", "broken": object()})',
+    'atomic_value = module.read_marker(atomic_path)',
+    'atomic_temporary_files = [name for name in os.listdir(os.path.dirname(atomic_path)) if name.startswith(".marker-")]',
     'outputs = []',
     'for _ in range(int(sys.argv[3])):',
     '    output = io.StringIO()',
     '    sys.stdin = io.StringIO(sys.argv[2])',
     '    with contextlib.redirect_stdout(output): module.main()',
     '    outputs.append(output.getvalue())',
-    'print(json.dumps({"outputs": outputs, "delivered": delivered, "emittedLimit": getattr(module, "STOP_EMITTED_ID_LIMIT", None)}))',
+    'print(json.dumps({"outputs": outputs, "delivered": delivered, "emittedLimit": getattr(module, "STOP_EMITTED_ID_LIMIT", None), "atomicWritten": atomic_written, "atomicValue": atomic_value, "atomicTemporaryFiles": atomic_temporary_files}))',
   ].join('\n')
   const result = Bun.spawnSync(
     [
@@ -937,30 +944,15 @@ test('Stop keeps its acknowledgement budget while carrying fresh ordinary delive
   ])
 })
 
-test('Stop records emitted ids before a failing stamp and blocks once per arriving message', () => {
+test('Stop records and bounds emitted ids, blocks once per message, and preserves markers atomically', () => {
   const item = createHookFixture(hookOutput)
   const first = { id: '1', text: 'first', requiresAcknowledgement: false }
   const second = { id: '2', text: 'second', requiresAcknowledgement: false }
-  const hook = runHookRepeatedResult(
-    guardHook,
-    JSON.stringify({ session_id: 'reader' }),
-    item,
-    4,
-    [[first], [first], [first, second], [first, second]],
-    true,
-  )
-  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'first' })
-  expect(hook.outputs[1]).toBe('')
-  expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
-  expect(hook.outputs[3]).toBe('')
-})
-
-test('Stop bounds ids retained after repeated stamp failures', () => {
-  const item = createHookFixture(hookOutput)
-  const pendingValues = Array.from({ length: 101 }, (_, index) => [
-    { id: String(index + 1), text: `message ${index + 1}`, requiresAcknowledgement: false },
+  const later = Array.from({ length: 99 }, (_, index) => [
+    { id: String(index + 3), text: `message ${index + 3}`, requiresAcknowledgement: false },
   ])
-  const result = runHookRepeatedResult(
+  const pendingValues = [[first], [first], [first, second], [first, second], ...later]
+  const hook = runHookRepeatedResult(
     guardHook,
     JSON.stringify({ session_id: 'reader' }),
     item,
@@ -968,38 +960,20 @@ test('Stop bounds ids retained after repeated stamp failures', () => {
     pendingValues,
     true,
   )
+  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'first' })
+  expect(hook.outputs[1]).toBe('')
+  expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
+  expect(hook.outputs[3]).toBe('')
   const markerRoot = join(item.root, 'board-hook-state', 'stop')
   const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
   const value = JSON.parse(readFileSync(marker, 'utf8'))
 
-  expect(result.emittedLimit).toBeGreaterThan(0)
-  expect(value.emitted_ids).toHaveLength(result.emittedLimit!)
+  expect(hook.emittedLimit).toBeGreaterThan(0)
+  expect(value.emitted_ids).toHaveLength(hook.emittedLimit!)
   expect(value.emitted_ids.at(-1)).toBe('101')
-})
-
-test('marker replacement preserves the prior value when serialization fails', () => {
-  const root = mkdtempSync(join(tmpdir(), 'board-marker-'))
-  hookRoots.push(root)
-  const marker = join(root, 'marker')
-  writeFileSync(marker, JSON.stringify({ previous: true }), { mode: 0o600 })
-  const runner = [
-    'import importlib.util, json, sys',
-    'spec = importlib.util.spec_from_file_location("board_hook_common_test", sys.argv[1])',
-    'module = importlib.util.module_from_spec(spec)',
-    'spec.loader.exec_module(module)',
-    'print(json.dumps({"written": module.write_marker(sys.argv[2], {"partial": "value", "broken": object()})}))',
-  ].join('\n')
-
-  const result = Bun.spawnSync(['python3', '-c', runner, commonHook, marker], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env, ORCH_BOARD_HOOK_STATE: root },
-  })
-
-  expect(result.exitCode).toBe(0)
-  expect(JSON.parse(result.stdout.toString())).toEqual({ written: false })
-  expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ previous: true })
-  expect(readdirSync(root)).toEqual(['marker'])
+  expect(hook.atomicWritten).toBeFalse()
+  expect(hook.atomicValue).toEqual({ previous: true })
+  expect(hook.atomicTemporaryFiles).toEqual([])
 })
 
 test('Stop budget is per session, is not rearmed by new notices, and resets when clear', () => {
