@@ -119,7 +119,12 @@ function runHook(
   })
 }
 
-function runHookRepeated(
+type RepeatedHookResult = {
+  outputs: string[]
+  delivered: Array<[string, string[]]>
+}
+
+function runHookRepeatedResult(
   path: string,
   payload: string,
   fixture: ReturnType<typeof createHookFixture>,
@@ -138,14 +143,15 @@ function runHookRepeated(
     'if pending_values is not None:',
     '    pending_iterator = iter(pending_values)',
     '    module.pending = lambda session, recently_injected=None: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
-    '    module.mark_delivered = lambda session, ids: None',
-    'results = []',
+    'delivered = []',
+    'module.mark_delivered = lambda session, ids: delivered.append([session, ids])',
+    'outputs = []',
     'for _ in range(int(sys.argv[3])):',
     '    output = io.StringIO()',
     '    sys.stdin = io.StringIO(sys.argv[2])',
     '    with contextlib.redirect_stdout(output): module.main()',
-    '    results.append(output.getvalue())',
-    'print(json.dumps(results))',
+    '    outputs.append(output.getvalue())',
+    'print(json.dumps({"outputs": outputs, "delivered": delivered}))',
   ].join('\n')
   const result = Bun.spawnSync(
     ['python3', '-c', runner, path, payload, String(times), JSON.stringify(pendingValues)],
@@ -167,7 +173,19 @@ function runHookRepeated(
     },
   )
   expect(result.exitCode).toBe(0)
-  return JSON.parse(result.stdout.toString()) as string[]
+  return JSON.parse(result.stdout.toString()) as RepeatedHookResult
+}
+
+function runHookRepeated(
+  path: string,
+  payload: string,
+  fixture: ReturnType<typeof createHookFixture>,
+  times: number,
+  pendingValues: Array<
+    Array<{ id: string; text: string; requiresAcknowledgement: boolean }>
+  > | null = null,
+) {
+  return runHookRepeatedResult(path, payload, fixture, times, pendingValues).outputs
 }
 
 function runStopHookRepeated(
@@ -175,46 +193,7 @@ function runStopHookRepeated(
   fixture: ReturnType<typeof createHookFixture>,
   pendingValues: Array<Array<{ id: string; text: string; requiresAcknowledgement: boolean }>>,
 ) {
-  const runner = [
-    'import contextlib, importlib.util, io, json, os, sys',
-    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
-    'spec = importlib.util.spec_from_file_location("board_stop_hook_test", sys.argv[1])',
-    'module = importlib.util.module_from_spec(spec)',
-    'spec.loader.exec_module(module)',
-    'pending_values = json.loads(sys.argv[3])',
-    'pending_iterator = iter(pending_values)',
-    'module.pending = lambda session: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
-    'delivered = []',
-    'module.mark_delivered = lambda session, ids: delivered.append([session, ids])',
-    'outputs = []',
-    'for _ in pending_values:',
-    '    output = io.StringIO()',
-    '    sys.stdin = io.StringIO(sys.argv[2])',
-    '    with contextlib.redirect_stdout(output): module.main()',
-    '    outputs.append(output.getvalue())',
-    'print(json.dumps({"outputs": outputs, "delivered": delivered}))',
-  ].join('\n')
-  const result = Bun.spawnSync(
-    ['python3', '-c', runner, guardHook, payload, JSON.stringify(pendingValues)],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: {
-        ...process.env,
-        ORCH_RUN_ID: '',
-        ORCH_DB: fixture.databasePath,
-        ORCH_BOARD_BIN: fixture.command,
-        BOARD_ACK_STOP_BLOCKS: '3',
-        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
-        ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
-      },
-    },
-  )
-  expect(result.exitCode).toBe(0)
-  return JSON.parse(result.stdout.toString()) as {
-    outputs: string[]
-    delivered: Array<[string, string[]]>
-  }
+  return runHookRepeatedResult(guardHook, payload, fixture, pendingValues.length, pendingValues)
 }
 
 const hookOutput = JSON.stringify({
