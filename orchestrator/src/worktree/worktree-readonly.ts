@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import {
   borrowedCheckoutOf,
   git,
+  gitInput,
   gitOk,
   repoRootOf,
   targetGitEnvironment,
@@ -55,12 +56,12 @@ export function createReadOnlyWorktree(
   }
 }
 
-type RemoteTrackingRef = { ref: string; object: string; symref: string }
+type RemoteTrackingRef = { ref: string; object: string }
 
 /** Preserve revision names reviewers can see without preserving a usable transport. */
 function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
   const output = git(
-    ['for-each-ref', '--format=%(refname)%09%(objectname)%09%(symref)', 'refs/remotes/'],
+    ['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/remotes/'],
     repoRoot,
   )
   if (!output) return []
@@ -69,18 +70,14 @@ function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
     const ref = fields[0]
     const object = fields[1]
     if (!ref || !object) throw new Error(`git for-each-ref returned malformed line: ${line}`)
-    const symref = fields[2] ?? ''
-    return { ref, object, symref }
+    return { ref, object }
   })
 }
 
 function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
-  for (const ref of refs) {
-    if (!ref.symref) git(['update-ref', ref.ref, ref.object], path)
-  }
-  for (const ref of refs) {
-    if (ref.symref) git(['symbolic-ref', ref.ref, ref.symref], path)
-  }
+  if (!refs.length) return
+  const updates = `${refs.map((ref) => `update ${ref.ref} ${ref.object}`).join('\n')}\n`
+  gitInput(['update-ref', '--stdin'], path, new TextEncoder().encode(updates))
 }
 
 /** Let a project provision a detached read-only checkout at orch's chosen path. */
