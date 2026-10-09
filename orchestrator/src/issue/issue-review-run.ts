@@ -1,16 +1,13 @@
 // concern: filed-issue review adapter
 /** Resolves review tier, dispatches its lenses, and gathers results without judging them. */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { resolveFailover } from '../collect/collect.ts'
+import { type CollectedWaitRun, collectWaitForRuns } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
-import { outcomeOf } from '../outcome.ts'
 import type { Project } from '../project/projects.ts'
 import { parseReviewOutput } from '../review/review.ts'
 import { resolveReviewMergeBase } from '../review/review-target.ts'
 import { reviewTierForRange } from '../review/review-tier-service.ts'
 import { detach } from '../run/run-dispatch.ts'
-import { reapStale, STALE_AFTER_MS } from '../run/run-liveness.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { boundedIssuePack, type FiledIssue } from './issue-file.ts'
 import {
@@ -21,17 +18,10 @@ import {
 } from './issue-review.ts'
 
 const ROUTE_CLAIM_TIMEOUT_MS = 30_000
-const REVIEW_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
+const REVIEW_FOLLOW_TIMEOUT_MS = 61 * 60_000
 const POLL_MS = 100
 
 type ReviewLaunch = { runId: number | null; failedToRun: string | null }
-type DetachedReviewResult = {
-  id: number
-  status: string
-  output: string
-  error: string | null
-  exitCode: number | null
-}
 
 /** Dispatch serially through the claim boundary, then gather concurrently in lens order. */
 export async function dispatchThenGatherIssueReviews<TClaim, TResult>(
@@ -96,19 +86,25 @@ export async function runIssueFixReviews(input: {
         return failedLens(lens, launch.failedToRun, launch.runId)
       }
       try {
-        const lensRun = await gatherDetachedReview(launch.runId!)
+        const collected = await collectWaitForRuns(db(), [launch.runId!], {
+          timeoutMs: REVIEW_FOLLOW_TIMEOUT_MS,
+        })
+        if (collected.kind === 'timed-out') {
+          throw new Error(`run ${launch.runId} did not finish within 61m`)
+        }
+        const lensRun = collected.runs[0]!
         if (lensRun.status !== 'ok') {
-          return failedLens(lens, failedReviewReason(lensRun), lensRun.id)
+          return failedLens(lens, failedReviewReason(lensRun), lensRun.finalId)
         }
         const review = parseReviewOutput(lensRun.output)
-        if (!review) throw new Error(`run ${lensRun.id} returned no review output`)
+        if (!review) throw new Error(`run ${lensRun.finalId} returned no review output`)
         return {
           lens,
           finished: true,
           failedToRun: null,
           findingCount: review.findings.length,
           findings: review.findings,
-          runId: lensRun.id,
+          runId: lensRun.finalId,
         }
       } catch (cause) {
         return failedLens(lens, String((cause as Error)?.message ?? cause), launch.runId)
@@ -141,39 +137,8 @@ async function waitUntilRoutingCounts(runId: number): Promise<void> {
   }
 }
 
-async function gatherDetachedReview(runId: number): Promise<DetachedReviewResult> {
-  const deadline = Date.now() + REVIEW_FOLLOW_TIMEOUT_MS
-  for (;;) {
-    const chain = resolveFailover(db(), runId)
-    const row = db()
-      .query('SELECT id,status,output_path,error,exit_code FROM run WHERE id=?')
-      .get(chain.finalId) as {
-      id: number
-      status: string
-      output_path: string | null
-      error: string | null
-      exit_code: number | null
-    } | null
-    if (row && outcomeOf(row).terminal && !chain.settling) {
-      return {
-        id: row.id,
-        status: row.status,
-        output:
-          row.output_path && existsSync(row.output_path)
-            ? readFileSync(row.output_path, 'utf8')
-            : '',
-        error: row.error,
-        exitCode: row.exit_code,
-      }
-    }
-    if (Date.now() >= deadline) throw new Error(`run ${runId} did not finish within 61m`)
-    reapStale()
-    await pollDelay()
-  }
-}
-
-function failedReviewReason(run: DetachedReviewResult): string {
-  return `run ${run.id} ended ${run.status}: ${run.error ?? (run.output.trim() || `exit ${run.exitCode}`)}`
+function failedReviewReason(run: CollectedWaitRun): string {
+  return `run ${run.finalId} ended ${run.status}: ${run.error ?? (run.output.trim() || `exit ${run.exitCode}`)}`
 }
 
 function errorRunId(cause: unknown): number | null {

@@ -592,6 +592,116 @@ export function collectResult(
 
 const VALUE_FLAGS = new Set(['--timeout'])
 
+export type CollectedWaitRun = {
+  requestedId: number
+  finalId: number
+  status: string
+  output: string
+  error: string | null
+  exitCode: number | null
+  failureKind: string | null
+  ok: boolean
+  line: string
+  attempts: FailoverAttempt[]
+  observedDead: boolean
+}
+
+export type CollectWaitServiceResult =
+  | { kind: 'finished'; runs: CollectedWaitRun[] }
+  | { kind: 'timed-out'; runs: CollectedWaitRun[]; runningIds: number[] }
+
+type CollectWaitServiceOptions = {
+  timeoutMs?: number
+  beforePoll?: () => void | number | ObservedDeadRun[]
+  now?: () => number
+  sleep?: (milliseconds: number) => Promise<void>
+}
+
+/** Wait for failover chains and return their terminal records without presenting or exiting. */
+export async function collectWaitForRuns(
+  database: Database,
+  ids: readonly number[],
+  options: CollectWaitServiceOptions = {},
+): Promise<CollectWaitServiceResult> {
+  const timeoutMs = options.timeoutMs ?? 1800_000
+  const beforePoll = options.beforePoll ?? (() => {})
+  const now = options.now ?? Date.now
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds)))
+  const deadline = now() + timeoutMs
+  const observedTerminal = new Set<number>()
+  for (;;) {
+    const observation = beforePoll()
+    const outcomes = ids.map((requestedId) => {
+      const chain = resolveFailover(database, requestedId)
+      const row = database
+        .query('SELECT id, status, output_path, error, failure_kind, exit_code FROM run WHERE id=?')
+        .get(chain.finalId) as {
+        id: number
+        status: string
+        output_path: string | null
+        error: string | null
+        failure_kind: string | null
+        exit_code: number | null
+      }
+      const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
+      const outcome =
+        asking?.state === 'running'
+          ? { terminal: false, ok: false, line: 'running' }
+          : asking?.state === 'open'
+            ? {
+                terminal: true,
+                ok: true,
+                line: `asking - orch inbox (or orch answer ${asking.rootId})`,
+              }
+            : asking?.state === 'recoverable'
+              ? {
+                  terminal: true,
+                  ok: true,
+                  line: `asking - recoverable: orch continue ${asking.rootId}`,
+                }
+              : outcomeOf(row)
+      return { requestedId, row, chain, outcome }
+    })
+    if (Array.isArray(observation)) {
+      const requestedRows = new Set(outcomes.map(({ row }) => row.id))
+      for (const dead of observation) {
+        if (!requestedRows.has(dead.id) || observedTerminal.has(dead.id)) continue
+        observedTerminal.add(dead.id)
+      }
+    }
+    const running = outcomes.filter(
+      ({ row, outcome, chain }) =>
+        !observedTerminal.has(row.id) && (!outcome.terminal || chain.settling),
+    )
+    const runs = outcomes.map(
+      ({ requestedId, row, chain, outcome }): CollectedWaitRun => ({
+        requestedId,
+        finalId: row.id,
+        status: row.status,
+        output:
+          row.output_path && existsSync(row.output_path)
+            ? readFileSync(row.output_path, 'utf8')
+            : '',
+        error: row.error,
+        exitCode: row.exit_code,
+        failureKind: row.failure_kind,
+        ok: outcome.ok,
+        line: outcome.line,
+        attempts: chain.attempts,
+        observedDead: observedTerminal.has(row.id),
+      }),
+    )
+    if (!running.length) return { kind: 'finished', runs }
+    if (now() >= deadline) {
+      return { kind: 'timed-out', runs, runningIds: running.map(({ row }) => row.id) }
+    }
+    await sleep(2000)
+  }
+}
+
 export async function collectWait(
   database: Database,
   argv: string[],
@@ -622,77 +732,38 @@ export async function collectWait(
   if (!ids.length) throw new Error('orch wait <run-id>...')
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
-  const deadline = Date.now() + timeoutMs
-  const observedTerminal = new Set<number>()
-  for (;;) {
-    const observation = beforePoll()
-    const outcomes = ids.map((id) => {
-      const chain = resolveFailover(database, id)
-      const row = database
-        .query('SELECT id, status, error, failure_kind, exit_code FROM run WHERE id=?')
-        .get(chain.finalId) as {
-        id: number
-        status: string
-        error: string | null
-        failure_kind: string | null
-        exit_code: number | null
-      }
-      const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
-      const outcome =
-        asking?.state === 'running'
-          ? { terminal: false, ok: false, line: 'running' }
-          : asking?.state === 'open'
-            ? {
-                terminal: true,
-                ok: true,
-                line: `asking - orch inbox (or orch answer ${asking.rootId})`,
-              }
-            : asking?.state === 'recoverable'
-              ? {
-                  terminal: true,
-                  ok: true,
-                  line: `asking - recoverable: orch continue ${asking.rootId}`,
-                }
-              : outcomeOf(row)
-      return { requestedId: id, row, chain, outcome }
-    })
-    if (Array.isArray(observation)) {
-      const requestedRows = new Set(outcomes.map(({ row }) => row.id))
-      for (const dead of observation) {
-        if (!requestedRows.has(dead.id) || observedTerminal.has(dead.id)) continue
-        observedTerminal.add(dead.id)
-        console.error(`run ${dead.id}: process gone, not terminalised (read-only linked worktree)`)
-      }
-    }
-    const running = outcomes.filter(
-      ({ row, outcome, chain }) =>
-        !observedTerminal.has(row.id) && (!outcome.terminal || chain.settling),
+  const result = await collectWaitForRuns(database, ids, { timeoutMs, beforePoll })
+  if (result.kind === 'timed-out') {
+    console.error(
+      `still running after ${Math.round(timeoutMs / 1000)}s: ` + result.runningIds.join(', '),
     )
-    if (!running.length) {
-      for (const { requestedId, row, outcome, chain } of outcomes) {
-        if (observedTerminal.has(row.id)) continue
-        console.log(`${requestedId}\t${outcome.line}`)
-        logOkOutcomeNote(row)
-        const note = failoverSummary(chain.attempts)
-        if (note) console.log(`  ${note}`)
-        if (!outcome.ok) console.log(`  ${failureReason(row)}`)
-        const branch = branchNote(database, row.id)
-        if (branch) console.log(branch.slice(1))
-      }
-      if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
-      return
-    }
-    if (Date.now() >= deadline) {
-      console.error(
-        `still running after ${Math.round(timeoutMs / 1000)}s: ` +
-          running.map(({ row }) => row.id).join(', '),
-      )
-      process.exit(2)
-    }
-    await new Promise<void>((resolve) => {
-      globalThis.setTimeout(resolve, 2000)
-    })
+    process.exit(2)
   }
+  for (const run of result.runs) {
+    if (run.observedDead) {
+      console.error(
+        `run ${run.finalId}: process gone, not terminalised (read-only linked worktree)`,
+      )
+      continue
+    }
+    console.log(`${run.requestedId}\t${run.line}`)
+    logOkOutcomeNote(run)
+    const note = failoverSummary(run.attempts)
+    if (note) console.log(`  ${note}`)
+    if (!run.ok) {
+      console.log(
+        `  ${failureReason({
+          status: run.status,
+          error: run.error,
+          failure_kind: run.failureKind,
+          exit_code: run.exitCode,
+        })}`,
+      )
+    }
+    const branch = branchNote(database, run.finalId)
+    if (branch) console.log(branch.slice(1))
+  }
+  if (result.runs.some((run) => run.observedDead || !run.ok)) process.exit(1)
 }
 
 export async function collect(

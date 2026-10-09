@@ -9,6 +9,7 @@ import {
   branchNote,
   collectResult,
   collectWait,
+  collectWaitForRuns,
   mintedBranchForRun,
   noCommitNote,
   releasedWritingTreeNote,
@@ -131,6 +132,71 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test('structured wait returns a failover chain terminal run and reads its output', async () => {
+    const requestedId = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
+    const finalId = addRun({ agent: 'claude', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of=?,automatic_failover=1 WHERE id=?')
+      .run(requestedId, finalId)
+    const output = join(dir, `structured-wait-${finalId}.txt`)
+    writeFileSync(output, 'review result')
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, finalId)
+    try {
+      const result = await collectWaitForRuns(db(), [requestedId], { beforePoll: () => {} })
+      expect(result).toMatchObject({
+        kind: 'finished',
+        runs: [
+          {
+            requestedId,
+            finalId,
+            status: 'ok',
+            output: 'review result',
+            error: null,
+            exitCode: null,
+          },
+        ],
+      })
+    } finally {
+      rmSync(output, { force: true })
+    }
+  })
+
+  test('structured wait returns a failed terminal run without exiting', async () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
+    db()
+      .query(
+        "UPDATE run SET error='harness refused',failure_kind='harness',exit_code=17 WHERE id=?",
+      )
+      .run(id)
+    const result = await collectWaitForRuns(db(), [id], { beforePoll: () => {} })
+    expect(result).toMatchObject({
+      kind: 'finished',
+      runs: [
+        {
+          finalId: id,
+          status: 'failed',
+          error: 'harness refused',
+          exitCode: 17,
+          ok: false,
+        },
+      ],
+    })
+  })
+
+  test('structured wait returns a distinct timeout using an injected clock', async () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    let now = 100
+    const result = await collectWaitForRuns(db(), [id], {
+      timeoutMs: 5,
+      beforePoll: () => {},
+      now: () => now,
+      sleep: async () => {
+        now += 5
+      },
+    })
+    expect(result).toMatchObject({ kind: 'timed-out', runningIds: [id] })
+  })
+
   test('result shows an ok outcome note directly before the score hint', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET error=? WHERE id=?').run('this turn changed nothing', id)
