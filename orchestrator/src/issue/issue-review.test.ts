@@ -2,8 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   type IssueReviewLensResult,
   issueReviewDecision,
+  issueReviewDidNotRun,
   issueReviewEvidence,
   issueReviewLenses,
+  issueReviewRunLabel,
+  parseIssueReviewRunLabel,
 } from './issue-review.ts'
 
 const clean = (lens: string): IssueReviewLensResult => ({
@@ -64,5 +67,24 @@ describe('filed issue review policy', () => {
     })
     expect(evidence).toContain('craft lens run: 42; did not run')
     expect(evidence).toContain('agent exited before returning review output')
+  })
+
+  test('a null finding count uses the same did-not-run ruling in decision and evidence', () => {
+    const result = { ...clean('correctness'), findingCount: null }
+    expect(issueReviewDidNotRun(result)).toBe(true)
+    expect(issueReviewDecision([result]).lensesNotRun).toEqual(['correctness'])
+    expect(issueReviewEvidence(result)).toContain('correctness lens run: 1; did not run')
+  })
+
+  test('one review label grammar formats and parses every coordinator lens', () => {
+    expect(issueReviewRunLabel('DEV-1', 'correctness')).toBe('issue DEV-1 review correctness')
+    expect(issueReviewRunLabel('DEV-1', 'issue-blast-radius')).toBe(
+      'issue DEV-1 review issue-blast-radius',
+    )
+    expect(parseIssueReviewRunLabel('issue DEV-1 review correctness')).toEqual({
+      issueKey: 'DEV-1',
+      lens: 'correctness',
+    })
+    expect(parseIssueReviewRunLabel('issue DEV-1 blast radius')).toBeNull()
   })
 })
