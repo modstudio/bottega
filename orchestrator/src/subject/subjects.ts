@@ -40,11 +40,19 @@ const mapped = (row: LocalRow): Subject => ({
   updatedAt: row.updated_at,
 })
 
+const unknownProject = (project: string): Error =>
+  new Error(`unknown project "${project}"; cleared by: orch project list`)
+
+const assertRegisteredProject = (project: string, database: Database = db()): void => {
+  if (!projectRowByName(project, database)) throw unknownProject(project)
+}
+
 export function listSubjects(
   project: string,
   options: { retired?: boolean } = {},
   database: Database = db(),
 ): Subject[] {
+  assertRegisteredProject(project, database)
   const rows = database
     .query<LocalRow, [string, number]>(
       `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id
@@ -59,6 +67,7 @@ export function resolveSubject(
   reference: string,
   database: Database = db(),
 ): Subject {
+  assertRegisteredProject(project, database)
   const byId = database
     .query<LocalRow, [string, string]>(
       `SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id
@@ -153,7 +162,7 @@ function localAdd(input: {
   definition: string
 }): Subject {
   const project = projectByName(input.project)
-  if (!project) throw new Error(`unknown project "${input.project}"; cleared by: orch project list`)
+  if (!project) throw unknownProject(input.project)
   const at = nowIso()
   const position = db()
     .query<{ position: number }, [number]>(
@@ -176,6 +185,7 @@ export async function addSubject(input: {
   name: string
   definition: string
 }): Promise<Subject> {
+  assertRegisteredProject(input.project)
   writableDb()
   const definition = SubjectDefinitionSchema.parse(input.definition)
   if (!input.name.trim()) throw new Error('a subject name is required')
@@ -195,6 +205,7 @@ async function mutate(
   local: (current: Subject, at: string) => RecordSubject,
   hosted: () => Promise<RecordSubject>,
 ): Promise<Subject> {
+  assertRegisteredProject(project)
   writableDb()
   return applyRecordWriteAuthority({
     local: () =>
@@ -242,6 +253,7 @@ function localReorder(project: string, ids: string[], at = nowIso()): Subject[] 
 }
 
 export async function reorderSubjects(project: string, ids: string[]): Promise<Subject[]> {
+  assertRegisteredProject(project)
   writableDb()
   return applyRecordWriteAuthority({
     local: () => writeTransaction(() => localReorder(project, ids)),

@@ -7,6 +7,7 @@ import {
   applySubjectRecord,
   defineSubject,
   listSubjects,
+  renameSubject,
   reorderSubjects,
   retireSubject,
 } from './subjects.ts'
@@ -26,6 +27,25 @@ const row = (project: string, name: string, parentId: string | null = null) => (
 })
 
 describe('project subjects', () => {
+  test('refuses an unregistered project and returns an empty list for a registered project', () => {
+    expect(() => listSubjects('missing')).toThrow(
+      'unknown project "missing"; cleared by: orch project list',
+    )
+    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    expect(listSubjects('alpha')).toEqual([])
+  })
+
+  test('every mutation refuses an unregistered project with the project-list remedy', async () => {
+    const refusal = 'unknown project "missing"; cleared by: orch project list'
+    await expect(
+      addSubject({ project: 'missing', name: 'One', definition: 'One.' }),
+    ).rejects.toThrow(refusal)
+    await expect(renameSubject('missing', newRecordId(), 'Renamed')).rejects.toThrow(refusal)
+    await expect(defineSubject('missing', newRecordId(), 'Defined.')).rejects.toThrow(refusal)
+    await expect(reorderSubjects('missing', [])).rejects.toThrow(refusal)
+    await expect(retireSubject('missing', newRecordId())).rejects.toThrow(refusal)
+  })
+
   test('adds at the end, keeps retired rows readable, and permits their names to be reused', async () => {
     upsertProject({ name: 'alpha', path: '/w/alpha' })
     const first = await addSubject({ project: 'alpha', name: 'First', definition: 'First.' })

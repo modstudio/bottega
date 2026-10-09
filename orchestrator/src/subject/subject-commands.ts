@@ -39,7 +39,16 @@ export async function subjectCommand(
 ): Promise<void> {
   const project = required(argv[2], 'project')
   if (verb === 'list') {
-    print(listSubjects(project, { retired: flags.has('retired') }), flags, presentation)
+    const includeRetired = flags.has('retired')
+    const rows = listSubjects(project, { retired: includeRetired })
+    print(rows, flags, presentation)
+    if (rows.length === 0 && !flags.has('json')) {
+      const qualifier =
+        !includeRetired && listSubjects(project, { retired: true }).length > 0 ? 'live ' : ''
+      presentation.log(
+        `project ${project} has no ${qualifier}subjects; add one with: orch subject add ${project} <name> --definition <definition>`,
+      )
+    }
     return
   }
   if (verb === 'add') {
