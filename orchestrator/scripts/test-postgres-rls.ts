@@ -184,7 +184,7 @@ try {
   if (rls !== 0) process.exitCode = rls
   else if (!falsifyMode) {
     const readOnlyMembership = await run(
-      ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-read-only-membership.test.ts'],
+      ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-read-only.test.ts'],
       {
         ORCH_TEST_POSTGRES_CONTAINER: container,
         ORCH_RECORD_MIGRATE_URL: ownerUrl,
