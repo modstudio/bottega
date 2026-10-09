@@ -32,6 +32,7 @@ import {
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
+  resolveNoteReference,
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
@@ -644,6 +645,7 @@ function explicitNoteAnchor(): Parameters<typeof createNote>[0]['anchor'] {
 
 async function note() {
   const sub = argv[1]
+  const reference = (value: string) => resolveNoteReference(value, projectOf(process.cwd()))
   refuseAmbiguousNoteVerb(sub)
   if (sub === 'push') return pushNoteCache()
   if (sub === 'list') {
@@ -676,7 +678,7 @@ async function note() {
     const session = noteSessionId()
     if (!session) throw new Error('hub note keep requires a session environment')
     for (const id of ids) {
-      const result = await acknowledgeNote(id, session)
+      const result = await acknowledgeNote(reference(id), session)
       console.log(
         `note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`,
       )
@@ -684,19 +686,19 @@ async function note() {
     return
   }
   if (sub === 'same') {
-    const row = await mergeNote(argv[2] ?? '', argv[3] ?? '')
+    const row = await mergeNote(reference(argv[2] ?? ''), reference(argv[3] ?? ''))
     console.log(`note ${row.id} now has ${row.sightings} sightings`)
     return
   }
   if (sub === 'promote') {
-    const row = await promoteNoteCommand(argv[2] ?? '', flag('task'), has('task'))
+    const row = await promoteNoteCommand(reference(argv[2] ?? ''), flag('task'), has('task'))
     console.log(`${row.promoted_task}`)
     return
   }
   if (sub === 'drop') {
     const reason = flag('reason')
     if (!reason) throw new Error('hub note drop <id> --reason "..."')
-    const row = await dropNote(argv[2] ?? '', reason)
+    const row = await dropNote(reference(argv[2] ?? ''), reason)
     console.log(`note ${row.id} dropped: ${row.stale_reason}`)
     return
   }
@@ -733,7 +735,7 @@ async function note() {
   let result = await createNote({
     text,
     area: flag('area'),
-    sameAs: same ? Number(same) : undefined,
+    sameAs: same ? reference(same) : undefined,
     forceNew: has('new'),
     anchor: explicitNoteAnchor(),
   })
@@ -749,7 +751,7 @@ async function note() {
     console.log(`possible duplicate notes:\n${lines.join('\n')}`)
     const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
     result = /^\d+$/.test(answer)
-      ? await createNote({ text, area: flag('area'), sameAs: Number(answer) })
+      ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
       : answer === 'new'
         ? await createNote({ text, area: flag('area'), forceNew: true })
         : result

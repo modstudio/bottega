@@ -30,6 +30,7 @@ import {
   hostedReapNotes,
   type NoteClientOptions,
 } from './note-client.ts'
+import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { nextNoteNumber } from './note-number.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
@@ -108,7 +109,9 @@ export function parseExplicitNoteAnchor(value: unknown, cwd = process.cwd()): No
 
 export type NoteRow = {
   id: number
-  record_id: string | null
+  record_id: string
+  number: number
+  label: string
   project: string
   text: string
   area: string | null
@@ -129,14 +132,12 @@ const git = (cwd: string, ...args: string[]): string | null => {
   return result.exitCode === 0 ? result.stdout.toString().trim() : null
 }
 
-function noteId(value: number | string): number {
-  const id = typeof value === 'number' ? value : Number(value)
-  if (!Number.isSafeInteger(id) || id < 1) throw new Error(`invalid note id '${value}'`)
-  return id
-}
-
-function decode(row: Omit<NoteRow, 'anchors'> & { anchors: string }): NoteRow {
-  return { ...row, anchors: JSON.parse(row.anchors) as NoteAnchor[] }
+function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): NoteRow {
+  return {
+    ...row,
+    label: formatNoteLabel(row.project, row.number),
+    anchors: JSON.parse(row.anchors) as NoteAnchor[],
+  }
 }
 
 function registeredProject(name: string): void {
@@ -159,13 +160,16 @@ function writeMode(
   return decision.mode
 }
 
-function noteRow(conn: Database, id: number): Omit<NoteRow, 'anchors'> & { anchors: string } {
+function noteRow(
+  conn: Database,
+  recordId: string,
+): Omit<NoteRow, 'anchors' | 'label'> & { anchors: string } {
   const row = conn
-    .query<Omit<NoteRow, 'anchors'> & { anchors: string }, [number]>(
-      'SELECT * FROM note WHERE id = ?',
+    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, [string]>(
+      'SELECT * FROM note WHERE record_id = ?',
     )
-    .get(id)
-  if (!row) throw new Error(`no note ${id}`)
+    .get(recordId)
+  if (!row) throw new Error(`no note ${recordId}`)
   return row
 }
 
@@ -301,7 +305,7 @@ export function listNotes(
     values.push(...sessions)
     clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
       SELECT 1 FROM note_acknowledgement acknowledgement
-       WHERE acknowledgement.note_id = note.id
+       WHERE acknowledgement.note_record_id = note.record_id
          AND acknowledgement.session_id IN (${candidates})
          AND acknowledgement.sightings = note.sightings
     )`)
@@ -309,7 +313,7 @@ export function listNotes(
   }
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db()
-    .query<Omit<NoteRow, 'anchors'> & { anchors: string }, (string | number)[]>(
+    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
       `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY note.last_seen_at DESC, note.id DESC`,
     )
@@ -323,52 +327,88 @@ export function listActionableNotes(
   return listNotes({ ...filters, actionable: true })
 }
 
-export function getNote(value: number | string): NoteRow {
-  const id = noteId(value)
+export function getNote(recordId: string): NoteRow {
   const row = db()
-    .query<Omit<NoteRow, 'anchors'> & { anchors: string }, [number]>(
-      'SELECT * FROM note WHERE id = ?',
+    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, [string]>(
+      'SELECT * FROM note WHERE record_id = ?',
     )
-    .get(id)
-  if (!row) throw new Error(`no note ${id}`)
+    .get(recordId)
+  if (!row) throw new Error(`no note ${recordId}`)
   return decode(row)
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function resolveNoteReference(value: string, sessionProject: string | null): string {
+  if (UUID.test(value)) {
+    const recordId = value.toLowerCase()
+    if (db().query('SELECT 1 FROM note WHERE record_id=?').get(recordId)) return recordId
+    throw new Error(`no note ${recordId}; use a project#number label or run \`hub note list\``)
+  }
+  let project: string | null = sessionProject
+  let number: number
+  if (value.includes('#')) {
+    const label = parseNoteLabel(value)
+    registeredProject(label.project)
+    project = label.project
+    number = label.number
+  } else {
+    if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+      throw new Error(`invalid note '${value}': expected project#number, a number, or a UUID`)
+    }
+    number = Number(value)
+  }
+  const inProject = project
+    ? db()
+        .query<{ record_id: string }, [string, number]>(
+          'SELECT record_id FROM note WHERE project=? AND number=?',
+        )
+        .get(project, number)
+    : null
+  if (inProject) return inProject.record_id
+  const matches = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM note WHERE number=? LIMIT 2')
+    .all(number)
+  if (matches.length === 1) return matches[0]!.record_id
+  const expected = formatNoteLabel(project ?? '<project>', number)
+  throw new Error(`no note ${expected}; use a project#number label or run \`hub note list\``)
+}
+
 export async function acknowledgeNote(
-  value: number | string,
+  recordId: string,
   session: string,
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteAcknowledgement> {
   const sessionId = session.trim()
   if (!sessionId) throw new Error('cannot keep note: no session identity')
-  const note = getNote(value)
+  const note = getNote(recordId)
   const existing = db()
-    .query<{ sightings: number }, [number, string]>(
-      'SELECT sightings FROM note_acknowledgement WHERE note_id=? AND session_id=?',
+    .query<{ sightings: number }, [string, string]>(
+      'SELECT sightings FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
     )
-    .get(note.id, sessionId)
+    .get(note.record_id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   const mode = writeMode(note.project, options.hosted)
   if (mode === 'local-authoritative') {
     writeTransaction((conn) => {
-      const row = decode(noteRow(conn, note.id))
+      const row = decode(noteRow(conn, note.record_id))
       conn
         .query(
-          `INSERT INTO note_acknowledgement (record_id,note_id,session_id,acknowledged_at,sightings)
+          `INSERT INTO note_acknowledgement (record_id,note_record_id,session_id,acknowledged_at,sightings)
            VALUES (?,?,?,?,?)
-           ON CONFLICT(note_id,session_id) DO UPDATE SET
+           ON CONFLICT(note_record_id,session_id) DO UPDATE SET
              acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
         )
-        .run(newRecordId(), row.id, sessionId, nowIso(), row.sightings)
+        .run(newRecordId(), row.record_id, sessionId, nowIso(), row.sightings)
     })
-    return { note: getNote(note.id), alreadyAcknowledged: false }
+    return { note: getNote(note.record_id), alreadyAcknowledged: false }
   }
-  const hosted = await hostedAcknowledgeNote(note.id, sessionId, options.hosted)
+  const hosted = await hostedAcknowledgeNote(note.number, sessionId, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, hosted.note)
     applyHostedAcknowledgement(conn, hosted.acknowledgement)
   })
-  return { note: getNote(note.id), alreadyAcknowledged: hosted.alreadyAcknowledged }
+  return { note: getNote(note.record_id), alreadyAcknowledged: hosted.alreadyAcknowledged }
 }
 
 function noteCandidates(text: string, project?: string): NoteCandidate[] {
@@ -405,41 +445,40 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
 }
 
 export async function mergeNote(
-  targetValue: number | string,
-  sourceValue: number | string,
+  targetRecordId: string,
+  sourceRecordId: string,
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteRow> {
-  const targetId = noteId(targetValue)
-  const sourceId = noteId(sourceValue)
-  if (targetId === sourceId) throw new Error('a note cannot be merged with itself')
-  const target = getNote(targetId)
+  if (targetRecordId === sourceRecordId) throw new Error('a note cannot be merged with itself')
+  const target = getNote(targetRecordId)
+  const sourceNote = getNote(sourceRecordId)
   const mode = writeMode(target.project, options.hosted)
   if (mode === 'local-authoritative') {
     writeTransaction((conn) => {
-      const current = decode(noteRow(conn, targetId))
-      const source = decode(noteRow(conn, sourceId))
+      const current = decode(noteRow(conn, targetRecordId))
+      const source = decode(noteRow(conn, sourceRecordId))
       if (current.project !== source.project)
         throw new Error('notes from different projects cannot be merged')
       const lastSeen =
         current.last_seen_at > source.last_seen_at ? current.last_seen_at : source.last_seen_at
       conn
-        .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE id=?`)
+        .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE record_id=?`)
         .run(
           JSON.stringify([...current.anchors, ...source.anchors]),
           current.sightings + source.sightings,
           lastSeen,
-          current.id,
+          current.record_id,
         )
-      conn.query('DELETE FROM note WHERE id=?').run(source.id)
+      conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
-    return getNote(targetId)
+    return getNote(targetRecordId)
   }
-  const result = await hostedMergeNotes(targetId, sourceId, options.hosted)
+  const result = await hostedMergeNotes(target.number, sourceNote.number, options.hosted)
   writeTransaction((conn) => {
     applyHostedNote(conn, result.note)
-    conn.query('DELETE FROM note WHERE id=?').run(result.deleted)
+    conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
   })
-  return getNote(targetId)
+  return getNote(targetRecordId)
 }
 
 export async function createNote(
@@ -447,7 +486,7 @@ export async function createNote(
     text: string
     cwd?: string
     area?: string
-    sameAs?: number
+    sameAs?: string
     forceNew?: boolean
     anchor?: NoteAnchor
   },
@@ -466,16 +505,16 @@ export async function createNote(
     if (mode === 'local-authoritative') {
       const at = nowIso()
       writeTransaction((conn) => {
-        const row = decode(noteRow(conn, existing.id))
+        const row = decode(noteRow(conn, existing.record_id))
         if (row.project !== anchor.project)
           throw new Error('the matching note belongs to another project')
         conn
           .query(
-            `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE id=?`,
+            `UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=?, stale_at=NULL, stale_reason=NULL WHERE record_id=?`,
           )
-          .run(JSON.stringify([...row.anchors, anchor]), at, row.id)
+          .run(JSON.stringify([...row.anchors, anchor]), at, row.record_id)
       })
-      return { note: getNote(existing.id), candidates }
+      return { note: getNote(existing.record_id), candidates }
     }
     const hosted = await hostedCreateNote(
       {
@@ -483,26 +522,28 @@ export async function createNote(
         text,
         area: input.area?.trim() || null,
         anchor: JSON.stringify(anchor),
-        sameAs: existing.id,
+        sameAs: existing.number,
       },
       options.hosted,
     )
     writeTransaction((conn) => applyHostedNote(conn, hosted))
-    return { note: getNote(existing.id), candidates }
+    return { note: getNote(existing.record_id), candidates }
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
   if (mode === 'local-authoritative') {
     const at = nowIso()
-    const id = writeTransaction((conn) => {
+    const recordId = writeTransaction((conn) => {
       const number = mintLocalNoteNumber(conn)
+      const recordId = newRecordId()
       conn
         .query(
-          `INSERT INTO note (id,record_id,project,text,area,anchors,sightings,created_at,last_seen_at)
-       VALUES (?,?,?,?,?,?,1,?,?)`,
+          `INSERT INTO note (id,record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at)
+       VALUES (?,?,?,?,?,?,?,1,?,?)`,
         )
         .run(
           number,
-          newRecordId(),
+          recordId,
+          number,
           anchor.project,
           text,
           input.area?.trim() || null,
@@ -510,9 +551,9 @@ export async function createNote(
           at,
           at,
         )
-      return number
+      return recordId
     })
-    return { note: getNote(id), candidates }
+    return { note: getNote(recordId), candidates }
   }
   const hosted = await hostedCreateNote(
     {
@@ -524,14 +565,14 @@ export async function createNote(
     options.hosted,
   )
   writeTransaction((conn) => applyHostedNote(conn, hosted))
-  return { note: getNote(hosted.number), candidates }
+  return { note: getNote(hosted.id), candidates }
 }
 
 export async function promoteNote(
-  value: number | string,
+  recordId: string,
   options: { hosted?: NoteClientOptions; existingTaskKey?: string } = {},
 ): Promise<NoteRow> {
-  const note = getNote(value)
+  const note = getNote(recordId)
   if (note.promoted_task)
     throw new Error(`note ${note.id} is already promoted to ${note.promoted_task}`)
   const project = projects().find((candidate) => candidate.name === note.project)!
@@ -552,19 +593,19 @@ export async function promoteNote(
   if (mode === 'local-authoritative') {
     if (destination === 'tracker') {
       writeTransaction((conn) => {
-        const row = decode(noteRow(conn, note.id))
+        const row = decode(noteRow(conn, note.record_id))
         if (row.promoted_task)
           throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
         conn
           .query(
-            'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE id=?',
+            'UPDATE note SET promoted_task=?, promoted_task_record_id=NULL, last_seen_at=? WHERE record_id=?',
           )
-          .run(options.existingTaskKey!, nowIso(), row.id)
+          .run(options.existingTaskKey!, nowIso(), row.record_id)
       })
-      return getNote(note.id)
+      return getNote(note.record_id)
     }
     writeTransaction((conn) => {
-      const row = decode(noteRow(conn, note.id))
+      const row = decode(noteRow(conn, note.record_id))
       if (row.promoted_task)
         throw new Error(`note ${row.id} is already promoted to ${row.promoted_task}`)
       const evidence = row.anchors
@@ -584,18 +625,18 @@ export async function promoteNote(
       )
       conn
         .query(
-          'UPDATE note SET promoted_task=?, promoted_task_record_id=?, last_seen_at=? WHERE id=?',
+          'UPDATE note SET promoted_task=?, promoted_task_record_id=?, last_seen_at=? WHERE record_id=?',
         )
-        .run(task.key, task.record_id, nowIso(), row.id)
+        .run(task.key, task.record_id, nowIso(), row.record_id)
     })
-    return getNote(note.id)
+    return getNote(note.record_id)
   }
-  const hosted = await hostedPromoteNote(note.id, options.existingTaskKey, options.hosted)
+  const hosted = await hostedPromoteNote(note.number, options.existingTaskKey, options.hosted)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
     applyHostedNote(conn, hosted.note)
   })
-  return getNote(note.id)
+  return getNote(note.record_id)
 }
 
 export function promotionTaskInput(note: NoteRow) {
@@ -609,27 +650,26 @@ export function promotionTaskInput(note: NoteRow) {
 }
 
 export async function dropNote(
-  value: number | string,
+  recordId: string,
   reason: string,
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<NoteRow> {
   if (!reason.trim()) throw new Error('--reason is required')
-  const id = noteId(value)
-  const current = getNote(id)
+  const current = getNote(recordId)
   const mode = writeMode(current.project, options.hosted)
   if (mode === 'local-authoritative') {
     const at = nowIso()
     writeTransaction((conn) => {
-      noteRow(conn, id)
+      noteRow(conn, recordId)
       conn
-        .query(`UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE id=?`)
-        .run(at, `dropped: ${reason.trim()}`, at, id)
+        .query(`UPDATE note SET stale_at=?, stale_reason=?, last_seen_at=? WHERE record_id=?`)
+        .run(at, `dropped: ${reason.trim()}`, at, recordId)
     })
-    return getNote(id)
+    return getNote(recordId)
   }
-  const hosted = await hostedDropNote(id, reason.trim(), options.hosted)
+  const hosted = await hostedDropNote(current.number, reason.trim(), options.hosted)
   writeTransaction((conn) => applyHostedNote(conn, hosted))
-  return getNote(id)
+  return getNote(recordId)
 }
 
 export type StaleResult = {

@@ -65,7 +65,7 @@ function LocalNotesPage() {
             </TableHeader>
             <TableBody>
               {notes.data.map((note) => (
-                <TableRow key={note.id}>
+                <TableRow key={note.record_id}>
                   <TableCell>
                     <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
                     <div className="mt-1 text-xs text-text-muted">
@@ -90,7 +90,7 @@ function LocalNotesPage() {
                         size="sm"
                         variant="secondary"
                         disabled={promote.isPending}
-                        onClick={() => promote.mutate({ id: note.id })}
+                        onClick={() => promote.mutate({ id: note.record_id })}
                       >
                         Promote
                       </Button>

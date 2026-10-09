@@ -52,14 +52,12 @@ describe('hosted-only note safety', () => {
 
   test('a promotion failure leaves no local task and no promoted_task', async () => {
     const at = new Date().toISOString()
-    const id = Number(
-      writeTransaction(
-        (conn) =>
-          conn
-            .query(`INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at)
-      VALUES ('workshop','promotion failure','[]',1,?,?)`)
-            .run(at, at).lastInsertRowid,
-      ),
+    const id = crypto.randomUUID()
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO note(id,record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+          VALUES (989,?,989,'workshop','promotion failure','[]',1,?,?)`)
+        .run(id, at, at),
     )
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
     await expect(promoteNote(id, { hosted: unreachable })).rejects.toThrow(
@@ -73,8 +71,15 @@ describe('hosted-only note safety', () => {
 
   test('cache pull applies an update and a soft delete', () => {
     const at = '2026-09-17T12:00:00.000Z'
+    const ids = new Map<number, string>()
     const row = (number: number, text: string, deleted_at: string | null) => ({
-      id: crypto.randomUUID(),
+      id:
+        ids.get(number) ??
+        (() => {
+          const id = crypto.randomUUID()
+          ids.set(number, id)
+          return id
+        })(),
       number,
       project: 'workshop',
       project_name: 'workshop',
@@ -92,7 +97,19 @@ describe('hosted-only note safety', () => {
     })
     applyHostedNoteChanges({
       notes: [row(990, 'old', null), row(991, 'gone', null)],
-      acknowledgements: [],
+      acknowledgements: [
+        {
+          id: crypto.randomUUID(),
+          note_id: ids.get(990)!,
+          project_name: 'workshop',
+          session_id: 'pulled-session',
+          acknowledged_at: at,
+          sightings: 1,
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      ],
       cursor: at,
     })
     applyHostedNoteChanges({
@@ -100,7 +117,14 @@ describe('hosted-only note safety', () => {
       acknowledgements: [],
       cursor: at,
     })
-    expect(getNote(990).text).toBe('new')
-    expect(() => getNote(991)).toThrow('no note 991')
+    expect(getNote(ids.get(990)!).text).toBe('new')
+    expect(
+      db()
+        .query<{ note_record_id: string }, []>(
+          `SELECT note_record_id FROM note_acknowledgement WHERE session_id='pulled-session'`,
+        )
+        .get(),
+    ).toEqual({ note_record_id: ids.get(990)! })
+    expect(() => getNote(ids.get(991)!)).toThrow(`no note ${ids.get(991)!}`)
   })
 })
