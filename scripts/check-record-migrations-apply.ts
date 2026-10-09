@@ -19,12 +19,17 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 const rerun = 'bun scripts/check-record-migrations-apply.ts'
 const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
 const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
-const audienceBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
+const audienceSetBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
+const audienceVocabularyBackfill = '20261009210001_dev_1238_doc_audience_vocabulary_backfill'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
 const unmanagedProjectId = '01990000-0000-7000-8000-000000000014'
 const platformOperatorId = '01990000-0000-7000-8000-000000000002'
+const publicAudienceProjectId = '01990000-0000-7000-8000-000000000015'
+const internalAudienceProjectId = '01990000-0000-7000-8000-000000000016'
+const publicAudienceDocId = '01990000-0000-7000-8000-000000000017'
+const internalAudienceDocId = '01990000-0000-7000-8000-000000000018'
 
 class CheckFailure extends Error {}
 
@@ -157,6 +162,76 @@ async function proofAudienceBackfill(transaction: Transaction): Promise<void> {
   }
 }
 
+async function seedAudienceVocabularyBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
+    INSERT INTO project (id, space_id, name, created_at) VALUES
+      ('${publicAudienceProjectId}', '${PLATFORM_SPACE_ID}', 'public-audience-proof', now()),
+      ('${internalAudienceProjectId}', '${PLATFORM_SPACE_ID}', 'internal-audience-proof', now());
+    INSERT INTO public_doc_space (space_id, project_id)
+    VALUES ('${PLATFORM_SPACE_ID}', '${publicAudienceProjectId}');
+    INSERT INTO doc
+      (id, space_id, scope, subject, slug, title, body, delivery, audiences, project_id,
+       created_at, updated_at)
+    VALUES
+      ('${publicAudienceDocId}', '${PLATFORM_SPACE_ID}', 'project', 'public-audience-proof',
+       'public-audience-proof', 'Public audience proof', 'body', 'demand',
+       ARRAY['technical','user'], '${publicAudienceProjectId}', now(), now()),
+      ('${internalAudienceDocId}', '${PLATFORM_SPACE_ID}', 'project', 'internal-audience-proof',
+       'internal-audience-proof', 'Internal audience proof', 'body', 'demand',
+       ARRAY['user','technical','internal'], '${internalAudienceProjectId}', now(), now());
+    INSERT INTO doc_revision
+      (id, space_id, doc_id, scope, subject, slug, project_id, op, title, body, delivery,
+       audiences, author, reason, at)
+    VALUES
+      ('01990000-0000-7000-8000-000000000019', '${PLATFORM_SPACE_ID}',
+       '${publicAudienceDocId}', 'project', 'public-audience-proof', 'public-audience-proof',
+       '${publicAudienceProjectId}', 'create', 'Public audience proof', 'body', 'demand',
+       ARRAY['technical','user'], 'migration-check', 'prove public audience backfill', now()),
+      ('01990000-0000-7000-8000-000000000020', '${PLATFORM_SPACE_ID}',
+       '${internalAudienceDocId}', 'project', 'internal-audience-proof', 'internal-audience-proof',
+       '${internalAudienceProjectId}', 'create', 'Internal audience proof', 'body', 'demand',
+       ARRAY['user','technical','internal'], 'migration-check', 'prove internal audience backfill', now());
+    SELECT set_config('app.space_id', '', true);
+    SELECT set_config('app.user_id', '', true);
+  `)
+}
+
+async function proofAudienceVocabularyBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
+  `)
+  const docs = await transaction.query<{ id: string; audiences: string[] }>(
+    'SELECT id, audiences FROM doc WHERE id IN ($1, $2) ORDER BY id',
+    [publicAudienceDocId, internalAudienceDocId],
+  )
+  const revisions = await transaction.query<{ doc_id: string; audiences: string[] }>(
+    'SELECT doc_id, audiences FROM doc_revision WHERE doc_id IN ($1, $2) ORDER BY doc_id',
+    [publicAudienceDocId, internalAudienceDocId],
+  )
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '', true);
+    SELECT set_config('app.user_id', '', true);
+  `)
+  const expected = [
+    { id: publicAudienceDocId, audiences: ['technical', 'customer'] },
+    { id: internalAudienceDocId, audiences: ['internal', 'technical'] },
+  ].sort((left, right) => left.id.localeCompare(right.id))
+  if (JSON.stringify(docs.rows) !== JSON.stringify(expected)) {
+    throw new CheckFailure(
+      `DEV-1238 document audience vocabulary backfill produced ${JSON.stringify(docs.rows)}`,
+    )
+  }
+  const expectedRevisions = expected.map(({ id, audiences }) => ({ doc_id: id, audiences }))
+  if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions)) {
+    throw new CheckFailure(
+      `DEV-1238 revision audience vocabulary backfill produced ${JSON.stringify(revisions.rows)}`,
+    )
+  }
+}
+
 function sqlTag(transaction: Transaction): SQL {
   const tag = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const statement = parts.reduce(
@@ -210,6 +285,8 @@ async function main(): Promise<void> {
       await database.transaction(async (transaction) => {
         for (const migration of migrations) {
           if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
+          if (migration.name === audienceVocabularyBackfill)
+            await seedAudienceVocabularyBackfill(transaction)
           await applyMigration(transaction, migration)
           if (
             migration.name === brokenDocBackfill &&
@@ -223,7 +300,9 @@ async function main(): Promise<void> {
           ) {
             throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
           }
-          if (migration.name === audienceBackfill) await proofAudienceBackfill(transaction)
+          if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
+          if (migration.name === audienceVocabularyBackfill)
+            await proofAudienceVocabularyBackfill(transaction)
         }
         await proofManagedCanonProjects(transaction)
       })

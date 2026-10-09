@@ -9,7 +9,7 @@ test('audience, parent, position, and featured round trip through set, list, and
     title: 'Tree parent',
     body: 'Parent.',
     delivery: 'demand',
-    audiences: ['user', 'technical'],
+    audiences: ['technical', 'internal'],
     position: 2,
     reason: 'create tree parent',
   })
@@ -33,7 +33,7 @@ test('audience, parent, position, and featured round trip through set, list, and
     position: 7,
     featured: true,
   })
-  expect(listDocs({ scope: 'global', audience: 'user' })).toContainEqual(parent)
+  expect(listDocs({ scope: 'global', audience: 'internal' })).toContainEqual(parent)
   expect(listDocs({ scope: 'global', audience: 'technical' })).toContainEqual(parent)
   expect(getDocRevision(listDocRevisions('global', null, child.slug)[0]!.id)).toMatchObject({
     audiences: ['technical'],

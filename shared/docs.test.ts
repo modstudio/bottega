@@ -4,9 +4,11 @@ import { DOC_SUMMARY_MAX_LENGTH, docSummary, normalizeDocAudiences } from './doc
 describe('normalizeDocAudiences', () => {
   test('refuses empty, duplicate, and unknown sets and orders valid input', () => {
     expect(() => normalizeDocAudiences([])).toThrow('must not be empty')
-    expect(() => normalizeDocAudiences(['user', 'user'])).toThrow('duplicate')
-    expect(() => normalizeDocAudiences(['other'])).toThrow('unknown')
-    expect(normalizeDocAudiences(['technical', 'user'])).toEqual(['user', 'technical'])
+    expect(() => normalizeDocAudiences(['internal', 'internal'])).toThrow('duplicate')
+    expect(() => normalizeDocAudiences(['user'])).toThrow(
+      'valid audiences: technical, internal, customer',
+    )
+    expect(normalizeDocAudiences(['customer', 'technical'])).toEqual(['technical', 'customer'])
   })
 })
 

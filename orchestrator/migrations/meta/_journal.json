@@ -659,6 +659,13 @@
       "when": 1791540000000,
       "tag": "0093_doc_audiences",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "6",
+      "when": 1791550800000,
+      "tag": "0094_doc_audience_vocabulary",
+      "breakpoints": true
     }
   ]
 }

@@ -18,7 +18,7 @@ export const DOC_SCOPES = [
   'settings',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
-export const DOC_AUDIENCES = ['user', 'technical'] as const
+export const DOC_AUDIENCES = ['technical', 'internal', 'customer'] as const
 export type DocAudience = (typeof DOC_AUDIENCES)[number]
 export type DocAudiences = [DocAudience, ...DocAudience[]]
 
@@ -36,6 +36,15 @@ export function normalizeDocAudiences(input: readonly string[]): DocAudiences {
     seen.add(audience)
   }
   return DOC_AUDIENCES.filter((audience) => seen.has(audience)) as DocAudiences
+}
+
+/**
+ * Audiences read from a hosted record that may still carry the retired `user`
+ * value, which reads as `internal`. Writes never go through this.
+ */
+export function hostedDocAudiences(input: readonly string[]): DocAudiences {
+  const tolerated = input.map((audience) => (audience === 'user' ? 'internal' : audience))
+  return normalizeDocAudiences([...new Set(tolerated)])
 }
 export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as const
 export type DocStatus = (typeof DOC_STATUSES)[number]

@@ -179,14 +179,61 @@ test('document audiences migration backfills live and revision scalar audiences'
          VALUES (?,'global',NULL,'audiences','create','Audiences','Body','demand','test','prove backfill','2026-10-09','technical')`,
       )
       .run(doc.id)
-    expect(applyMigrations(database)).toEqual(['0093_doc_audiences'])
-    expect(database.query('SELECT audiences FROM doc').get()).toEqual({ audiences: '["user"]' })
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0093_doc_audiences'))
+    expect(database.query('SELECT audiences FROM doc').get()).toEqual({
+      audiences: '["internal"]',
+    })
     expect(database.query('SELECT audiences FROM doc_revision').get()).toEqual({
       audiences: '["technical"]',
     })
     expect(
       database.query("SELECT 1 FROM pragma_table_info('doc') WHERE name='audience'").get(),
     ).toBeNull()
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
+test('document audience vocabulary migration converts local docs and revisions without duplicates', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-doc-audience-vocabulary-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0094_doc_audience_vocabulary')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    database
+      .query(
+        `INSERT INTO doc
+         (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,record_id)
+         VALUES ('global',NULL,'audiences','Audiences','Body','demand','["technical","user","internal"]',
+                 '2026-10-09','2026-10-09','01990000-0000-7000-8000-000000000101')`,
+      )
+      .run()
+    const doc = database.query<{ id: number }, []>('SELECT id FROM doc').get()!
+    database
+      .query(
+        `INSERT INTO doc_revision
+         (doc_id,scope,subject,slug,op,title,body,delivery,audiences,author,reason,at)
+         VALUES (?,'global',NULL,'audiences','create','Audiences','Body','demand',
+                 '["user","technical"]','test','prove backfill','2026-10-09')`,
+      )
+      .run(doc.id)
+    expect(applyMigrations(database)).toEqual(['0094_doc_audience_vocabulary'])
+    expect(database.query('SELECT audiences FROM doc').get()).toEqual({
+      audiences: '["technical","internal"]',
+    })
+    expect(database.query('SELECT audiences FROM doc_revision').get()).toEqual({
+      audiences: '["internal","technical"]',
+    })
   } finally {
     database.close()
     rmSync(folder, { recursive: true, force: true })

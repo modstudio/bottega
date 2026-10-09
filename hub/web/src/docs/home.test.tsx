@@ -11,7 +11,7 @@ const item = (id: string, title: string, extra: Partial<DocsTreeItem> = {}): Doc
   updatedAt: '',
   scope: 'global',
   subject: null,
-  audiences: ['user'],
+  audiences: ['customer'],
   summary: `${title} summary`,
   featured: false,
   ...extra,

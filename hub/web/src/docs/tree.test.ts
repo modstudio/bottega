@@ -21,7 +21,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     parentId: partial.parentId ?? null,
     position: partial.position ?? 0,
     updatedAt: '2026-10-06T00:00:00.000Z',
-    audiences: partial.audiences ?? ['user'],
+    audiences: partial.audiences ?? ['internal'],
     delivery: partial.delivery,
     ...partial,
     status: partial.status ?? 'current',
@@ -154,16 +154,16 @@ test('filters do not change neighbor order beyond the visible tree', () => {
 
 test('audience visibility keeps matching documents and keeps every non-matching ancestor of a match, unopenable', () => {
   const rows = [
-    item({ id: 'root', title: 'Root', audiences: ['user'] }),
-    item({ id: 'middle', title: 'Middle', parentId: 'root', audiences: ['user'] }),
+    item({ id: 'root', title: 'Root', audiences: ['internal'] }),
+    item({ id: 'middle', title: 'Middle', parentId: 'root', audiences: ['internal'] }),
     item({
       id: 'match',
       title: 'Match',
       parentId: 'middle',
       audiences: ['technical'],
     }),
-    item({ id: 'absent', title: 'Absent', parentId: 'root', audiences: ['user'] }),
-    item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
+    item({ id: 'absent', title: 'Absent', parentId: 'root', audiences: ['internal'] }),
+    item({ id: 'both', title: 'Both', audiences: ['technical', 'internal'] }),
   ]
   const technical = treeForAudience(rows, 'technical')
   expect(technical.map((node) => node.id)).toEqual(['both', 'root'])
@@ -172,7 +172,7 @@ test('audience visibility keeps matching documents and keeps every non-matching 
   expect(root.children[0]!.navigationDisabled).toBeTrue()
   expect(root.children[0]!.children[0]!.navigationDisabled).toBeFalse()
   expect(root.children.map((node) => node.id)).not.toContain('absent')
-  expect(treeForAudience(rows, 'user').map((node) => node.id)).toEqual(['both', 'root'])
+  expect(treeForAudience(rows, 'internal').map((node) => node.id)).toEqual(['both', 'root'])
 })
 
 test('all audiences shows every document as an enabled row', () => {

@@ -85,7 +85,7 @@ describe('record client', () => {
       updatedAt: '2026-10-06T12:00:00.000Z',
       scope: 'global',
       subject: null,
-      audiences: ['user'] as ['user'],
+      audiences: ['user'] as const,
       summary: 'Welcome summary',
       featured: false,
     }
@@ -106,11 +106,10 @@ describe('record client', () => {
       return jsonResponse({ items: [serverItem] })
     }
     const client = clientWith(fetch, { cookie: 'sid=private', authorization: 'Bearer private' })
-    expect(await client.publicDocs()).toEqual({
-      items: [serverItem],
-    })
+    const toleratedItem = { ...serverItem, audiences: ['internal'] as ['internal'] }
+    expect(await client.publicDocs()).toEqual({ items: [toleratedItem] })
     expect(await client.publicDoc(id)).toEqual({
-      ...serverItem,
+      ...toleratedItem,
       body: 'Welcome body',
     })
     expect(await client.publicDocSearch('welcome')).toEqual({
@@ -119,7 +118,7 @@ describe('record client', () => {
           id,
           slug: 'welcome',
           title: 'Welcome',
-          audiences: ['user'],
+          audiences: ['internal'],
           status: 'current',
           kind: 'working',
           snippet: 'Welcome body',

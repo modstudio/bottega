@@ -21,7 +21,7 @@ export const DocTreeItemSchema = z.object({
 
 export const DocSchema = DocTreeItemSchema.extend({ body: z.string() })
 
-const DocSearchMatchSchema = z.object({
+export const DocSearchMatchSchema = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),

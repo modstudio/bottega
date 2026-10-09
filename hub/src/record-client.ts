@@ -1,13 +1,13 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
-  DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
   type DocAudiences,
   type DocKind,
   type DocStatus,
+  hostedDocAudiences,
 } from '../../shared/docs.ts'
 import {
   HarnessHealthSchema,
@@ -20,7 +20,12 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
-import { DocSchema, DocSearchSchema, DocTreeItemSchema, DocTreeSchema } from './doc-contract.ts'
+import {
+  DocSchema,
+  DocSearchMatchSchema,
+  DocTreeItemSchema,
+  DocTreeSchema,
+} from './doc-contract.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -216,7 +221,24 @@ const snapshotsSchema = z.object({ items: z.array(z.unknown()) }).transform(({ i
   return { items: accepted, ignored }
 })
 
+/** A hosted response may still carry the retired audience while a deploy is in flight. */
+const hostedDocAudiencesSchema = z
+  .array(z.string())
+  .nonempty()
+  .transform((audiences, context) => {
+    try {
+      return hostedDocAudiences(audiences)
+    } catch (error) {
+      context.addIssue({ code: 'custom', message: (error as Error).message })
+      return z.NEVER
+    }
+  })
+const hostedDocSearchSchema = z.object({
+  items: z.array(DocSearchMatchSchema.extend({ audiences: hostedDocAudiencesSchema })),
+})
+
 const docSchema = DocSchema.extend({
+  audiences: hostedDocAudiencesSchema,
   id: z.string().uuid(),
   spaceId: z.string().uuid(),
   spaceName: z.string(),
@@ -239,7 +261,9 @@ const docSchema = DocSchema.extend({
 
 const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
 
-const publicDocTreeItemSchema = DocTreeItemSchema.transform((doc) => ({
+const publicDocTreeItemSchema = DocTreeItemSchema.extend({
+  audiences: hostedDocAudiencesSchema,
+}).transform((doc) => ({
   ...doc,
   summary: doc.summary ?? '',
   featured: doc.featured ?? false,
@@ -262,7 +286,7 @@ const docRevisionSchema = z.object({
   title: z.string(),
   body: z.string(),
   delivery: z.enum(['inject', 'demand']),
-  audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
+  audiences: hostedDocAudiencesSchema,
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
@@ -423,7 +447,7 @@ export function createRecordClient(options: RecordClientOptions) {
     publicDoc: (id: string) =>
       publicRequest(options, `/public/v1/docs/${encodeURIComponent(id)}`, publicDocSchema),
     publicDocSearch: (search: string) =>
-      publicRequest(options, query('/public/v1/docs/search', { q: search }), DocSearchSchema),
+      publicRequest(options, query('/public/v1/docs/search', { q: search }), hostedDocSearchSchema),
     whoami: () => request(options, '/v1/whoami', whoamiSchema),
     setActiveSpace: (spaceId: string) =>
       request(options, '/v1/active-space', z.object({ activeSpaceId: z.string() }), {
@@ -557,7 +581,7 @@ export function createRecordClient(options: RecordClientOptions) {
           includeDrafts: input.includeDrafts ? 'true' : undefined,
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
         }),
-        DocSearchSchema,
+        hostedDocSearchSchema,
       ),
     docRevisions: (id: string) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),

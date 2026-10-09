@@ -45,8 +45,10 @@ function audienceScopeRefusal(
   address: string,
   set: string,
 ): string | null {
-  return input.audiences.includes('user') && input.scope !== 'project' && input.scope !== 'global'
-    ? `refusing ${address}: user audience is allowed only for project and global documents; cleared by: re-run ${set} --audience technical`
+  return input.audiences.some((audience) => audience === 'internal' || audience === 'customer') &&
+    input.scope !== 'project' &&
+    input.scope !== 'global'
+    ? `refusing ${address}: internal and customer audiences are allowed only for project and global documents; cleared by: re-run ${set} --audience technical`
     : null
 }
 
