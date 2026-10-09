@@ -292,7 +292,7 @@ test('an own-group vendor leader receives a negative-pid signal', () => {
   expect(groups).toContain(-vendor)
 })
 
-test('a vendor in another group is not group-signalled with or without a coordinator row', () => {
+test('a vendor in another group is not group-signaled with or without a coordinator row', () => {
   const coordinator = 42402
   const vendor = 42922
   const sharedGroup = coordinator
