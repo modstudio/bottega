@@ -19,7 +19,7 @@ describe('Postgres substrate shape', () => {
     )
     expect(migration).toContain(`'${OPERATOR_USER_ID}'`)
     expect(migration).toContain(`'operator@${PLATFORM_SLUG}.local'`)
-    expect(migration.match(/^INSERT INTO /gm)).toHaveLength(3)
+    expect(migration.match(/^INSERT INTO "(?:space|user|membership)" /gm)).toHaveLength(3)
   })
 
   test('tenanted tables force RLS and keep read and write policies separate', () => {

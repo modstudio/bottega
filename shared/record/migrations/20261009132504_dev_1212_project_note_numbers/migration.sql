@@ -1,0 +1,2 @@
+ALTER TABLE "hub_note" DROP CONSTRAINT "hub_note_space_number_unique";--> statement-breakpoint
+ALTER TABLE "hub_note" ADD CONSTRAINT "hub_note_space_project_number_unique" UNIQUE("space_id","project_name","number");

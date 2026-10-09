@@ -3,7 +3,7 @@ import { hostedMirrorNotes, hostedNoteCounts, type NoteClientOptions } from './n
 
 export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean } = {}) {
   const notes = db()
-    .query<Record<string, unknown>, []>('SELECT * FROM note ORDER BY id')
+    .query<Record<string, unknown>, []>('SELECT * FROM note ORDER BY record_id')
     .all()
     .map((row) => ({
       id: row.record_id as string,
@@ -53,14 +53,15 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       { notes: [], acknowledgements: acknowledgements.slice(index, index + 500) },
       requestOptions,
     )
-  const projects = [...new Set(notes.map((row) => row.project))]
+  const counters = db()
+    .query<{ project: string; next: number }, []>(
+      'SELECT project,next FROM note_counter ORDER BY project',
+    )
+    .all()
   await hostedMirrorNotes(
     {
       notes: [],
-      raiseProjects: projects.map((project) => ({
-        project,
-        next: Math.max(1, ...notes.map((row) => row.number + 1)),
-      })),
+      raiseProjects: counters,
     },
     requestOptions,
   )

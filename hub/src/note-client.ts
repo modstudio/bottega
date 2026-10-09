@@ -3,6 +3,7 @@ import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { assertProjectNoteCounters, hostedTaskIdentity } from './task-client.ts'
 
 const TEST_REFUSAL = 'hub note client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -49,8 +50,10 @@ async function request<T>(
     )
   return value as T
 }
-export const hostedCreateNote = (body: unknown, options?: Options) =>
-  request<HostedNote>('/v1/notes', 'POST', body, options)
+export const hostedCreateNote = async (body: unknown, options?: Options) => {
+  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  return request<HostedNote>('/v1/notes', 'POST', body, options)
+}
 export const hostedAcknowledgeNote = (recordId: string, session: string, options?: Options) =>
   request<{
     note: HostedNote
@@ -76,21 +79,25 @@ export const hostedMergeNotes = (target: string, source: string, options?: Optio
 export const hostedReapNotes = (body: unknown, options?: Options) =>
   request<{ marked: number; deleted: number }>('/v1/notes/reap', 'POST', body, options)
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
+  assertProjectNoteCounters(await hostedTaskIdentity(options))
   const query = new URLSearchParams({ includeDeleted: 'true' })
   if (cursor) query.set('cursor', cursor)
   return request<{
     notes: HostedNote[]
     acknowledgements: HostedAcknowledgement[]
+    projectCounters: Array<{ project: string; next: number }>
     cursor: string
   }>(`/v1/notes?${query}`, 'GET', undefined, options)
 }
-export const hostedMirrorNotes = (body: unknown, options?: Options) =>
-  request<{ upserted: number; noteIds: Array<{ number: number; id: string }> }>(
+export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
+  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  return request<{ upserted: number; noteIds: Array<{ number: number; id: string }> }>(
     '/v1/notes/mirror',
     'PUT',
     body,
     options,
   )
+}
 export const hostedNoteCounts = (options?: Options) =>
   request<{ note: number; note_acknowledgement: number }>(
     '/v1/notes/counts',

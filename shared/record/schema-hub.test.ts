@@ -78,3 +78,57 @@ test('hosted document migration numbers live rows in UUID order and advances tas
   ).rejects.toThrow('hub_task_document_task_number_unique')
   await database.close()
 })
+
+test('hosted note migration scopes numbers and counters to each project', async () => {
+  const database = new PGlite()
+  await database.exec(`
+    CREATE TABLE project(id uuid PRIMARY KEY, space_id uuid NOT NULL, name text NOT NULL);
+    CREATE TABLE seq(
+      space_id uuid NOT NULL,
+      project_id uuid NOT NULL,
+      name text NOT NULL,
+      next bigint NOT NULL,
+      PRIMARY KEY(space_id,project_id,name)
+    );
+    CREATE TABLE hub_note(
+      id uuid PRIMARY KEY,
+      space_id uuid NOT NULL,
+      project_name text NOT NULL,
+      number bigint NOT NULL,
+      deleted_at timestamptz,
+      CONSTRAINT hub_note_space_number_unique UNIQUE(space_id,number)
+    );
+    INSERT INTO project VALUES
+      ('01990000-0000-7000-8000-000000000011','01990000-0000-7000-8000-000000000001','alpha'),
+      ('01990000-0000-7000-8000-000000000012','01990000-0000-7000-8000-000000000001','beta'),
+      ('01990000-0000-7000-8000-000000000013','01990000-0000-7000-8000-000000000001','empty');
+    INSERT INTO seq VALUES
+      ('01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000011','note',2);
+    INSERT INTO hub_note VALUES
+      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','alpha',4,NULL),
+      ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000001','alpha',8,'2026-01-02'),
+      ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','beta',6,NULL);
+  `)
+  await database.exec(
+    migration('20261009132504_dev_1212_project_note_numbers') +
+      migration('20261009132726_dev_1212_project_note_counter_backfill'),
+  )
+  expect(
+    (
+      await database.query<{ name: string; next: number }>(
+        `SELECT p.name,s.next::int FROM seq s JOIN project p ON p.id=s.project_id
+         WHERE s.name='note' ORDER BY p.name`,
+      )
+    ).rows,
+  ).toEqual([
+    { name: 'alpha', next: 9 },
+    { name: 'beta', next: 7 },
+  ])
+  await database.exec(`INSERT INTO hub_note VALUES
+    ('01990000-0000-7000-8000-000000000202','01990000-0000-7000-8000-000000000001','beta',4,NULL)`)
+  await expect(
+    database.exec(`INSERT INTO hub_note VALUES
+      ('01990000-0000-7000-8000-000000000103','01990000-0000-7000-8000-000000000001','alpha',4,NULL)`),
+  ).rejects.toThrow('hub_note_space_project_number_unique')
+  await database.close()
+})

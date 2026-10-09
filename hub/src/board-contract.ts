@@ -7,6 +7,7 @@ export const BoardIdSchema = z
     (id) => (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) || hasRecordIdShape(id),
     'board id must be a positive integer string or UUID',
   )
+const NoteIdSchema = z.string().refine(hasRecordIdShape, 'note id must be a UUID')
 export const BoardIdInputSchema = z.object({ id: BoardIdSchema })
 export const BoardListInputSchema = z.object({
   kind: z.enum(['notice', 'question']).optional(),
@@ -60,7 +61,7 @@ const BoardMessageSchema = z.object({
   acceptedReplyId: BoardIdSchema.nullable(),
   acceptedBy: z.string().nullable(),
   acceptedAt: z.string().nullable(),
-  noteId: BoardIdSchema.nullable(),
+  noteId: NoteIdSchema.nullable(),
   notePendingError: z.string().nullable(),
   revision: z.string().nullable(),
   scopeProjectIds: z.array(z.string()).nullable(),
@@ -140,7 +141,7 @@ export const BoardStatusResultSchema = z.object({
 export const BoardAcceptResultSchema = z.object({
   accepted: BoardIdSchema,
   questionId: BoardIdSchema,
-  noteId: BoardIdSchema.nullable(),
+  noteId: NoteIdSchema.nullable(),
   notePendingError: z.string().nullable(),
   retry: z.string().nullable(),
 })
