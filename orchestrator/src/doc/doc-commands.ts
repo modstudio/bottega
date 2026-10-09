@@ -132,8 +132,14 @@ function commandCanonTree(
   flags: DocFlags,
   presentation: DocPresentation,
   ports: DocCommandPorts,
+  allowProjectCwd = false,
 ): SelectedCanonWriteTree | undefined {
-  const tree = ports.selectCanonWriteTree({ scope, subject, cwd: flags.flag('cwd') })
+  const cwd = flags.flag('cwd')
+  const tree = ports.selectCanonWriteTree({
+    scope,
+    subject,
+    cwd: scope === 'canon' || allowProjectCwd ? cwd : undefined,
+  })
   if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
   return tree
 }
@@ -325,7 +331,14 @@ async function handleSetDocCommand(
       'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
     )
   }
-  const canonTree = commandCanonTree(address.scope, address.subject, flags, presentation, ports)
+  const canonTree = commandCanonTree(
+    address.scope,
+    address.subject,
+    flags,
+    presentation,
+    ports,
+    true,
+  )
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY

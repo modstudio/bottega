@@ -572,10 +572,10 @@ export function checkDoc(
 
 export function repoRootForDoc(
   doc: Pick<Doc, 'scope' | 'subject'>,
-  selectedCanonRoot?: string,
+  selectedRoot?: string,
 ): string | null {
   if (docScopeHasProjectSubject(doc.scope) && doc.subject) {
-    if (doc.scope === 'canon' && selectedCanonRoot) return selectedCanonRoot
+    if (selectedRoot) return selectedRoot
     return projectByName(doc.subject)?.path ?? null
   }
   if (doc.scope === 'project') return null

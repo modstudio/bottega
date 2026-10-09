@@ -9,6 +9,7 @@ describe('categorizeFile', () => {
     ['docs/guide.txt', 'docs'],
     ['packages/x/docs/notes.txt', 'docs'],
     ['orchestrator/src/doc/README.md', 'docs'],
+    ['db/migrations/0001/snapshot.json', 'generated'],
   ] as const)('%s is %s', (path, kind) => {
     expect(categorizeFile(path)).toBe(kind)
   })

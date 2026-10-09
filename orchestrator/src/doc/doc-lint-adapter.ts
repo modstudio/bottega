@@ -100,9 +100,19 @@ export function lintStoredDoc(
 export function storedDocLintRefusal(
   next: Omit<StoredDoc, 'kind'> & { kind?: StoredDoc['kind'] },
   current: StoredDoc | null,
+  selectedTree?: CanonWriteTree,
 ): string | null {
   const doc = { ...next, kind: next.kind ?? current?.kind ?? 'working' }
-  const findings = lintStoredDoc(doc)
-  const introduced = current ? introducedDocFindings(lintStoredDoc(current), findings) : findings
+  const projects = docHasRepositoryReferences(doc.body)
+    ? collectDocReferenceProjects(doc, selectedTree)
+    : undefined
+  const findings = lintStoredDoc(doc, projects)
+  const currentProjects =
+    current && docHasRepositoryReferences(current.body)
+      ? collectDocReferenceProjects(current, selectedTree)
+      : undefined
+  const introduced = current
+    ? introducedDocFindings(lintStoredDoc(current, currentProjects), findings)
+    : findings
   return docLintRefusal(doc, introduced)
 }

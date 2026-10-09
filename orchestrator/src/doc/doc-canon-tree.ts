@@ -1,6 +1,7 @@
 // concern: doc-canon-tree
-/** Selects the repository tree used by command-line canon writes. */
+/** Selects the repository tree used to validate a command-line document write. */
 import { existsSync, realpathSync } from 'node:fs'
+import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { gitToplevel, mainCheckoutOf } from '../../../shared/git.ts'
 import { type Project, projectByName, projects } from '../project/projects.ts'
 import type { CanonWriteTree } from './doc-write-allowed.ts'
@@ -18,19 +19,29 @@ function repositoryIdentity(path: string): string | null {
 }
 
 /**
- * A cwd affects only project-subject canon. An unrelated or non-repository cwd
- * falls back to the registered checkout; another registered repository refuses.
+ * Without --cwd, only canon needs an explicit selection because its write gate
+ * consumes tree facts. With --cwd, every project-subject document uses that
+ * checkout and refuses a tree belonging to another project.
  */
 export function selectCanonWriteTree(input: {
   scope: string
   subject: string | null
   cwd?: string
 }): SelectedCanonWriteTree | undefined {
-  if (input.scope !== 'canon' || !input.subject) return undefined
+  if (!docScopeHasProjectSubject(input.scope) || !input.subject) {
+    if (input.cwd) throw new Error('refusing --cwd: this document has no project')
+    return undefined
+  }
   const subjectProject = projectByName(input.subject)
   if (!subjectProject) return undefined
-  if (!input.cwd || !existsSync(input.cwd))
-    return { project: subjectProject, root: subjectProject.path }
+  if (!input.cwd)
+    return input.scope === 'canon'
+      ? { project: subjectProject, root: subjectProject.path }
+      : undefined
+  if (!existsSync(input.cwd))
+    throw new Error(
+      `refusing --cwd ${input.cwd}: it is not a worktree of project ${subjectProject.name}`,
+    )
 
   const requestedIdentity = repositoryIdentity(input.cwd)
   const subjectIdentity = repositoryIdentity(subjectProject.path)
@@ -46,9 +57,11 @@ export function selectCanonWriteTree(input: {
     )
     if (other) {
       throw new Error(
-        `refusing --cwd for project ${other.name}: canon subject is project ${subjectProject.name}`,
+        `refusing --cwd for project ${other.name}: document project is ${subjectProject.name}`,
       )
     }
   }
-  return { project: subjectProject, root: subjectProject.path }
+  throw new Error(
+    `refusing --cwd ${input.cwd}: it is not a worktree of project ${subjectProject.name}`,
+  )
 }

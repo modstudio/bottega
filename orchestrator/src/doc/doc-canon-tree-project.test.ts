@@ -30,6 +30,6 @@ test('a --cwd from another registered project is refused with both names', () =>
   upsertProject({ name: 'other', path: other, canon: true, settings: {} })
 
   expect(() => selectCanonWriteTree({ scope: 'canon', subject: 'subject', cwd: other })).toThrow(
-    'project other: canon subject is project subject',
+    'project other: document project is subject',
   )
 })

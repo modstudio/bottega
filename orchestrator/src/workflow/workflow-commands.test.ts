@@ -179,9 +179,11 @@ test('workflow attach reads text from stdin and prints its close reference', asy
 
 test('workflow attach refuses text in an argument', async () => {
   await expect(
-    workflowCommand(['workflow', 'attach', 'argument text', '--cursor', '1'], presentation([]), {
-      stdinIsTTY: () => true,
-    }),
+    workflowCommand(
+      ['workflow', 'attach', 'flow', 'argument text', '--cursor', '1'],
+      presentation([]),
+      { stdinIsTTY: () => true },
+    ),
   ).rejects.toThrow('workflow text is not accepted as an argument')
 })
 
@@ -600,8 +602,6 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
         verb,
         slug,
         ...(verb === 'step' ? [steps[0]!] : []),
-        '--project',
-        project,
         '--cursor',
         String(cursor),
         ...tail,
@@ -610,7 +610,11 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
     )
 
   await command('step', firstCursor, '--arg', 'key=DEV-1082-A')
-  await command('next', firstCursor, '--note', 'closed by handle')
+  await command('next', firstCursor, '--note', 'closed with supplied workflow')
+  await workflowCommand(
+    ['workflow', 'next', '--cursor', String(secondCursor), '--note', 'closed by handle'],
+    presentation(lines),
+  )
   await command('await', secondCursor, '--question', 'Proceed by handle?')
   await command('rule', secondCursor, '--ruling', 'Proceed.', '--from-operator')
   await workflowCommand(
@@ -625,6 +629,43 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   expect(db().query('SELECT state FROM workflow_cursor WHERE id=?').get(secondCursor)).toEqual({
     state: 'abandoned',
   })
+})
+
+test('a cursor refuses a supplied workflow or project that differs from its row', async () => {
+  const slug = 'cursor-identity-mismatch'
+  const project = 'cursor-identity-mismatch-project'
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [
+    { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
+  ])
+  const opened = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1223' }, {})
+  const cursor = String(opened.cursor!.id)
+
+  await expect(
+    workflowCommand(
+      ['workflow', 'next', 'another-workflow', '--cursor', cursor, '--note', 'mismatch'],
+      presentation([]),
+    ),
+  ).rejects.toThrow(`workflow mismatch: supplied "another-workflow", cursor has "${slug}"`)
+  await expect(
+    workflowCommand(
+      [
+        'workflow',
+        'next',
+        slug,
+        '--project',
+        'another-project',
+        '--cursor',
+        cursor,
+        '--note',
+        'mismatch',
+      ],
+      presentation([]),
+    ),
+  ).rejects.toThrow(`project mismatch: supplied "another-project", cursor has "${project}"`)
 })
 
 test('mode-less cursor command refuses active cursors in multiple modes', async () => {

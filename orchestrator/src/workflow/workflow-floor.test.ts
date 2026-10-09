@@ -96,6 +96,25 @@ test('a fully triaged graded review satisfies a ruling floor', () => {
   })
 })
 
+test('an unfinished review round refusal names every unfinished review id', () => {
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: {
+        review: {
+          id: 4,
+          allFindingsDisposed: true,
+          allLensesGraded: false,
+          unfinishedReviewIds: [5, 7],
+        },
+      },
+    }),
+  ).toEqual({
+    action: 'refuse',
+    message: 'floor ruling is unmet: review ids 5, 7 in this round are unfinished',
+  })
+})
+
 test('an operator ruling floor requires a bound operator answer', () => {
   const agentAnswer = answeredRuling
   const operatorAnswer: ValidatedEvidence = {

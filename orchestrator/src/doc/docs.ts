@@ -363,7 +363,7 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
-  const refusal = storedDocLintRefusal(input, prior)
+  const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
 }
 

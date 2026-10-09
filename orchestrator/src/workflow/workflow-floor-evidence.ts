@@ -285,8 +285,16 @@ function gatherReview(
   d: Database,
 ): ValidatedEvidence['review'] {
   const review = d
-    .query<{ id: number; project_name: string | null }, [number]>(
-      `SELECT r.id, p.name AS project_name
+    .query<
+      {
+        id: number
+        project_name: string | null
+        patch_id: string | null
+        path_set: string | null
+      },
+      [number]
+    >(
+      `SELECT r.id, p.name AS project_name, r.patch_id, r.path_set
          FROM review r LEFT JOIN project p ON p.id=r.project_id
         WHERE r.id=?`,
     )
@@ -297,36 +305,58 @@ function gatherReview(
       `--review ${id} project is ${review.project_name ?? 'unset'}, not this cursor's ${identity.project}`,
     )
   const bound = d
-    .query<{ ok: number }, [number, string | null, string | null, string]>(
-      `SELECT COUNT(*) AS ok
+    .query<
+      { branch: string | null },
+      [number, string | null, string | null, string, string | null]
+    >(
+      `SELECT ru.branch
          FROM review_lens rl JOIN run ru ON ru.id=rl.run_id
         WHERE rl.review_id=?
-          AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)`,
+          AND ((? IS NOT NULL AND ru.branch=?) OR ru.launch_key=?)
+        ORDER BY CASE WHEN ru.branch=? THEN 0 ELSE 1 END, rl.id LIMIT 1`,
     )
-    .get(id, identity.branch, identity.branch, identity.workflowKey)
-  if (!bound?.ok)
+    .get(id, identity.branch, identity.branch, identity.workflowKey, identity.branch)
+  if (!bound)
     throw new Error(
       `--review ${id} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
     )
-  const findings = d
-    .query<{ total: number; open: number }, [number]>(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN disposition IS NULL THEN 1 ELSE 0 END) AS open
-         FROM review_finding WHERE review_id=?`,
+  const round = d
+    .query<
+      { id: number; open_findings: number; total_lenses: number; ungraded_lenses: number },
+      [string, string | null, string | null, string | null]
+    >(
+      `SELECT r.id,
+              COUNT(DISTINCT CASE WHEN rf.disposition IS NULL THEN rf.id END) AS open_findings,
+              COUNT(DISTINCT rl.id) AS total_lenses,
+              COUNT(DISTINCT CASE
+                WHEN rl.reproduced IS NULL OR rl.coverage IS NULL OR rl.limits IS NULL OR rl.overlap IS NULL
+                THEN rl.id END) AS ungraded_lenses
+         FROM review r
+         JOIN review_lens rl ON rl.review_id=r.id
+         JOIN run ru ON ru.id=rl.run_id
+         LEFT JOIN review_finding rf ON rf.review_id=r.id
+        WHERE ru.repo=? AND ru.branch IS ?
+          AND r.patch_id IS ? AND r.path_set IS ?
+        GROUP BY r.id ORDER BY r.id`,
     )
-    .get(id) ?? { total: 0, open: 0 }
-  const lenses = d
-    .query<{ total: number; ungraded: number }, [number]>(
-      `SELECT COUNT(*) AS total,
-                SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
-                         THEN 1 ELSE 0 END) AS ungraded
-           FROM review_lens WHERE review_id=?`,
+    .all(identity.project, bound.branch, review.patch_id, review.path_set)
+  const reviews =
+    review.patch_id === null || review.path_set === null
+      ? round.filter(({ id: reviewId }) => reviewId === id)
+      : round
+  const unfinishedReviewIds = reviews
+    .filter(
+      ({ open_findings, total_lenses, ungraded_lenses }) =>
+        open_findings > 0 || total_lenses === 0 || ungraded_lenses > 0,
     )
-    .get(id) ?? { total: 0, ungraded: 0 }
+    .map(({ id: reviewId }) => reviewId)
   return {
     id,
-    allFindingsDisposed: Number(findings.open ?? 0) === 0,
-    allLensesGraded: lenses.total > 0 && Number(lenses.ungraded ?? 0) === 0,
+    allFindingsDisposed: reviews.every(({ open_findings }) => open_findings === 0),
+    allLensesGraded: reviews.every(
+      ({ total_lenses, ungraded_lenses }) => total_lenses > 0 && ungraded_lenses === 0,
+    ),
+    ...(unfinishedReviewIds.length ? { unfinishedReviewIds } : {}),
   }
 }
 
