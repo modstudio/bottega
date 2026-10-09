@@ -181,26 +181,38 @@ function typeRanges(structural: string): Array<{ start: number; end: number }> {
   return result
 }
 
+function previousNonWhitespace(content: string, from: number): number {
+  let cursor = from
+  while (cursor > 0 && /\s/.test(content[cursor - 1]!)) cursor -= 1
+  return cursor
+}
+
+function attributeStart(content: string, end: number): number | undefined {
+  if (content[end - 1] !== ']') return undefined
+  let depth = 0
+  for (let opening = end - 1; opening >= 0; opening -= 1) {
+    if (content[opening] === ']') depth += 1
+    else if (content[opening] === '[' && --depth === 0) {
+      return opening > 0 && content[opening - 1] === '#' ? opening - 1 : undefined
+    }
+  }
+  return undefined
+}
+
+function precedingDecoration(content: string, from: number): number | undefined {
+  const end = previousNonWhitespace(content, from)
+  if (content.slice(end - 2, end) === '*/') {
+    const opening = content.lastIndexOf('/*', end - 2)
+    return opening < 0 ? undefined : opening
+  }
+  return attributeStart(content, end)
+}
+
 function decorationStart(content: string, declaration: number): number {
   let start = declaration
-  while (start > 0) {
-    let cursor = start
-    while (cursor > 0 && /\s/.test(content[cursor - 1]!)) cursor -= 1
-    if (content.slice(cursor - 2, cursor) === '*/') {
-      const opening = content.lastIndexOf('/*', cursor - 2)
-      if (opening < 0) break
-      start = opening
-      continue
-    }
-    if (content[cursor - 1] !== ']') break
-    let depth = 0
-    let opening = cursor - 1
-    for (; opening >= 0; opening -= 1) {
-      if (content[opening] === ']') depth += 1
-      else if (content[opening] === '[' && --depth === 0) break
-    }
-    if (opening < 1 || content[opening - 1] !== '#') break
-    start = opening - 1
+  for (let preceding = precedingDecoration(content, start); preceding !== undefined; ) {
+    start = preceding
+    preceding = precedingDecoration(content, start)
   }
   return start
 }
@@ -598,7 +610,7 @@ function waivers(
  * This scanner is intentionally not a PHP parser. It masks strings, comments, and heredocs
  * while matching braces and public method declarations by bounded patterns. It does not model
  * PHP grammar, interpolation, dynamic declarations, or malformed nesting. Line rules preserve
- * the reference guard's raw-line behaviour, so trailing comments and strings can still match.
+ * the reference guard's raw-line behavior, so trailing comments and strings can still match.
  */
 export async function phpTestSubstanceReport(
   file: string,

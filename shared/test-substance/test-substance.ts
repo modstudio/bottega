@@ -37,7 +37,7 @@ export const PHP_UNIVERSAL_RULES = [
   'unused-waiver',
 ] as const
 export type PhpPolicyRule = (typeof PHP_POLICY_RULES)[number]
-export type PhpUniversalRule = (typeof PHP_UNIVERSAL_RULES)[number]
+type PhpUniversalRule = (typeof PHP_UNIVERSAL_RULES)[number]
 export type PhpRule = PhpPolicyRule | PhpUniversalRule
 
 export type TestSubstanceJudgment = {
