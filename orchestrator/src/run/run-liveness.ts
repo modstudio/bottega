@@ -26,6 +26,9 @@ import { runLeaseState } from './run-lease.ts'
  */
 export const STALE_AFTER_MS = 60 * 60 * 1000
 
+/** The common bound for callers following a detached run to its terminal state. */
+export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
+
 /**
  * When the terminal outcome of a conversation chain became observable.
  *

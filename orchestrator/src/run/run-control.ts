@@ -40,7 +40,7 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
-import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
+import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
 
@@ -50,8 +50,6 @@ export type RunControlPresentation = {
   argvResumeLimit(agentName: string): number | undefined
   printRunId(id: number): void
 }
-
-const FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
 
 export function continuationInstructionsForFreshRetry(
   writesRepo: boolean,
@@ -149,7 +147,7 @@ export async function follow(
   exitOnFailure = true,
   presentation: RunControlPresentation,
 ): Promise<string> {
-  const deadline = Date.now() + FOLLOW_TIMEOUT_MS
+  const deadline = Date.now() + RUN_FOLLOW_TIMEOUT_MS
   const q = db().query(
     `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
             output_path, error, route_reason, evidence_excluded
@@ -234,7 +232,7 @@ export async function follow(
       // Deliberately NOT a kill. The worker is detached and may still be
       // working; saying where to look for it is more use than destroying it.
       console.error(
-        `— run ${id} still going after ${Math.round(FOLLOW_TIMEOUT_MS / 60_000)}m.` +
+        `— run ${id} still going after ${Math.round(RUN_FOLLOW_TIMEOUT_MS / 60_000)}m.` +
           ` It is detached and will finish on its own:  orch run ${id}`,
       )
       process.exit(2)

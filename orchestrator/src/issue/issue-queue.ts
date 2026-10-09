@@ -2,6 +2,7 @@
 /** Selects and bounds filed issues without knowing their storage or dispatch adapters. */
 
 import { parseFiledIssue } from './issue-file.ts'
+import { parseIssueReviewRunLabel } from './issue-review.ts'
 
 export const MAX_ISSUES_PER_PASS = 5
 export const MAX_HELD_ISSUE_TREES = 3
@@ -59,6 +60,12 @@ export function filedIssueLoopRun(row: {
   job: string
   label: string | null
 }): FiledIssueLoopRun | null {
+  const review = row.label ? parseIssueReviewRunLabel(row.label) : null
+  if (review) {
+    return row.job === 'review-lens'
+      ? { runId: row.id, job: row.job, issueKey: review.issueKey }
+      : null
+  }
   const match = row.label?.match(/^issue ([A-Z][A-Z0-9]*-[0-9]+) (diagnosis|fix|blast radius)$/)
   if (!match) return null
   const issueKey = match[1]!

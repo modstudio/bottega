@@ -161,16 +161,17 @@
   },
   {
     "file": "orchestrator/src/collect/collect.ts",
-    "function": "collectWait",
-    "line": 317,
-    "score": 46
-  },
-  {
-    "file": "orchestrator/src/collect/collect.ts",
     "function": "collectResult",
     "line": 362,
     "score": 52,
     "key": "orchestrator/src/collect/collect.ts\u0000collectResult"
+  },
+  {
+    "file": "orchestrator/src/collect/collect.ts",
+    "function": "collectWait",
+    "line": 688,
+    "score": 21,
+    "key": "orchestrator/src/collect/collect.ts\u0000collectWait"
   },
   {
     "file": "orchestrator/src/confinement/confinement.ts",

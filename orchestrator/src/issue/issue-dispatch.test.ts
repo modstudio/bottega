@@ -58,7 +58,7 @@ describe('unscored filed-issue loop runs', () => {
     const failed = addRun({ agent: 'codex', job: 'diagnose', status: 'failed' })
     db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 diagnosis', diagnosis)
     db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 fix', fix)
-    db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 blast radius', lens)
+    db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 review correctness', lens)
     db().query('UPDATE run SET label=? WHERE id=?').run('hand-dispatched diagnosis', hand)
     db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 diagnosis', sessionOwned)
     db().query('UPDATE run SET label=? WHERE id=?').run('issue DEV-1 diagnosis', judged)
