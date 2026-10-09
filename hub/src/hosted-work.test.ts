@@ -10,7 +10,7 @@ function expectNumber(value: unknown, expected: number) {
 }
 
 test('hosted work rows return token totals above the 32-bit range as numbers', () => {
-  const shapedInterval = interval({
+  const intervalRow = {
     task_key: 'DEV-1240',
     project: 'workshop',
     source: 'claude',
@@ -18,17 +18,21 @@ test('hosted work rows return token totals above the 32-bit range as numbers', (
     job: null,
     start_at: '2026-10-05T10:00:00.000Z',
     end_at: '2026-10-05T12:00:00.000Z',
-    claude_tokens: INTERVAL_TOKENS,
-    vendor_tokens: INTERVAL_TOKENS,
     vendor_cost_usd: null,
     open: 0,
-  })
-  expectNumber(shapedInterval.claude_tokens, INTERVAL_TOKENS)
-  expectNumber(shapedInterval.vendor_tokens, INTERVAL_TOKENS)
+  }
+  for (const tokens of [String(INTERVAL_TOKENS), BigInt(INTERVAL_TOKENS), INTERVAL_TOKENS]) {
+    const shapedInterval = interval({
+      ...intervalRow,
+      claude_tokens: tokens,
+      vendor_tokens: tokens,
+    })
+    expectNumber(shapedInterval.claude_tokens, INTERVAL_TOKENS)
+    expectNumber(shapedInterval.vendor_tokens, INTERVAL_TOKENS)
+  }
 
-  const shapedDay = hostedDayRow({
+  const dayRow = {
     day: '2026-10-05',
-    claude_tokens: DAY_TOKENS,
     tasks: 1,
     commits: 0,
     files: 0,
@@ -37,6 +41,8 @@ test('hosted work rows return token totals above the 32-bit range as numbers', (
     lines_docs: 0,
     lines_config: 0,
     lines_generated: 0,
-  })
-  expectNumber(shapedDay.claude_tokens, DAY_TOKENS)
+  }
+  for (const tokens of [String(DAY_TOKENS), BigInt(DAY_TOKENS), DAY_TOKENS]) {
+    expectNumber(hostedDayRow({ ...dayRow, claude_tokens: tokens }).claude_tokens, DAY_TOKENS)
+  }
 })

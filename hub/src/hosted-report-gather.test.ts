@@ -254,7 +254,7 @@ test('hosted reports count matched, unmatched and untasked work independently', 
 test('hosted report rows return vendor tokens above the 32-bit range as numbers', () => {
   const startAt = '2026-10-05T10:00:00.000Z'
   const endAt = '2026-10-05T12:00:00.000Z'
-  const reportRow = asHostedReportRow({
+  const row = {
     space_id: '01990000-0000-7000-8000-000000001400',
     task_id: null,
     task_key: 'DEV-1240',
@@ -262,14 +262,18 @@ test('hosted report rows return vendor tokens above the 32-bit range as numbers'
     start_at: startAt,
     end_at: endAt,
     open: 0,
-    vendor_tokens: INTERVAL_TOKENS,
     task_project: 'workshop',
     task_title: null,
     task_status: null,
     project_color: null,
-  })
-  expectNumber(reportRow.vendor_tokens, INTERVAL_TOKENS)
-  const gathered = gatherHostedReport([reportRow], new Set(), {
+  }
+  const fromString = asHostedReportRow({ ...row, vendor_tokens: String(INTERVAL_TOKENS) })
+  expectNumber(fromString.vendor_tokens, INTERVAL_TOKENS)
+  expectNumber(
+    asHostedReportRow({ ...row, vendor_tokens: INTERVAL_TOKENS }).vendor_tokens,
+    INTERVAL_TOKENS,
+  )
+  const gathered = gatherHostedReport([fromString], new Set(), {
     from: startAt,
     to: endAt,
     key: endAt,

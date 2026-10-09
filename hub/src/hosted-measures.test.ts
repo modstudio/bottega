@@ -9,7 +9,7 @@ function expectNumber(value: unknown, expected: number) {
 }
 
 test('asInterval returns vendor tokens above the 32-bit range as a number', () => {
-  const measured = asInterval({
+  const row = {
     task_id: null,
     task_key: 'DEV-1240',
     project_name: 'workshop',
@@ -19,8 +19,11 @@ test('asInterval returns vendor tokens above the 32-bit range as a number', () =
     end_at: '2026-10-05T12:00:00.000Z',
     open: 0,
     user_id: null,
-    vendor_tokens: INTERVAL_TOKENS,
     vendor_cost_usd: null,
-  })
-  expectNumber(measured.vendorTokens, INTERVAL_TOKENS)
+  }
+  expectNumber(
+    asInterval({ ...row, vendor_tokens: String(INTERVAL_TOKENS) }).vendorTokens,
+    INTERVAL_TOKENS,
+  )
+  expectNumber(asInterval({ ...row, vendor_tokens: INTERVAL_TOKENS }).vendorTokens, INTERVAL_TOKENS)
 })
