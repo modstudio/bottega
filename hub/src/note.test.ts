@@ -193,6 +193,9 @@ describe('suggestion notes', () => {
       expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
       expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
       expect(resolveNoteReference('42', 'workshop')).toBe(alphaId)
+      expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
+        'no note alpha#41; use a project#number label or run `hub note list`',
+      )
       expect(resolveNoteReference(alphaId, 'workshop')).toBe(alphaId)
       expect(() => resolveNoteReference('99', 'workshop')).toThrow(
         'no note workshop#99; use a project#number label or run `hub note list`',

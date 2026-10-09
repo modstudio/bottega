@@ -11,6 +11,7 @@ import {
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { confirmCount } from './hosted-tasks.ts'
@@ -337,17 +338,16 @@ export function getNote(recordId: string): NoteRow {
   return decode(row)
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
-  if (UUID.test(value)) {
+  if (hasRecordIdShape(value)) {
     const recordId = value.toLowerCase()
     if (db().query('SELECT 1 FROM note WHERE record_id=?').get(recordId)) return recordId
     throw new Error(`no note ${recordId}; use a project#number label or run \`hub note list\``)
   }
   let project: string | null = sessionProject
   let number: number
-  if (value.includes('#')) {
+  const isLabel = value.includes('#')
+  if (isLabel) {
     const label = parseNoteLabel(value)
     registeredProject(label.project)
     project = label.project
@@ -366,6 +366,11 @@ export function resolveNoteReference(value: string, sessionProject: string | nul
         .get(project, number)
     : null
   if (inProject) return inProject.record_id
+  if (isLabel) {
+    throw new Error(
+      `no note ${formatNoteLabel(project!, number)}; use a project#number label or run \`hub note list\``,
+    )
+  }
   const matches = db()
     .query<{ record_id: string }, [number]>('SELECT record_id FROM note WHERE number=? LIMIT 2')
     .all(number)
