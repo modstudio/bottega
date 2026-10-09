@@ -3,6 +3,7 @@ import { useMatch, useNavigate } from '@tanstack/react-router'
 import { History, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
+import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
@@ -27,12 +28,10 @@ export function DocsPage() {
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
   const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
   const source = docsSource(hosted, signedIn)
-  const activeSpaceName = (whoami.data?.memberships ?? []).find(
-    (membership) => membership.space_id === whoami.data?.activeSpaceId,
-  )?.name
   const sourceLabel = docsSourceLabel(
     source,
-    typeof activeSpaceName === 'string' ? activeSpaceName : undefined,
+    recordSpaces(whoami.data?.memberships).find((space) => space.id === whoami.data?.activeSpaceId)
+      ?.name,
   )
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params

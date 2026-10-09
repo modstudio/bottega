@@ -22,6 +22,7 @@ import {
   sameLocationOn,
 } from '@/lib/hub-mode'
 import { waitingInboxEntries } from '@/lib/operator-waiting'
+import { recordSpaces } from '@/lib/record-spaces'
 import { useWindowState } from '@/lib/window'
 import { SiteFrame } from '@/site/chrome'
 import { queryClient, trpc } from '@/trpc/client'
@@ -255,11 +256,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
   }
   const email =
     whoami.data?.user && 'email' in whoami.data.user ? String(whoami.data.user.email) : null
-  const spaces = (whoami.data?.memberships ?? []).flatMap((membership) => {
-    const id = membership.space_id
-    const name = membership.name
-    return typeof id === 'string' && typeof name === 'string' ? [{ id, name }] : []
-  })
+  const spaces = recordSpaces(whoami.data?.memberships)
   return (
     <AppShell
       name={PLATFORM_NAME}
