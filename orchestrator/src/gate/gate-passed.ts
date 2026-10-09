@@ -37,7 +37,7 @@ export function passingGateForCommit(
     .query<GateCandidate, [string]>(
       `SELECT g.id,r.project_id AS projectId,g.cwd
          FROM gate_execution g LEFT JOIN run r ON r.id=g.run_id
-        WHERE g.head_commit=? AND g.finished_at IS NOT NULL AND g.exit_code=0
+        WHERE g.head_commit=? AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
         ORDER BY g.id DESC`,
     )
     .all(normalized)

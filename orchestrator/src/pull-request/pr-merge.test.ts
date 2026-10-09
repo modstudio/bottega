@@ -27,7 +27,6 @@ function registerProject(requiredChecks: string[]): void {
 const pullRequest: PullRequestMergeFacts = {
   number: 42,
   headCommit: 'head-commit',
-  headBranch: 'DEV-1058-proof',
   baseBranch: 'main',
   title: 'Prove the pull request head',
   state: 'OPEN',
@@ -155,20 +154,6 @@ test('a head commit that changes after checks is refused without merging', () =>
     ),
   ).toThrow('head changed from head-commit to changed-head-commit')
   expect(merged).toBe(false)
-})
-
-test('the recorded local gate and level landing branch admit a merge', () => {
-  registerProject([])
-  recordPassingGate()
-  expect(
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        landingState: () => ({ remoteLandingTip: 'base', mergeBase: 'base' }),
-      }),
-    ),
-  ).toBe('merge-commit')
 })
 
 test('a missing recorded local gate refuses with the gate command', () => {

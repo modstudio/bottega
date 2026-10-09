@@ -8,7 +8,7 @@ export type PullRequestCheck = {
   link: string
 }
 
-export type PullRequestIdentityInput = {
+type PullRequestIdentityInput = {
   number: number
   state: string
   baseBranch: string
@@ -30,14 +30,12 @@ type LocalGateProofInput = {
   headCommit: string
   currentHeadCommit: string
   landingBranch: string
-  gate:
-    | { recorded: false }
-    | { recorded: true; id: number; remoteLandingTip: string; mergeBase: string }
+  gate: { recorded: false } | { recorded: true; remoteLandingTip: string; mergeBase: string }
 }
 
 export type MergeProofInput = RequiredChecksProofInput | LocalGateProofInput
 
-export type MergeDecision = { admitted: true } | { admitted: false; refusal: string }
+type MergeDecision = { admitted: true } | { admitted: false; refusal: string }
 
 const rerun = (number: number) => `orch pr merge ${number}`
 

@@ -19,7 +19,6 @@ import {
 export type PullRequestMergeFacts = {
   number: number
   headCommit: string
-  headBranch: string
   baseBranch: string
   title: string
   state: string
@@ -81,21 +80,13 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     const value = parsed<{
       number?: unknown
       headRefOid?: unknown
-      headRefName?: unknown
       baseRefName?: unknown
       title?: unknown
       state?: unknown
     }>(
       successful(
         cwd,
-        [
-          'gh',
-          'pr',
-          'view',
-          target,
-          '--json',
-          'number,headRefOid,headRefName,baseRefName,title,state',
-        ],
+        ['gh', 'pr', 'view', target, '--json', 'number,headRefOid,baseRefName,title,state'],
         'pull-request lookup',
       ),
       'pull-request lookup',
@@ -103,7 +94,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     if (
       !Number.isSafeInteger(value.number) ||
       typeof value.headRefOid !== 'string' ||
-      typeof value.headRefName !== 'string' ||
       typeof value.baseRefName !== 'string' ||
       typeof value.title !== 'string' ||
       typeof value.state !== 'string'
@@ -113,7 +103,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     return {
       number: Number(value.number),
       headCommit: value.headRefOid,
-      headBranch: value.headRefName,
       baseBranch: value.baseRefName,
       title: value.title,
       state: value.state,
@@ -240,7 +229,6 @@ function collectMergeProof(
     landingBranch,
     gate: {
       recorded: true,
-      id: passingGateId,
       ...landingState,
     },
   }

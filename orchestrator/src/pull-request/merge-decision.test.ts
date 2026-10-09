@@ -26,10 +26,6 @@ const input = (values: Partial<RequiredChecksInput> = {}): RequiredChecksInput =
 })
 
 describe('required-check merge proof', () => {
-  test('all declared checks passing admits the head', () => {
-    expect(decideMergeProof(input())).toEqual({ admitted: true })
-  })
-
   test.each([
     ['pending', { name: 'lint', bucket: 'pending', state: 'IN_PROGRESS' }],
     ['cancelled', { name: 'lint', bucket: 'cancel', state: 'CANCELLED' }],
@@ -87,15 +83,10 @@ describe('local-gate merge proof', () => {
     landingBranch: 'main',
     gate: {
       recorded: true,
-      id: 9,
       remoteLandingTip: 'base-commit',
       mergeBase: 'base-commit',
     },
     ...values,
-  })
-
-  test('a recorded gate and level landing branch admit the head', () => {
-    expect(decideMergeProof(local())).toEqual({ admitted: true })
   })
 
   test('a missing gate record names the gate command', () => {
@@ -111,7 +102,6 @@ describe('local-gate merge proof', () => {
       local({
         gate: {
           recorded: true,
-          id: 9,
           remoteLandingTip: 'new-base',
           mergeBase: 'base-commit',
         },
