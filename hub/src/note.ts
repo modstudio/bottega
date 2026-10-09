@@ -32,10 +32,13 @@ import {
   type NoteClientOptions,
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
+import { noteDestinationOptions } from './note-project-space.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projects } from './projects.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
+import { hostedTaskIdentity } from './task-client.ts'
+import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = {
@@ -148,7 +151,7 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
 
 function registeredProject(name: string): void {
   if (!projects().some((candidate) => candidate.name === name))
-    throw new Error(`unknown project '${name}'`)
+    throw new Error(`project '${name}' is not registered; run \`orch project list\``)
 }
 
 function writeMode(
@@ -401,7 +404,8 @@ export async function acknowledgeNote(
     })
     return { note: getNote(note.record_id), alreadyAcknowledged: false }
   }
-  const hosted = await hostedAcknowledgeNote(note.record_id, sessionId, options.hosted)
+  const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
+  const hosted = await hostedAcknowledgeNote(note.record_id, sessionId, hostedOptions)
   writeTransaction((conn) => {
     applyHostedNote(conn, hosted.note)
     applyHostedAcknowledgement(conn, hosted.acknowledgement)
@@ -457,6 +461,8 @@ export async function mergeNote(
   if (targetRecordId === sourceRecordId) throw new Error('a note cannot be merged with itself')
   const target = getNote(targetRecordId)
   const sourceNote = getNote(sourceRecordId)
+  if (target.project !== sourceNote.project)
+    throw new Error('notes from different projects cannot be merged')
   const mode = writeMode(target.project, options.hosted)
   if (mode === 'local-authoritative') {
     writeTransaction((conn) => {
@@ -478,7 +484,8 @@ export async function mergeNote(
     })
     return getNote(targetRecordId)
   }
-  const result = await hostedMergeNotes(target.record_id, sourceNote.record_id, options.hosted)
+  const hostedOptions = await noteDestinationOptions(target.project, options.hosted)
+  const result = await hostedMergeNotes(target.record_id, sourceNote.record_id, hostedOptions)
   writeTransaction((conn) => {
     applyHostedNote(conn, result.note)
     conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
@@ -494,6 +501,7 @@ export async function createNote(
     sameAs?: string
     forceNew?: boolean
     anchor?: NoteAnchor
+    project?: string
   },
   options: { hosted?: NoteClientOptions } = {},
 ): Promise<{ note: NoteRow; candidates: NoteCandidate[] }> {
@@ -501,17 +509,19 @@ export async function createNote(
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = input.anchor ?? deriveNoteAnchor(text, input.cwd)
-  const candidates = noteCandidates(text, anchor.project)
-  const mode = writeMode(anchor.project, options.hosted)
+  const targetProject = input.project ?? anchor.project
+  registeredProject(targetProject)
+  const candidates = noteCandidates(text, targetProject)
+  const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
     const existing = getNote(input.sameAs)
-    if (existing.project !== anchor.project)
+    if (existing.project !== targetProject)
       throw new Error('the matching note belongs to another project')
     if (mode === 'local-authoritative') {
       const at = nowIso()
       writeTransaction((conn) => {
         const row = decode(noteRow(conn, existing.record_id))
-        if (row.project !== anchor.project)
+        if (row.project !== targetProject)
           throw new Error('the matching note belongs to another project')
         conn
           .query(
@@ -521,15 +531,16 @@ export async function createNote(
       })
       return { note: getNote(existing.record_id), candidates }
     }
+    const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
     const hosted = await hostedCreateNote(
       {
-        project: anchor.project,
+        project: targetProject,
         text,
         area: input.area?.trim() || null,
         anchor: JSON.stringify(anchor),
         sameAs: existing.record_id,
       },
-      options.hosted,
+      hostedOptions,
     )
     writeTransaction((conn) => applyHostedNote(conn, hosted))
     return { note: getNote(existing.record_id), candidates }
@@ -538,7 +549,7 @@ export async function createNote(
   if (mode === 'local-authoritative') {
     const at = nowIso()
     const recordId = writeTransaction((conn) => {
-      const number = mintLocalNoteNumber(conn, anchor.project)
+      const number = mintLocalNoteNumber(conn, targetProject)
       const recordId = newRecordId()
       conn
         .query(
@@ -548,7 +559,7 @@ export async function createNote(
         .run(
           recordId,
           number,
-          anchor.project,
+          targetProject,
           text,
           input.area?.trim() || null,
           JSON.stringify([anchor]),
@@ -559,14 +570,15 @@ export async function createNote(
     })
     return { note: getNote(recordId), candidates }
   }
+  const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
   const hosted = await hostedCreateNote(
     {
-      project: anchor.project,
+      project: targetProject,
       text,
       area: input.area?.trim() || null,
       anchor: JSON.stringify(anchor),
     },
-    options.hosted,
+    hostedOptions,
   )
   writeTransaction((conn) => applyHostedNote(conn, hosted))
   return { note: getNote(hosted.id), candidates }
@@ -635,7 +647,8 @@ export async function promoteNote(
     })
     return getNote(note.record_id)
   }
-  const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, options.hosted)
+  const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
+  const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, hostedOptions)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
     applyHostedNote(conn, hosted.note)
@@ -671,7 +684,8 @@ export async function dropNote(
     })
     return getNote(recordId)
   }
-  const hosted = await hostedDropNote(current.record_id, reason.trim(), options.hosted)
+  const hostedOptions = await noteDestinationOptions(current.project, options.hosted)
+  const hosted = await hostedDropNote(current.record_id, reason.trim(), hostedOptions)
   writeTransaction((conn) => applyHostedNote(conn, hosted))
   return getNote(recordId)
 }
@@ -763,8 +777,8 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
   const markedIds = new Set(reasons.map((row) => row.recordId))
   const deletedRows = db()
-    .query<{ record_id: string; stale_at: string | null }, [string]>(
-      `SELECT record_id,stale_at FROM note
+    .query<{ record_id: string; project: string; stale_at: string | null }, [string]>(
+      `SELECT record_id,project,stale_at FROM note
        WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
     )
     .all(cutoff)
@@ -803,24 +817,63 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
       return { marked: reasons.length, deleted: found.length, reasons }
     })
   }
-  const result = await hostedReapNotes(
-    {
-      stale: reasons.map((row) => ({ recordId: row.recordId, reason: row.reason, at })),
-      deleted: deletedRows.map((row) => row.record_id),
-      confirmation: deletedIds.length,
-      cutoff,
-    },
-    deps.hosted,
+  const identity = await hostedTaskIdentity(deps.hosted)
+  const projectById = new Map(notes.map((note) => [note.record_id, note.project]))
+  const maintenance = [
+    ...reasons.map((row) => ({
+      kind: 'stale' as const,
+      ...row,
+      project_name: projectById.get(row.recordId)!,
+    })),
+    ...deletedRows.map((row) => ({
+      kind: 'deleted' as const,
+      recordId: row.record_id,
+      project_name: row.project,
+    })),
+  ]
+  const partitioned = partitionProjectRows(maintenance, projects(), identity)
+  const failures = [...partitioned.refusals].map(
+    ([project, refusal]) => `${project}: ${refusal.reason}`,
   )
-  writeTransaction((conn) => {
-    for (const item of reasons) {
-      conn
-        .query('UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL')
-        .run(at, item.reason, item.recordId)
+  let marked = 0
+  let deleted = 0
+  for (const [spaceId, rows] of partitioned.destinations) {
+    const stale = rows.filter((row) => row.kind === 'stale')
+    const removed = rows.filter((row) => row.kind === 'deleted')
+    try {
+      const result = await hostedReapNotes(
+        {
+          stale: stale.map((row) => ({
+            recordId: row.recordId,
+            reason: 'reason' in row ? row.reason : '',
+            at,
+          })),
+          deleted: removed.map((row) => row.recordId),
+          confirmation: removed.length,
+          cutoff,
+        },
+        { ...deps.hosted, recordSpace: spaceId },
+      )
+      writeTransaction((conn) => {
+        for (const item of stale) {
+          if (!('reason' in item)) continue
+          conn
+            .query(
+              'UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL',
+            )
+            .run(at, item.reason, item.recordId)
+        }
+        for (const item of removed)
+          conn.query('DELETE FROM note WHERE record_id=?').run(item.recordId)
+      })
+      marked += result.marked
+      deleted += result.deleted
+    } catch (cause) {
+      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
     }
-    for (const id of deletedIds) conn.query('DELETE FROM note WHERE record_id=?').run(id)
-  })
-  return { marked: result.marked, deleted: result.deleted, reasons }
+  }
+  if (failures.length) throw new Error(`hosted note reaps failed: ${failures.join('; ')}`)
+  return { marked, deleted, reasons }
 }
 
 export function curatorEnabled(): boolean {

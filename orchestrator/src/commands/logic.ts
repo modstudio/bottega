@@ -238,11 +238,16 @@ export function register(program: Command): void {
     )
   program
     .command('note <text>')
+    .option('--project <name>')
     .option('--same-as <value>')
     .option('--new')
     .allowExcessArguments(false)
     .action((text, options) =>
-      noteCommand(text, { sameAs: options.sameAs, new: Boolean(options.new) }, presentation),
+      noteCommand(
+        text,
+        { project: options.project, sameAs: options.sameAs, new: Boolean(options.new) },
+        presentation,
+      ),
     )
   program
     .command('state')

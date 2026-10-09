@@ -48,7 +48,7 @@ export async function hubOutput(args: string[], cwd = process.cwd()): Promise<st
 }
 
 export async function fileNote(
-  input: { text: string; same_as?: string; new?: boolean },
+  input: { text: string; project?: string; same_as?: string; new?: boolean },
   options: { cwd?: string; anchor?: FiledNoteAnchor } = {},
 ) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
@@ -66,6 +66,7 @@ export async function fileNote(
     'note',
     'new',
     input.text,
+    ...(input.project ? ['--project', input.project] : []),
     ...(input.same_as ? ['--same-as', String(input.same_as)] : input.new ? ['--new'] : []),
     ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
     '--json',

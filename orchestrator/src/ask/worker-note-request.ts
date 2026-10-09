@@ -60,10 +60,17 @@ export async function requestWorkerNote(
   writableDb()
   const request = db()
     .query(
-      `INSERT INTO worker_note_request (run_id,text,file,same_as,requested_at,status)
-       VALUES (?,?,?,?,?,'requested') RETURNING id`,
+      `INSERT INTO worker_note_request (run_id,text,project,file,same_as,requested_at,status)
+       VALUES (?,?,?,?,?,?,'requested') RETURNING id`,
     )
-    .get(run.id, input.text, input.file ?? null, input.sameAs ?? null, nowIso()) as { id: number }
+    .get(
+      run.id,
+      input.text,
+      input.project ?? null,
+      input.file ?? null,
+      input.sameAs ?? null,
+      nowIso(),
+    ) as { id: number }
   const deadline = Date.now() + WORKER_NOTE_WAIT_MS
   while (Date.now() < deadline) {
     const row = db()

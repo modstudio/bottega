@@ -2,7 +2,10 @@ import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
+import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
+import { notePullSpaces } from './note-project-space.ts'
+import { projects } from './projects.ts'
+import { hostedTaskIdentity } from './task-client.ts'
 import { taskRecordIdFor } from './task-identity.ts'
 
 const CURSOR_KEY = 'collect.hosted-notes.cursor'
@@ -63,7 +66,11 @@ export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledg
     acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings`)
     .run(row.id, row.note_id, row.session_id, row.acknowledged_at, row.sightings)
 }
-export function applyHostedNoteChanges(changes: Awaited<ReturnType<typeof hostedNoteChanges>>) {
+export function applyHostedNoteChanges(
+  changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
+  cursorKey = CURSOR_KEY,
+  clearLegacyCursor = false,
+) {
   writeTransaction((conn) => {
     changes.notes.forEach((row) => {
       applyHostedNote(conn, row)
@@ -81,18 +88,59 @@ export function applyHostedNoteChanges(changes: Awaited<ReturnType<typeof hosted
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
-      .run(CURSOR_KEY, changes.cursor)
+      .run(cursorKey, changes.cursor)
+    if (clearLegacyCursor) conn.query('DELETE FROM setting WHERE key=?').run(CURSOR_KEY)
   })
 }
-export async function pullHostedNotes(options: NoteClientOptions = {}) {
-  const cursor =
-    db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(CURSOR_KEY)
-      ?.value ?? null
-  const changes = await hostedNoteChanges(cursor, options)
-  applyHostedNoteChanges(changes)
-  return {
-    notes: changes.notes.length,
-    acknowledgements: changes.acknowledgements.length,
-    cursor: changes.cursor,
+
+function pullCursor(spaceId: string, activeSpaceId: string) {
+  const selected = db()
+    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+    .get(`${CURSOR_KEY}.${spaceId}`)?.value
+  const legacy =
+    selected === undefined && spaceId === activeSpaceId
+      ? db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(CURSOR_KEY)?.value
+      : undefined
+  return { selected, legacy }
+}
+
+async function completeAcknowledgementNotes(
+  changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
+  options: NoteClientOptions,
+) {
+  const incoming = new Set(changes.notes.map((note) => note.id))
+  for (const acknowledgement of changes.acknowledgements) {
+    const present =
+      incoming.has(acknowledgement.note_id) ||
+      Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id))
+    if (present) continue
+    changes.notes.unshift(await hostedGetNote(acknowledgement.note_id, options))
+    incoming.add(acknowledgement.note_id)
   }
+}
+
+export async function pullHostedNotes(options: NoteClientOptions = {}) {
+  const identity = await hostedTaskIdentity(options)
+  const spaces = notePullSpaces(projects(), identity)
+  const totals = { notes: 0, acknowledgements: 0, cursor: '' }
+  const failures: string[] = []
+  for (const spaceId of spaces) {
+    const cursorKey = `${CURSOR_KEY}.${spaceId}`
+    const { selected, legacy } = pullCursor(spaceId, identity.activeSpaceId)
+    try {
+      const requestOptions = { ...options, recordSpace: spaceId }
+      const changes = await hostedNoteChanges(selected ?? legacy ?? null, requestOptions)
+      await completeAcknowledgementNotes(changes, requestOptions)
+      applyHostedNoteChanges(changes, cursorKey, legacy !== undefined)
+      totals.notes += changes.notes.length
+      totals.acknowledgements += changes.acknowledgements.length
+      if (spaceId === identity.activeSpaceId) totals.cursor = changes.cursor
+    } catch (cause) {
+      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+  if (failures.length) throw new Error(`hosted note pulls failed: ${failures.join('; ')}`)
+  return totals
 }

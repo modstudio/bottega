@@ -1,3 +1,5 @@
+import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
+import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
 import {
   acknowledgeHostedNote,
   createHostedNote,
@@ -35,7 +37,7 @@ async function authenticate(
   request: Request,
   config: Config,
   dependencies: Dependencies,
-): Promise<Identity | null> {
+): Promise<Identity | { refusedSpace: string } | null> {
   const authorization = request.headers.get('authorization')
   if (!authorization) return null
   const response = await (dependencies.fetch ?? fetch)(
@@ -45,9 +47,16 @@ async function authenticate(
   const identity = (await response.json().catch(() => null)) as {
     user?: { id?: string }
     activeSpaceId?: string
+    memberships?: unknown
   } | null
   if (!response.ok || !identity?.user?.id || !identity.activeSpaceId) return null
-  return { userId: identity.user.id, spaceId: identity.activeSpaceId }
+  const decision = recordSpaceRequestDecision(
+    request.headers.get('x-record-space'),
+    identity.activeSpaceId,
+    parseRecordSpaceMemberships(identity.memberships),
+  )
+  if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
+  return { userId: identity.user.id, spaceId: decision.spaceId! }
 }
 
 async function readRoute(context: RouteContext): Promise<Response | null> {
@@ -171,6 +180,14 @@ export async function noteApi(
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
   const who = await authenticate(request, config, dependencies)
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if ('refusedSpace' in who)
+    return json(
+      {
+        error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
+        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      },
+      403,
+    )
   const body =
     request.method === 'GET'
       ? null

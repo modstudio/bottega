@@ -132,3 +132,75 @@ test('hosted note migration scopes numbers and counters to each project', async 
   ).rejects.toThrow('hub_note_space_project_number_unique')
   await database.close()
 })
+
+test('stopal note move preserves identities, is idempotent, and refuses collisions', async () => {
+  const database = new PGlite()
+  await database.exec(`
+    CREATE TABLE space(id uuid PRIMARY KEY, slug text UNIQUE NOT NULL);
+    CREATE TABLE project(id uuid PRIMARY KEY, space_id uuid NOT NULL, name text NOT NULL);
+    CREATE TABLE seq(
+      space_id uuid NOT NULL, project_id uuid NOT NULL, name text NOT NULL, next bigint NOT NULL,
+      PRIMARY KEY(space_id,project_id,name)
+    );
+    CREATE TABLE hub_task(id uuid PRIMARY KEY, space_id uuid NOT NULL);
+    CREATE TABLE hub_note(
+      id uuid PRIMARY KEY, space_id uuid NOT NULL, project_name text NOT NULL, number bigint NOT NULL,
+      promoted_task_id uuid, UNIQUE(space_id,project_name,number)
+    );
+    CREATE TABLE hub_note_acknowledgement(
+      id uuid PRIMARY KEY, space_id uuid NOT NULL, note_id uuid NOT NULL
+    );
+    INSERT INTO space VALUES
+      ('01990000-0000-7000-8000-000000000001','bottega'),
+      ('01990000-0000-7000-8000-000000000002','stopal');
+    INSERT INTO project VALUES
+      ('01990000-0000-7000-8000-000000000011','01990000-0000-7000-8000-000000000001','stopal'),
+      ('01990000-0000-7000-8000-000000000012','01990000-0000-7000-8000-000000000002','stopal');
+    INSERT INTO hub_note VALUES
+      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,NULL);
+    INSERT INTO hub_note_acknowledgement VALUES
+      ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000101');
+  `)
+  const move = migration('20261009150000_dev_1212_move_stopal_notes')
+  await database.exec(move)
+  await database.exec(move)
+  expect(
+    (
+      await database.query<{ id: string; space_id: string }>(
+        `SELECT id::text,space_id::text FROM hub_note UNION ALL
+         SELECT id::text,space_id::text FROM hub_note_acknowledgement ORDER BY id`,
+      )
+    ).rows,
+  ).toEqual([
+    {
+      id: '01990000-0000-7000-8000-000000000101',
+      space_id: '01990000-0000-7000-8000-000000000002',
+    },
+    {
+      id: '01990000-0000-7000-8000-000000000201',
+      space_id: '01990000-0000-7000-8000-000000000002',
+    },
+  ])
+  expect(
+    (
+      await database.query<{ next: number }>(
+        `SELECT next::int FROM seq WHERE project_id='01990000-0000-7000-8000-000000000012'`,
+      )
+    ).rows,
+  ).toEqual([{ next: 8 }])
+
+  await database.exec(`
+    INSERT INTO hub_note VALUES
+      ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000001','stopal',9,NULL),
+      ('01990000-0000-7000-8000-000000000103','01990000-0000-7000-8000-000000000002','stopal',9,NULL);
+  `)
+  await expect(database.exec(move)).rejects.toThrow('destination project-number collision')
+  expect(
+    (
+      await database.query<{ space_id: string }>(
+        `SELECT space_id::text FROM hub_note WHERE id='01990000-0000-7000-8000-000000000102'`,
+      )
+    ).rows[0]?.space_id,
+  ).toBe('01990000-0000-7000-8000-000000000001')
+  await database.close()
+})

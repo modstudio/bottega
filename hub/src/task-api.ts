@@ -286,6 +286,7 @@ export async function taskApi(
         intervalRecordId: true,
         dayRecordId: true,
         projectNoteCounters: true,
+        targetSpaceNotes: true,
       },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)

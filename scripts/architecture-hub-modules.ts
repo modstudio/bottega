@@ -60,6 +60,10 @@ export const hubModuleSpecs = [
     allowed: ['./attribute.ts', './note.ts', './note-promote-cli.ts', './note-push.ts'],
   },
   {
+    file: 'hub/src/note-project-space.ts',
+    allowed: ['./note-client.ts', './projects.ts', './task-client.ts', './task-project-space.ts'],
+  },
+  {
     file: 'hub/src/task-write-destination.ts',
     allowed: [
       './hosted-write-mode.ts',

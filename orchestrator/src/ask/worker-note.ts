@@ -7,7 +7,7 @@ import { type FiledNoteAnchor, fileNote } from '../mcp/hub-notes.ts'
 export const WORKER_NOTE_MAX_LENGTH = 1_000
 export const WORKER_NOTE_MAX_FILE_BYTES = 1_000_000
 
-export type WorkerNoteInput = { text: string; file?: string; sameAs?: string }
+export type WorkerNoteInput = { text: string; project?: string; file?: string; sameAs?: string }
 export type WorkerNoteFiledResult = {
   noteRecordId: string
   noteLabel: string
@@ -29,6 +29,16 @@ export type WorkerNoteFileFact = { path: string; line: number; content: string }
 export type WorkerNoteAnchorDecision = {
   file?: WorkerNoteFileFact
   dropped?: string
+}
+
+function normalizedWorkerNoteProject(project: string | undefined): string | undefined {
+  const normalized = project?.trim()
+  if (project !== undefined && !normalized) throw new Error('project must be a project name.')
+  return normalized || undefined
+}
+
+function normalizedWorkerNoteInput(text: string, project?: string, sameAs?: string) {
+  return { text, ...(project ? { project } : {}), ...(sameAs ? { sameAs } : {}) }
 }
 
 /** Keep a durable main-checkout anchor only when it names the line the worker saw. */
@@ -53,7 +63,9 @@ export function validateWorkerNoteInput(input: WorkerNoteInput): WorkerNoteInput
   }
   const sameAs = input.sameAs?.trim()
   if (input.sameAs !== undefined && !sameAs) throw new Error('same_as must be a note reference.')
-  if (input.file === undefined) return { text, ...(sameAs ? { sameAs } : {}) }
+  const project = normalizedWorkerNoteProject(input.project)
+  const normalizedInput = normalizedWorkerNoteInput(text, project, sameAs)
+  if (input.file === undefined) return normalizedInput
   const file = input.file.trim()
   if (file.length > WORKER_NOTE_MAX_LENGTH) {
     throw new Error(
@@ -71,7 +83,10 @@ export function validateWorkerNoteInput(input: WorkerNoteInput): WorkerNoteInput
   ) {
     throw new Error('File anchor path must stay inside the run tree.')
   }
-  return { text, file: `${match[1]}:${match[2]}`, ...(sameAs ? { sameAs } : {}) }
+  return {
+    ...normalizedInput,
+    file: `${match[1]}:${match[2]}`,
+  }
 }
 
 export function deriveWorkerNoteAnchor(
@@ -199,7 +214,9 @@ export async function fileWorkerNote(
   }
   const anchor = deriveWorkerNoteAnchor(run, decision.file)
   const filed = await fileNote(
-    input.sameAs ? { text: input.text, same_as: input.sameAs } : { text: input.text, new: true },
+    input.sameAs
+      ? { text: input.text, project: input.project, same_as: input.sameAs }
+      : { text: input.text, project: input.project, new: true },
     { cwd: run.tree, anchor },
   )
   if (!filed.noteRecordId || !filed.noteLabel)

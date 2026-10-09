@@ -645,6 +645,13 @@
       "when": 1791532800000,
       "tag": "0091_note_uuid_references",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
+      "when": 1791536400000,
+      "tag": "0092_worker_note_target_project",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,7 @@ export type HostedTaskIdentity = {
     intervalRecordId?: boolean
     dayRecordId?: boolean
     projectNoteCounters?: boolean
+    targetSpaceNotes?: boolean
   }
 }
 
@@ -71,6 +72,15 @@ export function assertProjectNoteCounters(identity: HostedTaskIdentity) {
   if (identity.capabilities?.projectNoteCounters !== true)
     throw new Error(
       `hosted hub does not advertise per-project note counter support; ${PROJECT_NOTE_COUNTERS_REMEDY}`,
+    )
+}
+
+const TARGET_SPACE_NOTES_REMEDY = 'deploy the hub server at or after the target-space notes change'
+
+export function assertTargetSpaceNotes(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.targetSpaceNotes !== true)
+    throw new Error(
+      `hosted hub does not advertise target-space note support; ${TARGET_SPACE_NOTES_REMEDY}`,
     )
 }
 
@@ -365,6 +375,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).projectNoteCounters === true,
+      targetSpaceNotes:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).targetSpaceNotes === true,
     },
   }
 }
