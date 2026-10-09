@@ -19,6 +19,7 @@ import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
+import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import type {
@@ -31,6 +32,12 @@ import type {
   MachineKey,
 } from './record-config.ts'
 import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
+import {
+  decodeRecordCursor,
+  encodeRecordCursor,
+  pageRecordItems,
+  type RecordCursor,
+} from './record-cursor.ts'
 import {
   type RecordCanonImportInput,
   type RecordCanonImportResult,
@@ -52,7 +59,6 @@ import type {
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
 import type {
-  RecordCursor,
   RecordRun,
   RecordRunDetail,
   RecordRunsWindow,
@@ -73,7 +79,7 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type Deps = {
+type Deps = RecordSubjectRouteDeps & {
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }
@@ -234,8 +240,6 @@ type Deps = {
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
 const filterSchema = z.string().min(1).optional()
 const idSchema = z.string().uuid()
-const isoSchema = z.string().datetime({ offset: true })
-const cursorSchema = z.object({ at: isoSchema, id: z.string().uuid() })
 const snapshotKindSchema = z.enum(SNAPSHOT_KINDS)
 const configScopeSchema = z.enum(CONFIG_SCOPES)
 const expectedVersionSchema = z.number().int().positive()
@@ -258,9 +262,6 @@ const docWriteContextSchema = z.object({
 })
 const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an active space'
 
-export const encodeRecordCursor = (cursor: RecordCursor) => btoa(JSON.stringify(cursor))
-export const decodeRecordCursor = (value: string): RecordCursor =>
-  cursorSchema.parse(JSON.parse(atob(value)))
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
 
@@ -329,6 +330,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   }
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
+  registerRecordSubjectRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
@@ -718,15 +720,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       return writeError(context, error)
     }
   })
-  const page = <T>(items: T[], limit: number, cursorOf: (item: T) => RecordCursor) => {
-    const hasMore = items.length > limit
-    if (hasMore) items.pop()
-    const last = items.at(-1)
-    return {
-      items,
-      nextCursor: hasMore && last ? encodeRecordCursor(cursorOf(last)) : null,
-    }
-  }
   app.get('/v1/docs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
@@ -771,7 +764,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
     return context.json(
-      page(items, query.data.limit, (item) => ({
+      pageRecordItems(items, query.data.limit, (item) => ({
         at: item.updatedAt,
         id: item.id,
       })),
@@ -917,7 +910,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       cursor,
     })
     return context.json(
-      page(items, query.data.limit, (item) => ({
+      pageRecordItems(items, query.data.limit, (item) => ({
         at: item.updatedAt,
         id: item.runId,
       })),

@@ -4,8 +4,8 @@ import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
+import type { RecordCursor } from './record-cursor.ts'
 
-export type RecordCursor = { at: string; id: string }
 type RecordScore = {
   runId?: string
   delivery: string

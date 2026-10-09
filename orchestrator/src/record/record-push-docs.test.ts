@@ -36,8 +36,8 @@ function insertDoc(row: {
   return (
     db()
       .query(
-        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, parent_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at, parent_id, record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         row.scope,
@@ -50,6 +50,7 @@ function insertDoc(row: {
         row.createdAt,
         row.updatedAt,
         row.parentId ?? null,
+        newRecordId(),
       ) as { id: number }
   ).id
 }

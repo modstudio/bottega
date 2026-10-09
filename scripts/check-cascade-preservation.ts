@@ -287,15 +287,22 @@ function candidates(
 ): ProbeValue[] {
   const related = checks.filter((check) => mentions(check, column.name))
   const type = column.type.toUpperCase()
-  const values: ProbeValue[] = [...foreign]
-  if (!column.notnull && !column.pk) values.push(null)
+  const nullable = !column.notnull && !column.pk
+  const nullIsNamed = related.some((check) =>
+    new RegExp(`${column.name}\\s+IS\\s+NULL`, 'i').test(check),
+  )
+  const values: ProbeValue[] = nullable && nullIsNamed ? [null, ...foreign] : [...foreign]
+  if (nullable && !nullIsNamed) values.push(null)
   if (
     type.includes('INT') ||
     type.includes('REAL') ||
     type.includes('FLOA') ||
     type.includes('DOUB')
   ) {
-    values.push(ordinal, 1, 2, 0, -1)
+    const zeroIsNamed = related.some((check) =>
+      new RegExp(`(?:${column.name}\\s*=\\s*0|0\\s*=\\s*${column.name})`, 'i').test(check),
+    )
+    values.push(...(zeroIsNamed ? [0, ordinal, 1, 2, -1] : [ordinal, 1, 2, 0, -1]))
   } else if (type.includes('BLOB')) {
     values.push(new Uint8Array([1]))
   } else {
@@ -319,7 +326,7 @@ function candidates(
   )
 }
 
-function combinations<T>(lists: readonly T[][], limit = 4096): T[][] {
+function combinations<T>(lists: readonly T[][], limit = 65_536): T[][] {
   let result: T[][] = [[]]
   for (const list of lists) {
     result = result.flatMap((prefix) => list.map((value) => [...prefix, value])).slice(0, limit)

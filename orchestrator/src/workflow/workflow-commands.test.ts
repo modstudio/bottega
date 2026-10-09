@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { program } from '../cli/program.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -37,13 +38,13 @@ const outcomePresentation = () => {
 
 const recordedArtifact = (project: string) => {
   const row = db()
-    .query<{ id: number }, [string, string]>(
-      `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id)
-       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', 't', 't', id
+    .query<{ id: number }, [string, string, string]>(
+      `INSERT INTO doc (scope,subject,slug,title,body,delivery,created_at,updated_at,project_id,record_id)
+       SELECT 'project', ?, 'floor-artifact', 't', 'b', 'inject', 't', 't', id, ?
          FROM project WHERE name=?
        RETURNING id`,
     )
-    .get(project, project) as { id: number }
+    .get(project, newRecordId(), project) as { id: number }
   return [`--artifact`, `doc:${row.id}`] as const
 }
 

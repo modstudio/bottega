@@ -8,6 +8,7 @@ import {
   refuseVerdict,
   VOID_EXCLUSION_REASON,
 } from '../verdict/verdict-rules.ts'
+import type { RecordCursor } from './record-cursor.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409
@@ -18,8 +19,6 @@ export class RecordVerdictError extends Error {
 }
 
 type Tenant = { url: string; userId: string; spaceId: string }
-type RecordCursor = { at: string; id: string }
-
 export type RecordScore = {
   runId: string
   delivery: Delivery | null

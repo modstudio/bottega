@@ -239,7 +239,7 @@ async function json<T>(
   return schema.parse(value)
 }
 
-async function jsonDocument<T>(
+export async function jsonDocument<T>(
   args: string[],
   opts: { stdin?: string; env?: Record<string, string>; unsetEnv?: string[] } = {},
 ): Promise<T> {

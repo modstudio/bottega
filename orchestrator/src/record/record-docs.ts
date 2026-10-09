@@ -26,6 +26,7 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
+import type { RecordCursor } from './record-cursor.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -68,7 +69,6 @@ export type RecordCanonImportResult = {
 }
 
 type Tenant = { url: string } & TenantPrincipal
-type RecordCursor = { at: string; id: string }
 type StoredDocRow = Record<string, unknown>
 
 function storedDocKind(input: { kind?: DocKind }, existing?: StoredDocRow): DocKind {

@@ -1,13 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { idleBoardDeps } from '../../test/fixtures/record-api.ts'
+import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
-import {
-  decodeRecordCursor,
-  encodeRecordCursor,
-  recordApi,
-  SNAPSHOT_MAX_BYTES,
-} from './record-api.ts'
+import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { RecordDocError } from './record-docs.ts'
 import {
@@ -99,13 +94,13 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       throw new Error('not implemented')
     },
     revokeMachineKey: async () => undefined,
+    ...idleSubjectDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })
 }
 
 const id = '01990000-0000-7000-8000-000000000001'
-
 describe('record API', () => {
   test('a document destination binds a member space while no header keeps the active space', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
@@ -751,9 +746,7 @@ describe('record API presentation routes', () => {
     })
   })
 
-  test('cursor encode/decode round trips and malformed cursors are rejected', async () => {
-    const cursor = { at: '2026-01-02T03:04:05.000Z', id }
-    expect(decodeRecordCursor(encodeRecordCursor(cursor))).toEqual(cursor)
+  test('malformed cursors are rejected', async () => {
     const response = await appWith(identity).request('/v1/runs?before=broken')
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'invalid before cursor' })

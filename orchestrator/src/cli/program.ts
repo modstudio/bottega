@@ -21,6 +21,7 @@ import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
 import { register as registerSettings } from '../commands/settings.ts'
 import { register as registerSetup } from '../commands/setup.ts'
+import { register as registerSubjects } from '../commands/subjects.ts'
 import { drainStdout, setRawArgv, write } from '../commands/support.ts'
 import { register as registerSync } from '../commands/sync.ts'
 import { recordSessionSeen } from '../database/db.ts'
@@ -46,6 +47,7 @@ registerBoardCommands(program)
 registerRecordAuth(program)
 registerRelease(program)
 registerDocs(program)
+registerSubjects(program)
 registerRunListing(program)
 registerHealth(program)
 registerInbox(program)

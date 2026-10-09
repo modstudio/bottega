@@ -37,6 +37,7 @@ import type {
   RecordSettingsPermissionResult,
 } from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
+import type { RecordSubject } from './record-subjects.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
@@ -234,6 +235,36 @@ export type RecordApiClient = {
     destination?: RecordRequestDestination,
   ): Promise<Array<{ name: string; spaceId: string }>>
   retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
+  listProjectSubjects(
+    query: {
+      project?: string
+      includeRetired?: boolean
+      order?: 'catalog' | 'updated'
+      cursor?: string
+      limit?: number
+    },
+    destination?: RecordRequestDestination,
+  ): Promise<{ items: RecordSubject[]; nextCursor: string | null }>
+  addProjectSubject(
+    input: { id: string; project: string; name: string; definition: string },
+    destination?: RecordRequestDestination,
+  ): Promise<RecordSubject>
+  renameProjectSubject(
+    input: { project: string; id: string; name: string },
+    destination?: RecordRequestDestination,
+  ): Promise<RecordSubject>
+  defineProjectSubject(
+    input: { project: string; id: string; definition: string },
+    destination?: RecordRequestDestination,
+  ): Promise<RecordSubject>
+  reorderProjectSubjects(
+    input: { project: string; ids: string[] },
+    destination?: RecordRequestDestination,
+  ): Promise<{ items: RecordSubject[] }>
+  retireProjectSubject(
+    input: { project: string; id: string },
+    destination?: RecordRequestDestination,
+  ): Promise<RecordSubject>
   putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>
   unvoidRun(runId: string, input: { note: string }): Promise<void>
@@ -329,7 +360,7 @@ export function recordApiBaseUrl(
   return url.replace(/\/$/, '')
 }
 
-async function request<T>(
+async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
 ): Promise<T> {
@@ -349,6 +380,8 @@ async function request<T>(
   if (!response.ok) throw recordApiError(body, response.status)
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
+
+const request = recordApiRequest
 
 async function publicRequest<T>(path: string): Promise<T> {
   let response: Response
@@ -498,6 +531,41 @@ export function recordApiClient(): RecordApiClient {
     retireProject: (name, destination) =>
       request(`/v1/projects/${encodeURIComponent(name)}/retire`, {
         method: 'POST',
+        ...destination,
+      }),
+    listProjectSubjects: (query, destination) => {
+      const search = new URLSearchParams()
+      if (query.project) search.set('project', query.project)
+      if (query.includeRetired) search.set('includeRetired', 'true')
+      if (query.order) search.set('order', query.order)
+      if (query.cursor) search.set('cursor', query.cursor)
+      if (query.limit) search.set('limit', String(query.limit))
+      return request(`/v1/subjects?${search}`, destination)
+    },
+    addProjectSubject: (input, destination) =>
+      request('/v1/subjects', { method: 'PUT', body: JSON.stringify(input), ...destination }),
+    renameProjectSubject: (input, destination) =>
+      request(`/v1/subjects/${input.id}/rename`, {
+        method: 'POST',
+        body: JSON.stringify({ project: input.project, name: input.name }),
+        ...destination,
+      }),
+    defineProjectSubject: (input, destination) =>
+      request(`/v1/subjects/${input.id}/define`, {
+        method: 'POST',
+        body: JSON.stringify({ project: input.project, definition: input.definition }),
+        ...destination,
+      }),
+    reorderProjectSubjects: (input, destination) =>
+      request('/v1/subjects/reorder', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    retireProjectSubject: (input, destination) =>
+      request(`/v1/subjects/${input.id}/retire`, {
+        method: 'POST',
+        body: JSON.stringify({ project: input.project }),
         ...destination,
       }),
     putScore: async (runId, input) => {

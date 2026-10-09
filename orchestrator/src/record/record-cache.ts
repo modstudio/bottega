@@ -4,9 +4,11 @@ import type { Database } from 'bun:sqlite'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
+import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { encodeRecordCursor, type RecordCursor, RecordCursorSchema } from './record-cursor.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
@@ -14,7 +16,22 @@ import {
 } from './record-project-destination.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
+const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
+
+function readSubjectCursor(local: Database, key: string): RecordCursor | undefined {
+  const value = readCursor(local, key)
+  if (value === undefined) return undefined
+  const parsed = RecordCursorSchema.safeParse(JSON.parse(value))
+  if (!parsed.success) {
+    throw new Error(`invalid subject cache cursor for ${key}`)
+  }
+  return parsed.data
+}
+
+function writeSubjectCursor(local: Database, key: string, cursor: RecordCursor): void {
+  writeCursor(local, key, JSON.stringify(cursor))
+}
 
 function readCursor(local: Database, key: string): string | undefined {
   return local
@@ -169,20 +186,25 @@ async function pullDocs(
   return { docs, skippedDocs }
 }
 
-export async function pullRecordCache(
-  local: Database = db(),
-): Promise<{ docs: number; skippedDocs: number; scores: number }> {
+export async function pullRecordCache(local: Database = db()): Promise<{
+  docs: number
+  skippedDocs: number
+  subjects: number
+  skippedSubjects: number
+  scores: number
+}> {
   const hasMeta = local
     .query<{ n: number }, []>(
       "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
     )
     .get()
-  if (!hasMeta) return { docs: 0, skippedDocs: 0, scores: 0 }
+  if (!hasMeta) return { docs: 0, skippedDocs: 0, subjects: 0, skippedSubjects: 0, scores: 0 }
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   const cache = recordCacheSpaces(identity)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
+  const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -198,7 +220,49 @@ export async function pullRecordCache(
     }, local)
     if (!page.nextCursor) break
   }
-  return { ...pulledDocs, scores }
+  return { ...pulledDocs, ...pulledSubjects, scores }
+}
+
+async function pullSubjects(
+  local: Database,
+  spaces: readonly string[],
+  projectSpaces: ReadonlyMap<string, string | null>,
+): Promise<{ subjects: number; skippedSubjects: number }> {
+  const client = recordApiClient()
+  let subjects = 0
+  let skippedSubjects = 0
+  for (const spaceId of spaces) {
+    const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
+    let cursor = readSubjectCursor(local, cursorKey)
+    let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
+    for (;;) {
+      const page = await client.listProjectSubjects(
+        {
+          includeRetired: true,
+          order: 'updated',
+          cursor: requestCursor,
+          limit: 100,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      if (!page.items.length) break
+      writeTransaction(() => {
+        for (const row of page.items) {
+          if (projectSpaces.get(row.project) !== spaceId) {
+            skippedSubjects++
+          } else {
+            applySubjectRecord(row, local)
+            subjects++
+          }
+          cursor = { at: row.updatedAt, id: row.id }
+        }
+        if (cursor) writeSubjectCursor(local, cursorKey, cursor)
+      }, local)
+      if (!page.nextCursor) break
+      requestCursor = page.nextCursor
+    }
+  }
+  return { subjects, skippedSubjects }
 }
 
 function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {

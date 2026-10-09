@@ -74,6 +74,14 @@ import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import {
+  addRecordSubject,
+  defineRecordSubject,
+  listRecordSubjects,
+  renameRecordSubject,
+  reorderRecordSubjects,
+  retireRecordSubject,
+} from './record-subjects.ts'
+import {
   countRecordScores,
   listRecordScores,
   unvoidRecordRun,
@@ -140,6 +148,12 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     readProjects: listRecordProjects,
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
+    listSubjects: listRecordSubjects,
+    addSubject: addRecordSubject,
+    renameSubject: renameRecordSubject,
+    defineSubject: defineRecordSubject,
+    reorderSubjects: reorderRecordSubjects,
+    retireSubject: retireRecordSubject,
     listDocs: listRecordDocs,
     listPublicDocs: listPublicRecordDocs,
     readPublicDoc: getPublicRecordDoc,

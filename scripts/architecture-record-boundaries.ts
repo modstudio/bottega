@@ -74,6 +74,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-doc-mapping.ts',
       './record-doc-revision-write.ts',
       './record-doc-tree.ts',
+      './record-cursor.ts',
     ],
     'Enforce the record-docs concern boundary.',
     ['../canon/canon-lint.ts'],
@@ -110,7 +111,13 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-verdicts-boundary',
     'orchestrator/src/record/record-verdicts.ts',
-    ['bun', '../score/score.ts', '../verdict/verdict-payload.ts', '../verdict/verdict-rules.ts'],
+    [
+      'bun',
+      '../score/score.ts',
+      '../verdict/verdict-payload.ts',
+      '../verdict/verdict-rules.ts',
+      './record-cursor.ts',
+    ],
     'Enforce the record-verdicts concern boundary.',
   ),
   boundary(
@@ -128,7 +135,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-reviews-boundary',
     'orchestrator/src/record/record-reviews.ts',
-    ['bun', '../../../shared/record/tenant.ts', './record-runs.ts'],
+    ['bun', '../../../shared/record/tenant.ts', './record-cursor.ts', './record-runs.ts'],
     'Keep hosted review record access limited to the hosted run record contract.',
   ),
   boundary(
@@ -145,6 +152,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../../../shared/record/tenant.ts',
       '../failure/failure.ts',
       '../hook-tree/hook-tree.ts',
+      './record-cursor.ts',
     ],
     'Enforce the record-runs concern boundary; the window counters share the local definitions of evidence and the hook-tree job.',
   ),
@@ -280,6 +288,12 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'shared/record/schema-docs.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', '../docs.ts', './schema.ts'],
     'Enforce the hosted doc schema concern boundary.',
+  ),
+  boundary(
+    'postgres-schema-subjects-boundary',
+    'shared/record/schema-subjects.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted subject schema concern boundary.',
   ),
   boundary(
     'postgres-schema-hub-boundary',

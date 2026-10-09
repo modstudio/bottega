@@ -4,8 +4,14 @@ import { asSpace, psql, succeeds } from './fixtures/postgres-rls.ts'
 
 export function registerOwnedCanonPrivacyProof(
   authIds: () => { spaceId: string; ownerUserId: string; otherUserId: string },
-  fixtureSpaceId: string,
+  subjectFixture: readonly [
+    fixtureSpaceId: string,
+    otherSpaceId: string,
+    projectId: string,
+    otherProjectId: string,
+  ],
 ): void {
+  const [fixtureSpaceId, otherSpaceId, projectId, otherProjectId] = subjectFixture
   test('another user in the same space cannot read owned canon', () => {
     const { spaceId, ownerUserId, otherUserId } = authIds()
     const ownedDoc = newRecordId()
@@ -44,5 +50,38 @@ export function registerOwnedCanonPrivacyProof(
     )
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout.split('\n')).toEqual(['alpha', 'alpha-two'])
+  })
+
+  test('subjects are tenant-confined and cannot reference another space project', () => {
+    const subjectId = newRecordId()
+    const inserted = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      fixtureSpaceId,
+      `INSERT INTO subject
+         (id,space_id,project_id,name,definition,position,created_at,updated_at)
+       VALUES ('${subjectId}','${fixtureSpaceId}','${projectId}',
+         'tenant proof','Tenant proof.',0,now(),now());`,
+    )
+    expect(inserted.code, inserted.stderr).toBe(0)
+    const hidden = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      otherSpaceId,
+      `SELECT count(*) FROM subject WHERE id='${subjectId}';`,
+    )
+    expect(hidden.code, hidden.stderr).toBe(0)
+    expect(hidden.stdout).toBe('0')
+    const crossed = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      fixtureSpaceId,
+      `INSERT INTO subject
+         (id,space_id,project_id,name,definition,position,created_at,updated_at)
+       VALUES ('${newRecordId()}','${fixtureSpaceId}','${otherProjectId}',
+         'cross tenant','Must fail.',1,now(),now());`,
+    )
+    expect(crossed.code).not.toBe(0)
+    succeeds('postgres', 'postgres', `DELETE FROM subject WHERE id='${subjectId}';`)
   })
 }

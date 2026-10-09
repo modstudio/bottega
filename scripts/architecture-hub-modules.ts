@@ -1,5 +1,13 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/subject-contract.ts',
+    allowed: ['zod', '../../shared/subjects.ts'],
+  },
+  {
+    file: 'hub/src/subject-orch.ts',
+    allowed: ['./subject-contract.ts', './orch.ts'],
+  },
+  {
     file: 'hub/src/board-contract.ts',
     allowed: ['zod', '../../shared/record-id.ts'],
   },

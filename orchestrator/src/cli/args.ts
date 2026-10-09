@@ -373,6 +373,7 @@ export const CLI_COMMANDS = new Set([
   'score',
   'search',
   'serve',
+  'subject',
   'settings',
   'setup',
   'setup-ask',
