@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dispatchThenGatherIssueReviews } from './issue-review-run.ts'
+import { dispatchThenGatherIssueReviews, runIssueFixReviews } from './issue-review-run.ts'
 
 describe('filed issue review adapter', () => {
   test('waits for each lens claim before dispatching the next and gathers in lens order', async () => {
@@ -55,5 +55,21 @@ describe('filed issue review adapter', () => {
       'issue-blast-radius:11',
       'correctness:correctness:blocked-by:issue-blast-radius',
     ])
+  })
+
+  test('returns review-not-started when the fix has no worktree', async () => {
+    const result = await runIssueFixReviews({
+      issue: { key: 'DEV-42' } as never,
+      fixRun: { id: 42, worktree: null } as never,
+      target: { name: 'sample' } as never,
+      branchKey: 'DEV-42',
+    })
+
+    expect(result).toEqual({
+      tier: null,
+      selectedLenses: [],
+      reviewNotStarted: 'fix run 42 has no worktree to review',
+      results: [],
+    })
   })
 })
