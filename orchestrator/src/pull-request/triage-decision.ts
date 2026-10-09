@@ -1,9 +1,9 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import type { TriageReviewRow } from '../review/review-group.ts'
-import { applicableReviewLenses } from '../review/review-applicability.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
+import { applicableReviewLenses } from '../review/review-applicability.ts'
+import type { TriageReviewRow } from '../review/review-group.ts'
 
 export type TriageEvidence = {
   patchId: string
