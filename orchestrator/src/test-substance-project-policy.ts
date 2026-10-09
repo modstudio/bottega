@@ -49,4 +49,3 @@ export function resolvePhpPolicyRules(
 export function unreadPhpPolicyRulesLine(reason: string): string {
   return `the project's PHP policy rules were not read: ${reason}`
 }
-
