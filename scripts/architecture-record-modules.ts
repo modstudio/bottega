@@ -15,6 +15,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-request-space.ts', [
     'hono',
     '../../../shared/record-space-membership.ts',
+    '../../../shared/record-space-request.ts',
     './record-auth.ts',
     './record-project-destination.ts',
   ]),
@@ -95,6 +96,7 @@ export const recordModules: RecordModule[] = [
     '../postgres/postgres-migrate.ts',
     '../database/db.ts',
     '../../../shared/record/schema.ts',
+    '../../../shared/record-space-membership.ts',
     './record-attribution.ts',
     './record-auth.ts',
     './record-project-destination.ts',
@@ -128,7 +130,9 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-space.ts', [
+    '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
+    '../../../shared/record-space-membership.ts',
     './record-api-client.ts',
     './record-auth.ts',
     './record-session.ts',
@@ -163,6 +167,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-space-move.ts', [
     'bun',
+    '../../../shared/record-space-membership.ts',
     '../postgres/postgres-migrate.ts',
     './record-session.ts',
     './record-space.ts',

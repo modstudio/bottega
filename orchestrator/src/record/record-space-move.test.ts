@@ -2,8 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { destinationOwnedByCaller, requireCurrentMoveTotal } from './record-space-move.ts'
 
 const memberships = [
-  { spaceId: 'source-id', slug: 'source', name: 'Source', role: 'member', permission: 'write' },
-  { spaceId: 'owned-id', slug: 'owned', name: 'Owned', role: 'owner', permission: 'write' },
+  {
+    spaceId: '01990000-0000-7000-8000-000000000003',
+    slug: 'source',
+    name: 'Source',
+    role: 'member',
+    permission: 'write',
+  },
+  {
+    spaceId: '01990000-0000-7000-8000-000000000004',
+    slug: 'owned',
+    name: 'Owned',
+    role: 'owner',
+    permission: 'write',
+  },
 ]
 
 describe('record project space move decisions', () => {
@@ -21,6 +33,8 @@ describe('record project space move decisions', () => {
     expect(() => destinationOwnedByCaller('missing', memberships)).toThrow(
       'does not exist or is not visible to the caller; create it or join it as owner, then retry',
     )
-    expect(destinationOwnedByCaller('owned-id', memberships).slug).toBe('owned')
+    expect(destinationOwnedByCaller('01990000-0000-7000-8000-000000000004', memberships).slug).toBe(
+      'owned',
+    )
   })
 })

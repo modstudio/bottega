@@ -3,6 +3,8 @@
 
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import { setActiveRecordSpace } from './record-auth.ts'
 import { currentRecordUserSession } from './record-session.ts'
@@ -36,9 +38,7 @@ function resolveRecordSpace(
   value: string,
   memberships: readonly RecordMembership[],
 ): RecordMembership {
-  const match = memberships.find(
-    (membership) => membership.spaceId === value || membership.slug === value,
-  )
+  const match = recordSpaceMembership(value, memberships)
   if (match) return match
   const slugs =
     memberships
@@ -116,6 +116,11 @@ export function refuseDuplicateRecordSpaceSlug(
   slug: string,
   memberships: readonly RecordMembership[],
 ): void {
+  if (hasRecordIdShape(slug.trim())) {
+    throw new Error(
+      `record space slug ${slug} is shaped like a record id and would make space selection ambiguous; choose a non-UUID slug`,
+    )
+  }
   const duplicate = memberships.find((membership) => membership.slug === slug)
   if (duplicate) throw new Error(`record space slug ${slug} already exists: ${duplicate.spaceId}`)
 }
