@@ -42,6 +42,11 @@ export type HostedAcknowledgement = {
   deleted_at: string | null
 }
 
+export const hostedNotePullSerializers = {
+  hub_note: (row: HostedNote) => row,
+  hub_note_acknowledgement: (row: HostedAcknowledgement) => row,
+} as const
+
 const rows = <T>(value: unknown) => value as T[]
 async function tenant<T>(url: string, identity: TaskIdentity, work: (tx: SQL) => Promise<T>) {
   const client = new SQL(url)
@@ -80,12 +85,12 @@ export async function listHostedNotes(
       AND updated_at > ${since}::timestamptz
       AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)
       ORDER BY updated_at,hub_note.number`,
-    )
+    ).map(hostedNotePullSerializers.hub_note)
     const acknowledgements = rows<HostedAcknowledgement>(
       await tx`SELECT * FROM hub_note_acknowledgement
       WHERE space_id=${identity.spaceId}::uuid AND updated_at > ${since}::timestamptz
       AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL) ORDER BY updated_at,id`,
-    )
+    ).map(hostedNotePullSerializers.hub_note_acknowledgement)
     const cursor = [...notes, ...acknowledgements].reduce((latest, row) => {
       const stamp = new Date(row.updated_at).toISOString()
       return stamp > latest ? stamp : latest

@@ -447,6 +447,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:url',
       '@trpc/server/adapters/fetch',
       './app-static.ts',
+      './change-api.ts',
       './evidence-api.ts',
       './hosted-health.ts',
       './note-api.ts',

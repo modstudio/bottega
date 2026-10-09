@@ -1,5 +1,23 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/change-api.ts',
+    allowed: ['./hosted-changes.ts', './hosted-route-identity.ts'],
+  },
+  {
+    file: 'hub/src/hosted-route-identity.ts',
+    allowed: ['../../shared/record-space-membership.ts', '../../shared/record-space-request.ts'],
+  },
+  {
+    file: 'hub/src/hosted-changes.ts',
+    allowed: [
+      'bun',
+      '../../shared/record/tenant.ts',
+      './hosted-notes.ts',
+      './hosted-reports.ts',
+      './hosted-tasks.ts',
+    ],
+  },
+  {
     file: 'hub/src/subject-contract.ts',
     allowed: ['zod', '../../shared/subjects.ts'],
   },
@@ -36,7 +54,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-api.ts',
     allowed: [
       '../../shared/record-space-membership.ts',
-      '../../shared/record-space-request.ts',
+      './hosted-route-identity.ts',
       './hosted-task-prune.ts',
       './hosted-tasks.ts',
     ],

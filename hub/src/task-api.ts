@@ -1,8 +1,5 @@
-import {
-  parseRecordSpaceMemberships,
-  type RecordSpaceMembership,
-} from '../../shared/record-space-membership.ts'
-import { recordSpaceRequestDecision } from '../../shared/record-space-request.ts'
+import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
+import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
   addHostedComment,
@@ -35,36 +32,6 @@ type Dependencies = {
   deleteTasks?: typeof softDeleteHostedTasks
   mirror?: typeof mirrorHostedTasks
   counts?: typeof hostedTaskCounts
-}
-
-async function identity(
-  request: Request,
-  base: string,
-  fetchImpl: typeof fetch,
-  honorRequestedSpace: boolean,
-) {
-  const authorization = request.headers.get('authorization')
-  if (!authorization) return null
-  const response = await fetchImpl(`${base.replace(/\/$/, '')}/v1/whoami`, {
-    headers: { authorization },
-  })
-  if (!response.ok) return null
-  const value = (await response.json().catch(() => null)) as Record<string, unknown> | null
-  const user = value?.user as Record<string, unknown> | undefined
-  const memberships = parseRecordSpaceMemberships(value?.memberships)
-  if (typeof user?.id !== 'string' || typeof value?.activeSpaceId !== 'string') return null
-  const decision = recordSpaceRequestDecision(
-    honorRequestedSpace ? request.headers.get('x-record-space') : null,
-    value.activeSpaceId,
-    memberships,
-  )
-  if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
-  return {
-    userId: user.id,
-    spaceId: decision.spaceId!,
-    spaceIds: memberships.map((row) => row.spaceId),
-    memberships,
-  }
 }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status })
@@ -260,7 +227,7 @@ export async function taskApi(
   const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
   const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
   const honorRequestedSpace = taskRouteHonorsRequestedSpace(request.method, url.pathname)
-  const who = await identity(
+  const who = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
     (dependencies.fetch ?? fetch) as typeof fetch,
@@ -287,6 +254,7 @@ export async function taskApi(
         dayRecordId: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
+        spaceChanges: true,
       },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)
