@@ -515,6 +515,7 @@ describe('hosted-only task safety', () => {
         intervalRecordId: true,
         dayRecordId: true,
         projectNoteCounters: true,
+        targetSpaceNotes: true,
       },
     })
   })

@@ -616,6 +616,12 @@ export function createAskMcpServer(
         'you may optionally anchor the observation to a relative path and line.',
       inputSchema: z.object({
         text: requiredTextReachingHandler.describe('One non-empty line describing the defect.'),
+        project: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe('Registered target project; defaults to the run project.'),
         file: z
           .preprocess(
             (value) => (value === undefined ? undefined : String(value)),
@@ -629,10 +635,10 @@ export function createAskMcpServer(
           .describe('A note label, UUID, or project-local number.'),
       }),
     },
-    async ({ text: noteText, file, same_as }) => {
+    async ({ text: noteText, project, file, same_as }) => {
       try {
         if (!authorized()) throw new Error(unauthorized())
-        const input = validateWorkerNoteInput({ text: noteText, file, sameAs: same_as })
+        const input = validateWorkerNoteInput({ text: noteText, project, file, sameAs: same_as })
         const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
         return text(
           JSON.stringify({

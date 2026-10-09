@@ -145,6 +145,125 @@ const acknowledge = (id: number, session: string) =>
   acknowledgeNote(recordId(id), session, { hosted })
 
 describe('suggestion notes', () => {
+  test('a named target project routes independently from the filing anchor', async () => {
+    const requestedSpaces: Array<string | null> = []
+    const targetHosted = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input: string, init?: RequestInit) => {
+        const url = new URL(input)
+        if (url.pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user-1',
+            activeSpaceId: 'space-a',
+            memberships: [
+              { spaceId: 'space-a', slug: 'active' },
+              { spaceId: 'space-gamma', slug: 'declared-gamma-space' },
+            ],
+            capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+          })
+        requestedSpaces.push(new Headers(init?.headers).get('x-record-space'))
+        const body = JSON.parse(String(init?.body))
+        return Response.json({
+          id: crypto.randomUUID(),
+          number: 1,
+          project: body.project,
+          project_name: body.project,
+          text: body.text,
+          area: null,
+          anchors: `[${body.anchor}]`,
+          sightings: 1,
+          created_at: '2026-10-09T00:00:00.000Z',
+          last_seen_at: '2026-10-09T00:00:00.000Z',
+          stale_at: null,
+          stale_reason: null,
+          promoted_task: null,
+          updated_at: '2026-10-09T00:00:00.000Z',
+          deleted_at: null,
+        })
+      },
+    }
+    const result = await createNote(
+      {
+        text: 'targeted elsewhere',
+        cwd: '/fixtures/repos/workshop',
+        project: 'gamma',
+        forceNew: true,
+      },
+      { hosted: targetHosted },
+    )
+    expect(requestedSpaces).toEqual(['space-gamma'])
+    expect(result.note.project).toBe('gamma')
+    expect(result.note.anchors[0]?.project).toBe('workshop')
+    expect(result.note.anchors[0]?.cwd).toBe('/fixtures/repos/workshop')
+  })
+
+  test('keep and drop route from the notes project rather than the caller directory', async () => {
+    const id = '01990000-0000-7000-8000-000000000601'
+    const at = '2026-10-09T00:00:00.000Z'
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO note
+          (record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+          VALUES (?,6001,'gamma','route disposition','[]',1,?,?)`)
+        .run(id, at, at),
+    )
+    const spaces: Array<string | null> = []
+    const dispositionHosted = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input: string, init?: RequestInit) => {
+        const url = new URL(input)
+        if (url.pathname === '/v1/tasks/identity')
+          return Response.json({
+            userId: 'user-1',
+            activeSpaceId: 'space-a',
+            memberships: [{ spaceId: 'space-gamma', slug: 'declared-gamma-space' }],
+            capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+          })
+        spaces.push(new Headers(init?.headers).get('x-record-space'))
+        const current = getNote(id)
+        const note = {
+          id,
+          number: current.number,
+          project: current.project,
+          project_name: current.project,
+          text: current.text,
+          area: current.area,
+          anchors: JSON.stringify(current.anchors),
+          sightings: current.sightings,
+          created_at: current.created_at,
+          last_seen_at: current.last_seen_at,
+          stale_at: url.pathname.endsWith('/drop') ? at : null,
+          stale_reason: url.pathname.endsWith('/drop') ? 'dropped: done' : null,
+          promoted_task: null,
+          updated_at: at,
+          deleted_at: null,
+        }
+        if (url.pathname.endsWith('/acknowledgements'))
+          return Response.json({
+            note,
+            acknowledgement: {
+              id: '01990000-0000-7000-8000-000000000602',
+              note_id: id,
+              project_name: 'gamma',
+              session_id: 'session-1',
+              acknowledged_at: at,
+              sightings: 1,
+              created_at: at,
+              updated_at: at,
+              deleted_at: null,
+            },
+            alreadyAcknowledged: false,
+          })
+        return Response.json(note)
+      },
+    }
+    await acknowledgeNote(id, 'session-1', { hosted: dispositionHosted })
+    await dropNote(id, 'done', { hosted: dispositionHosted })
+    expect(spaces).toEqual(['space-gamma', 'space-gamma'])
+  })
+
   describe('local-authoritative note writes', () => {
     const previousHostedUrl = process.env.HUB_HOSTED_URL
     beforeAll(() => {

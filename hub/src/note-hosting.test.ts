@@ -4,8 +4,9 @@ import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
+import { noteApi } from './note-api.ts'
 import { applyHostedNoteChanges } from './note-cache.ts'
-import { hostedNoteChanges } from './note-client.ts'
+import { hostedDropNote, hostedNoteChanges } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
 
 beforeAll(resetFixtureStore)
@@ -18,6 +19,46 @@ const unreachable = {
 }
 
 describe('hosted-only note safety', () => {
+  test('every note route refuses a requested space outside the caller memberships', async () => {
+    const id = '01990000-0000-7000-8000-000000000001'
+    const routes = [
+      ['GET', '/v1/notes'],
+      ['GET', '/v1/notes/counts'],
+      ['GET', `/v1/notes/${id}`],
+      ['POST', '/v1/notes'],
+      ['PATCH', `/v1/notes/${id}`],
+      ['POST', `/v1/notes/${id}/acknowledgements`],
+      ['POST', `/v1/notes/${id}/promote`],
+      ['POST', `/v1/notes/${id}/drop`],
+      ['POST', '/v1/notes/merge'],
+      ['POST', '/v1/notes/reap'],
+      ['PUT', '/v1/notes/mirror'],
+    ] as const
+    for (const [method, path] of routes) {
+      const response = await noteApi(
+        new Request(`https://hub.example.test${path}`, {
+          method,
+          headers: {
+            authorization: 'Bearer test',
+            'content-type': 'application/json',
+            'x-record-space': 'missing',
+          },
+          ...(method === 'GET' ? {} : { body: '{}' }),
+        }),
+        { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
+        {
+          fetch: (async () =>
+            Response.json({
+              user: { id: 'user-1' },
+              activeSpaceId: 'space-a',
+              memberships: [{ space_id: 'space-a', slug: 'active' }],
+            })) as unknown as typeof fetch,
+        },
+      )
+      expect(response?.status, `${method} ${path}`).toBe(403)
+    }
+  })
+
   test('note changes refuse a server without project counter support', async () => {
     await expect(
       hostedNoteChanges(null, {
@@ -35,6 +76,32 @@ describe('hosted-only note safety', () => {
         },
       }),
     ).rejects.toThrow('deploy the hub server at or after the per-project note counter change')
+  })
+
+  test('a note operation for another space refuses a server without target-space support', async () => {
+    let noteRouteCalled = false
+    await expect(
+      hostedDropNote('01990000-0000-7000-8000-000000000001', 'resolved', {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        recordSpace: 'space-b',
+        fetch: async (input) => {
+          if (new URL(input).pathname === '/v1/tasks/identity')
+            return Response.json({
+              userId: 'user-1',
+              activeSpaceId: 'space-a',
+              memberships: [
+                { spaceId: 'space-a', slug: 'active' },
+                { spaceId: 'space-b', slug: 'target' },
+              ],
+              capabilities: { projectNoteCounters: true },
+            })
+          noteRouteCalled = true
+          return Response.json({ error: 'unexpected route' }, { status: 500 })
+        },
+      }),
+    ).rejects.toThrow('deploy the hub server at or after the target-space notes change')
+    expect(noteRouteCalled).toBe(false)
   })
 
   test('number seeding never goes below an existing number', () => {

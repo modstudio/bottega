@@ -17,7 +17,7 @@ import {
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 
-export const NOTE_USAGE = `hub note new "<text>" [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
+export const NOTE_USAGE = `hub note new "<text>" [--project NAME] [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
   hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
   hub note same <LABEL|UUID|NUMBER> <LABEL|UUID|NUMBER>
   hub note keep <LABEL|UUID|NUMBER>...
@@ -107,11 +107,12 @@ type NoteCliContext = {
 }
 
 function noteCliContext(argv: string[]): NoteCliContext {
+  const targetProject = option(argv, 'project') ?? projectOf(process.cwd())
   return {
     argv,
     flag: (name) => option(argv, name),
     has: (name) => hasOption(argv, name),
-    reference: (value) => resolveNoteReference(value, projectOf(process.cwd())),
+    reference: (value) => resolveNoteReference(value, targetProject),
   }
 }
 
@@ -197,6 +198,7 @@ async function newNoteCommand(context: NoteCliContext): Promise<void> {
     sameAs: same ? reference(same) : undefined,
     forceNew: has('new'),
     anchor: explicitNoteAnchor(argv),
+    project: flag('project'),
   })
   if (!result.note) result = await resolveDuplicateNote(context, text, result)
   if (!result.note) return
@@ -226,9 +228,19 @@ async function resolveDuplicateNote(
   const answer = prompt(NOTE_DUPLICATE_PROMPT)?.trim() ?? ''
   const filed =
     answer && answer !== 'new'
-      ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
+      ? await createNote({
+          text,
+          area: flag('area'),
+          sameAs: reference(answer),
+          project: flag('project'),
+        })
       : answer === 'new'
-        ? await createNote({ text, area: flag('area'), forceNew: true })
+        ? await createNote({
+            text,
+            area: flag('area'),
+            forceNew: true,
+            project: flag('project'),
+          })
         : result
   if (!filed.note) throw new Error('note not filed')
   return filed

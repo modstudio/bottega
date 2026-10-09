@@ -3,19 +3,27 @@ import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
-import { assertProjectNoteCounters, hostedTaskIdentity } from './task-client.ts'
+import {
+  assertProjectNoteCounters,
+  assertTargetSpaceNotes,
+  hostedTaskIdentity,
+} from './task-client.ts'
 
 const TEST_REFUSAL = 'hub note client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
-type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch }
+type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
 async function request<T>(
   path: string,
   method: string,
   body?: unknown,
   options: Options = {},
 ): Promise<T> {
+  if (options.recordSpace) {
+    const identity = await hostedTaskIdentity(options)
+    if (options.recordSpace !== identity.activeSpaceId) assertTargetSpaceNotes(identity)
+  }
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -31,6 +39,7 @@ async function request<T>(
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
+        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -50,8 +59,12 @@ async function request<T>(
     )
   return value as T
 }
+async function assertNoteCapabilities(options?: Options) {
+  const identity = await hostedTaskIdentity(options)
+  assertProjectNoteCounters(identity)
+}
 export const hostedCreateNote = async (body: unknown, options?: Options) => {
-  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  await assertNoteCapabilities(options)
   return request<HostedNote>('/v1/notes', 'POST', body, options)
 }
 export const hostedAcknowledgeNote = (recordId: string, session: string, options?: Options) =>
@@ -79,7 +92,7 @@ export const hostedMergeNotes = (target: string, source: string, options?: Optio
 export const hostedReapNotes = (body: unknown, options?: Options) =>
   request<{ marked: number; deleted: number }>('/v1/notes/reap', 'POST', body, options)
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
-  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  await assertNoteCapabilities(options)
   const query = new URLSearchParams({ includeDeleted: 'true' })
   if (cursor) query.set('cursor', cursor)
   return request<{
@@ -90,7 +103,7 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
   }>(`/v1/notes?${query}`, 'GET', undefined, options)
 }
 export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
-  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  await assertNoteCapabilities(options)
   return request<{ upserted: number; noteIds: Array<{ number: number; id: string }> }>(
     '/v1/notes/mirror',
     'PUT',
@@ -105,4 +118,6 @@ export const hostedNoteCounts = (options?: Options) =>
     undefined,
     options,
   )
+export const hostedGetNote = (recordId: string, options?: Options) =>
+  request<HostedNote>(`/v1/notes/${recordId}`, 'GET', undefined, options)
 export type NoteClientOptions = Options
