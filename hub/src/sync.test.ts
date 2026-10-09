@@ -118,39 +118,57 @@ function applyHostedIntervalWrite(
   method: string,
   spaceId: string,
   body: Record<string, unknown>,
-) {
-  const ids = (body.ids as string[] | undefined) ?? []
-  const keys = (body.keys as HostedIntervalCopy[] | undefined) ?? []
+): Response {
   if (method === 'DELETE') {
+    if (!Array.isArray(body.ids))
+      return Response.json({ error: 'ids must contain at most 500 items' }, { status: 400 })
+    const ids = body.ids as string[]
     hosted.splice(
       0,
       hosted.length,
-      ...hosted.filter(
-        (row) =>
-          row.spaceId !== spaceId ||
-          !(
-            ids.includes(row.id) ||
-            keys.some(
-              (key) =>
-                key.source === row.source && key.ref === row.ref && key.start_at === row.start_at,
-            )
-          ),
-      ),
+      ...hosted.filter((row) => row.spaceId !== spaceId || !ids.includes(row.id)),
     )
-    return
+    return Response.json({ deleted: ids.length })
   }
-  if (method === 'PUT')
-    hosted.push(
-      ...((body.rows as IntervalEvidence[]) ?? [])
-        .filter((row) => row.id)
-        .map((row) => ({
-          spaceId,
-          id: row.id!,
-          source: row.source,
-          ref: row.ref,
-          start_at: row.start_at,
-        })),
+  if (method !== 'PUT') return Response.json({ error: 'method not allowed' }, { status: 405 })
+  const rows = (body.rows as IntervalEvidence[] | undefined) ?? []
+  if (rows.some((row) => typeof row.id !== 'string' || row.id === ''))
+    return Response.json(
+      {
+        error:
+          'every interval row requires id; upgrade the client to one with intervalRecordId support',
+      },
+      { status: 400 },
     )
+  const next = hosted.map((row) => ({ ...row }))
+  for (const row of rows) {
+    const existing = next.find((copy) => copy.spaceId === spaceId && copy.id === row.id)
+    if (existing) {
+      Object.assign(existing, {
+        source: row.source,
+        ref: row.ref,
+        start_at: row.start_at,
+      })
+      continue
+    }
+    const collision = next.find(
+      (copy) =>
+        copy.spaceId === spaceId &&
+        copy.source === row.source &&
+        copy.ref === row.ref &&
+        copy.start_at === row.start_at,
+    )
+    if (collision)
+      return Response.json(
+        {
+          error: `interval identity conflict: tuple (${row.source}, ${row.ref}, ${row.start_at}) belongs to UUID ${collision.id}, not incoming UUID ${row.id}`,
+        },
+        { status: 409 },
+      )
+    next.push({ spaceId, id: row.id, source: row.source, ref: row.ref, start_at: row.start_at })
+  }
+  hosted.splice(0, hosted.length, ...next)
+  return Response.json({ upserted: rows.length })
 }
 
 function syncFetch(
@@ -178,7 +196,7 @@ function syncFetch(
     if (recordSpace === options.failSpace)
       return Response.json({ error: 'destination unavailable' }, { status: 503 })
     if (options.hosted && recordSpace)
-      applyHostedIntervalWrite(options.hosted, init?.method ?? 'GET', recordSpace, body)
+      return applyHostedIntervalWrite(options.hosted, init?.method ?? 'GET', recordSpace, body)
     return Response.json({ ok: true })
   }
 }
@@ -749,9 +767,67 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
-      ['PUT', 'space-a', { rows: [{ ...replacement, ref: original.ref }] }],
       ['DELETE', 'space-a', { ids: [original.id] }],
+      ['PUT', 'space-a', { rows: [{ ...replacement, ref: original.ref }] }],
     ])
+  })
+
+  test('a row recreated with the same tuple replaces its predecessor on the first sync', async () => {
+    const original = interval('1', 'one')
+    const replacement = { ...original, id: '00000000-0000-4000-8000-000000000002' }
+    insertInterval(replacement)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO record_ledger
+             (table_name,local_key,content_hash,synced_at,destination_space_id)
+           VALUES ('interval',?,?,?,?)`,
+        )
+        .run(original.id, contentHash(original), '2026-10-01T00:00:00.000Z', 'space-a'),
+    )
+    const hosted: HostedIntervalCopy[] = [
+      {
+        spaceId: 'space-a',
+        id: original.id,
+        source: original.source,
+        ref: original.ref,
+        start_at: original.start_at,
+      },
+    ]
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes, { hosted }),
+      registeredProjects: registered,
+    })
+
+    expect(writes.map((write) => [write.method, write.recordSpace, write.body])).toEqual([
+      ['DELETE', 'space-a', { ids: [original.id] }],
+      ['PUT', 'space-a', { rows: [replacement] }],
+    ])
+    expect(hosted).toEqual([
+      {
+        spaceId: 'space-a',
+        id: replacement.id,
+        source: replacement.source,
+        ref: replacement.ref,
+        start_at: replacement.start_at,
+      },
+    ])
+    expect(
+      db()
+        .query<{ local_key: string; destination_space_id: string }, []>(
+          `SELECT local_key, destination_space_id
+             FROM record_ledger WHERE table_name='interval'`,
+        )
+        .all(),
+    ).toEqual([{ local_key: replacement.id, destination_space_id: 'space-a' }])
   })
 
   test('a non-UUID ledger key reports one issue, sends no request, and stays in place', async () => {

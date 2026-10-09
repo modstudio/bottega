@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { jsonBody } from '../../shared/http-json.ts'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
@@ -235,8 +236,6 @@ function forgetIntervals(keys: string[]) {
   })
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
   const result = new Map<string, T[]>()
   for (const row of rows) result.set(key(row), [...(result.get(key(row)) ?? []), row])
@@ -366,8 +365,10 @@ export async function syncEvidence(
   if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
   const intervalRows = localIntervals()
   const intervalLedger = ledger('interval')
-  const invalidIntervalLedger = intervalLedger.filter((row) => !UUID.test(row.local_key))
-  const validIntervalLedger = intervalLedger.filter((row) => UUID.test(row.local_key))
+  const invalidIntervalLedger = intervalLedger.filter(
+    (row) => !hasRecordIdShape(row.local_key),
+  )
+  const validIntervalLedger = intervalLedger.filter((row) => hasRecordIdShape(row.local_key))
   const day = diffDays(localDays(), ledger('day'))
   const result: SyncResult = {
     interval: {
@@ -431,8 +432,8 @@ export async function syncEvidence(
   const deliveryRequest = { fetch: fetchImpl, baseUrl, token }
   forgetIntervals(vanishedWithoutDestination.map((row) => row.local_key))
   result.interval.issues.push(
-    ...(await deliverIntervalChanges(interval.deliveries, deliveryRequest)),
     ...(await deleteVanishedIntervals(vanishedWithDestination, deliveryRequest)),
+    ...(await deliverIntervalChanges(interval.deliveries, deliveryRequest)),
   )
   for (const group of batches(day.changed.map((entry) => entry.row)))
     await request(fetchImpl, baseUrl, token, '/v1/evidence/days', 'PUT', {
