@@ -61,7 +61,7 @@ export function issueFixReady(
   after: string,
   plainGateOk: boolean,
   environmentGateOk: boolean,
-  findings: number,
+  reviewReady: boolean,
 ): boolean {
   return (
     fix.status === 'done' &&
@@ -72,7 +72,7 @@ export function issueFixReady(
     before !== after &&
     plainGateOk &&
     environmentGateOk &&
-    findings === 0
+    reviewReady
   )
 }
 

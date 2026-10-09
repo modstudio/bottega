@@ -16,7 +16,6 @@ import { repoRootOf } from '../git/git-environment.ts'
 import { type Project, projectByName } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
-import { parseReviewOutput } from '../review/review.ts'
 import { run } from '../run/run.ts'
 import { terminateRunProcesses } from '../run/run-process.ts'
 import { abandonRun } from '../run/run-stop.ts'
@@ -34,6 +33,8 @@ import {
   seedAnswer,
   seedFromReport,
 } from './issue-file.ts'
+import { issueReviewDecision, issueReviewEvidence } from './issue-review.ts'
+import { runIssueFixReviews } from './issue-review-run.ts'
 import {
   filedIssueCommandPlan,
   issueFixReady,
@@ -465,24 +466,12 @@ async function verifyOrHandbackFix(
       : { ok: false, text: 'project has no configured gate', exitCode: -1 }
   await comment(
     issue.key,
-    `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`,
+    `Independent measurements and both gates completed for run ${fixRun.id}; tier review is starting.`,
   )
-  const lens = fixRun.worktree
-    ? await run({
-        job: 'review-lens',
-        cwd: fixRun.worktree.path,
-        lens: 'issue-blast-radius',
-        key: branchKey,
-        carry: true,
-        review: fixRun.worktree.branch,
-        prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
-        label: `issue ${issue.key} blast radius`,
-      })
-    : null
-  const review = lens ? parseReviewOutput(lens.output) : null
-  // Findings runs record their review as part of terminalisation. Parsing it
-  // here still decides coordinator readiness; capture no longer needs a
-  // second, issue-specific write.
+  const reviewPass = await runIssueFixReviews({ issue, fixRun, target, branchKey })
+  // Findings runs record their reviews as part of terminalisation. Gathering
+  // here decides coordinator readiness; the owning session still judges them.
+  const reviewDecision = issueReviewDecision(reviewPass.results)
   const ready = issueFixReady(
     fix,
     diagnosis,
@@ -490,14 +479,15 @@ async function verifyOrHandbackFix(
     after.text,
     plainGate.ok,
     environmentGate.ok,
-    review?.findings.length ?? -1,
+    reviewDecision.ready,
   )
   const extra = [
     `Coordinator before: ${before.text}`,
     `Coordinator after: ${after.text}`,
     `Coordinator plain gate: ${plainGate.text}`,
     `Coordinator worker-environment gate: ${environmentGate.text}`,
-    `Blast-radius lens run: ${lens?.id ?? 'not run'}; findings: ${JSON.stringify(review?.findings ?? null)}`,
+    `Review tier: ${reviewPass.tier}; selected lenses: ${JSON.stringify(reviewPass.selectedLenses)}`,
+    ...reviewPass.results.map(issueReviewEvidence),
     `Ready to land: ${ready ? 'yes' : 'no — handed back'}`,
     `Fix run: ${fixRun.id}`,
   ]

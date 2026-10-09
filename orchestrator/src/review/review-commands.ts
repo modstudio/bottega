@@ -9,19 +9,13 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { applicableReviewLenses } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { reviewPins } from './review-pins.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
-import {
-  classifyReviewTier,
-  diffNumstat,
-  parseTierRange,
-  resolveTierRange,
-  type TierRangeEndpoint,
-} from './review-tier.ts'
+import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
+import { reviewTierForRange } from './review-tier-service.ts'
 import {
   completeReview,
   DISPOSITIONS,
@@ -198,16 +192,7 @@ function resolveTierTarget(value: string): {
 
 function reviewTierOutput(value: string) {
   const { repo, from, to, project } = resolveTierTarget(value)
-  const files = diffNumstat(repo, from, to)
-  const tier = classifyReviewTier({ files })
-  return {
-    ...tier,
-    lenses: applicableReviewLenses(
-      tier.tier,
-      files.map(({ path }) => path),
-      project.settings.review,
-    ),
-  }
+  return reviewTierForRange(repo, from, to, project.settings.review)
 }
 
 function printReviewTier(

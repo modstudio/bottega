@@ -53,6 +53,7 @@ describe('filed issue coordinator inputs', () => {
 
   test('the issue path consumes its chosen seed only for the writing fix run', () => {
     const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
+    const reviewSource = readFileSync(new URL('./issue-review-run.ts', import.meta.url), 'utf8')
     const diagnosis = source.slice(
       source.indexOf('diagnosisRun = await run({'),
       source.indexOf('const diagnosis =', source.indexOf('diagnosisRun = await run({')),
@@ -61,16 +62,16 @@ describe('filed issue coordinator inputs', () => {
       source.indexOf('fixRun = await run({'),
       source.indexOf('const fix =', source.indexOf('fixRun = await run({')),
     )
-    const lens = source.slice(
-      source.indexOf('const lens ='),
-      source.indexOf('const review =', source.indexOf('const lens =')),
+    const lens = reviewSource.slice(
+      reviewSource.indexOf('lensRun = await run({'),
+      reviewSource.indexOf('const review =', reviewSource.indexOf('lensRun = await run({')),
     )
     expect(diagnosis).toContain("job: 'diagnose'")
     expect(diagnosis).not.toContain('seed:')
     expect(fix).toContain("job: 'issue-worker'")
     expect(fix).toContain('seed: fixSeed ?? undefined')
     expect(lens).toContain("job: 'review-lens'")
-    expect(lens).toContain('review: fixRun.worktree.branch')
+    expect(lens).toContain('review: worktree.branch')
     expect(lens).not.toContain('seed:')
   })
 

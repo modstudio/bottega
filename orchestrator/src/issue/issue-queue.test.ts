@@ -66,9 +66,12 @@ describe('filed issue queue decisions', () => {
       issueKey: 'DEV-1',
     })
     expect(
-      filedIssueLoopRun({ id: 13, job: 'review-lens', label: 'issue DEV-1 blast radius' }),
+      filedIssueLoopRun({ id: 13, job: 'review-lens', label: 'issue DEV-1 review correctness' }),
     ).toEqual({ runId: 13, job: 'review-lens', issueKey: 'DEV-1' })
-    expect(filedIssueLoopRun({ id: 14, job: 'diagnose', label: null })).toBeNull()
+    expect(
+      filedIssueLoopRun({ id: 14, job: 'review-lens', label: 'issue DEV-1 blast radius' }),
+    ).toEqual({ runId: 14, job: 'review-lens', issueKey: 'DEV-1' })
+    expect(filedIssueLoopRun({ id: 15, job: 'diagnose', label: null })).toBeNull()
     expect(
       filedIssueLoopRun({ id: 15, job: 'diagnose', label: 'hand-dispatched diagnosis' }),
     ).toBeNull()
