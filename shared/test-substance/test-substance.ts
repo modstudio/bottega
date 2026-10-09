@@ -38,8 +38,7 @@ type ReportLoader = () => Promise<{
   testSubstanceReport(file: string, content: string): Promise<Report>
 }>
 
-const loadReport: ReportLoader = async () =>
-  require('./test-substance-eslint.ts') as Awaited<ReturnType<ReportLoader>>
+const loadReport: ReportLoader = () => import('./test-substance-eslint.ts')
 
 /** Judge only findings introduced by the proposed whole-file content. */
 export async function judgeTestSubstance(
@@ -48,8 +47,19 @@ export async function judgeTestSubstance(
 ): Promise<TestSubstanceJudgment> {
   if (!TEST_FILE_NAME.test(input.file)) return { status: 'ok', findings: [], reason: '' }
 
-  const { testSubstanceReport } = await load()
-  const after = await testSubstanceReport(input.file, input.after)
+  let after: Report
+  let testSubstanceReport: Awaited<ReturnType<ReportLoader>>['testSubstanceReport']
+  try {
+    ;({ testSubstanceReport } = await load())
+    after = await testSubstanceReport(input.file, input.after)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: `detectors unavailable in this build: ${detail}`,
+    }
+  }
   if (after.parseError) {
     return { status: 'unchecked', findings: [], reason: after.parseError }
   }

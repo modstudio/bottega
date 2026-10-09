@@ -35,6 +35,21 @@ test('reports an unparseable test as unchecked', async () => {
   ).toEqual({ status: 'unchecked', findings: [], reason: 'could not parse test' })
 })
 
+test('reports unavailable detectors as unchecked', async () => {
+  expect(
+    await judgeTestSubstance(
+      { file: 'example.test.ts', before: null, after: 'content' },
+      async () => {
+        throw new Error("Cannot find module 'eslint'")
+      },
+    ),
+  ).toEqual({
+    status: 'unchecked',
+    findings: [],
+    reason: "detectors unavailable in this build: Cannot find module 'eslint'",
+  })
+})
+
 function finding(testName: string, line = 4): TestFinding {
   return {
     file: 'example.test.ts',

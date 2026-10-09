@@ -96,7 +96,7 @@ test('git guard covers every Bash command and has no condition', () => {
 test('test substance guard covers every editor tool from the rendered install', () => {
   const hooks = render({}).settings.hooks as Record<
     string,
-    Array<{ matcher?: string; hooks: Array<{ command: string }> }>
+    Array<{ matcher?: string; hooks: Array<{ command: string; type: string }> }>
   >
   const group = hooks.PreToolUse?.find((item) => item.matcher === 'Write|Edit|MultiEdit')
   expect(group?.hooks).toEqual([
