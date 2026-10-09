@@ -39,9 +39,16 @@ const projectsOf = (rows: ProjectInput[]): ProjectionProject[] =>
     settings: { keyPrefixes: row.keyPrefixes },
   }))
 
-type RawInterval = Omit<IntervalRow, 'start_at' | 'end_at'> & {
+type RawInterval = Omit<
+  IntervalRow,
+  'start_at' | 'end_at' | 'claude_tokens' | 'vendor_tokens' | 'vendor_cost_usd' | 'open'
+> & {
   start_at: SqlTime
   end_at: SqlTime
+  claude_tokens: string | number | bigint
+  vendor_tokens: string | number | bigint
+  vendor_cost_usd: string | number | bigint | null
+  open: string | number | bigint
 }
 type RawWindow = Omit<
   WindowIntervalRow,
