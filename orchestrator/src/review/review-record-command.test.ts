@@ -29,6 +29,14 @@ function operations(
           severity: 'high',
           location: 'src/a.ts:4',
         },
+        {
+          lens: 'craft',
+          run: 72,
+          disposition: 'skipped',
+          category: null,
+          severity: null,
+          location: 'src/b.ts:9',
+        },
       ],
     }),
     findingsPath: () => '/state/review.json',
@@ -60,7 +68,7 @@ test('writes finished review findings and runs the declared argv in the requeste
   )
 
   expect(written).toEqual({
-    lenses: ['correctness'],
+    lenses: ['correctness', 'craft'],
     findings: [
       {
         lens: 'correctness',
@@ -70,7 +78,7 @@ test('writes finished review findings and runs the declared argv in the requeste
         run: 71,
       },
     ],
-    skipped: 0,
+    skipped: 1,
   })
   expect(invocation).toEqual({
     cwd: '/worktree',
@@ -82,7 +90,7 @@ test('writes finished review findings and runs the declared argv in the requeste
       '--reason',
       reason,
       '--agents',
-      '1',
+      '2',
       '--findings',
       '/state/review.json',
       '--branch',
