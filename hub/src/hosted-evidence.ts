@@ -21,6 +21,7 @@ export type IntervalEvidence = {
   user_id: string | null
 }
 export type DayEvidence = {
+  id?: string
   day: string
   claude_tokens: number
   cache_read: number
@@ -45,7 +46,9 @@ export type HostedIntervalPut =
   | { kind: 'insert'; id: string }
   | { kind: 'insert-legacy' }
 
-/** Choose insert, update, or re-key from the incoming id and hosted rows in this space. */
+export type HostedDayPut = HostedIntervalPut
+
+// Temporary identity transitions let UUID clients adopt legacy hosted rows; remove both together.
 export function decideHostedIntervalPut(
   incomingId: string | undefined,
   existingId: string | null,
@@ -55,6 +58,14 @@ export function decideHostedIntervalPut(
   if (existingId) return { kind: 'update', id: incomingId }
   if (existingTupleId) return { kind: 'rekey', fromId: existingTupleId, toId: incomingId }
   return { kind: 'insert', id: incomingId }
+}
+
+export function decideHostedDayPut(
+  incomingId: string | undefined,
+  existingId: string | null,
+  existingDayId: string | null,
+): HostedDayPut {
+  return decideHostedIntervalPut(incomingId, existingId, existingDayId)
 }
 
 async function tenant<T>(url: string, identity: EvidenceIdentity, work: (tx: SQL) => Promise<T>) {
@@ -172,7 +183,6 @@ async function upsertOneInterval(
     return 0
   }
   if (decision.kind === 'rekey') {
-    // Re-keys a hosted interval to the client's record_id.
     await updateHostedInterval(tx, identity, decision.fromId, decision.toId, row)
     return 1
   }
@@ -196,8 +206,19 @@ export async function upsertIntervals(
 
 export async function upsertDays(url: string, identity: EvidenceIdentity, rows: DayEvidence[]) {
   return tenant(url, identity, async (tx) => {
+    let rekeyed = 0
     for (const row of rows) {
-      await tx`
+      const byId = row.id
+        ? await tx<{ id: string }[]>`
+            SELECT id::text AS id FROM hub_day
+            WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
+        : []
+      const byDay = await tx<{ id: string }[]>`
+        SELECT id::text AS id FROM hub_day
+        WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
+      const decision = decideHostedDayPut(row.id, byId[0]?.id ?? null, byDay[0]?.id ?? null)
+      if (decision.kind === 'insert-legacy') {
+        await tx`
         INSERT INTO hub_day
           (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
            other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
@@ -217,8 +238,39 @@ export async function upsertDays(url: string, identity: EvidenceIdentity, rows: 
           lines_generated=excluded.lines_generated, collected_at=excluded.collected_at,
           updated_at=now()
       `
+        continue
+      }
+      if (decision.kind === 'insert') {
+        await tx`
+          INSERT INTO hub_day
+            (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
+             other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
+             lines_generated, collected_at, updated_at)
+          VALUES
+            (${decision.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
+             ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
+             ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
+             ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
+             ${row.collected_at}::timestamptz, now())
+        `
+        continue
+      }
+      const currentId = decision.kind === 'rekey' ? decision.fromId : decision.id
+      const nextId = decision.kind === 'rekey' ? decision.toId : decision.id
+      await tx`
+        UPDATE hub_day SET
+          id=${nextId}::uuid, day=${row.day}, claude_tokens=${row.claude_tokens},
+          cache_read=${row.cache_read}, messages=${row.messages}, tasks=${row.tasks},
+          canon_tokens=${row.canon_tokens}, other_tokens=${row.other_tokens},
+          commits=${row.commits}, files=${row.files}, lines_product=${row.lines_product},
+          lines_test=${row.lines_test}, lines_docs=${row.lines_docs},
+          lines_config=${row.lines_config}, lines_generated=${row.lines_generated},
+          collected_at=${row.collected_at}::timestamptz, updated_at=now()
+        WHERE id=${currentId}::uuid AND space_id=${identity.spaceId}::uuid
+      `
+      if (decision.kind === 'rekey') rekeyed++
     }
-    return { upserted: rows.length }
+    return { upserted: rows.length, rekeyed }
   })
 }
 

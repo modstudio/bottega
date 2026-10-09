@@ -4,11 +4,11 @@ import { hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
 import { evidenceApi } from './evidence-api.ts'
 import type { IntervalEvidence } from './hosted-evidence.ts'
-import { batches, contentHash, diffRows, signedInRecordUserId, syncEvidence } from './sync.ts'
+import { batches, contentHash, signedInRecordUserId, syncEvidence } from './sync.ts'
 
 beforeEach(resetFixtureStore)
 
-const identity = (capability = true, intervalRecordId = true) => ({
+const identity = (capability = true, intervalRecordId = true, dayRecordId = true) => ({
   userId: 'user-1',
   activeSpaceId: 'space-active',
   memberships: [
@@ -16,7 +16,9 @@ const identity = (capability = true, intervalRecordId = true) => ({
     { spaceId: 'space-a', slug: 'alpha' },
     { spaceId: 'space-b', slug: 'beta' },
   ],
-  capabilities: capability ? { targetSpaceIntervalEvidence: true, intervalRecordId } : {},
+  capabilities: capability
+    ? { targetSpaceIntervalEvidence: true, intervalRecordId, dayRecordId }
+    : {},
 })
 
 function interval(ref: string, project: string | null): IntervalEvidence & { id: string } {
@@ -149,6 +151,7 @@ function syncFetch(
   options: {
     capability?: boolean
     intervalRecordId?: boolean
+    dayRecordId?: boolean
     failSpace?: string
     hosted?: HostedIntervalCopy[]
   } = {},
@@ -156,7 +159,11 @@ function syncFetch(
   return async (url: string, init?: RequestInit) => {
     if (url.endsWith('/v1/tasks/identity'))
       return Response.json(
-        identity(options.capability !== false, options.intervalRecordId !== false),
+        identity(
+          options.capability !== false,
+          options.intervalRecordId !== false,
+          options.dayRecordId !== false,
+        ),
       )
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     const recordSpace = new Headers(init?.headers).get('x-record-space')
@@ -218,30 +225,6 @@ describe('evidence sync planning', () => {
     const row = { source: 'orch', ref: 'orch:1', start_at: '2026-09-17T00:00:00.000Z' }
     expect(contentHash(row)).toBe(contentHash({ ...row }))
     expect(contentHash({ ...row, ref: 'orch:2' })).not.toBe(contentHash(row))
-  })
-
-  test('selects new and changed rows and vanished keys', () => {
-    const unchanged = { day: '2026-09-16', commits: 2 }
-    const changed = { day: '2026-09-17', commits: 3 }
-    const plan = diffRows(
-      [
-        { key: unchanged.day, row: unchanged },
-        { key: changed.day, row: changed },
-      ],
-      [
-        { local_key: unchanged.day, content_hash: contentHash(unchanged) },
-        { local_key: changed.day, content_hash: contentHash({ ...changed, commits: 1 }) },
-        { local_key: '2026-09-15', content_hash: 'old' },
-      ],
-    )
-    expect(plan.changed.map((row) => row.key)).toEqual(['2026-09-17'])
-    expect(plan.deleted).toEqual(['2026-09-15'])
-  })
-
-  test('refuses to infer deletes from an empty local table', () => {
-    const plan = diffRows([], [{ local_key: 'existing', content_hash: 'old' }])
-    expect(plan.deleted).toEqual([])
-    expect(plan.deleteSkipped).toBe(true)
   })
 
   test('an absent hosted record skips the push', async () => {
@@ -845,8 +828,8 @@ describe('evidence sync planning', () => {
   test('an HTML success response does not advance the evidence ledger', async () => {
     writeTransaction((conn) => {
       conn
-        .query(`INSERT INTO day(day,collected_at) VALUES (?,?)`)
-        .run('2026-09-24', '2026-09-24T12:00:00.000Z')
+        .query(`INSERT INTO day(record_id,day,collected_at) VALUES (?,?,?)`)
+        .run('33333333-3333-4333-8333-333333333333', '2026-09-24', '2026-09-24T12:00:00.000Z')
     })
 
     await expect(
@@ -981,7 +964,7 @@ describe('evidence API', () => {
           }),
         putDays: async (_url, tenant) => {
           boundSpace = tenant.spaceId
-          return { upserted: 0 }
+          return { upserted: 0, rekeyed: 0 }
         },
       },
     )

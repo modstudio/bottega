@@ -1,4 +1,5 @@
 import { engagedMs } from '../../shared/interval.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
@@ -189,8 +190,8 @@ export function rollUpDays(): number {
 
   writeTransaction((conn) => {
     const stmt = conn.query(
-      `INSERT INTO day (day, claude_tokens, messages, collected_at)
-     VALUES (?,?,?,datetime('now'))
+      `INSERT INTO day (record_id, day, claude_tokens, messages, collected_at)
+     VALUES (?,?,?,?,datetime('now'))
      ON CONFLICT(day) DO UPDATE SET
        -- Only a pass that FOUND tokens may overwrite them. Transcripts are
        -- pruned and work done on another machine never had any here, so a later
@@ -203,7 +204,7 @@ export function rollUpDays(): number {
                             THEN excluded.messages ELSE day.messages END,
        collected_at  = excluded.collected_at`,
     )
-    for (const r of rows) stmt.run(r.day, r.claude, r.msgs)
+    for (const r of rows) stmt.run(newRecordId(), r.day, r.claude, r.msgs)
   })
   return rows.length
 }
