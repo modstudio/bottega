@@ -47,6 +47,15 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     './doc-tree-rules.ts',
   ]),
+  module('orchestrator/src/doc/local-doc-write.ts', [
+    '../../../shared/docs.ts',
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    './doc-audiences-codec.ts',
+    './doc-read-store.ts',
+    './doc-revision-store.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/doc-owner.ts', [
     '../record/record-attribution.ts',
     '../record/record-auth.ts',
