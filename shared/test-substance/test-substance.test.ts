@@ -113,6 +113,19 @@ test('judges only a newly added PHP vacuous method', async () => {
   })
 })
 
+test('enables PHP policy findings only when requested', async () => {
+  const input = {
+    file: '/project/tests/Feature/FooTest.php',
+    before: null,
+    after: `<?php class FooTest { public function testMock(): void { $this->createMock(Foo::class); } }`,
+  }
+  expect(await judgeTestSubstance(input)).toEqual({ status: 'ok', findings: [], reason: '' })
+  expect(await judgeTestSubstance({ ...input, phpPolicyRules: ['createMock'] })).toMatchObject({
+    status: 'refused',
+    findings: [{ test: 'testMock', rule: 'createMock' }],
+  })
+})
+
 function finding(testName: string, line = 4): TestFinding {
   return {
     file: 'example.test.ts',

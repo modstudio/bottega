@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { OUTSIDE_TEST } from './test-substance'
+import { OUTSIDE_TEST, PHP_POLICY_RULES } from './test-substance'
 import { phpTestSubstanceReport } from './test-substance-php'
 
 const file = '/project/tests/Feature/FooTest.php'
 
 async function findings(content: string) {
-  return (await phpTestSubstanceReport(file, `<?php\nclass FooTest {\n${content}\n}`)).findings
+  return (
+    await phpTestSubstanceReport(file, `<?php\nclass FooTest {\n${content}\n}`, PHP_POLICY_RULES)
+  ).findings
 }
 
 describe('PHP test attribution', () => {
@@ -25,6 +27,7 @@ class FooTest {
 }
 $this->getMockBuilder(Foo::class);
 `,
+      PHP_POLICY_RULES,
     )
     expect(report.findings.map(({ rule, testName }) => [rule, testName])).toEqual([
       ['createMock', 'testNamed'],
@@ -58,6 +61,27 @@ describe('PHP vacuous methods', () => {
     expect(
       report.filter(({ rule }) => rule === 'vacuous-test').map(({ testName }) => testName),
     ).toEqual(['testTypeOnly', 'testConstantOnly'])
+  })
+
+  test('treats fluent assertions, receiver expectations, and exception expectations as real', async () => {
+    const report = await findings(`
+  public function testPendingCommand(): void {
+    $pendingCommand->expectsOutput('done')->assertSuccessful();
+  }
+  public function testCommandResult(): void {
+    $this->check()->assertFailed();
+  }
+  public function testExpectations(): void {
+    $mock->shouldReceive('run');
+  }
+  public function testStaticFluentAssertion(): void {
+    Response::assertSuccessful();
+  }
+  public function testExpectedException(): void {
+    $this->expectExceptionMessage('failure');
+  }
+`)
+    expect(report.filter(({ rule }) => rule === 'vacuous-test')).toEqual([])
   })
 })
 

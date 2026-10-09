@@ -18,7 +18,17 @@ export type TestSubstanceInput = {
   file: string
   before: string | null
   after: string
+  phpPolicyRules?: readonly PhpPolicyRule[]
 }
+
+export const PHP_POLICY_RULES = [
+  'createMock',
+  'mock-builder',
+  'refresh-database',
+  'sql-string-matching',
+  'skipped',
+] as const
+export type PhpPolicyRule = (typeof PHP_POLICY_RULES)[number]
 
 export type TestSubstanceJudgment = {
   status: 'ok' | 'refused' | 'unchecked'
@@ -44,7 +54,11 @@ type Report = {
 }
 
 type ReportLoader = () => Promise<{
-  testSubstanceReport(file: string, content: string): Promise<Report>
+  testSubstanceReport(
+    file: string,
+    content: string,
+    phpPolicyRules?: readonly PhpPolicyRule[],
+  ): Promise<Report>
 }>
 
 // A compiled binary cannot resolve the lint packages. Treat that artifact limitation as
@@ -63,9 +77,10 @@ async function runDetector(
   report: Awaited<ReturnType<ReportLoader>>['testSubstanceReport'],
   file: string,
   content: string,
+  phpPolicyRules: readonly PhpPolicyRule[],
 ): Promise<Report | TestSubstanceJudgment> {
   try {
-    return await report(file, content)
+    return await report(file, content, phpPolicyRules)
   } catch (error) {
     return { status: 'unchecked', findings: [], reason: `detector failed: ${detail(error)}` }
   }
@@ -92,7 +107,8 @@ export async function judgeTestSubstance(
       reason: `detectors unavailable in this build: ${detail(error)}`,
     }
   }
-  const after = await runDetector(testSubstanceReport, input.file, input.after)
+  const phpPolicyRules = input.phpPolicyRules ?? []
+  const after = await runDetector(testSubstanceReport, input.file, input.after, phpPolicyRules)
   if (isJudgment(after)) return after
   if (after.parseError) {
     return { status: 'unchecked', findings: [], reason: after.parseError }
@@ -103,7 +119,7 @@ export async function judgeTestSubstance(
 
   let findings = after.findings
   if (input.before !== null) {
-    const before = await runDetector(testSubstanceReport, input.file, input.before)
+    const before = await runDetector(testSubstanceReport, input.file, input.before, phpPolicyRules)
     if (isJudgment(before)) return before
     if (!before.parseError) findings = introducedTestFindings(before.findings, after.findings)
   }

@@ -1,4 +1,11 @@
-import { applyTestWaivers, OUTSIDE_TEST, type TestFinding, type TestWaiver } from './test-substance'
+import {
+  applyTestWaivers,
+  OUTSIDE_TEST,
+  PHP_POLICY_RULES,
+  type PhpPolicyRule,
+  type TestFinding,
+  type TestWaiver,
+} from './test-substance'
 
 type TestMethod = {
   bodyEnd: number
@@ -61,6 +68,15 @@ const RULES = [
 ] as const
 
 export const PHP_GUARDED_RULES = [...RULES.map(({ rule }) => rule), 'vacuous-test', 'unused-waiver']
+export const PHP_UNIVERSAL_RULES = [
+  'self-equal-assertion',
+  'tautology',
+  'no-assertions',
+  'vacuous-test',
+  'unused-waiver',
+] as const
+
+const policyRules = new Set<string>(PHP_POLICY_RULES)
 
 function lineAt(content: string, offset: number): number {
   let line = 1
@@ -222,7 +238,12 @@ function finding(
   }
 }
 
-function lineFindings(file: string, content: string, methods: TestMethod[]): TestFinding[] {
+function lineFindings(
+  file: string,
+  content: string,
+  methods: TestMethod[],
+  enabledPolicyRules: ReadonlySet<PhpPolicyRule>,
+): TestFinding[] {
   const findings: TestFinding[] = []
   const lines = content.split('\n')
   let offset = 0
@@ -230,6 +251,8 @@ function lineFindings(file: string, content: string, methods: TestMethod[]): Tes
   for (const line of lines) {
     if (!commentLine(line)) {
       for (const rule of RULES) {
+        if (policyRules.has(rule.rule) && !enabledPolicyRules.has(rule.rule as PhpPolicyRule))
+          continue
         rule.pattern.lastIndex = 0
         for (const match of line.matchAll(rule.pattern)) {
           findings.push(
@@ -237,7 +260,11 @@ function lineFindings(file: string, content: string, methods: TestMethod[]): Tes
           )
         }
       }
-      if (/^\s*(?:toSql|getBindings)\s*\(/.test(line) && /->\s*$/.test(previous?.content ?? '')) {
+      if (
+        enabledPolicyRules.has('sql-string-matching') &&
+        /^\s*(?:toSql|getBindings)\s*\(/.test(line) &&
+        /->\s*$/.test(previous?.content ?? '')
+      ) {
         findings.push(
           finding(file, content, methods, offset, 'sql-string-matching', RULES.at(-1)!.message),
         )
@@ -266,8 +293,23 @@ function assertions(body: string): Assertion[] {
   const result: Assertion[] = []
   for (const line of body.split('\n')) {
     if (commentLine(line)) continue
-    for (const match of line.matchAll(/(?:self::|static::|\$this->)?(assert[A-Z]\w*)\s*\(/g)) {
+    for (const match of line.matchAll(
+      /\b((?:assert|expects|should)[A-Z]\w*|expectException\w*)\s*\(/g,
+    )) {
       const name = match[1]!
+      const prefix = line.slice(0, match.index).trimEnd()
+      const arrowReceiver = prefix.endsWith('->')
+      const scopeReceiver = prefix.endsWith('::')
+      const frameworkReceiver = /(?:\$this\s*->|(?:self|static|parent)\s*::)\s*$/.test(prefix)
+      if (
+        (name.startsWith('assert') && (arrowReceiver || scopeReceiver) && !frameworkReceiver) ||
+        ((name.startsWith('expects') || name.startsWith('should')) &&
+          (arrowReceiver || scopeReceiver)) ||
+        (name.startsWith('expectException') && /\$this\s*->\s*$/.test(prefix))
+      ) {
+        result.push({ name, kind: 'real' })
+        continue
+      }
       if (name === 'assertInstanceOf' || name === 'assertNotNull') {
         result.push({ name, kind: 'type-only' })
         continue
@@ -332,11 +374,16 @@ function waivers(file: string, content: string, methods: TestMethod[]): TestWaiv
 export async function phpTestSubstanceReport(
   file: string,
   content: string,
+  enabledPolicyRules: readonly PhpPolicyRule[] = [],
 ): Promise<PhpSubstanceReport> {
   const methods = testMethods(content)
+  const enabled = new Set(enabledPolicyRules)
   const findings = [
-    ...lineFindings(file, content, methods),
+    ...lineFindings(file, content, methods, enabled),
     ...vacuousFindings(file, content, methods),
   ]
-  return { findings: applyTestWaivers(findings, waivers(file, content, methods)), runner: 'php' }
+  const applicableWaivers = waivers(file, content, methods).filter(
+    (waiver) => !policyRules.has(waiver.rule) || enabled.has(waiver.rule as PhpPolicyRule),
+  )
+  return { findings: applyTestWaivers(findings, applicableWaivers), runner: 'php' }
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
+  PHP_POLICY_RULES,
   isTestFile,
   judgeTestSubstance,
   type TestFinding,
@@ -75,10 +76,17 @@ async function guardJavaScriptFixtures(failures: string[]) {
 
 async function guardPhpFixture(failures: string[]) {
   const phpFile = `${fixtureDirectory}test-substance-php.fixtures.php`
-  const phpReport = await phpTestSubstanceReport(phpFile, readFileSync(phpFile, 'utf8'))
+  const content = readFileSync(phpFile, 'utf8')
+  const phpReport = await phpTestSubstanceReport(phpFile, content, PHP_POLICY_RULES)
   const phpCounts = new Map<string, number>()
   for (const finding of phpReport.findings) {
     phpCounts.set(finding.rule, (phpCounts.get(finding.rule) ?? 0) + 1)
+  }
+  const universalReport = await phpTestSubstanceReport(phpFile, content, [])
+  for (const finding of universalReport.findings) {
+    if (PHP_POLICY_RULES.includes(finding.rule as never)) {
+      failures.push(`php: disabled policy rule ${finding.rule} produced a finding`)
+    }
   }
   const expectedPhpCounts = new Map<string, number>(
     PHP_GUARDED_RULES.map((rule) => [rule, rule === 'sql-string-matching' ? 2 : 1]),
@@ -126,6 +134,7 @@ async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
     file,
     before: beforeContent ?? null,
     after: afterContent(mode, file),
+    phpPolicyRules: [],
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
   return {

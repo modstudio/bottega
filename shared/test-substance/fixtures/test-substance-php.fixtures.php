@@ -51,7 +51,7 @@ final class SubstanceFixtureTest
         self::assertInstanceOf(Service::class, $service);
     }
 
-    // test-substance-allow: skipped deliberately covered elsewhere
+    // test-substance-allow: tautology deliberately covered elsewhere
     public function testWaivedSkip(): void
     {
         self::assertSame(42, $result->total());
