@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { upsertProject } from '../project/projects.ts'
-import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { docCommand } from './doc-commands.ts'
+import { selectDocWriteTree } from './doc-write-tree.ts'
 import { getDoc } from './docs.ts'
 
 let fixtureRoot: string | null = null
@@ -74,7 +74,7 @@ async function command(args: string[], stdin = '') {
           code = value
         },
       },
-      { selectCanonWriteTree, collectCanonLintInput },
+      { selectDocWriteTree, collectCanonLintInput },
     )
   } catch (error) {
     code = 1
@@ -134,10 +134,13 @@ test('a project doc branch-only citation requires the subject worktree named by 
     'project',
     '--subject',
     'subject',
+    '--cwd',
+    subject.worktree,
     '--reason',
     'test worktree removal',
     '--expect',
     revision,
   ])
   expect(removed.code).toBe(0)
+  expect(removed.out).toContain(`tree: ${realpathSync(subject.worktree)}`)
 })

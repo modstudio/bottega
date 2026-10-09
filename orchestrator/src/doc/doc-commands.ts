@@ -14,8 +14,8 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
-import type { SelectedCanonWriteTree } from './doc-canon-tree.ts'
 import { searchDocs } from './doc-search.ts'
+import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
   collectDocReferenceProjects,
   consumeDoc,
@@ -54,11 +54,11 @@ type DocPresentation = {
   exitCode?(code: number): void
 }
 type DocCommandPorts = {
-  selectCanonWriteTree(input: {
+  selectDocWriteTree(input: {
     scope: string
     subject: string | null
     cwd?: string
-  }): SelectedCanonWriteTree | undefined
+  }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
 }
 
@@ -126,19 +126,17 @@ function docPosition(value: string | undefined): number | undefined {
   return Number(value)
 }
 
-function commandCanonTree(
+function commandDocWriteTree(
   scope: string,
   subject: string | null,
   flags: DocFlags,
   presentation: DocPresentation,
   ports: DocCommandPorts,
-  allowProjectCwd = false,
-): SelectedCanonWriteTree | undefined {
-  const cwd = flags.flag('cwd')
-  const tree = ports.selectCanonWriteTree({
+): SelectedDocWriteTree | undefined {
+  const tree = ports.selectDocWriteTree({
     scope,
     subject,
-    cwd: scope === 'canon' || allowProjectCwd ? cwd : undefined,
+    cwd: flags.flag('cwd'),
   })
   if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
   return tree
@@ -331,14 +329,7 @@ async function handleSetDocCommand(
       'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
     )
   }
-  const canonTree = commandCanonTree(
-    address.scope,
-    address.subject,
-    flags,
-    presentation,
-    ports,
-    true,
-  )
+  const canonTree = commandDocWriteTree(address.scope, address.subject, flags, presentation, ports)
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY
@@ -462,7 +453,7 @@ export async function docCommand(
       throw new Error(
         'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
       )
-    const canonTree = commandCanonTree(scope, subject, flags, presentation, ports)
+    const canonTree = commandDocWriteTree(scope, subject, flags, presentation, ports)
     const removed = await removeDoc(
       scope,
       subject,

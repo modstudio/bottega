@@ -21,6 +21,7 @@ export type TriageReviewRow = {
   patchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
+  lenses: readonly { id: number; graded: boolean }[]
   findings: readonly { id: number; ordinal: number; disposition: string | null }[]
 }
 
@@ -132,8 +133,9 @@ function reviewsForChangeGroup(
 export function reviewsForTriage(
   database: Database,
   group: ChangeGroup,
+  includeReviewId?: number,
 ): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
-  const branchReviews = reviewsForBranch(database, group.project, group.branch)
+  const branchReviews = reviewsForBranch(database, group.project, group.branch, includeReviewId)
   return {
     branchReviews,
     reviews: reviewsForChangeGroup(branchReviews, group),
@@ -141,7 +143,12 @@ export function reviewsForTriage(
 }
 
 /** All review rounds recorded by runs on a branch, newest first. */
-function reviewsForBranch(database: Database, project: string, branch: string): TriageReviewRow[] {
+function reviewsForBranch(
+  database: Database,
+  project: string,
+  branch: string,
+  includeReviewId?: number,
+): TriageReviewRow[] {
   const rows = database
     .query<
       {
@@ -151,21 +158,27 @@ function reviewsForBranch(database: Database, project: string, branch: string): 
         tier: 0 | 1 | 2 | 3 | null
         patch_id: string | null
         path_set: string | null
+        lens_id: number
         lens: string
+        reproduced: string | null
+        coverage: string | null
+        limits: string | null
+        overlap: string | null
         finding_id: number | null
         ordinal: number | null
         disposition: string | null
       },
-      [string, string]
+      [string, string, number | null]
     >(
-      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,rl.lens,
+      `SELECT r.id review_id,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
+              rl.id lens_id,rl.lens,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rf.id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_id=r.id
          JOIN run ON run.id=rl.run_id
          LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE run.repo=? AND run.branch=? ORDER BY r.id DESC,rl.id,rf.id`,
+        WHERE run.repo=? AND (run.branch=? OR r.id=?) ORDER BY r.id DESC,rl.id,rf.id`,
     )
-    .all(project, branch)
+    .all(project, branch, includeReviewId ?? null)
   const reviews = new Map<number, TriageReviewRow>()
   for (const row of rows) {
     const review = reviews.get(row.review_id) ?? {
@@ -176,10 +189,21 @@ function reviewsForBranch(database: Database, project: string, branch: string): 
       patchId: row.patch_id,
       pathSet: row.path_set,
       lensIdentities: [],
+      lenses: [],
       findings: [],
     }
     if (!review.lensIdentities.includes(row.lens)) {
       ;(review.lensIdentities as string[]).push(row.lens)
+    }
+    if (!review.lenses.some((lens) => lens.id === row.lens_id)) {
+      ;(review.lenses as { id: number; graded: boolean }[]).push({
+        id: row.lens_id,
+        graded:
+          row.reproduced !== null &&
+          row.coverage !== null &&
+          row.limits !== null &&
+          row.overlap !== null,
+      })
     }
     if (
       row.finding_id !== null &&

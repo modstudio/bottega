@@ -97,7 +97,7 @@ export type DocWriteContext = {
   /** The caller already decided the complete next canon set as one set. */
   canonRemovalDecision?: 'already-decided-next-set'
   expectedRevision?: string
-  /** A CLI-selected worktree for project-subject canon validation. */
+  /** A CLI-selected worktree for validating a project-subject document write. */
   canonTree?: CanonWriteTree
   /** Collects repository facts for canon validation. */
   collectCanonLintInput?: CanonLintInputCollector

@@ -13,6 +13,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { reviewsForTriage } from '../review/review-group.ts'
 import {
   type ArtifactRef,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -320,41 +321,36 @@ function gatherReview(
     throw new Error(
       `--review ${id} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
     )
-  const round = d
-    .query<
-      { id: number; open_findings: number; total_lenses: number; ungraded_lenses: number },
-      [string, string | null, string | null, string | null]
-    >(
-      `SELECT r.id,
-              COUNT(DISTINCT CASE WHEN rf.disposition IS NULL THEN rf.id END) AS open_findings,
-              COUNT(DISTINCT rl.id) AS total_lenses,
-              COUNT(DISTINCT CASE
-                WHEN rl.reproduced IS NULL OR rl.coverage IS NULL OR rl.limits IS NULL OR rl.overlap IS NULL
-                THEN rl.id END) AS ungraded_lenses
-         FROM review r
-         JOIN review_lens rl ON rl.review_id=r.id
-         JOIN run ru ON ru.id=rl.run_id
-         LEFT JOIN review_finding rf ON rf.review_id=r.id
-        WHERE ru.repo=? AND ru.branch IS ?
-          AND r.patch_id IS ? AND r.path_set IS ?
-        GROUP BY r.id ORDER BY r.id`,
-    )
-    .all(identity.project, bound.branch, review.patch_id, review.path_set)
+  const branch = identity.branch ?? bound.branch
+  const grouped = reviewsForTriage(
+    d,
+    {
+      project: identity.project,
+      branch: branch ?? '',
+      patchId: review.patch_id ?? '',
+      pathSet: review.path_set === null ? [] : (JSON.parse(review.path_set) as string[]),
+    },
+    id,
+  )
   const reviews =
     review.patch_id === null || review.path_set === null
-      ? round.filter(({ id: reviewId }) => reviewId === id)
-      : round
+      ? grouped.branchReviews.filter(({ reviewId }) => reviewId === id)
+      : grouped.reviews
   const unfinishedReviewIds = reviews
     .filter(
-      ({ open_findings, total_lenses, ungraded_lenses }) =>
-        open_findings > 0 || total_lenses === 0 || ungraded_lenses > 0,
+      ({ findings, lenses }) =>
+        findings.some(({ disposition }) => disposition === null) ||
+        lenses.length === 0 ||
+        lenses.some(({ graded }) => !graded),
     )
-    .map(({ id: reviewId }) => reviewId)
+    .map(({ reviewId }) => reviewId)
   return {
     id,
-    allFindingsDisposed: reviews.every(({ open_findings }) => open_findings === 0),
+    allFindingsDisposed: reviews.every(({ findings }) =>
+      findings.every(({ disposition }) => disposition !== null),
+    ),
     allLensesGraded: reviews.every(
-      ({ total_lenses, ungraded_lenses }) => total_lenses > 0 && ungraded_lenses === 0,
+      ({ lenses }) => lenses.length > 0 && lenses.every(({ graded }) => graded),
     ),
     ...(unfinishedReviewIds.length ? { unfinishedReviewIds } : {}),
   }

@@ -376,6 +376,41 @@ test('a review matches when a lens run carries the workflow key on another branc
   expect(gather(d, { review: 1 }).review?.id).toBe(1)
 })
 
+test('a launch-key-bound review uses its cursor branch review round', () => {
+  const d = database()
+  const namedRun = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-977',
+    branch: 'other-branch',
+  })
+  const siblingRun = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-977',
+    branch: 'DEV-977-work',
+  })
+  const project = projectId(d, 'fixture')
+  d.query(
+    `INSERT INTO review (id,recorded_at,project_id,patch_id,path_set) VALUES
+      (1,'2026-09-01',?,'same-patch','["src/change.ts"]'),
+      (2,'2026-09-01',?,'same-patch','["src/change.ts"]')`,
+  ).run(project, project)
+  const insertLens = d.query(
+    `INSERT INTO review_lens
+      (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+       reproduced,coverage,limits,overlap)
+     VALUES (?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+  )
+  insertLens.run(1, namedRun, 'all', 'adequate', 'named', 'unique')
+  insertLens.run(2, siblingRun, null, null, null, null)
+
+  expect(gather(d, { review: 1 }).review).toEqual({
+    id: 1,
+    allFindingsDisposed: true,
+    allLensesGraded: false,
+    unfinishedReviewIds: [2],
+  })
+})
+
 test('a foreign gate run is refused and a matching gate run is allowed', () => {
   const d = database()
   const foreign = insertRun(d, {

@@ -68,7 +68,7 @@ export const mcpModules: McpModule[] = [
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon.ts',
-    '../doc/doc-canon-tree.ts',
+    '../doc/doc-write-tree.ts',
     '../doc/docs.ts',
     '../worker-store-write.ts',
     './mcp-doc-write.ts',

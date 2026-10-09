@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
-import type { SelectedCanonWriteTree } from '../doc/doc-canon-tree.ts'
+import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
   consumeDoc,
   getDoc,
@@ -47,16 +47,16 @@ async function withMcpDocWriteRemedy<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
-type CanonTreeSelector = (input: {
+type DocWriteTreeSelector = (input: {
   scope: string
   subject: string | null
   cwd?: string
-}) => SelectedCanonWriteTree | undefined
+}) => SelectedDocWriteTree | undefined
 
 export function registerDocTools(
   server: McpServer,
   ports: {
-    selectCanonWriteTree: CanonTreeSelector
+    selectDocWriteTree: DocWriteTreeSelector
     collectCanonLintInput: CanonLintInputCollector
   },
 ): void {
@@ -200,7 +200,7 @@ export function registerDocTools(
     }) => {
       const refusal = decideMcpDocWrite('set_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = ports.selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
+      const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
       const doc = await withMcpDocWriteRemedy(() =>
         setDoc({
           scope,
@@ -288,7 +288,7 @@ export function registerDocTools(
     async ({ scope, subject, slug, reason, author, expected_revision, cwd }) => {
       const refusal = decideMcpDocWrite('remove_doc', scope)
       if (refusal) throw new Error(refusal)
-      const canonTree = ports.selectCanonWriteTree({ scope, subject: subject ?? null, cwd })
+      const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
         removeDoc(scope, subject ?? null, slug, {
           reason,

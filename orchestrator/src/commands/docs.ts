@@ -3,8 +3,8 @@
 import { type Command, Option } from 'commander'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
-import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import { docCommand } from '../doc/doc-commands.ts'
+import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
@@ -79,7 +79,7 @@ export function register(program: Command): void {
             process.exitCode = code
           },
         },
-        { selectCanonWriteTree, collectCanonLintInput },
+        { selectDocWriteTree, collectCanonLintInput },
       )
     })
 
