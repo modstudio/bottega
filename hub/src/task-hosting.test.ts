@@ -513,6 +513,7 @@ describe('hosted-only task safety', () => {
         targetSpaceTaskMirror: true,
         targetSpaceIntervalEvidence: true,
         intervalRecordId: true,
+        dayRecordId: true,
       },
     })
   })

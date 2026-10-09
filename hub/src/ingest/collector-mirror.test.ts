@@ -231,6 +231,11 @@ test('a refused tracker mirror still writes locally and retries the persisted ta
 })
 
 test('git seeding mirrors two project destinations while the active space is a third', async () => {
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO day (record_id,day,collected_at) VALUES (?,?,?)`)
+      .run('11111111-1111-4111-8111-111111111111', '2026-09-24', '2026-09-24T00:00:00.000Z'),
+  )
   const scanned: string[] = []
   const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     scanned.push(command[2]!)
@@ -265,6 +270,9 @@ test('git seeding mirrors two project destinations while the active space is a t
     )
     .get()!.record_id
   expect(mirrored.get('STO-2')).toEqual([stopalId, stopalId])
+  expect(
+    db().query<{ record_id: string }, []>(`SELECT record_id FROM day WHERE day='2026-09-24'`).get(),
+  ).toEqual({ record_id: '11111111-1111-4111-8111-111111111111' })
   expect(new Set(mirroredTargets)).toEqual(new Set(['space-alpha', 'space-stopal']))
   expect(mirroredTargets).not.toContain('space-active')
   expect(scanned).toEqual([

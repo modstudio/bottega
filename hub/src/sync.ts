@@ -5,6 +5,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence, IntervalKey } from './hosted-evidence.ts'
 import { projects } from './projects.ts'
 import {
+  assertDayRecordId,
   assertIntervalRecordId,
   assertTargetSpaceIntervalEvidence,
   hostedSignedInUserId,
@@ -24,7 +25,6 @@ type LedgerRow = {
   content_hash: string
   destination_space_id: string | null
 }
-type DiffLedgerRow = Pick<LedgerRow, 'local_key' | 'content_hash'>
 type IntervalEntry = { key: string; row: IntervalEvidence }
 type RoutedIntervalEntry = IntervalEntry & { project_name: string | null }
 type IntervalDelivery = {
@@ -46,7 +46,7 @@ export async function signedInRecordUserId(
   return hostedSignedInUserId({ baseUrl, token, fetch: options.fetch })
 }
 
-export type SyncTablePlan<T> = {
+type SyncTablePlan<T> = {
   changed: Array<{ key: string; hash: string; row: T }>
   deleted: string[]
   deleteSkipped: boolean
@@ -55,24 +55,6 @@ export type SyncTablePlan<T> = {
 
 export function contentHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
-}
-
-export function diffRows<T>(
-  rows: Array<{ key: string; row: T }>,
-  ledger: DiffLedgerRow[],
-  allowDeletes = true,
-): SyncTablePlan<T> {
-  const known = new Map(ledger.map((entry) => [entry.local_key, entry.content_hash]))
-  const current = new Set(rows.map((entry) => entry.key))
-  return {
-    changed: rows
-      .map((entry) => ({ ...entry, hash: contentHash(entry.row) }))
-      .filter((entry) => known.get(entry.key) !== entry.hash),
-    deleted:
-      rows.length > 0 && allowDeletes ? [...known.keys()].filter((key) => !current.has(key)) : [],
-    deleteSkipped: allowDeletes && rows.length === 0 && known.size > 0,
-    localCount: rows.length,
-  }
 }
 
 export function batches<T>(rows: T[], size = 500): T[][] {
@@ -95,14 +77,31 @@ function localIntervals() {
 
 function localDays() {
   const rows = db()
-    .query<DayEvidence, []>(
-      `SELECT day, claude_tokens, cache_read, messages, tasks, canon_tokens, other_tokens,
+    .query<DayEvidence & { id: string }, []>(
+      `SELECT record_id AS id, day, claude_tokens, cache_read, messages, tasks, canon_tokens, other_tokens,
               commits, files, lines_product, lines_test, lines_docs, lines_config,
               lines_generated, collected_at
          FROM day ORDER BY day`,
     )
     .all()
-  return rows.map((row) => ({ key: row.day, row }))
+  return rows.map((row) => ({ key: row.id, row }))
+}
+
+function dayContentHash(row: DayEvidence): string {
+  const { id: _id, collected_at: _collectedAt, ...figures } = row
+  return contentHash(figures)
+}
+
+function diffDays(rows: ReturnType<typeof localDays>, acknowledgements: LedgerRow[]) {
+  const known = new Map(acknowledgements.map((entry) => [entry.local_key, entry.content_hash]))
+  return {
+    changed: rows
+      .map((entry) => ({ ...entry, hash: dayContentHash(entry.row) }))
+      .filter((entry) => known.get(entry.key) !== entry.hash),
+    deleted: [],
+    deleteSkipped: false,
+    localCount: rows.length,
+  }
 }
 
 function ledger(table: string): LedgerRow[] {
@@ -376,7 +375,7 @@ export async function syncEvidence(
   if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
   const intervalRows = localIntervals()
   const intervalLedger = ledger('interval')
-  const day = diffRows(localDays(), ledger('day'), false)
+  const day = diffDays(localDays(), ledger('day'))
   const result: SyncResult = {
     interval: {
       changed: 0,
@@ -400,6 +399,7 @@ export async function syncEvidence(
   const identity = await hostedTaskIdentity(requestOptions)
   assertTargetSpaceIntervalEvidence(identity)
   assertIntervalRecordId(identity)
+  if (day.changed.length > 0) assertDayRecordId(identity)
   const interval = intervalDeliveries(
     intervalRows,
     intervalLedger,

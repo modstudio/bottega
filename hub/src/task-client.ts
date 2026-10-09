@@ -22,6 +22,7 @@ export type HostedTaskIdentity = {
     targetSpaceTaskMirror?: boolean
     targetSpaceIntervalEvidence?: boolean
     intervalRecordId?: boolean
+    dayRecordId?: boolean
   }
 }
 
@@ -53,6 +54,13 @@ export function assertIntervalRecordId(identity: HostedTaskIdentity) {
     throw new Error(
       `hosted hub does not advertise interval record id support; ${INTERVAL_RECORD_ID_REMEDY}`,
     )
+}
+
+const DAY_RECORD_ID_REMEDY = 'deploy the hub server at or after the day UUID identity change'
+
+export function assertDayRecordId(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.dayRecordId !== true)
+    throw new Error(`hosted hub does not advertise day record id support; ${DAY_RECORD_ID_REMEDY}`)
 }
 
 function assertHostedTaskWriteConfigured(options: { baseUrl?: string } = {}) {
@@ -338,6 +346,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).intervalRecordId === true,
+      dayRecordId:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).dayRecordId === true,
     },
   }
 }
