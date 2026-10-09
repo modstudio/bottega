@@ -146,10 +146,11 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
     CREATE TABLE hub_task(id uuid PRIMARY KEY, space_id uuid NOT NULL);
     CREATE TABLE hub_note(
       id uuid PRIMARY KEY, space_id uuid NOT NULL, project_name text NOT NULL, number bigint NOT NULL,
-      promoted_task_id uuid, UNIQUE(space_id,project_name,number)
+      promoted_task_id uuid, updated_at timestamptz NOT NULL, UNIQUE(space_id,project_name,number)
     );
     CREATE TABLE hub_note_acknowledgement(
-      id uuid PRIMARY KEY, space_id uuid NOT NULL, note_id uuid NOT NULL
+      id uuid PRIMARY KEY, space_id uuid NOT NULL, note_id uuid NOT NULL,
+      updated_at timestamptz NOT NULL
     );
     INSERT INTO space VALUES
       ('01990000-0000-7000-8000-000000000001','${PLATFORM_SLUG}'),
@@ -158,9 +159,9 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
       ('01990000-0000-7000-8000-000000000011','01990000-0000-7000-8000-000000000001','stopal'),
       ('01990000-0000-7000-8000-000000000012','01990000-0000-7000-8000-000000000002','stopal');
     INSERT INTO hub_note VALUES
-      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,NULL);
+      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001','stopal',7,NULL,'2026-01-01');
     INSERT INTO hub_note_acknowledgement VALUES
-      ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000101');
+      ('01990000-0000-7000-8000-000000000201','01990000-0000-7000-8000-000000000001','01990000-0000-7000-8000-000000000101','2026-01-01');
   `)
   const move = migration('20261009150000_dev_1212_move_stopal_notes')
   await database.exec(move)
@@ -184,6 +185,14 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
   ])
   expect(
     (
+      await database.query<{ advanced: boolean }>(
+        `SELECT updated_at > '2026-01-01'::timestamptz advanced FROM hub_note UNION ALL
+         SELECT updated_at > '2026-01-01'::timestamptz advanced FROM hub_note_acknowledgement`,
+      )
+    ).rows,
+  ).toEqual([{ advanced: true }, { advanced: true }])
+  expect(
+    (
       await database.query<{ next: number }>(
         `SELECT next::int FROM seq WHERE project_id='01990000-0000-7000-8000-000000000012'`,
       )
@@ -192,8 +201,8 @@ test('stopal note move preserves identities, is idempotent, and refuses collisio
 
   await database.exec(`
     INSERT INTO hub_note VALUES
-      ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000001','stopal',9,NULL),
-      ('01990000-0000-7000-8000-000000000103','01990000-0000-7000-8000-000000000002','stopal',9,NULL);
+      ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000001','stopal',9,NULL,'2026-01-01'),
+      ('01990000-0000-7000-8000-000000000103','01990000-0000-7000-8000-000000000002','stopal',9,NULL,'2026-01-01');
   `)
   await expect(database.exec(move)).rejects.toThrow('destination project-number collision')
   expect(

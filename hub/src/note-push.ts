@@ -43,19 +43,32 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
   const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(requestOptions)
   const partitioned = partitionProjectRows(notes, projects(), identity)
-  const failures = [...partitioned.refusals].map(
-    ([project, refusal]) => `${project}: ${refusal.reason}`,
-  )
-  const hosted = { note: 0, note_acknowledgement: 0 }
-  let match = true
-  const noteById = new Map(notes.map((note) => [note.id, note]))
   const counters = db()
     .query<{ project: string; next: number }, []>(
       'SELECT project,next FROM note_counter ORDER BY project',
     )
     .all()
+  const partitionedCounters = partitionProjectRows(
+    counters.map((counter) => ({ ...counter, project_name: counter.project })),
+    projects(),
+    identity,
+  )
+  const refusals = new Map<string, string>()
+  for (const [project, refusal] of partitioned.refusals)
+    refusals.set(project, `${project}: ${refusal.reason}`)
+  for (const [project, refusal] of partitionedCounters.refusals)
+    refusals.set(project, `${project}: ${refusal.reason}`)
+  const failures = [...refusals.values()]
+  const hosted = { note: 0, note_acknowledgement: 0 }
+  let match = true
+  const noteById = new Map(notes.map((note) => [note.id, note]))
 
-  for (const [spaceId, selectedNotes] of partitioned.destinations) {
+  const destinationSpaceIds = new Set([
+    ...partitioned.destinations.keys(),
+    ...partitionedCounters.destinations.keys(),
+  ])
+  for (const spaceId of destinationSpaceIds) {
+    const selectedNotes = partitioned.destinations.get(spaceId) ?? []
     const selectedIds = new Set(selectedNotes.map((note) => note.id))
     const acknowledgements = acknowledgementRows
       .filter((row) => selectedIds.has(row.note_record_id as string))
@@ -70,8 +83,9 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
         updated_at: row.acknowledged_at as string,
         deleted_at: null,
       }))
-    const selectedProjects = new Set(selectedNotes.map((note) => note.project))
-    const selectedCounters = counters.filter((counter) => selectedProjects.has(counter.project))
+    const selectedCounters = (partitionedCounters.destinations.get(spaceId) ?? []).map(
+      ({ project, next }) => ({ project, next }),
+    )
     const targeted = { ...requestOptions, recordSpace: spaceId }
     try {
       for (const batch of chunks(selectedNotes)) await hostedMirrorNotes({ notes: batch }, targeted)

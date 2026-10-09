@@ -45,3 +45,37 @@ test('note push sends each space only that space projects notes', async () => {
     { space: 'space-gamma', projects: ['gamma'] },
   ])
 })
+
+test('note push sends a project counter when the project has no notes', async () => {
+  writeTransaction((conn) => {
+    conn.query(`INSERT INTO note_counter(project,next) VALUES ('gamma',7)`).run()
+  })
+  const raises: Array<{ space: string | null; counters: unknown[] }> = []
+  const fetch = async (input: string, init?: RequestInit) => {
+    const url = new URL(input)
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-a',
+        memberships: [
+          { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-gamma', slug: 'declared-gamma-space' },
+        ],
+        capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+      })
+    if (url.pathname === '/v1/notes/counts')
+      return Response.json({ note: 0, note_acknowledgement: 0 })
+    const body = JSON.parse(String(init?.body)) as { raiseProjects?: unknown[] }
+    if (body.raiseProjects)
+      raises.push({
+        space: new Headers(init?.headers).get('x-record-space'),
+        counters: body.raiseProjects,
+      })
+    return Response.json({ upserted: 0, noteIds: [] })
+  }
+
+  await expect(
+    pushNotes({ baseUrl: 'https://hub.example.test', token: 'session', fetch }),
+  ).resolves.toMatchObject({ local: { note: 0 }, match: true })
+  expect(raises).toEqual([{ space: 'space-gamma', counters: [{ project: 'gamma', next: 7 }] }])
+})

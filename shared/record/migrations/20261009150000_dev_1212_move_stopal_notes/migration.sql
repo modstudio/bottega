@@ -43,14 +43,14 @@ BEGIN
   END IF;
 
   UPDATE hub_note_acknowledgement acknowledgement
-  SET space_id = destination_space
+  SET space_id = destination_space, updated_at = now()
   WHERE acknowledgement.space_id = source_space
     AND acknowledgement.note_id IN (
       SELECT id FROM hub_note WHERE space_id = source_space AND project_name = 'stopal'
     );
 
   UPDATE hub_note
-  SET space_id = destination_space
+  SET space_id = destination_space, updated_at = now()
   WHERE space_id = source_space AND project_name = 'stopal';
 
   SELECT max(number) INTO highest_number

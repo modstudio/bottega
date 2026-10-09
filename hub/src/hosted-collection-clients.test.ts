@@ -171,3 +171,58 @@ test('note pull isolates spaces and fetches a missing note before its acknowledg
       .get('collect.hosted-notes.cursor.space-gamma')?.value,
   ).toBe('space-gamma-after')
 })
+
+test('note pull applies a deleted acknowledgement without fetching its absent note', async () => {
+  const noteId = '01990000-0000-7000-8000-000000000411'
+  const acknowledgementId = '01990000-0000-7000-8000-000000000412'
+  const at = '2026-10-09T12:00:00.000Z'
+  let noteFetches = 0
+  const fetch = async (input: string, init?: RequestInit) => {
+    const url = new URL(input)
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-a',
+        memberships: [
+          { spaceId: 'space-a', slug: 'active' },
+          { spaceId: 'space-gamma', slug: 'declared-gamma-space' },
+        ],
+        capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+      })
+    if (url.pathname === `/v1/notes/${noteId}`) {
+      noteFetches += 1
+      return Response.json({ error: 'not found' }, { status: 404 })
+    }
+    const space = new Headers(init?.headers).get('x-record-space')
+    return Response.json({
+      notes: [],
+      acknowledgements:
+        space === 'space-a'
+          ? [
+              {
+                id: acknowledgementId,
+                note_id: noteId,
+                project_name: 'workshop',
+                session_id: 'session-1',
+                acknowledged_at: at,
+                sightings: 1,
+                created_at: at,
+                updated_at: at,
+                deleted_at: at,
+              },
+            ]
+          : [],
+      projectCounters: [],
+      cursor: `${space}-after-deleted`,
+    })
+  }
+
+  await pullHostedNotes({ baseUrl: 'https://hub.example.test', token: 'session', fetch })
+
+  expect(noteFetches).toBe(0)
+  expect(
+    db()
+      .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+      .get('collect.hosted-notes.cursor.space-a')?.value,
+  ).toBe('space-a-after-deleted')
+})

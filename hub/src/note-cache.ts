@@ -112,6 +112,7 @@ async function completeAcknowledgementNotes(
 ) {
   const incoming = new Set(changes.notes.map((note) => note.id))
   for (const acknowledgement of changes.acknowledgements) {
+    if (acknowledgement.deleted_at) continue
     const present =
       incoming.has(acknowledgement.note_id) ||
       Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id))
