@@ -81,14 +81,6 @@ export function rulingFileOfferLines(input: {
   return input.questionIds.map(rulingFileHint)
 }
 
-export function parseFiledNoteId(output: string): number {
-  const match = output.match(/^note (\d+) filed/m)
-  if (!match) {
-    throw new Error(`hub note new did not report a note id; inspect the output:\n${output}`)
-  }
-  return Number(match[1])
-}
-
 export function filedDocRef(id: number, revision: string | null): string {
   return revision ? `${id}@${revision}` : String(id)
 }

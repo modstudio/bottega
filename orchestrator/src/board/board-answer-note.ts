@@ -1,11 +1,11 @@
-import { fileNote } from '../mcp/hub-notes.ts'
+import { fileNote, hubNoteLabel } from '../mcp/hub-notes.ts'
 
 const BOARD_ANSWER_NOTE_BODY_MAX_CHARS = 1_000
 
 export type AnswerNoteFiler = (
   input: { text: string; new: true },
   options: { cwd: string },
-) => Promise<{ noteId: number | null; recordId?: string | null }>
+) => Promise<{ noteRecordId: string | null; noteLabel: string | null }>
 
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
 
@@ -27,3 +27,5 @@ export function acceptedAnswerNoteText(input: {
 }
 
 export const fileAcceptedAnswerNote: AnswerNoteFiler = (input, options) => fileNote(input, options)
+
+export const resolveAcceptedAnswerNoteLabel = hubNoteLabel

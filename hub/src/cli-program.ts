@@ -21,23 +21,7 @@ import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
-import {
-  acknowledgeNote,
-  createNote,
-  curateNotes,
-  curatorEnabled,
-  dropNote,
-  listActionableNotes,
-  listNotes,
-  mergeNote,
-  noteSessionId,
-  parseExplicitNoteAnchor,
-  resolveNoteReference,
-  setCuratorEnabled,
-  staleNotes,
-} from './note.ts'
-import { promoteNoteCommand } from './note-promote-cli.ts'
-import { pushNotes } from './note-push.ts'
+import { NOTE_USAGE, noteHelpRequested, runNoteCommand } from './note-cli.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
@@ -93,26 +77,20 @@ const flag = (name: string) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
-const flags = (name: string) =>
-  argv.flatMap((value, index) =>
-    value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
-  )
 const has = (name: string) => argv.includes(`--${name}`)
 const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
 const hubHelpRequested = () => {
   if (cmd === 'task') return taskHelpRequested(argv.slice(1))
+  if (cmd === 'note') return noteHelpRequested(argv.slice(1))
   if (isHelpToken(cmd) || argv[1] === 'help') return true
   const valueFlags = new Set([
-    '--area',
     '--hours',
     '--only',
     '--parent',
     '--port',
     '--project',
-    '--reason',
     '--role',
-    '--same-as',
     '--session',
     '--since',
     '--status',
@@ -189,16 +167,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
 
   ${TASK_USAGE}
 
-  hub note new "<text>" [--same-as ID|--new] [--area AREA]
-  hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
-  hub note same <ID> <ID>
-  hub note keep <ID>...
-  hub note promote <ID>
-  hub note drop <ID> --reason "..."
-  hub note stale              mark vanished anchors and reap eligible notes
-  hub note curate [--scheduled]
-  hub note curator [--enable|--disable]
-  hub note push [--dry-run]   migrate and verify the local note cache
+  ${NOTE_USAGE}
 
   hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly
                               --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]
@@ -638,165 +607,6 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   throw new Error(`unknown task command\nvalid syntax:\n  ${TASK_USAGE}`)
 }
 
-function explicitNoteAnchor(): Parameters<typeof createNote>[0]['anchor'] {
-  const value = flag('anchor-json')
-  return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
-}
-
-async function note() {
-  const sub = argv[1]
-  const reference = (value: string) => resolveNoteReference(value, projectOf(process.cwd()))
-  refuseAmbiguousNoteVerb(sub)
-  if (sub === 'push') return pushNoteCache()
-  if (sub === 'list') {
-    if (argv[2] && !argv[2]!.startsWith('--')) {
-      throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
-    }
-    if (has('actionable') && has('kept'))
-      throw new Error('--actionable and --kept are mutually exclusive')
-    const sessions = flags('session')
-    if (has('kept') && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
-    if (has('kept') && !sessions.length)
-      throw new Error('hub note list --kept requires --session ID or a session environment')
-    const session = sessions.length ? sessions : undefined
-    const rows = has('actionable')
-      ? listActionableNotes({ project: flag('project'), session })
-      : listNotes({ project: flag('project'), stale: has('stale'), session, kept: has('kept') })
-    if (has('json')) console.log(JSON.stringify(rows))
-    else if (!rows.length) console.log('no notes')
-    else
-      for (const row of rows) {
-        console.log(
-          `${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`,
-        )
-      }
-    return
-  }
-  if (sub === 'keep') {
-    const ids = argv.slice(2).filter((value) => !value.startsWith('--'))
-    if (!ids.length) throw new Error('hub note keep <id>...')
-    const session = noteSessionId()
-    if (!session) throw new Error('hub note keep requires a session environment')
-    for (const id of ids) {
-      const result = await acknowledgeNote(reference(id), session)
-      console.log(
-        `note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`,
-      )
-    }
-    return
-  }
-  if (sub === 'same') {
-    const row = await mergeNote(reference(argv[2] ?? ''), reference(argv[3] ?? ''))
-    console.log(`note ${row.id} now has ${row.sightings} sightings`)
-    return
-  }
-  if (sub === 'promote') {
-    const row = await promoteNoteCommand(reference(argv[2] ?? ''), flag('task'), has('task'))
-    console.log(`${row.promoted_task}`)
-    return
-  }
-  if (sub === 'drop') {
-    const reason = flag('reason')
-    if (!reason) throw new Error('hub note drop <id> --reason "..."')
-    const row = await dropNote(reference(argv[2] ?? ''), reason)
-    console.log(`note ${row.id} dropped: ${row.stale_reason}`)
-    return
-  }
-  if (sub === 'stale') {
-    const result = await staleNotes()
-    for (const row of result.reasons) console.log(`note ${row.id}: ${row.reason}`)
-    console.log(`${result.marked} marked stale; ${result.deleted} deleted`)
-    return
-  }
-  if (sub === 'curate') {
-    const results = await curateNotes(has('scheduled'))
-    if (has('scheduled') && !curatorEnabled()) {
-      console.log('note curator is disabled')
-      return
-    }
-    for (const result of results) console.log(`${result.project}: ${result.result}`)
-    return
-  }
-  if (sub === 'curator') {
-    if (has('enable') === has('disable')) {
-      console.log(`note curator is ${curatorEnabled() ? 'enabled' : 'disabled'}`)
-      return
-    }
-    console.log(`note curator ${setCuratorEnabled(has('enable')) ? 'enabled' : 'disabled'}`)
-    return
-  }
-  if (sub !== 'new') {
-    throw new Error(
-      `hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`,
-    )
-  }
-  const text = argv[2] ?? ''
-  const same = flag('same-as')
-  let result = await createNote({
-    text,
-    area: flag('area'),
-    sameAs: same ? reference(same) : undefined,
-    forceNew: has('new'),
-    anchor: explicitNoteAnchor(),
-  })
-  if (!result.note) {
-    const lines = result.candidates.map(
-      (candidate) => `${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`,
-    )
-    if (!process.stdin.isTTY) {
-      throw new Error(
-        `possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <id> or --new.`,
-      )
-    }
-    console.log(`possible duplicate notes:\n${lines.join('\n')}`)
-    const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
-    result = /^\d+$/.test(answer)
-      ? await createNote({ text, area: flag('area'), sameAs: reference(answer) })
-      : answer === 'new'
-        ? await createNote({ text, area: flag('area'), forceNew: true })
-        : result
-    if (!result.note) throw new Error('note not filed')
-  }
-  for (const candidate of result.candidates) {
-    console.log(`near ${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
-  }
-  for (const line of noteFiledOutput(result.note)) console.log(line)
-}
-
-export function noteFiledOutput(note: {
-  id: number
-  sightings: number
-  record_id: string | null
-}): string[] {
-  return [
-    `note ${note.id} filed; ${note.sightings} sighting${note.sightings === 1 ? '' : 's'}`,
-    ...(note.record_id ? [`record ${note.record_id}`] : []),
-  ]
-}
-
-function refuseAmbiguousNoteVerb(sub: string | undefined): void {
-  const verbs = new Set([
-    'list',
-    'same',
-    'keep',
-    'promote',
-    'drop',
-    'stale',
-    'curate',
-    'curator',
-    'push',
-  ])
-  if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
-    throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
-  }
-}
-
-async function pushNoteCache(): Promise<void> {
-  const result = await pushNotes({ dryRun: has('dry-run') })
-  console.log(JSON.stringify(result, null, 2))
-  if (result.match === false) process.exitCode = 1
-}
-
 /**
  * Every command's errors are the caller's message, not a stack trace.
  *
@@ -809,7 +619,7 @@ async function pushNoteCache(): Promise<void> {
  */
 try {
   if (hubHelpRequested()) {
-    console.log(cmd === 'task' ? TASK_USAGE : USAGE)
+    console.log(cmd === 'task' ? TASK_USAGE : cmd === 'note' ? NOTE_USAGE : USAGE)
     process.exit(0)
   }
 
@@ -1018,7 +828,7 @@ try {
       await task(taskArguments)
       break
     case 'note':
-      await note()
+      await runNoteCommand(argv)
       break
     case 'report':
       await runReportCommand(argv)

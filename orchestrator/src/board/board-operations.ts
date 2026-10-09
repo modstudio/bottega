@@ -16,7 +16,11 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
-import { acceptedAnswerNoteText, fileAcceptedAnswerNote } from './board-answer-note.ts'
+import {
+  acceptedAnswerNoteText,
+  fileAcceptedAnswerNote,
+  resolveAcceptedAnswerNoteLabel,
+} from './board-answer-note.ts'
 import { BOARD_CLAIM_DEFAULT_MS } from './board-claim-policy.ts'
 import {
   type ClaimView,
@@ -81,7 +85,8 @@ type BoardMessageResult = {
   acceptedReplyId: string | null
   acceptedBy: string | null
   acceptedAt: string | null
-  noteId: string | null
+  noteRecordId: string | null
+  noteLabel: string | null
   notePendingError: string | null
   revision: string | null
   scopeProjectIds: string[] | null
@@ -171,7 +176,8 @@ function localPostResult(value: ReturnType<typeof postNotice>): BoardPostResult 
 }
 
 function hostedMessage(value: HostedBoardMessage): BoardMessageResult {
-  return { ...value, text: null }
+  const { noteId, ...message } = value
+  return { ...message, noteRecordId: noteId, noteLabel: null, text: null }
 }
 
 function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
@@ -181,7 +187,8 @@ function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
       id: String(value.root.id),
       threadRootId: null,
       acceptedReplyId: stringId(value.root.acceptedReplyId),
-      noteId: stringId(value.root.noteId),
+      noteRecordId: value.root.noteRecordId,
+      noteLabel: value.root.noteLabel,
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
@@ -236,7 +243,8 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
       acceptedReplyId: stringId(row.accepted_reply_id),
       acceptedBy: row.accepted_by,
       acceptedAt: row.accepted_at,
-      noteId: stringId(row.note_id),
+      noteRecordId: row.note_record_id,
+      noteLabel: row.note_label,
       notePendingError: row.note_pending_error,
       revision: null,
       scopeProjectIds: null,
@@ -401,9 +409,18 @@ export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const mode = boardModeForId(id, 'board thread id', c.env)
   const parsed = idForMode(id, mode)
-  return mode === 'local'
-    ? localThread(readThread(parsed as number, c.env, c.clock))
-    : hostedThread(await hostedClient(c).getBoardThread(parsed as string))
+  if (mode === 'local') return localThread(readThread(parsed as number, c.env, c.clock))
+  const thread = hostedThread(await hostedClient(c).getBoardThread(parsed as string))
+  if (thread.root.noteRecordId) {
+    try {
+      thread.root.noteLabel = await resolveAcceptedAnswerNoteLabel(thread.root.noteRecordId, {
+        cwd: c.cwd,
+      })
+    } catch {
+      thread.root.noteLabel = null
+    }
+  }
+  return thread
 }
 
 async function fileHostedNote(
@@ -428,20 +445,30 @@ async function fileHostedNote(
       },
       { cwd: c.cwd },
     )
-    const recordId = 'recordId' in filed ? filed.recordId : null
-    if (typeof recordId !== 'string') throw new Error('filed note has no record id')
+    if (typeof filed.noteRecordId !== 'string' || typeof filed.noteLabel !== 'string')
+      throw new Error('filed note has no identity')
     await client.completeBoardFilingLease(questionId, {
-      noteId: recordId,
+      noteId: filed.noteRecordId,
       authorSession: boardActor(c.env).session,
     })
-    return { noteId: String(filed.noteId), notePendingError: null, retry: null }
+    return {
+      noteRecordId: filed.noteRecordId,
+      noteLabel: filed.noteLabel,
+      notePendingError: null,
+      retry: null,
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     await client.failBoardFilingLease(questionId, {
       error: detail,
       authorSession: boardActor(c.env).session,
     })
-    return { noteId: null, notePendingError: detail, retry: `orch board file-note ${questionId}` }
+    return {
+      noteRecordId: null,
+      noteLabel: null,
+      notePendingError: detail,
+      retry: `orch board file-note ${questionId}`,
+    }
   }
 }
 
@@ -459,7 +486,6 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
       ...value,
       accepted: String(value.accepted),
       questionId: String(value.questionId),
-      noteId: stringId(value.noteId),
     }
   }
   const thread = await hostedClient(c).acceptBoardAnswer(question as string, {
@@ -475,7 +501,7 @@ export async function boardFileNote(questionId: string, inputContext?: Context) 
   const question = idForMode(questionId, mode)
   if (mode === 'local') {
     const result = await fileAnswerNote(question as number, c.env, c.cwd)
-    return { ...result, questionId, noteId: stringId(result.noteId) }
+    return { ...result, questionId }
   }
   return {
     questionId,

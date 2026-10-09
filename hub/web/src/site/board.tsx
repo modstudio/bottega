@@ -80,7 +80,7 @@ export function BoardPage() {
             {`\n`}$ <b>orch note</b> "rate limiter counts retries{`\n`} as new requests"{`\n\n`}
             <span className="c">
               {' '}
-              note 189 filed · 1 sighting{`\n`} anchored: harbor · HBR-205 · rate-limit.ts:64
+              harbor#189 filed · 1 sighting{`\n`} anchored: harbor · HBR-205 · rate-limit.ts:64
               {`\n\n`}
               {'// later, yours to dispose of'}
             </span>

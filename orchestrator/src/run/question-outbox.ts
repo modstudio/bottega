@@ -34,6 +34,8 @@ export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
   'replacement',
   'filedAs',
   'filedRef',
+  'filedRecordId',
+  'filedLabel',
   'filedAt',
   'closedAt',
   'closeReason',
@@ -44,7 +46,7 @@ export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
 ] as const
 export const QUESTION_RECORD_PAYLOAD_CONTRACT = {
   columns: QUESTION_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
+  laterAdded: { filedRecordId: null, filedLabel: null },
 } as const
 
 type QuestionRow = Record<string, unknown> & {
@@ -134,6 +136,8 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     replacement: row.replacement,
     filedAs: row.filed_as,
     filedRef: row.filed_ref,
+    filedRecordId: row.filed_record_id,
+    filedLabel: row.filed_label,
     filedAt: row.filed_at,
     closedAt: row.closed_at,
     closeReason: row.close_reason,

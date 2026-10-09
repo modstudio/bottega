@@ -524,6 +524,20 @@ describe('collection records', () => {
     expect(recordedResult(id).errors.join('\n')).toContain('notes:     71 (near 8, 13)')
   })
 
+  test('orch result lists labels from new worker note events', () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens' })
+    appendRunEvent(id, {
+      ts: new Date().toISOString(),
+      type: 'note',
+      noteRecordId: '01990000-0000-7000-8000-000000000071',
+      noteLabel: 'workshop#71',
+      candidates: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
+    })
+    expect(recordedResult(id).errors.join('\n')).toContain(
+      'notes:     workshop#71 (near workshop#8)',
+    )
+  })
+
   test('orch result exposes degradation and the explicit trust command', () => {
     const id = addRun({ agent: 'grok', job: 'review-lens' })
     db()

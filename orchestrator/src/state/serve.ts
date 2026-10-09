@@ -116,7 +116,7 @@ export function runDetail(id: number, receipt = false) {
     .query(
       `SELECT q.id,q.run_id,q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
-              q.filed_as,q.filed_ref,q.filed_at
+              q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
          FROM question q JOIN run owner ON owner.id=q.run_id
         WHERE owner.id=? OR owner.parent_run_id=? ORDER BY q.id`,
     )

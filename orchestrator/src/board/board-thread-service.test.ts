@@ -31,6 +31,10 @@ function addArchitect(session: string, project: string, clock: number) {
 }
 
 const architect = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
+const filed = (number: number) => ({
+  noteRecordId: `01990000-0000-7000-8000-${String(number).padStart(12, '0')}`,
+  noteLabel: `thread-fixture#${number}`,
+})
 
 test('question replies reach the prior participants but never the replier', () => {
   ensurePostingProject()
@@ -137,7 +141,8 @@ test('acceptance closes a question, persists through filing failure, and retry f
   expect(readThread(question.id, architect('question-asker'), clock + 3).root).toMatchObject({
     state: 'accepted',
     acceptedReplyId: reply.id,
-    noteId: null,
+    noteRecordId: null,
+    noteLabel: null,
     notePendingError: 'hub unavailable',
   })
   expect(() =>
@@ -145,7 +150,7 @@ test('acceptance closes a question, persists through filing failure, and retry f
   ).toThrow(/accepted answer/)
   await expect(
     acceptAnswer(question.id, reply.id, architect('question-asker'), clock + 5, cwd, async () => ({
-      noteId: 99,
+      ...filed(99),
     })),
   ).rejects.toThrow(/acceptance is final/)
   const retried = await fileAnswerNote(
@@ -154,16 +159,16 @@ test('acceptance closes a question, persists through filing failure, and retry f
     cwd,
     async ({ text }) => {
       expect(text).toContain('Choose: The accepted answer')
-      return { noteId: 99 }
+      return filed(99)
     },
   )
-  expect(retried.noteId).toBe(99)
+  expect(retried.noteLabel).toBe('thread-fixture#99')
   await expect(
-    fileAnswerNote(question.id, architect('question-answerer'), cwd, async () => ({ noteId: 100 })),
+    fileAnswerNote(question.id, architect('question-answerer'), cwd, async () => filed(100)),
   ).rejects.toThrow(/question author or operator/)
   await expect(
-    fileAnswerNote(question.id, architect('question-asker'), cwd, async () => ({ noteId: 100 })),
-  ).rejects.toThrow(/already filed note 99/)
+    fileAnswerNote(question.id, architect('question-asker'), cwd, async () => filed(100)),
+  ).rejects.toThrow(/already filed note thread-fixture#99/)
 })
 
 test('only the asker or operator accepts and the reply must belong to the question', async () => {
@@ -192,13 +197,8 @@ test('only the asker or operator accepts and the reply must belong to the questi
     cwd,
   )
   await expect(
-    acceptAnswer(
-      question.id,
-      reply.id,
-      architect('permission-other'),
-      clock + 3,
-      cwd,
-      async () => ({ noteId: 1 }),
+    acceptAnswer(question.id, reply.id, architect('permission-other'), clock + 3, cwd, async () =>
+      filed(1),
     ),
   ).rejects.toThrow(/question author/)
   await expect(
@@ -208,7 +208,7 @@ test('only the asker or operator accepts and the reply must belong to the questi
       architect('permission-asker'),
       clock + 4,
       cwd,
-      async () => ({ noteId: 1 }),
+      async () => filed(1),
     ),
   ).rejects.toThrow(/does not belong/)
 })
@@ -230,7 +230,7 @@ test('accepted threads survive retention while unaccepted expired questions are 
     clock,
     cwd,
   )
-  await acceptAnswer(accepted.id, reply.id, {}, clock, cwd, async () => ({ noteId: 101 }))
+  await acceptAnswer(accepted.id, reply.id, {}, clock, cwd, async () => filed(101))
   const expired = askQuestion(
     { audience: `project:${project}`, title: 'Reap', body: 'Reap this.', expiresMs: 1 },
     {},
@@ -274,7 +274,7 @@ test('a retry while acceptance is filing is refused and files exactly one note',
       filings += 1
       signalStarted()
       await waitForRelease
-      return { noteId: 202 }
+      return filed(202)
     },
   )
   await started
@@ -285,13 +285,13 @@ test('a retry while acceptance is filing is refused and files exactly one note',
       cwd,
       async () => {
         filings += 1
-        return { noteId: 203 }
+        return filed(203)
       },
       clock + 3,
     ),
   ).rejects.toThrow(/filing is in progress.*file-note.*after/)
   release()
-  expect(await accepting).toMatchObject({ noteId: 202, retry: null })
+  expect(await accepting).toMatchObject({ noteLabel: 'thread-fixture#202', retry: null })
   expect(filings).toBe(1)
 })
 
@@ -324,8 +324,12 @@ test('a stale note filing lease can be taken over', async () => {
     question.id,
     architect('stale-asker'),
     cwd,
-    async () => ({ noteId: 204 }),
+    async () => filed(204),
     clock + 3 + BOARD_NOTE_FILING_LEASE_MS,
   )
-  expect(retried).toMatchObject({ noteId: 204, notePendingError: null, retry: null })
+  expect(retried).toMatchObject({
+    noteLabel: 'thread-fixture#204',
+    notePendingError: null,
+    retry: null,
+  })
 })

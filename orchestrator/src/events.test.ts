@@ -290,6 +290,27 @@ describe('vendor event log', () => {
 })
 
 describe('the live log is observation, never outcome', () => {
+  test('new note events round-trip UUIDs and labels while old numeric lines still read', () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
+    appendRunEvent(id, {
+      ts: '2026-10-09T12:00:00.000Z',
+      type: 'note',
+      noteRecordId: '01990000-0000-7000-8000-000000000071',
+      noteLabel: 'workshop#71',
+      candidates: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
+    })
+    appendRunEvent(id, {
+      ts: '2026-10-09T12:01:00.000Z',
+      type: 'note',
+      noteId: 72,
+      candidateIds: [9],
+    })
+    expect(peekRun(id, { events: 2 }).events).toEqual([
+      { type: 'note', noteLabel: 'workshop#71', candidateLabels: ['workshop#8'] },
+      { type: 'note', noteLabel: '72', candidateLabels: ['9'] },
+    ])
+  })
+
   test('an unwritable events path loses the line and throws nothing', async () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')

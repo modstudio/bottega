@@ -69,7 +69,7 @@ function LocalNotesPage() {
                   <TableCell>
                     <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
                     <div className="mt-1 text-xs text-text-muted">
-                      #{note.id} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
+                      {note.label} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
                     </div>
                   </TableCell>
                   <TableCell>{note.project}</TableCell>
@@ -162,7 +162,7 @@ export function HostedNotesPage() {
                     <TableCell>
                       <div className="max-w-xl whitespace-pre-wrap">{note.text}</div>
                       <div className="mt-1 text-xs text-text-muted">
-                        #{note.id} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
+                        {note.label} · {note.last_seen_at.slice(0, 16).replace('T', ' ')}
                       </div>
                       {note.anchors.length ? (
                         <div className="mt-1 text-xs text-text-muted">

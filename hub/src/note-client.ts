@@ -51,23 +51,23 @@ async function request<T>(
 }
 export const hostedCreateNote = (body: unknown, options?: Options) =>
   request<HostedNote>('/v1/notes', 'POST', body, options)
-export const hostedAcknowledgeNote = (number: number, session: string, options?: Options) =>
+export const hostedAcknowledgeNote = (recordId: string, session: string, options?: Options) =>
   request<{
     note: HostedNote
     acknowledgement: HostedAcknowledgement
     alreadyAcknowledged: boolean
-  }>(`/v1/notes/${number}/acknowledgements`, 'POST', { session }, options)
-export const hostedPromoteNote = (number: number, task: string | undefined, options?: Options) =>
+  }>(`/v1/notes/${recordId}/acknowledgements`, 'POST', { session }, options)
+export const hostedPromoteNote = (recordId: string, task: string | undefined, options?: Options) =>
   request<{ note: HostedNote; task: HostedTask | null }>(
-    `/v1/notes/${number}/promote`,
+    `/v1/notes/${recordId}/promote`,
     'POST',
     task ? { task } : {},
     options,
   )
-export const hostedDropNote = (number: number, reason: string, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${number}/drop`, 'POST', { reason }, options)
-export const hostedMergeNotes = (target: number, source: number, options?: Options) =>
-  request<{ note: HostedNote; deleted: number }>(
+export const hostedDropNote = (recordId: string, reason: string, options?: Options) =>
+  request<HostedNote>(`/v1/notes/${recordId}/drop`, 'POST', { reason }, options)
+export const hostedMergeNotes = (target: string, source: string, options?: Options) =>
+  request<{ note: HostedNote; deleted: string }>(
     '/v1/notes/merge',
     'POST',
     { target, source },

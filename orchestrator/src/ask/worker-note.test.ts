@@ -87,13 +87,25 @@ test('worker note file anchors require the same line in the main checkout', () =
 
 test('worker note request lifecycle permits exactly one terminal transition', () => {
   expect(
-    workerNoteTransition('requested', { status: 'filed', noteId: 71, candidateIds: [8] }),
-  ).toMatchObject({ status: 'filed', noteId: 71, candidateIds: '[8]' })
+    workerNoteTransition('requested', {
+      status: 'filed',
+      noteRecordId: '01990000-0000-7000-8000-000000000071',
+      noteLabel: 'workshop#71',
+      candidateNotes: [{ recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' }],
+    }),
+  ).toMatchObject({
+    status: 'filed',
+    noteRecordId: '01990000-0000-7000-8000-000000000071',
+    noteLabel: 'workshop#71',
+    candidateIds: '["01990000-0000-7000-8000-000000000008"]',
+    candidateLabels: '["workshop#8"]',
+  })
   expect(
     workerNoteTransition('requested', {
       status: 'filed',
-      noteId: 71,
-      candidateIds: [],
+      noteRecordId: '01990000-0000-7000-8000-000000000071',
+      noteLabel: 'workshop#71',
+      candidateNotes: [],
       anchorDropped: 'anchor dropped',
     }),
   ).toMatchObject({ status: 'filed', detail: 'anchor dropped' })
@@ -105,7 +117,12 @@ test('worker note request lifecycle permits exactly one terminal transition', ()
     }),
   ).toMatchObject({ status: 'refused', refusalClass: 'filing-refused' })
   expect(() =>
-    workerNoteTransition('filed', { status: 'filed', noteId: 72, candidateIds: [] }),
+    workerNoteTransition('filed', {
+      status: 'filed',
+      noteRecordId: '01990000-0000-7000-8000-000000000072',
+      noteLabel: 'workshop#72',
+      candidateNotes: [],
+    }),
   ).toThrow('already filed')
 })
 

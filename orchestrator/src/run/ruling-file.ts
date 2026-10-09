@@ -24,7 +24,6 @@ import {
 } from './ruling-file-authority.ts'
 import {
   filedDocRef,
-  parseFiledNoteId,
   renderCanonProposalNote,
   renderRulingFileText,
   rulingDocSlug,
@@ -55,7 +54,7 @@ export type RulingFileStores = {
   fileNote: (
     input: { text: string; new: boolean },
     options?: { cwd?: string },
-  ) => Promise<{ output: string }>
+  ) => Promise<{ noteRecordId: string | null; noteLabel: string | null }>
 }
 
 export type FileRulingInput = {
@@ -88,6 +87,8 @@ type QuestionRow = {
   replacement: string | null
   filed_as: string | null
   filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
   filed_at: string | null
   repo: string | null
   cwd: string | null
@@ -157,7 +158,7 @@ function refusal(
   }
   if (decision.code === 'already-filed') {
     return (
-      `question ${row.id} is already filed as ${row.filed_as} at ${row.filed_ref}; ` +
+      `question ${row.id} is already filed as ${row.filed_as} at ${filingDisplay(row)}; ` +
       `inspect that filing rather than filing again`
     )
   }
@@ -206,7 +207,7 @@ function loadQuestion(questionId: number): QuestionRow {
               c.updated_at workflow_updated_at,
               q.question, q.answer,
               q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
-              q.replacement, q.filed_as, q.filed_ref, q.filed_at,
+              q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
               COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
          FROM question q LEFT JOIN run r ON r.id = q.run_id
@@ -239,7 +240,7 @@ async function writeDocFiling(
   row: QuestionRow,
   body: string,
   stores: RulingFileStores,
-): Promise<string> {
+): Promise<{ filed_ref: string; filed_record_id: null; filed_label: null }> {
   const scope = filingScope(input.scope)
   const title = input.title?.trim() || shortRulingTitle(row.question)
   const saved = await stores.writeDoc({
@@ -251,14 +252,18 @@ async function writeDocFiling(
     delivery: 'demand',
     reason: `file ruling ${row.id}`,
   })
-  return filedDocRef(saved.id, saved.revision)
+  return {
+    filed_ref: filedDocRef(saved.id, saved.revision),
+    filed_record_id: null,
+    filed_label: null,
+  }
 }
 
 async function writeCanonProposal(
   row: QuestionRow,
   body: string,
   stores: RulingFileStores,
-): Promise<string> {
+): Promise<{ filed_ref: null; filed_record_id: string; filed_label: string }> {
   if (row.run_id === null && !row.project_path) {
     throw new Error(
       `workflow project ${row.repo ?? 'unknown'} is not registered; register it with orch project add before filing a canon proposal`,
@@ -268,24 +273,50 @@ async function writeCanonProposal(
     { text: renderCanonProposalNote(body), new: true },
     row.cwd ? { cwd: row.cwd } : undefined,
   )
-  return String(parseFiledNoteId(filed.output))
+  if (!filed.noteRecordId || !filed.noteLabel)
+    throw new Error('hub note new did not report a note UUID and label')
+  return { filed_ref: null, filed_record_id: filed.noteRecordId, filed_label: filed.noteLabel }
 }
 
-function recordFiling(row: QuestionRow, requested: FiledRulingKind, filedRef: string, at: string) {
+type FilingReference = {
+  filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
+}
+
+function filingDisplay(row: FilingReference): string {
+  if (row.filed_label)
+    return row.filed_record_id ? `${row.filed_label} (${row.filed_record_id})` : row.filed_label
+  return row.filed_ref ?? 'unknown filing'
+}
+
+function recordFiling(
+  row: QuestionRow,
+  requested: FiledRulingKind,
+  reference: FilingReference,
+  at: string,
+) {
   const changed = db()
     .query(
-      `UPDATE question SET filed_as=?, filed_ref=?, filed_at=?, revision=revision+1
+      `UPDATE question SET filed_as=?, filed_ref=?, filed_record_id=?, filed_label=?,
+         filed_at=?, revision=revision+1
         WHERE id=? AND filed_as IS NULL`,
     )
-    .run(requested, filedRef, at, row.id)
+    .run(
+      requested,
+      reference.filed_ref,
+      reference.filed_record_id,
+      reference.filed_label,
+      at,
+      row.id,
+    )
   if (changed.changes === 1) return
-  const current = db().query('SELECT filed_as, filed_ref FROM question WHERE id=?').get(row.id) as {
-    filed_as: string | null
-    filed_ref: string | null
-  } | null
+  const current = db()
+    .query('SELECT filed_as, filed_ref, filed_record_id, filed_label FROM question WHERE id=?')
+    .get(row.id) as (FilingReference & { filed_as: string | null }) | null
   if (current?.filed_as) {
     throw new Error(
-      `question ${row.id} is already filed as ${current.filed_as} at ${current.filed_ref}; ` +
+      `question ${row.id} is already filed as ${current.filed_as} at ${filingDisplay(current)}; ` +
         `inspect that filing rather than filing again`,
     )
   }
@@ -355,13 +386,13 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     date: at,
     questionId: row.id,
   })
-  const filedRef =
+  const reference =
     requested === 'canon-proposal'
       ? await writeCanonProposal(row, body, stores)
       : await writeDocFiling(input, row, body, stores)
   writeTransaction(() => {
     if (row.run_id !== null) authority = adoptRunMutation(authority!, 'file')
-    recordFiling(row, requested, filedRef, at)
+    recordFiling(row, requested, reference, at)
     if (row.run_id !== null) auditRunMutation(authority!, 'file', `as ${requested}`)
     else
       auditQuestionMutation({
@@ -377,7 +408,9 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   return {
     question_id: row.id,
     filed_as: requested,
-    filed_ref: filedRef,
+    filed_ref: reference.filed_ref,
+    filed_record_id: reference.filed_record_id,
+    filed_label: reference.filed_label,
     filed_at: at,
   }
 }

@@ -7,10 +7,11 @@ import { type FiledNoteAnchor, fileNote } from '../mcp/hub-notes.ts'
 export const WORKER_NOTE_MAX_LENGTH = 1_000
 export const WORKER_NOTE_MAX_FILE_BYTES = 1_000_000
 
-export type WorkerNoteInput = { text: string; file?: string }
+export type WorkerNoteInput = { text: string; file?: string; sameAs?: string }
 export type WorkerNoteFiledResult = {
-  noteId: number
-  candidateIds: number[]
+  noteRecordId: string
+  noteLabel: string
+  candidateNotes: { recordId: string; label: string }[]
   anchorDropped?: string
 }
 
@@ -50,7 +51,9 @@ export function validateWorkerNoteInput(input: WorkerNoteInput): WorkerNoteInput
       `Note text must be at most ${WORKER_NOTE_MAX_LENGTH.toLocaleString('en-US')} Unicode code units.`,
     )
   }
-  if (input.file === undefined) return { text }
+  const sameAs = input.sameAs?.trim()
+  if (input.sameAs !== undefined && !sameAs) throw new Error('same_as must be a note reference.')
+  if (input.file === undefined) return { text, ...(sameAs ? { sameAs } : {}) }
   const file = input.file.trim()
   if (file.length > WORKER_NOTE_MAX_LENGTH) {
     throw new Error(
@@ -68,7 +71,7 @@ export function validateWorkerNoteInput(input: WorkerNoteInput): WorkerNoteInput
   ) {
     throw new Error('File anchor path must stay inside the run tree.')
   }
-  return { text, file: `${match[1]}:${match[2]}` }
+  return { text, file: `${match[1]}:${match[2]}`, ...(sameAs ? { sameAs } : {}) }
 }
 
 export function deriveWorkerNoteAnchor(
@@ -195,14 +198,18 @@ export async function fileWorkerNote(
     decision = stableWorkerNoteFileAnchor(treeFile, mainContent)
   }
   const anchor = deriveWorkerNoteAnchor(run, decision.file)
-  const filed = await fileNote({ text: input.text, new: true }, { cwd: run.tree, anchor })
-  if (!filed.noteId)
-    throw new Error('The note service completed without returning a filed note id.')
+  const filed = await fileNote(
+    input.sameAs ? { text: input.text, same_as: input.sameAs } : { text: input.text, new: true },
+    { cwd: run.tree, anchor },
+  )
+  if (!filed.noteRecordId || !filed.noteLabel)
+    throw new Error('The note service completed without returning a filed note identity.')
   appendRunEvent(run.id, {
     ts: nowIso(),
     type: 'note',
-    noteId: filed.noteId,
-    candidateIds: filed.candidateIds,
+    noteRecordId: filed.noteRecordId,
+    noteLabel: filed.noteLabel,
+    candidates: filed.candidateNotes,
   })
   if (decision.dropped) {
     appendRunEvent(run.id, {
@@ -212,8 +219,9 @@ export async function fileWorkerNote(
     })
   }
   return {
-    noteId: filed.noteId,
-    candidateIds: filed.candidateIds,
+    noteRecordId: filed.noteRecordId,
+    noteLabel: filed.noteLabel,
+    candidateNotes: filed.candidateNotes,
     ...(decision.dropped ? { anchorDropped: decision.dropped } : {}),
   }
 }

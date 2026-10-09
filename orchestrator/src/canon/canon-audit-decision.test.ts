@@ -4,14 +4,14 @@ import { decideCanonAuditNotes, decideCanonAuditRun } from './canon-audit-decisi
 const note = (
   text: string,
   overrides: Partial<{
-    id: number
+    record_id: string
     stale_at: string | null
     stale_reason: string | null
     promoted_task: string | null
     last_seen_at: string
   }> = {},
 ) => ({
-  id: 1,
+  record_id: '01990000-0000-7000-8000-000000000001',
   text,
   stale_at: null,
   stale_reason: null,
@@ -131,13 +131,13 @@ describe('canon audit filing decision', () => {
         [finding()],
         [
           note(existing, {
-            id: 17,
+            record_id: '01990000-0000-7000-8000-000000000017',
             stale_at: '2026-09-24T12:00:00.000Z',
             stale_reason: 'anchor path no longer exists',
             last_seen_at: '2026-09-23T12:00:00.000Z',
           }),
           note(existing, {
-            id: 29,
+            record_id: '01990000-0000-7000-8000-000000000029',
             stale_at: '2026-09-24T12:00:00.000Z',
             stale_reason: 'anchor content changed',
             last_seen_at: '2026-09-24T12:00:00.000Z',
@@ -147,7 +147,7 @@ describe('canon audit filing decision', () => {
     ).toEqual([
       {
         text: 'canon audit: workshop canon/reference .agents/rules/canon.md:12 named path does not resolve',
-        sameAs: 29,
+        sameAs: '01990000-0000-7000-8000-000000000029',
       },
     ])
   })

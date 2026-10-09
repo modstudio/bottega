@@ -204,7 +204,8 @@ export function readThread(id: number, env: Environment = process.env, clock = D
       acceptedReplyId: root.accepted_reply_id,
       acceptedBy: root.accepted_by,
       acceptedAt: root.accepted_at,
-      noteId: root.note_id,
+      noteRecordId: root.note_record_id,
+      noteLabel: root.note_label,
       notePendingError: root.note_pending_error,
     },
     replies: replies.map((reply) => ({
@@ -221,9 +222,13 @@ function retryHint(questionId: number, pendingError: string | null): string | nu
 }
 
 function filingLeaseRefusal(question: MessageRow, clock: number): string | null {
-  const decision = noteFilingLeaseDecision(question.note_id, question.note_filing_started_at, clock)
+  const decision = noteFilingLeaseDecision(
+    question.note_record_id ?? question.note_label,
+    question.note_filing_started_at,
+    clock,
+  )
   if (decision.kind === 'filed')
-    return `board question ${question.id} already filed note ${decision.noteId}`
+    return `board question ${question.id} already filed note ${question.note_label}`
   if (decision.kind === 'in-progress')
     return `board question ${question.id} note filing is in progress; retry with orch board file-note ${question.id} after ${new Date(decision.retryAt).toISOString()}`
   return null
@@ -243,7 +248,7 @@ function takeFilingLease(
     const taken = database
       .query(
         `UPDATE board_message SET note_filing_started_at=?
-         WHERE id=? AND note_id IS NULL
+         WHERE id=? AND note_record_id IS NULL AND note_label IS NULL
            AND (note_filing_started_at IS NULL OR note_filing_started_at<=?)`,
       )
       .run(startedAt, questionId, staleBefore)
@@ -264,7 +269,12 @@ async function filePendingNote(
   cwd: string,
   filer: AnswerNoteFiler,
   clock: number,
-): Promise<{ noteId: number | null; notePendingError: string | null; retry: string | null }> {
+): Promise<{
+  noteRecordId: string | null
+  noteLabel: string | null
+  notePendingError: string | null
+  retry: string | null
+}> {
   const { question, reply, startedAt } = takeFilingLease(questionId, clock)
   try {
     const filed = await filer(
@@ -279,18 +289,24 @@ async function filePendingNote(
       },
       { cwd },
     )
-    if (filed.noteId === null) throw new Error('hub did not report the filed note id')
+    if (filed.noteRecordId === null || filed.noteLabel === null)
+      throw new Error('hub did not report the filed note identity')
     const database = writableDb()
     writeTransaction(() => {
       database
         .query(
           `UPDATE board_message
-           SET note_id=?,note_pending_error=NULL,note_filing_started_at=NULL
+           SET note_record_id=?,note_label=?,note_pending_error=NULL,note_filing_started_at=NULL
            WHERE id=? AND note_filing_started_at=?`,
         )
-        .run(filed.noteId, question.id, startedAt)
+        .run(filed.noteRecordId, filed.noteLabel, question.id, startedAt)
     }, database)
-    return { noteId: filed.noteId, notePendingError: null, retry: null }
+    return {
+      noteRecordId: filed.noteRecordId,
+      noteLabel: filed.noteLabel,
+      notePendingError: null,
+      retry: null,
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     const database = writableDb()
@@ -303,7 +319,12 @@ async function filePendingNote(
         )
         .run(detail, question.id, startedAt)
     }, database)
-    return { noteId: null, notePendingError: detail, retry: retryHint(question.id, detail) }
+    return {
+      noteRecordId: null,
+      noteLabel: null,
+      notePendingError: detail,
+      retry: retryHint(question.id, detail),
+    }
   }
 }
 

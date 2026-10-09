@@ -509,16 +509,16 @@ try {
       FOR EACH ROW EXECUTE FUNCTION fail_hub_task_insert()`
     let promotionFailed = false
     try {
-      await promoteHostedNote(actorUrl, identity, allocatedNote.number)
+      await promoteHostedNote(actorUrl, identity, allocatedNote.id)
     } catch {
       promotionFailed = true
     }
     await admin`DROP TRIGGER fail_hub_task_insert ON hub_task`
     await admin`DROP FUNCTION fail_hub_task_insert()`
     if (!promotionFailed) throw new Error('forced promotion task insert did not fail')
-    if ((await getHostedNote(actorUrl, identity, allocatedNote.number))?.promoted_task)
+    if ((await getHostedNote(actorUrl, identity, allocatedNote.id))?.promoted_task)
       throw new Error('failed promotion marked its note')
-    const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.number)
+    const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.id)
     if (!promoted?.task.key || promoted.note.promoted_task !== promoted.task.key)
       throw new Error('promotion did not create a task and mark its note')
     await mirrorHostedNotes(actorUrl, identity, {
@@ -547,7 +547,7 @@ try {
     try {
       await reapHostedNotes(actorUrl, identity, {
         stale: [],
-        deleted: [802],
+        deleted: ['01990000-0000-7000-8000-00000000066e'],
         confirmation: 1,
         cutoff,
       })
@@ -557,11 +557,11 @@ try {
       refusedResighted = true
     }
     if (!refusedResighted) throw new Error('reap of a re-sighted note was not refused')
-    if (!(await getHostedNote(actorUrl, identity, 802)))
+    if (!(await getHostedNote(actorUrl, identity, '01990000-0000-7000-8000-00000000066e')))
       throw new Error('re-sighted note was deleted')
     await reapHostedNotes(actorUrl, identity, {
       stale: [],
-      deleted: [800],
+      deleted: ['01990000-0000-7000-8000-00000000066d'],
       confirmation: 1,
       cutoff,
     })

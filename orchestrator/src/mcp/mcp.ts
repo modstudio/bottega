@@ -981,7 +981,7 @@ export function createDocsMcpServer(): McpServer {
         'File one cwd-bound suggestion-box note. If duplicate candidates are returned, retry with same_as or new.',
       inputSchema: z.object({
         text: z.string().trim().min(1),
-        same_as: z.number().int().positive().optional(),
+        same_as: z.string().min(1).optional(),
         new: z.boolean().optional(),
       }),
     },

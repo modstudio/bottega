@@ -148,6 +148,108 @@ test('document identity migration backfills UUIDs and makes record_id required a
   }
 })
 
+test('note UUID reference migration preserves rows and turns old integers into display labels', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-note-uuid-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0091_note_uuid_references')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    const run = database
+      .query(
+        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-10-09','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+      )
+      .get() as { id: number }
+    database
+      .query(
+        `INSERT INTO worker_note_request
+         (run_id,text,requested_at,finished_at,status,note_id,candidate_ids)
+         VALUES (?,'finding','2026-10-09','2026-10-09','filed',71,'[8,13]')`,
+      )
+      .run(run.id)
+    database
+      .query(
+        `INSERT INTO board_message
+         (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,note_id)
+         VALUES ('question','architect','author','operator','Title','Body',0,'2026-10-10','2026-10-09',72)`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,filed_as,filed_ref)
+         VALUES (?,'2026-10-09','Canon?','canon-proposal','73'),
+                (?,'2026-10-09','Doc?','doc','12@rev-1')`,
+      )
+      .run(run.id, run.id)
+
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0091_note_uuid_references'))
+    expect(
+      database
+        .query(
+          `SELECT same_as,note_record_id,note_label,candidate_ids,candidate_labels
+           FROM worker_note_request`,
+        )
+        .get(),
+    ).toEqual({
+      same_as: null,
+      note_record_id: null,
+      note_label: '71',
+      candidate_ids: '[]',
+      candidate_labels: '["8","13"]',
+    })
+    expect(database.query('SELECT note_record_id,note_label FROM board_message').get()).toEqual({
+      note_record_id: null,
+      note_label: '72',
+    })
+    expect(
+      database
+        .query(
+          `SELECT filed_as,filed_ref,filed_record_id,filed_label
+           FROM question ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        filed_as: 'canon-proposal',
+        filed_ref: null,
+        filed_record_id: null,
+        filed_label: '73',
+      },
+      {
+        filed_as: 'doc',
+        filed_ref: '12@rev-1',
+        filed_record_id: null,
+        filed_label: null,
+      },
+    ])
+    expect(
+      database
+        .query(
+          `SELECT name FROM pragma_table_info('worker_note_request')
+           WHERE name='note_id'`,
+        )
+        .get(),
+    ).toBeNull()
+    expect(
+      database
+        .query(`SELECT name FROM pragma_table_info('board_message') WHERE name='note_id'`)
+        .get(),
+    ).toBeNull()
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('board origin snapshot migration backfills an existing architect notice', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-board-origin-'))
   mkdirSync(join(folder, 'meta'))
@@ -286,7 +388,8 @@ test('board thread migration preserves existing messages, receipts, and tags', (
     expect(
       database
         .query(
-          `SELECT kind,title,thread_root_id,accepted_reply_id,note_id,note_filing_started_at
+          `SELECT kind,title,thread_root_id,accepted_reply_id,note_record_id,note_label,
+                  note_filing_started_at
            FROM board_message`,
         )
         .get(),
@@ -295,7 +398,8 @@ test('board thread migration preserves existing messages, receipts, and tags', (
       title: 'Title',
       thread_root_id: null,
       accepted_reply_id: null,
-      note_id: null,
+      note_record_id: null,
+      note_label: null,
       note_filing_started_at: null,
     })
     expect(database.query('SELECT reader_session FROM board_receipt').get()).toEqual({
@@ -579,7 +683,13 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       database
         .query(`SELECT name FROM pragma_table_info('question') WHERE name LIKE 'filed_%'`)
         .all(),
-    ).toHaveLength(3)
+    ).toEqual([
+      { name: 'filed_as' },
+      { name: 'filed_ref' },
+      { name: 'filed_at' },
+      { name: 'filed_record_id' },
+      { name: 'filed_label' },
+    ])
     expect(
       database
         .query("SELECT name FROM sqlite_master WHERE type='table' AND name='run_carried_ruling'")

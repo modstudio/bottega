@@ -222,7 +222,7 @@ def main() -> int:
             note_args,
             capture_output=True, text=True, timeout=min(5, remaining), check=True,
         )
-        notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
+        notes = [(row["label"], row["text"]) for row in json.loads(result.stdout)]
     except Exception:
         notes = []
 
@@ -295,8 +295,12 @@ def main() -> int:
         if lines:
             lines.append("")
         lines.append(f"{len(notes)} notes filed; keep, drop or promote with hub note:")
-        for note_id, project, note_text in notes:
-            lines.append(f"  {note_id}  {project}  {note_text[:80]}")
+        for note_label, note_text in notes:
+            lines.append(
+                f"  {note_label}  {note_text[:80]}\n"
+                f"    hub note keep {note_label} | hub note drop {note_label} --reason \"...\" | "
+                f"hub note promote {note_label}"
+            )
     if cleanup_holds:
         if lines:
             lines.append("")

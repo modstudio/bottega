@@ -10,7 +10,7 @@ import {
 export function promotionTaskKey(value: string | undefined, present: boolean): string | undefined {
   if (!present) return undefined
   if (!value?.trim())
-    throw new Error('--task requires a task key: hub note promote <ID> --task <KEY>')
+    throw new Error('--task requires a task key: hub note promote <LABEL|UUID|NUMBER> --task <KEY>')
   return value
 }
 
@@ -49,7 +49,7 @@ export async function promoteNoteCommand(
   } catch (error) {
     if (!created) throw error
     throw new Error(
-      `tracker task ${existingTaskKey} was created, but note promotion failed: ${(error as Error).message}. Finish with: hub note promote ${note.id} --task ${existingTaskKey}`,
+      `tracker task ${existingTaskKey} was created, but note promotion failed: ${(error as Error).message}. Finish with: hub note promote ${note.label} --task ${existingTaskKey}`,
     )
   }
 }

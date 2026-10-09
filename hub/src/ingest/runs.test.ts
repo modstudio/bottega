@@ -44,6 +44,8 @@ describe('run ingest', () => {
           replacement: null,
           filed_as: null,
           filed_ref: null,
+          filed_record_id: null,
+          filed_label: null,
           filed_at: null,
         },
       ]),

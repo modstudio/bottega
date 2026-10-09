@@ -10,7 +10,13 @@ import {
 } from './worker-note-request.ts'
 
 const WORKER_NOTE_POLL_MS = 100
-type PendingNote = { id: number; run_id: number; text: string; file: string | null }
+type PendingNote = {
+  id: number
+  run_id: number
+  text: string
+  file: string | null
+  same_as: string | null
+}
 
 function storeContention(error: unknown): boolean {
   const candidate = error as { code?: unknown; message?: unknown }
@@ -25,7 +31,7 @@ function claim(runId: number): PendingNote | null {
   return writeTransaction(() => {
     const row = db()
       .query(
-        `SELECT id,run_id,text,file FROM worker_note_request
+        `SELECT id,run_id,text,file,same_as FROM worker_note_request
          WHERE run_id=? AND status='requested' AND claimed_at IS NULL ORDER BY id LIMIT 1`,
       )
       .get(runId) as PendingNote | null
@@ -77,14 +83,17 @@ function finish(request: PendingNote, outcome: WorkerNoteOutcome): void {
   const update = workerNoteTransition('requested', outcome)
   db()
     .query(
-      `UPDATE worker_note_request SET status=?,finished_at=?,note_id=?,candidate_ids=?,
-       refusal_class=?,detail=? WHERE id=? AND status='requested'`,
+      `UPDATE worker_note_request SET status=?,finished_at=?,note_record_id=?,note_label=?,
+       candidate_ids=?,candidate_labels=?,refusal_class=?,detail=?
+       WHERE id=? AND status='requested'`,
     )
     .run(
       update.status,
       nowIso(),
-      update.noteId,
+      update.noteRecordId,
+      update.noteLabel,
       update.candidateIds,
+      update.candidateLabels,
       update.refusalClass,
       update.detail,
       request.id,
@@ -99,6 +108,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
     const filed = await filer(runFacts(request.run_id), {
       text: request.text,
       ...(request.file ? { file: request.file } : {}),
+      ...(request.same_as ? { sameAs: request.same_as } : {}),
     })
     outcome = { status: 'filed', ...filed }
   } catch (error) {

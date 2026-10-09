@@ -5,7 +5,7 @@ export type CanonAuditFinding = Pick<Finding, 'file' | 'line' | 'rule' | 'messag
 }
 
 export type CanonAuditNote = {
-  id: number
+  record_id: string
   text: string
   stale_at: string | null
   stale_reason: string | null
@@ -13,7 +13,7 @@ export type CanonAuditNote = {
   last_seen_at: string
 }
 
-export type CanonAuditFiling = { text: string; sameAs?: number }
+export type CanonAuditFiling = { text: string; sameAs?: string }
 
 export type CanonAuditProjectRead = {
   project: string
@@ -73,7 +73,7 @@ export function decideCanonAuditNotes(
       (latest, note) => (!latest || note.last_seen_at > latest.last_seen_at ? note : latest),
       null,
     )
-    filings.push(stale ? { text, sameAs: stale.id } : { text })
+    filings.push(stale ? { text, sameAs: stale.record_id } : { text })
   }
   return filings
 }

@@ -35,7 +35,7 @@ const hosted = {
     const url = new URL(input),
       body = init?.body ? JSON.parse(String(init.body)) : {},
       at = new Date().toISOString()
-    const number = Number(url.pathname.split('/')[3])
+    const pathRecordId = url.pathname.split('/')[3]!
     const shape = (note: ReturnType<typeof getNote>) => ({
       id: note.record_id,
       number: note.id,
@@ -94,18 +94,18 @@ const hosted = {
           anchors: JSON.stringify([...target.anchors, ...source.anchors]),
           sightings: target.sightings + source.sightings,
         },
-        deleted: source.id,
+        deleted: source.record_id,
       })
     }
     if (url.pathname.endsWith('/drop'))
       return Response.json({
-        ...shape(getNote(resolveNoteReference(String(number), 'workshop'))),
+        ...shape(getNote(pathRecordId)),
         stale_at: at,
         stale_reason: `dropped: ${body.reason}`,
         last_seen_at: at,
       })
     if (url.pathname.endsWith('/acknowledgements')) {
-      const note = getNote(resolveNoteReference(String(number), 'workshop'))
+      const note = getNote(pathRecordId)
       const hostedNote = shape(note)
       return Response.json({
         note: hostedNote,
@@ -180,7 +180,7 @@ describe('suggestion notes', () => {
       expect(created.id).toBe(41)
     })
 
-    test('resolves note labels, session-project numbers, unique fallback numbers and UUIDs', () => {
+    test('resolves note labels, session-project numbers and UUIDs without cross-project fallback', () => {
       const workshopId = crypto.randomUUID()
       const alphaId = crypto.randomUUID()
       writeTransaction((conn) =>
@@ -192,7 +192,12 @@ describe('suggestion notes', () => {
       )
       expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
       expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
-      expect(resolveNoteReference('42', 'workshop')).toBe(alphaId)
+      expect(() => resolveNoteReference('42', 'workshop')).toThrow(
+        'no note workshop#42; use a project#number label or run `hub note list`',
+      )
+      expect(() => resolveNoteReference('42', null)).toThrow(
+        'no note <project>#42; use a project#number label or run `hub note list`',
+      )
       expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
         'no note alpha#41; use a project#number label or run `hub note list`',
       )
@@ -413,7 +418,7 @@ describe('suggestion notes', () => {
       text: `Collector ${unique} loses the active run interval`,
       cwd: '/fixtures/repos/workshop',
     })
-    expect(offered.candidates[0]?.id).toBe(first.id)
+    expect(offered.candidates[0]?.record_id).toBe(first.record_id)
     expect(listNotes()).toHaveLength(before)
   })
 
@@ -463,7 +468,7 @@ describe('suggestion notes', () => {
       cwd: '/fixtures/repos/workshop',
     })
     expect(offered.note).toBeFalsy()
-    expect(offered.candidates[0]?.id).toBe(first.id)
+    expect(offered.candidates[0]?.record_id).toBe(first.record_id)
   })
 
   test('same preserves sightings and drop records why', async () => {

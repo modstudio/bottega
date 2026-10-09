@@ -686,7 +686,9 @@ async function fileFailure(result: MirrorResult, project: Project): Promise<void
   const text = `canon mirror: ${project.name} ${result.text}`
   const notes = await listHubNotes(project.name, { cwd: project.path })
   const same = notes.find((note) => note.text === text)
-  await fileNote(same ? { text, same_as: same.id } : { text, new: true }, { cwd: project.path })
+  await fileNote(same ? { text, same_as: same.record_id } : { text, new: true }, {
+    cwd: project.path,
+  })
 }
 export async function mirrorRepositoryCanon(input: {
   project?: string

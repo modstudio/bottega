@@ -49,7 +49,7 @@ export async function fixDefectCommand(
 
 export async function noteCommand(
   text: string,
-  options: { sameAs?: number; new: boolean },
+  options: { sameAs?: string; new: boolean },
   presentation: Presentation,
 ): Promise<void> {
   const result = await fileNote({

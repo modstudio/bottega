@@ -39,6 +39,8 @@ type InboxQuestion = {
   replacement: string | null
   filed_as: 'doc' | 'canon-proposal' | null
   filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
   filed_at: string | null
 }
 
@@ -151,7 +153,7 @@ export async function queryInbox(
     .query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
-            q.filed_as, q.filed_ref, q.filed_at,
+            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status, ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
@@ -173,6 +175,8 @@ export async function queryInbox(
     replacement: string | null
     filed_as: 'doc' | 'canon-proposal' | null
     filed_ref: string | null
+    filed_record_id: string | null
+    filed_label: string | null
     filed_at: string | null
     options: string | null
     recommendation: string | null
@@ -232,6 +236,8 @@ export async function queryInbox(
           replacement: q.replacement,
           filed_as: q.filed_as,
           filed_ref: q.filed_ref,
+          filed_record_id: q.filed_record_id,
+          filed_label: q.filed_label,
           filed_at: q.filed_at,
         }),
       ),
@@ -305,11 +311,18 @@ function presentOverturn(
 }
 
 function presentFiled(
-  question: { filed_as: string | null; filed_ref: string | null },
+  question: {
+    filed_as: string | null
+    filed_ref: string | null
+    filed_record_id: string | null
+    filed_label: string | null
+  },
   log: (...values: unknown[]) => void,
 ): void {
-  if (!question.filed_ref) return
-  log(`        filed: ${question.filed_as} ${question.filed_ref}`)
+  const shown = question.filed_label ?? question.filed_ref
+  if (!shown) return
+  const identity = question.filed_record_id ? ` (${question.filed_record_id})` : ''
+  log(`        filed: ${question.filed_as} ${shown}${identity}`)
 }
 
 function presentWorkflowQuestions(
@@ -375,7 +388,7 @@ export async function runInboxCommand(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
-            q.filed_as, q.filed_ref, q.filed_at,
+            q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
             root.status root_status,
             ${voidedSql('root')} root_voided,
@@ -400,6 +413,8 @@ export async function runInboxCommand(
     replacement: string | null
     filed_as: string | null
     filed_ref: string | null
+    filed_record_id: string | null
+    filed_label: string | null
     filed_at: string | null
     options: string | null
     recommendation: string | null

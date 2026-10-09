@@ -57,7 +57,11 @@ describe('the live ask channel always answers', () => {
     const toolsFor = async (runId: number, token = '') => {
       let reported: string[] = []
       const server = createAskMcpServer(runId, token, undefined, {
-        fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+        fileWorkerNote: async () => ({
+          noteRecordId: '01990000-0000-7000-8000-000000000001',
+          noteLabel: 'workshop#1',
+          candidateNotes: [],
+        }),
         lifecycle: {
           started: (tools) => {
             reported = tools
@@ -91,7 +95,11 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     let initialized = 0
     const connection = await askClient(run, '', undefined, {
-      fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+      fileWorkerNote: async () => ({
+        noteRecordId: '01990000-0000-7000-8000-000000000001',
+        noteLabel: 'workshop#1',
+        candidateNotes: [],
+      }),
       lifecycle: {
         started: () => {},
         initialized: () => {
@@ -273,7 +281,11 @@ describe('the live ask channel always answers', () => {
     let nowMs = Date.now()
     let waits = 0
     const connection = await askClient(run, '', undefined, {
-      fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+      fileWorkerNote: async () => ({
+        noteRecordId: '01990000-0000-7000-8000-000000000001',
+        noteLabel: 'workshop#1',
+        candidateNotes: [],
+      }),
       gate: {
         waitMs: 2,
         now: () => nowMs,
@@ -326,7 +338,11 @@ describe('the live ask channel always answers', () => {
     const controller = new AbortController()
     let waitCalls = 0
     const connection = await askClient(run, '', undefined, {
-      fileWorkerNote: async () => ({ noteId: 1, candidateIds: [] }),
+      fileWorkerNote: async () => ({
+        noteRecordId: '01990000-0000-7000-8000-000000000001',
+        noteLabel: 'workshop#1',
+        candidateNotes: [],
+      }),
       gate: {
         waitMs: 10,
         now: Date.now,
@@ -558,8 +574,12 @@ describe('the live ask channel always answers', () => {
       fileWorkerNote: async (derived, input) => {
         seen.push(derived, input)
         return {
-          noteId: 71,
-          candidateIds: [8, 13],
+          noteRecordId: '01990000-0000-7000-8000-000000000071',
+          noteLabel: 'workshop#71',
+          candidateNotes: [
+            { recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' },
+            { recordId: '01990000-0000-7000-8000-000000000013', label: 'workshop#13' },
+          ],
           anchorDropped:
             'File anchor src/file.ts:3 was dropped because the line is new or changed on the branch.',
         }
@@ -579,9 +599,16 @@ describe('the live ask channel always answers', () => {
         arguments: { text: 'outside defect', file: 'src/file.ts:3' },
       })
       expect(result.isError).toBeUndefined()
-      expect(resultText(result)).toBe(
-        'Note 71 filed. Near-duplicate candidate ids: 8, 13. File anchor src/file.ts:3 was dropped because the line is new or changed on the branch.',
-      )
+      expect(JSON.parse(resultText(result))).toEqual({
+        noteRecordId: '01990000-0000-7000-8000-000000000071',
+        noteLabel: 'workshop#71',
+        candidates: [
+          { recordId: '01990000-0000-7000-8000-000000000008', label: 'workshop#8' },
+          { recordId: '01990000-0000-7000-8000-000000000013', label: 'workshop#13' },
+        ],
+        anchorDropped:
+          'File anchor src/file.ts:3 was dropped because the line is new or changed on the branch.',
+      })
       expect(seen).toEqual([
         {
           id: run,

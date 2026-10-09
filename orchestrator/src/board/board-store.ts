@@ -77,7 +77,8 @@ export type MessageRow = {
   accepted_reply_id: number | null
   accepted_by: string | null
   accepted_at: string | null
-  note_id: number | null
+  note_record_id: string | null
+  note_label: string | null
   note_pending_error: string | null
   note_filing_started_at: string | null
   claim_id: number | null

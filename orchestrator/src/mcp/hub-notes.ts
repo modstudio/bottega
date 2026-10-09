@@ -6,7 +6,8 @@ import { projectAt } from '../project/projects.ts'
 
 const noteRowsSchema = z.array(
   z.object({
-    id: z.number().int().positive(),
+    record_id: z.string().uuid(),
+    label: z.string().min(1),
     text: z.string(),
     stale_at: z.string().nullable(),
     stale_reason: z.string().nullable(),
@@ -47,7 +48,7 @@ export async function hubOutput(args: string[], cwd = process.cwd()): Promise<st
 }
 
 export async function fileNote(
-  input: { text: string; same_as?: number; new?: boolean },
+  input: { text: string; same_as?: string; new?: boolean },
   options: { cwd?: string; anchor?: FiledNoteAnchor } = {},
 ) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
@@ -67,18 +68,40 @@ export async function fileNote(
     input.text,
     ...(input.same_as ? ['--same-as', String(input.same_as)] : input.new ? ['--new'] : []),
     ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
+    '--json',
   ]
-  const output = (await hubOutput(args, cwd)).trim()
-  return parseFiledNoteOutput(output)
+  return parseFiledNoteOutput((await hubOutput(args, cwd)).trim())
 }
 
 export function parseFiledNoteOutput(output: string) {
-  const noteId = Number(/(?:^|\n)note (\d+) filed;/.exec(output)?.[1] ?? 0)
-  const recordId = /(?:^|\n)record ([0-9a-f-]{36})(?:\n|$)/i.exec(output)?.[1] ?? null
-  const candidateIds = [...output.matchAll(/(?:^|\n)near (\d+) score/g)].map((match) =>
-    Number(match[1]),
-  )
-  return { output, noteId: noteId || null, recordId, candidateIds }
+  const parsed = z
+    .object({
+      record_id: z.string().uuid().nullable(),
+      number: z.number().int().positive().nullable(),
+      label: z.string().min(1).nullable(),
+      sightings: z.number().int().positive().nullable(),
+      candidates: z.array(
+        z.object({
+          record_id: z.string().uuid(),
+          label: z.string().min(1),
+          score: z.number(),
+          text: z.string(),
+        }),
+      ),
+    })
+    .parse(JSON.parse(output) as unknown)
+  const candidateNotes = parsed.candidates.map((candidate) => ({
+    recordId: candidate.record_id,
+    label: candidate.label,
+  }))
+  return {
+    output: parsed.label
+      ? `note ${parsed.label} filed; ${parsed.sightings} sighting${parsed.sightings === 1 ? '' : 's'}\nrecord ${parsed.record_id}`
+      : `possible duplicate notes: ${parsed.candidates.map((candidate) => candidate.label).join(', ')}`,
+    noteRecordId: parsed.record_id,
+    noteLabel: parsed.label,
+    candidateNotes,
+  }
 }
 
 export async function listHubNotes(project: string, options: { cwd: string }): Promise<HubNote[]> {
@@ -91,4 +114,18 @@ export async function listHubNotes(project: string, options: { cwd: string }): P
   }
   const [live, stale] = await Promise.all([list(false), list(true)])
   return [...live, ...stale]
+}
+
+export async function hubNoteLabel(recordId: string, options: { cwd: string }): Promise<string> {
+  const list = async (stale: boolean) => {
+    const output = await hubOutput(
+      ['note', 'list', ...(stale ? ['--stale'] : []), '--json'],
+      options.cwd,
+    )
+    return noteRowsSchema.parse(JSON.parse(output) as unknown)
+  }
+  const notes = [...(await list(false)), ...(await list(true))]
+  const note = notes.find((candidate) => candidate.record_id === recordId)
+  if (!note) throw new Error(`hub cannot resolve note ${recordId}; run \`hub note list\``)
+  return note.label
 }

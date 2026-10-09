@@ -66,12 +66,12 @@ async function readRoute(context: RouteContext): Promise<Response | null> {
     )
   if (url.pathname === '/v1/notes/counts')
     return json(await call(dependencies.counts, hostedNoteCounts)(config.recordDatabaseUrl, who))
-  const match = /^\/v1\/notes\/(\d+)$/.exec(url.pathname)
+  const match = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (!match) return null
   const value = await call(dependencies.get, getHostedNote)(
     config.recordDatabaseUrl,
     who,
-    Number(match[1]),
+    match[1]!,
   )
   return value ? json(value) : json({ error: 'note not found' }, 404)
 }
@@ -86,22 +86,22 @@ async function noteWriteRoute(context: RouteContext): Promise<Response | null> {
     )
     return value ? json(value, 201) : json({ error: 'note not found' }, 404)
   }
-  const match = /^\/v1\/notes\/(\d+)$/.exec(url.pathname)
+  const match = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
   if (request.method === 'PATCH' && match) {
     const value = await call(dependencies.patch, patchHostedNote)(
       config.recordDatabaseUrl,
       who,
-      Number(match[1]),
+      match[1]!,
       body as never,
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
   }
-  const ack = /^\/v1\/notes\/(\d+)\/acknowledgements$/.exec(url.pathname)
+  const ack = /^\/v1\/notes\/([0-9a-f-]{36})\/acknowledgements$/i.exec(url.pathname)
   if (request.method !== 'POST' || !ack) return null
   const value = await call(dependencies.acknowledge, acknowledgeHostedNote)(
     config.recordDatabaseUrl,
     who,
-    Number(ack[1]),
+    ack[1]!,
     String(body?.session ?? ''),
   )
   return value ? json(value, 201) : json({ error: 'note not found' }, 404)
@@ -110,22 +110,22 @@ async function noteWriteRoute(context: RouteContext): Promise<Response | null> {
 async function noteActionRoute(context: RouteContext): Promise<Response | null> {
   const { request, url, config, dependencies, who, body } = context
   if (request.method !== 'POST') return null
-  const promote = /^\/v1\/notes\/(\d+)\/promote$/.exec(url.pathname)
+  const promote = /^\/v1\/notes\/([0-9a-f-]{36})\/promote$/i.exec(url.pathname)
   if (promote) {
     const value = await call(dependencies.promote, promoteHostedNote)(
       config.recordDatabaseUrl,
       who,
-      Number(promote[1]),
+      promote[1]!,
       { task: typeof body?.task === 'string' ? body.task : undefined },
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
   }
-  const drop = /^\/v1\/notes\/(\d+)\/drop$/.exec(url.pathname)
+  const drop = /^\/v1\/notes\/([0-9a-f-]{36})\/drop$/i.exec(url.pathname)
   if (drop) {
     const value = await call(dependencies.drop, dropHostedNote)(
       config.recordDatabaseUrl,
       who,
-      Number(drop[1]),
+      drop[1]!,
       String(body?.reason ?? ''),
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
@@ -134,8 +134,8 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
   const value = await call(dependencies.merge, mergeHostedNotes)(
     config.recordDatabaseUrl,
     who,
-    Number(body?.target),
-    Number(body?.source),
+    String(body?.target),
+    String(body?.source),
   )
   return value ? json(value) : json({ error: 'note not found' }, 404)
 }

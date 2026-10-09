@@ -141,6 +141,8 @@ const OpenQuestionSchema = z
     replacement: z.string().nullable(),
     filed_as: z.enum(['doc', 'canon-proposal']).nullable(),
     filed_ref: z.string().nullable(),
+    filed_record_id: z.string().uuid().nullable(),
+    filed_label: z.string().nullable(),
     filed_at: z.string().nullable(),
   })
   .strict()
@@ -167,7 +169,9 @@ export const FileRulingResultSchema = z
   .object({
     question_id: z.number().int().positive(),
     filed_as: z.enum(['doc', 'canon-proposal']),
-    filed_ref: z.string().min(1),
+    filed_ref: z.string().min(1).nullable(),
+    filed_record_id: z.string().uuid().nullable(),
+    filed_label: z.string().min(1).nullable(),
     filed_at: z.string(),
   })
   .strict()
@@ -275,6 +279,8 @@ const RulingListRowSchema = z
     replacement: nullableString,
     filed_as: nullableString,
     filed_ref: nullableString,
+    filed_record_id: nullableString,
+    filed_label: nullableString,
     filed_at: nullableString,
   })
   .strict()

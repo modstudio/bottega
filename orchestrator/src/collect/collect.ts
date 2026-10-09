@@ -220,15 +220,36 @@ function filedNotesNote(runId: number): string {
       try {
         const event = JSON.parse(line) as {
           type?: string
+          noteLabel?: unknown
+          candidates?: unknown
           noteId?: unknown
           candidateIds?: unknown
         }
+        if (event.type === 'note' && typeof event.noteLabel === 'string') {
+          return [
+            {
+              noteLabel: event.noteLabel,
+              candidateLabels: Array.isArray(event.candidates)
+                ? event.candidates.flatMap((candidate) =>
+                    candidate &&
+                    typeof candidate === 'object' &&
+                    typeof (candidate as { label?: unknown }).label === 'string'
+                      ? [(candidate as { label: string }).label]
+                      : [],
+                  )
+                : [],
+            },
+          ]
+        }
+        // Run files live for KEEP_RUN_FILES_DAYS, so accept the numeric event shape until they age out.
         return event.type === 'note' && Number.isSafeInteger(event.noteId)
           ? [
               {
-                noteId: event.noteId as number,
-                candidateIds: Array.isArray(event.candidateIds)
-                  ? event.candidateIds.filter((id): id is number => Number.isSafeInteger(id))
+                noteLabel: String(event.noteId),
+                candidateLabels: Array.isArray(event.candidateIds)
+                  ? event.candidateIds
+                      .filter((id): id is number => Number.isSafeInteger(id))
+                      .map(String)
                   : [],
               },
             ]
@@ -241,7 +262,7 @@ function filedNotesNote(runId: number): string {
   return `\n  notes:     ${notes
     .map(
       (note) =>
-        `${note.noteId}${note.candidateIds.length ? ` (near ${note.candidateIds.join(', ')})` : ''}`,
+        `${note.noteLabel}${note.candidateLabels.length ? ` (near ${note.candidateLabels.join(', ')})` : ''}`,
     )
     .join('; ')}`
 }

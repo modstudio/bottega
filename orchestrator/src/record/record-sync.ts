@@ -473,6 +473,8 @@ function questionValues(row: Payload, projectId: string | null) {
     replacement: nullableString(row.replacement),
     filedAs: nullableString(row.filedAs),
     filedRef: nullableString(row.filedRef),
+    filedRecordId: nullableString(row.filedRecordId),
+    filedLabel: nullableString(row.filedLabel),
     filedAt: nullableDate(row.filedAt),
     closedAt: nullableDate(row.closedAt),
     closeReason: nullableString(row.closeReason),

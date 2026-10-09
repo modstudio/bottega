@@ -206,6 +206,57 @@ test('execution probe seeds nullable exclusive-or columns with an integer flag',
   ])
 })
 
+test('execution probe seeds a nullable self-reference with null', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (
+          id TEXT PRIMARY KEY,
+          parent_id TEXT REFERENCES parent(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE child (
+          id INTEGER PRIMARY KEY,
+          parent_id TEXT NOT NULL REFERENCES parent(id) ON DELETE CASCADE
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toEqual([])
+  expect(result.risks).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent',
+      dependentTable: 'child',
+      detectedBy: ['replay'],
+    },
+  ])
+})
+
+test('execution probe names a non-nullable self-reference it cannot seed', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (
+          id TEXT PRIMARY KEY,
+          parent_id TEXT NOT NULL REFERENCES parent(id) ON DELETE RESTRICT
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toEqual([
+    {
+      migration: '0001_rebuild',
+      table: 'parent',
+      reason:
+        'self-referencing foreign key parent.parent_id is NOT NULL and cannot be seeded mechanically',
+    },
+  ])
+})
+
 test('names a table whose CHECK constraints cannot be satisfied mechanically', () => {
   const result = probeMigrations([
     {

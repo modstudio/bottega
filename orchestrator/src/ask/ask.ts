@@ -63,7 +63,12 @@ import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
-import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
+import {
+  validateWorkerNoteInput,
+  type WorkerNoteFiledResult,
+  type WorkerNoteInput,
+  type WorkerNoteRun,
+} from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
 
 /**
@@ -424,14 +429,7 @@ export async function ask(o: {
  * spawned the agent, which is the only party that actually knows.
  */
 type AskServerDependencies = {
-  fileWorkerNote(
-    run: WorkerNoteRun,
-    input: WorkerNoteInput,
-  ): Promise<{
-    noteId: number
-    candidateIds: number[]
-    anchorDropped?: string
-  }>
+  fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
 }
@@ -624,18 +622,26 @@ export function createAskMcpServer(
             z.string().optional(),
           )
           .describe('Optional relative path:line inside this run tree.'),
+        same_as: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('A note label, UUID, or project-local number.'),
       }),
     },
-    async ({ text: noteText, file }) => {
+    async ({ text: noteText, file, same_as }) => {
       try {
         if (!authorized()) throw new Error(unauthorized())
-        const input = validateWorkerNoteInput({ text: noteText, file })
+        const input = validateWorkerNoteInput({ text: noteText, file, sameAs: same_as })
         const filed = await dependencies.fileWorkerNote(workerNoteRun(runId), input)
-        const near = filed.candidateIds.length
-          ? ` Near-duplicate candidate ids: ${filed.candidateIds.join(', ')}.`
-          : ' No near-duplicate candidates were found.'
-        const anchor = filed.anchorDropped ? ` ${filed.anchorDropped}` : ''
-        return text(`Note ${filed.noteId} filed.${near}${anchor}`)
+        return text(
+          JSON.stringify({
+            noteRecordId: filed.noteRecordId,
+            noteLabel: filed.noteLabel,
+            candidates: filed.candidateNotes,
+            ...(filed.anchorDropped ? { anchorDropped: filed.anchorDropped } : {}),
+          }),
+        )
       } catch (error) {
         const message = error instanceof Error ? error.message : 'The note was not filed.'
         return text(

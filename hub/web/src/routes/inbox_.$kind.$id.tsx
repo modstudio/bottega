@@ -211,7 +211,8 @@ function FileRulingControl({ question }: { question: OperatorWaitingItem }) {
       </Button>
       {file.data ? (
         <p data-tone="success" className="text-status-text">
-          filed as {file.data.filed_as} at {file.data.filed_ref}
+          filed as {file.data.filed_as} at {file.data.filed_label ?? file.data.filed_ref}
+          {file.data.filed_record_id ? ` (${file.data.filed_record_id})` : ''}
         </p>
       ) : null}
       {file.error ? (
