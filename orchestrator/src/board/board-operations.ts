@@ -32,6 +32,7 @@ import {
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'
+import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
@@ -409,9 +410,11 @@ export async function boardThread(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const mode = boardModeForId(id, 'board thread id', c.env)
   const parsed = idForMode(id, mode)
-  if (mode === 'local') return localThread(readThread(parsed as number, c.env, c.clock))
-  const thread = hostedThread(await hostedClient(c).getBoardThread(parsed as string))
-  if (thread.root.noteRecordId) {
+  const thread =
+    mode === 'local'
+      ? localThread(readThread(parsed as number, c.env, c.clock))
+      : hostedThread(await hostedClient(c).getBoardThread(parsed as string))
+  if (mode === 'hosted' && thread.root.noteRecordId) {
     try {
       thread.root.noteLabel = await resolveAcceptedAnswerNoteLabel(thread.root.noteRecordId, {
         cwd: c.cwd,
@@ -420,6 +423,13 @@ export async function boardThread(id: string, inputContext?: Context) {
       thread.root.noteLabel = null
     }
   }
+  const session = architectIdentity(c.env)?.session
+  if (session)
+    await markBoardDeliveriesDelivered(
+      session,
+      [thread.root.id, ...thread.replies.map((reply) => reply.id)],
+      new Date(c.clock).toISOString(),
+    )
   return thread
 }
 

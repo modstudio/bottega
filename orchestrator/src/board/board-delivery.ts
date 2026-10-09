@@ -21,7 +21,7 @@ import {
 } from './board-service.ts'
 
 export const BOARD_READ_REFRESH_BUDGET_MS = 500
-export const BOARD_PUSH_REFRESH_SECONDS = 60
+export const BOARD_PUSH_REFRESH_SECONDS = 15
 export const BOARD_PUSH_REMIND_SECONDS = 300
 export const BOARD_PUSH_RETRY_SECONDS = 15
 export const BOARD_ACK_STOP_BLOCKS = 3

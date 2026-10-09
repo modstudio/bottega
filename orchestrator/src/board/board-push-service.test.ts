@@ -16,6 +16,8 @@ import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
+import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
+import { boardThread } from './board-operations.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
 import { acknowledgeNotice, postNotice } from './board-service.ts'
@@ -106,7 +108,7 @@ function runHook(
       ORCH_DB: fixture.databasePath,
       ORCH_BOARD_BIN: fixture.command,
       TMPDIR: fixture.root,
-      BOARD_PUSH_REFRESH_SECONDS: '60',
+      BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
       BOARD_PUSH_REMIND_SECONDS: '300',
       BOARD_PUSH_RETRY_SECONDS: '15',
       BOARD_ACK_STOP_BLOCKS: '3',
@@ -155,7 +157,7 @@ function runHookRepeated(
         ORCH_RUN_ID: '',
         ORCH_DB: fixture.databasePath,
         ORCH_BOARD_BIN: fixture.command,
-        BOARD_PUSH_REFRESH_SECONDS: '60',
+        BOARD_PUSH_REFRESH_SECONDS: String(BOARD_PUSH_REFRESH_SECONDS),
         BOARD_PUSH_REMIND_SECONDS: '300',
         BOARD_PUSH_RETRY_SECONDS: '15',
         BOARD_ACK_STOP_BLOCKS: '3',
@@ -166,6 +168,53 @@ function runHookRepeated(
   )
   expect(result.exitCode).toBe(0)
   return JSON.parse(result.stdout.toString()) as string[]
+}
+
+function runStopHookRepeated(
+  payload: string,
+  fixture: ReturnType<typeof createHookFixture>,
+  pendingValues: Array<Array<{ id: string; text: string; requiresAcknowledgement: boolean }>>,
+) {
+  const runner = [
+    'import contextlib, importlib.util, io, json, os, sys',
+    'sys.path.insert(0, os.path.dirname(sys.argv[1]))',
+    'spec = importlib.util.spec_from_file_location("board_stop_hook_test", sys.argv[1])',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'pending_values = json.loads(sys.argv[3])',
+    'pending_iterator = iter(pending_values)',
+    'module.pending = lambda session: (lambda value: (value, None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
+    'delivered = []',
+    'module.mark_delivered = lambda session, ids: delivered.append([session, ids])',
+    'outputs = []',
+    'for _ in pending_values:',
+    '    output = io.StringIO()',
+    '    sys.stdin = io.StringIO(sys.argv[2])',
+    '    with contextlib.redirect_stdout(output): module.main()',
+    '    outputs.append(output.getvalue())',
+    'print(json.dumps({"outputs": outputs, "delivered": delivered}))',
+  ].join('\n')
+  const result = Bun.spawnSync(
+    ['python3', '-c', runner, guardHook, payload, JSON.stringify(pendingValues)],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        ORCH_RUN_ID: '',
+        ORCH_DB: fixture.databasePath,
+        ORCH_BOARD_BIN: fixture.command,
+        BOARD_ACK_STOP_BLOCKS: '3',
+        BOARD_PUSH_SLOW_TIMEOUT_SECONDS: '5',
+        ORCH_BOARD_HOOK_STATE: join(fixture.root, 'board-hook-state'),
+      },
+    },
+  )
+  expect(result.exitCode).toBe(0)
+  return JSON.parse(result.stdout.toString()) as {
+    outputs: string[]
+    delivered: Array<[string, string[]]>
+  }
 }
 
 const hookOutput = JSON.stringify({
@@ -674,6 +723,62 @@ test('recently-injected ids do not suppress messages never delivered to the sess
   expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.id)])
 })
 
+test('reading a thread stamps its printed root and replies while acknowledgement remains pending', async () => {
+  ensurePostingProject()
+  const clock = Date.parse('2026-10-08T13:00:00.000Z')
+  const session = 'thread-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const question = askQuestion(
+    { audience: `session:${session}`, title: 'Read thread', body: 'Question body' },
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock,
+    postingCwd,
+  )
+  const reply = replyToThread(
+    question.id,
+    'Reply body',
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock + 1,
+    postingCwd,
+  )
+  const acknowledgement = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Acknowledge',
+      body: 'Still needs acknowledgement',
+      ackRequired: true,
+    },
+    {},
+    clock + 2,
+  )
+
+  await boardThread(String(question.id), {
+    env: { CLAUDE_CODE_SESSION_ID: session },
+    clock: clock + 3,
+  })
+  await boardThread(String(acknowledgement.id), {
+    env: { CLAUDE_CODE_SESSION_ID: session },
+    clock: clock + 3,
+  })
+  const pending = await pendingBoardDelivery({ session, budgetMs: 0, clock: clock + 4 })
+
+  expect(pending.delivery).toEqual([])
+  expect(pending.pendingAcknowledgements.map((message) => message.id)).toEqual([
+    String(acknowledgement.id),
+  ])
+  const stamped = db()
+    .query(
+      'SELECT message_id FROM board_receipt WHERE reader_session=? AND delivered_at IS NOT NULL ORDER BY message_id',
+    )
+    .all(session) as { message_id: number }[]
+  expect(stamped.map((row) => row.message_id)).toEqual([question.id, reply.id, acknowledgement.id])
+})
+
 test('PostToolUse is silent for workers, malformed input, missing stores, and the cheap no-pending path', () => {
   const item = createHookFixture(hookOutput)
   for (const [payload, extra] of [
@@ -838,6 +943,21 @@ test('Stop blocks three times and allows the fourth with a system message', () =
   expect(values[3].systemMessage).toStartWith(
     'This architect session is stopping with 1 unacknowledged board notice.',
   )
+})
+
+test('Stop emits one unread ordinary delivery once and stamps exactly what it emitted', () => {
+  const item = createHookFixture(hookOutput)
+  const result = runStopHookRepeated(JSON.stringify({ session_id: 'reader' }), item, [
+    [{ id: '8', text: 'ordinary message', requiresAcknowledgement: false }],
+    [],
+  ])
+
+  expect(JSON.parse(result.outputs[0]!)).toEqual({
+    decision: 'block',
+    reason: 'ordinary message',
+  })
+  expect(result.outputs[1]).toBe('')
+  expect(result.delivered).toEqual([['reader', ['8']]])
 })
 
 test('Stop ignores ordinary delivery while retaining acknowledgement-required notices', () => {

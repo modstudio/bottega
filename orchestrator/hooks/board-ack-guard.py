@@ -8,6 +8,7 @@ import sys
 
 from board_hook_common import (
     marker_path,
+    mark_delivered,
     pending,
     read_marker,
     store_path,
@@ -52,10 +53,19 @@ def main() -> int:
             or not os.path.exists(store_path())
         ):
             return 0
-        _delivery, _overflow, notices = pending(session)
+        delivery, overflow, notices = pending(session)
         path, count = block_count(session)
         if not notices:
-            write_marker(path, {"blocks": 0})
+            if not write_marker(path, {"blocks": 0}):
+                return 0
+            if delivery:
+                context = "\n\n".join(item["text"] for item in delivery)
+                if overflow:
+                    context += "\n\n" + overflow
+                value = {"decision": "block", "reason": context}
+                sys.stdout.write(json.dumps(value) + "\n")
+                sys.stdout.flush()
+                mark_delivered(session, [item["id"] for item in delivery])
             return 0
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
         # A block is spent only once it is recorded: a marker that cannot be

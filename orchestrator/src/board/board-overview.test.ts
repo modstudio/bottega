@@ -14,6 +14,7 @@ import {
 } from './board-overview.ts'
 import { postNotice, readNotices } from './board-service.ts'
 import type { BoardThreadState } from './board-thread-policy.ts'
+import { askQuestion } from './board-thread-service.ts'
 
 const clock = Date.parse('2026-10-05T12:00:00.000Z')
 const noRecordEnv = {
@@ -103,7 +104,7 @@ test('the pure overview applies kind, open, ended filters and newest-first opaqu
   ])
 })
 
-test('an unadopted overview ignores caller audience and stamps no delivery receipt', async () => {
+test('an unadopted overview stamps only the roots printed for an identified session', async () => {
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
@@ -115,9 +116,14 @@ test('an unadopted overview ignores caller audience and stamps no delivery recei
     {},
     clock,
   )
+  const omitted = askQuestion(
+    { audience: 'session:overview-addressed', title: 'Filtered out', body: 'body' },
+    {},
+    clock + 1,
+  )
 
   const listed = await listBoardOverview(
-    {},
+    { kind: 'notice' },
     {
       env: { ...noRecordEnv, CLAUDE_CODE_SESSION_ID: 'overview-caller' },
       clock,
@@ -131,10 +137,20 @@ test('an unadopted overview ignores caller audience and stamps no delivery recei
       .get(posted.id, 'overview-addressed'),
   ).toEqual({ delivered_at: null })
   expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
+      .get(posted.id, 'overview-caller'),
+  ).toEqual({ delivered_at: '2026-10-05T12:00:00.000Z' })
+  expect(
+    db()
+      .query('SELECT delivered_at FROM board_receipt WHERE message_id=? AND reader_session=?')
+      .get(omitted.id, 'overview-caller'),
+  ).toBeNull()
+  expect(
     readNotices(false, { CLAUDE_CODE_SESSION_ID: 'overview-addressed' }, clock).map(
       (row) => row.id,
     ),
-  ).toEqual([posted.id])
+  ).toEqual([posted.id, omitted.id])
 })
 
 test('an adopted overview combines local and cached roots with null hosted reach and warning', async () => {
