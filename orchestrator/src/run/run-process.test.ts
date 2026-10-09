@@ -46,6 +46,28 @@ test('worker context controls follow a registered agent harness rather than its 
   })
 })
 
+test('a parent environment holding both record URLs yields a child environment holding neither', () => {
+  const priorUrl = process.env.ORCH_RECORD_URL
+  const priorMigrate = process.env.ORCH_RECORD_MIGRATE_URL
+  const priorOther = process.env.ORCH_OTHER
+  process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
+  process.env.ORCH_RECORD_MIGRATE_URL = 'postgres://record.test/migrate'
+  process.env.ORCH_OTHER = 'keep'
+  try {
+    const child = childEnv(AGENTS.grok!, undefined, undefined, {}, false)
+    expect(child.ORCH_RECORD_URL).toBeUndefined()
+    expect(child.ORCH_RECORD_MIGRATE_URL).toBeUndefined()
+    expect(child.ORCH_OTHER).toBe('keep')
+  } finally {
+    if (priorUrl === undefined) delete process.env.ORCH_RECORD_URL
+    else process.env.ORCH_RECORD_URL = priorUrl
+    if (priorMigrate === undefined) delete process.env.ORCH_RECORD_MIGRATE_URL
+    else process.env.ORCH_RECORD_MIGRATE_URL = priorMigrate
+    if (priorOther === undefined) delete process.env.ORCH_OTHER
+    else process.env.ORCH_OTHER = priorOther
+  }
+})
+
 test('a Codex worker environment uses its chain-scoped CODEX_HOME', () => {
   expect(
     childEnv(AGENTS.codex!, undefined, undefined, { CODEX_HOME: '/runs/sandbox-41/codex' }, false)

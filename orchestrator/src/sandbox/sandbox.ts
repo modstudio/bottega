@@ -65,6 +65,9 @@ export const READONLY_LENS_DENY_PATHS = [
  */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
+/** Loopback TCP is allowed on every readonly-lens SRT profile. */
+export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
+
 /** Reads denied by every SRT profile, including profiles outside normal runs. */
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
   return [
@@ -246,7 +249,7 @@ export function readonlyLensProfile(input: {
         // On macOS srt's one switch covers both binding and outbound loopback.
         // The per-run orch-ask listener uses an OS-assigned loopback port, so it
         // cannot be named in the static domain list before srt starts.
-        allowLocalBinding: true,
+        allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
         denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
@@ -314,6 +317,53 @@ export function isReadonlySandboxCandidate(input: {
   return input.agent !== 'codex' && !input.writesRepo
 }
 
+export type ReadonlySandboxKind = {
+  sandbox: RunSandbox
+  reason: string | null
+  missingRoot: boolean
+}
+
+/** Host-versus-srt decision dispatch uses before it builds an SRT profile. */
+export function selectReadonlySandboxKind(input: {
+  agent: string
+  readsRepo: boolean
+  writesRepo: boolean
+  worktreePresent: boolean
+  projectPresent: boolean
+  override?: string
+  mcp?: boolean
+}): ReadonlySandboxKind {
+  if (!isReadonlySandboxCandidate(input)) {
+    return { sandbox: 'host', reason: null, missingRoot: false }
+  }
+  // Preserve the repository seam exactly: an unregistered or not-yet-cut
+  // readonly checkout was already a host run. No-repo jobs have no such
+  // fallback because their isolate is the boundary this selector must build.
+  if (input.readsRepo && (!input.worktreePresent || !input.projectPresent)) {
+    return { sandbox: 'host', reason: null, missingRoot: false }
+  }
+  if (input.override === 'host') {
+    return {
+      sandbox: 'host',
+      reason: input.readsRepo
+        ? 'ORCH_SANDBOX=host'
+        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+      missingRoot: false,
+    }
+  }
+  if (input.mcp) {
+    return {
+      sandbox: 'host',
+      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
+      missingRoot: false,
+    }
+  }
+  if (!input.worktreePresent) {
+    return { sandbox: 'srt', reason: null, missingRoot: true }
+  }
+  return { sandbox: 'srt', reason: null, missingRoot: false }
+}
+
 export function selectReadonlySandbox(input: {
   agent: string
   readsRepo: boolean
@@ -329,42 +379,29 @@ export function selectReadonlySandbox(input: {
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
 }): SandboxSelection {
-  if (!isReadonlySandboxCandidate(input)) {
-    return { sandbox: 'host', profile: null, reason: null }
-  }
-  // Preserve the repository seam exactly: an unregistered or not-yet-cut
-  // readonly checkout was already a host run. No-repo jobs have no such
-  // fallback because their isolate is the boundary this selector must build.
-  if (input.readsRepo && (!input.worktree || !input.project)) {
-    return { sandbox: 'host', profile: null, reason: null }
-  }
-  if (input.override === 'host') {
-    return {
-      sandbox: 'host',
-      profile: null,
-      reason: input.readsRepo
-        ? 'ORCH_SANDBOX=host'
-        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
-    }
-  }
-  if (input.mcp) {
-    return {
-      sandbox: 'host',
-      profile: null,
-      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
-    }
-  }
-  if (!input.worktree) {
+  const kind = selectReadonlySandboxKind({
+    agent: input.agent,
+    readsRepo: input.readsRepo,
+    writesRepo: input.writesRepo,
+    worktreePresent: Boolean(input.worktree),
+    projectPresent: Boolean(input.project),
+    override: input.override,
+    mcp: input.mcp,
+  })
+  if (kind.missingRoot) {
     throw new Error(
       `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
         'the sandbox root is missing',
     )
   }
+  if (kind.sandbox !== 'srt') {
+    return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
+  }
   return {
     sandbox: 'srt',
-    reason: null,
+    reason: kind.reason,
     profile: readonlyLensProfile({
-      worktree: input.worktree,
+      worktree: input.worktree!,
       runsDir: input.runsDir,
       scratchDir: input.scratchDir,
       project: input.project,
@@ -754,6 +791,11 @@ export function prepareCodexHome(
   return { CODEX_HOME: targetHome }
 }
 
+/** Grok's mirrored HOME links the operator env file into the worker home. */
+export function workerHomeLinksEnvFile(harness: string): boolean {
+  return harness === 'grok'
+}
+
 /**
  * Put vendor session state under this chain's writable directory. Codex and
  * Grok receive isolated harness homes; Grok also receives a mirrored HOME that
@@ -766,7 +808,7 @@ export function prepareSandboxHome(
   sandbox: RunSandbox,
 ): Record<string, string> {
   if (agent === 'codex') return prepareCodexHome(runDir, environment)
-  if (agent === 'grok') {
+  if (workerHomeLinksEnvFile(agent)) {
     const operatorHome = environment.HOME
     if (!operatorHome) {
       throw new Error(

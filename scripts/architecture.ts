@@ -589,6 +589,11 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     './sandbox-runtime.ts',
   ]),
+  module('orchestrator/src/sandbox/record-connection-env.ts', []),
+  module('orchestrator/src/sandbox/confinement-report.ts', [
+    './record-connection-env.ts',
+    './sandbox.ts',
+  ]),
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',
     'bun',

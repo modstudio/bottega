@@ -15,19 +15,8 @@ import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.t
 import { DB_PATH, db } from '../database/db.ts'
 import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
+import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
-
-const ALLOW_ENV_EXACT = new Set([
-  'PATH',
-  'HOME',
-  'USER',
-  'SHELL',
-  'LANG',
-  'TERM',
-  'TMPDIR',
-  'SSH_AUTH_SOCK',
-])
-const ALLOW_ENV_PREFIX = /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|ORCH_)/
 
 export function childEnv(
   a: (typeof AGENTS)[string],
@@ -38,7 +27,7 @@ export function childEnv(
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
-    if (v === undefined || !(ALLOW_ENV_EXACT.has(k) || ALLOW_ENV_PREFIX.test(k))) continue
+    if (v === undefined || !isForwardedChildEnvName(k)) continue
     env[k] = v
   }
   env.ORCH_DEPTH = String(depth() + 1)
