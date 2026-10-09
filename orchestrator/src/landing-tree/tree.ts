@@ -20,6 +20,7 @@ import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
+import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-seed.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   LANDING_TREE_AGENT,
@@ -43,6 +44,23 @@ type RunRow = {
   launch_cwd: string | null
   launch_key: string | null
   launch_seed: string | null
+}
+
+export function landingTreeSeedRequest(input: {
+  requested: string | undefined
+  recordedLaunchSeed: string | null
+  project: Parameters<typeof projectSeedPreflight>[0]['project']
+  tool: Parameters<typeof projectSeedPreflight>[0]['tool']
+  baseRef: string | undefined
+}): Parameters<typeof projectSeedPreflight>[0] {
+  return {
+    requested: input.requested,
+    inherited: input.recordedLaunchSeed ?? undefined,
+    writesRepo: true,
+    project: input.project,
+    tool: input.tool,
+    baseRef: input.baseRef,
+  }
 }
 
 function sourceRun(runId: number): { root: RunRow; latest: RunRow } {
@@ -86,7 +104,7 @@ function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
     rootBranch: root.branch_kept,
   })
   const branch = branchPlan.branch
-  const missingBranch = landingTreeOpeningRefusal({ branch, seeds: [] })
+  const missingBranch = landingTreeOpeningRefusal({ branch })
   if (missingBranch) throw new Error(`run ${runId}: ${missingBranch}`)
   if (!branch) throw new Error(`run ${runId}: conversation branch resolution failed`)
   const liveTip = gitContext(project.path, 'rev-parse', '--verify', `refs/heads/${branch}^{commit}`)
@@ -117,12 +135,18 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
-  const seedRefusal = landingTreeOpeningRefusal({
-    branch,
-    seeds: tool?.seeds ?? [],
-    seed,
-  })
-  if (seedRefusal) throw new Error(`project ${project.name}: ${seedRefusal}`)
+  const seedDecision = projectSeedPreflight(
+    landingTreeSeedRequest({
+      requested: seed,
+      recordedLaunchSeed: root.launch_seed,
+      project,
+      tool,
+      baseRef: plan.tip,
+    }),
+  )
+  if (seedDecision.refusal) throw new Error(`project ${project.name}: ${seedDecision.refusal}`)
+  const effectiveSeed = seedDecision.seed
+  validateProjectSeed(project, effectiveSeed)
   let templateBase: string | undefined
   if (lifecycle.form === 'command-templates') {
     const capability = landingTreeCommandCapability(tool!.create!)
@@ -166,7 +190,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
       project.path,
       root.launch_key,
       templateBase ?? plan.tip,
-      seed ?? null,
+      effectiveSeed ?? null,
       stackAt(project.path),
       LANDING_TREE_EVIDENCE_EXCLUSION,
       process.pid,
@@ -239,7 +263,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         runId: inserted.id,
         writes: true,
         readOnlyBase: plan.tip,
-        seed,
+        seed: effectiveSeed,
         key: root.launch_key ?? undefined,
         baseRef: plan.tip,
         record,

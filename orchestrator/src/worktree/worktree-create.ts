@@ -11,6 +11,7 @@ import { createTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { resolveBase } from './worktree-caller.ts'
 import { removeFor, removeWorktree } from './worktree-remove.ts'
+import { projectSeedPreflight } from './worktree-seed.ts'
 import { createArgv, fillArg, fillTool, type WorktreeCreate } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
@@ -210,20 +211,22 @@ export function createWithTool(
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  const projectName = projectAt(cwd)?.name ?? projectAt(repoRoot)?.name ?? '(unregistered)'
-  if (tool.seeds?.length && !seed) {
-    throw new Error(
-      `this project requires a database size for a new worktree, and has no default.\n` +
-        `  --seed ${tool.seeds.join('\n  --seed ')}\n\n` +
-        `Choosing is the architect's call: it depends on what the task touches.`,
-    )
-  }
+  const project = projectAt(cwd) ?? projectAt(repoRoot)
+  const projectName = project?.name ?? '(unregistered)'
+  const seedDecision = projectSeedPreflight({
+    requested: seed,
+    writesRepo: true,
+    project,
+    tool,
+    baseRef,
+  })
+  if (seedDecision.refusal) throw new Error(seedDecision.refusal)
   return withWorktreeCreateLock(repoRoot, () =>
     createWithToolUnlocked(
       tool,
       repoRoot,
       runId,
-      seed,
+      seedDecision.seed,
       key,
       baseRef,
       record,

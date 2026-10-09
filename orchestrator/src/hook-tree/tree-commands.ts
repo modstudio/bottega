@@ -5,7 +5,7 @@ import { openLandingTree } from '../landing-tree/tree.ts'
 import { createHookTree, removeHookTree } from './tree.ts'
 
 export function treeCreateCommand(
-  options: { cwd: string; name: string; key?: string; base?: string },
+  options: { cwd: string; name: string; key?: string; base?: string; seed?: string },
   presentation: { writePath(path: string): void },
 ): void {
   presentation.writePath(createHookTree(options))

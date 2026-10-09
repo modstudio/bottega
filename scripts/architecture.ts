@@ -638,6 +638,7 @@ export const modules: ArchitectureModule[] = [
     '../recipe/tracked-recipe.ts',
     '../worktree/worktree-create.ts',
     '../worktree/worktree-lifecycle.ts',
+    '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/landing-tree/tree.ts', [
@@ -655,6 +656,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-attribution.ts',
     '../worktree/worktree-create.ts',
     '../worktree/worktree-lifecycle.ts',
+    '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
     './landing-tree.ts',
   ]),
@@ -698,6 +700,7 @@ export const modules: ArchitectureModule[] = [
     '../project/project-lock.ts',
     './worktree-remove.ts',
     './worktree-caller.ts',
+    './worktree-seed.ts',
     './worktree-tool.ts',
     './worktree-types.ts',
   ]),

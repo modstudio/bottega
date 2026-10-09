@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { createWorkerWorktree } from './worktree.ts'
+import { seedPreflight } from './worktree-seed.ts'
 
 afterEach(() => {
   mock.restore()
@@ -17,6 +18,11 @@ test('worktree creation from a non-main cwd starts compose in the registered mai
     return result('')
   }) as typeof Bun.spawnSync)
 
+  const refusal = seedPreflight({
+    requested: undefined,
+    registerChoices: ['required'],
+    recipeSeeds: undefined,
+  }).refusal!
   expect(() =>
     createWorkerWorktree({
       tool: { seeds: ['required'] },
@@ -29,7 +35,7 @@ test('worktree creation from a non-main cwd starts compose in the registered mai
       detached: false,
       mainStackConsumers: ['worktree-create'],
     }),
-  ).toThrow('requires a database size')
+  ).toThrow(refusal)
 
   expect(composeCalls).toEqual([
     {

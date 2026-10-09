@@ -14,6 +14,7 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
+import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-seed.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { HOOK_TREE_AGENT, hookTreeEvidenceDecision } from './hook-tree.ts'
 
@@ -45,11 +46,27 @@ function validateKey(
   }
 }
 
+export function hookTreeSeedRequest(input: {
+  requested: string | undefined
+  project: Parameters<typeof projectSeedPreflight>[0]['project']
+  tool: Parameters<typeof projectSeedPreflight>[0]['tool']
+  baseRef: string | undefined
+}): Parameters<typeof projectSeedPreflight>[0] {
+  return {
+    requested: input.requested,
+    writesRepo: true,
+    project: input.project,
+    tool: input.tool,
+    baseRef: input.baseRef,
+  }
+}
+
 export function createHookTree(input: {
   cwd: string
   name: string
   key?: string
   base?: string
+  seed?: string
 }): string {
   const callerCwd = resolve(input.cwd)
   const project = projectAt(callerCwd)
@@ -62,6 +79,16 @@ export function createHookTree(input: {
   }
   if (!input.name.trim()) throw new Error('--name must contain text')
   validateKey(tool, input.key)
+  const seedDecision = projectSeedPreflight(
+    hookTreeSeedRequest({
+      requested: input.seed,
+      project,
+      tool,
+      baseRef: input.base,
+    }),
+  )
+  if (seedDecision.refusal) throw new Error(`project ${project.name}: ${seedDecision.refusal}`)
+  validateProjectSeed(project, seedDecision.seed)
   const hookBranch = trackedHookBranch({
     tool,
     repoRoot: project.path,
@@ -84,8 +111,8 @@ export function createHookTree(input: {
     .query(
       `INSERT INTO run
        (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
-        session_id,launch_cwd,launch_key,launch_base,stack,evidence_excluded,pid)
-       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
+        session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
+       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
       startedAt,
@@ -101,6 +128,7 @@ export function createHookTree(input: {
       callerCwd,
       input.key ?? null,
       input.base ?? null,
+      seedDecision.seed ?? null,
       stackAt(project.path),
       evidence.evidenceExcluded,
       process.pid,
@@ -147,7 +175,7 @@ export function createHookTree(input: {
       tool,
       project.path,
       inserted.id,
-      undefined,
+      seedDecision.seed,
       input.key,
       input.base,
       record,

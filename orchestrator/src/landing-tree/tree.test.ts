@@ -2,7 +2,19 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { removeHookTree } from '../hook-tree/tree.ts'
-import { releaseFailedLandingTree } from './tree.ts'
+import { landingTreeSeedRequest, releaseFailedLandingTree } from './tree.ts'
+
+test('landing-tree seed request carries the recorded launch seed', () => {
+  expect(
+    landingTreeSeedRequest({
+      requested: undefined,
+      recordedLaunchSeed: 'recorded',
+      project: null,
+      tool: null,
+      baseRef: 'tip',
+    }),
+  ).toMatchObject({ requested: undefined, inherited: 'recorded', baseRef: 'tip' })
+})
 
 test('failed creation settles its worktree claim after the recipe already removed the directory', () => {
   const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'failed' })
