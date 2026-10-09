@@ -1,6 +1,11 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
 import { upsertRecordDoc } from '../src/record/record-docs.ts'
+import {
+  clearPublicDocProject,
+  designatePublicDocProject,
+  listPublicDocProjects,
+} from '../src/record/record-public-doc-designation.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -16,6 +21,7 @@ export function registerPublicDocProofs(input: {
   spaces: readonly [publicSpaceId: string, privateSpaceId: string, actorUrl: string]
   projects: readonly [publicProjectId: string, otherProjectId: string, privateProjectId: string]
   ownerUserId: string
+  session(): readonly [userId: string, token: string, setToken: (token: string) => void]
   admin(statement: string): string
   psql(user: string, password: string, statement: string): PsqlResult
 }): void {
@@ -30,8 +36,6 @@ export function registerPublicDocProofs(input: {
 
   beforeAll(() => {
     input.admin(`
-      INSERT INTO public_doc_space (space_id, project_id)
-        VALUES ('${publicSpaceId}', '${publicProjectId}');
       INSERT INTO doc (
         id, space_id, scope, subject, owner_user_id, slug, title, body, delivery,
         audiences, featured, project_id, created_at, updated_at, deleted_at
@@ -50,6 +54,77 @@ export function registerPublicDocProofs(input: {
          'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', ARRAY['customer'], false, '${otherProjectId}', now(), now(), NULL),
         ('${NO_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
          'no-project-guide', 'No project guide', 'hidden no project body', 'demand', ARRAY['customer'], false, NULL, now(), now(), NULL);
+    `)
+  })
+
+  test('break: using owner lookups without tenant bindings silently inserts no public designation', async () => {
+    const [sessionUserId, token, setToken] = input.session()
+    const ownerUrl = process.env.ORCH_RECORD_MIGRATE_URL
+    if (!ownerUrl) throw new Error('ORCH_RECORD_MIGRATE_URL is required')
+    setToken(token)
+    input.admin(`
+      INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
+      VALUES ('01990000-0000-7000-8000-000000000313', '${publicSpaceId}',
+        '${sessionUserId}', 'member', 'write', now());
+      DELETE FROM public_doc_space;
+    `)
+    const target = {
+      actorUrl,
+      ownerUrl,
+      spaceSlug: 'space-a',
+      projectName: 'alpha',
+    }
+
+    await expect(
+      designatePublicDocProject({ ...target, spaceSlug: 'missing-space' }),
+    ).rejects.toThrow('not a member of record space')
+    await expect(
+      designatePublicDocProject({ ...target, projectName: 'missing-project' }),
+    ).rejects.toThrow('does not exist in space')
+    expect(input.admin('SELECT count(*) FROM public_doc_space;')).toBe('0')
+
+    expect(await designatePublicDocProject(target)).toEqual({
+      changed: true,
+      spaceId: publicSpaceId,
+      projectId: publicProjectId,
+    })
+    expect((await designatePublicDocProject(target)).changed).toBeFalse()
+    expect(asPublic(`SELECT id FROM doc WHERE id='${PUBLIC_DOC}'; COMMIT;`).stdout).toBe(PUBLIC_DOC)
+
+    input.admin(`
+      INSERT INTO public_doc_space (space_id, project_id)
+      VALUES ('${privateSpaceId}', '${privateProjectId}');
+    `)
+    expect(await listPublicDocProjects({ actorUrl, ownerUrl })).toEqual([
+      {
+        space_id: publicSpaceId,
+        project_id: publicProjectId,
+        space_slug: 'space-a',
+        project_name: 'alpha',
+        resolvable: true,
+      },
+      {
+        space_id: privateSpaceId,
+        project_id: privateProjectId,
+        space_slug: null,
+        project_name: null,
+        resolvable: false,
+      },
+    ])
+    input.admin(`
+      DELETE FROM public_doc_space
+      WHERE space_id='${privateSpaceId}' AND project_id='${privateProjectId}';
+    `)
+
+    expect(await clearPublicDocProject(target)).toEqual({
+      spaceId: publicSpaceId,
+      projectId: publicProjectId,
+    })
+    expect(asPublic(`SELECT id FROM doc WHERE id='${PUBLIC_DOC}'; COMMIT;`).stdout).toBe('')
+    await expect(clearPublicDocProject(target)).rejects.toThrow('is not publicly designated')
+    await designatePublicDocProject(target)
+    input.admin(`
+      DELETE FROM membership WHERE id='01990000-0000-7000-8000-000000000313';
     `)
   })
 
