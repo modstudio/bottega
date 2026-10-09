@@ -37,7 +37,7 @@ type RawEvent = {
   to_status: string
 }
 
-function asInterval(row: RawInterval): MeasureInterval {
+export function asInterval(row: RawInterval): MeasureInterval {
   return {
     source: row.source,
     startAt: iso(row.start_at),

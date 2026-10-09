@@ -1,8 +1,12 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { PGlite } from '@electric-sql/pglite'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { getTableColumns } from 'drizzle-orm'
+import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { PLATFORM_SLUG } from '../brand.ts'
+import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
 import { hubSend, hubTaskComment, hubTaskDocument, hubTaskStatusEvent } from './schema-hub.ts'
 
 const migration = (name: string) =>
@@ -256,5 +260,137 @@ test('stopal note move bypasses forced row security as the non-bypass table owne
       )
     ).rows[0]?.space_id,
   ).toBe('01990000-0000-7000-8000-000000000001')
+  await database.close()
+})
+
+const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
+const TOKEN_BIGINT_MIGRATION = '20261009200321_dev_1240_token_bigint'
+const tokenSpace = '01990000-0000-7000-8000-000000001410'
+const tokenUser = '01990000-0000-7000-8000-000000001411'
+const tokenDay = '01990000-0000-7000-8000-000000001412'
+const tokenInterval = '01990000-0000-7000-8000-000000001413'
+
+async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
+  for (const statement of migration.sql) await transaction.exec(statement)
+  await transaction.query(
+    'INSERT INTO drizzle.__drizzle_migrations (hash,created_at,name) VALUES ($1,$2,$3)',
+    [migration.hash, migration.folderMillis, migration.name],
+  )
+}
+
+test('token bigint migration keeps values and appends no change-log entry', async () => {
+  const database = new PGlite()
+  await database.exec(`
+    CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_actor LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_auth LOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_public NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    CREATE ROLE record_reader LOGIN NOSUPERUSER NOBYPASSRLS;
+    GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;
+    GRANT CREATE ON DATABASE postgres TO record_owner;
+    ALTER SCHEMA public OWNER TO record_owner;
+    SET ROLE record_owner;
+    CREATE SCHEMA drizzle;
+    CREATE TABLE drizzle.__drizzle_migrations (
+      id serial PRIMARY KEY, hash text NOT NULL, created_at bigint, name text
+    );
+  `)
+  const migrations = readMigrationFiles({ migrationsFolder })
+  const tokenMigration = migrations.find((item) => item.name === TOKEN_BIGINT_MIGRATION)
+  if (!tokenMigration) throw new Error(`missing ${TOKEN_BIGINT_MIGRATION}`)
+  await database.transaction(async (transaction) => {
+    for (const item of migrations) {
+      if (item.name === TOKEN_BIGINT_MIGRATION) continue
+      await applyMigration(transaction, item)
+    }
+  })
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${tokenSpace}','Token migrate','token-migrate',now());
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${tokenUser}','migrate@example.test','Migrate user',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000001414','${tokenSpace}','${tokenUser}','member','write',now());
+    SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${tokenUser}',false);
+    SELECT set_config('app.space_id','${tokenSpace}',false);
+    SELECT set_config('app.space_ids','${tokenSpace}',false);
+    INSERT INTO hub_day (
+      id,space_id,day,claude_tokens,cache_read,canon_tokens,other_tokens,collected_at,updated_at
+    ) VALUES (
+      '${tokenDay}','${tokenSpace}','2026-10-05',1000,1001,1002,1003,now(),now()
+    );
+    INSERT INTO hub_interval (
+      id,space_id,source,start_at,end_at,claude_tokens,vendor_tokens,ref,updated_at
+    ) VALUES (
+      '${tokenInterval}','${tokenSpace}','claude',now(),now(),2000,2001,'migrate-interval',now()
+    );
+  `)
+  await database.exec('RESET ROLE')
+  const changesBefore = (
+    await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_change`)
+  ).rows[0]!.count
+  const dayCount = (
+    await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_day`)
+  ).rows[0]!.count
+  const intervalCount = (
+    await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_interval`)
+  ).rows[0]!.count
+  expect(
+    (
+      await database.query<{ relforcerowsecurity: boolean }>(
+        `SELECT relforcerowsecurity FROM pg_class WHERE oid='hub_day'::regclass`,
+      )
+    ).rows[0]?.relforcerowsecurity,
+  ).toBe(true)
+  expect(
+    (
+      await database.query<{ relforcerowsecurity: boolean }>(
+        `SELECT relforcerowsecurity FROM pg_class WHERE oid='hub_interval'::regclass`,
+      )
+    ).rows[0]?.relforcerowsecurity,
+  ).toBe(true)
+  await database.exec(`SET ROLE ${RECORD_OWNER_ROLE}`)
+  await database.transaction(async (transaction) => {
+    await applyMigration(transaction, tokenMigration)
+  })
+  await database.exec('RESET ROLE')
+  const migratedDay = (
+    await database.query<{
+      claude_tokens: string | number
+      cache_read: string | number
+      canon_tokens: string | number
+      other_tokens: string | number
+    }>(`SELECT claude_tokens,cache_read,canon_tokens,other_tokens FROM hub_day WHERE id=$1`, [
+      tokenDay,
+    ])
+  ).rows[0]!
+  expect(Number(migratedDay.claude_tokens)).toBe(1000)
+  expect(Number(migratedDay.cache_read)).toBe(1001)
+  expect(Number(migratedDay.canon_tokens)).toBe(1002)
+  expect(Number(migratedDay.other_tokens)).toBe(1003)
+  const migratedInterval = (
+    await database.query<{ claude_tokens: string | number; vendor_tokens: string | number }>(
+      `SELECT claude_tokens,vendor_tokens FROM hub_interval WHERE id=$1`,
+      [tokenInterval],
+    )
+  ).rows[0]!
+  expect(Number(migratedInterval.claude_tokens)).toBe(2000)
+  expect(Number(migratedInterval.vendor_tokens)).toBe(2001)
+  expect(
+    (
+      await database.query<{ data_type: string }>(
+        `SELECT data_type FROM information_schema.columns
+         WHERE table_name='hub_day' AND column_name='claude_tokens'`,
+      )
+    ).rows[0]?.data_type,
+  ).toBe('bigint')
+  expect(
+    (await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_change`))
+      .rows[0]!.count,
+  ).toBe(changesBefore)
+  expect(dayCount).toBe(1)
+  expect(intervalCount).toBe(1)
   await database.close()
 })

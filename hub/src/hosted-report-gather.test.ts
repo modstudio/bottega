@@ -1,11 +1,22 @@
 import { expect, test } from 'bun:test'
-import { gatherHostedReport, type HostedReportRow } from './hosted-report-gather.ts'
+import {
+  asHostedReportRow,
+  gatherHostedReport,
+  type HostedReportRow,
+} from './hosted-report-gather.ts'
 import {
   projectDisplayNames,
   projectItemPresentation,
   renderHtml,
   renderText,
 } from './report-renderer.ts'
+
+const INTERVAL_TOKENS = 2_207_932_949
+
+function expectNumber(value: unknown, expected: number) {
+  expect(typeof value).toBe('number')
+  expect(value).toBe(expected)
+}
 
 const period = {
   from: '2026-09-17T13:00:00.000Z',
@@ -238,4 +249,34 @@ test('hosted reports count matched, unmatched and untasked work independently', 
     'DEV-404 — not in the task record',
   ])
   expect(presentation.unmatchedNotice).toBe('1 task was not found in the task record: DEV-404')
+})
+
+test('hosted report rows return vendor tokens above the 32-bit range as numbers', () => {
+  const startAt = '2026-10-05T10:00:00.000Z'
+  const endAt = '2026-10-05T12:00:00.000Z'
+  const row = {
+    space_id: '01990000-0000-7000-8000-000000001400',
+    task_id: null,
+    task_key: 'DEV-1240',
+    project_name: 'workshop',
+    start_at: startAt,
+    end_at: endAt,
+    open: 0,
+    task_project: 'workshop',
+    task_title: null,
+    task_status: null,
+    project_color: null,
+  }
+  const fromString = asHostedReportRow({ ...row, vendor_tokens: String(INTERVAL_TOKENS) })
+  expectNumber(fromString.vendor_tokens, INTERVAL_TOKENS)
+  expectNumber(
+    asHostedReportRow({ ...row, vendor_tokens: INTERVAL_TOKENS }).vendor_tokens,
+    INTERVAL_TOKENS,
+  )
+  const gathered = gatherHostedReport([fromString], new Set(), {
+    from: startAt,
+    to: endAt,
+    key: endAt,
+  })
+  expectNumber(gathered.projects[0]!.agentTokens, INTERVAL_TOKENS)
 })
