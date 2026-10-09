@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   callerCheckoutDecision,
   dispatchLaunchCwdDecision,
+  resolveCallerCheckoutDecision,
   taskBranchLandingBypassWarning,
 } from './dispatch-cli-service.ts'
 
@@ -57,6 +58,34 @@ describe('dispatch launch cwd selection', () => {
 })
 
 describe('caller checkout resolution', () => {
+  test('recording-handoff mutation: --repo alone records and returns the named project cwd', () => {
+    const checked: string[] = []
+    const decision = resolveCallerCheckoutDecision(
+      {
+        shellCwd: '/projects/atlas',
+        explicitCwd: null,
+        namedProject: { name: 'starship', path: '/projects/starship' },
+        cwdProject: null,
+      },
+      (cwd) => {
+        checked.push(cwd)
+        return {
+          repoRoot: '/projects/starship',
+          registeredProjectPath: '/projects/starship',
+          linkedWorktree: false,
+          borrowedCheckout: false,
+        }
+      },
+    )
+
+    expect(checked).toEqual(['/projects/starship'])
+    expect(decision).toEqual({
+      callerCwd: '/projects/starship',
+      launchCwd: '/projects/starship',
+      notice: null,
+    })
+  })
+
   test('shell-cwd mutation: implicit linked worktree resolves to the registered project and warns', () => {
     expect(
       callerCheckoutDecision({

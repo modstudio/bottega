@@ -109,28 +109,46 @@ export function callerCheckoutDecision(input: {
   }
 }
 
+export function resolveCallerCheckoutDecision(
+  input: {
+    shellCwd: string
+    explicitCwd: string | null
+    namedProject: { name: string; path: string } | null
+    cwdProject: { name: string } | null
+  },
+  checkoutFactsAt: (cwd: string) => ReturnType<typeof callerCheckoutFacts>,
+): CallerCheckoutDecision {
+  const selection = dispatchLaunchCwdDecision({
+    namedProject: input.namedProject,
+    cwdWasGiven: input.explicitCwd !== null,
+    cwd: input.explicitCwd ?? input.shellCwd,
+    cwdProject: input.cwdProject,
+  })
+  if (!('launchCwd' in selection)) throw new Error(selection.refusal)
+  const decidedLaunchCwd = selection.launchCwd
+  const decidedCwdIsExplicit = input.explicitCwd !== null || input.namedProject !== null
+  return callerCheckoutDecision({
+    launchCwd: decidedLaunchCwd,
+    explicitCwd: decidedCwdIsExplicit ? decidedLaunchCwd : null,
+    ...checkoutFactsAt(decidedLaunchCwd),
+  })
+}
+
 function resolveCallerCheckout(
-  launchCwd: string,
+  shellCwd: string,
   explicitCwd?: string,
   explicitRepo?: string,
 ): CallerCheckoutDecision {
-  const selected = explicitCwd ? realpathSync(explicitCwd) : launchCwd
-  const namedProject = explicitRepo ? projectByName(explicitRepo) : null
-  const selection = dispatchLaunchCwdDecision({
-    namedProject,
-    cwdWasGiven: explicitCwd !== undefined,
-    cwd: selected,
-    cwdProject: explicitCwd ? projectAt(selected) : null,
-  })
-  if (!('launchCwd' in selection)) throw new Error(selection.refusal)
-  const effectiveCwd = selection.launchCwd
-  const effectiveExplicitCwd = explicitCwd !== undefined || namedProject ? effectiveCwd : undefined
-  const facts = callerCheckoutFacts(effectiveCwd)
-  return callerCheckoutDecision({
-    launchCwd,
-    explicitCwd: effectiveExplicitCwd ?? null,
-    ...facts,
-  })
+  const selectedCwd = explicitCwd ? realpathSync(explicitCwd) : shellCwd
+  return resolveCallerCheckoutDecision(
+    {
+      shellCwd,
+      explicitCwd: explicitCwd !== undefined ? selectedCwd : null,
+      namedProject: explicitRepo ? projectByName(explicitRepo) : null,
+      cwdProject: explicitCwd ? projectAt(selectedCwd) : null,
+    },
+    callerCheckoutFacts,
+  )
 }
 
 async function modelForDistinct(id: number): Promise<string> {
