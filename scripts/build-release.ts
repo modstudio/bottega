@@ -4,6 +4,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import { DIST_MANIFEST, type DistributionManifest } from '../shared/install-root.ts'
+import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 import { resolveStateRoot } from '../shared/state-directory.ts'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -36,10 +37,11 @@ export const DECLARED_PAYLOAD_PATHS = [
 ] as const
 
 export function releaseVersion(tag: string): string {
-  if (!/^v[0-9A-Za-z][0-9A-Za-z.-]*$/.test(tag)) {
-    throw new Error(`release tag must match v*: received ${JSON.stringify(tag)}`)
+  const version = releaseTagVersion(tag)
+  if (version === null) {
+    throw new Error(`release tag must match ${RELEASE_TAG_SHAPE}: received ${JSON.stringify(tag)}`)
   }
-  return tag.slice(1)
+  return version
 }
 
 export function distributionManifest(

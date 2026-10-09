@@ -1,6 +1,8 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
+import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
+
 export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
 
 /** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
@@ -30,6 +32,22 @@ export type CheckoutFacts = {
 }
 
 export type Decision = { ok: true } | { ok: false; message: string }
+
+/** Require the checkout's reported version to be the version named by the release tag. */
+export function releaseTagVersionDecision(reportedVersion: string, tag: string): Decision {
+  const taggedVersion = releaseTagVersion(tag)
+  if (taggedVersion === null) {
+    return {
+      ok: false,
+      message: `release tag ${tag} must match ${RELEASE_TAG_SHAPE}`,
+    }
+  }
+  if (taggedVersion === reportedVersion) return { ok: true }
+  return {
+    ok: false,
+    message: `reported version ${reportedVersion} does not match release tag ${tag}; change package.json before tagging`,
+  }
+}
 
 export function checkoutReleaseDecision(facts: CheckoutFacts): Decision {
   if (facts.branch !== facts.requiredBranch) {

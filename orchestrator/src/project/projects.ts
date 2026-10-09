@@ -33,6 +33,7 @@ import {
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
+import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
@@ -794,6 +795,30 @@ export type RegisterBranchCheck = {
   problems: string[]
 }
 
+/** Choose the detached-checkout message from facts already gathered by the git adapter. */
+export function detachedCheckoutDecision(
+  landing: string | null,
+  detached: boolean,
+  tagsAtHead: readonly string[],
+  checkoutPath: string,
+  projectName: string,
+): string | null {
+  if (!landing || !detached) return null
+  const releaseTag = [...tagsAtHead].sort().find((tag) => releaseTagVersion(tag) !== null)
+  return releaseTag
+    ? `release tag ${releaseTag} is checked out; a development checkout stays on its landing branch ${landing}\n` +
+        `cleared by: git -C ${shellQuote(checkoutPath)} switch -- ${shellQuote(landing)}`
+    : `checkout HEAD is detached, not landing branch ${landing}\n` +
+        registerBranchRemedy(landing, checkoutPath, projectName)
+}
+
+function registerBranchRemedy(landing: string, checkoutPath: string, projectName: string): string {
+  return (
+    `cleared by: check out ${landing} in ${checkoutPath} or correct it with orch project set ${projectName} ` +
+    `--settings '{"trunk":"<branch>"}'`
+  )
+}
+
 /** Verify branch facts at registration time; never guess a detached HEAD. */
 export function registerBranchCheck(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
@@ -811,6 +836,23 @@ export function registerBranchCheck(
     },
   )
   const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
+  const tagResult =
+    headResult.exitCode === 1
+      ? Bun.spawnSync(['git', '-C', project.path, 'tag', '--points-at', 'HEAD'], {
+          env: inspectionGitEnv(),
+          stdout: 'pipe',
+          stderr: 'ignore',
+        })
+      : null
+  const tagsAtHead =
+    tagResult?.exitCode === 0 ? tagResult.stdout.toString().trim().split('\n').filter(Boolean) : []
+  const detachedDecision = detachedCheckoutDecision(
+    landing,
+    head === null,
+    tagsAtHead,
+    project.path,
+    project.name,
+  )
   let canonIntegration: string | null = null
   const canonPath = join(project.path, 'AGENTS.md')
   if (existsSync(canonPath)) {
@@ -821,8 +863,12 @@ export function registerBranchCheck(
     canonIntegration = match?.[1] ?? null
   }
   const problems: string[] = []
-  if (landing && head !== landing)
-    problems.push(`checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`)
+  if (landing && head !== landing) {
+    problems.push(
+      detachedDecision ??
+        `checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}\n${registerBranchRemedy(landing, project.path, project.name)}`,
+    )
+  }
   if (landing && canonIntegration && canonIntegration !== landing) {
     problems.push(
       `canon names integration branch ${canonIntegration}, not landing branch ${landing}`,
@@ -835,7 +881,12 @@ export function registerBranchCheck(
   if (landing && production && production === landing) {
     problems.push(`production branch ${production} must be distinct from landing branch ${landing}`)
   }
-  return { head, landing, canonIntegration, problems }
+  return {
+    head,
+    landing,
+    canonIntegration,
+    problems,
+  }
 }
 
 export function assertRegisterBranches(
@@ -845,8 +896,7 @@ export function assertRegisterBranches(
   if (!check.problems.length) return
   throw new Error(
     `${project.name}: ${check.problems.join('; ')}\n` +
-      'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
-      `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+      'invariant: the register landing branch agrees with the main checkout and its integration-branch canon',
   )
 }
 

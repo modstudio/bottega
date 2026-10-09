@@ -6,6 +6,7 @@ import {
   RELEASE_OUTPUT_WITHHELD,
   releaseCapturedText,
   releaseLockDecision,
+  releaseTagVersionDecision,
   rollbackReasonDecision,
 } from './release-decision.ts'
 
@@ -18,6 +19,19 @@ const level = {
   ahead: 0,
   behind: 0,
 }
+
+test('release tag version accepts a match and refuses a mismatch', () => {
+  expect(releaseTagVersionDecision('0.2.0', 'v0.2.0')).toEqual({ ok: true })
+  expect(releaseTagVersionDecision('0.1.0', 'v0.2.0')).toEqual({
+    ok: false,
+    message:
+      'reported version 0.1.0 does not match release tag v0.2.0; change package.json before tagging',
+  })
+  expect(releaseTagVersionDecision('0.2.0', 'release-0.2.0')).toEqual({
+    ok: false,
+    message: 'release tag release-0.2.0 must match v*',
+  })
+})
 
 describe('release checkout', () => {
   test('allows a clean level checkout', () =>

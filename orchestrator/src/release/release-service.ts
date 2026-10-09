@@ -1,7 +1,10 @@
 // concern: release-service
 /** Gathers release facts, executes a registered deploy under the project lock, and owns its ledger. */
 
+import { readFileSync } from 'node:fs'
 import { userInfo } from 'node:os'
+import { join } from 'node:path'
+import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
@@ -14,11 +17,38 @@ import {
   postDeployLiveDecision,
   releaseCapturedText,
   releaseLockDecision,
+  releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
 } from './release-decision.ts'
 
 type CommandResult = { exitCode: number; output: string }
+
+/** Validate a proposed tag against the version reported by this development checkout. */
+export function validateReleaseTagVersion(
+  tag: string,
+  fromDirectory = import.meta.dir,
+  environment: Record<string, string | undefined> = process.env,
+): { tag: string; reportedVersion: string } {
+  const root = resolveInstallRoot(fromDirectory, environment)
+  const file = join(root, 'package.json')
+  let value: unknown
+  try {
+    value = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    throw new Error(
+      `cannot read the reported version from ${file}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  const reportedVersion =
+    value && typeof value === 'object' ? (value as Record<string, unknown>).version : null
+  if (typeof reportedVersion !== 'string' || !reportedVersion.trim()) {
+    throw new Error(`cannot read the reported version from ${file}: version is missing or empty`)
+  }
+  const decision = releaseTagVersionDecision(reportedVersion, tag)
+  if (!decision.ok) throw new Error(decision.message)
+  return { tag, reportedVersion }
+}
 
 export type ReleaseLedgerRow = {
   id: number

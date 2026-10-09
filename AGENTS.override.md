@@ -590,6 +590,12 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 Run `bun run check` on the reviewed branch, then open the pull request with `orch pr create` and merge on GitHub. `orch pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. The local gate proves the commit; the pull request admits it to trunk.
 
+## Keep development on the landing branch when releasing
+
+On a machine where Bottega is developed, the installed copy is the `main` checkout and stays on its registered landing branch. Run `orch release check` before tagging, then cut a release by tagging the release commit and pushing the tag; never check out the tag in the development checkout. The pushed tag runs the same version check again before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
+
+On any other machine, install a release in its own directory and update it by replacing that directory.
+
 ## Close out the session
 
 Release terminal worktrees with `orch close-out`, prune landed run branches with `orch branches prune`, which sweep also runs, close landed tasks with `hub task`, and offer a resume brief through `orch doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
