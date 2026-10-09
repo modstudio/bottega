@@ -100,6 +100,10 @@ function unusedBoard(): Promise<never> {
   return Promise.reject(new Error('hosted board is unused in this fixture'))
 }
 
+function unusedSubject(): Promise<never> {
+  return Promise.reject(new Error('hosted subjects are unused in this fixture'))
+}
+
 export function unusedBoardClientMethods(): Pick<
   RecordApiClient,
   | 'listPublicDocs'
@@ -123,6 +127,12 @@ export function unusedBoardClientMethods(): Pick<
   | 'releaseBoardClaim'
   | 'listBoardClaims'
   | 'releaseBoardTaskClaims'
+  | 'listProjectSubjects'
+  | 'addProjectSubject'
+  | 'renameProjectSubject'
+  | 'defineProjectSubject'
+  | 'reorderProjectSubjects'
+  | 'retireProjectSubject'
 > {
   return {
     listPublicDocs: unusedBoard,
@@ -146,6 +156,12 @@ export function unusedBoardClientMethods(): Pick<
     releaseBoardClaim: unusedBoard,
     listBoardClaims: unusedBoard,
     releaseBoardTaskClaims: unusedBoard,
+    listProjectSubjects: async () => ({ items: [], nextCursor: null }),
+    addProjectSubject: unusedSubject,
+    renameProjectSubject: unusedSubject,
+    defineProjectSubject: unusedSubject,
+    reorderProjectSubjects: unusedSubject,
+    retireProjectSubject: unusedSubject,
   }
 }
 

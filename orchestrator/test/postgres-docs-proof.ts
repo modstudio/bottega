@@ -46,6 +46,24 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
       const suffix = search.toString()
       return read(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination?.destinationSpaceId)
     },
+    listProjectSubjects: async (query, destination) => {
+      const search = new URLSearchParams()
+      if (query.project) search.set('project', query.project)
+      if (query.includeRetired) search.set('includeRetired', 'true')
+      if (query.order) search.set('order', query.order)
+      if (query.cursor) search.set('cursor', query.cursor)
+      if (query.limit) search.set('limit', String(query.limit))
+      const suffix = search.toString()
+      return read(
+        `/v1/subjects${suffix ? `?${suffix}` : ''}`,
+        destination?.destinationSpaceId,
+      ) as ReturnType<RecordApiClient['listProjectSubjects']>
+    },
+    addProjectSubject: unused,
+    renameProjectSubject: unused,
+    defineProjectSubject: unused,
+    reorderProjectSubjects: unused,
+    retireProjectSubject: unused,
     listScores: async (query) => {
       const search = new URLSearchParams()
       if (query.updatedSince) search.set('updatedSince', query.updatedSince)
@@ -492,7 +510,8 @@ async function proveSubjects(
     expect(response.status).toBe(200)
     return (await response.json()) as ProofSubject
   }
-  const first = await add('First', 'The first subject.')
+  const first = await add('First', '  The first subject. \n')
+  expect(first.definition).toBe('The first subject.')
   const second = await add('Second', 'The second subject.')
   const third = await add('Third', 'The third subject.')
   const list = async (query = '') => {
@@ -516,12 +535,22 @@ async function proveSubjects(
   const defined = await fetch(`${origin}/v1/subjects/${third.id}/define`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ project, definition: 'The updated third subject.' }),
+    body: JSON.stringify({ project, definition: '\tThe updated third subject.\r' }),
   })
   expect(defined.status).toBe(200)
   expect((await defined.json()) as ProofSubject).toMatchObject({
     id: third.id,
     definition: 'The updated third subject.',
+  })
+
+  const multiline = await fetch(`${origin}/v1/subjects/${third.id}/define`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ project, definition: 'First line\nSecond line' }),
+  })
+  expect(multiline.status).toBe(400)
+  expect(await multiline.json()).toEqual({
+    error: 'a subject definition must be one non-empty line',
   })
 
   const duplicate = await fetch(`${origin}/v1/subjects`, {

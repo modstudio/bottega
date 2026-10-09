@@ -5,6 +5,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   addSubject,
   applySubjectRecord,
+  defineSubject,
   listSubjects,
   reorderSubjects,
   retireSubject,
@@ -85,4 +86,21 @@ describe('project subjects', () => {
       )
     },
   )
+
+  test('trims surrounding whitespace and refuses an interior line break', async () => {
+    upsertProject({ name: 'alpha', path: '/w/alpha' })
+    const subject = await addSubject({
+      project: 'alpha',
+      name: 'Trimmed',
+      definition: '  A trimmed definition. \n',
+    })
+    expect(subject.definition).toBe('A trimmed definition.')
+    expect(listSubjects('alpha')[0]?.definition).toBe('A trimmed definition.')
+    expect((await defineSubject('alpha', subject.id, '\tA changed definition.\r')).definition).toBe(
+      'A changed definition.',
+    )
+    expect(() => defineSubject('alpha', subject.id, 'First line\nSecond line')).toThrow(
+      'a subject definition must be one non-empty line',
+    )
+  })
 })

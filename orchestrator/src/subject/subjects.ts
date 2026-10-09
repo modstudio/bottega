@@ -2,7 +2,11 @@
 /** Owns local subject storage and hosted-first subject mutations. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { SubjectDefinitionSchema, type SubjectOutput } from '../../../shared/subjects.ts'
+import {
+  SubjectDefinitionSchema,
+  type SubjectOutput,
+  subjectState,
+} from '../../../shared/subjects.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName, projectRowByName } from '../project/projects.ts'
 import type { RecordSubject } from '../record/record-subjects.ts'
@@ -31,7 +35,7 @@ const mapped = (row: LocalRow): Subject => ({
   position: row.position,
   parentId: row.parent_id,
   retiredAt: row.retired_at,
-  state: row.retired_at === null ? 'active' : 'retired',
+  state: subjectState(row.retired_at),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 })
@@ -108,7 +112,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
       `cannot apply subject ${row.id}: project ${row.project} is not registered; cleared by: orch project add <path> --name ${row.project}`,
     )
   }
-  SubjectDefinitionSchema.parse(row.definition)
+  const definition = SubjectDefinitionSchema.parse(row.definition)
   assertParent(database, row, project.id)
   try {
     database
@@ -124,7 +128,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
         row.id,
         project.id,
         row.name,
-        row.definition,
+        definition,
         row.position,
         row.parentId,
         row.retiredAt,
@@ -139,7 +143,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
     }
     throw error
   }
-  return { ...row, state: row.retiredAt === null ? 'active' : 'retired' }
+  return { ...row, definition, state: subjectState(row.retiredAt) }
 }
 
 function localAdd(input: {
@@ -173,13 +177,13 @@ export async function addSubject(input: {
   definition: string
 }): Promise<Subject> {
   writableDb()
-  SubjectDefinitionSchema.parse(input.definition)
+  const definition = SubjectDefinitionSchema.parse(input.definition)
   if (!input.name.trim()) throw new Error('a subject name is required')
   const id = newRecordId()
   return applyRecordWriteAuthority({
-    local: () => writeTransaction(() => localAdd({ ...input, id })),
+    local: () => writeTransaction(() => localAdd({ ...input, definition, id })),
     hosted: async () => {
-      const hosted = await subjectClient.add({ ...input, id })
+      const hosted = await subjectClient.add({ ...input, definition, id })
       return writeTransaction(() => applySubjectRecord(hosted))
     },
   })
@@ -213,12 +217,12 @@ export function renameSubject(project: string, id: string, name: string): Promis
 }
 
 export function defineSubject(project: string, id: string, definition: string): Promise<Subject> {
-  SubjectDefinitionSchema.parse(definition)
+  const parsedDefinition = SubjectDefinitionSchema.parse(definition)
   return mutate(
     project,
     id,
-    (row, at) => ({ ...row, definition, updatedAt: at }),
-    () => subjectClient.define(project, id, definition),
+    (row, at) => ({ ...row, definition: parsedDefinition, updatedAt: at }),
+    () => subjectClient.define(project, id, parsedDefinition),
   )
 }
 

@@ -19,6 +19,10 @@ const headers = (token: string) => ({
   'content-type': 'application/json',
 })
 
+const subjectsUnused = async (): Promise<never> => {
+  throw new Error('hosted subjects are unused in the board adoption proof')
+}
+
 function adoptionClient(input: ProofInput): RecordApiClient {
   const call = async (path: string, method = 'GET', body?: unknown) => {
     const response = await fetch(`${input.origin()}${path}`, {
@@ -44,6 +48,12 @@ function adoptionClient(input: ProofInput): RecordApiClient {
       call('/v1/board/receipts', 'PUT', body),
     takeBoardClaim: async (body: Parameters<RecordApiClient['takeBoardClaim']>[0]) =>
       call('/v1/board/claims', 'PUT', body),
+    listProjectSubjects: subjectsUnused,
+    addProjectSubject: subjectsUnused,
+    renameProjectSubject: subjectsUnused,
+    defineProjectSubject: subjectsUnused,
+    reorderProjectSubjects: subjectsUnused,
+    retireProjectSubject: subjectsUnused,
   } as unknown as RecordApiClient
 }
 

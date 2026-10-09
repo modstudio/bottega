@@ -2,7 +2,7 @@
 /** Owns tenant-bound hosted review reads. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import type { RecordCursor } from './record-runs.ts'
+import type { RecordCursor } from './record-cursor.ts'
 
 const camel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
 const presentation = (row: Record<string, unknown>) =>

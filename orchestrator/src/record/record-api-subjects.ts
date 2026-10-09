@@ -4,18 +4,18 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { SubjectDefinitionSchema } from '../../../shared/subjects.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { decodeRecordCursor, pageRecordItems, type RecordCursor } from './record-cursor.ts'
 import { type RecordSubject, RecordSubjectError } from './record-subjects.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type Cursor = { at: string; id: string }
 export type RecordSubjectRouteDeps = {
   listSubjects(
     input: Tenant & {
       project?: string
       includeRetired: boolean
       order: 'catalog' | 'updated'
-      cursor: Cursor | null
+      cursor: RecordCursor | null
       limit: number
     },
   ): Promise<RecordSubject[]>
@@ -36,7 +36,15 @@ const project = z.string().trim().min(1)
 const id = z.string().uuid()
 const name = z.string().trim().min(1)
 const definition = SubjectDefinitionSchema
-const cursorSchema = z.object({ at: z.string().datetime({ offset: true }), id })
+
+const invalidBody = (
+  context: Context<Environment>,
+  result: { error: z.ZodError },
+  fallback: string,
+) => {
+  const definitionIssue = result.error.issues.find((issue) => issue.path[0] === 'definition')
+  return context.json({ error: definitionIssue?.message ?? fallback }, 400)
+}
 
 export function registerRecordSubjectRoutes(
   app: Hono<Environment>,
@@ -68,9 +76,9 @@ export function registerRecordSubjectRoutes(
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid subject list query' }, 400)
-    let cursor: Cursor | null = null
+    let cursor: RecordCursor | null = null
     try {
-      cursor = query.data.cursor ? cursorSchema.parse(JSON.parse(atob(query.data.cursor))) : null
+      cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
     } catch {
       return context.json({ error: 'invalid cursor' }, 400)
     }
@@ -82,14 +90,9 @@ export function registerRecordSubjectRoutes(
       cursor,
       limit: query.data.limit + 1,
     })
-    const hasMore = rows.length > query.data.limit
-    if (hasMore) rows.pop()
-    const last = rows.at(-1)
-    return context.json({
-      items: rows,
-      nextCursor:
-        hasMore && last ? btoa(JSON.stringify({ at: last.updatedAt, id: last.id })) : null,
-    })
+    return context.json(
+      pageRecordItems(rows, query.data.limit, (row) => ({ at: row.updatedAt, id: row.id })),
+    )
   })
   app.put('/v1/subjects', async (context) => {
     const bound = active(context)
@@ -97,7 +100,7 @@ export function registerRecordSubjectRoutes(
     const body = z
       .object({ id: id.optional(), project, name, definition })
       .safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid subject add' }, 400)
+    if (!body.success) return invalidBody(context, body, 'invalid subject add')
     try {
       return context.json(await deps.addSubject({ ...bound.tenant, ...body.data }))
     } catch (error) {
@@ -126,8 +129,8 @@ export function registerRecordSubjectRoutes(
     const body = z
       .object({ project, definition })
       .safeParse(await context.req.json().catch(() => null))
-    if (!parsedId.success || !body.success)
-      return context.json({ error: 'invalid subject definition' }, 400)
+    if (!parsedId.success) return context.json({ error: 'invalid subject definition' }, 400)
+    if (!body.success) return invalidBody(context, body, 'invalid subject definition')
     try {
       return context.json(
         await deps.defineSubject({ ...bound.tenant, id: parsedId.data, ...body.data }),

@@ -9,6 +9,9 @@ const headers = (token: string) => ({
 })
 
 const json = async (response: Response) => (await response.json()) as Record<string, unknown>
+const subjectsUnused = async (): Promise<never> => {
+  throw new Error('hosted subjects are unused in the board cache proof')
+}
 
 export function postgresBoardCacheStore(session: string, project: string): Database {
   const store = new Database(':memory:')
@@ -44,5 +47,11 @@ export function postgresBoardCacheClient(origin: string, token: string): RecordA
           body: JSON.stringify(body),
         }),
       ),
+    listProjectSubjects: subjectsUnused,
+    addProjectSubject: subjectsUnused,
+    renameProjectSubject: subjectsUnused,
+    defineProjectSubject: subjectsUnused,
+    reorderProjectSubjects: subjectsUnused,
+    retireProjectSubject: subjectsUnused,
   } as unknown as RecordApiClient
 }

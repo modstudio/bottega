@@ -8,6 +8,7 @@ import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import { encodeRecordCursor, type RecordCursor, RecordCursorSchema } from './record-cursor.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
@@ -18,19 +19,17 @@ const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
 
-type SubjectCursor = { at: string; id: string }
-
-function readSubjectCursor(local: Database, key: string): SubjectCursor | undefined {
+function readSubjectCursor(local: Database, key: string): RecordCursor | undefined {
   const value = readCursor(local, key)
   if (value === undefined) return undefined
-  const parsed = JSON.parse(value) as Partial<SubjectCursor>
-  if (typeof parsed.at !== 'string' || typeof parsed.id !== 'string') {
+  const parsed = RecordCursorSchema.safeParse(JSON.parse(value))
+  if (!parsed.success) {
     throw new Error(`invalid subject cache cursor for ${key}`)
   }
-  return { at: parsed.at, id: parsed.id }
+  return parsed.data
 }
 
-function writeSubjectCursor(local: Database, key: string, cursor: SubjectCursor): void {
+function writeSubjectCursor(local: Database, key: string, cursor: RecordCursor): void {
   writeCursor(local, key, JSON.stringify(cursor))
 }
 
@@ -230,15 +229,20 @@ async function pullSubjects(
   projectSpaces: ReadonlyMap<string, string | null>,
 ): Promise<{ subjects: number; skippedSubjects: number }> {
   const client = recordApiClient()
-  if (!client.listProjectSubjects) return { subjects: 0, skippedSubjects: 0 }
   let subjects = 0
   let skippedSubjects = 0
   for (const spaceId of spaces) {
     const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
     let cursor = readSubjectCursor(local, cursorKey)
+    let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
     for (;;) {
       const page = await client.listProjectSubjects(
-        { includeRetired: true, order: 'updated', cursor, limit: 100 },
+        {
+          includeRetired: true,
+          order: 'updated',
+          cursor: requestCursor,
+          limit: 100,
+        },
         { destinationSpaceId: spaceId },
       )
       if (!page.items.length) break
@@ -255,6 +259,7 @@ async function pullSubjects(
         if (cursor) writeSubjectCursor(local, cursorKey, cursor)
       }, local)
       if (!page.nextCursor) break
+      requestCursor = page.nextCursor
     }
   }
   return { subjects, skippedSubjects }

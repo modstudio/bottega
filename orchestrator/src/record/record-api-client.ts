@@ -235,33 +235,33 @@ export type RecordApiClient = {
     destination?: RecordRequestDestination,
   ): Promise<Array<{ name: string; spaceId: string }>>
   retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
-  listProjectSubjects?(
+  listProjectSubjects(
     query: {
       project?: string
       includeRetired?: boolean
       order?: 'catalog' | 'updated'
-      cursor?: { at: string; id: string }
+      cursor?: string
       limit?: number
     },
     destination?: RecordRequestDestination,
   ): Promise<{ items: RecordSubject[]; nextCursor: string | null }>
-  addProjectSubject?(
+  addProjectSubject(
     input: { id: string; project: string; name: string; definition: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
-  renameProjectSubject?(
+  renameProjectSubject(
     input: { project: string; id: string; name: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
-  defineProjectSubject?(
+  defineProjectSubject(
     input: { project: string; id: string; definition: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
-  reorderProjectSubjects?(
+  reorderProjectSubjects(
     input: { project: string; ids: string[] },
     destination?: RecordRequestDestination,
   ): Promise<{ items: RecordSubject[] }>
-  retireProjectSubject?(
+  retireProjectSubject(
     input: { project: string; id: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
@@ -360,7 +360,7 @@ export function recordApiBaseUrl(
   return url.replace(/\/$/, '')
 }
 
-export async function recordApiRequest<T>(
+async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
 ): Promise<T> {
@@ -538,7 +538,7 @@ export function recordApiClient(): RecordApiClient {
       if (query.project) search.set('project', query.project)
       if (query.includeRetired) search.set('includeRetired', 'true')
       if (query.order) search.set('order', query.order)
-      if (query.cursor) search.set('cursor', btoa(JSON.stringify(query.cursor)))
+      if (query.cursor) search.set('cursor', query.cursor)
       if (query.limit) search.set('limit', String(query.limit))
       return request(`/v1/subjects?${search}`, destination)
     },

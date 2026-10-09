@@ -6,6 +6,7 @@ import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
@@ -40,6 +41,22 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     upsertProject: async () => ({ name: 'unused' }),
     listProjects: async () => [],
     retireProject: async () => ({ name: 'unused' }),
+    listProjectSubjects: async () => ({ items: [], nextCursor: null }),
+    addProjectSubject: async () => {
+      throw new Error('hosted subjects are unused in this fixture')
+    },
+    renameProjectSubject: async () => {
+      throw new Error('hosted subjects are unused in this fixture')
+    },
+    defineProjectSubject: async () => {
+      throw new Error('hosted subjects are unused in this fixture')
+    },
+    reorderProjectSubjects: async () => {
+      throw new Error('hosted subjects are unused in this fixture')
+    },
+    retireProjectSubject: async () => {
+      throw new Error('hosted subjects are unused in this fixture')
+    },
     putScore: async () => undefined,
     voidRun: async () => undefined,
     unvoidRun: async () => undefined,
@@ -304,9 +321,14 @@ describe('record cache pull', () => {
           if (destination?.destinationSpaceId !== 'space-alpha') {
             return { items: [], nextCursor: null }
           }
-          seen.push({ order: query.order, cursor: query.cursor })
-          if (!query.cursor) return { items: [subject(firstId, 'First', 0)], nextCursor: 'more' }
-          if (query.cursor.id === firstId) {
+          const cursor = query.cursor ? decodeRecordCursor(query.cursor) : undefined
+          seen.push({ order: query.order, cursor })
+          if (!cursor)
+            return {
+              items: [subject(firstId, 'First', 0)],
+              nextCursor: encodeRecordCursor({ at: updatedAt, id: firstId }),
+            }
+          if (cursor.id === firstId) {
             return { items: [subject(secondId, 'Second', 1)], nextCursor: null }
           }
           return { items: [], nextCursor: null }

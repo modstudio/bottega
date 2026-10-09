@@ -3,7 +3,12 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { SubjectDefinitionSchema, type SubjectOutput } from '../../../shared/subjects.ts'
+import {
+  SubjectDefinitionSchema,
+  type SubjectOutput,
+  subjectState,
+} from '../../../shared/subjects.ts'
+import type { RecordCursor } from './record-cursor.ts'
 
 export type RecordSubject = SubjectOutput
 
@@ -43,7 +48,7 @@ function mapped(row: Record<string, unknown>): RecordSubject {
     position: Number(row.position),
     parentId: row.parent_id == null ? null : String(row.parent_id),
     retiredAt: row.retired_at == null ? null : iso(row.retired_at),
-    state: row.retired_at == null ? 'active' : 'retired',
+    state: subjectState(row.retired_at == null ? null : iso(row.retired_at)),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   }
@@ -90,7 +95,7 @@ export async function listRecordSubjects(
     project?: string
     includeRetired: boolean
     order: 'catalog' | 'updated'
-    cursor?: { at: string; id: string } | null
+    cursor?: RecordCursor | null
     limit: number
   },
 ): Promise<RecordSubject[]> {
@@ -120,7 +125,7 @@ export async function addRecordSubject(
     definition: string
   },
 ): Promise<RecordSubject> {
-  SubjectDefinitionSchema.parse(input.definition)
+  const definition = SubjectDefinitionSchema.parse(input.definition)
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
     const ownedProjectId = await projectId(tx, input.spaceId, input.project)
@@ -136,7 +141,7 @@ export async function addRecordSubject(
         INSERT INTO subject
           (id,space_id,project_id,name,definition,position,parent_id,retired_at,created_at,updated_at)
         VALUES (${id}::uuid,${input.spaceId}::uuid,${ownedProjectId}::uuid,${input.name},
-          ${input.definition},
+          ${definition},
           (SELECT COALESCE(MAX(position),-1)+1 FROM subject
            WHERE space_id=${input.spaceId}::uuid AND project_id=${ownedProjectId}::uuid
              AND retired_at IS NULL),
@@ -159,7 +164,8 @@ export async function addRecordSubject(
 async function updateRecordSubject(
   input: Tenant & { project: string; id: string; field: 'name' | 'definition'; value: string },
 ): Promise<RecordSubject> {
-  if (input.field === 'definition') SubjectDefinitionSchema.parse(input.value)
+  const value =
+    input.field === 'definition' ? SubjectDefinitionSchema.parse(input.value) : input.value
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
     const ownedProjectId = await projectId(tx, input.spaceId, input.project)
@@ -167,10 +173,10 @@ async function updateRecordSubject(
     try {
       rows =
         input.field === 'name'
-          ? await tx`UPDATE subject SET name=${input.value},updated_at=${timestamp}::timestamptz
+          ? await tx`UPDATE subject SET name=${value},updated_at=${timestamp}::timestamptz
               WHERE space_id=${input.spaceId}::uuid AND project_id=${ownedProjectId}::uuid
                 AND id=${input.id}::uuid RETURNING *,${input.project} AS project`
-          : await tx`UPDATE subject SET definition=${input.value},updated_at=${timestamp}::timestamptz
+          : await tx`UPDATE subject SET definition=${value},updated_at=${timestamp}::timestamptz
               WHERE space_id=${input.spaceId}::uuid AND project_id=${ownedProjectId}::uuid
                 AND id=${input.id}::uuid RETURNING *,${input.project} AS project`
     } catch (error) {
