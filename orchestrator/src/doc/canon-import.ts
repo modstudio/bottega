@@ -3,10 +3,11 @@
 
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import { type RecordCanonImportResult, recordApiClient } from '../record/record-api-client.ts'
+import type { RecordCanonImportResult } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
+import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import {
@@ -81,8 +82,9 @@ export async function importCanon(input: {
       findings: [],
       bootstrap: !hasCanonImportHistory(input.address),
     }),
-    hosted: () =>
-      recordApiClient().importCanon({
+    hosted: async () => {
+      const subject = input.address.kind === 'project' ? input.address.subject : null
+      return (await hostedDocClient('canon', subject)).importCanon({
         address:
           input.address.kind === 'user'
             ? { kind: 'user' }
@@ -91,7 +93,8 @@ export async function importCanon(input: {
         expectedRevisions,
         reason: identity.reason,
         author: identity.author,
-      }),
+      })
+    },
   })
   return writeTransaction(() => {
     const live = listDocsStore({ scope: 'canon', subject, owner, status: 'current' })

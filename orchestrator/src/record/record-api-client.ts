@@ -127,6 +127,8 @@ export type RecordCanonImportResult = {
   bootstrap: boolean
 }
 
+export type RecordRequestDestination = { destinationSpaceId?: string }
+
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
   inviteMember(input: {
@@ -157,53 +159,81 @@ export type RecordApiClient = {
     audience?: DocAudience
     acrossReadableSpaces?: boolean
   }): Promise<{ items: RecordDocSearchMatch[] }>
-  listDocs(query: {
-    scope?: string
-    subject?: string | null
-    audience?: DocAudience
-    status?: DocStatus
-    updatedSince?: string
-    limit?: number
-    cursor?: string | null
-    includeDeleted?: boolean
-    kind?: DocKind
-    acrossReadableSpaces?: boolean
-  }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
-  getDoc(id: string): Promise<Record<string, unknown>>
-  listRevisions(id: string): Promise<Record<string, unknown>[]>
-  upsertDoc(input: RecordDocUpsertInput): Promise<{ id: string; revisionId: string }>
+  listDocs(
+    query: {
+      scope?: string
+      subject?: string | null
+      audience?: DocAudience
+      status?: DocStatus
+      updatedSince?: string
+      limit?: number
+      cursor?: string | null
+      includeDeleted?: boolean
+      kind?: DocKind
+      acrossReadableSpaces?: boolean
+    },
+    destination?: RecordRequestDestination,
+  ): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
+  getDoc(id: string, destination?: RecordRequestDestination): Promise<Record<string, unknown>>
+  listRevisions(
+    id: string,
+    destination?: RecordRequestDestination,
+  ): Promise<Record<string, unknown>[]>
+  upsertDoc(
+    input: RecordDocUpsertInput,
+    destination?: RecordRequestDestination,
+  ): Promise<{ id: string; revisionId: string }>
   applySettingsPermission(
     input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
+    destination?: RecordRequestDestination,
   ): Promise<RecordSettingsPermissionResult>
-  importDoc(input: RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
-  importCanon(input: RecordCanonImportInput): Promise<RecordCanonImportResult>
+  importDoc(
+    input: RecordDocImportInput,
+    destination?: RecordRequestDestination,
+  ): Promise<{ id: string; revisionIds: string[] }>
+  importCanon(
+    input: RecordCanonImportInput,
+    destination?: RecordRequestDestination,
+  ): Promise<RecordCanonImportResult>
   deleteDoc(
     id: string,
     input: { reason: string; author: string; expectedRevision?: string },
+    destination?: RecordRequestDestination,
   ): Promise<{ id: string; revisionId: string }>
   consumeDoc(
     id: string,
     input: { reason: string; author: string; expectedRevision?: string },
+    destination?: RecordRequestDestination,
   ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
   restoreDoc(
     id: string,
     input: { revisionId: string; reason: string; author: string; expectedRevision?: string },
+    destination?: RecordRequestDestination,
   ): Promise<{ id: string; revisionId: string }>
-  renameSubject(input: {
-    from: string
-    to: string
-    count: number
-  }): Promise<{ docs: number; revisions: number }>
-  upsertProject(input: {
-    name: string
-    previousName?: string
-    path: string
-    stack: string | null
-    canon: boolean
-    settings: Record<string, unknown>
-    retiredAt: string | null
-  }): Promise<{ name: string }>
-  retireProject(name: string): Promise<{ name: string }>
+  renameSubject(
+    input: {
+      from: string
+      to: string
+      count: number
+    },
+    destination?: RecordRequestDestination,
+  ): Promise<{ docs: number; revisions: number }>
+  upsertProject(
+    input: {
+      name: string
+      previousName?: string
+      path: string
+      stack: string | null
+      canon: boolean
+      settings: Record<string, unknown>
+      retiredAt: string | null
+    },
+    destination?: RecordRequestDestination,
+  ): Promise<{ name: string }>
+  listProjects(
+    destination?: RecordRequestDestination,
+  ): Promise<Array<{ name: string; spaceId: string }>>
+  retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
   putScore(runId: string, input: VerdictInput): Promise<void>
   voidRun(runId: string, input: { reason: string }): Promise<void>
   unvoidRun(runId: string, input: { note: string }): Promise<void>
@@ -212,7 +242,9 @@ export type RecordApiClient = {
     limit?: number
     cursor?: string | null
   }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
-  counts(): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
+  counts(
+    destination?: RecordRequestDestination,
+  ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
   listBoardMessages(query?: HostedBoardOverviewFilters): Promise<HostedBoardOverview>
   postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
   replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
@@ -299,13 +331,14 @@ export function recordApiBaseUrl(
 
 async function request<T>(
   path: string,
-  init: RequestInit & { schema?: (body: unknown) => T } = {},
+  init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
 ): Promise<T> {
   const token = storedRecordToken()
   if (!token) throw recordApiUnreachable(new Error(RECORD_SIGN_IN_REMEDY))
   const headers = new Headers(init.headers)
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+  if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
   let response: Response
   try {
     response = await fetch(`${recordApiBaseUrl()}${path}`, { ...init, headers })
@@ -387,7 +420,7 @@ export function recordApiClient(): RecordApiClient {
     searchPublicDocs: (query) =>
       publicRequest(`/public/v1/docs/search?${new URLSearchParams({ q: query })}`),
     searchDocs: (query) => request(`/v1/docs/search?${docSearchParams(query)}`),
-    listDocs: (query) => {
+    listDocs: (query, destination) => {
       const search = new URLSearchParams()
       if (query.scope) search.set('scope', query.scope)
       if (query.subject !== undefined) search.set('subject', query.subject ?? '')
@@ -400,41 +433,73 @@ export function recordApiClient(): RecordApiClient {
       if (query.includeDeleted) search.set('includeDeleted', 'true')
       if (query.acrossReadableSpaces) search.set('acrossReadableSpaces', 'true')
       const suffix = search.toString()
-      return request(`/v1/docs${suffix ? `?${suffix}` : ''}`)
+      return request(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination)
     },
-    getDoc: (id) => request(`/v1/docs/${id}`),
-    listRevisions: async (id) => {
-      const body = await request<{ items?: Record<string, unknown>[] }>(`/v1/docs/${id}/revisions`)
+    getDoc: (id, destination) => request(`/v1/docs/${id}`, destination),
+    listRevisions: async (id, destination) => {
+      const body = await request<{ items?: Record<string, unknown>[] }>(
+        `/v1/docs/${id}/revisions`,
+        destination,
+      )
       return Array.isArray(body) ? body : (body.items ?? [])
     },
-    upsertDoc: (input) =>
-      request('/v1/docs', { method: 'PUT', body: JSON.stringify(input) }).then(ids),
-    applySettingsPermission: (input) =>
-      request('/v1/settings/permission', { method: 'POST', body: JSON.stringify(input) }),
-    importDoc: (input) =>
-      request('/v1/docs/import', { method: 'POST', body: JSON.stringify(input) }).then(importIds),
-    importCanon: (input) =>
-      request('/v1/docs/canon/import', { method: 'POST', body: JSON.stringify(input) }),
-    deleteDoc: (id, input) =>
-      request(`/v1/docs/${id}`, { method: 'DELETE', body: JSON.stringify(input) }).then(ids),
-    consumeDoc: async (id, input) => {
+    upsertDoc: (input, destination) =>
+      request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
+    applySettingsPermission: (input, destination) =>
+      request('/v1/settings/permission', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    importDoc: (input, destination) =>
+      request('/v1/docs/import', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }).then(importIds),
+    importCanon: (input, destination) =>
+      request('/v1/docs/canon/import', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    deleteDoc: (id, input, destination) =>
+      request(`/v1/docs/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+        ...destination,
+      }).then(ids),
+    consumeDoc: async (id, input, destination) => {
       const body = await request<Record<string, unknown>>(`/v1/docs/${id}/consume`, {
         method: 'POST',
         body: JSON.stringify(input),
+        ...destination,
       })
       return {
         ...ids(body),
         alreadyConsumed: Boolean(body.alreadyConsumed),
       }
     },
-    restoreDoc: (id, input) =>
-      request(`/v1/docs/${id}/restore`, { method: 'POST', body: JSON.stringify(input) }).then(ids),
-    renameSubject: (input) =>
-      request('/v1/docs/rename-subject', { method: 'POST', body: JSON.stringify(input) }),
-    upsertProject: (input) =>
-      request('/v1/projects', { method: 'PUT', body: JSON.stringify(input) }),
-    retireProject: (name) =>
-      request(`/v1/projects/${encodeURIComponent(name)}/retire`, { method: 'POST' }),
+    restoreDoc: (id, input, destination) =>
+      request(`/v1/docs/${id}/restore`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }).then(ids),
+    renameSubject: (input, destination) =>
+      request('/v1/docs/rename-subject', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+      }),
+    upsertProject: (input, destination) =>
+      request('/v1/projects', { method: 'PUT', body: JSON.stringify(input), ...destination }),
+    listProjects: (destination) => request('/v1/projects', destination),
+    retireProject: (name, destination) =>
+      request(`/v1/projects/${encodeURIComponent(name)}/retire`, {
+        method: 'POST',
+        ...destination,
+      }),
     putScore: async (runId, input) => {
       await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })
     },
@@ -452,7 +517,7 @@ export function recordApiClient(): RecordApiClient {
       const suffix = search.toString()
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
-    counts: () => request('/v1/docs/counts'),
+    counts: (destination) => request('/v1/docs/counts', destination),
     listBoardMessages: (query = {}) => {
       const search = new URLSearchParams()
       if (query.kind) search.set('kind', query.kind)

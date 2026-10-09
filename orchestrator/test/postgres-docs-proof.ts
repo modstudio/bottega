@@ -60,6 +60,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     restoreDoc: unused,
     renameSubject: unused,
     upsertProject: unused,
+    listProjects: unused,
     retireProject: unused,
     putScore: unused,
     voidRun: unused,
@@ -349,6 +350,119 @@ async function proveCachePull(
   }
 }
 
+async function proveRequestedProjectSpace(
+  origin: string,
+  headers: Record<string, string>,
+  activeSpaceId: string,
+  destinationSpaceId: string,
+): Promise<void> {
+  const activeProjectName = `active-project-${newRecordId()}`
+  const activeProject = await fetch(`${origin}/v1/projects`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      name: activeProjectName,
+      path: `/tmp/${activeProjectName}`,
+      stack: null,
+      canon: false,
+      settings: {},
+      retiredAt: null,
+    }),
+  })
+  expect(activeProject.status).toBe(200)
+  const activeDocument = await fetch(`${origin}/v1/docs`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      scope: 'project',
+      subject: activeProjectName,
+      slug: 'active-only',
+      title: 'Active only',
+      body: 'must not cross a destination header',
+      delivery: 'demand',
+      projectName: activeProjectName,
+      reason: 'prove destination read isolation',
+      author: 'proof',
+    }),
+  })
+  expect(activeDocument.status).toBe(200)
+  const activeDocumentId = String(((await activeDocument.json()) as { id: string }).id)
+
+  const projectName = `routed-project-${newRecordId()}`
+  const destinationHeaders = { ...headers, 'x-record-space': destinationSpaceId }
+  const project = await fetch(`${origin}/v1/projects`, {
+    method: 'PUT',
+    headers: destinationHeaders,
+    body: JSON.stringify({
+      name: projectName,
+      path: `/tmp/${projectName}`,
+      stack: null,
+      canon: false,
+      settings: { space: destinationSpaceId },
+      retiredAt: null,
+    }),
+  })
+  expect(project.status).toBe(200)
+  const document = await fetch(`${origin}/v1/docs`, {
+    method: 'PUT',
+    headers: destinationHeaders,
+    body: JSON.stringify({
+      scope: 'project',
+      subject: projectName,
+      slug: 'routed',
+      title: 'Routed',
+      body: 'two-space proof',
+      delivery: 'demand',
+      projectName,
+      reason: 'prove project destination',
+      author: 'proof',
+    }),
+  })
+  expect(document.status).toBe(200)
+  expect(
+    (await fetch(`${origin}/v1/docs/${activeDocumentId}`, { headers: destinationHeaders })).status,
+  ).toBe(404)
+  expect(
+    (
+      await fetch(`${origin}/v1/docs/${activeDocumentId}/revisions`, {
+        headers: destinationHeaders,
+      })
+    ).status,
+  ).toBe(404)
+  expect(
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT count(*) FROM project WHERE space_id='${activeSpaceId}' AND name='${projectName}';
+       SELECT count(*) FROM doc WHERE space_id='${activeSpaceId}' AND subject='${projectName}';
+       SELECT count(*) FROM project WHERE space_id='${destinationSpaceId}' AND name='${projectName}';
+       SELECT count(*) FROM doc WHERE space_id='${destinationSpaceId}' AND subject='${projectName}';`,
+    ).split('\n'),
+  ).toEqual(['0', '0', '1', '1'])
+
+  const refusedName = `refused-project-${newRecordId()}`
+  const refusedSpace = newRecordId()
+  const refused = await fetch(`${origin}/v1/projects`, {
+    method: 'PUT',
+    headers: { ...headers, 'x-record-space': refusedSpace },
+    body: JSON.stringify({
+      name: refusedName,
+      path: `/tmp/${refusedName}`,
+      stack: null,
+      canon: false,
+      settings: {},
+      retiredAt: null,
+    }),
+  })
+  expect(refused.status).toBe(403)
+  expect(await refused.json()).toMatchObject({
+    error: expect.stringContaining(refusedSpace),
+  })
+  expect(
+    succeeds('postgres', 'postgres', `SELECT count(*) FROM project WHERE name='${refusedName}';`),
+  ).toBe('0')
+}
+
 export async function proveHostedDocs(input: {
   origin: string
   token: string
@@ -385,6 +499,7 @@ export async function proveHostedDocs(input: {
     })
     expect(response.status).toBe(200)
   }
+  await proveRequestedProjectSpace(input.origin, headers, identity.personalSpaceId, memberSpaceId)
   await selectSpace(memberSpaceId)
   const put = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',

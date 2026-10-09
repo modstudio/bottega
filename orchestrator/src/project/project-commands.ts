@@ -8,6 +8,7 @@ import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import {
   applyLocalProjectRename,
   assertProjectRename,
@@ -291,6 +292,19 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
   }
 }
 
+async function writeHostedFillCandidate(
+  snapshot: Project,
+  candidate: FillCandidate,
+): Promise<void> {
+  if (!candidate.project) return
+  const destination = await hostedProjectDestination(
+    candidate.project.name,
+    candidate.project.settings,
+  )
+  await refuseHostedProjectSpaceChange(snapshot, candidate.project.settings, destination)
+  await writeHostedProject(candidate.project, destination?.destinationSpaceId)
+}
+
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
 export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
   let candidate: Project | null = null
@@ -300,6 +314,7 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     const checked = fillCandidate(snapshot, input)
     const branchCheck = checked.project ? registerBranchCheck(checked.project) : null
     try {
+      await writeHostedFillCandidate(snapshot, checked)
       writeTransaction(() => {
         const current = projectByName(input.name)
         if (!current) throw new Error(`no project "${input.name}"`)
@@ -327,7 +342,6 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     }
   }
   if (!candidate) throw new Error(`project ${input.name} was not updated`)
-  await writeHostedProject(candidate)
 }
 
 function mergeableObject(value: unknown): value is Record<string, unknown> {
@@ -391,12 +405,16 @@ async function persistSetProject(
   nextName: string,
   previousTrunk: string | null,
   candidate: Parameters<typeof upsertProject>[0] & { settings: { trunk?: unknown } },
+  destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  await writeHostedProject({
-    ...candidate,
-    previousName: renamed ? currentName : undefined,
-  })
+  await writeHostedProject(
+    {
+      ...candidate,
+      previousName: renamed ? currentName : undefined,
+    },
+    destinationSpaceId,
+  )
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   writeTransaction(() => {
     if (renamed) applyLocalProjectRename(renamed, currentName, nextName)
@@ -415,7 +433,6 @@ async function setProjectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-  requireMembership: (url: string, space: string) => Promise<unknown>,
 ): Promise<void> {
   const name = argv[2]
   if (!name)
@@ -429,7 +446,6 @@ async function setProjectCommand(
     try {
       const patch = JSON.parse(flags.flag('settings')!)
       settings = mergeProjectSettings(settings, patch) as typeof settings
-      await validateDeclaredSpace(patch, requireMembership)
     } catch (error) {
       throw new Error(`--settings must be JSON: ${error}`)
     }
@@ -457,7 +473,9 @@ async function setProjectCommand(
   if (incomplete.length && !flags.has('allow-incomplete')) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const previousTrunk = typeof project.settings.trunk === 'string' ? project.settings.trunk : null
-  await persistSetProject(name, nextName, previousTrunk, candidate)
+  const destination = await hostedProjectDestination(candidate.name, candidate.settings)
+  await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
+  await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
   if (flags.has('json')) {
     presentation.log(JSON.stringify(projectByName(nextName)))
     return
@@ -506,7 +524,7 @@ export async function projectCommand(
   }
 
   if (sub === 'set') {
-    await setProjectCommand(argv, flags, presentation, dependencies.requireSpaceMembership)
+    await setProjectCommand(argv, flags, presentation)
     return
   }
 

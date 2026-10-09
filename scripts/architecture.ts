@@ -456,7 +456,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/project/project-injection.ts', ['zod', '../../../shared/trackers.ts']),
   module('orchestrator/src/project/project-hosted-write.ts', [
+    '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
+    '../record/record-project-destination.ts',
+    '../record/record-project-destination-client.ts',
     '../record/record-write-authority.ts',
     './project-settings.ts',
   ]),

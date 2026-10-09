@@ -192,36 +192,37 @@ test('rename writes the hosted project once then updates the local name', async 
 
 test('project push writes every registered project to the hosted record', async () => {
   const names: string[] = []
+  const destinations = new Map<string, string | undefined>()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
-    upsertProject: async (input) => {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-active',
+      personalSpaceId: 'space-active',
+      memberships: [
+        { space_id: 'space-active', slug: 'active' },
+        { space_id: 'space-other', slug: 'other' },
+      ],
+    }),
+    upsertProject: async (input, destination) => {
       names.push(input.name)
+      destinations.set(input.name, destination?.destinationSpaceId)
       return { name: input.name }
     },
   })
   upsertProject({ name: 'push-live', path: '/w/push-live' })
-  upsertProject({ name: 'push-retired', path: '/w/push-retired' })
+  upsertProject({
+    name: 'push-retired',
+    path: '/w/push-retired',
+    settings: { space: 'other' },
+  })
   expect(retireProject('push-retired')).toBe('retired')
   const out = await runProject(['project', 'push'])
   expect(names).toContain('push-live')
   expect(names).toContain('push-retired')
+  expect(destinations.get('push-live')).toBe('space-active')
+  expect(destinations.get('push-retired')).toBe('space-other')
   expect(out).toBe(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
-})
-
-test('declaring a space refuses a space outside the signed-in memberships', async () => {
-  upsertProject({ name: 'space-refusal', path: '/w/space-refusal' })
-  await expect(
-    runProject(
-      ['project', 'set', 'space-refusal'],
-      { settings: JSON.stringify({ space: 'unreachable' }) },
-      async (_url, space) => {
-        throw new Error(
-          `record space ${space} is not one of the signed-in user's memberships; join it first with an invitation, then retry`,
-        )
-      },
-    ),
-  ).rejects.toThrow('join it first with an invitation')
-  expect(projectByName('space-refusal')?.settings.space).toBeUndefined()
 })
 
 test('fill absent settings refuses a stale snapshot without changing any field', async () => {

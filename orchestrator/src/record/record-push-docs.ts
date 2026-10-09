@@ -5,8 +5,15 @@ import type { DocAudience, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
-import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
+import { projectRowByName } from '../project/projects.ts'
+import type {
+  RecordApiClient,
+  RecordDocImportInput,
+  RecordRequestDestination,
+} from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
+import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -293,6 +300,7 @@ function payloadWithImportedParentIds(
 async function compareLiveDocs(
   local: ReturnType<typeof db>,
   client: RecordApiClient,
+  destinations: Map<string | null, RecordRequestDestination>,
 ): Promise<string[]> {
   const docs = local
     .query<LocalDoc, []>(
@@ -309,7 +317,13 @@ async function compareLiveDocs(
     }
     let hosted: Record<string, unknown>
     try {
-      hosted = await client.getDoc(doc.record_id)
+      const projectName =
+        doc.project_id == null
+          ? null
+          : (local
+              .query<{ name: string }, [number]>('SELECT name FROM project WHERE id=?')
+              .get(doc.project_id)?.name ?? null)
+      hosted = await client.getDoc(doc.record_id, destinations.get(projectName))
     } catch {
       mismatches.push(`${label}: hosted row is absent`)
       continue
@@ -385,18 +399,55 @@ export async function pushDocsCommand(
   if (options.dryRun) return
   writableDb()
   const client = recordApiClient()
+  const identity = await client.whoami()
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  const destinations = new Map<string | null, RecordRequestDestination>([
+    [null, { destinationSpaceId: identity.activeSpaceId }],
+  ])
+  const destinationFor = async (projectName: string | null) => {
+    const cached = destinations.get(projectName)
+    if (cached) return cached
+    const project = projectName ? projectRowByName(projectName) : null
+    if (!project) throw new Error(`no project "${projectName}"`)
+    const destination = {
+      destinationSpaceId: await requireProjectRecordDestination(
+        project.name,
+        project.settings,
+        client,
+      ),
+    }
+    destinations.set(projectName, destination)
+    return destination
+  }
   const importedIds = new Map<number, string>()
   for (const group of groups) importedIds.set(group.sourceDocId, group.payload.doc.id!)
   for (const group of groups) {
-    const hosted = await client.importDoc(payloadWithImportedParentIds(group, importedIds))
+    const destination = await destinationFor(group.payload.doc.projectName ?? null)
+    const hosted = await client.importDoc(
+      payloadWithImportedParentIds(group, importedIds),
+      destination,
+    )
     importedIds.set(group.sourceDocId, hosted.id)
     recordReturnedIds(local, group, hosted)
   }
-  const hosted = await client.counts()
+  const hosted = { docs: 0, revisions: 0, scores: 0, voids: 0 }
+  const uniqueDestinations = new Map(
+    [...destinations.values()].map((destination) => [
+      destination.destinationSpaceId ?? null,
+      destination,
+    ]),
+  )
+  for (const destination of uniqueDestinations.values()) {
+    const counts = await client.counts(destination)
+    hosted.docs += counts.docs
+    hosted.revisions += counts.revisions
+    hosted.scores += counts.scores
+    hosted.voids += counts.voids
+  }
   presentation.log(
     `hosted docs ${hosted.docs}, revisions ${hosted.revisions}, scores ${hosted.scores}, voids ${hosted.voids}`,
   )
-  const mismatches = await compareLiveDocs(local, client)
+  const mismatches = await compareLiveDocs(local, client, destinations)
   for (const mismatch of mismatches) presentation.log(mismatch)
   if (mismatches.length) throw new Error('hosted docs do not match local live docs')
 }

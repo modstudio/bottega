@@ -1,13 +1,7 @@
 /**
- * Operator documents are scoped facts about the installation around this router.
- * Machine, agent, and job facts describe this estate and may be injected. Project
- * and global operator documents are demand-only; software-building instructions are
- * canon. Project, agent, and job facts attach to one named
- * subject; resume briefs attach to a project (the epic is the slug); machine facts
- * describe the host itself. Worker prompts receive job injects; agent and machine
- * notes serve routing and architectural judgment, while resume notes serve session
- * recovery. Canon docs are the source for the global and
- * project hydrated instruction tree and enter worker packs through the canon path.
+ * Operator documents are scoped installation facts. Machine, agent, and job facts may be
+ * injected; project and global facts are demand-only, while software instructions are canon.
+ * Subject-bearing facts name one subject; resume briefs use the project and epic slug.
  */
 import {
   DOC_SCOPE_ALLOWS_OWNER,
@@ -26,10 +20,10 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
+import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import {
   type Doc,
@@ -398,7 +392,8 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         identity,
       }),
     hosted: async () => {
-      const hosted = await recordApiClient().upsertDoc({
+      const client = await hostedDocClient(input.scope, input.subject)
+      const hosted = await client.upsertDoc({
         scope: input.scope,
         subject: input.subject,
         owner,
@@ -533,10 +528,11 @@ export async function removeDoc(
   return applyRecordWriteAuthority({
     local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
     hosted: async () => {
+      const client = await hostedDocClient(doc.scope, doc.subject)
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {
-        const created = await recordApiClient().upsertDoc({
+        const created = await client.upsertDoc({
           scope: doc.scope,
           subject: doc.subject,
           owner: doc.owner,
@@ -548,6 +544,7 @@ export async function removeDoc(
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
           featured: doc.featured,
+          projectName: docWriteProjectName(doc.scope, doc.subject),
           reason: identity.reason,
           author: identity.author,
           id: undefined,
@@ -556,7 +553,7 @@ export async function removeDoc(
         recordId = created.id
         hostedExpected = created.revisionId
       }
-      const hosted = await recordApiClient().deleteDoc(recordId, {
+      const hosted = await client.deleteDoc(recordId, {
         reason: identity.reason,
         author: identity.author,
         expectedRevision: hostedExpected,
@@ -619,10 +616,11 @@ export async function consumeDoc(
         ...context,
       }),
     hosted: async () => {
+      const client = await hostedDocClient(doc.scope, doc.subject)
       let recordId = doc.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {
-        const created = await recordApiClient().upsertDoc({
+        const created = await client.upsertDoc({
           scope: doc.scope,
           subject: doc.subject,
           slug: doc.slug,
@@ -633,6 +631,7 @@ export async function consumeDoc(
           parentRecordId: localParentRecordId(doc),
           position: doc.position,
           featured: doc.featured,
+          projectName: docWriteProjectName(doc.scope, doc.subject),
           reason: identity.reason,
           author: identity.author,
           expectedRevision: context.expectedRevision,
@@ -640,7 +639,7 @@ export async function consumeDoc(
         recordId = created.id
         hostedExpected = created.revisionId
       }
-      const hosted = await recordApiClient().consumeDoc(recordId, {
+      const hosted = await client.consumeDoc(recordId, {
         reason: identity.reason,
         author: identity.author,
         expectedRevision: hostedExpected,
@@ -964,10 +963,11 @@ export async function restoreDoc(
         ...context,
       }),
     hosted: async () => {
+      const client = await hostedDocClient(scope, subject)
       let recordId = liveRecordId
       let hostedExpected = context.expectedRevision
       if (!recordId) {
-        const listed = await recordApiClient().listDocs({
+        const listed = await client.listDocs({
           scope,
           subject,
           includeDeleted: true,
@@ -982,7 +982,7 @@ export async function restoreDoc(
         recordId = match && typeof match.id === 'string' ? match.id : null
       }
       if (!recordId) {
-        const created = await recordApiClient().upsertDoc({
+        const created = await client.upsertDoc({
           scope,
           subject,
           owner,
@@ -1011,7 +1011,7 @@ export async function restoreDoc(
         recordId = created.id
         hostedExpected = created.revisionId
       }
-      const hosted = await recordApiClient().restoreDoc(recordId, {
+      const hosted = await client.restoreDoc(recordId, {
         revisionId: revision.record_id ?? recordId,
         reason: identity.reason,
         author: identity.author,

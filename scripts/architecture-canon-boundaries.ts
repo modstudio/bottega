@@ -198,6 +198,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'shared/record/schema.ts',
       'orchestrator/src/worker-store-write.ts',
       'orchestrator/src/doc/doc-read-store.ts',
+      'orchestrator/src/doc/doc-hosted-client.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
       'orchestrator/src/doc/doc-revision-store.ts',
     ],

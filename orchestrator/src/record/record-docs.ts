@@ -125,7 +125,12 @@ async function projectId(
 ): Promise<string | null> {
   if (!name) return null
   const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
-  if (rows.length !== 1) throw new RecordDocError(`record project is absent: ${name}`, 422)
+  if (rows.length !== 1) {
+    throw new RecordDocError(
+      `project ${name} has no hosted row in record space ${spaceId}; run \`orch project push\` to create it`,
+      422,
+    )
+  }
   return String(rows[0]!.id)
 }
 

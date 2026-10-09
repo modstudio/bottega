@@ -11,6 +11,12 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-hosted-client.ts', [
+    '../project/projects.ts',
+    '../record/record-api-client.ts',
+    '../record/record-project-destination-client.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/canon-import-collision.ts', []),
   module('orchestrator/src/doc/doc-files.ts', [
     'node:fs',
