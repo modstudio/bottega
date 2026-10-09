@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db } from '../database/db.ts'
+import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from './review-commands.ts'
 
@@ -98,6 +99,61 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     )
 
     expect(JSON.parse(output.join('\n'))).toMatchObject({ tier: 0, risk: 0, size: 0 })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier reports stack and generic profile sources resolved for its project', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-profiles-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    importRebasedHistory(repo)
+    upsertProject({
+      name: 'tier-profile-fixture',
+      path: repo,
+      stack: 'bun',
+      settings: {
+        trunk: 'main',
+        review: { lenses: [{ lens: 'correctness' }, { lens: 'craft' }] },
+      },
+    })
+    setProfile({
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'bun',
+      body: '{"framework_guidance":"Bun guidance.","commands":"bun test"}',
+      enabled: true,
+      reason: 'review tier stack source fixture',
+    })
+    const base = git(repo, 'rev-parse', 'main')
+    const reviewed = git(repo, 'rev-parse', 'DEV-992-fixture')
+    const run = db()
+      .query<{ id: number }, [string, string, string]>(
+        `INSERT INTO run
+           (started_at,agent,job,repo,base_commit,input_tree,head_commit,
+            prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
+                 'sha',1,'head','ok')
+         RETURNING id`,
+      )
+      .get(base, reviewed, reviewed)!
+    const output: string[] = []
+
+    await reviewCommand(
+      'tier',
+      ['review', 'tier', String(run.id)],
+      { has: () => false, flag: () => undefined },
+      {
+        log: (...values) => output.push(values.join(' ')),
+        usage: () => {
+          throw new Error('unexpected usage')
+        },
+      },
+    )
+
+    expect(output).toContain('lens correctness  framework=stack')
+    expect(output).toContain('lens craft  framework=generic')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

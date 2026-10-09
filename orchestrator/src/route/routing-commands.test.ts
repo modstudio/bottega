@@ -6,7 +6,7 @@ import { recordDuels } from '../score/duel.ts'
 import { MIN_SAMPLE } from './route.ts'
 import { pickCommand, statsCommand } from './routing-commands.ts'
 
-const preview = (avoid: string[] = [], distinctModels: string[] = []) => {
+const preview = (avoid: string[] = [], distinctModels: string[] = [], lens?: string) => {
   const lines: string[] = []
   pickCommand(
     {
@@ -14,7 +14,7 @@ const preview = (avoid: string[] = [], distinctModels: string[] = []) => {
       stack: null,
       avoid,
       distinctModels,
-      lens: undefined,
+      lens,
       selectedAgent: undefined,
     },
     { has: () => false, flag: () => undefined },
@@ -55,4 +55,10 @@ test('pick shares do validation for fan-out exclusions', () => {
 
 test('pick refuses an unmet constraint instead of silently routing', () => {
   expect(() => preview(['grok', 'codex'])).toThrow('routing constraints leave no eligible agent')
+})
+
+test('pick reports the source of each resolved lens profile', () => {
+  expect(preview([], [], 'correctness')).toContain(
+    'selected profiles: framework=default@1 source=generic',
+  )
 })

@@ -216,6 +216,7 @@ export function register(program: Command): void {
     .option('--slots <value>')
     .option('--slots-file <value>')
     .option('--enabled <value>')
+    .option('--requires-execution <value>')
     .option('--reason <value>')
     .option('--axis <value>')
     .option('--name <value>')

@@ -22,6 +22,48 @@ import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.
 
 type TransportName = 'cli' | 'acp'
 
+export function genericLensProfileNotices(
+  resolved: NonNullable<ReturnType<typeof resolveLens>> | null,
+  stack: string | null,
+): string[] {
+  if (!resolved) return []
+  const profileName = stack ?? '<project-stack>'
+  return resolved.profiles
+    .filter((profile) => profile.source === 'generic')
+    .map(
+      (profile) =>
+        `! lens ${resolved.id} uses generic ${profile.axis} body; write the stack profile with: ` +
+        `orch lens profile set ${resolved.id} --axis ${profile.axis} --name ${profileName} ` +
+        '--body-file <path> --enabled true --reason <reason>',
+    )
+}
+
+export function lensDispatchNotices(input: {
+  jobName: string
+  lens: string | undefined
+  resolved: ReturnType<typeof resolveLens>
+  stack: string | null
+}): string[] {
+  if (input.lens && !input.resolved && input.jobName !== 'review-lens-inline') {
+    return [
+      `! lens ${input.lens} has no catalogue row and runs with the caller's prompt only; ` +
+        'orch lens list shows the catalogue',
+    ]
+  }
+  return genericLensProfileNotices(input.resolved, input.stack)
+}
+
+function reportLensDispatchNotices(input: {
+  jobName: string
+  lens: string | undefined
+  project: string | null
+  stack: string | null
+  report: (...values: unknown[]) => void
+}): void {
+  const resolved = input.lens ? resolveLens(input.lens, input.project) : null
+  for (const notice of lensDispatchNotices({ ...input, resolved })) input.report(notice)
+}
+
 function reportDefaultSeed(
   requested: string | undefined,
   effective: string | undefined,
@@ -296,6 +338,13 @@ export async function dispatchCommand(
     error,
   )
   const lens = flag('lens')
+  reportLensDispatchNotices({
+    jobName,
+    lens,
+    project: dispatchProjectName,
+    stack: dispatchProject?.stack ?? null,
+    report: error,
+  })
   assertExecutionRequirement({
     requested,
     explicit: has('requires-execution'),

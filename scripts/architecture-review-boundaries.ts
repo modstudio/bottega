@@ -62,6 +62,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',
+      '../lens/lenses.ts',
       '../project/projects.ts',
       './review.ts',
       './review-calibration.ts',

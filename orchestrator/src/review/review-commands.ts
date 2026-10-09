@@ -7,6 +7,7 @@ import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
+import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
@@ -192,7 +193,14 @@ function resolveTierTarget(value: string): {
 
 function reviewTierOutput(value: string) {
   const { repo, from, to, project } = resolveTierTarget(value)
-  return reviewTierForRange(repo, from, to, project.settings.review)
+  const output = reviewTierForRange(repo, from, to, project.settings.review)
+  return {
+    ...output,
+    lens_profiles: output.lenses.map((id) => ({
+      id,
+      profiles: resolveLens(id, project.name)?.profiles ?? [],
+    })),
+  }
 }
 
 function printReviewTier(
@@ -207,7 +215,12 @@ function printReviewTier(
   log(`tier ${output.tier}`)
   log(`risk ${output.risk}`)
   log(`size ${output.size}`)
-  for (const lens of output.lenses) log(`lens ${lens}`)
+  for (const lens of output.lens_profiles) {
+    const sources = lens.profiles
+      .map((profile) => formatLensProfileSource(profile, 'source'))
+      .join(', ')
+    log(`lens ${lens.id}${sources ? `  ${sources}` : ''}`)
+  }
   for (const reason of output.reasons) log(reason)
 }
 
