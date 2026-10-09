@@ -354,8 +354,8 @@ try {
       (id,space_id,project_name,task_key,body,created_at,updated_at) VALUES
       (${legacyCommentId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},'legacy',${stamp}::timestamptz,${stamp}::timestamptz)`
     await admin`INSERT INTO hub_task_document
-      (id,space_id,project_name,task_key,title,body,version,created_at,updated_at) VALUES
-      (${legacyDocumentId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},'legacy','legacy','v1',${stamp}::timestamptz,${stamp}::timestamptz)`
+      (id,space_id,project_name,task_key,number,title,body,version,created_at,updated_at) VALUES
+      (${legacyDocumentId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},1,'legacy','legacy','v1',${stamp}::timestamptz,${stamp}::timestamptz)`
     await admin`INSERT INTO hub_task_status_event
       (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at) VALUES
       (${legacyEventId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${mirrored.key},${stamp}::timestamptz,NULL,'open',${stamp}::timestamptz,${stamp}::timestamptz)`
@@ -1159,8 +1159,8 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},${pruneId}::uuid,
        'by id',${stamp}::timestamptz,${stamp}::timestamptz)`
     await admin`INSERT INTO hub_task_document
-      (id,space_id,project_name,task_key,title,body,version,created_at,updated_at) VALUES
-      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},'by key','body','v1',
+      (id,space_id,project_name,task_key,number,title,body,version,created_at,updated_at) VALUES
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${pruneKey},1,'by key','body','v1',
        ${stamp}::timestamptz,${stamp}::timestamptz)`
     await admin`INSERT INTO hub_task_status_event
       (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at) VALUES

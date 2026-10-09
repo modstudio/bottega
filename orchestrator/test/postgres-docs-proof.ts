@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from '../src/database/db.ts'
 import type { RecordApiClient } from '../src/record/record-api-client.ts'
+import type { RecordIdentity } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { psql, succeeds } from './fixtures/postgres-rls.ts'
 import {
@@ -16,21 +17,25 @@ function unused(): Promise<never> {
 
 function liveCacheClient(origin: string, token: string): RecordApiClient {
   const headers = { Authorization: `Bearer ${token}` }
-  const read = async (path: string) => {
-    const response = await fetch(`${origin}${path}`, { headers })
+  const get = async (path: string, destinationSpaceId?: string) => {
+    const response = await fetch(`${origin}${path}`, {
+      headers: destinationSpaceId ? { ...headers, 'x-record-space': destinationSpaceId } : headers,
+    })
     if (!response.ok) throw new Error(`${path} ${response.status}`)
-    return response.json() as Promise<{
+    return response.json()
+  }
+  const read = (path: string, destinationSpaceId?: string) =>
+    get(path, destinationSpaceId) as Promise<{
       items: Record<string, unknown>[]
       nextCursor: string | null
     }>
-  }
   return {
     ...unusedBoardClientMethods(),
-    whoami: unused,
+    whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,
     putSnapshot: unused,
     listSnapshots: unused,
-    listDocs: async (query) => {
+    listDocs: async (query, destination) => {
       const search = new URLSearchParams()
       if (query.scope) search.set('scope', query.scope)
       if (query.subject !== undefined) search.set('subject', query.subject ?? '')
@@ -39,7 +44,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
       if (query.cursor) search.set('cursor', query.cursor)
       if (query.includeDeleted) search.set('includeDeleted', 'true')
       const suffix = search.toString()
-      return read(`/v1/docs${suffix ? `?${suffix}` : ''}`)
+      return read(`/v1/docs${suffix ? `?${suffix}` : ''}`, destination?.destinationSpaceId)
     },
     listScores: async (query) => {
       const search = new URLSearchParams()
