@@ -531,10 +531,10 @@ describe('record cache pull', () => {
     db()
       .query(
         `INSERT INTO doc
-          (scope, subject, slug, title, body, delivery, created_at, updated_at)
-         VALUES ('global',NULL,'adopted','Local','local','demand',?,?)`,
+          (scope, subject, slug, title, body, delivery, created_at, updated_at, record_id)
+         VALUES ('global',NULL,'adopted','Local','local','demand',?,?,?)`,
       )
-      .run('2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z')
+      .run('2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z', newRecordId())
     const item = (id: string, slug: string, overrides: Record<string, unknown> = {}) => ({
       id,
       scope: 'global',
