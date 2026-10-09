@@ -1,5 +1,8 @@
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
-import { recordRequestNature, recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
+import {
+  recordRequestNature,
+  recordSpaceAccessDecision,
+} from '../../shared/record-space-request.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
