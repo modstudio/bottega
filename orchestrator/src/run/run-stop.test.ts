@@ -201,17 +201,17 @@ test('stop refuses when the vendor stays alive after the row is recorded stopped
 test('stop calls terminate only after the row already reads stopped', async () => {
   const id = insert('running')
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
-  let statusDuringTerminate: string | undefined
+  const statusesDuringTerminate: string[] = []
   const result = await invoke('stop', id, {
     plan: () => verifiedVendor,
     terminate: () => {
-      statusDuringTerminate = (
-        db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }
-      ).status
+      statusesDuringTerminate.push(
+        (db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status,
+      )
       return { outcome: 'signaled', signaled: [42922] }
     },
   })
-  expect(statusDuringTerminate).toBe('stopped')
+  expect(statusesDuringTerminate).toEqual(['stopped'])
   expect(result.code).toBe(0)
   expect(result.out).toContain(`stopped run ${id}`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
