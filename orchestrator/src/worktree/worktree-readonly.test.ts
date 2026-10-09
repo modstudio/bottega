@@ -24,6 +24,21 @@ test('built-in read-only trees are detached shared clones with private refs', ()
       ],
       repoRoot,
     )
+    const remoteTip = git(['rev-parse', 'HEAD'], repoRoot)
+    git(['update-ref', 'refs/remotes/origin/develop', remoteTip], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '--allow-empty',
+        '-m',
+        'head',
+      ],
+      repoRoot,
+    )
     const base = git(['rev-parse', 'HEAD'], repoRoot)
 
     const worktree = createReadOnlyWorktree(repoRoot, runId, base)
@@ -34,6 +49,11 @@ test('built-in read-only trees are detached shared clones with private refs', ()
       readFileSync(join(worktree.path, '.git', 'objects', 'info', 'alternates'), 'utf8').trim(),
     ).toEndWith('/.git/objects')
     expect(git(['remote'], worktree.path)).toBe('')
+    expect(git(['rev-parse', '--verify', 'refs/remotes/origin/develop'], worktree.path)).toBe(
+      remoteTip,
+    )
+    git(['update-ref', 'refs/remotes/origin/develop', base], worktree.path)
+    expect(git(['rev-parse', '--verify', 'refs/remotes/origin/develop'], repoRoot)).toBe(remoteTip)
   } finally {
     rmSync(repoRoot, { recursive: true, force: true })
   }

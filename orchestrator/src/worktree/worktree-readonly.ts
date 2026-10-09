@@ -36,9 +36,11 @@ export function createReadOnlyWorktree(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
   try {
+    const remoteTrackingRefs = snapshotRemoteTrackingRefs(repoRoot)
     git(['clone', '--shared', '--no-checkout', repoRoot, path], repoRoot)
     git(['checkout', '--detach', base], path)
     git(['remote', 'remove', 'origin'], path)
+    restoreRemoteTrackingRefs(path, remoteTrackingRefs)
     provisionWorktree(repoRoot, path, provision, 'the project register row', provisionTimeoutMs)
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
@@ -50,6 +52,30 @@ export function createReadOnlyWorktree(
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\ncleanup: ${cleanup.detail}`,
     )
+  }
+}
+
+type RemoteTrackingRef = { ref: string; object: string; symref: string }
+
+/** Preserve revision names reviewers can see without preserving a usable transport. */
+function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
+  const output = git(
+    ['for-each-ref', '--format=%(refname)%09%(objectname)%09%(symref)', 'refs/remotes/'],
+    repoRoot,
+  )
+  if (!output) return []
+  return output.split('\n').map((line) => {
+    const [ref, object, symref = ''] = line.split('\t')
+    return { ref, object, symref }
+  })
+}
+
+function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
+  for (const ref of refs) {
+    if (!ref.symref) git(['update-ref', ref.ref, ref.object], path)
+  }
+  for (const ref of refs) {
+    if (ref.symref) git(['symbolic-ref', ref.ref, ref.symref], path)
   }
 }
 
