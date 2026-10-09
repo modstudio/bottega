@@ -72,9 +72,86 @@ function insertInterval(row: IntervalEvidence & { id: string }) {
 
 const keyOf = (row: IntervalEvidence & { id?: string }) => row.id!
 
+function seedPrePushMove() {
+  const row = interval('1', 'two')
+  insertInterval(row)
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO record_ledger
+           (table_name,local_key,content_hash,synced_at,destination_space_id)
+         VALUES ('interval',?,?,?,?)`,
+      )
+      .run(keyOf(row), contentHash(row), '2026-10-01T00:00:00.000Z', 'space-a'),
+  )
+  const hosted: HostedIntervalCopy[] = [
+    {
+      spaceId: 'space-a',
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      source: row.source,
+      ref: row.ref,
+      start_at: row.start_at,
+    },
+  ]
+  return { row, hosted }
+}
+
+type HostedIntervalCopy = {
+  spaceId: string
+  id: string
+  source: string
+  ref: string
+  start_at: string
+}
+
+function applyHostedIntervalWrite(
+  hosted: HostedIntervalCopy[],
+  method: string,
+  spaceId: string,
+  body: Record<string, unknown>,
+) {
+  const ids = (body.ids as string[] | undefined) ?? []
+  const keys = (body.keys as HostedIntervalCopy[] | undefined) ?? []
+  if (method === 'DELETE') {
+    hosted.splice(
+      0,
+      hosted.length,
+      ...hosted.filter(
+        (row) =>
+          row.spaceId !== spaceId ||
+          !(
+            ids.includes(row.id) ||
+            keys.some(
+              (key) =>
+                key.source === row.source && key.ref === row.ref && key.start_at === row.start_at,
+            )
+          ),
+      ),
+    )
+    return
+  }
+  if (method === 'PUT')
+    hosted.push(
+      ...((body.rows as IntervalEvidence[]) ?? [])
+        .filter((row) => row.id)
+        .map((row) => ({
+          spaceId,
+          id: row.id!,
+          source: row.source,
+          ref: row.ref,
+          start_at: row.start_at,
+        })),
+    )
+}
+
 function syncFetch(
   writes: Array<{ method: string; recordSpace: string | null; body: Record<string, unknown> }>,
-  options: { capability?: boolean; intervalRecordId?: boolean; failSpace?: string } = {},
+  options: {
+    capability?: boolean
+    intervalRecordId?: boolean
+    failSpace?: string
+    hosted?: HostedIntervalCopy[]
+  } = {},
 ) {
   return async (url: string, init?: RequestInit) => {
     if (url.endsWith('/v1/tasks/identity'))
@@ -86,6 +163,8 @@ function syncFetch(
     writes.push({ method: init?.method ?? 'GET', recordSpace, body })
     if (recordSpace === options.failSpace)
       return Response.json({ error: 'destination unavailable' }, { status: 503 })
+    if (options.hosted && recordSpace)
+      applyHostedIntervalWrite(options.hosted, init?.method ?? 'GET', recordSpace, body)
     return Response.json({ ok: true })
   }
 }
@@ -354,6 +433,7 @@ describe('evidence sync planning', () => {
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
       ['DELETE', 'space-a'],
+      ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
     expect(
@@ -389,6 +469,7 @@ describe('evidence sync planning', () => {
       registeredProjects: registered,
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
+      ['DELETE', 'space-a'],
       ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
@@ -545,6 +626,7 @@ describe('evidence sync planning', () => {
     })
     expect(writes.map((write) => [write.method, write.recordSpace])).toEqual([
       ['DELETE', 'space-a'],
+      ['DELETE', 'space-a'],
       ['PUT', 'space-b'],
     ])
     expect(
@@ -554,6 +636,52 @@ describe('evidence sync planning', () => {
         )
         .get(),
     ).toEqual({ destination_space_id: 'space-b' })
+  })
+
+  test('a space move before the first push leaves one hosted row in the new space', async () => {
+    const { row, hosted } = seedPrePushMove()
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch([], { hosted }),
+      registeredProjects: registered,
+    })
+    expect(hosted).toEqual([
+      { spaceId: 'space-b', id: row.id, source: row.source, ref: row.ref, start_at: row.start_at },
+    ])
+  })
+
+  test('a failed pre-push space-move PUT leaves the ledger and completes on retry', async () => {
+    const { row, hosted } = seedPrePushMove()
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch([], { failSpace: 'space-b', hosted }),
+      registeredProjects: registered,
+    })
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-a' })
+    await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch([], { hosted }),
+      registeredProjects: registered,
+    })
+    expect(
+      db()
+        .query<{ destination_space_id: string }, []>(
+          `SELECT destination_space_id FROM record_ledger WHERE table_name='interval'`,
+        )
+        .get(),
+    ).toEqual({ destination_space_id: 'space-b' })
+    expect(hosted).toEqual([
+      { spaceId: 'space-b', id: row.id, source: row.source, ref: row.ref, start_at: row.start_at },
+    ])
   })
 
   test('after an unchanged collection the next push sends no interval', async () => {

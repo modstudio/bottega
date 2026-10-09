@@ -237,6 +237,14 @@ function intervalDeleteBodies(keys: string[]): Array<{ ids: string[] } | { keys:
   return bodies
 }
 
+function intervalMoveDeleteKeys(rows: IntervalDelivery[]): string[] {
+  // Deletes a moved interval by tuple as well as UUID while hosted rows may still carry a server-minted id.
+  return rows.flatMap((row) => [
+    row.key,
+    JSON.stringify([row.row.source, row.row.ref, row.row.start_at]),
+  ])
+}
+
 function groupedBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
   const result = new Map<string, T[]>()
   for (const row of rows) result.set(key(row), [...(result.get(key(row)) ?? []), row])
@@ -296,11 +304,7 @@ async function deliverIntervalChanges(rows: IntervalDelivery[], requestOptions: 
           acknowledgeIntervals(unmoved)
         }
         for (const [oldSpaceId, movedRows] of groupedBy(moved, (row) => row.acknowledgedSpaceId!)) {
-          await deleteIntervalRows(
-            movedRows.map((row) => row.key),
-            oldSpaceId,
-            requestOptions,
-          )
+          await deleteIntervalRows(intervalMoveDeleteKeys(movedRows), oldSpaceId, requestOptions)
           await putIntervalRows(movedRows, destinationSpaceId, requestOptions)
           acknowledgeIntervals(movedRows)
         }
