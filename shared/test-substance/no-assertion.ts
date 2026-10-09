@@ -3,6 +3,14 @@ import ts from 'typescript'
 
 const TEST_NAMES = new Set(['it', 'test'])
 
+type BoundSourceFile = ts.SourceFile & {
+  locals?: Map<ts.__String, ts.Symbol>
+}
+
+type TypeScriptWithBinder = typeof ts & {
+  bindSourceFile(source: ts.SourceFile, options: ts.CompilerOptions): void
+}
+
 function rootCallName(expression: ts.Expression): string | undefined {
   if (ts.isIdentifier(expression)) return expression.text
   if (ts.isPropertyAccessExpression(expression)) return rootCallName(expression.expression)
@@ -12,7 +20,7 @@ function rootCallName(expression: ts.Expression): string | undefined {
 
 function functionArgument(
   call: ts.CallExpression,
-  source: ts.SourceFile,
+  source: BoundSourceFile,
 ): ts.FunctionLikeDeclaration | undefined {
   for (let index = call.arguments.length - 1; index >= 0; index -= 1) {
     const argument = call.arguments[index]!
@@ -27,7 +35,7 @@ function functionArgument(
   return undefined
 }
 
-function isImportedAssertion(name: ts.Identifier, source: ts.SourceFile) {
+function isImportedAssertion(name: ts.Identifier, source: BoundSourceFile) {
   if (!/^(?:expect|assert)/.test(name.text)) return false
   const symbol = source.locals?.get(name.escapedText)
   return symbol?.declarations?.some(
@@ -52,13 +60,13 @@ function callableDeclaration(declaration: ts.Declaration): ts.FunctionLikeDeclar
   return undefined
 }
 
-function localFunctions(name: ts.Identifier, source: ts.SourceFile) {
+function localFunctions(name: ts.Identifier, source: BoundSourceFile) {
   return (source.locals?.get(name.escapedText)?.declarations ?? [])
     .map(callableDeclaration)
     .filter((declaration): declaration is ts.FunctionLikeDeclaration => Boolean(declaration))
 }
 
-function reachesAssertion(node: ts.Node, source: ts.SourceFile, seen: Set<ts.Node>): boolean {
+function reachesAssertion(node: ts.Node, source: BoundSourceFile, seen: Set<ts.Node>): boolean {
   if (seen.has(node)) return false
   seen.add(node)
   let found = false
@@ -101,9 +109,9 @@ export const noAssertionRule: Rule.RuleModule = {
           ts.ScriptTarget.Latest,
           true,
           ts.ScriptKind.TSX,
-        )
+        ) as BoundSourceFile
         // Bind same-file declarations so calls through local helpers can be followed.
-        ts.bindSourceFile(source, { target: ts.ScriptTarget.Latest })
+        ;(ts as TypeScriptWithBinder).bindSourceFile(source, { target: ts.ScriptTarget.Latest })
 
         function visit(node: ts.Node) {
           if (ts.isCallExpression(node) && TEST_NAMES.has(rootCallName(node.expression) ?? '')) {

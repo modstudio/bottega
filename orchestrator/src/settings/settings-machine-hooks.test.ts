@@ -63,7 +63,7 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(15)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(16)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(4)
@@ -91,6 +91,20 @@ test('git guard covers every Bash command and has no condition', () => {
     .find((item) => String(item.command).endsWith('/git-guard.py'))
   expect(preToolUse.find((group) => group.hooks.includes(guard!))?.matcher).toBe('Bash')
   expect(guard).not.toHaveProperty('if')
+})
+
+test('test substance guard covers every editor tool from the rendered install', () => {
+  const hooks = render({}).settings.hooks as Record<
+    string,
+    Array<{ matcher?: string; hooks: Array<{ command: string }> }>
+  >
+  const group = hooks.PreToolUse?.find((item) => item.matcher === 'Write|Edit|MultiEdit')
+  expect(group?.hooks).toEqual([
+    {
+      type: 'command',
+      command: `python3 ${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py`,
+    },
+  ])
 })
 
 test('product hook rendering is a fixed point', () => {

@@ -1,4 +1,4 @@
-import { type Finding, introducedFindings } from '../../shared/ratchet'
+import { type Finding, introducedFindings } from '../ratchet'
 
 export const OUTSIDE_TEST = '<outside test>'
 
@@ -12,6 +12,63 @@ export type TestWaiver = {
   testName: string
   rule: string
   reason: string
+}
+
+export type TestSubstanceInput = {
+  file: string
+  before: string | null
+  after: string
+}
+
+export type TestSubstanceJudgment = {
+  status: 'ok' | 'refused' | 'unchecked'
+  findings: Array<{ test: string; rule: string; message: string; line: number }>
+  reason: string
+}
+
+export const TEST_FILE_NAME = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/
+
+type Report = {
+  findings: TestFinding[]
+  parseError?: string
+  runner: 'bun' | 'vitest' | 'unrecognised'
+}
+
+type ReportLoader = () => Promise<{
+  testSubstanceReport(file: string, content: string): Promise<Report>
+}>
+
+const loadReport: ReportLoader = async () =>
+  require('./test-substance-eslint.ts') as Awaited<ReturnType<ReportLoader>>
+
+/** Judge only findings introduced by the proposed whole-file content. */
+export async function judgeTestSubstance(
+  input: TestSubstanceInput,
+  load: ReportLoader = loadReport,
+): Promise<TestSubstanceJudgment> {
+  if (!TEST_FILE_NAME.test(input.file)) return { status: 'ok', findings: [], reason: '' }
+
+  const { testSubstanceReport } = await load()
+  const after = await testSubstanceReport(input.file, input.after)
+  if (after.parseError) {
+    return { status: 'unchecked', findings: [], reason: after.parseError }
+  }
+  if (after.runner === 'unrecognised') {
+    return { status: 'unchecked', findings: [], reason: 'test runner not recognised' }
+  }
+
+  let findings = after.findings
+  if (input.before !== null) {
+    const before = await testSubstanceReport(input.file, input.before)
+    if (!before.parseError) findings = introducedTestFindings(before.findings, after.findings)
+  }
+  const result = findings.map(({ testName: test, rule, message, line }) => ({
+    test,
+    rule,
+    message,
+    line,
+  }))
+  return { status: result.length ? 'refused' : 'ok', findings: result, reason: '' }
 }
 
 function ratchetFinding(finding: TestFinding): Finding {

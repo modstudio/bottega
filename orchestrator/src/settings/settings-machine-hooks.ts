@@ -22,6 +22,7 @@ const SCRIPT_FILES = [
   'workflow-cursor-reminder.py',
   'board-ack-guard.py',
   'session-brief.py',
+  'test-substance-guard.py',
 ] as const
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
@@ -51,6 +52,11 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
+  {
+    event: 'PreToolUse',
+    matcher: 'Write|Edit|MultiEdit',
+    script: 'test-substance-guard.py',
+  },
   { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
   { event: 'PostToolUse', matcher: 'Bash', if: 'Bash(orch do:*)', script: 'heartbeat-remind.py' },
   {

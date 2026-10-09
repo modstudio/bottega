@@ -2,9 +2,38 @@ import { describe, expect, test } from 'bun:test'
 import {
   applyTestWaivers,
   introducedTestFindings,
+  judgeTestSubstance,
   type TestFinding,
   type TestWaiver,
 } from './test-substance'
+
+test('judges an absolute test path outside the current checkout', async () => {
+  expect(
+    await judgeTestSubstance({
+      file: '/another/project/example.test.ts',
+      before: null,
+      after: 'import { test } from "bun:test"\ntest("empty", () => {})\n',
+    }),
+  ).toMatchObject({
+    status: 'refused',
+    findings: [{ test: 'empty', rule: 'no-assertion' }],
+  })
+})
+
+test('reports an unparseable test as unchecked', async () => {
+  expect(
+    await judgeTestSubstance(
+      { file: 'example.test.ts', before: null, after: 'broken' },
+      async () => ({
+        testSubstanceReport: async () => ({
+          findings: [],
+          parseError: 'could not parse test',
+          runner: 'bun',
+        }),
+      }),
+    ),
+  ).toEqual({ status: 'unchecked', findings: [], reason: 'could not parse test' })
+})
 
 function finding(testName: string, line = 4): TestFinding {
   return {

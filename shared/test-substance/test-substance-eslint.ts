@@ -63,7 +63,7 @@ function testTitle(source: ts.SourceFile, call: ts.CallExpression) {
     : (title?.getText(source) ?? '<missing title>')
 }
 
-function callback(call: ts.CallExpression): ts.FunctionLikeDeclaration | undefined {
+function callback(call: ts.CallExpression): ts.ArrowFunction | ts.FunctionExpression | undefined {
   return [...call.arguments]
     .reverse()
     .find(
@@ -225,8 +225,12 @@ function waivers(file: string, content: string, locations: TestLocation[]): Test
 }
 
 async function lintMessages(file: string, content: string, runner: Runner) {
+  // ESLint ignores an absolute file outside its process cwd. The content and
+  // extension are all this config needs, so keep installed orch able to judge
+  // a test in any registered project by linting under its basename.
+  const lintFile = file.split(/[\\/]/).at(-1) ?? file
   if (runner !== 'bun')
-    return (await eslint(runner, true).lintText(content, { filePath: file }))[0]!
+    return (await eslint(runner, true).lintText(content, { filePath: lintFile }))[0]!
 
   // The SonarJS pass for bun files replaces bun:test with vitest only in the module
   // specifier of import and export declarations, located through the parse, never by
@@ -253,9 +257,9 @@ async function lintMessages(file: string, content: string, runner: Runner) {
     sonarContent = `${sonarContent.slice(0, replacement.start)}vitest${sonarContent.slice(replacement.end)}`
   }
   const [sonarResult] = await eslint('bun', true, false, false).lintText(sonarContent, {
-    filePath: file,
+    filePath: lintFile,
   })
-  const [runnerResult] = await eslint('bun', false).lintText(content, { filePath: file })
+  const [runnerResult] = await eslint('bun', false).lintText(content, { filePath: lintFile })
   return {
     ...runnerResult!,
     messages: [...sonarResult!.messages, ...runnerResult!.messages],

@@ -25,6 +25,7 @@ import { sessionContextModules } from './architecture-session-context-modules.ts
 import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
+import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 
@@ -67,6 +68,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
   ...releaseModules,
