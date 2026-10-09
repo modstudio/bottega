@@ -37,13 +37,13 @@ export type DayEvidence = {
   lines_generated: number
   collected_at: string
 }
-export function intervalIdentityConflict(row: IntervalEvidence, existingId: string): Error {
+function intervalIdentityConflict(row: IntervalEvidence, existingId: string): Error {
   return new Error(
     `interval identity conflict: tuple (${row.source}, ${row.ref}, ${row.start_at}) belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
   )
 }
 
-export function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
+function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
   return new Error(
     `day identity conflict: date ${row.day} belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
   )
