@@ -66,24 +66,33 @@ export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledg
     acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings`)
     .run(row.id, row.note_id, row.session_id, row.acknowledged_at, row.sightings)
 }
+export function applyHostedNoteRows(
+  conn: Database,
+  changes: Pick<
+    Awaited<ReturnType<typeof hostedNoteChanges>>,
+    'notes' | 'acknowledgements' | 'projectCounters'
+  >,
+) {
+  changes.notes.forEach((row) => {
+    applyHostedNote(conn, row)
+  })
+  changes.acknowledgements.forEach((row) => {
+    applyHostedAcknowledgement(conn, row)
+  })
+  changes.projectCounters.forEach((counter) => {
+    conn
+      .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
+        ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
+      .run(counter.project, counter.next)
+  })
+}
 export function applyHostedNoteChanges(
   changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
   cursorKey = CURSOR_KEY,
   clearLegacyCursor = false,
 ) {
   writeTransaction((conn) => {
-    changes.notes.forEach((row) => {
-      applyHostedNote(conn, row)
-    })
-    changes.acknowledgements.forEach((row) => {
-      applyHostedAcknowledgement(conn, row)
-    })
-    changes.projectCounters.forEach((counter) => {
-      conn
-        .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
-          ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
-        .run(counter.project, counter.next)
-    })
+    applyHostedNoteRows(conn, changes)
     conn
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -106,20 +115,41 @@ function pullCursor(spaceId: string, activeSpaceId: string) {
   return { selected, legacy }
 }
 
-async function completeAcknowledgementNotes(
-  changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
+type NoteParentChange = { id: string; deleted: boolean }
+type NoteParentBatchState = 'live' | 'deleted'
+
+export async function completeAcknowledgementNotes(
+  noteChanges: readonly NoteParentChange[],
+  acknowledgements: readonly HostedAcknowledgement[],
   options: NoteClientOptions,
 ) {
-  const incoming = new Set(changes.notes.map((note) => note.id))
-  for (const acknowledgement of changes.acknowledgements) {
+  const finalNoteChanges = new Map<string, NoteParentBatchState>(
+    noteChanges.map((note) => [note.id, note.deleted ? 'deleted' : 'live']),
+  )
+  const completed = new Set<string>()
+  const fetched: HostedNote[] = []
+  for (const acknowledgement of acknowledgements) {
     if (acknowledgement.deleted_at) continue
-    const present =
-      incoming.has(acknowledgement.note_id) ||
-      Boolean(db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id))
-    if (present) continue
-    changes.notes.unshift(await hostedGetNote(acknowledgement.note_id, options))
-    incoming.add(acknowledgement.note_id)
+    if (completed.has(acknowledgement.note_id)) continue
+    const batchState = finalNoteChanges.get(acknowledgement.note_id)
+    if (batchState !== undefined) continue
+    if (db().query('SELECT 1 FROM note WHERE record_id=?').get(acknowledgement.note_id)) continue
+    fetched.unshift(await hostedGetNote(acknowledgement.note_id, options))
+    completed.add(acknowledgement.note_id)
   }
+  return fetched
+}
+
+export async function hostedNotePullRows(cursor: string | null, options: NoteClientOptions) {
+  const changes = await hostedNoteChanges(cursor, options)
+  changes.notes.unshift(
+    ...(await completeAcknowledgementNotes(
+      changes.notes.map((note) => ({ id: note.id, deleted: Boolean(note.deleted_at) })),
+      changes.acknowledgements,
+      options,
+    )),
+  )
+  return changes
 }
 
 export async function pullHostedNotes(options: NoteClientOptions = {}) {
@@ -132,8 +162,7 @@ export async function pullHostedNotes(options: NoteClientOptions = {}) {
     const { selected, legacy } = pullCursor(spaceId, identity.activeSpaceId)
     try {
       const requestOptions = { ...options, recordSpace: spaceId }
-      const changes = await hostedNoteChanges(selected ?? legacy ?? null, requestOptions)
-      await completeAcknowledgementNotes(changes, requestOptions)
+      const changes = await hostedNotePullRows(selected ?? legacy ?? null, requestOptions)
       applyHostedNoteChanges(changes, cursorKey, legacy !== undefined)
       totals.notes += changes.notes.length
       totals.acknowledgements += changes.acknowledgements.length
