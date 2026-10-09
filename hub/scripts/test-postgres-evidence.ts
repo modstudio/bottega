@@ -866,6 +866,7 @@ try {
       throw new Error('public report unsubscribe detail crossed its bound space')
     if (await unsubscribeHostedEmailRecipient(actorUrl, SPACE_B, emailRows[1]!.unsubscribe_token))
       throw new Error('public report unsubscribe deleted through the wrong bound space')
+    // Production break watched: allow a space-bound read member to delete without the token setting.
     const readMemberDeletedRecipient = await client.begin(async (tx) => {
       await bindTenant(tx, { userId: READ_USER, spaceId: SPACE_A })
       return tx`DELETE FROM hub_report_subscription_recipient
@@ -877,6 +878,7 @@ try {
     await admin`DELETE FROM membership
       WHERE space_id=${SPACE_A}::uuid AND user_id=${READ_USER}::uuid`
     await admin`DELETE FROM "user" WHERE id=${READ_USER}::uuid`
+    // Production break watched: remove the token-capability branch from the recipient DELETE policy.
     if (
       !(await unsubscribeHostedEmailRecipient(actorUrl, SPACE_A, emailRows[1]!.unsubscribe_token))
     )
