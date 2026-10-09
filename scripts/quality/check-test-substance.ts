@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { introducedTestFindings, type TestFinding } from './test-substance'
-import { GUARDED_RULES, testSubstanceReport } from './test-substance-eslint'
+import { guardedRules, testSubstanceReport } from './test-substance-eslint'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
@@ -57,7 +57,7 @@ async function guardFixtures() {
       continue
     }
     const produced = new Set(report.findings.map((finding) => finding.rule))
-    for (const rule of GUARDED_RULES) {
+    for (const rule of guardedRules(runner)) {
       if (!produced.has(rule))
         failures.push(`${runner}: ${rule} produced no finding on its fixture`)
     }
@@ -88,16 +88,19 @@ async function judgeFile(mode: Mode, file: string): Promise<FileJudgment> {
   if (afterReport.parseError) {
     return { findings: [], unchecked: `${file}: ${afterReport.parseError}`, unrecognised }
   }
+  if (unrecognised) {
+    return {
+      findings: [],
+      unchecked: `${file}: runner not recognised`,
+      unrecognised,
+    }
+  }
   if (beforeContent === undefined) {
     return { findings: afterReport.findings, unrecognised }
   }
   const beforeReport = await testSubstanceReport(file, beforeContent)
   if (beforeReport.parseError) {
-    return {
-      findings: [],
-      unchecked: `${file} at base: ${beforeReport.parseError}`,
-      unrecognised,
-    }
+    return { findings: afterReport.findings, unrecognised }
   }
   return {
     findings: introducedTestFindings(beforeReport.findings, afterReport.findings),

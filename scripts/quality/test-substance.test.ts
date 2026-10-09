@@ -34,7 +34,13 @@ describe('test substance comparison', () => {
   test('returns a second instance of an existing finding in one test', () => {
     expect(
       introducedTestFindings([finding('same')], [finding('same'), finding('same', 8)]),
-    ).toEqual([finding('same', 8)])
+    ).toEqual([finding('same')])
+  })
+
+  test('returns the new instance when it precedes the old instance', () => {
+    expect(
+      introducedTestFindings([finding('same', 8)], [finding('same', 4), finding('same', 8)]),
+    ).toEqual([finding('same', 4)])
   })
 
   test('returns an addition in another test when a finding was removed', () => {

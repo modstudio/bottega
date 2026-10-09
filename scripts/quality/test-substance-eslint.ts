@@ -4,6 +4,7 @@ import { ESLint, type Linter } from 'eslint'
 import jestPlugin from 'eslint-plugin-jest'
 import sonarPlugin from 'eslint-plugin-sonarjs'
 import ts from 'typescript'
+import { expectWithoutMatcherRule } from './expect-without-matcher'
 import { selfComparisonRule } from './self-comparison'
 import { applyTestWaivers, OUTSIDE_TEST, type TestFinding, type TestWaiver } from './test-substance'
 
@@ -29,20 +30,24 @@ const SONAR_RULES = [
   'no-exclusive-tests',
   'no-duplicate-test-title',
 ] as const
-const RUNNER_RULES = ['valid-expect', 'no-disabled-tests', 'no-focused-tests'] as const
+const SHARED_RUNNER_RULES = ['no-disabled-tests', 'no-focused-tests'] as const
 
-export const GUARDED_RULES = [
+const SHARED_GUARDED_RULES = [
   'assertions-in-tests',
   'no-trivial-assertions',
-  'async-test-assertions',
   'no-exclusive-tests',
   'no-duplicate-test-title',
-  'valid-expect',
   'no-disabled-tests',
   'no-focused-tests',
   'self-comparison',
   'unused-waiver',
 ] as const
+
+export function guardedRules(runner: Exclude<Runner, 'unrecognised'>): readonly string[] {
+  return runner === 'bun'
+    ? [...SHARED_GUARDED_RULES, 'expect-without-matcher']
+    : [...SHARED_GUARDED_RULES, 'async-test-assertions', 'valid-expect']
+}
 
 function callRootName(expression: ts.Expression): string | undefined {
   if (ts.isIdentifier(expression)) return expression.text
@@ -51,11 +56,11 @@ function callRootName(expression: ts.Expression): string | undefined {
   return undefined
 }
 
-function staticTitle(call: ts.CallExpression) {
+function testTitle(source: ts.SourceFile, call: ts.CallExpression) {
   const title = call.arguments[0]
   return title && (ts.isStringLiteralLike(title) || ts.isNoSubstitutionTemplateLiteral(title))
     ? title.text
-    : '<dynamic title>'
+    : (title?.getText(source) ?? '<missing title>')
 }
 
 function callback(call: ts.CallExpression): ts.FunctionLikeDeclaration | undefined {
@@ -76,7 +81,7 @@ function testLocations(file: string, content: string): TestLocation[] {
       const root = callRootName(node.expression)
       if (root === 'describe') {
         const body = callback(node)
-        if (body) visit(body.body, [...titles, staticTitle(node)])
+        if (body) visit(body.body, [...titles, testTitle(source, node)])
         return
       }
       if (root === 'test' || root === 'it') {
@@ -85,7 +90,7 @@ function testLocations(file: string, content: string): TestLocation[] {
           start,
           end: node.getEnd(),
           line: source.getLineAndCharacterOfPosition(start).line + 1,
-          name: [...titles, staticTitle(node)].join(' > '),
+          name: [...titles, testTitle(source, node)].join(' > '),
         })
         return
       }
@@ -99,39 +104,65 @@ function testLocations(file: string, content: string): TestLocation[] {
 
 function runnerFor(content: string): Runner {
   const source = ts.createSourceFile('runner.ts', content, ts.ScriptTarget.Latest, true)
-  for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
-      continue
-    if (statement.moduleSpecifier.text === 'bun:test') return 'bun'
-    if (statement.moduleSpecifier.text === 'vitest') return 'vitest'
+  let runner: Runner = 'unrecognised'
+  function recognize(specifier: ts.Expression | undefined) {
+    if (!specifier || !ts.isStringLiteralLike(specifier)) return
+    if (specifier.text === 'bun:test') runner = 'bun'
+    if (specifier.text === 'vitest') runner = 'vitest'
   }
-  return 'unrecognised'
+  function visit(node: ts.Node) {
+    if (runner !== 'unrecognised') return
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      recognize(node.moduleSpecifier)
+    } else if (ts.isCallExpression(node)) {
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
+      if (isRequire || isDynamicImport) recognize(node.arguments[0])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return runner
 }
 
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {
   return Object.fromEntries(names.map((name) => [`${prefix}/${name}`, 'error']))
 }
 
-function eslint(runner: Runner, sonar: boolean, custom = true) {
+function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = true) {
   const plugins: Record<string, ESLint.Plugin> = {}
   const configuredRules: Linter.RulesRecord = {}
   if (custom) {
-    plugins['test-substance'] = { rules: { 'self-comparison': selfComparisonRule } }
+    plugins['test-substance'] = {
+      rules: {
+        'expect-without-matcher': expectWithoutMatcherRule,
+        'self-comparison': selfComparisonRule,
+      },
+    }
     configuredRules['test-substance/self-comparison'] = 'error'
+    if (runner === 'bun') configuredRules['test-substance/expect-without-matcher'] = 'error'
   }
   const settings: Record<string, unknown> = {}
   if (sonar) {
     plugins.sonarjs = sonarPlugin as ESLint.Plugin
-    Object.assign(configuredRules, rules('sonarjs', SONAR_RULES))
+    Object.assign(
+      configuredRules,
+      rules(
+        'sonarjs',
+        runner === 'bun'
+          ? SONAR_RULES.filter((rule) => rule !== 'async-test-assertions')
+          : SONAR_RULES,
+      ),
+    )
   }
-  if (runner === 'bun') {
+  if (runnerRules && runner === 'bun') {
     plugins.jest = jestPlugin as ESLint.Plugin
-    Object.assign(configuredRules, rules('jest', RUNNER_RULES))
+    Object.assign(configuredRules, rules('jest', SHARED_RUNNER_RULES))
     settings.jest = { globalPackage: 'bun:test' }
   }
-  if (runner === 'vitest') {
+  if (runnerRules && runner === 'vitest') {
     plugins.vitest = vitestPlugin as ESLint.Plugin
-    Object.assign(configuredRules, rules('vitest', RUNNER_RULES))
+    Object.assign(configuredRules, rules('vitest', [...SHARED_RUNNER_RULES, 'valid-expect']))
   }
 
   return new ESLint({
@@ -195,11 +226,31 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   if (runner !== 'bun')
     return (await eslint(runner, true).lintText(content, { filePath: file }))[0]!
 
-  // SonarJS recognizes Vitest's API but not bun:test. Preserve the test source and
-  // substitute only its module name for the SonarJS pass; the Jest pass sees the
-  // original bun:test import and settings.
-  const sonarContent = content.replace(/(['"])bun:test\1/g, '$1vitest$1')
-  const [sonarResult] = await eslint('unrecognised', true, false).lintText(sonarContent, {
+  // The SonarJS pass for bun files replaces bun:test with vitest only in the module
+  // specifier of import and export declarations, located through the parse, never by
+  // a text search over the file.
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const replacements: Array<{ end: number; start: number }> = []
+  function visit(node: ts.Node) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === 'bun:test'
+    ) {
+      replacements.push({
+        start: node.moduleSpecifier.getStart(source) + 1,
+        end: node.moduleSpecifier.getEnd() - 1,
+      })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  let sonarContent = content
+  for (const replacement of replacements.reverse()) {
+    sonarContent = `${sonarContent.slice(0, replacement.start)}vitest${sonarContent.slice(replacement.end)}`
+  }
+  const [sonarResult] = await eslint('bun', true, false, false).lintText(sonarContent, {
     filePath: file,
   })
   const [runnerResult] = await eslint('bun', false).lintText(content, { filePath: file })

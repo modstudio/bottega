@@ -28,11 +28,11 @@ export function introducedTestFindings(before: TestFinding[], after: TestFinding
   const introduced = introducedFindings(before.map(ratchetFinding), after.map(ratchetFinding))
   const counts = new Map<string, number>()
   for (const finding of introduced) {
-    const key = JSON.stringify([finding.file, finding.line, finding.rule])
+    const key = JSON.stringify([finding.file, finding.rule])
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return after.filter((finding) => {
-    const key = JSON.stringify([`${finding.file}\0${finding.testName}`, finding.line, finding.rule])
+    const key = JSON.stringify([`${finding.file}\0${finding.testName}`, finding.rule])
     const count = counts.get(key) ?? 0
     if (count === 0) return false
     counts.set(key, count - 1)
