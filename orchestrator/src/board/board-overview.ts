@@ -1,9 +1,9 @@
 // concern: board-overview
-/** Builds the board overview and stamps roots shown to an identified architect session. */
+/** Builds the operator's side-effect-free overview from local and hosted-cache roots. */
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { BOARD_READ_REFRESH_BUDGET_MS, markBoardDeliveriesDelivered } from './board-delivery.ts'
+import { BOARD_READ_REFRESH_BUDGET_MS } from './board-delivery.ts'
 import {
   cachedHostedBoardMessages,
   hostedBoardVerificationWarning,
@@ -11,7 +11,6 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { type BoardStatusResult, boardStatus, hostedBoardStatusResult } from './board-operations.ts'
-import { architectIdentity } from './board-policy.ts'
 import { type BoardOrigin, messageRows, rowIsLive } from './board-store.ts'
 import { type BoardThreadState, boardThreadState } from './board-thread-policy.ts'
 
@@ -185,16 +184,8 @@ export async function listBoardOverview(
   })
   const rows = await localEntries(clock)
   if (refreshed !== 'local') rows.push(...hostedEntries(cachedHostedBoardMessages(db()), clock))
-  const messages = boardOverview(rows, filters)
-  const session = architectIdentity(input.env ?? process.env)?.session
-  if (session)
-    await markBoardDeliveriesDelivered(
-      session,
-      messages.map((message) => message.id),
-      new Date(clock).toISOString(),
-    )
   return {
-    messages,
+    messages: boardOverview(rows, filters),
     warning: refreshed === 'local' ? null : hostedBoardVerificationWarning(),
   }
 }
