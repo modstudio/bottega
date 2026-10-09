@@ -1,10 +1,9 @@
 // concern: doc-canon-tree
 /** Selects the repository tree used to validate a command-line document write. */
 import { existsSync, realpathSync } from 'node:fs'
-import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { gitToplevel, mainCheckoutOf } from '../../../shared/git.ts'
 import { type Project, projectByName, projects } from '../project/projects.ts'
-import type { CanonWriteTree } from './doc-write-allowed.ts'
+import { type CanonWriteTree, docWriteProjectName } from './doc-write-allowed.ts'
 
 export type SelectedCanonWriteTree = CanonWriteTree & { project: Project }
 
@@ -28,11 +27,12 @@ export function selectCanonWriteTree(input: {
   subject: string | null
   cwd?: string
 }): SelectedCanonWriteTree | undefined {
-  if (!docScopeHasProjectSubject(input.scope) || !input.subject) {
+  const projectName = docWriteProjectName(input.scope, input.subject)
+  if (!projectName) {
     if (input.cwd) throw new Error('refusing --cwd: this document has no project')
     return undefined
   }
-  const subjectProject = projectByName(input.subject)
+  const subjectProject = projectByName(projectName)
   if (!subjectProject) return undefined
   if (!input.cwd)
     return input.scope === 'canon'
