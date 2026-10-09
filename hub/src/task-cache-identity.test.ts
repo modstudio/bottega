@@ -21,7 +21,6 @@ function seedTask(recordId: string, key: string) {
 
 function changes(options: {
   ids: { comment: string; document: string; event: string }
-  legacy: { comment: number; document: number; event: number }
   taskKey?: string
   deleted?: boolean
 }) {
@@ -32,7 +31,6 @@ function changes(options: {
     comments: [
       {
         id: options.ids.comment,
-        legacy_local_id: options.legacy.comment,
         task_key: taskKey,
         project_name: 'workshop',
         body: 'hosted comment',
@@ -44,7 +42,6 @@ function changes(options: {
     documents: [
       {
         id: options.ids.document,
-        legacy_local_id: options.legacy.document,
         task_key: taskKey,
         project_name: 'workshop',
         number: 1,
@@ -60,7 +57,6 @@ function changes(options: {
     statusEvents: [
       {
         id: options.ids.event,
-        legacy_local_id: options.legacy.event,
         task_key: taskKey,
         project_name: 'workshop',
         at: '2026-10-08T12:01:00.000Z',
@@ -105,7 +101,6 @@ test('matching record ids update and delete child rows', () => {
         document: 'matched-document',
         event: 'matched-event',
       },
-      legacy: { comment: 401, document: 402, event: 403 },
     }),
   )
 
@@ -147,7 +142,6 @@ test('matching record ids update and delete child rows', () => {
         document: 'matched-document',
         event: 'matched-event',
       },
-      legacy: { comment: 999, document: 999, event: 999 },
       deleted: true,
     }),
   )
@@ -177,7 +171,6 @@ test('pulled document refuses a number held by another UUID', () => {
           document: 'incoming-document',
           event: 'incoming-event',
         },
-        legacy: { comment: 1, document: 1, event: 1 },
       }),
     ),
   ).toThrow(

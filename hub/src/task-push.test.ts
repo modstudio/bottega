@@ -98,7 +98,7 @@ test('task push refuses an older server before its first mirror write', async ()
   expect(writes).toBe(0)
 })
 
-test('task push sends a child record id without legacy identity fields', async () => {
+test('task push sends a child record id', async () => {
   const at = '2026-09-24T12:00:00.000Z'
   writeTransaction((conn) => {
     conn
@@ -149,7 +149,6 @@ test('task push sends a child record id without legacy identity fields', async (
     task_id: '01990000-0000-7000-8000-000000000001',
   })
   expect(sentEvents[0]).not.toHaveProperty('task_record_id')
-  expect(sentEvents[0]).not.toHaveProperty('legacy_local_id')
   expect(sentEvents[0]).not.toHaveProperty('newly_assigned')
 })
 

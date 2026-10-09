@@ -66,7 +66,6 @@ export const hubTaskComment = pgTable.withRLS(
   'hub_task_comment',
   {
     id: identity(),
-    legacyLocalId: bigint('legacy_local_id', { mode: 'bigint' }),
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
@@ -78,7 +77,6 @@ export const hubTaskComment = pgTable.withRLS(
   },
   (table) => [
     unique('hub_task_comment_space_id_unique').on(table.spaceId, table.id),
-    unique('hub_task_comment_legacy_unique').on(table.spaceId, table.legacyLocalId),
     index('hub_task_comment_task_id_idx').on(table.taskId),
     ...tenantPolicies('hub_task_comment', table.spaceId),
   ],
@@ -88,7 +86,6 @@ export const hubTaskDocument = pgTable.withRLS(
   'hub_task_document',
   {
     id: identity(),
-    legacyLocalId: bigint('legacy_local_id', { mode: 'bigint' }),
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
@@ -104,7 +101,6 @@ export const hubTaskDocument = pgTable.withRLS(
   },
   (table) => [
     unique('hub_task_document_space_id_unique').on(table.spaceId, table.id),
-    unique('hub_task_document_legacy_unique').on(table.spaceId, table.legacyLocalId),
     index('hub_task_document_task_id_idx').on(table.taskId),
     uniqueIndex('hub_task_document_task_number_unique').on(table.taskId, table.number),
     check(
@@ -120,7 +116,6 @@ export const hubTaskStatusEvent = pgTable.withRLS(
   'hub_task_status_event',
   {
     id: identity(),
-    legacyLocalId: bigint('legacy_local_id', { mode: 'bigint' }),
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     taskKey: text('task_key').notNull(),
@@ -134,7 +129,6 @@ export const hubTaskStatusEvent = pgTable.withRLS(
   },
   (table) => [
     unique('hub_task_status_event_space_id_unique').on(table.spaceId, table.id),
-    unique('hub_task_status_event_legacy_unique').on(table.spaceId, table.legacyLocalId),
     unique('hub_task_status_event_change_unique').on(
       table.spaceId,
       table.taskKey,
@@ -308,7 +302,6 @@ export const hubSend = pgTable.withRLS(
   'hub_send',
   {
     id: identity(),
-    legacyLocalId: bigint('legacy_local_id', { mode: 'bigint' }),
     spaceId: spaceIdentity(),
     at: timestamp({ withTimezone: true }).notNull(),
     window: text().notNull(),
@@ -325,7 +318,6 @@ export const hubSend = pgTable.withRLS(
     periodEnd: timestamp('period_end', { withTimezone: true }),
   },
   (table) => [
-    unique('hub_send_space_legacy_unique').on(table.spaceId, table.legacyLocalId),
     uniqueIndex('hub_send_subscription_period_unique')
       .on(table.subscriptionId, table.periodEnd)
       .where(sql`${table.test} = 0`),
