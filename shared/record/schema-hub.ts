@@ -7,21 +7,112 @@ import {
   bigint,
   check,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import { project, RECORD_OWNER_ROLE, space, spaceIdentity, tenantPolicies, user } from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
+
+export const HUB_CHANGE_SOURCES = {
+  rows: [
+    'hub_task',
+    'hub_task_comment',
+    'hub_task_document',
+    'hub_task_status_event',
+    'hub_send',
+    'hub_interval',
+    'hub_day',
+    'hub_note',
+    'hub_note_acknowledgement',
+  ],
+  children: {
+    hub_send_recipient: 'hub_send',
+  },
+} as const
+
+export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
+  hub_change_head: 'Change-log state tracks the latest allocated sequence for each space.',
+  hub_change: 'Change-log entries form the hosted synchronization feed.',
+  hub_report_subscription: 'Hosted report configuration defines scheduled report delivery.',
+  hub_report_subscription_member: 'Hosted report membership selects subscription recipients.',
+  hub_report_subscription_project: 'Hosted report configuration selects subscription projects.',
+  hub_report_subscription_recipient: 'Hosted report delivery stores subscription recipients.',
+} as const
+
+export const hubChangeHead = pgTable.withRLS(
+  'hub_change_head',
+  {
+    spaceId: uuid('space_id')
+      .primaryKey()
+      .references(() => space.id),
+    sequence: bigint({ mode: 'bigint' }).notNull(),
+  },
+  (table) => [
+    pgPolicy('hub_change_head_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_space_update', {
+      for: 'update',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_head_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+)
+
+export const hubChange = pgTable.withRLS(
+  'hub_change',
+  {
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    sequence: bigint({ mode: 'bigint' }).notNull(),
+    tableName: text('table_name').notNull(),
+    rowId: uuid('row_id').notNull(),
+    op: text().notNull(),
+    at: timestamp({ withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.sequence] }),
+    check('hub_change_op_check', sql`${table.op} IN ('upsert','delete')`),
+    pgPolicy('hub_change_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('hub_change_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+)
 
 export const hubTask = pgTable.withRLS(
   'hub_task',
@@ -322,6 +413,7 @@ export const hubSend = pgTable.withRLS(
     periodEnd: timestamp('period_end', { withTimezone: true }),
   },
   (table) => [
+    unique('hub_send_space_id_unique').on(table.spaceId, table.id),
     uniqueIndex('hub_send_subscription_period_unique')
       .on(table.subscriptionId, table.periodEnd)
       .where(sql`${table.test} = 0`),
@@ -356,15 +448,18 @@ export const hubSendRecipient = pgTable.withRLS(
   {
     id: identity(),
     spaceId: spaceIdentity(),
-    sendId: uuid('send_id')
-      .notNull()
-      .references(() => hubSend.id),
+    sendId: uuid('send_id').notNull(),
     userId: uuid('user_id').references(() => user.id),
     name: text().notNull(),
     email: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.spaceId, table.sendId],
+      foreignColumns: [hubSend.spaceId, hubSend.id],
+      name: 'hub_send_recipient_space_send_fk',
+    }),
     unique('hub_send_recipient_unique').on(table.sendId, table.userId),
     pgPolicy('hub_send_recipient_space_select', {
       for: 'select',
