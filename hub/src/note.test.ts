@@ -36,6 +36,13 @@ const hosted = {
       body = init?.body ? JSON.parse(String(init.body)) : {},
       at = new Date().toISOString()
     const pathRecordId = url.pathname.split('/')[3]!
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-a',
+        memberships: [],
+        capabilities: { projectNoteCounters: true },
+      })
     const shape = (note: ReturnType<typeof getNote>) => ({
       id: note.record_id,
       number: note.number,
@@ -66,7 +73,8 @@ const hosted = {
         })
       }
       const next =
-        (db().query<{ max: number | null }, []>('SELECT max(number) max FROM note').get()?.max ?? 0) + 1
+        (db().query<{ max: number | null }, []>('SELECT max(number) max FROM note').get()?.max ??
+          0) + 1
       return Response.json({
         id: crypto.randomUUID(),
         number: next,
@@ -163,15 +171,36 @@ describe('suggestion notes', () => {
           forceNew: true,
         })
       ).note
-      const alpha = (
+      const beta = (
         await createNote({
-          text: `Alpha note ${crypto.randomUUID()}`,
-          cwd: '/fixtures/repos/alpha',
+          text: `Beta note ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/beta',
           forceNew: true,
         })
       ).note
       expect(created.number).toBe(1)
-      expect(alpha.number).toBe(1)
+      expect(beta.number).toBe(1)
+    })
+
+    test('deleting the highest note does not reuse its project number', async () => {
+      const first = (
+        await createNote({
+          text: `Counter deletion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      writeTransaction((conn) =>
+        conn.query('DELETE FROM note WHERE record_id=?').run(first.record_id),
+      )
+      const next = (
+        await createNote({
+          text: `Counter after deletion ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      expect(next.number).toBe(first.number + 1)
     })
 
     test('resolves note labels, session-project numbers and UUIDs without cross-project fallback', () => {
@@ -243,7 +272,10 @@ describe('suggestion notes', () => {
       writeTransaction((conn) =>
         conn
           .query('UPDATE note SET anchors=? WHERE record_id=?')
-          .run(JSON.stringify([{ ...same.note.anchors[0], session_id: session }]), same.note.record_id),
+          .run(
+            JSON.stringify([{ ...same.note.anchors[0], session_id: session }]),
+            same.note.record_id,
+          ),
       )
       const kept = await acknowledgeNote(same.note.record_id, session)
       expect(kept.alreadyAcknowledged).toBe(false)
@@ -504,7 +536,9 @@ describe('suggestion notes', () => {
         .query(`INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
         VALUES (?,'DEV-9998','workshop','promoted','open','open','local',?,?)`)
         .run(crypto.randomUUID(), at, at)
-      conn.query(`UPDATE note SET promoted_task='DEV-9998' WHERE record_id=?`).run(promoted.record_id)
+      conn
+        .query(`UPDATE note SET promoted_task='DEV-9998' WHERE record_id=?`)
+        .run(promoted.record_id)
     })
     await drop(dropped.number, 'resolved')
     expect(listActionableNotes({ session }).map((note) => note.record_id)).toEqual([open.record_id])
@@ -531,20 +565,30 @@ describe('suggestion notes', () => {
     expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(false)
     expect((await acknowledge(note.number, session)).alreadyAcknowledged).toBe(true)
     expect(listNotes({ session }).map((row) => row.record_id)).not.toContain(note.record_id)
-    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(note.record_id)
-    expect(listNotes({ session: [otherSession, session] }).map((row) => row.record_id)).not.toContain(
+    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(
       note.record_id,
     )
+    expect(
+      listNotes({ session: [otherSession, session] }).map((row) => row.record_id),
+    ).not.toContain(note.record_id)
     expect(listNotes({ session, kept: true }).map((row) => row.record_id)).toContain(note.record_id)
 
     writeTransaction((conn) =>
       conn
         .query('UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=? WHERE record_id=?')
-        .run(JSON.stringify([anchor, otherAnchor, anchor]), new Date().toISOString(), note.record_id),
+        .run(
+          JSON.stringify([anchor, otherAnchor, anchor]),
+          new Date().toISOString(),
+          note.record_id,
+        ),
     )
     expect(listNotes({ session }).map((row) => row.record_id)).toContain(note.record_id)
-    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(note.record_id)
-    expect(listNotes({ session, kept: true }).map((row) => row.record_id)).not.toContain(note.record_id)
+    expect(listNotes({ session: otherSession }).map((row) => row.record_id)).toContain(
+      note.record_id,
+    )
+    expect(listNotes({ session, kept: true }).map((row) => row.record_id)).not.toContain(
+      note.record_id,
+    )
   })
 
   test('stale maintenance recognizes file, run, branch and commit anchors', async () => {
@@ -627,16 +671,7 @@ describe('suggestion notes', () => {
             `INSERT INTO note(record_id,number,project,text,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task)
              VALUES (?,?,'workshop',?,?,?, ?,?,'2026-07-02T00:00:00.000Z','gone',?)`,
           )
-          .run(
-            recordId,
-            number,
-            `reap ${Math.random()}`,
-            anchor,
-            sightings,
-            old,
-            seen,
-            promoted,
-          ),
+          .run(recordId, number, `reap ${Math.random()}`, anchor, sightings, old, seen, promoted),
       )
       return { number, recordId }
     }

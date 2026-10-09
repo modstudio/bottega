@@ -5,6 +5,7 @@ import { noteMirrorCollision } from './hosted-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { applyHostedNoteChanges } from './note-cache.ts'
+import { hostedNoteChanges } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
 
 beforeAll(resetFixtureStore)
@@ -17,6 +18,25 @@ const unreachable = {
 }
 
 describe('hosted-only note safety', () => {
+  test('note changes refuse a server without project counter support', async () => {
+    await expect(
+      hostedNoteChanges(null, {
+        baseUrl: 'https://hub.example.test',
+        token: 'test',
+        fetch: async (input) => {
+          if (new URL(input).pathname === '/v1/tasks/identity')
+            return Response.json({
+              userId: 'user-1',
+              activeSpaceId: 'space-a',
+              memberships: [],
+              capabilities: {},
+            })
+          return Response.json({ error: 'unexpected route' }, { status: 500 })
+        },
+      }),
+    ).rejects.toThrow('deploy the hub server at or after the per-project note counter change')
+  })
+
   test('number seeding never goes below an existing number', () => {
     expect(nextNoteNumber(140n, 3n)).toBe(141n)
     expect(nextNoteNumber(140n, 200n)).toBe(200n)
@@ -131,7 +151,49 @@ describe('hosted-only note safety', () => {
     ).toEqual({ note_record_id: ids.get(990)! })
     expect(() => getNote(ids.get(991)!)).toThrow(`no note ${ids.get(991)!}`)
     expect(
-      db().query<{ next: number }, []>("SELECT next FROM note_counter WHERE project='workshop'").get(),
+      db()
+        .query<{ next: number }, []>("SELECT next FROM note_counter WHERE project='workshop'")
+        .get(),
     ).toEqual({ next: 1_000 })
+  })
+
+  test('cache pull refuses a project-number collision under another UUID', () => {
+    const at = '2026-09-17T12:00:00.000Z'
+    const existing = crypto.randomUUID()
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO note(record_id,number,project,text,anchors,created_at,last_seen_at)
+          VALUES (?,77,'workshop','existing','[]',?,?)`)
+        .run(existing, at, at),
+    )
+    const incoming = crypto.randomUUID()
+    expect(() =>
+      applyHostedNoteChanges({
+        notes: [
+          {
+            id: incoming,
+            number: 77,
+            project: 'workshop',
+            project_name: 'workshop',
+            text: 'incoming',
+            area: null,
+            anchors: '[]',
+            sightings: 1,
+            created_at: at,
+            last_seen_at: at,
+            stale_at: null,
+            stale_reason: null,
+            promoted_task: null,
+            updated_at: at,
+            deleted_at: null,
+          },
+        ],
+        acknowledgements: [],
+        projectCounters: [],
+        cursor: at,
+      }),
+    ).toThrow(
+      `note workshop#77 belongs to UUID ${existing}, not incoming UUID ${incoming}; run \`hub note list\``,
+    )
   })
 })

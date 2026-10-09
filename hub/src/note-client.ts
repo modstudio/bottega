@@ -50,8 +50,10 @@ async function request<T>(
     )
   return value as T
 }
-export const hostedCreateNote = (body: unknown, options?: Options) =>
-  request<HostedNote>('/v1/notes', 'POST', body, options)
+export const hostedCreateNote = async (body: unknown, options?: Options) => {
+  assertProjectNoteCounters(await hostedTaskIdentity(options))
+  return request<HostedNote>('/v1/notes', 'POST', body, options)
+}
 export const hostedAcknowledgeNote = (recordId: string, session: string, options?: Options) =>
   request<{
     note: HostedNote

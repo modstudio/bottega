@@ -12,6 +12,15 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     conn.query('DELETE FROM note WHERE record_id=?').run(row.id)
     return
   }
+  const holder = conn
+    .query<{ record_id: string }, [string, number]>(
+      'SELECT record_id FROM note WHERE project=? AND number=?',
+    )
+    .get(row.project, row.number)
+  if (holder && holder.record_id !== row.id)
+    throw new Error(
+      `note ${row.project}#${row.number} belongs to UUID ${holder.record_id}, not incoming UUID ${row.id}; run \`hub note list\``,
+    )
   const promotedTaskRecordId = row.promoted_task
     ? taskRecordIdFor(conn, row.promoted_task, row.project)
     : null
