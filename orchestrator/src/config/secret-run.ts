@@ -3,6 +3,7 @@
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
+import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-connection-env.ts'
 
 export const SECRET_RUN_WORKING_FORM =
   'orch config secret run --name <KEY> [--name <KEY> ...] -- <argv...>'
@@ -92,6 +93,7 @@ function hostedStoreUnread(error: unknown): boolean {
 }
 
 export async function runNamedSecrets(input: SecretRunInvocation): Promise<number> {
+  assertRecordConnectionResolutionAllowed(input.names, process.env)
   let resolved: Record<string, string | undefined>
   try {
     resolved = await readEnvValuesWithHosted(input.names)

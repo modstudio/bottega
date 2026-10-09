@@ -16,6 +16,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/config-client.ts',
     '../../../shared/env-source.ts',
     '../../../shared/hosted-secrets.ts',
+    '../sandbox/record-connection-env.ts',
   ]),
   module('orchestrator/src/config/config-service.ts', [
     'node:os',

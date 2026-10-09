@@ -76,6 +76,7 @@ import {
   codexMcpSetupHeader,
   codexProjectServersForRun,
 } from '../sandbox/codex-mcp-scope.ts'
+import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import {
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
@@ -102,7 +103,6 @@ import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
-import { decideCodexSandbox } from './run-codex-sandbox.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
   workerGitConfigEnvironment,

@@ -212,6 +212,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../idle-kill.ts',
       '../agent/agent-registry.ts',
       '../agent/worker-launch-env.ts',
+      '../sandbox/record-connection-env.ts',
     ],
     'Keep run process control independent of routing, contracts, reviews, and transports.',
   ),

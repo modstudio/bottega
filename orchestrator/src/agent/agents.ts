@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
+import { codexLaunchUsesApproveForMe } from '../sandbox/codex-sandbox.ts'
 import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { Caps } from './capabilities.ts'
@@ -287,7 +288,7 @@ function codexSandboxArgs(
   sandbox: 'read-only' | 'workspace-write' | typeof CODEX_EXEC_SANDBOX,
   repository: boolean | undefined,
 ): string[] {
-  return mcp || (repository && sandbox === 'workspace-write')
+  return codexLaunchUsesApproveForMe({ mcp, sandbox, repository })
     ? ['--approve-for-me']
     : ['-s', sandbox]
 }

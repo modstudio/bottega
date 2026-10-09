@@ -50,20 +50,31 @@ export type SandboxRuntimeConfig = {
 
 export type RunSandbox = 'host' | 'srt'
 
+/** Operator env file denied by every readonly-lens profile. */
+const READONLY_LENS_OPERATOR_ENV_FILE = '~/.claude/.env'
+
+/** Login keychain paths denied by every readonly-lens profile. */
+const READONLY_LENS_LOGIN_KEYCHAIN_PATHS = [
+  '~/Library/Keychains/login.keychain',
+  '~/Library/Keychains/login.keychain-db',
+] as const
+
 /** Sensitive operator paths denied by every readonly-lens profile. */
 export const READONLY_LENS_DENY_PATHS = [
   '~/.ssh', // private SSH keys and host credentials
   '~/.aws', // AWS access keys and session credentials
-  '~/.claude/.env', // MCP and service tokens
+  READONLY_LENS_OPERATOR_ENV_FILE, // MCP and service tokens
   '~/.config/gcloud', // Google Cloud application credentials
-  '~/Library/Keychains/login.keychain', // legacy macOS login keychain
-  '~/Library/Keychains/login.keychain-db', // current macOS login keychain
+  ...READONLY_LENS_LOGIN_KEYCHAIN_PATHS,
 ] as const
 
 /**
  * Host-control sockets are denied for every read-only worker.
  */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
+
+/** Loopback TCP is allowed on every readonly-lens SRT profile. */
+export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
 
 /** Reads denied by every SRT profile, including profiles outside normal runs. */
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
@@ -108,14 +119,68 @@ const isAtOrBelow = (path: string, parent: string) => {
   return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
 }
 
+function denyReadCovers(denyRead: readonly string[], path: string): boolean {
+  return denyRead.some((denied) => isAtOrBelow(path, denied))
+}
+
+function readonlyLensOperatorEnvFileDenyPaths(envFilePaths: readonly string[]): string[] {
+  return [...new Set(envFilePaths.map((path) => resolve(path)))]
+}
+
+function readonlyLensLoginKeychainDenyPaths(keychainPaths: readonly string[]): string[] {
+  return [...new Set(keychainPaths.map((path) => resolve(path)))]
+}
+
+/** Whether a readonly-lens denyRead list denies the operator env file. */
+export function readonlyLensDeniesOperatorEnvFile(
+  denyRead: readonly string[],
+  envFilePaths: readonly string[],
+): boolean {
+  return readonlyLensOperatorEnvFileDenyPaths(envFilePaths).some((path) =>
+    denyReadCovers(denyRead, path),
+  )
+}
+
+/** Whether a readonly-lens denyRead list denies the login keychain. */
+export function readonlyLensDeniesLoginKeychain(
+  denyRead: readonly string[],
+  keychainPaths: readonly string[],
+): boolean {
+  return readonlyLensLoginKeychainDenyPaths(keychainPaths).some((path) =>
+    denyReadCovers(denyRead, path),
+  )
+}
+
 function protectedDenyPaths(project: Project | null, environment: ConfigEnvironment): string[] {
   return [
     ...new Set([
       ...mandatorySrtDenyRead(environment),
-      ...resolveEnvFilePaths(environment).map((path) => resolve(path)),
+      ...readonlyLensOperatorEnvFileDenyPaths(resolveEnvFilePaths(environment)),
+      ...readonlyLensLoginKeychainDenyPaths(READONLY_LENS_LOGIN_KEYCHAIN_PATHS.map(expandHome)),
       ...resolveSecretPaths(project),
     ]),
   ]
+}
+
+/** Resolved deny lists a confinement report needs; the report itself reads no home. */
+export function readonlyLensReportInputs(
+  environment: ConfigEnvironment,
+  project: Project | null = null,
+): {
+  denyRead: readonly string[]
+  envFilePaths: string[]
+  keychainPaths: string[]
+} {
+  return {
+    denyRead: [...protectedDenyPaths(project, environment), ...READONLY_LENS_DENY_SOCKETS],
+    envFilePaths: readonlyLensOperatorEnvFileDenyPaths([
+      expandHome(READONLY_LENS_OPERATOR_ENV_FILE),
+      ...resolveEnvFilePaths(environment),
+    ]),
+    keychainPaths: readonlyLensLoginKeychainDenyPaths(
+      READONLY_LENS_LOGIN_KEYCHAIN_PATHS.map(expandHome),
+    ),
+  }
 }
 
 function refuseProtectedOverlap(
@@ -246,7 +311,7 @@ export function readonlyLensProfile(input: {
         // On macOS srt's one switch covers both binding and outbound loopback.
         // The per-run orch-ask listener uses an OS-assigned loopback port, so it
         // cannot be named in the static domain list before srt starts.
-        allowLocalBinding: true,
+        allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
         denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
@@ -314,6 +379,53 @@ export function isReadonlySandboxCandidate(input: {
   return input.agent !== 'codex' && !input.writesRepo
 }
 
+export type ReadonlySandboxKind = {
+  sandbox: RunSandbox
+  reason: string | null
+  missingRoot: boolean
+}
+
+/** Host-versus-srt decision dispatch uses before it builds an SRT profile. */
+export function selectReadonlySandboxKind(input: {
+  agent: string
+  readsRepo: boolean
+  writesRepo: boolean
+  worktreePresent: boolean
+  projectPresent: boolean
+  override?: string
+  mcp?: boolean
+}): ReadonlySandboxKind {
+  if (!isReadonlySandboxCandidate(input)) {
+    return { sandbox: 'host', reason: null, missingRoot: false }
+  }
+  // Preserve the repository seam exactly: an unregistered or not-yet-cut
+  // readonly checkout was already a host run. No-repo jobs have no such
+  // fallback because their isolate is the boundary this selector must build.
+  if (input.readsRepo && (!input.worktreePresent || !input.projectPresent)) {
+    return { sandbox: 'host', reason: null, missingRoot: false }
+  }
+  if (input.override === 'host') {
+    return {
+      sandbox: 'host',
+      reason: input.readsRepo
+        ? 'ORCH_SANDBOX=host'
+        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+      missingRoot: false,
+    }
+  }
+  if (input.mcp) {
+    return {
+      sandbox: 'host',
+      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
+      missingRoot: false,
+    }
+  }
+  if (!input.worktreePresent) {
+    return { sandbox: 'srt', reason: null, missingRoot: true }
+  }
+  return { sandbox: 'srt', reason: null, missingRoot: false }
+}
+
 export function selectReadonlySandbox(input: {
   agent: string
   readsRepo: boolean
@@ -329,42 +441,29 @@ export function selectReadonlySandbox(input: {
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
 }): SandboxSelection {
-  if (!isReadonlySandboxCandidate(input)) {
-    return { sandbox: 'host', profile: null, reason: null }
-  }
-  // Preserve the repository seam exactly: an unregistered or not-yet-cut
-  // readonly checkout was already a host run. No-repo jobs have no such
-  // fallback because their isolate is the boundary this selector must build.
-  if (input.readsRepo && (!input.worktree || !input.project)) {
-    return { sandbox: 'host', profile: null, reason: null }
-  }
-  if (input.override === 'host') {
-    return {
-      sandbox: 'host',
-      profile: null,
-      reason: input.readsRepo
-        ? 'ORCH_SANDBOX=host'
-        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
-    }
-  }
-  if (input.mcp) {
-    return {
-      sandbox: 'host',
-      profile: null,
-      reason: 'MCP was requested; srt blocks MCP transports; run is unconfined',
-    }
-  }
-  if (!input.worktree) {
+  const kind = selectReadonlySandboxKind({
+    agent: input.agent,
+    readsRepo: input.readsRepo,
+    writesRepo: input.writesRepo,
+    worktreePresent: Boolean(input.worktree),
+    projectPresent: Boolean(input.project),
+    override: input.override,
+    mcp: input.mcp,
+  })
+  if (kind.missingRoot) {
     throw new Error(
       `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
         'the sandbox root is missing',
     )
   }
+  if (kind.sandbox !== 'srt') {
+    return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
+  }
   return {
     sandbox: 'srt',
-    reason: null,
+    reason: kind.reason,
     profile: readonlyLensProfile({
-      worktree: input.worktree,
+      worktree: input.worktree!,
       runsDir: input.runsDir,
       scratchDir: input.scratchDir,
       project: input.project,
@@ -754,6 +853,11 @@ export function prepareCodexHome(
   return { CODEX_HOME: targetHome }
 }
 
+/** Grok's mirrored HOME links the operator env file into the worker home. */
+export function workerHomeLinksEnvFile(harness: string): boolean {
+  return harness === 'grok'
+}
+
 /**
  * Put vendor session state under this chain's writable directory. Codex and
  * Grok receive isolated harness homes; Grok also receives a mirrored HOME that
@@ -766,7 +870,7 @@ export function prepareSandboxHome(
   sandbox: RunSandbox,
 ): Record<string, string> {
   if (agent === 'codex') return prepareCodexHome(runDir, environment)
-  if (agent === 'grok') {
+  if (workerHomeLinksEnvFile(agent)) {
     const operatorHome = environment.HOME
     if (!operatorHome) {
       throw new Error(
