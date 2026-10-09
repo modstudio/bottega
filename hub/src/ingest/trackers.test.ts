@@ -71,6 +71,27 @@ describe('tracker observation times', () => {
     })
   })
 
+  test('an unchanged legacy row repairs missing update and open times once', () => {
+    const legacy = { ...storedTrackerTask, opened_at: null, updated_at: null }
+    const repaired = trackerObservationTimes(trackerTask, legacy, at)
+    expect(repaired).toEqual({
+      openedAt: at,
+      closedAt: legacy.closed_at,
+      firstSeen: legacy.first_seen,
+      lastSeen: legacy.last_seen,
+      updatedAt: at,
+    })
+
+    const secondAt = '2026-09-04T10:00:00.000Z'
+    expect(
+      trackerObservationTimes(
+        trackerTask,
+        { ...legacy, opened_at: repaired.openedAt, updated_at: repaired.updatedAt },
+        secondAt,
+      ),
+    ).toEqual(repaired)
+  })
+
   test('a tracker update time is retained for new, changed, and unchanged observations', () => {
     const updatedAt = '2026-09-03T09:30:00.000Z'
     const supplied = { ...trackerTask, updatedAt }
@@ -102,9 +123,9 @@ describe('tracker observation times', () => {
       closed_at: closedAt,
     }
     expect(trackerObservationTimes(done, stored, at).closedAt).toBe(closedAt)
-    expect(trackerObservationTimes({ ...done, title: 'Changed done task' }, stored, at).closedAt).toBe(
-      at,
-    )
+    expect(
+      trackerObservationTimes({ ...done, title: 'Changed done task' }, stored, at).closedAt,
+    ).toBe(at)
   })
 })
 
@@ -223,6 +244,21 @@ describe('tracker register', () => {
 })
 
 describe('tracker assignees', () => {
+  test('a second unchanged observation preserves repaired machine times', () => {
+    const firstAt = '2026-09-23T10:00:00.000Z'
+    const secondAt = '2026-09-24T10:00:00.000Z'
+    upsertTrackerTask(trackerTask, firstAt)
+    upsertTrackerTask(trackerTask, secondAt)
+
+    expect(
+      db()
+        .query<{ opened_at: string; updated_at: string; closed_at: string | null }, []>(
+          "SELECT opened_at,updated_at,closed_at FROM task WHERE key='ALP-1'",
+        )
+        .get(),
+    ).toEqual({ opened_at: firstAt, updated_at: firstAt, closed_at: null })
+  })
+
   test('resolves an id once and reuses the cached display name', async () => {
     const cache = new Map<string, string | null>()
     let calls = 0

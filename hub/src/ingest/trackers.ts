@@ -162,7 +162,7 @@ export type TrackerObservationTimes = {
   closedAt: string | null
   firstSeen: string
   lastSeen: string
-  updatedAt: string | null
+  updatedAt: string
 }
 
 /** Preserve machine times when a tracker observation carries no semantic change. */
@@ -172,12 +172,13 @@ export function trackerObservationTimes(
   at: string,
 ): TrackerObservationTimes {
   if (stored && !differs(task, stored)) {
+    const repairedUpdateTime = stored.updated_at ?? at
     return {
-      openedAt: stored.opened_at,
+      openedAt: stored.opened_at ?? repairedUpdateTime,
       closedAt: stored.closed_at,
       firstSeen: stored.first_seen,
       lastSeen: stored.last_seen,
-      updatedAt: stored.updated_at,
+      updatedAt: repairedUpdateTime,
     }
   }
   const sourceTime = task.updatedAt ?? at
@@ -296,11 +297,7 @@ function updateTrackerTask(
     )
 }
 
-function insertTrackerTask(
-  conn: Database,
-  t: TrackerTask,
-  times: TrackerObservationTimes,
-) {
+function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObservationTimes) {
   conn
     .query(
       `INSERT INTO task (record_id, external_id, key, project, title, status, status_category,
@@ -364,13 +361,14 @@ export type TrackerTaskObservation = {
   at: string
   taskRecordId: string | null
   taskKey: string
-  times: TrackerObservationTimes
   event: {
     recordId: string
     fromCategory: string
     toCategory: string
   } | null
 }
+
+type CachedTrackerTaskObservation = TrackerTaskObservation & { times: TrackerObservationTimes }
 
 const PENDING_TRACKER_STATUS_EVENTS_SETTING = 'tracker.status-events.pending-mirror'
 export const PENDING_TRACKER_STATUS_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
@@ -417,7 +415,7 @@ function observeTrackerTaskOn(
   task: TrackerTask,
   at: string,
   pendingMirror = false,
-): TrackerTaskObservation {
+): CachedTrackerTaskObservation {
   const stored = trackerIdentityRow(conn, task)
   const times = trackerObservationTimes(task, stored ?? undefined, at)
   const was = stored?.status_category ?? null
@@ -472,7 +470,10 @@ export function observeTrackerTask(
   at = nowIso(),
   pendingMirror = false,
 ): TrackerTaskObservation {
-  return writeTransaction((conn) => observeTrackerTaskOn(conn, task, at, pendingMirror))
+  return writeTransaction((conn) => {
+    const { times: _times, ...observation } = observeTrackerTaskOn(conn, task, at, pendingMirror)
+    return observation
+  })
 }
 
 function trackerTaskMirrorRow(
@@ -647,9 +648,9 @@ async function lookupTrackerTask(
   }
 }
 
-export type TrackerCacheObservation = {
+type TrackerCacheObservation = {
   task: TrackerTask
-  observation: TrackerTaskObservation
+  observation: CachedTrackerTaskObservation
 }
 
 export function writeTrackerCache(

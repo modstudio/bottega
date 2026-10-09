@@ -770,7 +770,7 @@ async function raiseMirroredSequences(tx: SQL, identity: TaskIdentity, body: Mir
   }
 }
 
-async function mirrorHostedTaskBody(
+export async function mirrorHostedTaskBody(
   tx: SQL,
   identity: TaskIdentity,
   body: MirrorBody,
