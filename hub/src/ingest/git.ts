@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
-import { createCollectorMirrorPass } from './collector-mirror.ts'
+import { type CollectorMirrorPass, createCollectorMirrorPass } from './collector-mirror.ts'
 
 /**
  * Generated files, which are not work.
@@ -46,6 +46,8 @@ type GitTask = {
   last: string
   commits: number
 }
+
+type StoredGitTask = Parameters<CollectorMirrorPass['mirrorTasks']>[0][number]
 
 function blank(): DayActivity {
   return {
@@ -172,7 +174,13 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
      ON CONFLICT(project,key) DO UPDATE SET
        record_id = COALESCE(task.record_id, excluded.record_id),
        last_seen  = excluded.last_seen,
-       updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at)`,
+       updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at),
+       opened_at  = CASE
+         WHEN task.opened_at IS NULL THEN excluded.opened_at
+         WHEN excluded.opened_at < task.opened_at THEN excluded.opened_at
+         ELSE task.opened_at
+       END
+     WHERE task.source = 'git'`,
     )
 
     const commitStmt = conn.query(
@@ -204,27 +212,14 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
       .run(JSON.stringify(at))
   })
   try {
-    const mirrored = [...tasks.values()].map((t) => ({
-      ...db()
-        .query<{ record_id: string; next_document_number: number }, [string, string]>(
-          `SELECT record_id,next_document_number FROM task WHERE project=? AND key=?`,
+    const mirrored = [...tasks.values()].flatMap((task) => {
+      const stored = db()
+        .query<StoredGitTask, [string, string]>(
+          `SELECT * FROM task WHERE project=? AND key=? AND source='git'`,
         )
-        .get(t.project, t.key)!,
-      key: t.key,
-      project: t.project,
-      title: null,
-      status: null,
-      status_category: null,
-      parent_key: null,
-      body: null,
-      assignee: null,
-      opened_at: t.first,
-      closed_at: null,
-      source: 'git' as const,
-      first_seen: at,
-      last_seen: at,
-      updated_at: t.last,
-    }))
+        .get(task.project, task.key)
+      return stored ? [stored] : []
+    })
     for (let index = 0; index < mirrored.length; index += 500) {
       try {
         await mirror.mirrorTasks(mirrored.slice(index, index + 500))

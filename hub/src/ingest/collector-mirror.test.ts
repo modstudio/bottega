@@ -90,11 +90,16 @@ let refusedTargetSpace: string | null = null
 const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started' }
 const trackerTaskOverrides: Record<string, Array<Record<string, unknown>> | undefined> = {}
 const mirrored = new Map<string, string[]>()
+const mirroredTaskRows: Array<Record<string, unknown>> = []
 const mirroredEvents: Array<{ task_key: string; project_name: string; at?: string }> = []
 const statusEventMirrorBatchSizes: number[] = []
 const mirroredTargets: string[] = []
 mock.module('../task-client.ts', () => ({
+  assertProjectNoteCounters: () => {},
+  assertDayRecordId: () => {},
+  assertIntervalRecordId: () => {},
   assertTargetSpaceIntervalEvidence: () => {},
+  assertTargetSpaceNotes: () => {},
   assertTargetSpaceTaskMirror: (identity: {
     capabilities?: { targetSpaceTaskMirror?: boolean }
   }) => {
@@ -130,9 +135,10 @@ mock.module('../task-client.ts', () => ({
     }
   },
   hostedSignedInUserId: async () => 'user-active',
+  hostedSpaceChanges: async () => null,
   hostedMirrorTasks: async (
     body: {
-      tasks: Array<{ id: string; key: string }>
+      tasks: Array<Record<string, unknown> & { id: string; key: string }>
       statusEvents?: Array<{ task_key: string; project_name: string }>
     },
     options?: { recordSpace?: string | null },
@@ -153,6 +159,7 @@ mock.module('../task-client.ts', () => ({
       throw new Error('simulated hosted refusal')
     mirroredTargets.push(options.recordSpace)
     for (const task of body.tasks ?? []) {
+      mirroredTaskRows.push(task)
       const ids = mirrored.get(task.key) ?? []
       ids.push(task.id)
       mirrored.set(task.key, ids)
@@ -191,6 +198,7 @@ beforeEach(() => {
       conn.exec(`DELETE FROM ${table}`)
   })
   mirrored.clear()
+  mirroredTaskRows.length = 0
   mirroredEvents.length = 0
   statusEventMirrorBatchSizes.length = 0
   mirroredTargets.length = 0
@@ -281,6 +289,133 @@ test('git seeding mirrors two project destinations while the active space is a t
     '/fixtures/repos/alpha',
     '/fixtures/repos/stopal',
   ])
+})
+
+function gitTaskLog(key: string, dates: string[]) {
+  return new TextEncoder().encode(
+    dates
+      .map(
+        (date, index) =>
+          `\u0000${date}\t${date}T12:00:00.000Z\t${key.toLowerCase()}-${date}-${index}\t${key} collected\n1\t0\tsrc/file.ts`,
+      )
+      .join('\n'),
+  )
+}
+
+function mockGitTaskScans(key: string, scans: string[][]) {
+  let scan = 0
+  return spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    if (command.includes('/fixtures/repos/stopal'))
+      return { stdout: new Uint8Array() } as ReturnType<typeof Bun.spawnSync>
+    return { stdout: gitTaskLog(key, scans[scan++] ?? []) } as ReturnType<typeof Bun.spawnSync>
+  }) as typeof Bun.spawnSync)
+}
+
+test('a narrower git scan preserves and mirrors the earlier opening date', async () => {
+  const spawn = mockGitTaskScans('ALP-20', [['2026-06-30', '2026-10-03'], ['2026-10-03']])
+  try {
+    await ingestGit('2026-06-01')
+    await ingestGit('2026-10-01')
+  } finally {
+    spawn.mockRestore()
+  }
+
+  expect(
+    db().query<{ opened_at: string }, []>(`SELECT opened_at FROM task WHERE key='ALP-20'`).get(),
+  ).toEqual({ opened_at: '2026-06-30' })
+  expect(
+    mirroredTaskRows.filter((row) => row.key === 'ALP-20').map((row) => row.opened_at),
+  ).toEqual(['2026-06-30', '2026-06-30'])
+})
+
+test('a wider git scan moves the opening date earlier once and mirrors it', async () => {
+  const spawn = mockGitTaskScans('ALP-21', [['2026-10-03'], ['2026-06-30', '2026-10-03']])
+  try {
+    await ingestGit('2026-10-01')
+    await ingestGit('2026-06-01')
+  } finally {
+    spawn.mockRestore()
+  }
+
+  expect(
+    db().query<{ opened_at: string }, []>(`SELECT opened_at FROM task WHERE key='ALP-21'`).get(),
+  ).toEqual({ opened_at: '2026-06-30' })
+  expect(
+    mirroredTaskRows.filter((row) => row.key === 'ALP-21').map((row) => row.opened_at),
+  ).toEqual(['2026-10-03', '2026-06-30'])
+})
+
+test('a git mirror sends the complete stored task row', async () => {
+  const spawn = mockGitTaskScans('ALP-22', [['2026-09-15', '2026-10-03']])
+  try {
+    await ingestGit('2026-09-01')
+  } finally {
+    spawn.mockRestore()
+  }
+
+  const stored = db()
+    .query<Record<string, unknown>, []>(`SELECT * FROM task WHERE key='ALP-22'`)
+    .get()!
+  const sent = mirroredTaskRows.find((row) => row.key === 'ALP-22')!
+  expect(sent).toEqual({
+    id: stored.record_id,
+    key: stored.key,
+    project: stored.project,
+    project_name: stored.project,
+    title: stored.title,
+    status: stored.status,
+    status_category: stored.status_category,
+    parent_key: stored.parent_key,
+    body: stored.body,
+    assignee: stored.assignee,
+    opened_at: stored.opened_at,
+    closed_at: stored.closed_at,
+    source: stored.source,
+    first_seen: stored.first_seen,
+    last_seen: stored.last_seen,
+    created_at: stored.first_seen,
+    updated_at: stored.updated_at,
+    deleted_at: null,
+    next_document_number: stored.next_document_number,
+  })
+})
+
+test('git ingestion leaves a tracker-sourced task with the same key unchanged', async () => {
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO task
+          (record_id,key,project,title,status,status_category,opened_at,closed_at,updated_at,
+           source,first_seen,last_seen,next_document_number)
+         VALUES (?,?,?,?,?,?,?,?,?,'mcp',?,?,?)`,
+      )
+      .run(
+        '22222222-2222-4222-8222-222222222222',
+        'ALP-23',
+        'alpha',
+        'Tracker task',
+        'started',
+        'active',
+        '2026-01-02T03:04:05.000Z',
+        null,
+        '2026-02-03T04:05:06.000Z',
+        '2026-01-02T03:04:05.000Z',
+        '2026-02-03T04:05:06.000Z',
+        7,
+      ),
+  )
+  const before = db()
+    .query<Record<string, unknown>, []>(`SELECT * FROM task WHERE key='ALP-23'`)
+    .get()
+  const spawn = mockGitTaskScans('ALP-23', [['2025-12-01', '2026-10-03']])
+  try {
+    await ingestGit('2025-12-01')
+  } finally {
+    spawn.mockRestore()
+  }
+
+  expect(db().query(`SELECT * FROM task WHERE key='ALP-23'`).get()).toEqual(before)
+  expect(mirroredTaskRows.some((row) => row.key === 'ALP-23')).toBeFalse()
 })
 
 test('a refused first git mirror batch does not stop a later deliverable batch', async () => {
