@@ -12,6 +12,13 @@ const module = (file: string, allowed: string[]): SettingsModule => ({
 })
 
 export const settingsModules: SettingsModule[] = [
+  module('orchestrator/src/project/project-injection.ts', [
+    'zod',
+    '../../../shared/trackers.ts',
+    '../../../shared/test-substance/test-substance.ts',
+    './review-record-template.ts',
+  ]),
+  module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/config/secret-run.ts', [
     '../../../shared/config-client.ts',
     '../../../shared/env-source.ts',

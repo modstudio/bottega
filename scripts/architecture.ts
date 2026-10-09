@@ -18,6 +18,7 @@ import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
+import { reviewModuleSpecs } from './architecture-review-boundaries.ts'
 import { runLifecycleModules } from './architecture-run-lifecycle-modules.ts'
 import { runLivenessModuleSpecs } from './architecture-run-liveness.ts'
 import { runModuleSpecs } from './architecture-run-modules.ts'
@@ -440,6 +441,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
+  ...reviewModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record/schema.ts',
     '../record/outbox-sanitize.ts',
@@ -450,13 +452,6 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../../../shared/process-identity.ts',
   ]),
-  module('orchestrator/src/project/project-injection.ts', [
-    'zod',
-    '../../../shared/trackers.ts',
-    '../../../shared/test-substance/test-substance.ts',
-    './review-record-template.ts',
-  ]),
-  module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/project/project-hosted-write.ts', [
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
@@ -553,18 +548,6 @@ export const modules: ArchitectureModule[] = [
     './review-group.ts',
     './review-outbox.ts',
   ]),
-  module('orchestrator/src/review/review-record-command.ts', [
-    'bun:sqlite',
-    'node:path',
-    '../../../shared/state-directory.ts',
-    '../database/db.ts',
-    '../git/git-environment.ts',
-    '../project/projects.ts',
-    '../project/review-record-template.ts',
-    './review-group.ts',
-    './review-record-findings.ts',
-  ]),
-  module('orchestrator/src/review/review-record-findings.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/review/review-pins.ts', [
     '../database/db.ts',
     '../git/git-environment.ts',

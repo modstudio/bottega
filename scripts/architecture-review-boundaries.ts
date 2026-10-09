@@ -6,6 +6,27 @@ export type ReviewBoundarySpec = {
   typeOnlyAllowed?: string[]
 }
 
+export const reviewModuleSpecs = [
+  {
+    file: 'orchestrator/src/review/review-record-command.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:path',
+      '../../../shared/state-directory.ts',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      '../project/review-record-template.ts',
+      './review-group.ts',
+      './review-record-findings.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/review/review-record-findings.ts',
+    allowed: ['node:fs', 'node:path'],
+  },
+] as const
+
 export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-applicability-boundary',
