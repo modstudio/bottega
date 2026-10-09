@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   resolvePhpPolicyRules,
@@ -60,20 +61,132 @@ function afterContent(mode: Mode, file: string) {
     : git(['show', `HEAD:${file}`]).stdout
 }
 
-async function guardJavaScriptFixtures(failures: string[]) {
-  for (const runner of ['bun', 'vitest'] as const) {
-    const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
-    const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
-    if (report.parseError) {
-      failures.push(`${runner}: fixture unchecked: ${report.parseError}`)
-      continue
-    }
-    const produced = new Set(report.findings.map((finding) => finding.rule))
-    for (const rule of guardedRules(runner)) {
-      if (!produced.has(rule))
-        failures.push(`${runner}: ${rule} produced no finding on its fixture`)
+function guardGenuineCases(runner: 'bun' | 'vitest', findings: TestFinding[], failures: string[]) {
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ['genuine: fixed literal comparison', 'no-trivial-assertions'],
+    ['genuine: calls helpers without assertions', 'no-assertion'],
+    ...(runner === 'vitest'
+      ? [['has an unawaited assertion', 'async-test-assertions'] as const]
+      : []),
+  ]
+  for (const [testName, rule] of cases) {
+    const found = findings.some(
+      (finding) => finding.testName.includes(testName) && finding.rule === rule,
+    )
+    if (!found) failures.push(`${runner}: genuine case ${testName} produced no ${rule} finding`)
+  }
+}
+
+async function guardRunnerFixture(runner: 'bun' | 'vitest', failures: string[]) {
+  const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
+  const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
+  if (report.parseError) {
+    failures.push(`${runner}: fixture unchecked: ${report.parseError}`)
+    return
+  }
+  const produced = new Set(report.findings.map((finding) => finding.rule))
+  for (const finding of report.findings) {
+    if (finding.testName.includes('clean:')) {
+      failures.push(`${runner}: clean case ${finding.testName} produced ${finding.rule}`)
     }
   }
+  for (const rule of guardedRules(runner)) {
+    if (!produced.has(rule)) failures.push(`${runner}: ${rule} produced no finding on its fixture`)
+  }
+  guardGenuineCases(runner, report.findings, failures)
+}
+
+async function guardSpecialJavaScriptFixtures(failures: string[]) {
+  const reexportFile = `${fixtureDirectory}test-substance-reexport.fixtures.ts`
+  const reexportReport = await testSubstanceReport(reexportFile, readFileSync(reexportFile, 'utf8'))
+  if (reexportReport.runner !== 'bun' || reexportReport.findings.length) {
+    failures.push('runner re-export fixture was not judged cleanly with bun rules')
+  }
+
+  const browserFile = `${fixtureDirectory}test-substance-browser.fixtures.ts`
+  const browserContent = readFileSync(browserFile, 'utf8')
+  const browserReport = await testSubstanceReport(browserFile, browserContent)
+  const browserJudgment = await judgeTestSubstance({
+    file: `${fixtureDirectory}browser.test.ts`,
+    before: null,
+    after: browserContent,
+  })
+  if (
+    browserReport.runner !== 'browser' ||
+    browserJudgment.status !== 'ok' ||
+    browserJudgment.reason !== 'browser tests are not judged'
+  ) {
+    failures.push('browser fixture was not excluded with the browser-test reason')
+  }
+
+  const derivedBrowserFile = `${fixtureDirectory}test-substance-derived-browser.fixtures.ts`
+  const derivedBrowserReport = await testSubstanceReport(
+    derivedBrowserFile,
+    readFileSync(derivedBrowserFile, 'utf8'),
+  )
+  if (derivedBrowserReport.runner !== 'browser' || derivedBrowserReport.findings.length) {
+    failures.push('derived browser fixture was not excluded from judgment')
+  }
+
+  const globalWithBrowserHelperFile = `${fixtureDirectory}test-substance-global-with-browser-helper.fixtures.ts`
+  const globalWithBrowserHelperReport = await testSubstanceReport(
+    globalWithBrowserHelperFile,
+    readFileSync(globalWithBrowserHelperFile, 'utf8'),
+  )
+  if (globalWithBrowserHelperReport.runner !== 'unrecognised') {
+    failures.push('global test was incorrectly assigned the runner from a relative helper')
+  }
+
+  const bunWithVitestHelperFile = `${fixtureDirectory}test-substance-bun-with-vitest-helper.fixtures.ts`
+  const bunWithVitestHelperReport = await testSubstanceReport(
+    bunWithVitestHelperFile,
+    readFileSync(bunWithVitestHelperFile, 'utf8'),
+  )
+  if (bunWithVitestHelperReport.runner !== 'bun' || bunWithVitestHelperReport.findings.length) {
+    failures.push('unrelated Vitest helper prevented recognition of the Bun runner')
+  }
+
+  const typeOnlyBrowserHelperFile = `${fixtureDirectory}test-substance-type-only-browser-helper.fixtures.ts`
+  const typeOnlyBrowserHelperReport = await testSubstanceReport(
+    typeOnlyBrowserHelperFile,
+    readFileSync(typeOnlyBrowserHelperFile, 'utf8'),
+  )
+  if (typeOnlyBrowserHelperReport.runner !== 'unrecognised') {
+    failures.push('type-only import incorrectly supplied the browser runner')
+  }
+
+  const nestedMixedRunnerFile = `${fixtureDirectory}test-substance-nested-mixed-runner.fixtures.ts`
+  const nestedMixedRunnerReport = await testSubstanceReport(
+    nestedMixedRunnerFile,
+    readFileSync(nestedMixedRunnerFile, 'utf8'),
+  )
+  if (nestedMixedRunnerReport.runner !== 'unrecognised') {
+    failures.push('nested calls from mixed runner modules did not stay unrecognised')
+  }
+
+  const nestedBunRunnerFile = `${fixtureDirectory}test-substance-nested-bun-runner.fixtures.ts`
+  const nestedBunRunnerReport = await testSubstanceReport(
+    nestedBunRunnerFile,
+    readFileSync(nestedBunRunnerFile, 'utf8'),
+  )
+  if (nestedBunRunnerReport.runner !== 'bun' || nestedBunRunnerReport.findings.length) {
+    failures.push('nested calls from one Bun module were not judged cleanly with Bun rules')
+  }
+
+  const directiveFile = `${fixtureDirectory}test-substance-inline-directive.fixture.txt`
+  const directiveReport = await testSubstanceReport(
+    `${fixtureDirectory}inline-directive.test.ts`,
+    readFileSync(directiveFile, 'utf8'),
+  )
+  if (directiveReport.findings.length) {
+    failures.push('inline lint directive changed the fixture findings')
+  }
+}
+
+async function guardJavaScriptFixtures(failures: string[]) {
+  await guardRunnerFixture('bun', failures)
+  await guardRunnerFixture('vitest', failures)
+  await guardSpecialJavaScriptFixtures(failures)
 }
 
 async function guardPhpFixture(failures: string[]) {
@@ -128,6 +241,7 @@ function printFinding(finding: TestFinding) {
 }
 
 type FileJudgment = {
+  browser: boolean
   findings: TestFinding[]
   unchecked?: string
   unrecognised: boolean
@@ -140,13 +254,15 @@ async function judgeFile(
 ): Promise<FileJudgment> {
   const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
   const judgment = await judgeTestSubstance({
-    file,
+    file: resolve(file),
     before: beforeContent ?? null,
     after: afterContent(mode, file),
     phpPolicyRules,
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
+  const browser = judgment.reason === 'browser tests are not judged'
   return {
+    browser,
     findings: judgment.findings.map(({ test, ...finding }) => ({
       ...finding,
       file,
@@ -167,6 +283,25 @@ function gatePhpPolicyRulesFor(files: string[]) {
   return files.some((file) => file.endsWith('.php')) ? gatePhpPolicyRules() : []
 }
 
+async function collectFileJudgments(
+  mode: Mode,
+  files: string[],
+  phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
+) {
+  const introduced: TestFinding[] = []
+  const unchecked: string[] = []
+  const unrecognised: string[] = []
+  let browserFiles = 0
+  for (const file of files) {
+    const judgment = await judgeFile(mode, file, phpPolicyRules)
+    browserFiles += Number(judgment.browser)
+    if (judgment.unrecognised) unrecognised.push(file)
+    if (judgment.unchecked) unchecked.push(judgment.unchecked)
+    introduced.push(...judgment.findings)
+  }
+  return { browserFiles, introduced, unchecked, unrecognised }
+}
+
 async function main() {
   const startedAt = performance.now()
   const mode = parseMode(Bun.argv.slice(2))
@@ -181,15 +316,11 @@ async function main() {
 
   const files = changedTestFiles(mode)
   const phpPolicyRules = gatePhpPolicyRulesFor(files)
-  const introduced: TestFinding[] = []
-  const unchecked: string[] = []
-  const unrecognised: string[] = []
-  for (const file of files) {
-    const judgment = await judgeFile(mode, file, phpPolicyRules)
-    if (judgment.unrecognised) unrecognised.push(file)
-    if (judgment.unchecked) unchecked.push(judgment.unchecked)
-    introduced.push(...judgment.findings)
-  }
+  const { browserFiles, introduced, unchecked, unrecognised } = await collectFileJudgments(
+    mode,
+    files,
+    phpPolicyRules,
+  )
 
   for (const file of unrecognised) console.log(`${file}: runner not recognised`)
   for (const failure of unchecked) console.error(`${failure}: unchecked`)
@@ -198,7 +329,7 @@ async function main() {
     for (const finding of introduced) printFinding(finding)
   }
   const elapsedMs = performance.now() - startedAt
-  const summary = `test substance: judged ${files.length} file(s), ${unrecognised.length} runner not recognised, ${(elapsedMs / 1000).toFixed(2)}s`
+  const summary = `test substance: judged ${files.length} file(s), ${browserFiles} browser test file(s), ${unrecognised.length} runner not recognised, ${(elapsedMs / 1000).toFixed(2)}s`
   if (introduced.length || unchecked.length) {
     console.error(summary)
     console.error(`${introduced.length} finding(s), ${unchecked.length} unchecked file(s)`)

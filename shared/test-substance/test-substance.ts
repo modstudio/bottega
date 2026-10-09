@@ -60,7 +60,7 @@ export function isTestFile(file: string): boolean {
 type Report = {
   findings: TestFinding[]
   parseError?: string
-  runner: 'bun' | 'vitest' | 'php' | 'unrecognised'
+  runner: 'browser' | 'bun' | 'vitest' | 'php' | 'unrecognised'
 }
 
 type ReportLoader = () => Promise<{
@@ -122,6 +122,9 @@ export async function judgeTestSubstance(
   if (isJudgment(after)) return after
   if (after.parseError) {
     return { status: 'unchecked', findings: [], reason: after.parseError }
+  }
+  if (after.runner === 'browser') {
+    return { status: 'ok', findings: [], reason: 'browser tests are not judged' }
   }
   if (after.runner === 'unrecognised') {
     return { status: 'unchecked', findings: [], reason: 'test runner not recognised' }

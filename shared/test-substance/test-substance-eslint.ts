@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import parser from '@typescript-eslint/parser'
 import vitestPlugin from '@vitest/eslint-plugin'
 import { ESLint, type Linter } from 'eslint'
@@ -6,6 +7,7 @@ import sonarPlugin from 'eslint-plugin-sonarjs'
 import ts from 'typescript'
 import { expectWithoutMatcherRule } from './expect-without-matcher'
 import { noAssertionRule } from './no-assertion'
+import { readRelativeModule } from './relative-module'
 import { selfComparisonRule } from './self-comparison'
 import {
   applyTestWaivers,
@@ -14,8 +16,15 @@ import {
   type TestFinding,
   type TestWaiver,
 } from './test-substance'
+import { vitestAsyncAssertionRule } from './vitest-async-assertion'
 
-type Runner = 'bun' | 'vitest' | 'unrecognised'
+type Runner = 'browser' | 'bun' | 'vitest' | 'unrecognised'
+
+const RUNNERS_BY_PACKAGE = new Map<string, Exclude<Runner, 'unrecognised'>>([
+  ['bun:test', 'bun'],
+  ['vitest', 'vitest'],
+  ['@playwright/test', 'browser'],
+])
 
 export type SubstanceReport = {
   findings: TestFinding[]
@@ -50,6 +59,7 @@ const SHARED_GUARDED_RULES = [
 ] as const
 
 export function guardedRules(runner: Exclude<Runner, 'unrecognised'>): readonly string[] {
+  if (runner === 'browser') return []
   return runner === 'bun'
     ? [...SHARED_GUARDED_RULES, 'expect-without-matcher']
     : [...SHARED_GUARDED_RULES, 'async-test-assertions', 'valid-expect']
@@ -108,47 +118,149 @@ function testLocations(file: string, content: string): TestLocation[] {
   return locations
 }
 
-function runnerFor(content: string): Runner {
-  const source = ts.createSourceFile('runner.ts', content, ts.ScriptTarget.Latest, true)
-  let runner: Runner = 'unrecognised'
-  function recognize(specifier: ts.Expression | undefined) {
+function importedRunners(source: ts.SourceFile) {
+  const runners: Exclude<Runner, 'unrecognised'>[] = []
+  function collect(specifier: ts.Expression | undefined) {
     if (!specifier || !ts.isStringLiteralLike(specifier)) return
-    if (specifier.text === 'bun:test') runner = 'bun'
-    if (specifier.text === 'vitest') runner = 'vitest'
+    const runner = RUNNERS_BY_PACKAGE.get(specifier.text)
+    if (runner) runners.push(runner)
   }
   function visit(node: ts.Node) {
-    if (runner !== 'unrecognised') return
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      recognize(node.moduleSpecifier)
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause
+      const importsValue =
+        !clause ||
+        (!clause.isTypeOnly &&
+          (Boolean(clause.name) ||
+            !clause.namedBindings ||
+            ts.isNamespaceImport(clause.namedBindings) ||
+            clause.namedBindings.elements.some((element) => !element.isTypeOnly)))
+      if (importsValue) collect(node.moduleSpecifier)
+    } else if (ts.isExportDeclaration(node)) {
+      const exportsValue =
+        !node.isTypeOnly &&
+        (!node.exportClause ||
+          ts.isNamespaceExport(node.exportClause) ||
+          node.exportClause.elements.some((element) => !element.isTypeOnly))
+      if (exportsValue) collect(node.moduleSpecifier)
     } else if (ts.isCallExpression(node)) {
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require'
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
-      if (isRequire || isDynamicImport) recognize(node.arguments[0])
+      if (isRequire || isDynamicImport) collect(node.arguments[0])
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return runner
+  return runners
+}
+
+function valueImportBindings(statement: ts.ImportDeclaration) {
+  const clause = statement.importClause
+  if (!clause || clause.isTypeOnly) return []
+  const bindings: string[] = []
+  if (clause.name) bindings.push(clause.name.text)
+  if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+    bindings.push(clause.namedBindings.name.text)
+  }
+  if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+    for (const element of clause.namedBindings.elements) {
+      if (!element.isTypeOnly) bindings.push(element.name.text)
+    }
+  }
+  return bindings
+}
+
+function statementCallRoots(source: ts.SourceFile, relativeBindings: Set<string>) {
+  const roots = new Set<string>()
+
+  function visitCallback(node: ts.CallExpression) {
+    for (const argument of node.arguments) {
+      if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) visit(argument.body)
+    }
+  }
+
+  function visit(node: ts.Node) {
+    if (ts.isFunctionLike(node)) return
+    if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)) {
+      const root = callRootName(node.expression.expression)
+      if (root) {
+        roots.add(root)
+        if (relativeBindings.has(root) || root === 'describe' || root === 'test' || root === 'it') {
+          visitCallback(node.expression)
+        }
+      }
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return roots
+}
+
+function valueImports(source: ts.SourceFile) {
+  const valueBindings = new Set<string>()
+  const relativeImports: Array<{ bindings: string[]; specifier: string }> = []
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    if (!ts.isStringLiteralLike(statement.moduleSpecifier)) continue
+    const bindings = valueImportBindings(statement)
+    for (const binding of bindings) valueBindings.add(binding)
+    if (bindings.length && statement.moduleSpecifier.text.startsWith('.')) {
+      relativeImports.push({ bindings, specifier: statement.moduleSpecifier.text })
+    }
+  }
+  return { relativeImports, valueBindings }
+}
+
+function runnerFromRelativeImports(
+  file: string,
+  relativeImports: Array<{ bindings: string[]; specifier: string }>,
+  called: Set<string>,
+): Runner {
+  const runners = new Set<Exclude<Runner, 'unrecognised'>>()
+  for (const { bindings, specifier } of relativeImports) {
+    if (!bindings.some((binding) => called.has(binding))) continue
+    const imported = readRelativeModule(file, specifier)
+    if (!imported) continue
+    for (const runner of importedRunners(imported.parsed.source)) runners.add(runner)
+  }
+  return runners.size === 1 ? [...runners][0]! : 'unrecognised'
+}
+
+function runnerFor(file: string, content: string): Runner {
+  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
+  const [direct] = importedRunners(source)
+  if (direct) return direct
+
+  const { relativeImports, valueBindings } = valueImports(source)
+  const relativeBindings = new Set(relativeImports.flatMap(({ bindings }) => bindings))
+  const called = statementCallRoots(source, relativeBindings)
+  if (['test', 'it', 'describe'].some((name) => called.has(name) && !valueBindings.has(name))) {
+    return 'unrecognised'
+  }
+  return runnerFromRelativeImports(file, relativeImports, called)
 }
 
 function rules(prefix: string, names: readonly string[]): Linter.RulesRecord {
   return Object.fromEntries(names.map((name) => [`${prefix}/${name}`, 'error']))
 }
 
-function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = true) {
+function eslint(file: string, runner: Runner, sonar: boolean, custom = true, runnerRules = true) {
   const plugins: Record<string, ESLint.Plugin> = {}
   const configuredRules: Linter.RulesRecord = {}
   if (custom) {
     plugins['test-substance'] = {
       rules: {
         'expect-without-matcher': expectWithoutMatcherRule,
-        'no-assertion': noAssertionRule,
+        'no-assertion': noAssertionRule(file),
         'self-comparison': selfComparisonRule,
+        'async-test-assertions': vitestAsyncAssertionRule,
       },
     }
     configuredRules['test-substance/no-assertion'] = 'error'
     configuredRules['test-substance/self-comparison'] = 'error'
     if (runner === 'bun') configuredRules['test-substance/expect-without-matcher'] = 'error'
+    if (runner === 'vitest') configuredRules['test-substance/async-test-assertions'] = 'error'
   }
   const settings: Record<string, unknown> = {}
   if (sonar) {
@@ -157,9 +269,7 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
       configuredRules,
       rules(
         'sonarjs',
-        runner === 'bun'
-          ? SONAR_RULES.filter((rule) => rule !== 'async-test-assertions')
-          : SONAR_RULES,
+        SONAR_RULES.filter((rule) => rule !== 'async-test-assertions'),
       ),
     )
   }
@@ -170,10 +280,12 @@ function eslint(runner: Runner, sonar: boolean, custom = true, runnerRules = tru
   }
   if (runnerRules && runner === 'vitest') {
     plugins.vitest = vitestPlugin as ESLint.Plugin
-    Object.assign(configuredRules, rules('vitest', [...SHARED_RUNNER_RULES, 'valid-expect']))
+    Object.assign(configuredRules, rules('vitest', SHARED_RUNNER_RULES))
+    configuredRules['vitest/valid-expect'] = ['error', { maxArgs: 2 }]
   }
 
   return new ESLint({
+    allowInlineConfig: false,
     overrideConfigFile: true,
     overrideConfig: [
       {
@@ -235,8 +347,20 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   // extension are all this config needs, so keep installed orch able to judge
   // a test in any registered project by linting under its basename.
   const lintFile = file.split(/[\\/]/).at(-1) ?? file
-  if (runner !== 'bun')
-    return (await eslint(runner, true).lintText(content, { filePath: lintFile }))[0]!
+  if (runner !== 'bun') {
+    const result = (await eslint(file, runner, true).lintText(content, { filePath: lintFile }))[0]!
+    return {
+      ...result,
+      messages: result.messages.filter(
+        (message) =>
+          !(
+            runner === 'vitest' &&
+            message.ruleId === 'vitest/valid-expect' &&
+            message.message.startsWith('Async assertions must be awaited')
+          ),
+      ),
+    }
+  }
 
   // The SonarJS pass for bun files replaces bun:test with vitest only in the module
   // specifier of import and export declarations, located through the parse, never by
@@ -262,10 +386,10 @@ async function lintMessages(file: string, content: string, runner: Runner) {
   for (const replacement of replacements.reverse()) {
     sonarContent = `${sonarContent.slice(0, replacement.start)}vitest${sonarContent.slice(replacement.end)}`
   }
-  const [sonarResult] = await eslint('bun', true, false, false).lintText(sonarContent, {
+  const [sonarResult] = await eslint(file, 'bun', true, false, false).lintText(sonarContent, {
     filePath: lintFile,
   })
-  const [runnerResult] = await eslint('bun', false).lintText(content, { filePath: lintFile })
+  const [runnerResult] = await eslint(file, 'bun', false).lintText(content, { filePath: lintFile })
   return {
     ...runnerResult!,
     messages: [...sonarResult!.messages, ...runnerResult!.messages],
@@ -273,7 +397,9 @@ async function lintMessages(file: string, content: string, runner: Runner) {
 }
 
 export async function testSubstanceReport(file: string, content: string): Promise<SubstanceReport> {
-  const runner = runnerFor(content)
+  if (!isAbsolute(file)) throw new Error('test-substance requires an absolute test file path')
+  const runner = runnerFor(file, content)
+  if (runner === 'browser') return { findings: [], runner }
   const locations = testLocations(file, content)
   const result = await lintMessages(file, content, runner)
   const fatal = result.messages.find((message) => message.fatal)
