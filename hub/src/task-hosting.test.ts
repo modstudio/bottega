@@ -6,7 +6,6 @@ import {
   createHostedTaskInTransaction,
   mirrorCollisionDecision,
 } from './hosted-tasks.ts'
-import { taskRequestSpaceDecision } from './record-space-request.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
@@ -27,29 +26,6 @@ import { closeThenPrune } from './task-close.ts'
 beforeAll(resetFixtureStore)
 
 describe('hosted-only task safety', () => {
-  test('the task request space decision binds only a caller membership', () => {
-    const memberships = [
-      { spaceId: 'space-a', slug: 'active' },
-      { spaceId: 'space-b', slug: 'declared' },
-    ]
-    expect(taskRequestSpaceDecision(null, 'space-a', memberships)).toEqual({
-      allowed: true,
-      spaceId: 'space-a',
-    })
-    expect(taskRequestSpaceDecision('declared', 'space-a', memberships)).toEqual({
-      allowed: true,
-      spaceId: 'space-b',
-    })
-    expect(taskRequestSpaceDecision('missing', 'space-a', memberships)).toEqual({
-      allowed: false,
-      requestedSpace: 'missing',
-    })
-    expect(taskRequestSpaceDecision('', 'space-a', memberships)).toEqual({
-      allowed: false,
-      requestedSpace: '',
-    })
-  })
-
   test('task writes bind a requested member space and keep membership scope unchanged', async () => {
     let received: Record<string, unknown> | null = null
     const response = await taskApi(

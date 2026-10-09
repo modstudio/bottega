@@ -1,11 +1,10 @@
 import { z } from 'zod'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 
 export const BoardIdSchema = z
   .string()
   .refine(
-    (id) =>
-      (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) ||
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
+    (id) => (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))) || hasRecordIdShape(id),
     'board id must be a positive integer string or UUID',
   )
 export const BoardIdInputSchema = z.object({ id: BoardIdSchema })
