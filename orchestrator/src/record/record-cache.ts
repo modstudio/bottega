@@ -20,18 +20,32 @@ import {
 const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
+const FIRST_RECORD_ID = '00000000-0000-0000-0000-000000000000'
 
-function readSubjectCursor(local: Database, key: string): RecordCursor | undefined {
+function readRecordCursor(
+  local: Database,
+  key: string,
+  legacyTimestamp = false,
+): RecordCursor | undefined {
   const value = readCursor(local, key)
   if (value === undefined) return undefined
-  const parsed = RecordCursorSchema.safeParse(JSON.parse(value))
-  if (!parsed.success) {
-    throw new Error(`invalid subject cache cursor for ${key}`)
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(value)
+  } catch {
+    decoded = null
   }
-  return parsed.data
+  const parsed = RecordCursorSchema.safeParse(decoded)
+  if (parsed.success) return parsed.data
+  const migrated = RecordCursorSchema.safeParse({ at: value, id: FIRST_RECORD_ID })
+  if (legacyTimestamp && migrated.success) {
+    writeRecordCursor(local, key, migrated.data)
+    return migrated.data
+  }
+  throw new Error(`invalid record cache cursor for ${key}`)
 }
 
-function writeSubjectCursor(local: Database, key: string, cursor: RecordCursor): void {
+function writeRecordCursor(local: Database, key: string, cursor: RecordCursor): void {
   writeCursor(local, key, JSON.stringify(cursor))
 }
 
@@ -88,10 +102,10 @@ function applyDocPage(
     projectSpaces: ReadonlyMap<string, string | null>
   },
   unresolvedParents: Map<string, string>,
-): { docs: number; skippedDocs: number; cursor?: string } {
+): { docs: number; skippedDocs: number; cursor?: RecordCursor } {
   let docs = 0
   let skippedDocs = 0
-  let cursor: string | undefined
+  let cursor: RecordCursor | undefined
   for (const item of items) {
     const owned = recordCacheSpaceOwnsAddress({
       scope: String(item.scope),
@@ -105,7 +119,8 @@ function applyDocPage(
     } else {
       skippedDocs++
     }
-    if (typeof item.updatedAt === 'string') cursor = item.updatedAt
+    if (typeof item.updatedAt === 'string' && typeof item.id === 'string')
+      cursor = { at: item.updatedAt, id: item.id }
   }
   return { docs, skippedDocs, cursor }
 }
@@ -118,14 +133,14 @@ async function pullDocsForSpace(
     projectSpaces: ReadonlyMap<string, string | null>
     unresolvedParents: Map<string, string>
   },
-): Promise<{ docs: number; skippedDocs: number; cursorKey: string; cursor?: string }> {
+): Promise<{ docs: number; skippedDocs: number; cursorKey: string; cursor?: RecordCursor }> {
   const cursorKey = `${DOCS_CURSOR}:${input.spaceId}`
-  let cursor = readCursor(local, cursorKey)
+  let cursor = readRecordCursor(local, cursorKey, true)
   if (input.spaceId === input.activeSpaceId && cursor === undefined) {
     const legacy = readCursor(local, DOCS_CURSOR)
     if (legacy !== undefined) {
-      cursor = legacy
       writeCursor(local, cursorKey, legacy)
+      cursor = readRecordCursor(local, cursorKey, true)
       deleteCursor(local, DOCS_CURSOR)
     }
   }
@@ -134,7 +149,11 @@ async function pullDocsForSpace(
   const client = recordApiClient()
   for (;;) {
     const page = await client.listDocs(
-      { updatedSince: cursor, includeDeleted: true, limit: 100 },
+      {
+        cursor: cursor ? encodeRecordCursor(cursor) : undefined,
+        includeDeleted: true,
+        limit: 100,
+      },
       { destinationSpaceId: input.spaceId },
     )
     if (!page.items.length) break
@@ -148,6 +167,7 @@ async function pullDocsForSpace(
       docs += applied.docs
       skippedDocs += applied.skippedDocs
       cursor = applied.cursor ?? cursor
+      if (cursor && input.unresolvedParents.size === 0) writeRecordCursor(local, cursorKey, cursor)
     }, local)
     if (!page.nextCursor) break
   }
@@ -162,7 +182,7 @@ async function pullDocs(
 ): Promise<{ docs: number; skippedDocs: number }> {
   let docs = 0
   let skippedDocs = 0
-  const cursors = new Map<string, string>()
+  const cursors = new Map<string, RecordCursor>()
   const unresolvedParents = new Map<string, string>()
   for (const spaceId of spaces) {
     const pulled = await pullDocsForSpace(local, {
@@ -184,7 +204,7 @@ async function pullDocs(
       `record cache could not resolve document parent links ${links}; cleared by: ensure the hosted parent documents are readable and refresh again`,
     )
   }
-  for (const [key, cursor] of cursors) writeCursor(local, key, cursor)
+  for (const [key, cursor] of cursors) writeRecordCursor(local, key, cursor)
   return { docs, skippedDocs }
 }
 
@@ -235,7 +255,7 @@ async function pullSubjects(
   let skippedSubjects = 0
   for (const spaceId of spaces) {
     const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
-    let cursor = readSubjectCursor(local, cursorKey)
+    let cursor = readRecordCursor(local, cursorKey)
     let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
     for (;;) {
       const page = await client.listProjectSubjects(
@@ -258,7 +278,7 @@ async function pullSubjects(
           }
           cursor = { at: row.updatedAt, id: row.id }
         }
-        if (cursor) writeSubjectCursor(local, cursorKey, cursor)
+        if (cursor) writeRecordCursor(local, cursorKey, cursor)
       }, local)
       if (!page.nextCursor) break
       requestCursor = page.nextCursor

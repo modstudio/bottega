@@ -6,7 +6,7 @@ import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
+import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
@@ -360,7 +360,7 @@ describe('record cache pull', () => {
   test('keeps a cursor per space when the active space changes', async () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
     let activeSpaceId = 'space-a'
-    const seen: Array<[string, string | undefined]> = []
+    const seen: Array<[string, { at: string; id: string } | undefined]> = []
     installRecordApiClient(
       clientWith({
         whoami: async () => ({
@@ -375,20 +375,21 @@ describe('record cache pull', () => {
         }),
         listDocs: async (query, destination) => {
           const space = destination?.destinationSpaceId ?? 'missing'
-          seen.push([space, query.updatedSince])
-          return query.updatedSince
+          const cursor = query.cursor ? decodeRecordCursor(query.cursor) : undefined
+          seen.push([space, cursor])
+          return cursor
             ? { items: [], nextCursor: null }
             : {
                 items: [
                   {
-                    id: newRecordId(),
+                    id: space === 'space-a' ? firstId : secondId,
                     scope: 'global',
                     subject: null,
                     slug: `cursor-${space}`,
                     title: 'Cursor',
                     body: 'cursor',
                     delivery: 'demand',
-                    updatedAt: `${space}-cursor`,
+                    updatedAt,
                   },
                 ],
                 nextCursor: null,
@@ -397,6 +398,9 @@ describe('record cache pull', () => {
       }),
     )
 
+    const updatedAt = '2026-10-08T12:00:00.000Z'
+    const firstId = newRecordId()
+    const secondId = newRecordId()
     await pullRecordCache(db())
     activeSpaceId = 'space-b'
     await pullRecordCache(db())
@@ -405,7 +409,7 @@ describe('record cache pull', () => {
       ['space-a', undefined],
       ['space-alpha', undefined],
       ['space-b', undefined],
-      ['space-alpha', 'space-alpha-cursor'],
+      ['space-alpha', { at: updatedAt, id: secondId }],
     ])
     expect(
       db()
@@ -413,13 +417,14 @@ describe('record cache pull', () => {
           "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
         )
         .get()?.value,
-    ).toBe('space-a-cursor')
+    ).toBe(JSON.stringify({ at: updatedAt, id: firstId }))
   })
 
   test('inherits the legacy cursor into the active space only once', async () => {
-    db().query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor','legacy')").run()
+    const legacy = '2026-10-08T12:00:00.000Z'
+    db().query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor',?)").run(legacy)
     let activeSpaceId = 'space-a'
-    const seen: Array<string | undefined> = []
+    const seen: Array<RecordCursor | undefined> = []
     installRecordApiClient(
       clientWith({
         whoami: async () => ({
@@ -429,7 +434,7 @@ describe('record cache pull', () => {
           memberships: [],
         }),
         listDocs: async (query) => {
-          seen.push(query.updatedSince)
+          seen.push(query.cursor ? decodeRecordCursor(query.cursor) : undefined)
           return { items: [], nextCursor: null }
         },
       }),
@@ -439,14 +444,14 @@ describe('record cache pull', () => {
     activeSpaceId = 'space-b'
     await pullRecordCache(db())
 
-    expect(seen).toEqual(['legacy', undefined])
+    expect(seen).toEqual([{ at: legacy, id: '00000000-0000-0000-0000-000000000000' }, undefined])
     expect(
       db()
         .query<{ value: string }, []>(
           "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
         )
         .get()?.value,
-    ).toBe('legacy')
+    ).toBe(JSON.stringify({ at: legacy, id: '00000000-0000-0000-0000-000000000000' }))
     expect(db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor'").get()).toBeNull()
   })
 
