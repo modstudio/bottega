@@ -87,17 +87,34 @@ function localDays() {
   return rows.map((row) => ({ key: row.id, row }))
 }
 
-function dayContentHash(row: DayEvidence): string {
+function dayFigureHash(row: DayEvidence): string {
   const { id: _id, collected_at: _collectedAt, ...figures } = row
   return contentHash(figures)
 }
 
 function diffDays(rows: ReturnType<typeof localDays>, acknowledgements: LedgerRow[]) {
   const known = new Map(acknowledgements.map((entry) => [entry.local_key, entry.content_hash]))
+  const newestDay = rows.reduce<string | null>(
+    (newest, entry) => (newest === null || entry.row.day > newest ? entry.row.day : newest),
+    null,
+  )
   return {
     changed: rows
-      .map((entry) => ({ ...entry, hash: dayContentHash(entry.row) }))
-      .filter((entry) => known.get(entry.key) !== entry.hash),
+      .map((entry) => {
+        const figureHash = dayFigureHash(entry.row)
+        const hash =
+          entry.row.day === newestDay
+            ? `${figureHash}:${contentHash(entry.row.collected_at)}`
+            : figureHash
+        return { ...entry, figureHash, hash }
+      })
+      .filter((entry) => {
+        const acknowledged = known.get(entry.key)
+        if (entry.row.day === newestDay) return acknowledged !== entry.hash
+        return (
+          acknowledged !== entry.figureHash && !acknowledged?.startsWith(`${entry.figureHash}:`)
+        )
+      }),
     deleted: [],
     deleteSkipped: false,
     localCount: rows.length,
