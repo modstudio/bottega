@@ -53,7 +53,7 @@ export type TriageDecision =
     }
 
 type CompleteReviewRound = {
-  reviews: TriageReviewRow[]
+  reviews: readonly TriageReviewRow[]
   tier: 0 | 1 | 2 | 3
   completedAt: string
 }
