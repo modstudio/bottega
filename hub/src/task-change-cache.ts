@@ -35,7 +35,7 @@ const TASK_CHANGE_TABLES = new Set<string>([
   'hub_task_status_event',
 ])
 
-export type HostedChangeSpaceCounts = {
+type HostedChangeSpaceCounts = {
   spaceId: string
   upsertsChanged: number
   upsertsNoop: number
@@ -109,10 +109,7 @@ export function hostedChangeLegLine(report: HostedChangeLegReport): string {
     .join('; ')
 }
 
-export function hostedChangeDeleteAction(
-  rowSpaceId: string | null,
-  logSpaceId: string,
-): 'apply' | 'skip' {
+function hostedChangeDeleteAction(rowSpaceId: string | null, logSpaceId: string): 'apply' | 'skip' {
   return rowSpaceId === logSpaceId ? 'apply' : 'skip'
 }
 

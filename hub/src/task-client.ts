@@ -276,8 +276,8 @@ export async function hostedTaskChanges(
   }>(`/v1/tasks?${query}`, 'GET', undefined, options)
 }
 
-export const HOSTED_TASK_CHANGE_TABLES =
-  'hub_task,hub_task_comment,hub_task_document,hub_task_status_event' as const
+const HOSTED_TASK_CHANGE_TABLES =
+  'hub_task,hub_task_comment,hub_task_document,hub_task_status_event'
 
 export type HostedSpaceChange = {
   sequence: number
