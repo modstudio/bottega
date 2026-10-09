@@ -1,7 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import {
+  EMPTY_PROJECT_CANON_IMPORT_REMEDY,
+  EMPTY_PROJECT_CANON_STORE_CONDITION,
+} from '../orchestrator/src/canon/canon-empty-store-refusal.ts'
 import { collectCanonTreeAtRef, isHydrationPath } from '../orchestrator/src/canon/canon-files.ts'
 import {
+  emptyStoreHydrationRefusal,
   type HydrationDrift,
   hydrationDrift,
   planHydration,
@@ -25,8 +30,8 @@ function run(argv: string[], cwd: string): { exitCode: number; stdout: string; s
   }
 }
 
-function refuse(condition: string): never {
-  throw new Error(`${condition}\nremedy: ${remedy}`)
+function refuse(condition: string, namedRemedy = remedy): never {
+  throw new Error(`${condition}\nremedy: ${namedRemedy}`)
 }
 
 export function readCanonGateInput(
@@ -71,6 +76,17 @@ export function canonBranchFindings(input: {
   return hydrationDrift(planHydration({ rows: input.rows, tree: head.tree }), changed)
 }
 
+export function canonEmptyStoreDriftRefusal(input: {
+  projectRowCount: number
+  deleteCount: number
+}): { condition: string; remedy: string } | null {
+  if (!emptyStoreHydrationRefusal(input)) return null
+  return {
+    condition: EMPTY_PROJECT_CANON_STORE_CONDITION,
+    remedy: EMPTY_PROJECT_CANON_IMPORT_REMEDY,
+  }
+}
+
 function checkCanonDrift(checkout: string, databasePath = DB_PATH): HydrationDrift[] {
   let database: Database
   try {
@@ -92,9 +108,20 @@ function checkCanonDrift(checkout: string, databasePath = DB_PATH): HydrationDri
     } catch (cause) {
       refuse(String((cause as Error).message ?? cause))
     }
-    return canonBranchFindings({ checkout, base, rows })
+    const findings = canonBranchFindings({ checkout, base, rows })
+    if (findings.length === 0) return findings
+    const plan = planHydration({
+      rows,
+      tree: collectCanonTreeAtRef(checkout, 'HEAD').tree,
+    })
+    const emptyStore = canonEmptyStoreDriftRefusal({
+      projectRowCount: rows.filter((row) => row.subject === project.name).length,
+      deleteCount: plan.deletes.length,
+    })
+    if (emptyStore) refuse(emptyStore.condition, emptyStore.remedy)
+    return findings
   } catch (cause) {
-    if (String((cause as Error).message ?? cause).includes(`remedy: ${remedy}`)) throw cause
+    if (String((cause as Error).message ?? cause).includes('\nremedy: ')) throw cause
     refuse(
       `cannot read the project register or stored canon through a read-only connection: ${String((cause as Error).message ?? cause)}`,
     )

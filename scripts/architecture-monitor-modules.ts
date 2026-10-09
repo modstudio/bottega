@@ -67,6 +67,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-canon-drift.ts', [
+    '../canon/canon-empty-store-refusal.ts',
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',
     '../canon/canon-stored-rows.ts',

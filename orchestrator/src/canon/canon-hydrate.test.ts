@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   composeCanonRows,
+  emptyStoreHydrationRefusal,
   hydrationDrift,
   mainCheckoutHydrationRefusal,
   planHydration,
@@ -37,10 +38,25 @@ describe('hydration drift decisions', () => {
     ])
   })
 
-  test('read-only checks allow main while hydration writes refuse it', () => {
-    expect(mainCheckoutHydrationRefusal({ mainCheckout: true, check: true })).toBeFalse()
-    expect(mainCheckoutHydrationRefusal({ mainCheckout: true, check: false })).toBeTrue()
-    expect(mainCheckoutHydrationRefusal({ mainCheckout: false, check: false })).toBeFalse()
+  test('read-only checks and dry-run allow main while hydration writes refuse it', () => {
+    expect(
+      mainCheckoutHydrationRefusal({ mainCheckout: true, check: true, dryRun: false }),
+    ).toBeFalse()
+    expect(
+      mainCheckoutHydrationRefusal({ mainCheckout: true, check: false, dryRun: true }),
+    ).toBeFalse()
+    expect(
+      mainCheckoutHydrationRefusal({ mainCheckout: true, check: false, dryRun: false }),
+    ).toBeTrue()
+    expect(
+      mainCheckoutHydrationRefusal({ mainCheckout: false, check: false, dryRun: false }),
+    ).toBeFalse()
+  })
+
+  test('an empty store refuses deletes and leaves a populated store free to delete stale rows', () => {
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 0, deleteCount: 1 })).toBeTrue()
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 0, deleteCount: 0 })).toBeFalse()
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 1, deleteCount: 1 })).toBeFalse()
   })
 })
 

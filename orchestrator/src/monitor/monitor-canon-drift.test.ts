@@ -10,6 +10,8 @@ describe('canon drift monitor decision', () => {
       canonDriftCondition(project, {
         ...landed,
         drift: [{ path: '.agents/rules/a.md', operation: 'write' }],
+        projectRowCount: 1,
+        deleteCount: 0,
       }),
     ).toEqual({
       kind: 'canon-drift',
@@ -24,7 +26,14 @@ describe('canon drift monitor decision', () => {
   })
 
   test('stays quiet when the checkout is in sync', () => {
-    expect(canonDriftCondition(project, { ...landed, drift: [] })).toBeNull()
+    expect(
+      canonDriftCondition(project, {
+        ...landed,
+        drift: [],
+        projectRowCount: 1,
+        deleteCount: 0,
+      }),
+    ).toBeNull()
   })
 
   test('caps displayed paths and reports the remainder', () => {
@@ -32,8 +41,33 @@ describe('canon drift monitor decision', () => {
       path: `.agents/rules/${index}.md`,
       operation: 'write' as const,
     }))
-    expect(canonDriftCondition(project, { ...landed, drift })?.detail).toEndWith(
+    expect(
+      canonDriftCondition(project, {
+        ...landed,
+        drift,
+        projectRowCount: 1,
+        deleteCount: 0,
+      })?.detail,
+    ).toEndWith(
       '.agents/rules/0.md, .agents/rules/1.md, .agents/rules/2.md, .agents/rules/3.md, .agents/rules/4.md, and 2 more',
     )
+  })
+
+  test('an empty project store names import as the remedy instead of hydrate', () => {
+    expect(
+      canonDriftCondition(project, {
+        ...landed,
+        drift: [{ path: 'AGENTS.md', operation: 'delete' }],
+        projectRowCount: 0,
+        deleteCount: 1,
+      }),
+    ).toEqual({
+      kind: 'canon-drift',
+      subject: 'sample',
+      since: null,
+      detail: 'sample: this store holds no project canon while the tree has managed canon paths',
+      action: 'orch canon import --project',
+      affectedProject: 'sample',
+    })
   })
 })
