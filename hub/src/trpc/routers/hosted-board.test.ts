@@ -20,6 +20,7 @@ const mintedPostId = '01990000-0000-7000-8000-000000000012'
 const servicePostId = '01990000-0000-7000-8000-000000000013'
 const mintedReplyId = '01990000-0000-7000-8000-000000000014'
 const replyId = '01990000-0000-7000-8000-000000000015'
+const noteId = '01990000-0000-7000-8000-000000000016'
 const now = Date.parse('2026-10-06T12:00:00.000Z')
 
 const root = {
@@ -166,6 +167,36 @@ test('hosted board procedures map record responses to the shared browser contrac
     id: mintedReplyId,
     body: 'Answer',
   })
+})
+
+test('board contract accepts UUID note references and refuses numeric note ids', () => {
+  expect(
+    BoardThreadResultSchema.safeParse({ root: { ...root, noteId, text: null }, replies: [] })
+      .success,
+  ).toBe(true)
+  expect(
+    BoardAcceptResultSchema.safeParse({
+      accepted: replyId,
+      questionId: rootId,
+      noteId,
+      notePendingError: null,
+      retry: null,
+    }).success,
+  ).toBe(true)
+
+  expect(
+    BoardThreadResultSchema.safeParse({ root: { ...root, noteId: '42', text: null }, replies: [] })
+      .success,
+  ).toBe(false)
+  expect(
+    BoardAcceptResultSchema.safeParse({
+      accepted: replyId,
+      questionId: rootId,
+      noteId: '42',
+      notePendingError: null,
+      retry: null,
+    }).success,
+  ).toBe(false)
 })
 
 test('hosted board post applies the shared default durations', async () => {
