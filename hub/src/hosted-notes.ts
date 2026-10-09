@@ -121,7 +121,11 @@ export function noteMirrorCollision(
   existingByNumber: { id: string; spaceId: string } | null,
 ) {
   const decision = mirrorCollisionDecision(
-    { id: incoming.id, spaceId: incoming.spaceId, naturalKey: `${incoming.project}#${incoming.number}` },
+    {
+      id: incoming.id,
+      spaceId: incoming.spaceId,
+      naturalKey: `${incoming.project}#${incoming.number}`,
+    },
     existingById
       ? {
           id: existingById.id,

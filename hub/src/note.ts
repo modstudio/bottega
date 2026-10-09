@@ -181,9 +181,9 @@ function noteRow(
 
 function mintLocalNoteNumber(conn: Database, project: string): number {
   const number =
-    conn.query<{ next: number }, [string]>('SELECT next FROM note_counter WHERE project=?').get(
-      project,
-    )?.next ?? 1
+    conn
+      .query<{ next: number }, [string]>('SELECT next FROM note_counter WHERE project=?')
+      .get(project)?.next ?? 1
   conn
     .query(
       `INSERT INTO note_counter (project, next) VALUES (?, ?)
@@ -780,7 +780,9 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     return writeTransaction((conn) => {
       for (const item of reasons) {
         conn
-          .query('UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL')
+          .query(
+            'UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL',
+          )
           .run(at, item.reason, item.recordId)
       }
       const found = deletedIds.flatMap((id) => {

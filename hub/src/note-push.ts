@@ -54,7 +54,9 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       requestOptions,
     )
   const counters = db()
-    .query<{ project: string; next: number }, []>('SELECT project,next FROM note_counter ORDER BY project')
+    .query<{ project: string; next: number }, []>(
+      'SELECT project,next FROM note_counter ORDER BY project',
+    )
     .all()
   await hostedMirrorNotes(
     {
