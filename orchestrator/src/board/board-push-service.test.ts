@@ -855,11 +855,16 @@ test('PostToolUse runs correctly without following an unreadable marker symlink'
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
 
-test('Stop keeps its acknowledgement budget and emits one ordinary delivery once', () => {
+test('Stop keeps its acknowledgement budget while carrying fresh ordinary delivery', () => {
   const item = createHookFixture(hookOutput)
+  const required = JSON.parse(hookOutput).delivery
   const pendingValues = [
-    ...Array.from({ length: 4 }, () => JSON.parse(hookOutput).delivery),
-    [{ id: '8', text: 'ordinary message', requiresAcknowledgement: false }],
+    [{ id: '8', text: 'ordinary within budget', requiresAcknowledgement: false }, ...required],
+    required,
+    required,
+    required,
+    [{ id: '9', text: 'ordinary after budget', requiresAcknowledgement: false }, ...required],
+    required,
     [],
   ]
   const result = runHookRepeatedResult(
@@ -869,55 +874,24 @@ test('Stop keeps its acknowledgement budget and emits one ordinary delivery once
     pendingValues.length,
     pendingValues,
   )
-  const values = result.outputs.slice(0, 4).map((value) => JSON.parse(value))
+  const values = result.outputs.map((value) => (value ? JSON.parse(value) : null))
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
-  expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
+  expect(values[0].reason).toStartWith('ordinary within budget')
+  expect(values[0].reason).toContain('This architect session has 1 unacknowledged board notice.')
   expect(values[3].systemMessage).toStartWith(
     'This architect session is stopping with 1 unacknowledged board notice.',
   )
-  expect(JSON.parse(result.outputs[4]!)).toEqual({
+  expect(values[4]).toEqual({
     decision: 'block',
-    reason: 'ordinary message',
+    reason: 'ordinary after budget',
   })
-  expect(result.outputs[5]).toBe('')
-  expect(result.delivered).toEqual([['reader', ['8']]])
-})
-
-test('Stop carries ordinary delivery before a pending acknowledgement within budget', () => {
-  const item = createHookFixture(hookOutput)
-  const pendingValues = [
-    { id: '1', text: 'ordinary', requiresAcknowledgement: false },
-    { id: '2', text: 'required', requiresAcknowledgement: true },
-  ]
-  const hook = runHookRepeatedResult(guardHook, JSON.stringify({ session_id: 'reader' }), item, 1, [
-    pendingValues,
+  expect(values[5].decision).toBeUndefined()
+  expect(values[5].systemMessage).toContain('unacknowledged board notice')
+  expect(result.outputs[6]).toBe('')
+  expect(result.delivered).toEqual([
+    ['reader', ['8']],
+    ['reader', ['9']],
   ])
-  const result = JSON.parse(hook.outputs[0]!)
-  expect(result.decision).toBe('block')
-  expect(result.reason).toStartWith('ordinary')
-  expect(result.reason).toContain('required')
-  expect(hook.delivered).toEqual([['reader', ['1']]])
-})
-
-test('Stop with a spent acknowledgement budget blocks once for fresh ordinary delivery only', () => {
-  const item = createHookFixture(hookOutput)
-  const marker = join(
-    item.root,
-    'board-hook-state',
-    'stop',
-    createHash('sha256').update('reader').digest('hex'),
-  )
-  mkdirSync(join(item.root, 'board-hook-state', 'stop'), { recursive: true })
-  writeFileSync(marker, JSON.stringify({ blocks: 3 }))
-  const required = { id: '2', text: 'required', requiresAcknowledgement: true }
-  const hook = runHookRepeatedResult(guardHook, JSON.stringify({ session_id: 'reader' }), item, 2, [
-    [{ id: '1', text: 'ordinary', requiresAcknowledgement: false }, required],
-    [required],
-  ])
-  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'ordinary' })
-  expect(JSON.parse(hook.outputs[1]!).systemMessage).toContain('required')
-  expect(hook.delivered).toEqual([['reader', ['1']]])
-  expect(JSON.parse(readFileSync(marker, 'utf8')).blocks).toBe(3)
 })
 
 test('Stop records emitted ids before a failing stamp and blocks once per arriving message', () => {
