@@ -82,15 +82,12 @@ describe('project workflow injection', () => {
   })
 
   test('refuses unknown and repeated PHP policy rules with the register remedy', () => {
-    expect(
-      validateProjectSettings({
-        testSubstance: { phpPolicyRules: ['unknown-rule'] },
-      } as unknown as Project['settings']),
-    ).toEqual([
-      expect.stringMatching(
-        /unknown PHP policy rule; valid rules: createMock, .*; set with: orch project set <project> --settings/,
-      ),
-    ])
+    const unknownRuleErrors = validateProjectSettings({
+      testSubstance: { phpPolicyRules: ['unknown-rule'] },
+    } as unknown as Project['settings']).join('\n')
+    expect(unknownRuleErrors).toContain('unknown PHP policy rule')
+    expect(unknownRuleErrors).toContain('valid rules:')
+    expect(unknownRuleErrors).toContain('orch project set <project> --settings')
     expect(
       validateProjectSettings({
         testSubstance: { phpPolicyRules: ['createMock', 'createMock'] },

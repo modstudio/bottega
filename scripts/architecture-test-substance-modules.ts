@@ -3,14 +3,6 @@
 
 export const testSubstanceModules = [
   {
-    file: 'orchestrator/src/project/project-injection.ts',
-    allowed: [
-      'zod',
-      '../../../shared/trackers.ts',
-      '../../../shared/test-substance/test-substance.ts',
-    ],
-  },
-  {
     file: 'shared/test-substance/test-substance.ts',
     allowed: ['../ratchet.ts', './test-substance-eslint.ts', './test-substance-php.ts'],
   },

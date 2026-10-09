@@ -166,7 +166,6 @@ function gatePhpPolicyRules() {
 async function main() {
   const startedAt = performance.now()
   const mode = parseMode(Bun.argv.slice(2))
-  const phpPolicyRules = gatePhpPolicyRules()
   const guardFailures = await guardFixtures()
   if (guardFailures.length) {
     console.error('test substance fixture guard failed:')
@@ -177,6 +176,7 @@ async function main() {
   }
 
   const files = changedTestFiles(mode)
+  const phpPolicyRules = files.some((file) => file.endsWith('.php')) ? gatePhpPolicyRules() : []
   const introduced: TestFinding[] = []
   const unchecked: string[] = []
   const unrecognised: string[] = []
