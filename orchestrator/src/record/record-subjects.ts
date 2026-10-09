@@ -29,6 +29,11 @@ async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T
   }
 }
 
+/** A timestamp column as ISO text; a Date keeps its milliseconds, which its string form drops. */
+function iso(value: unknown): string {
+  return (value instanceof Date ? value : new Date(String(value))).toISOString()
+}
+
 function mapped(row: Record<string, unknown>): RecordSubject {
   return {
     id: String(row.id),
@@ -37,10 +42,10 @@ function mapped(row: Record<string, unknown>): RecordSubject {
     definition: String(row.definition),
     position: Number(row.position),
     parentId: row.parent_id == null ? null : String(row.parent_id),
-    retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+    retiredAt: row.retired_at == null ? null : iso(row.retired_at),
     state: row.retired_at == null ? 'active' : 'retired',
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
   }
 }
 
