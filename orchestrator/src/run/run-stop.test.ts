@@ -2,12 +2,12 @@ import { beforeEach, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
+import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
 import {
   abandonRun,
   stoppedRunLine,
   stopRun,
   stopTerminationRefusal,
-  type TerminateRunProcessesResult,
 } from './run-stop.ts'
 
 const presentation = () => {
@@ -28,6 +28,7 @@ async function invoke(
   opts: {
     note?: string
     checkpoint?: (name: string) => void
+    plan?: () => RunProcessTerminationPlan
     terminate?: () => TerminateRunProcessesResult
   } = {},
 ) {
@@ -36,6 +37,7 @@ async function invoke(
     const options = { force: false, auditReason: null, note: opts.note, presentation: shown.value }
     const helpers = {
       lifecycleCheckpoint: opts.checkpoint ?? (() => {}),
+      planRunProcessTermination: opts.plan ?? (() => ({ outcome: 'no-pid' as const })),
       terminateRunProcesses: opts.terminate ?? (() => ({ outcome: 'no-pid' as const })),
     }
     if (action === 'stop') await stopRun(id, options, helpers)
@@ -58,20 +60,21 @@ test('stop reports an identity mismatch with an inspect-then-signal remedy and d
   )
 })
 
-test('stop reports a vendor that survived SIGKILL and does not claim stopped', () => {
+test('stop reports a vendor that survived SIGKILL after the row is recorded stopped', () => {
   expect(
     stopTerminationRefusal(
       { id: 42 },
       { outcome: 'still-alive', pid: 42922, reason: 'process did not exit after SIGKILL' },
     ),
   ).toBe(
-    'run 42 pid 42922 is still alive after process did not exit after SIGKILL; the run remains running; after checking ps -p 42922 -o lstart=,command=, run kill -TERM 42922',
+    'run 42 is recorded stopped; process 42922 is still alive; after checking ps -p 42922 -o lstart=,command=, run kill -KILL 42922',
   )
 })
 
 test('stop uses the plain success line after a proven termination', () => {
   expect(stoppedRunLine(42)).toBe('stopped run 42')
   expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-pid' })).toBeNull()
+  expect(stopTerminationRefusal({ id: 42 }, { outcome: 'no-vendor' })).toBeNull()
   expect(stopTerminationRefusal({ id: 42 }, { outcome: 'gone' })).toBeNull()
   expect(stopTerminationRefusal({ id: 42 }, { outcome: 'signaled', signaled: [42922] })).toBeNull()
 })
@@ -158,9 +161,15 @@ test('stop refuses a run that is not running without changing it', async () => {
 test('stop refuses an identity mismatch and leaves the run running', async () => {
   const id = insert('running')
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
+  let terminated = false
   const result = await invoke('stop', id, {
-    terminate: () => ({ outcome: 'identity-mismatch', pid: 42922 }),
+    plan: () => ({ outcome: 'identity-mismatch', pid: 42922 }),
+    terminate: () => {
+      terminated = true
+      return { outcome: 'identity-mismatch', pid: 42922 }
+    },
   })
+  expect(terminated).toBe(false)
   expect(result.code).toBe(1)
   expect(result.err).toContain('pid 42922 identity could not be confirmed')
   expect(result.err).toContain('the run remains running')
@@ -169,7 +178,7 @@ test('stop refuses an identity mismatch and leaves the run running', async () =>
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
 })
 
-test('stop refuses when the vendor stays alive and leaves the run running', async () => {
+test('stop refuses when the vendor stays alive after the row is recorded stopped', async () => {
   const id = insert('running')
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
   const result = await invoke('stop', id, {
@@ -180,12 +189,13 @@ test('stop refuses when the vendor stays alive and leaves the run running', asyn
     }),
   })
   expect(result.code).toBe(1)
-  expect(result.err).toContain('pid 42922 is still alive')
-  expect(result.err).toContain('the run remains running')
-  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
+  expect(result.err).toContain('is recorded stopped')
+  expect(result.err).toContain('process 42922 is still alive')
+  expect(result.err).toContain('kill -KILL 42922')
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
 })
 
-test('stop commits stopped only after the vendor is gone', async () => {
+test('stop calls terminate only after the row already reads stopped', async () => {
   const id = insert('running')
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(42402, 42922, id)
   let statusDuringTerminate: string | undefined
@@ -197,7 +207,24 @@ test('stop commits stopped only after the vendor is gone', async () => {
       return { outcome: 'signaled', signaled: [42922] }
     },
   })
-  expect(statusDuringTerminate).toBe('running')
+  expect(statusDuringTerminate).toBe('stopped')
+  expect(result.code).toBe(0)
+  expect(result.out).toContain(`stopped run ${id}`)
+  expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })
+})
+
+test('stop records a setup run with no vendor and signals nothing', async () => {
+  const id = insert('running')
+  db().query('UPDATE run SET pid=? WHERE id=?').run(42402, id)
+  let terminated = false
+  const result = await invoke('stop', id, {
+    plan: () => ({ outcome: 'no-vendor' }),
+    terminate: () => {
+      terminated = true
+      return { outcome: 'signaled', signaled: [42402] }
+    },
+  })
+  expect(terminated).toBe(false)
   expect(result.code).toBe(0)
   expect(result.out).toContain(`stopped run ${id}`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' })

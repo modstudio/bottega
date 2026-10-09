@@ -223,3 +223,185 @@ test('filed-defect terminate signals nothing when vendor identity does not match
   expect(result).toEqual({ outcome: 'identity-mismatch', pid: vendor })
   expect(signaled).toEqual([])
 })
+
+test('a run with a coordinator pid and no vendor is a no-vendor plan', () => {
+  expect(
+    planRunProcessTermination({
+      recorded: { pid: 42402, agentPid: null, agentPgid: null, agentStartTime: null },
+      vendorIdentity: 'unknown',
+      inventory: { ascertainable: true, rows: [] },
+      exclude: [42402],
+      selfPid: 9001,
+    }),
+  ).toEqual({ outcome: 'no-vendor' })
+})
+
+test('a live vendor pid excluded as the coordinator is a mismatch, not gone', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const coordinator = 42402
+  db()
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .run(coordinator, coordinator, coordinator, FILED_DEFECT_BIRTH, id)
+  const signaled: number[] = []
+  const result = terminateRunProcesses(id, [coordinator], {
+    inventory: () => ({
+      ascertainable: true,
+      rows: [
+        {
+          pid: coordinator,
+          ppid: 1,
+          pgid: coordinator,
+          command: 'codex exec --json',
+        },
+      ],
+    }),
+    identity: () => 'live',
+    kill(pid) {
+      signaled.push(pid)
+    },
+    alive: () => true,
+    wait: () => {},
+    confirmMs: 5,
+    selfPgid: () => 1,
+  })
+  expect(result).toEqual({ outcome: 'identity-mismatch', pid: coordinator })
+  expect(signaled).toEqual([])
+})
+
+test('an own-group vendor leader receives a negative-pid signal', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const coordinator = 42402
+  const vendor = 42922
+  db()
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
+  const groups: number[] = []
+  terminateRunProcesses(id, [coordinator], {
+    inventory: () => filedDefectInventory(coordinator, vendor),
+    identity: () => 'live',
+    kill(pid) {
+      if (pid < 0) groups.push(pid)
+    },
+    alive: () => false,
+    wait: () => {},
+    confirmMs: 5,
+    selfPgid: () => 1,
+  })
+  expect(groups).toContain(-vendor)
+})
+
+test('a vendor in another group is not group-signalled with or without a coordinator row', () => {
+  const coordinator = 42402
+  const vendor = 42922
+  const sharedGroup = coordinator
+  const inventories = [
+    {
+      ascertainable: true as const,
+      rows: [
+        {
+          pid: coordinator,
+          ppid: 1,
+          pgid: sharedGroup,
+          command: 'bun orchestrator/src/cli.ts fix-defect DEV-1234',
+        },
+        { pid: vendor, ppid: coordinator, pgid: sharedGroup, command: 'codex exec --json' },
+      ],
+    },
+    {
+      ascertainable: true as const,
+      rows: [{ pid: vendor, ppid: 1, pgid: sharedGroup, command: 'codex exec --json' }],
+    },
+    { ascertainable: false as const, reason: 'process inventory unavailable' },
+  ]
+  for (const inventory of inventories) {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db()
+      .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+      .run(coordinator, vendor, sharedGroup, FILED_DEFECT_BIRTH, id)
+    const groups: number[] = []
+    terminateRunProcesses(id, [coordinator], {
+      inventory: () => inventory,
+      identity: () => 'live',
+      kill(pid) {
+        if (pid < 0) groups.push(pid)
+      },
+      alive: () => false,
+      wait: () => {},
+      confirmMs: 5,
+      selfPgid: () => 1,
+    })
+    expect(groups).toEqual([])
+  }
+})
+
+test('a descendant that survives SIGTERM is SIGKILLed after the root dies', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const coordinator = 42402
+  const vendor = 42922
+  const child = 43000
+  db()
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
+  const killed: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+  const result = terminateRunProcesses(id, [coordinator], {
+    inventory: () => ({
+      ascertainable: true,
+      rows: [
+        {
+          pid: coordinator,
+          ppid: 1,
+          pgid: coordinator,
+          command: 'bun orchestrator/src/cli.ts fix-defect DEV-1234',
+        },
+        { pid: vendor, ppid: coordinator, pgid: vendor, command: 'codex exec --json' },
+        { pid: child, ppid: vendor, pgid: vendor, command: 'codex worker' },
+      ],
+    }),
+    identity: () => 'live',
+    kill(pid, signal) {
+      killed.push({ pid, signal })
+    },
+    alive: (pid) => pid === child,
+    wait: () => {},
+    confirmMs: 5,
+    selfPgid: () => 1,
+  })
+  expect(result).toEqual({ outcome: 'signaled', signaled: [vendor, child] })
+  expect(killed).toContainEqual({ pid: child, signal: 'SIGKILL' })
+})
+
+test('a descendant that survives SIGKILL is still-alive', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const coordinator = 42402
+  const vendor = 42922
+  const child = 43000
+  db()
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE id=?')
+    .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
+  const result = terminateRunProcesses(id, [coordinator], {
+    inventory: () => ({
+      ascertainable: true,
+      rows: [
+        {
+          pid: coordinator,
+          ppid: 1,
+          pgid: coordinator,
+          command: 'bun orchestrator/src/cli.ts fix-defect DEV-1234',
+        },
+        { pid: vendor, ppid: coordinator, pgid: vendor, command: 'codex exec --json' },
+        { pid: child, ppid: vendor, pgid: vendor, command: 'codex worker' },
+      ],
+    }),
+    identity: () => 'live',
+    kill: () => {},
+    alive: (pid) => pid === child,
+    wait: () => {},
+    confirmMs: 5,
+    selfPgid: () => 1,
+  })
+  expect(result).toEqual({
+    outcome: 'still-alive',
+    pid: child,
+    reason: 'process did not exit after SIGKILL',
+  })
+})
