@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { expectImported, refusedBy } from './test-substance-fixture-helper'
+import { expectImported, refusedBy } from './test-substance-fixture-helper.fixtures'
 
 function expectThroughHelper() {
   expect(subject).toBe(expected)

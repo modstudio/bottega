@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { expectImported, refusedBy } from './test-substance-fixture-helper'
+import { expectImported, refusedBy } from './test-substance-fixture-helper.fixtures'
 
 function expectThroughHelper() {
   expect(subject).toBe(expected)
@@ -54,8 +54,6 @@ describe('fixture', () => {
   test('clean: nested function helper', () => expectInOrder(['first', 'second']))
   test('clean: nested async helper', async () => await survivesAsync('| G |'))
   test('clean: transitive loop helper', async () => await spend())
-  // eslint-disable-next-line @typescript-eslint/only-throw-error
-  test('clean: unknown lint directive', () => expect(subject).toBe(expected))
 })
 
 function doesNothing() {

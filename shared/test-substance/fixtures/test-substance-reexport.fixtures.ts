@@ -1,4 +1,4 @@
-import { expect, test } from './test-substance-runner-helper'
+import { expect, test } from './test-substance-runner-helper.fixtures'
 
 test('clean: runner re-export', () => expect(subject).toBe(expected))
 

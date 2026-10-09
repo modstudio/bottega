@@ -18,6 +18,13 @@ type ImportedFunction = {
   unresolved: boolean
 }
 
+function hasParseErrors(source: ts.SourceFile) {
+  return Boolean(
+    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics
+      ?.length,
+  )
+}
+
 function bind(file: string, content: string): BoundSourceFile {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   ;(ts as TypeScriptWithBinder).bindSourceFile(source, { target: ts.ScriptTarget.Latest })
@@ -114,37 +121,47 @@ function resolveImport(testFile: string, specifier: string): string | undefined 
   })
 }
 
+function hasExportModifier(statement: ts.Statement) {
+  return (
+    ts.canHaveModifiers(statement) &&
+    ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+  )
+}
+
+function directlyExportedFunction(statement: ts.Statement, name: string) {
+  if (!hasExportModifier(statement)) return undefined
+  if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) {
+    return statement.body ? statement : undefined
+  }
+  if (!ts.isVariableStatement(statement)) return undefined
+  const declaration = statement.declarationList.declarations.find(
+    (candidate) => ts.isIdentifier(candidate.name) && candidate.name.text === name,
+  )
+  return declaration && callableDeclaration(declaration)
+}
+
+function locallyReexportedFunction(statement: ts.Statement, source: BoundSourceFile, name: string) {
+  if (
+    !ts.isExportDeclaration(statement) ||
+    statement.moduleSpecifier ||
+    !statement.exportClause ||
+    !ts.isNamedExports(statement.exportClause)
+  ) {
+    return undefined
+  }
+  const exportedName = statement.exportClause.elements.find((element) => element.name.text === name)
+  if (!exportedName) return undefined
+  const localName = exportedName.propertyName?.text ?? exportedName.name.text
+  const symbol = source.locals?.get(ts.escapeLeadingUnderscores(localName))
+  return symbol?.declarations?.map(callableDeclaration).find(Boolean)
+}
+
 function exportedFunction(source: BoundSourceFile, name: string) {
   for (const statement of source.statements) {
-    const exported = statement.modifiers?.some(
-      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-    )
-    if (exported && ts.isFunctionDeclaration(statement) && statement.name?.text === name) {
-      return statement.body ? statement : undefined
-    }
-    if (exported && ts.isVariableStatement(statement)) {
-      for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
-          return callableDeclaration(declaration)
-        }
-      }
-    }
-    if (
-      ts.isExportDeclaration(statement) &&
-      statement.exportClause &&
-      ts.isNamedExports(statement.exportClause)
-    ) {
-      const exportedName = statement.exportClause.elements.find(
-        (element) => element.name.text === name,
-      )
-      if (!exportedName || statement.moduleSpecifier) continue
-      const localName = exportedName.propertyName?.text ?? exportedName.name.text
-      const symbol = source.locals?.get(ts.escapeLeadingUnderscores(localName))
-      for (const declaration of symbol?.declarations ?? []) {
-        const callable = callableDeclaration(declaration)
-        if (callable) return callable
-      }
-    }
+    const callable =
+      directlyExportedFunction(statement, name) ??
+      locallyReexportedFunction(statement, source, name)
+    if (callable) return callable
   }
   return undefined
 }
@@ -171,7 +188,7 @@ function importedFunction(
     const metadata = statSync(file)
     if (metadata.size > MAX_IMPORTED_FILE_BYTES) throw new Error('imported file exceeds size limit')
     const importedSource = bind(file, readFileSync(file, 'utf8'))
-    if (importedSource.parseDiagnostics.length) throw new Error('imported file could not be parsed')
+    if (hasParseErrors(importedSource)) throw new Error('imported file could not be parsed')
     const declaration = exportedFunction(importedSource, imported.importedName)
     const result = declaration
       ? { declaration, source: importedSource, unresolved: false }
@@ -196,41 +213,29 @@ function reachesAssertion(
   seen.add(node)
   let found = false
 
+  function callReachesAssertion(child: ts.CallExpression) {
+    const callName = finalCallName(child.expression)
+    if (callName && /^(?:expect|assert)/.test(callName)) return true
+    if (!ts.isIdentifier(child.expression)) return false
+    const local = symbolInScope(child.expression, child, source)
+      ?.declarations?.map(callableDeclaration)
+      .find(Boolean)
+    if (local && reachesAssertion(local, source, testFile, seen, imports)) return true
+    if (source.fileName !== testFile && isRelativeImport(child.expression, child, source)) {
+      return true
+    }
+    const imported = importedFunction(child.expression, child, source, testFile, imports)
+    if (imported?.unresolved) return true
+    return Boolean(
+      imported?.declaration &&
+        imported.source &&
+        reachesAssertion(imported.declaration, imported.source, testFile, seen, imports),
+    )
+  }
+
   function visit(child: ts.Node) {
     if (found) return
-    if (ts.isCallExpression(child)) {
-      const callName = finalCallName(child.expression)
-      if (callName && /^(?:expect|assert)/.test(callName)) {
-        found = true
-        return
-      }
-      if (ts.isIdentifier(child.expression)) {
-        const local = symbolInScope(child.expression, child, source)
-          ?.declarations?.map(callableDeclaration)
-          .find(Boolean)
-        if (local && reachesAssertion(local, source, testFile, seen, imports)) {
-          found = true
-          return
-        }
-        if (source.fileName !== testFile && isRelativeImport(child.expression, child, source)) {
-          found = true
-          return
-        }
-        const imported = importedFunction(child.expression, child, source, testFile, imports)
-        if (imported?.unresolved) {
-          found = true
-          return
-        }
-        if (
-          imported?.declaration &&
-          imported.source &&
-          reachesAssertion(imported.declaration, imported.source, testFile, seen, imports)
-        ) {
-          found = true
-          return
-        }
-      }
-    }
+    if (ts.isCallExpression(child) && callReachesAssertion(child)) found = true
     ts.forEachChild(child, visit)
   }
 

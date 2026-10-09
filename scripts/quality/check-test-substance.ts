@@ -61,42 +61,42 @@ function afterContent(mode: Mode, file: string) {
     : git(['show', `HEAD:${file}`]).stdout
 }
 
-async function guardJavaScriptFixtures(failures: string[]) {
-  for (const runner of ['bun', 'vitest'] as const) {
-    const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
-    const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
-    if (report.parseError) {
-      failures.push(`${runner}: fixture unchecked: ${report.parseError}`)
-      continue
-    }
-    const produced = new Set(report.findings.map((finding) => finding.rule))
-    for (const finding of report.findings) {
-      if (finding.testName.includes('clean:')) {
-        failures.push(`${runner}: clean case ${finding.testName} produced ${finding.rule}`)
-      }
-    }
-    for (const rule of guardedRules(runner)) {
-      if (!produced.has(rule))
-        failures.push(`${runner}: ${rule} produced no finding on its fixture`)
-    }
-    const genuineCases = [
-      ['genuine: fixed literal comparison', 'no-trivial-assertions'],
-      ['genuine: calls helpers without assertions', 'no-assertion'],
-      ...(runner === 'vitest'
-        ? ([['has an unawaited assertion', 'async-test-assertions']] as const)
-        : []),
-    ] as const
-    for (const [testName, rule] of genuineCases) {
-      if (
-        !report.findings.some(
-          (finding) => finding.testName.includes(testName) && finding.rule === rule,
-        )
-      ) {
-        failures.push(`${runner}: genuine case ${testName} produced no ${rule} finding`)
-      }
+function guardGenuineCases(runner: 'bun' | 'vitest', findings: TestFinding[], failures: string[]) {
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ['genuine: fixed literal comparison', 'no-trivial-assertions'],
+    ['genuine: calls helpers without assertions', 'no-assertion'],
+    ...(runner === 'vitest'
+      ? [['has an unawaited assertion', 'async-test-assertions'] as const]
+      : []),
+  ]
+  for (const [testName, rule] of cases) {
+    const found = findings.some(
+      (finding) => finding.testName.includes(testName) && finding.rule === rule,
+    )
+    if (!found) failures.push(`${runner}: genuine case ${testName} produced no ${rule} finding`)
+  }
+}
+
+async function guardRunnerFixture(runner: 'bun' | 'vitest', failures: string[]) {
+  const file = `${fixtureDirectory}test-substance-${runner}.fixtures.ts`
+  const report = await testSubstanceReport(file, readFileSync(file, 'utf8'))
+  if (report.parseError) {
+    failures.push(`${runner}: fixture unchecked: ${report.parseError}`)
+    return
+  }
+  const produced = new Set(report.findings.map((finding) => finding.rule))
+  for (const finding of report.findings) {
+    if (finding.testName.includes('clean:')) {
+      failures.push(`${runner}: clean case ${finding.testName} produced ${finding.rule}`)
     }
   }
+  for (const rule of guardedRules(runner)) {
+    if (!produced.has(rule)) failures.push(`${runner}: ${rule} produced no finding on its fixture`)
+  }
+  guardGenuineCases(runner, report.findings, failures)
+}
 
+async function guardSpecialJavaScriptFixtures(failures: string[]) {
   const reexportFile = `${fixtureDirectory}test-substance-reexport.fixtures.ts`
   const reexportReport = await testSubstanceReport(reexportFile, readFileSync(reexportFile, 'utf8'))
   if (reexportReport.runner !== 'bun' || reexportReport.findings.length) {
@@ -118,6 +118,21 @@ async function guardJavaScriptFixtures(failures: string[]) {
   ) {
     failures.push('browser fixture was not excluded with the browser-test reason')
   }
+
+  const directiveFile = `${fixtureDirectory}test-substance-inline-directive.fixture.txt`
+  const directiveReport = await testSubstanceReport(
+    `${fixtureDirectory}inline-directive.test.ts`,
+    readFileSync(directiveFile, 'utf8'),
+  )
+  if (directiveReport.findings.length) {
+    failures.push('inline lint directive changed the fixture findings')
+  }
+}
+
+async function guardJavaScriptFixtures(failures: string[]) {
+  await guardRunnerFixture('bun', failures)
+  await guardRunnerFixture('vitest', failures)
+  await guardSpecialJavaScriptFixtures(failures)
 }
 
 async function guardPhpFixture(failures: string[]) {
@@ -214,6 +229,25 @@ function gatePhpPolicyRulesFor(files: string[]) {
   return files.some((file) => file.endsWith('.php')) ? gatePhpPolicyRules() : []
 }
 
+async function collectFileJudgments(
+  mode: Mode,
+  files: string[],
+  phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
+) {
+  const introduced: TestFinding[] = []
+  const unchecked: string[] = []
+  const unrecognised: string[] = []
+  let browserFiles = 0
+  for (const file of files) {
+    const judgment = await judgeFile(mode, file, phpPolicyRules)
+    browserFiles += Number(judgment.browser)
+    if (judgment.unrecognised) unrecognised.push(file)
+    if (judgment.unchecked) unchecked.push(judgment.unchecked)
+    introduced.push(...judgment.findings)
+  }
+  return { browserFiles, introduced, unchecked, unrecognised }
+}
+
 async function main() {
   const startedAt = performance.now()
   const mode = parseMode(Bun.argv.slice(2))
@@ -228,17 +262,11 @@ async function main() {
 
   const files = changedTestFiles(mode)
   const phpPolicyRules = gatePhpPolicyRulesFor(files)
-  const introduced: TestFinding[] = []
-  const unchecked: string[] = []
-  const unrecognised: string[] = []
-  let browserFiles = 0
-  for (const file of files) {
-    const judgment = await judgeFile(mode, file, phpPolicyRules)
-    if (judgment.browser) browserFiles += 1
-    if (judgment.unrecognised) unrecognised.push(file)
-    if (judgment.unchecked) unchecked.push(judgment.unchecked)
-    introduced.push(...judgment.findings)
-  }
+  const { browserFiles, introduced, unchecked, unrecognised } = await collectFileJudgments(
+    mode,
+    files,
+    phpPolicyRules,
+  )
 
   for (const file of unrecognised) console.log(`${file}: runner not recognised`)
   for (const failure of unchecked) console.error(`${failure}: unchecked`)

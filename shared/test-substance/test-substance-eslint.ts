@@ -115,6 +115,13 @@ function testLocations(file: string, content: string): TestLocation[] {
 const RUNNER_EXTENSIONS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 const MAX_IMPORTED_FILE_BYTES = 1024 * 1024
 
+function hasParseErrors(source: ts.SourceFile) {
+  return Boolean(
+    (source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics
+      ?.length,
+  )
+}
+
 function directRunner(source: ts.SourceFile): Runner {
   let runner: Runner = 'unrecognised'
   function recognize(specifier: ts.Expression | undefined) {
@@ -146,40 +153,46 @@ function relativeFile(file: string, specifier: string) {
   ].find(existsSync)
 }
 
+function reexportedRunner(file: string, statement: ts.ImportDeclaration): Runner {
+  if (!ts.isStringLiteralLike(statement.moduleSpecifier)) return 'unrecognised'
+  if (!statement.moduleSpecifier.text.startsWith('.')) return 'unrecognised'
+  const importedTest = statement.importClause?.namedBindings
+  if (!importedTest || !ts.isNamedImports(importedTest)) return 'unrecognised'
+  if (!importedTest.elements.some((element) => element.name.text === 'test')) return 'unrecognised'
+  const importedFile = relativeFile(file, statement.moduleSpecifier.text)
+  if (!importedFile) return 'unrecognised'
+  try {
+    if (statSync(importedFile).size > MAX_IMPORTED_FILE_BYTES) return 'unrecognised'
+    const importedSource = ts.createSourceFile(
+      importedFile,
+      readFileSync(importedFile, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    )
+    if (hasParseErrors(importedSource)) return 'unrecognised'
+    const runner = directRunner(importedSource)
+    if (runner === 'unrecognised') return runner
+    const exportsTest = importedSource.statements.some(
+      (candidate) =>
+        ts.isExportDeclaration(candidate) &&
+        candidate.exportClause &&
+        ts.isNamedExports(candidate.exportClause) &&
+        candidate.exportClause.elements.some((element) => element.name.text === 'test'),
+    )
+    return exportsTest ? runner : 'unrecognised'
+  } catch {
+    return 'unrecognised'
+  }
+}
+
 function runnerFor(file: string, content: string): Runner {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true)
   const direct = directRunner(source)
   if (direct !== 'unrecognised') return direct
   for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) {
-      continue
-    }
-    if (!statement.moduleSpecifier.text.startsWith('.')) continue
-    const importedTest = statement.importClause?.namedBindings
-    if (!importedTest || !ts.isNamedImports(importedTest)) continue
-    if (!importedTest.elements.some((element) => element.name.text === 'test')) continue
-    const importedFile = relativeFile(file, statement.moduleSpecifier.text)
-    if (!importedFile) continue
-    try {
-      if (statSync(importedFile).size > MAX_IMPORTED_FILE_BYTES) continue
-      const importedSource = ts.createSourceFile(
-        importedFile,
-        readFileSync(importedFile, 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-      )
-      if (importedSource.parseDiagnostics.length) continue
-      const runner = directRunner(importedSource)
-      if (runner === 'unrecognised') continue
-      const exportsTest = importedSource.statements.some(
-        (candidate) =>
-          ts.isExportDeclaration(candidate) &&
-          candidate.exportClause &&
-          ts.isNamedExports(candidate.exportClause) &&
-          candidate.exportClause.elements.some((element) => element.name.text === 'test'),
-      )
-      if (exportsTest) return runner
-    } catch {}
+    if (!ts.isImportDeclaration(statement)) continue
+    const runner = reexportedRunner(file, statement)
+    if (runner !== 'unrecognised') return runner
   }
   return 'unrecognised'
 }
