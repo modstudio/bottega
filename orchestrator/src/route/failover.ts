@@ -10,6 +10,7 @@ import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
+import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 
 type TransportName = 'cli' | 'acp'
@@ -29,8 +30,7 @@ export type ResolvedTaskBranch = {
   mergeBase: string
   projectId: number
   projectName: string
-  nominatingRuns: { id: number; sessionId: string | null }[]
-  runIds: number[]
+  nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
   worktree: RetryWorktree | null
 }

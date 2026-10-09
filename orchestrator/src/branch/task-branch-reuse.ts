@@ -35,6 +35,19 @@ export function taskBranchSessionRefusal(candidate: TaskBranchCandidate): string
   )
 }
 
+/** Refuse cross-session implicit reuse, or pass through the candidate unchanged. */
+export function taskBranchForDispatchingSession(
+  candidate: TaskBranchCandidate,
+  dispatchingSession: string | null,
+): TaskBranchCandidate {
+  const decision = decideTaskBranchSessionReuse(
+    dispatchingSession,
+    candidate.nominatingRuns.map((run) => run.sessionId),
+  )
+  if (decision.action === 'refuse') throw new Error(taskBranchSessionRefusal(candidate))
+  return candidate
+}
+
 export type TaskBranchReuseFacts = {
   callerOnTrunk: boolean
   candidateIsAncestorOfCaller: boolean
@@ -132,10 +145,5 @@ export function resolveCompatibleTaskBranch(
 ): TaskBranchCandidate | null {
   const candidate = resolveTaskBranch(cwd, launchKey)
   if (!candidate) return null
-  const sessionDecision = decideTaskBranchSessionReuse(
-    dispatchingSession,
-    candidate.nominatingRuns.map((run) => run.sessionId),
-  )
-  if (sessionDecision.action === 'refuse') throw new Error(taskBranchSessionRefusal(candidate))
-  return compatibleTaskBranch(cwd, candidate)
+  return compatibleTaskBranch(cwd, taskBranchForDispatchingSession(candidate, dispatchingSession))
 }

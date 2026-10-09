@@ -10,6 +10,7 @@ import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git
 import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
+import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { type PatchEquivalentForm, pullRequestCarriesKey } from './branch-state.ts'
 import {
@@ -32,8 +33,7 @@ export type TaskBranchCandidate = {
   mergeBase: string
   projectId: number
   projectName: string
-  nominatingRuns: { id: number; sessionId: string | null }[]
-  runIds: number[]
+  nominatingRuns: TaskBranchNominatingRun[]
   trunk: string
   worktree: Worktree | null
 }
@@ -400,7 +400,6 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       projectId: project.id,
       projectName: project.name,
       nominatingRuns: branchRows.map((row) => ({ id: row.id, sessionId: row.session_id })),
-      runIds: branchRows.map((row) => row.id),
       trunk,
       worktree: path
         ? {
@@ -433,7 +432,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     .map((kept) => {
       const voidCommands = candidates
         .filter((candidate) => candidate !== kept)
-        .flatMap((candidate) => candidate.runIds)
+        .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
         .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
         .join('\n')
       return `  To keep ${kept.branch}:\n${voidCommands}`
@@ -451,6 +450,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 export function taskBranchReuseNotice(candidate: TaskBranchCandidate): string {
   return (
     `! continuing task branch ${candidate.branch} at tip ${candidate.tip} ` +
-    `(runs ${candidate.runIds.join(', ')}); use --base ${candidate.trunk} to start over`
+    `(runs ${candidate.nominatingRuns.map((run) => run.id).join(', ')}); ` +
+    `use --base ${candidate.trunk} to start over`
   )
 }

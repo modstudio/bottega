@@ -128,7 +128,6 @@ test('the detached spec mapping forwards every field to run', () => {
         projectId: 1,
         projectName: 'project',
         nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
-        runIds: [11],
         trunk: 'main',
         worktree: null,
       },
@@ -159,7 +158,7 @@ test('the detached spec mapping forwards every field to run', () => {
     resolvedTaskBranch: {
       branch: 'DEV-63-orch-11',
       tip: 'abc123',
-      runIds: [11],
+      nominatingRuns: [{ id: 11, sessionId: 'session-a' }],
     },
     review: 'feature/DEV-63',
     ownerSession: 'owner',

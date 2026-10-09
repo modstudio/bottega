@@ -28,7 +28,7 @@ const row = (
   launch_base: launchBase,
 })
 
-test('failure-kind mutation: an abandoned run is not a task-branch candidate', () => {
+test('an abandoned run is not a task-branch candidate', () => {
   const kept = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
   const abandoned = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
   db().query("UPDATE run SET failure_kind='abandoned' WHERE id=?").run(abandoned)
@@ -256,7 +256,6 @@ test('task branch reuse notice names branch, tip, contributing runs, and start-o
         { id: 5186, sessionId: 'session-a' },
         { id: 5190, sessionId: 'session-a' },
       ],
-      runIds: [5186, 5190],
       trunk: 'main',
       worktree: null,
     }),
