@@ -1,5 +1,11 @@
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import {
+  type HostedChangeLegReport,
+  hostedChangeLegLine,
+  pullHostedNoteChanges,
+  pullHostedTaskChanges,
+} from './hosted-change-cache.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRuns } from './ingest/runs.ts'
 import {
@@ -16,11 +22,6 @@ import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
 import { type SyncResult, syncEvidence } from './sync.ts'
 import { pullHostedTasks } from './task-cache.ts'
-import {
-  type HostedChangeLegReport,
-  hostedChangeLegLine,
-  pullHostedTaskChanges,
-} from './task-change-cache.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -90,9 +91,10 @@ export type CollectLegResult =
   | { source: string; ok: false; error: string }
 
 export function formatCollectLeg(result: CollectLegResult): string {
-  if (!result.ok) return `${result.source.padEnd(18)}FAILED: ${result.error}`
+  const separator = result.source.length >= 18 ? ' ' : ''
+  if (!result.ok) return `${result.source.padEnd(18)}${separator}FAILED: ${result.error}`
   if (result.hostedChanges)
-    return `${result.source.padEnd(18)}${hostedChangeLegLine(result.hostedChanges)}`
+    return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
   return `${result.source.padEnd(18)}ok`
 }
 
@@ -111,6 +113,7 @@ type HostedCollectDependencies = {
   evidence?: () => Promise<SyncResult>
   tasks?: () => Promise<unknown>
   changes?: () => Promise<HostedChangeLegReport | null | undefined>
+  noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
   notes?: () => Promise<unknown>
   reports?: () => Promise<unknown>
 }
@@ -141,8 +144,14 @@ export async function hostedCollectLegs(
     results.push(await settleLeg(source, work))
     previous = source
     guard?.assertHeld(source)
-    if (source !== 'hosted tasks') continue
-    const changeResult = await settleChangeLeg(dependencies.changes ?? pullHostedTaskChanges)
+    const changeWork =
+      source === 'hosted tasks'
+        ? { name: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges }
+        : source === 'hosted notes'
+          ? { name: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges }
+          : null
+    if (!changeWork) continue
+    const changeResult = await settleChangeLeg(changeWork.name, changeWork.work)
     if (!changeResult) continue
     results.push(changeResult)
     previous = changeResult.source
@@ -152,16 +161,17 @@ export async function hostedCollectLegs(
 }
 
 async function settleChangeLeg(
+  source: string,
   work: () => Promise<HostedChangeLegReport | null | undefined>,
 ): Promise<CollectLegResult | null> {
   try {
     const report = await work()
     if (report == null) return null
-    return { source: 'hosted changes', ok: true, hostedChanges: report }
+    return { source, ok: true, hostedChanges: report }
   } catch (error) {
     const message = (error as Error).message
-    console.error(`hub: hosted changes collect failed: ${message}`)
-    return { source: 'hosted changes', ok: false, error: message }
+    console.error(`hub: ${source} collect failed: ${message}`)
+    return { source, ok: false, error: message }
   }
 }
 

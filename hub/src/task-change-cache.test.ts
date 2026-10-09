@@ -2,13 +2,13 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import type { HostedTask } from './hosted-tasks.ts'
-import { applyHostedTask, pullHostedTasks } from './task-cache.ts'
 import {
   HOSTED_CHANGES_CURSOR_KEY,
   MAX_HOSTED_CHANGE_PAGES_PER_PASS,
   pullHostedTaskChanges,
-} from './task-change-cache.ts'
+} from './hosted-change-cache.ts'
+import type { HostedTask } from './hosted-tasks.ts'
+import { applyHostedTask, pullHostedTasks } from './task-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -501,6 +501,7 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
     }),
     tasks: () => pullHostedTasks(request),
     changes: () => pullHostedTaskChanges(request),
+    noteChanges: async () => null,
     notes: async () => {},
     reports: async () => {},
   })
@@ -511,9 +512,10 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
     { source: 'hosted evidence', ok: true },
     { source: 'hosted tasks', ok: true },
     {
-      source: 'hosted changes',
+      source: 'hosted task changes',
       ok: false,
-      error: 'hosted change pulls failed: space-one: hosted hub refused the request (503): offline',
+      error:
+        'hosted task change pulls failed: space-one: hosted hub refused the request (503): offline',
     },
     { source: 'hosted notes', ok: true },
     { source: 'hosted reports', ok: true },
@@ -523,7 +525,7 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
 test('the collect line prints the four change counts per space', () => {
   expect(
     formatCollectLeg({
-      source: 'hosted changes',
+      source: 'hosted task changes',
       ok: true,
       hostedChanges: {
         upsertsChanged: 3,
@@ -541,7 +543,7 @@ test('the collect line prints the four change counts per space', () => {
         ],
       },
     }),
-  ).toBe('hosted changes    space-one 3 changed, 10 no-op, 1 deleted, 0 skipped')
+  ).toBe('hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped')
 })
 
 test('the page bound stops a pass and the next pass continues from the stored cursor', async () => {

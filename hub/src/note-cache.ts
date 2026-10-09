@@ -66,24 +66,33 @@ export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledg
     acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings`)
     .run(row.id, row.note_id, row.session_id, row.acknowledged_at, row.sightings)
 }
+export function applyHostedNoteRows(
+  conn: Database,
+  changes: Pick<
+    Awaited<ReturnType<typeof hostedNoteChanges>>,
+    'notes' | 'acknowledgements' | 'projectCounters'
+  >,
+) {
+  changes.notes.forEach((row) => {
+    applyHostedNote(conn, row)
+  })
+  changes.acknowledgements.forEach((row) => {
+    applyHostedAcknowledgement(conn, row)
+  })
+  changes.projectCounters.forEach((counter) => {
+    conn
+      .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
+        ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
+      .run(counter.project, counter.next)
+  })
+}
 export function applyHostedNoteChanges(
   changes: Awaited<ReturnType<typeof hostedNoteChanges>>,
   cursorKey = CURSOR_KEY,
   clearLegacyCursor = false,
 ) {
   writeTransaction((conn) => {
-    changes.notes.forEach((row) => {
-      applyHostedNote(conn, row)
-    })
-    changes.acknowledgements.forEach((row) => {
-      applyHostedAcknowledgement(conn, row)
-    })
-    changes.projectCounters.forEach((counter) => {
-      conn
-        .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
-          ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
-        .run(counter.project, counter.next)
-    })
+    applyHostedNoteRows(conn, changes)
     conn
       .query(
         `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
@@ -122,6 +131,12 @@ async function completeAcknowledgementNotes(
   }
 }
 
+export async function hostedNotePullRows(cursor: string | null, options: NoteClientOptions) {
+  const changes = await hostedNoteChanges(cursor, options)
+  await completeAcknowledgementNotes(changes, options)
+  return changes
+}
+
 export async function pullHostedNotes(options: NoteClientOptions = {}) {
   const identity = await hostedTaskIdentity(options)
   const spaces = notePullSpaces(projects(), identity)
@@ -132,8 +147,7 @@ export async function pullHostedNotes(options: NoteClientOptions = {}) {
     const { selected, legacy } = pullCursor(spaceId, identity.activeSpaceId)
     try {
       const requestOptions = { ...options, recordSpace: spaceId }
-      const changes = await hostedNoteChanges(selected ?? legacy ?? null, requestOptions)
-      await completeAcknowledgementNotes(changes, requestOptions)
+      const changes = await hostedNotePullRows(selected ?? legacy ?? null, requestOptions)
       applyHostedNoteChanges(changes, cursorKey, legacy !== undefined)
       totals.notes += changes.notes.length
       totals.acknowledgements += changes.acknowledgements.length
