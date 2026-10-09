@@ -14,6 +14,9 @@ nd = "nd"
 unparseable = "unparseable"
 # Composer uses `analyse` as a conventional script name.
 analyse = "analyse"
+# The test-substance check's declared status wording is `runner not recognised`.
+recognised = "recognised"
+unrecognised = "unrecognised"
 
 [default.extend-identifiers]
 # `ba` is a regex fragment that includes both `bash` and `sh`.

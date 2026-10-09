@@ -100,7 +100,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
   rule(
     'test-observations',
     'Assert observable effects rather than interactions.',
-    'scripts/quality/check-no-expect.ts',
+    'scripts/quality/check-test-substance.ts',
     '.agents/rules/30-tests.md',
   ),
   rule(

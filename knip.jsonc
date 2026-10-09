@@ -50,7 +50,7 @@
         "scripts/architecture.test.ts",
         "!scripts/check-runtime.ts",
         "scripts/generate-recipe-schema.ts!",
-        "scripts/quality/check-no-expect.ts!"
+        "scripts/quality/check-test-substance.ts!"
       ],
       "project": ["scripts/**/*.ts!", "shared/**/*.ts!", "scripts/architecture.ts!"],
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
