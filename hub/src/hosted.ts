@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
+import { changeApi } from './change-api.ts'
 import { evidenceApi } from './evidence-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
 import { noteApi } from './note-api.ts'
@@ -37,6 +38,8 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
       if (health) return health
       const evidence = await evidenceApi(req, config)
       if (evidence) return evidence
+      const changes = await changeApi(req, config)
+      if (changes) return changes
       const tasks = await taskApi(req, config)
       if (tasks) return tasks
       const notes = await noteApi(req, config)

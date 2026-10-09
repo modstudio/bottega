@@ -54,7 +54,6 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-api.ts',
     allowed: [
       '../../shared/record-space-membership.ts',
-      './change-api.ts',
       './hosted-route-identity.ts',
       './hosted-task-prune.ts',
       './hosted-tasks.ts',

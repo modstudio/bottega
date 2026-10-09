@@ -17,16 +17,6 @@ import {
 
 export const MAX_HUB_CHANGE_PAGE_SIZE = 500
 
-type ChangeRow =
-  | HostedTask
-  | HostedComment
-  | HostedDocument
-  | HostedStatusEvent
-  | HostedSend
-  | HostedNote
-  | HostedAcknowledgement
-type Reader = (tx: SQL, spaceId: string, ids: readonly string[]) => Promise<Map<string, ChangeRow>>
-
 const rows = <T>(value: unknown) => value as T[]
 const byId = <T extends { id: string }>(values: T[]) =>
   new Map(values.map((value) => [value.id, value] as const))
@@ -47,73 +37,60 @@ async function taskRows<T extends { id: string }>(
     ).map(serialize),
   )
 }
-const readTask: Reader = (tx, spaceId, ids) =>
-  taskRows(tx, spaceId, ids, 'hub_task', hostedTaskPullSerializers.hub_task)
-const readComment: Reader = (tx, spaceId, ids) =>
-  taskRows(tx, spaceId, ids, 'hub_task_comment', hostedTaskPullSerializers.hub_task_comment)
-const readDocument: Reader = (tx, spaceId, ids) =>
-  taskRows(tx, spaceId, ids, 'hub_task_document', hostedTaskPullSerializers.hub_task_document)
-const readStatusEvent: Reader = (tx, spaceId, ids) =>
-  taskRows(
-    tx,
-    spaceId,
-    ids,
-    'hub_task_status_event',
-    hostedTaskPullSerializers.hub_task_status_event,
-  )
-const readNote: Reader = async (tx, spaceId, ids) => {
-  if (!ids.length) return new Map()
-  return byId(
-    rows<HostedNote>(
-      await tx`SELECT hub_note.*,number::int number FROM hub_note
-        WHERE space_id=${spaceId}::uuid
-        AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
-    ).map(hostedNotePullSerializers.hub_note),
-  )
-}
-const readAcknowledgement: Reader = (tx, spaceId, ids) =>
-  taskRows(
-    tx,
-    spaceId,
-    ids,
-    'hub_note_acknowledgement',
-    hostedNotePullSerializers.hub_note_acknowledgement,
-  )
-const readSend: Reader = async (tx, spaceId, ids) => {
-  if (!ids.length) return new Map()
-  const selected = rows<HostedSend & { recipient_details_json: string }>(
-    await tx`SELECT id,at,"window",recipients,projects,items,status,error,test,
-      created_at,machine,subscription_id,period_start,period_end,
-      COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
-        ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')::text
-        AS recipient_details_json
-      FROM hub_send WHERE space_id=${spaceId}::uuid
-      AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
-  )
-  return byId(selected.map(serializeHostedSend))
-}
+const taskReader =
+  <T extends { id: string }>(table: string, serialize: (row: T) => T) =>
+  async (tx: SQL, spaceId: string, ids: readonly string[]) =>
+    taskRows(tx, spaceId, ids, table, serialize)
 
 export const READABLE_HUB_CHANGES = {
-  hub_task: { serializer: hostedTaskPullSerializers.hub_task, reader: readTask },
-  hub_task_comment: { serializer: hostedTaskPullSerializers.hub_task_comment, reader: readComment },
-  hub_task_document: {
-    serializer: hostedTaskPullSerializers.hub_task_document,
-    reader: readDocument,
+  hub_task: taskReader<HostedTask>('hub_task', hostedTaskPullSerializers.hub_task),
+  hub_task_comment: taskReader<HostedComment>(
+    'hub_task_comment',
+    hostedTaskPullSerializers.hub_task_comment,
+  ),
+  hub_task_document: taskReader<HostedDocument>(
+    'hub_task_document',
+    hostedTaskPullSerializers.hub_task_document,
+  ),
+  hub_task_status_event: taskReader<HostedStatusEvent>(
+    'hub_task_status_event',
+    hostedTaskPullSerializers.hub_task_status_event,
+  ),
+  hub_send: async (tx: SQL, spaceId: string, ids: readonly string[]) => {
+    if (!ids.length) return new Map<string, HostedSend>()
+    const selected = rows<HostedSend & { recipient_details_json: string }>(
+      await tx`SELECT id,at,"window",recipients,projects,items,status,error,test,
+        created_at,machine,subscription_id,period_start,period_end,
+        COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
+          ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')::text
+          AS recipient_details_json
+        FROM hub_send WHERE space_id=${spaceId}::uuid
+        AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
+    )
+    return byId(selected.map(serializeHostedSend))
   },
-  hub_task_status_event: {
-    serializer: hostedTaskPullSerializers.hub_task_status_event,
-    reader: readStatusEvent,
+  hub_note: async (tx: SQL, spaceId: string, ids: readonly string[]) => {
+    if (!ids.length) return new Map<string, HostedNote>()
+    return byId(
+      rows<HostedNote>(
+        await tx`SELECT hub_note.*,number::int number FROM hub_note
+          WHERE space_id=${spaceId}::uuid
+          AND id=ANY(string_to_array(${idList(ids)},',')::uuid[])`,
+      ).map(hostedNotePullSerializers.hub_note),
+    )
   },
-  hub_send: { serializer: serializeHostedSend, reader: readSend },
-  hub_note: { serializer: hostedNotePullSerializers.hub_note, reader: readNote },
-  hub_note_acknowledgement: {
-    serializer: hostedNotePullSerializers.hub_note_acknowledgement,
-    reader: readAcknowledgement,
-  },
+  hub_note_acknowledgement: taskReader<HostedAcknowledgement>(
+    'hub_note_acknowledgement',
+    hostedNotePullSerializers.hub_note_acknowledgement,
+  ),
 } as const
 
 const HUB_CHANGES_NOT_YET_READABLE = ['hub_interval', 'hub_day'] as const
 export type ReadableHubChangeTable = keyof typeof READABLE_HUB_CHANGES
+type ReaderRow<T> = T extends (...args: infer _Args) => Promise<Map<string, infer Row>>
+  ? Row
+  : never
+type ChangeRow = ReaderRow<(typeof READABLE_HUB_CHANGES)[ReadableHubChangeTable]>
 
 export function hubChangeReadability(table: string): 'readable' | 'not-yet-readable' | null {
   if (table in READABLE_HUB_CHANGES) return 'readable'
@@ -193,7 +170,7 @@ export async function readHostedChangesInTransaction(
           !superseded.has(`${entry.table_name}:${entry.row_id}`),
       )
       .map((entry) => entry.row_id)
-    const found = await READABLE_HUB_CHANGES[table].reader(tx, identity.spaceId, ids)
+    const found = await READABLE_HUB_CHANGES[table](tx, identity.spaceId, ids)
     for (const [id, row] of found) currentRows.set(`${table}:${id}`, row)
   }
   const changes = finalEntries.flatMap((entry) => {
@@ -226,6 +203,7 @@ export async function listHostedChanges(
   const client = new SQL(url)
   try {
     return await client.begin(async (tx) => {
+      // Head, entries, and rows share one snapshot, so a returned row is never newer than next.
       await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
       await bindTenant(tx, identity)
       return readHostedChangesInTransaction(tx, identity, input)

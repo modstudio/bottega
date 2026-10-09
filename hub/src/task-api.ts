@@ -1,5 +1,4 @@
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
-import { changeApi } from './change-api.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
@@ -220,7 +219,6 @@ export async function taskApi(
   dependencies: Dependencies = {},
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  if (url.pathname === '/v1/changes') return changeApi(request, config)
   if (!url.pathname.startsWith('/v1/tasks')) return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
