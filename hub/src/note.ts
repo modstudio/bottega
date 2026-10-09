@@ -373,15 +373,6 @@ export function resolveNoteReference(value: string, sessionProject: string | nul
         .get(project, number)
     : null
   if (inProject) return inProject.record_id
-  if (isLabel) {
-    throw new Error(
-      `no note ${formatNoteLabel(project!, number)}; use a project#number label or run \`hub note list\``,
-    )
-  }
-  const matches = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM note WHERE number=? LIMIT 2')
-    .all(number)
-  if (matches.length === 1) return matches[0]!.record_id
   const expected = formatNoteLabel(project ?? '<project>', number)
   throw new Error(`no note ${expected}; use a project#number label or run \`hub note list\``)
 }

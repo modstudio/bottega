@@ -5,6 +5,7 @@ CREATE TABLE worker_note_request (
   run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
   text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 1000 AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
   file TEXT CHECK (file IS NULL OR length(file) BETWEEN 1 AND 1000),
+  same_as TEXT CHECK (same_as IS NULL OR length(same_as) BETWEEN 1 AND 1000),
   requested_at TEXT NOT NULL,
   claimed_at TEXT,
   finished_at TEXT,

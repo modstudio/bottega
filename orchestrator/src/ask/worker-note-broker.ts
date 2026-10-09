@@ -10,7 +10,13 @@ import {
 } from './worker-note-request.ts'
 
 const WORKER_NOTE_POLL_MS = 100
-type PendingNote = { id: number; run_id: number; text: string; file: string | null }
+type PendingNote = {
+  id: number
+  run_id: number
+  text: string
+  file: string | null
+  same_as: string | null
+}
 
 function storeContention(error: unknown): boolean {
   const candidate = error as { code?: unknown; message?: unknown }
@@ -25,7 +31,7 @@ function claim(runId: number): PendingNote | null {
   return writeTransaction(() => {
     const row = db()
       .query(
-        `SELECT id,run_id,text,file FROM worker_note_request
+        `SELECT id,run_id,text,file,same_as FROM worker_note_request
          WHERE run_id=? AND status='requested' AND claimed_at IS NULL ORDER BY id LIMIT 1`,
       )
       .get(runId) as PendingNote | null
@@ -102,6 +108,7 @@ async function file(request: PendingNote, filer: WorkerNoteFiler): Promise<void>
     const filed = await filer(runFacts(request.run_id), {
       text: request.text,
       ...(request.file ? { file: request.file } : {}),
+      ...(request.same_as ? { sameAs: request.same_as } : {}),
     })
     outcome = { status: 'filed', ...filed }
   } catch (error) {

@@ -2,10 +2,12 @@ import { expect, test } from 'bun:test'
 import { noteCuratorPrompt } from './note.ts'
 import {
   NOTE_DUPLICATE_PROMPT,
+  NOTE_USAGE,
   noteCandidateLine,
   noteDropLine,
   noteFiledJson,
   noteFiledOutput,
+  noteHelpRequested,
   noteKeepLine,
   noteListLine,
   noteSameLine,
@@ -75,4 +77,11 @@ test('new note JSON carries UUID, number, label, and candidate identities', () =
       },
     ],
   })
+})
+
+test('note help scanning owns note value flags and usage', () => {
+  expect(NOTE_USAGE).toContain('hub note new')
+  expect(noteHelpRequested(['new', 'text', '--help'])).toBe(true)
+  expect(noteHelpRequested(['new', 'text', '--same-as', '--help'])).toBe(false)
+  expect(noteHelpRequested(['list', '--project', '--help'])).toBe(false)
 })

@@ -195,11 +195,12 @@ test('note UUID reference migration preserves rows and turns old integers into d
     expect(
       database
         .query(
-          `SELECT note_record_id,note_label,candidate_ids,candidate_labels
+          `SELECT same_as,note_record_id,note_label,candidate_ids,candidate_labels
            FROM worker_note_request`,
         )
         .get(),
     ).toEqual({
+      same_as: null,
       note_record_id: null,
       note_label: '71',
       candidate_ids: '[]',

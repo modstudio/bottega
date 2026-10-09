@@ -188,7 +188,8 @@ test('thread results have one pinned shape in local and hosted modes', async () 
   })
 
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const message = hostedMessage()
+  const unresolvedNoteId = '01990000-0000-7000-8000-000000000099'
+  const message = { ...hostedMessage(), noteId: unresolvedNoteId }
   const hosted = await boardThread(message.id, {
     env,
     client: {
@@ -198,7 +199,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
   })
   const { noteId: _noteId, ...hostedRoot } = message
   expect(hosted).toEqual({
-    root: { ...hostedRoot, noteRecordId: null, noteLabel: null, text: null },
+    root: { ...hostedRoot, noteRecordId: unresolvedNoteId, noteLabel: null, text: null },
     replies: [],
   })
 })

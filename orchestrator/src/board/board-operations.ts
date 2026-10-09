@@ -412,9 +412,13 @@ export async function boardThread(id: string, inputContext?: Context) {
   if (mode === 'local') return localThread(readThread(parsed as number, c.env, c.clock))
   const thread = hostedThread(await hostedClient(c).getBoardThread(parsed as string))
   if (thread.root.noteRecordId) {
-    thread.root.noteLabel = await resolveAcceptedAnswerNoteLabel(thread.root.noteRecordId, {
-      cwd: c.cwd,
-    })
+    try {
+      thread.root.noteLabel = await resolveAcceptedAnswerNoteLabel(thread.root.noteRecordId, {
+        cwd: c.cwd,
+      })
+    } catch {
+      thread.root.noteLabel = null
+    }
   }
   return thread
 }

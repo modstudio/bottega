@@ -180,7 +180,7 @@ describe('suggestion notes', () => {
       expect(created.id).toBe(41)
     })
 
-    test('resolves note labels, session-project numbers, unique fallback numbers and UUIDs', () => {
+    test('resolves note labels, session-project numbers and UUIDs without cross-project fallback', () => {
       const workshopId = crypto.randomUUID()
       const alphaId = crypto.randomUUID()
       writeTransaction((conn) =>
@@ -192,7 +192,12 @@ describe('suggestion notes', () => {
       )
       expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
       expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
-      expect(resolveNoteReference('42', 'workshop')).toBe(alphaId)
+      expect(() => resolveNoteReference('42', 'workshop')).toThrow(
+        'no note workshop#42; use a project#number label or run `hub note list`',
+      )
+      expect(() => resolveNoteReference('42', null)).toThrow(
+        'no note <project>#42; use a project#number label or run `hub note list`',
+      )
       expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
         'no note alpha#41; use a project#number label or run `hub note list`',
       )

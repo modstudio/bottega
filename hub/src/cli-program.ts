@@ -21,7 +21,7 @@ import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
-import { runNoteCommand } from './note-cli.ts'
+import { NOTE_USAGE, noteHelpRequested, runNoteCommand } from './note-cli.ts'
 import { startDashboardCapability } from './orch.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
@@ -82,17 +82,15 @@ const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
 const hubHelpRequested = () => {
   if (cmd === 'task') return taskHelpRequested(argv.slice(1))
+  if (cmd === 'note') return noteHelpRequested(argv.slice(1))
   if (isHelpToken(cmd) || argv[1] === 'help') return true
   const valueFlags = new Set([
-    '--area',
     '--hours',
     '--only',
     '--parent',
     '--port',
     '--project',
-    '--reason',
     '--role',
-    '--same-as',
     '--session',
     '--since',
     '--status',
@@ -169,16 +167,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
 
   ${TASK_USAGE}
 
-  hub note new "<text>" [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
-  hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
-  hub note same <LABEL|UUID|NUMBER> <LABEL|UUID|NUMBER>
-  hub note keep <LABEL|UUID|NUMBER>...
-  hub note promote <LABEL|UUID|NUMBER>
-  hub note drop <LABEL|UUID|NUMBER> --reason "..."
-  hub note stale              mark vanished anchors and reap eligible notes
-  hub note curate [--scheduled]
-  hub note curator [--enable|--disable]
-  hub note push [--dry-run]   migrate and verify the local note cache
+  ${NOTE_USAGE}
 
   hub report subscribe --scope space|project|person [--project NAME] --cadence daily|weekly
                               --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]
@@ -630,7 +619,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
  */
 try {
   if (hubHelpRequested()) {
-    console.log(cmd === 'task' ? TASK_USAGE : USAGE)
+    console.log(cmd === 'task' ? TASK_USAGE : cmd === 'note' ? NOTE_USAGE : USAGE)
     process.exit(0)
   }
 

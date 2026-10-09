@@ -63,7 +63,12 @@ import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
-import { validateWorkerNoteInput, type WorkerNoteInput, type WorkerNoteRun } from './worker-note.ts'
+import {
+  validateWorkerNoteInput,
+  type WorkerNoteFiledResult,
+  type WorkerNoteInput,
+  type WorkerNoteRun,
+} from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
 
 /**
@@ -424,15 +429,7 @@ export async function ask(o: {
  * spawned the agent, which is the only party that actually knows.
  */
 type AskServerDependencies = {
-  fileWorkerNote(
-    run: WorkerNoteRun,
-    input: WorkerNoteInput,
-  ): Promise<{
-    noteRecordId: string
-    noteLabel: string
-    candidateNotes: { recordId: string; label: string }[]
-    anchorDropped?: string
-  }>
+  fileWorkerNote(run: WorkerNoteRun, input: WorkerNoteInput): Promise<WorkerNoteFiledResult>
   gate?: GateWaitDependencies
   lifecycle?: AskLifecycle
 }

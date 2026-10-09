@@ -17,6 +17,41 @@ import {
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 
+export const NOTE_USAGE = `hub note new "<text>" [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
+  hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
+  hub note same <LABEL|UUID|NUMBER> <LABEL|UUID|NUMBER>
+  hub note keep <LABEL|UUID|NUMBER>...
+  hub note promote <LABEL|UUID|NUMBER>
+  hub note drop <LABEL|UUID|NUMBER> --reason "..."
+  hub note stale              mark vanished anchors and reap eligible notes
+  hub note curate [--scheduled]
+  hub note curator [--enable|--disable]
+  hub note push [--dry-run]   migrate and verify the local note cache`
+
+const NOTE_VALUE_FLAGS = new Set([
+  '--anchor-json',
+  '--area',
+  '--project',
+  '--reason',
+  '--same-as',
+  '--session',
+  '--task',
+])
+
+export function noteHelpRequested(argv: readonly string[]): boolean {
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') return true
+  let expectingValue = false
+  for (const token of argv.slice(1)) {
+    if (expectingValue) {
+      expectingValue = false
+      continue
+    }
+    if (token === '--help' || token === '-h') return true
+    expectingValue = NOTE_VALUE_FLAGS.has(token)
+  }
+  return false
+}
+
 const option = (argv: string[], name: string) => {
   const index = argv.indexOf(`--${name}`)
   return index >= 0 ? argv[index + 1] : undefined

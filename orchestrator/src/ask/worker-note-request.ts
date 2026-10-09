@@ -8,13 +8,7 @@ const WORKER_NOTE_POLL_MS = 100
 
 export type WorkerNoteRefusalClass = 'anchor-refused' | 'filing-refused' | 'supervisor-closed'
 export type WorkerNoteOutcome =
-  | {
-      status: 'filed'
-      noteRecordId: string
-      noteLabel: string
-      candidateNotes: { recordId: string; label: string }[]
-      anchorDropped?: string
-    }
+  | ({ status: 'filed' } & WorkerNoteFiledResult)
   | { status: 'refused'; refusalClass: WorkerNoteRefusalClass; detail: string }
 
 export function workerNoteTransition(
@@ -66,10 +60,10 @@ export async function requestWorkerNote(
   writableDb()
   const request = db()
     .query(
-      `INSERT INTO worker_note_request (run_id,text,file,requested_at,status)
-       VALUES (?,?,?,?, 'requested') RETURNING id`,
+      `INSERT INTO worker_note_request (run_id,text,file,same_as,requested_at,status)
+       VALUES (?,?,?,?,?,'requested') RETURNING id`,
     )
-    .get(run.id, input.text, input.file ?? null, nowIso()) as { id: number }
+    .get(run.id, input.text, input.file ?? null, input.sameAs ?? null, nowIso()) as { id: number }
   const deadline = Date.now() + WORKER_NOTE_WAIT_MS
   while (Date.now() < deadline) {
     const row = db()
