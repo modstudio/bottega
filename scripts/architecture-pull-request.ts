@@ -20,6 +20,7 @@ export const pullRequestModuleSpecs = [
       '../project/projects.ts',
       '../record/landing-outbox.ts',
       '../review/review-group.ts',
+      '../review/review-applicability.ts',
       './admission-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',

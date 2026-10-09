@@ -3,14 +3,20 @@
 
 import type { TriageReviewRow } from '../review/review-group.ts'
 
+export type TriageReviewGroup = {
+  reviews: readonly TriageReviewRow[]
+  applicableLenses: readonly string[]
+}
+
 export type TriageEvidence = {
   patchId: string
   pathSet: string
   tip: string
   tier: 0 | 1 | 2 | 3
+  applicableLenses: readonly string[]
   branchOwnerSession: string | null
   reviews: readonly TriageReviewRow[]
-  branchReviews: readonly TriageReviewRow[]
+  branchReviewGroups: readonly TriageReviewGroup[]
   reads: readonly {
     id: number
     tip: string
@@ -39,7 +45,7 @@ export type TriageDecision =
       missingReview: boolean
       unfinishedReviewIds: number[]
       undisposedFindings: { id: number; reviewId: number; ordinal: number }[]
-      roundsOwed: number
+      missingLenses: string[]
       architectReadRequired: boolean
       earlierReviewId: number | null
       earlierReviewTier: 0 | 1 | 2 | 3 | null
@@ -47,29 +53,22 @@ export type TriageDecision =
     }
 
 type CompleteReviewRound = {
-  reviews: TriageReviewRow[]
+  reviews: readonly TriageReviewRow[]
   tier: 0 | 1 | 2 | 3
   completedAt: string
 }
 
 function mostRecentCompleteRound(
-  branchReviews: readonly TriageReviewRow[],
+  branchReviewGroups: readonly TriageReviewGroup[],
 ): CompleteReviewRound | null {
-  const groups = new Map<string, TriageReviewRow[]>()
-  for (const review of branchReviews) {
-    if (review.patchId === null || review.pathSet === null) continue
-    const key = JSON.stringify([review.patchId, review.pathSet])
-    const group = groups.get(key) ?? []
-    group.push(review)
-    groups.set(key, group)
-  }
-  for (const reviews of groups.values()) {
+  for (const { reviews, applicableLenses } of branchReviewGroups) {
     if (reviews.some((review) => review.completedAt === null || review.tier === null)) continue
     if (reviews.some((review) => review.findings.some((finding) => finding.disposition === null))) {
       continue
     }
     const tier = Math.max(...reviews.map((review) => review.tier!)) as 0 | 1 | 2 | 3
-    if (new Set(reviews.flatMap((review) => review.lensIdentities)).size < tier) continue
+    const judged = new Set(reviews.flatMap((review) => review.lensIdentities))
+    if (applicableLenses.some((lens) => !judged.has(lens))) continue
     return {
       reviews,
       tier,
@@ -86,7 +85,10 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const reviewIds = [...new Set(evidence.reviews.map((row) => row.reviewId))].sort((a, b) => a - b)
   const lensRounds = new Set(evidence.reviews.flatMap((row) => row.lensIdentities)).size
   const findings = evidence.reviews.flatMap((review) =>
-    review.findings.map((finding) => ({ ...finding, reviewId: review.reviewId })),
+    review.findings.map((finding) => ({
+      ...finding,
+      reviewId: review.reviewId,
+    })),
   )
   const snapshot = {
     reviewIds,
@@ -97,7 +99,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     admissionPath: 'exact_review' as const,
     readId: null,
   }
-  const missingReview = evidence.tier > 0 && reviewIds.length === 0
+  const missingReview = evidence.applicableLenses.length > 0 && reviewIds.length === 0
   const unfinishedReviewIds = evidence.reviews
     .filter((row) => row.completedAt === null)
     .map((row) => row.reviewId)
@@ -106,11 +108,21 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     .filter((finding) => finding.disposition === null)
     .map(({ id, reviewId, ordinal }) => ({ id, reviewId, ordinal }))
     .sort((a, b) => a.id - b.id)
-  const roundsOwed = Math.max(0, evidence.tier - lensRounds)
-  if (!missingReview && !unfinishedReviewIds.length && !undisposedFindings.length && !roundsOwed) {
+  const judgedLenses = new Set(
+    evidence.reviews
+      .filter((review) => review.completedAt !== null)
+      .flatMap((review) => review.lensIdentities),
+  )
+  const missingLenses = evidence.applicableLenses.filter((lens) => !judgedLenses.has(lens))
+  if (
+    !missingReview &&
+    !unfinishedReviewIds.length &&
+    !undisposedFindings.length &&
+    !missingLenses.length
+  ) {
     return { complete: true, snapshot }
   }
-  const earlierRound = mostRecentCompleteRound(evidence.branchReviews)
+  const earlierRound = mostRecentCompleteRound(evidence.branchReviewGroups)
   const exactRead = earlierRound
     ? evidence.reads.find(
         (read) =>
@@ -142,7 +154,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     missingReview,
     unfinishedReviewIds,
     undisposedFindings,
-    roundsOwed,
+    missingLenses,
     architectReadRequired: Boolean(earlierRound && !finalTierRaised && !exactRead),
     earlierReviewId: earlierRound?.reviews[0]?.reviewId ?? null,
     earlierReviewTier: earlierRound?.tier ?? null,

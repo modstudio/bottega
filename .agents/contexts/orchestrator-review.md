@@ -40,7 +40,7 @@ Precision measures false positives among findings raised. It says nothing about 
 
 `orch do` detaches so concurrent review can run.
 
-Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Tier `1` runs one `correctness` lens. Tier `2` runs `correctness` plus the surface lens: `migration-safety` for `db.ts`, `craft` for a new module, or `teardown-safety` for `worktree.ts`. Tier `3` runs tier `2` and one more distinct lens chosen for what the change touches, `safety` when no other surface lens applies. A tier counts distinct lenses: a second model on a lens already run adds evidence, not a lens.
+Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `orch review tier`.
 
 The round ceiling and when to re-lens are always-on canon in `.agents/rules/20-build-and-buy.md`. Small and formatting findings are fixed inline in the same round, without re-review. Speculation is dropped in triage as `below-bar`; file it only when it is high or critical, or observed in a real run.
 
@@ -64,7 +64,7 @@ When an agent or gate trips — a harness refusal, lockout, dead resume, or unre
 
 ## Review
 
-Tier decides the lens count as above, and the always-on review budget governs rounds. Read every lens of a tier-`3` round before writing their single fix round, because acting on half the review defeats the pair.
+The project's review declaration decides the applicable lenses, and the always-on review budget governs rounds. Read every lens of a tier-`3` round before writing their single fix round, because acting on half the review defeats the pair.
 
 ## Admission
 

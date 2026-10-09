@@ -96,7 +96,10 @@ export type Project = {
   settings: StoredProjectSettings
 }
 
-export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
+export function resolveBranchRef(value: string): {
+  branch: string
+  runId: number | null
+} {
   if (!/^\d+$/.test(value)) return { branch: value, runId: null }
   const runId = Number(value)
   const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as {
@@ -259,7 +262,10 @@ export function upsertProject(p: {
   settings?: ProjectSettings
 }): void {
   const database = writableDb()
-  writeProjectRegisterRow(database, { ...p, settings: projectSettingsForStorage(p.settings) })
+  writeProjectRegisterRow(database, {
+    ...p,
+    settings: projectSettingsForStorage(p.settings),
+  })
 }
 
 function projectSettingsForStorage(
@@ -577,6 +583,7 @@ type ProjectSettingsValidationContext = {
   currentProjectName?: string
   projectNameAfterWrite?: string
   register?: Pick<Project, 'name' | 'settings'>[]
+  enabledLensIds?: readonly string[]
 }
 
 function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationContext): string[] {
@@ -612,6 +619,21 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
   return problems
 }
 
+function reviewLensProblems(
+  review: ProjectSettings['review'],
+  enabledLensIds: readonly string[] | undefined,
+): string[] {
+  if (!review || !Array.isArray(review.lenses) || enabledLensIds === undefined) return []
+  const enabled = new Set(enabledLensIds)
+  return review.lenses.flatMap((entry, index) =>
+    entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
+      ? [
+          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from orch lens list`,
+        ]
+      : [],
+  )
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -636,6 +658,7 @@ export function validateProjectSettings(
     ...projectSearchProblems(settings.search),
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
+    ...reviewLensProblems(settings.review, context.enabledLensIds),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

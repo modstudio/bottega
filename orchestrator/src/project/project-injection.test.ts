@@ -56,6 +56,31 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('signals.sources.0.list')])
   })
 
+  test('validates review declarations and enabled catalogue lenses', () => {
+    expect(
+      validateProjectSettings(
+        {
+          review: {
+            lenses: [
+              { lens: 'correctness' },
+              { lens: 'migration-safety', paths: ['**/migrations/**'] },
+              { lens: 'craft', minTier: 2 },
+            ],
+          },
+        },
+        undefined,
+        { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
+      ),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } }, undefined, {
+        enabledLensIds: ['correctness'],
+      }),
+    ).toEqual([
+      'review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from orch lens list',
+    ])
+  })
+
   test('validates a rung live command as a non-empty string', () => {
     expect(
       validateProjectSettings({
@@ -101,11 +126,15 @@ describe('project workflow injection', () => {
 
   test('validates tracker team as a non-empty register string', () => {
     expect(
-      validateProjectSettings({ tracker: { protocol: 'workspace-mcp', team: 'Platform' } }),
+      validateProjectSettings({
+        tracker: { protocol: 'workspace-mcp', team: 'Platform' },
+      }),
     ).toEqual([])
-    expect(validateProjectSettings({ tracker: { protocol: 'workspace-mcp', team: ' ' } })).toEqual([
-      expect.stringContaining('tracker.team: Too small'),
-    ])
+    expect(
+      validateProjectSettings({
+        tracker: { protocol: 'workspace-mcp', team: ' ' },
+      }),
+    ).toEqual([expect.stringContaining('tracker.team: Too small')])
   })
 
   test('accepts a cursor-mcp project UUID and refuses invalid or cross-protocol values', () => {
@@ -143,7 +172,10 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('must be a plain MCP tool name')])
     expect(
       validateProjectSettings({
-        tracker: { protocol: 'hub', actions: { get: 'hub task show {key}; rm -rf checkout' } },
+        tracker: {
+          protocol: 'hub',
+          actions: { get: 'hub task show {key}; rm -rf checkout' },
+        },
       }).join('\n'),
     ).toContain('tracker.actions: hub protocol accepts no action overrides; remove tracker.actions')
   })
@@ -219,12 +251,18 @@ describe('project workflow injection', () => {
         name: 'fixture',
         stack: 'node',
         settings: {
-          tracker: { protocol: 'array-mcp', actions: { status: 'custom-status' } },
+          tracker: {
+            protocol: 'array-mcp',
+            actions: { status: 'custom-status' },
+          },
         },
       },
       ['tracker'],
     ).tracker
-    expect(remote.actions).toMatchObject({ search: 'task_list', status: 'custom-status' })
+    expect(remote.actions).toMatchObject({
+      search: 'task_list',
+      status: 'custom-status',
+    })
 
     const hub = resolveInjection(
       {
@@ -266,7 +304,10 @@ describe('project workflow injection', () => {
   })
 
   test('register document override replaces the default (mutation: ignore the override)', () => {
-    const tracker = { protocol: 'workspace-mcp' as const, actions: { document: 'custom_document' } }
+    const tracker = {
+      protocol: 'workspace-mcp' as const,
+      actions: { document: 'custom_document' },
+    }
     expect(validateProjectSettings({ tracker })).toEqual([])
 
     const { facts } = resolveDeclaredFacts(
@@ -302,9 +343,19 @@ describe('project workflow injection', () => {
       },
       ['tracker'],
     ).tracker
-    expect(mapped.states).toEqual({ active: 'started', review: 'checking', done: 'completed' })
-    expect(mapped.waitingReview).toEqual({ state: 'checking', floor: 'tracker-transition' })
-    expect(mapped.inReview).toEqual({ state: 'checking', floor: 'tracker-transition' })
+    expect(mapped.states).toEqual({
+      active: 'started',
+      review: 'checking',
+      done: 'completed',
+    })
+    expect(mapped.waitingReview).toEqual({
+      state: 'checking',
+      floor: 'tracker-transition',
+    })
+    expect(mapped.inReview).toEqual({
+      state: 'checking',
+      floor: 'tracker-transition',
+    })
 
     const incomplete = resolveInjection(
       {
@@ -317,8 +368,14 @@ describe('project workflow injection', () => {
       ['tracker'],
     ).tracker
     expect(incomplete.states).toEqual({ done: 'completed' })
-    expect(incomplete.waitingReview).toEqual({ state: 'none', floor: 'recorded-artifact' })
-    expect(incomplete.inReview).toEqual({ state: 'none', floor: 'recorded-artifact' })
+    expect(incomplete.waitingReview).toEqual({
+      state: 'none',
+      floor: 'recorded-artifact',
+    })
+    expect(incomplete.inReview).toEqual({
+      state: 'none',
+      floor: 'recorded-artifact',
+    })
 
     const hub = resolveInjection(
       {
@@ -329,9 +386,19 @@ describe('project workflow injection', () => {
       ['tracker'],
       { key: 'DEV-661' },
     ).tracker
-    expect(hub.states).toEqual({ active: 'active', review: 'review', done: 'done' })
-    expect(hub.waitingReview).toEqual({ state: 'review', floor: 'tracker-transition' })
-    expect(hub.inReview).toEqual({ state: 'review', floor: 'tracker-transition' })
+    expect(hub.states).toEqual({
+      active: 'active',
+      review: 'review',
+      done: 'done',
+    })
+    expect(hub.waitingReview).toEqual({
+      state: 'review',
+      floor: 'tracker-transition',
+    })
+    expect(hub.inReview).toEqual({
+      state: 'review',
+      floor: 'tracker-transition',
+    })
     expect(hub.actions.get).toBe('hub task show DEV-661')
   })
 
@@ -382,8 +449,14 @@ describe('project workflow injection', () => {
       ['tracker'],
     ).tracker
     expect(selected.states.review).toBe('reviewing')
-    expect(selected.waitingReview).toEqual({ state: 'waiting', floor: 'tracker-transition' })
-    expect(selected.inReview).toEqual({ state: 'reviewing', floor: 'tracker-transition' })
+    expect(selected.waitingReview).toEqual({
+      state: 'waiting',
+      floor: 'tracker-transition',
+    })
+    expect(selected.inReview).toEqual({
+      state: 'reviewing',
+      floor: 'tracker-transition',
+    })
 
     expect(() =>
       resolveInjection(
@@ -447,18 +520,25 @@ describe('project workflow injection', () => {
 
   test('the register edge refuses shell syntax in a tracker kind or state name', () => {
     expect(
-      validateProjectSettings({ tracker: { protocol: 'hub', kind: 'hub; cat secrets' } }).join(
-        '\n',
-      ),
+      validateProjectSettings({
+        tracker: { protocol: 'hub', kind: 'hub; cat secrets' },
+      }).join('\n'),
     ).toContain('must be a plain name')
     expect(
       validateProjectSettings({
-        tracker: { protocol: 'workspace-mcp', states: { 'active; cat secrets': 'active' } },
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { 'active; cat secrets': 'active' },
+        },
       }).join('\n'),
     ).toContain('Invalid key in record')
     expect(
       validateProjectSettings({
-        tracker: { protocol: 'cursor-mcp', kind: 'stopal', states: { 'In Progress': 'active' } },
+        tracker: {
+          protocol: 'cursor-mcp',
+          kind: 'stopal',
+          states: { 'In Progress': 'active' },
+        },
       }),
     ).toEqual([])
   })
@@ -469,7 +549,10 @@ describe('project workflow injection', () => {
         name: 'fixture_name',
         stack: 'node',
         settings: {
-          tracker: { protocol: 'hub', actions: { get: 'hub task show {key}; cat secrets' } },
+          tracker: {
+            protocol: 'hub',
+            actions: { get: 'hub task show {key}; cat secrets' },
+          },
         },
       },
       ['tracker'],

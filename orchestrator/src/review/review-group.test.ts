@@ -75,7 +75,7 @@ test('a rebase credits the complete round from the same branch and never another
       .run(reviewId, run.id, lens)
   }
   addReview('DEV-977', 20, 'correctness')
-  addReview('DEV-977', 21, 'safety')
+  addReview('DEV-977', 21, 'craft')
   addReview('DEV-other', 22, 'foreign')
 
   const selected = reviewsForTriage(database, {
@@ -92,9 +92,15 @@ test('a rebase credits the complete round from the same branch and never another
       pathSet: '["a.ts"]',
       tip: 'rebased-tip',
       tier: 2,
+      applicableLenses: ['correctness', 'craft'],
       branchOwnerSession: 'owner',
       reviews: selected.reviews,
-      branchReviews: selected.branchReviews,
+      branchReviewGroups: [
+        {
+          reviews: selected.branchReviews,
+          applicableLenses: ['correctness', 'craft'],
+        },
+      ],
       reads: [
         {
           id: 30,

@@ -101,7 +101,11 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
   }
   const parsed = JSON.parse(result.stdout) as {
-    task?: { key?: string; status?: string | null; status_category?: string | null }
+    task?: {
+      key?: string
+      status?: string | null
+      status_category?: string | null
+    }
     comments?: Array<{ id?: number | string }>
     tracker_comments_verifiable?: boolean
   }
@@ -314,9 +318,9 @@ function gatherReview(
   const lenses = d
     .query<{ total: number; ungraded: number }, [number]>(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
-                       THEN 1 ELSE 0 END) AS ungraded
-         FROM review_lens WHERE review_id=?`,
+                SUM(CASE WHEN reproduced IS NULL OR coverage IS NULL OR limits IS NULL OR overlap IS NULL
+                         THEN 1 ELSE 0 END) AS ungraded
+           FROM review_lens WHERE review_id=?`,
     )
     .get(id) ?? { total: 0, ungraded: 0 }
   return {
@@ -379,7 +383,11 @@ function sessionOrAdopterFor(
     cursorSession !== null && actorSession !== null
       ? loadAdoptionReasons(cursorId, actorSession, d)
       : []
-  return sessionOrAdopterMatch({ cursorSession, actorSession, adoptionReasons })
+  return sessionOrAdopterMatch({
+    cursorSession,
+    actorSession,
+    adoptionReasons,
+  })
 }
 
 function requireRunBinding(
@@ -528,7 +536,9 @@ function resolveNumericArtifact(
   runHasArtifacts: (runId: number) => boolean,
 ): { ref: string; exists: boolean } {
   const doc = d.query('SELECT id FROM doc WHERE id=?').get(id)
-  const run = d.query('SELECT id FROM run WHERE id=?').get(id) as { id: number } | null
+  const run = d.query('SELECT id FROM run WHERE id=?').get(id) as {
+    id: number
+  } | null
   const runOk = run !== null && runHasArtifacts(id)
   if (doc && runOk)
     throw new Error(`--artifact ${id} matches both a doc and a run; pass doc:${id} or run:${id}`)
@@ -581,7 +591,13 @@ function resolveArtifact(
   if (ref.kind === 'attached-text') {
     const row = d
       .query<
-        { id: number; cursor_id: number; step_ordinal: number; step_slug: string; body: string },
+        {
+          id: number
+          cursor_id: number
+          step_ordinal: number
+          step_slug: string
+          body: string
+        },
         [number]
       >(
         `SELECT id,cursor_id,step_ordinal,step_slug,body
@@ -659,7 +675,9 @@ function gatherTask(
     throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   if (!ports.readTask)
     throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
-  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, { fresh: true })
+  const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, {
+    fresh: true,
+  })
   const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null

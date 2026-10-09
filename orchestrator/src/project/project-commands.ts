@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
-import { selectProjectProfile } from '../lens/lenses.ts'
+import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
@@ -31,8 +31,16 @@ import {
   writeHostedProject,
 } from './projects.ts'
 
-type ProjectFlags = { has(name: string): boolean; flag(name: string): string | undefined }
+type ProjectFlags = {
+  has(name: string): boolean
+  flag(name: string): string | undefined
+}
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
+
+const enabledLensIds = (): string[] =>
+  listLenses()
+    .filter((lens) => lens.enabled)
+    .map((lens) => lens.id)
 
 function listedProjectJson(project: Project) {
   const { retiredAt, ...rest } = project
@@ -139,6 +147,7 @@ export async function addProject(
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
+    enabledLensIds: enabledLensIds(),
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   await validateDeclaredSpace(input.settings, requireMembership)
@@ -255,9 +264,14 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
     validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
     currentProjectName: current.name,
     register: projects(),
+    enabledLensIds: enabledLensIds(),
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
-  const candidate = { ...current, stack: input.fill.stack ?? current.stack, settings }
+  const candidate = {
+    ...current,
+    stack: input.fill.stack ?? current.stack,
+    settings,
+  }
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length) throw new Error(incomplete.join('\n'))
   return candidate
@@ -404,7 +418,9 @@ async function persistSetProject(
   currentName: string,
   nextName: string,
   previousTrunk: string | null,
-  candidate: Parameters<typeof upsertProject>[0] & { settings: { trunk?: unknown } },
+  candidate: Parameters<typeof upsertProject>[0] & {
+    settings: { trunk?: unknown }
+  },
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
@@ -467,6 +483,7 @@ async function setProjectCommand(
     currentProjectName: name,
     projectNameAfterWrite: nextName,
     register: projects(),
+    enabledLensIds: enabledLensIds(),
   }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)

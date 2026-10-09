@@ -34,6 +34,7 @@ export type HostedProjectColumns = {
   mcpProbeTool: string | null
   docs: string | null
   signals: string | null
+  review: string | null
   release: string | null
   states: string | null
   tracker: string | null
@@ -60,6 +61,7 @@ export const PROJECT_SETTING_COLUMNS = {
   requireCleanMain: 'requireCleanMain',
   secretPaths: 'secretPaths',
   signals: 'signals',
+  review: 'review',
   states: 'states',
   tracker: 'tracker',
   trunk: 'landingBranch',
@@ -167,6 +169,10 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.signals]: document(
       settings.signals,
       `project ${project} settings.signals`,
+    ),
+    [PROJECT_SETTING_COLUMNS.review]: document(
+      settings.review,
+      `project ${project} settings.review`,
     ),
     [PROJECT_SETTING_COLUMNS.release]: document(
       settings.release,

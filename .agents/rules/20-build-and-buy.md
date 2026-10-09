@@ -39,9 +39,10 @@ search.
 ## Review within the tier's budget
 
 `review-tier.ts:classifyReviewTier` sets a change's tier from the higher of
-risk and cognitive size. The tier fixes the lens count and a hard ceiling on
-lens rounds, counted on the branch: tier `0` runs none, tier `1` one, tier `2`
-two, tier `3` three. Check the tier before the first lens and before every
+risk and cognitive size. The project's review declaration selects the lenses
+that apply to the change at that tier. The tier fixes a hard ceiling on lens
+rounds, counted on the branch; tier `0` runs none.
+Check the tier before the first lens and before every
 later round. At the ceiling, stop and ask the operator; never dispatch another
 round, whatever the new findings' severity.
 
