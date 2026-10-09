@@ -11,14 +11,9 @@ export const LANDING_TREE_EVIDENCE_EXCLUSION = 'landing tree lifecycle row; not 
 
 export function landingTreeOpeningRefusal(input: {
   branch: string | null
-  seeds: readonly string[]
-  seed?: string
   commandHasBranch?: boolean
 }): string | null {
   if (!input.branch) return 'the conversation has no recorded branch; use a finished writer run'
-  if (input.seeds.length && !input.seed) {
-    return `the project lists database seeds and --seed was not given; choose one: ${input.seeds.join(', ')}`
-  }
   if (input.commandHasBranch === false) {
     return 'the command-template create lifecycle has no {branch} placeholder; edit the project register so worktree.create accepts {branch} to open an existing branch'
   }
@@ -34,7 +29,6 @@ export function landingTreeCommandCapability(
         allowed: false,
         reason: landingTreeOpeningRefusal({
           branch: 'recorded',
-          seeds: [],
           commandHasBranch: false,
         })!,
       }

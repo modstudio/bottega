@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { removeProject, upsertProject } from '../project/projects.ts'
-import { preflight, seedPreflight } from './dispatch-preflight.ts'
+import { seedPreflight } from '../worktree/worktree-seed.ts'
+import { preflight } from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
 

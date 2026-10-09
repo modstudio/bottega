@@ -107,11 +107,18 @@ export function register(program: Command): void {
     .requiredOption('--name <text>')
     .option('--key <KEY>')
     .option('--base <ref>')
+    .option('--seed <value>')
     .option('--cwd <path>', '', process.cwd())
     .allowExcessArguments(false)
     .action((options) =>
       treeCreateCommand(
-        { cwd: options.cwd, name: options.name, key: options.key, base: options.base },
+        {
+          cwd: options.cwd,
+          name: options.name,
+          key: options.key,
+          base: options.base,
+          seed: options.seed,
+        },
         { writePath: (path) => write(`${path}\n`) },
       ),
     )

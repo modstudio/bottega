@@ -51,12 +51,7 @@ describe('landing-tree decisions', () => {
   })
 
   test('names opening refusals and their remedies', () => {
-    expect(landingTreeOpeningRefusal({ branch: null, seeds: [] })).toContain(
-      'use a finished writer run',
-    )
-    expect(
-      landingTreeOpeningRefusal({ branch: 'DEV-838-orch-1', seeds: ['none', 'full'] }),
-    ).toContain('choose one: none, full')
+    expect(landingTreeOpeningRefusal({ branch: null })).toContain('use a finished writer run')
   })
   test('requires command templates to accept an existing branch', () => {
     expect(landingTreeCommandCapability('scripts/tree add {branch} {base}')).toEqual({
