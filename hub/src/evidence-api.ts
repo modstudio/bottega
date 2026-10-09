@@ -132,27 +132,9 @@ async function deleteIntervalBatch(
   return Response.json({ error: 'ids must contain at most 500 items' }, { status: 400 })
 }
 
-export async function evidenceApi(
-  request: Request,
-  config: Config,
-  dependencies: Dependencies = {},
-): Promise<Response | null> {
-  const url = new URL(request.url)
-  if (!url.pathname.startsWith('/v1/evidence/')) return null
-  if (!request.headers.has('authorization'))
-    return Response.json(
-      { error: 'authorization and an active space are required' },
-      { status: 401 },
-    )
-  if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
-  const who = await identity(request, config.recordApiUrl, dependencies.fetch ?? fetch)
-  if (!who)
-    return Response.json(
-      { error: 'authorization and an active space are required' },
-      { status: 401 },
-    )
+function evidenceTenant(request: Request, pathname: string, who: Tenant): Tenant | Response {
   const intervalRoute =
-    url.pathname === '/v1/evidence/intervals' &&
+    pathname === '/v1/evidence/intervals' &&
     (request.method === 'PUT' || request.method === 'DELETE')
   const decision = recordSpaceRequestDecision(
     intervalRoute ? request.headers.get('x-record-space') : null,
@@ -172,9 +154,32 @@ export async function evidenceApi(
     decision.spaceId!,
     who.memberships,
   )
-  if (!access.allowed)
-    return Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
-  const tenant = { ...who, spaceId: decision.spaceId! }
+  return access.allowed
+    ? { ...who, spaceId: decision.spaceId! }
+    : Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
+}
+
+export async function evidenceApi(
+  request: Request,
+  config: Config,
+  dependencies: Dependencies = {},
+): Promise<Response | null> {
+  const url = new URL(request.url)
+  if (!url.pathname.startsWith('/v1/evidence/')) return null
+  if (!request.headers.has('authorization'))
+    return Response.json(
+      { error: 'authorization and an active space are required' },
+      { status: 401 },
+    )
+  if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
+  const who = await identity(request, config.recordApiUrl, dependencies.fetch ?? fetch)
+  if (!who)
+    return Response.json(
+      { error: 'authorization and an active space are required' },
+      { status: 401 },
+    )
+  const tenant = evidenceTenant(request, url.pathname, who)
+  if (tenant instanceof Response) return tenant
   const body = await request.json().catch(() => null)
   try {
     if (request.method === 'PUT' && url.pathname === '/v1/evidence/intervals')
