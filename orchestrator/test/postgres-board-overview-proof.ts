@@ -87,6 +87,7 @@ export function registerBoardOverviewProof(input: ProofInput): void {
     const posted = post(input.tokenA(), 'notice', `project:${PROJECT}`, 'receipt-reach', {
       ackRequired: true,
       ackDeadline: new Date(Date.parse(input.expiresAt) - 1).toISOString(),
+      project: PROJECT,
     })
     await body(await posted.response)
     const receipt = (token: string, readerSession: string, acknowledged: boolean) =>
