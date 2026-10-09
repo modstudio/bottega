@@ -44,8 +44,12 @@ export function FilterPanel({
   onChange: (next: FilterSelection) => void
   total: number
 }) {
-  const labels: Record<FilterKey, string> = { scope: 'Scope', delivery: 'Delivery' }
-  const active = Boolean(chosen.scope || chosen.delivery)
+  const labels: Record<FilterKey, string> = {
+    audience: 'Audience',
+    scope: 'Scope',
+    delivery: 'Delivery',
+  }
+  const active = Boolean(chosen.audience || chosen.scope || chosen.delivery)
   return (
     <div className="w-[min(17.5rem,calc(100vw-2.5rem))]">
       {offered.map((filter) => (
@@ -59,7 +63,7 @@ export function FilterPanel({
             <FilterOption
               name={`docs-filter-${filter.key}`}
               checked={chosen[filter.key] === null}
-              label="Any"
+              label={filter.allLabel}
               count={total}
               onSelect={() => onChange({ ...chosen, [filter.key]: null })}
             />
@@ -68,7 +72,7 @@ export function FilterPanel({
                 key={option.value}
                 name={`docs-filter-${filter.key}`}
                 checked={chosen[filter.key] === option.value}
-                label={option.value}
+                label={option.label}
                 count={option.count}
                 onSelect={() => onChange({ ...chosen, [filter.key]: option.value })}
               />

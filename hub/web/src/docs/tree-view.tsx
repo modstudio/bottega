@@ -1,10 +1,60 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { type MutableRefObject, useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
 import { DocStatusBadge } from './status-badge.tsx'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
+
+function TreeDocumentRow({
+  node,
+  item,
+  current,
+  rowRef,
+  onSelect,
+}: {
+  node: TreeNode
+  item: DocsTreeItem
+  current: boolean
+  rowRef: MutableRefObject<HTMLElement | null>
+  onSelect: (item: DocsTreeItem) => void
+}) {
+  const ref = (element: HTMLElement | null) => {
+    rowRef.current = element
+  }
+  if (node.navigationDisabled) {
+    return (
+      <span
+        ref={ref}
+        aria-current={current ? 'page' : undefined}
+        aria-disabled="true"
+        title={node.title}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left text-text-secondary"
+      >
+        <span className="min-w-0 flex-1 truncate">{node.title}</span>
+        <DocStatusBadge status={node.status} />
+      </span>
+    )
+  }
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-current={current ? 'page' : undefined}
+      onClick={() => onSelect(item)}
+      title={node.title}
+      className={classes(
+        'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
+        current
+          ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
+          : 'text-text-secondary hover:bg-control-hover',
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{node.title}</span>
+      <DocStatusBadge status={node.status} />
+    </button>
+  )
+}
 
 function TreeRow({
   node,
@@ -25,7 +75,7 @@ function TreeRow({
   const current = node.id === selectedId
   const open = !collapsed.has(node.id)
   const { children, ...item } = node
-  const rowRef = useRef<HTMLButtonElement>(null)
+  const rowRef = useRef<HTMLElement>(null)
   useEffect(() => {
     if (!current) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -50,25 +100,16 @@ function TreeRow({
         ) : gutter ? (
           <span className="size-6 shrink-0" />
         ) : null}
-        <button
-          ref={rowRef}
-          type="button"
-          aria-current={current ? 'page' : undefined}
-          onClick={() => onSelect(item)}
-          title={node.title}
-          className={classes(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
-            current
-              ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
-              : 'text-text-secondary hover:bg-control-hover',
-          )}
-        >
-          <span className="min-w-0 flex-1 truncate">{node.title}</span>
-          <DocStatusBadge status={node.status} />
-        </button>
+        <TreeDocumentRow
+          node={node}
+          item={item}
+          current={current}
+          rowRef={rowRef}
+          onSelect={onSelect}
+        />
       </div>
       {children.length && open ? (
-        <div className="ml-3 border-border-default border-l pl-1">
+        <div className="ml-3 border-border-default border-l pl-4">
           <TreeList
             nodes={children}
             selectedId={selectedId}

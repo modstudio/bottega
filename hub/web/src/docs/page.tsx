@@ -7,11 +7,18 @@ import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
-import { chooserProject, projectSubjects, searchSubject } from './filters.ts'
+import {
+  chooserProject,
+  EMPTY_FILTERS,
+  type FilterSelection,
+  projectSubjects,
+  searchSubject,
+  selectedAudience,
+} from './filters.ts'
 import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
 import { docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
-import type { DocsAudience, DocsTreeItem } from './types.ts'
+import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
 import { DocsView } from './view.tsx'
@@ -36,7 +43,7 @@ export function DocsPage() {
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params
   const search = detail?.search
-  const [audience, setAudience] = useState<DocsAudience>('user')
+  const [filters, setFilters] = useState<FilterSelection>(EMPTY_FILTERS)
   const [project, setProject] = useState<string | 'all'>('all')
   const [emptyChooserSet, setEmptyChooserSet] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -61,13 +68,8 @@ export function DocsPage() {
       null
     )
   }, [catalog.items, params, search?.id])
-  const selectedAudiences = selected?.audiences
   const selectedId = selected?.id
   const selectedProject = selected?.projectName
-  useEffect(() => {
-    if (selectedAudiences && !selectedAudiences.includes(audience))
-      setAudience(selectedAudiences[0])
-  }, [audience, selectedAudiences])
   useEffect(() => {
     if (!selectedId) return
     setProject(selectedProject ?? 'all')
@@ -86,7 +88,7 @@ export function DocsPage() {
   const results = useDocsSearch(
     source,
     searchQuery,
-    audience,
+    selectedAudience(filters),
     searchSubject(project, navigationItems),
     includeDrafts,
   )
@@ -124,11 +126,8 @@ export function DocsPage() {
         sourceLabel={sourceLabel}
         items={catalog.items}
         selectedId={selected?.id ?? null}
-        audience={audience}
-        onAudience={(next) => {
-          if (source === 'public' && selected) void navigate({ to: '/docs' })
-          setAudience(next)
-        }}
+        filters={filters}
+        onFilters={setFilters}
         project={project}
         onProject={setProject}
         signedIn={signedIn}
@@ -141,7 +140,6 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
-        onLeaveTree={() => void navigate({ to: '/docs' })}
         ready={!catalog.isPending && emptyChooserSet && identityResolved}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}

@@ -3,14 +3,21 @@ import {
   applyFilters,
   clearStaleFilters,
   type FilterSelection,
-  inAudience,
   inProject,
   offeredFilters,
   projectSubjects,
+  selectedAudience,
 } from './filters.ts'
 import { secondLevelHeadings } from './headings.ts'
-import { breadcrumb, buildDocTree, groupRootsBySubject, neighbors, treePath } from './tree.ts'
-import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
+import {
+  breadcrumb,
+  groupRootsBySubject,
+  neighbors,
+  openableItems,
+  treeForAudience,
+  treePath,
+} from './tree.ts'
+import type { DocsDoc, DocsTreeItem } from './types.ts'
 
 /** The catalogue rows that belong in navigation for the chosen draft visibility. */
 export function docsVisibleByStatus(
@@ -20,19 +27,6 @@ export function docsVisibleByStatus(
   return items.filter(
     (item) => item.status === 'current' || (showDrafts && item.status === 'draft'),
   )
-}
-
-/** The selected catalogue row when the page controls still include it. */
-export function docsSelectionInView(
-  items: readonly DocsTreeItem[],
-  audience: DocsAudience,
-  project: string | 'all',
-  chosen: FilterSelection,
-  selectedId: string,
-): DocsTreeItem | null {
-  const forAudience = inAudience(inProject(items, project), audience)
-  const filters = clearStaleFilters(forAudience, chosen)
-  return applyFilters(forAudience, filters).find((item) => item.id === selectedId) ?? null
 }
 
 /** A replacement is linkable only when its address identifies one catalogue row. */
@@ -50,28 +44,27 @@ export function resolveDocsReplacement(
 
 export function docsViewModel(
   items: readonly DocsTreeItem[],
-  audience: DocsAudience,
   project: string | 'all',
   chosen: FilterSelection,
   selectedId: string | null,
   doc: DocsDoc | null,
+  includeAudienceFilter = true,
 ) {
   const forProject = inProject(items, project)
-  const forAudience = inAudience(forProject, audience)
-  const stale = clearStaleFilters(forAudience, chosen)
-  const visible = applyFilters(forAudience, stale)
-  const tree = buildDocTree(visible)
+  const stale = clearStaleFilters(forProject, chosen)
+  const structural = applyFilters(forProject, { ...stale, audience: null })
+  const tree = treeForAudience(structural, selectedAudience(stale))
   const groups = project === 'all' ? groupRootsBySubject(tree) : null
-  const selected = visible.find((item) => item.id === selectedId) ?? null
+  const selected = treePath(tree, selectedId ?? '').at(-1) ?? null
   const path = selected ? treePath(tree, selected.id) : []
   const roots = groups ? groups.flatMap((group) => group.children) : tree
+  const first = openableItems(roots)[0]
   return {
-    first: roots[0] ?? null,
-    userCount: inAudience(forProject, 'user').length,
-    technicalCount: inAudience(forProject, 'technical').length,
-    inView: forAudience.length,
+    first: first ?? null,
+    documentCount: openableItems(tree).length,
+    inView: forProject.length,
     stale,
-    offered: offeredFilters(forAudience),
+    offered: offeredFilters(forProject, includeAudienceFilter),
     tree,
     groups,
     selected,

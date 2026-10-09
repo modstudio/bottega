@@ -1,4 +1,4 @@
-import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
+import type { DocsAudience, DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 function byPositionThenTitle(a: DocsTreeItem, b: DocsTreeItem) {
   if (a.position !== b.position) return a.position - b.position
@@ -41,22 +41,33 @@ export function buildDocTree(items: readonly DocsTreeItem[]): TreeNode[] {
   }
   const node = (item: DocsTreeItem): TreeNode => ({
     ...item,
+    navigationDisabled: false,
     children: (children.get(item.id) ?? []).slice().sort(byPositionThenTitle).map(node),
   })
   return roots.sort(byPositionThenTitle).map(node)
 }
 
-export function flattenTree(nodes: readonly TreeNode[]): DocsTreeItem[] {
-  const out: DocsTreeItem[] = []
-  const walk = (list: readonly TreeNode[]) => {
-    for (const node of list) {
-      const { children, ...item } = node
-      out.push(item)
-      walk(children)
-    }
+/**
+ * Keep audience matches and the ancestors needed to reach them. An ancestor
+ * that does not itself match stays in place but cannot be opened.
+ */
+export function treeForAudience(
+  items: readonly DocsTreeItem[],
+  audience: DocsAudience | null,
+): TreeNode[] {
+  const visit = (node: TreeNode): TreeNode | null => {
+    const children = node.children.flatMap((child) => {
+      const kept = visit(child)
+      return kept ? [kept] : []
+    })
+    const matches = audience === null || node.audiences.includes(audience)
+    if (!matches && children.length === 0) return null
+    return { ...node, navigationDisabled: !matches, children }
   }
-  walk(nodes)
-  return out
+  return buildDocTree(items).flatMap((node) => {
+    const kept = visit(node)
+    return kept ? [kept] : []
+  })
 }
 
 export function treePath(nodes: readonly TreeNode[], id: string): DocsTreeItem[] {
@@ -74,11 +85,25 @@ export function treePath(nodes: readonly TreeNode[], id: string): DocsTreeItem[]
   return []
 }
 
+/** The documents a reader can open, in reading order. */
+export function openableItems(nodes: readonly TreeNode[]): DocsTreeItem[] {
+  const out: DocsTreeItem[] = []
+  const walk = (list: readonly TreeNode[]) => {
+    for (const node of list) {
+      const { children, navigationDisabled, ...item } = node
+      if (!navigationDisabled) out.push(item)
+      walk(children)
+    }
+  }
+  walk(nodes)
+  return out
+}
+
 export function neighbors(
   nodes: readonly TreeNode[],
   id: string,
 ): { previous: DocsTreeItem | null; next: DocsTreeItem | null } {
-  const order = flattenTree(nodes)
+  const order = openableItems(nodes)
   const index = order.findIndex((item) => item.id === id)
   if (index < 0) return { previous: null, next: null }
   return {

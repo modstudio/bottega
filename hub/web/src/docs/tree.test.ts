@@ -4,10 +4,11 @@ import { applyFilters, EMPTY_FILTERS } from './filters.ts'
 import {
   breadcrumb,
   buildDocTree,
-  flattenTree,
   groupRootsBySubject,
   neighbors,
+  openableItems,
   parentEdgeCycles,
+  treeForAudience,
   treePath,
 } from './tree.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -138,7 +139,7 @@ test('previous and next follow preorder of the visible tree', () => {
   })
   expect(neighbors(tree, 'g').previous).toBeNull()
   expect(neighbors(tree, 'how').next).toBeNull()
-  expect(flattenTree(tree).map((node) => node.id)).toEqual(['g', 'install', 'run', 'how'])
+  expect(openableItems(tree).map((node) => node.id)).toEqual(['g', 'install', 'run', 'how'])
 })
 
 test('filters do not change neighbor order beyond the visible tree', () => {
@@ -149,4 +150,39 @@ test('filters do not change neighbor order beyond the visible tree', () => {
   ]
   const tree = buildDocTree(applyFilters(items, { ...EMPTY_FILTERS, scope: 'project' }))
   expect(neighbors(tree, 'a').next).toEqual(expect.objectContaining({ id: 'c' }))
+})
+
+test('audience visibility keeps matching documents and keeps every non-matching ancestor of a match, unopenable', () => {
+  const rows = [
+    item({ id: 'root', title: 'Root', audiences: ['user'] }),
+    item({ id: 'middle', title: 'Middle', parentId: 'root', audiences: ['user'] }),
+    item({
+      id: 'match',
+      title: 'Match',
+      parentId: 'middle',
+      audiences: ['technical'],
+    }),
+    item({ id: 'absent', title: 'Absent', parentId: 'root', audiences: ['user'] }),
+    item({ id: 'both', title: 'Both', audiences: ['user', 'technical'] }),
+  ]
+  const technical = treeForAudience(rows, 'technical')
+  expect(technical.map((node) => node.id)).toEqual(['both', 'root'])
+  const root = technical.find((node) => node.id === 'root')!
+  expect(root.navigationDisabled).toBeTrue()
+  expect(root.children[0]!.navigationDisabled).toBeTrue()
+  expect(root.children[0]!.children[0]!.navigationDisabled).toBeFalse()
+  expect(root.children.map((node) => node.id)).not.toContain('absent')
+  expect(treeForAudience(rows, 'user').map((node) => node.id)).toEqual(['both', 'root'])
+})
+
+test('all audiences shows every document as an enabled row', () => {
+  const tree = treeForAudience(
+    [
+      item({ id: 'user', title: 'User' }),
+      item({ id: 'technical', title: 'Technical', audiences: ['technical'] }),
+    ],
+    null,
+  )
+  expect(tree.map((node) => node.id)).toEqual(['technical', 'user'])
+  expect(tree.every((node) => !node.navigationDisabled)).toBeTrue()
 })

@@ -38,7 +38,7 @@ export type DocsSearchMatch = {
 
 export type DocsSource = 'local' | 'hosted' | 'public'
 
-export type TreeNode = DocsTreeItem & { children: TreeNode[] }
+export type TreeNode = DocsTreeItem & { children: TreeNode[]; navigationDisabled: boolean }
 
 export type DocsTreeGroup = { heading: string; children: TreeNode[] }
 
