@@ -70,6 +70,17 @@ const canonEditGuardBoundarySpecs: ImportBoundary[] = [
   },
 ]
 
+const canonEmptyStoreRefusalBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-empty-store-refusal-boundary',
+    file: `${source}canon-empty-store-refusal.ts`,
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the empty-project canon store refusal text independent of planning, stores, and commands.',
+  },
+]
+
 const canonCommandBoundarySpecs: ImportBoundary[] = [
   {
     name: 'canon-commands-boundary',
@@ -81,6 +92,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
       `${source}canon.ts`,
       `${source}canon-apply.ts`,
       `${source}canon-audit.ts`,
+      `${source}canon-empty-store-refusal.ts`,
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
       `${source}canon-import-policy.ts`,
@@ -126,6 +138,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'node:path',
       `${source}canon-apply.ts`,
       'shared/secret-shaped.ts',
+      `${source}canon-empty-store-refusal.ts`,
       `${source}canon-files.ts`,
       `${source}canon-hydrate.ts`,
       `${source}canon-lint.ts`,
@@ -272,6 +285,7 @@ const canonRemovalBoundarySpecs: ImportBoundary[] = [
 export const canonBoundarySpecs = [
   ...canonEditGuardBoundarySpecs,
   ...canonAuditBoundarySpecs,
+  ...canonEmptyStoreRefusalBoundarySpecs,
   ...canonCommandBoundarySpecs,
   ...canonMirrorBoundarySpecs,
   ...canonRemovalBoundarySpecs,

@@ -1,8 +1,17 @@
 // concern: monitor-canon-drift
 /** Compares managed projects' landed trees with stored canon without modifying either. */
 
+import {
+  EMPTY_PROJECT_CANON_IMPORT_REMEDY,
+  EMPTY_PROJECT_CANON_STORE_CONDITION,
+} from '../canon/canon-empty-store-refusal.ts'
 import { type CanonTreeAtRef, collectCanonTreeAtRef } from '../canon/canon-files.ts'
-import { type HydrationDrift, hydrationDrift, planHydration } from '../canon/canon-hydrate.ts'
+import {
+  emptyStoreHydrationRefusal,
+  type HydrationDrift,
+  hydrationDrift,
+  planHydration,
+} from '../canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../canon/canon-stored-rows.ts'
 import type { Project } from '../project/projects.ts'
 import type { MonitorCondition, UnaddressedMonitorCondition } from './monitor-types.ts'
@@ -13,9 +22,28 @@ type CanonDriftCondition = Omit<UnaddressedMonitorCondition, 'ageMs'>
 /** Decide whether one readable landed tree needs its stored canon hydrated. */
 export function canonDriftCondition(
   project: Pick<Project, 'name'>,
-  comparison: Pick<CanonTreeAtRef, 'ref' | 'commit'> & { drift: HydrationDrift[] },
+  comparison: Pick<CanonTreeAtRef, 'ref' | 'commit'> & {
+    drift: HydrationDrift[]
+    projectRowCount: number
+    deleteCount: number
+  },
 ): CanonDriftCondition | null {
   const { drift } = comparison
+  if (
+    emptyStoreHydrationRefusal({
+      projectRowCount: comparison.projectRowCount,
+      deleteCount: comparison.deleteCount,
+    })
+  ) {
+    return {
+      kind: 'canon-drift',
+      subject: project.name,
+      since: null,
+      detail: `${project.name}: ${EMPTY_PROJECT_CANON_STORE_CONDITION}`,
+      action: EMPTY_PROJECT_CANON_IMPORT_REMEDY,
+      affectedProject: project.name,
+    }
+  }
   if (drift.length === 0) return null
   const displayed = drift.slice(0, DISPLAYED_DRIFT_PATHS).map(({ path }) => path)
   const remainder = drift.length - displayed.length
@@ -44,6 +72,8 @@ export function observeProjectCanonDrift(
       ref: landed.ref,
       commit: landed.commit,
       drift: hydrationDrift(plan),
+      projectRowCount: rows.filter((row) => row.subject === project.name).length,
+      deleteCount: plan.deletes.length,
     })
     return condition ? [{ ...condition, ageMs: null }] : []
   } catch (cause) {

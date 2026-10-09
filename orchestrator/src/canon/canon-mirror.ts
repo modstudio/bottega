@@ -29,8 +29,9 @@ import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import { inspectTreeOwnership, ORCH_RUN_MARKER } from '../worktree/worktree-attribution.ts'
 import { attributeWorktree } from '../worktree/worktree-create.ts'
 import { applyHydration } from './canon-apply.ts'
+import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
-import { hydrationDrift, planHydration } from './canon-hydrate.ts'
+import { emptyStoreHydrationRefusal, hydrationDrift, planHydration } from './canon-hydrate.ts'
 import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
@@ -450,7 +451,8 @@ function performMirrorPublication(input: {
   const ref = `origin/${trunk}`
   const base = port.refTip(project, ref)
   const landed = collectCanonTreeAtRef(project.path, base)
-  const plan = planHydration({ rows: storedRepositoryCanonRows(project.name), tree: landed.tree })
+  const rows = storedRepositoryCanonRows(project.name)
+  const plan = planHydration({ rows, tree: landed.tree })
   const drift = hydrationDrift(plan)
   if (drift.length === 0) {
     setRunTerminal(runId, started)
@@ -463,6 +465,14 @@ function performMirrorPublication(input: {
       failed: false,
       text: `left open, dry-run: ${drift.length} paths differ`,
     }
+  }
+  if (
+    emptyStoreHydrationRefusal({
+      projectRowCount: rows.filter((row) => row.subject === project.name).length,
+      deleteCount: plan.deletes.length,
+    })
+  ) {
+    throw new Error(EMPTY_PROJECT_CANON_STORE_REFUSAL)
   }
   releaseOwnedLeftover(project, path, port)
   const previous = previousPublication(project, branch, runId)

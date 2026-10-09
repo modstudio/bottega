@@ -54,9 +54,9 @@ describe('hydration drift decisions', () => {
   })
 
   test('an empty store refuses deletes and leaves a populated store free to delete stale rows', () => {
-    expect(emptyStoreHydrationRefusal({ rowCount: 0, deleteCount: 1 })).toBeTrue()
-    expect(emptyStoreHydrationRefusal({ rowCount: 0, deleteCount: 0 })).toBeFalse()
-    expect(emptyStoreHydrationRefusal({ rowCount: 1, deleteCount: 1 })).toBeFalse()
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 0, deleteCount: 1 })).toBeTrue()
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 0, deleteCount: 0 })).toBeFalse()
+    expect(emptyStoreHydrationRefusal({ projectRowCount: 1, deleteCount: 1 })).toBeFalse()
   })
 })
 

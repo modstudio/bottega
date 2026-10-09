@@ -27,10 +27,10 @@ import {
 } from './canon.ts'
 import { applyHydration } from './canon-apply.ts'
 import { auditRepositoryCanon, type CanonAuditResult } from './canon-audit.ts'
+import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
 import { canonGitRoot, collectCanonLintInput, collectCanonTree } from './canon-files.ts'
 import {
   composeCanonRows,
-  EMPTY_PROJECT_CANON_STORE_REFUSAL,
   emptyStoreHydrationRefusal,
   hydrationDrift,
   mainCheckoutHydrationRefusal,
@@ -297,7 +297,12 @@ async function canonHydrateCommand(
     presentation.log(`would hydrate ${count} paths`)
     return
   }
-  if (emptyStoreHydrationRefusal({ rowCount: rows.length, deleteCount: plan.deletes.length })) {
+  if (
+    emptyStoreHydrationRefusal({
+      projectRowCount: rows.filter((row) => row.subject === project.name).length,
+      deleteCount: plan.deletes.length,
+    })
+  ) {
     throw new Error(`refusing canon hydrate: ${EMPTY_PROJECT_CANON_STORE_REFUSAL}`)
   }
   applyHydration(root, plan)

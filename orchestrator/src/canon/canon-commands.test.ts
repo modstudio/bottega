@@ -229,6 +229,45 @@ test('project canon hydrate dry-run prints the plan and leaves the tree unchange
   }
 })
 
+test('project canon hydrate refuses when only global canon rows exist and the tree would be deleted', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-hydrate-global-only-'))
+  const main = mkdtempSync(join(tmpdir(), 'canon-hydrate-global-only-main-'))
+  try {
+    spawnFixtureGitSync(['init'], { cwd: main })
+    spawnFixtureGitSync(['init'], { cwd: root })
+    writeFileSync(join(root, 'AGENTS.md'), 'Keep the tree.\n')
+    spawnFixtureGitSync(['add', 'AGENTS.md'], { cwd: root })
+    upsertProject({ name: 'canon-hydrate-global-only', path: main, canon: true, settings: {} })
+    await setDoc({
+      scope: 'canon',
+      subject: null,
+      slug: '.agents/rules/global.md',
+      title: '.agents/rules/global.md',
+      body: '---\ndescription: Global\nalways: true\n---\n\nGlobal rule.\n',
+      reason: 'seed a global row',
+      allowCanonBootstrap: true,
+    })
+    const output: string[] = []
+
+    await expect(
+      dispatchCanonCommand(
+        ['canon', 'hydrate'],
+        {
+          has: (name) => name === 'project' || name === 'cwd',
+          flag: (name) =>
+            name === 'project' ? 'canon-hydrate-global-only' : name === 'cwd' ? root : undefined,
+        },
+        { log: (...parts) => output.push(parts.join(' ')), exitCode: () => {}, cwd: () => root },
+      ),
+    ).rejects.toThrow('refusing canon hydrate: this store holds no project canon')
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(true)
+    expect(output).toContain('delete AGENTS.md')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
+  }
+})
+
 test('project canon hydrate refuses an empty store that would delete managed tree files', async () => {
   const root = mkdtempSync(join(tmpdir(), 'canon-hydrate-empty-store-'))
   const main = mkdtempSync(join(tmpdir(), 'canon-hydrate-empty-main-'))

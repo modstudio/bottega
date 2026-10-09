@@ -16,14 +16,20 @@ let openReadOnlyDatabase: typeof import('../orchestrator/src/database/db.ts').op
 let branchChangedPaths: typeof import('./check-canon-drift.ts').branchChangedPaths
 let branchHydrationPaths: typeof import('./check-canon-drift.ts').branchHydrationPaths
 let canonBranchFindings: typeof import('./check-canon-drift.ts').canonBranchFindings
+let canonEmptyStoreDriftRefusal: typeof import('./check-canon-drift.ts').canonEmptyStoreDriftRefusal
 let readCanonGateInput: typeof import('./check-canon-drift.ts').readCanonGateInput
 
 beforeAll(async () => {
   databaseScratch = mkdtempSync(join(tmpdir(), 'canon-drift-database-'))
   process.env.ORCH_DB = join(databaseScratch, 'orch.db')
   ;({ openReadOnlyDatabase } = await import('../orchestrator/src/database/db.ts'))
-  ;({ branchChangedPaths, branchHydrationPaths, canonBranchFindings, readCanonGateInput } =
-    await import('./check-canon-drift.ts'))
+  ;({
+    branchChangedPaths,
+    branchHydrationPaths,
+    canonBranchFindings,
+    canonEmptyStoreDriftRefusal,
+    readCanonGateInput,
+  } = await import('./check-canon-drift.ts'))
 })
 
 afterAll(() => {
@@ -163,5 +169,13 @@ describe('canon drift branch gate', () => {
     expect(() => resolveRegisteredLandingBase('/unused', 'canon drift check', 'main')).toThrow(
       'GITHUB_BASE_REF release: the project register names main as trunk',
     )
+  })
+
+  test('an empty project store names import as the remedy instead of hydrate', () => {
+    expect(canonEmptyStoreDriftRefusal({ projectRowCount: 0, deleteCount: 1 })).toEqual({
+      condition: 'this store holds no project canon while the tree has managed canon paths',
+      remedy: 'orch canon import --project',
+    })
+    expect(canonEmptyStoreDriftRefusal({ projectRowCount: 1, deleteCount: 1 })).toBeNull()
   })
 })
