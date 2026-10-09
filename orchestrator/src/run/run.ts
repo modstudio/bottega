@@ -231,7 +231,7 @@ export async function run(opts: {
   cwd?: string
   /** Internal override for callers whose execution cwd is not their canon source. */
   canonPack?: Pack
-  /** Shell directory that launched the root run, before implicit caller resolution. */
+  /** Persisted origin: shell cwd in the selected project, else its registered path, else shell cwd. */
   launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string

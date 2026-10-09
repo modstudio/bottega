@@ -62,7 +62,7 @@ type CallerCheckoutDecision = {
   notice: string | null
 }
 
-type DispatchLaunchCwdDecision = { launchCwd: string; refusal: null } | { refusal: string }
+type DispatchLaunchCwdDecision = { checkoutCwd: string; refusal: null } | { refusal: string }
 
 export function dispatchLaunchCwdDecision(input: {
   namedProject: { name: string; path: string } | null
@@ -70,10 +70,10 @@ export function dispatchLaunchCwdDecision(input: {
   cwd: string
   cwdProject: { name: string } | null
 }): DispatchLaunchCwdDecision {
-  if (!input.namedProject) return { launchCwd: input.cwd, refusal: null }
-  if (!input.cwdWasGiven) return { launchCwd: input.namedProject.path, refusal: null }
+  if (!input.namedProject) return { checkoutCwd: input.cwd, refusal: null }
+  if (!input.cwdWasGiven) return { checkoutCwd: input.namedProject.path, refusal: null }
   if (!input.cwdProject || input.cwdProject.name === input.namedProject.name) {
-    return { launchCwd: input.cwd, refusal: null }
+    return { checkoutCwd: input.cwd, refusal: null }
   }
   return {
     refusal:
@@ -83,28 +83,38 @@ export function dispatchLaunchCwdDecision(input: {
   }
 }
 
+function recordedLaunchCwdDecision(input: {
+  shellCwd: string
+  shellProject: { name: string } | null
+  checkoutCwd: string
+  checkoutProject: { name: string; path: string } | null
+}): string {
+  if (input.shellProject?.name === input.checkoutProject?.name) return input.shellCwd
+  return input.checkoutProject?.path ?? input.shellCwd
+}
+
 export function callerCheckoutDecision(input: {
-  launchCwd: string
+  recordedLaunchCwd: string
   explicitCwd: string | null
   repoRoot: string | null
   registeredProjectPath: string | null
   linkedWorktree: boolean
   borrowedCheckout: boolean
 }): CallerCheckoutDecision {
-  const callerCwd = input.explicitCwd ?? input.launchCwd
+  const callerCwd = input.explicitCwd ?? input.recordedLaunchCwd
   if (
     input.explicitCwd !== null ||
     input.repoRoot === null ||
     input.registeredProjectPath === null ||
     (!input.linkedWorktree && !input.borrowedCheckout)
   ) {
-    return { callerCwd, launchCwd: input.launchCwd, notice: null }
+    return { callerCwd, launchCwd: input.recordedLaunchCwd, notice: null }
   }
   return {
     callerCwd: input.registeredProjectPath,
-    launchCwd: input.launchCwd,
+    launchCwd: input.recordedLaunchCwd,
     notice:
-      `! dispatched from project tree ${input.launchCwd}; caller checkout is ` +
+      `! dispatched from project tree ${input.recordedLaunchCwd}; caller checkout is ` +
       `${input.registeredProjectPath} (pass --cwd to choose a tree)`,
   }
 }
@@ -114,7 +124,8 @@ export function resolveCallerCheckoutDecision(
     shellCwd: string
     explicitCwd: string | null
     namedProject: { name: string; path: string } | null
-    cwdProject: { name: string } | null
+    cwdProject: { name: string; path: string } | null
+    shellProject: { name: string; path: string } | null
   },
   checkoutFactsAt: (cwd: string) => ReturnType<typeof callerCheckoutFacts>,
 ): CallerCheckoutDecision {
@@ -124,13 +135,22 @@ export function resolveCallerCheckoutDecision(
     cwd: input.explicitCwd ?? input.shellCwd,
     cwdProject: input.cwdProject,
   })
-  if (!('launchCwd' in selection)) throw new Error(selection.refusal)
-  const decidedLaunchCwd = selection.launchCwd
+  if (!('checkoutCwd' in selection)) throw new Error(selection.refusal)
+  const checkoutCwd = selection.checkoutCwd
   const decidedCwdIsExplicit = input.explicitCwd !== null || input.namedProject !== null
+  const checkoutProject = input.explicitCwd
+    ? input.cwdProject
+    : (input.namedProject ?? input.shellProject)
+  const facts = checkoutFactsAt(checkoutCwd)
   return callerCheckoutDecision({
-    launchCwd: decidedLaunchCwd,
-    explicitCwd: decidedCwdIsExplicit ? decidedLaunchCwd : null,
-    ...checkoutFactsAt(decidedLaunchCwd),
+    recordedLaunchCwd: recordedLaunchCwdDecision({
+      shellCwd: input.shellCwd,
+      shellProject: input.shellProject,
+      checkoutCwd,
+      checkoutProject,
+    }),
+    explicitCwd: decidedCwdIsExplicit ? checkoutCwd : null,
+    ...facts,
   })
 }
 
@@ -146,6 +166,7 @@ function resolveCallerCheckout(
       explicitCwd: explicitCwd !== undefined ? selectedCwd : null,
       namedProject: explicitRepo ? projectByName(explicitRepo) : null,
       cwdProject: explicitCwd ? projectAt(selectedCwd) : null,
+      shellProject: projectAt(shellCwd),
     },
     callerCheckoutFacts,
   )
