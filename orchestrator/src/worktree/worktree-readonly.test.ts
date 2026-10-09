@@ -16,6 +16,7 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import {
   createReadOnlyWorktree,
   landingRemoteTrackingRefs,
+  parseRemoteTrackingRefs,
   type RemoteTrackingRef,
 } from './worktree-readonly.ts'
 
@@ -24,12 +25,44 @@ test('landing remote-tracking refs selects the landing branch on every remote', 
     { ref: 'refs/remotes/origin/develop', object: 'origin-develop' },
     { ref: 'refs/remotes/upstream/develop', object: 'upstream-develop' },
     { ref: 'refs/remotes/origin/topic', object: 'origin-topic' },
+    { ref: 'refs/remotes/origin/feature/develop', object: 'origin-feature-develop' },
   ]
 
   expect(landingRemoteTrackingRefs([refs[0]!, refs[2]!], 'develop')).toEqual([refs[0]!])
   expect(landingRemoteTrackingRefs(refs, 'develop')).toEqual(refs.slice(0, 2))
   expect(landingRemoteTrackingRefs(refs, 'main')).toEqual([])
   expect(landingRemoteTrackingRefs(refs, null)).toEqual([])
+})
+
+test('landing remote-tracking refs matches a slash-containing landing branch whole', () => {
+  const refs: RemoteTrackingRef[] = [
+    { ref: 'refs/remotes/origin/release/main', object: 'release-main' },
+    { ref: 'refs/remotes/origin/main', object: 'main' },
+  ]
+
+  expect(landingRemoteTrackingRefs(refs, 'release/main')).toEqual([refs[0]!])
+})
+
+test('remote-tracking ref output skips malformed lines', () => {
+  expect(
+    parseRemoteTrackingRefs(
+      [
+        'refs/remotes/origin/develop\t1111111111111111111111111111111111111111',
+        'missing-object',
+        '\t2222222222222222222222222222222222222222',
+        'refs/remotes/upstream/develop\t3333333333333333333333333333333333333333',
+      ].join('\n'),
+    ),
+  ).toEqual([
+    {
+      ref: 'refs/remotes/origin/develop',
+      object: '1111111111111111111111111111111111111111',
+    },
+    {
+      ref: 'refs/remotes/upstream/develop',
+      object: '3333333333333333333333333333333333333333',
+    },
+  ])
 })
 
 test('built-in read-only trees are detached shared clones with private refs', () => {

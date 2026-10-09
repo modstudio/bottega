@@ -69,29 +69,36 @@ export function landingRemoteTrackingRefs(
 ): RemoteTrackingRef[] {
   if (!landingBranch) return []
   const prefix = 'refs/remotes/'
-  const suffix = `/${landingBranch}`
-  return refs.filter(
-    ({ ref }) =>
-      ref.startsWith(prefix) &&
-      ref.slice(prefix.length).length > suffix.length &&
-      ref.endsWith(suffix),
-  )
+  return refs.filter(({ ref }) => {
+    if (!ref.startsWith(prefix)) return false
+    const remoteAndBranch = ref.slice(prefix.length)
+    const separator = remoteAndBranch.indexOf('/')
+    return separator > 0 && remoteAndBranch.slice(separator + 1) === landingBranch
+  })
+}
+
+/** Parse readable ref candidates, ignoring output that cannot identify both fields. */
+export function parseRemoteTrackingRefs(output: string): RemoteTrackingRef[] {
+  const refs: RemoteTrackingRef[] = []
+  for (const line of output.split('\n')) {
+    const fields = line.split('\t')
+    if (fields.length !== 2) continue
+    const [ref, object] = fields
+    if (!ref || !object) continue
+    refs.push({ ref, object })
+  }
+  return refs
 }
 
 /** Read private candidates before the clone's transport configuration is removed. */
 function snapshotRemoteTrackingRefs(repoRoot: string): RemoteTrackingRef[] {
-  const output = git(
-    ['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/remotes/'],
-    repoRoot,
-  )
-  if (!output) return []
-  return output.split('\n').map((line) => {
-    const fields = line.split('\t')
-    const ref = fields[0]
-    const object = fields[1]
-    if (!ref || !object) throw new Error(`git for-each-ref returned malformed line: ${line}`)
-    return { ref, object }
-  })
+  try {
+    return parseRemoteTrackingRefs(
+      git(['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/remotes/'], repoRoot),
+    )
+  } catch {
+    return []
+  }
 }
 
 function restoreRemoteTrackingRefs(path: string, refs: RemoteTrackingRef[]): void {
