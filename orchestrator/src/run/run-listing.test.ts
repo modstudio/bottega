@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { ProcessSample } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
 import { runDetail } from '../state/serve.ts'
 import { runListingCommand } from './run-listing.ts'
@@ -9,6 +10,11 @@ import { runListingCommand } from './run-listing.ts'
 function command(
   args: Record<string, string[] | boolean> = {},
   thinOutputWarning: Parameters<typeof runListingCommand>[2]['thinOutputWarning'] = () => null,
+  observation: Parameters<typeof runListingCommand>[2]['processObservation'] = {
+    sampleProcesses: () => [],
+    processStartTime: () => null,
+  },
+  clock: () => number = Date.now,
 ) {
   const lines: string[] = []
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
@@ -34,6 +40,8 @@ function command(
         ),
       strandedRecovery: (root) => `orch retry ${root} --agent`,
       thinOutputWarning,
+      processObservation: observation,
+      clock,
     },
   ).then(() => lines)
 }
@@ -84,6 +92,45 @@ describe('run listing', () => {
     expect(text).toMatch(new RegExp(`\\b${root}\\s+codex\\s+implement\\s+running\\b`))
     expect(text).not.toMatch(new RegExp(`\\b${turn}\\s+codex\\s+implement\\s+running\\b`))
     expect((await command({ json: true })).map(runJson).map((row) => row.id)).toEqual([root])
+  })
+
+  test('runs JSON publishes the stalled live member', async () => {
+    const observedAt = Date.parse('2026-09-22T12:30:00.000Z')
+    const id = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'running',
+      startedAt: '2026-09-22T12:00:00.000Z',
+      session: 'stalled-listing',
+    })
+    db()
+      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE id=?')
+      .run(process.pid, 'recorded birth', '2026-09-22T12:00:00.000Z', id)
+    const samples: ProcessSample[] = [
+      { pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' },
+    ]
+
+    const row = runJson(
+      (
+        await command(
+          { json: true, id: [String(id)] },
+          () => null,
+          {
+            sampleProcesses: () => samples,
+            processStartTime: () => 'recorded birth',
+          },
+          () => observedAt,
+        )
+      )[0]!,
+    )
+
+    expect(row).toMatchObject({
+      id,
+      live_member_id: id,
+      stall_state: 'stalled',
+    })
+    expect(row.stall).toBeString()
+    expect((row.stall as string).length).toBeGreaterThan(0)
   })
 
   test('runs --unscored applies its filter before --limit', async () => {

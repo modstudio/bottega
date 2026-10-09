@@ -4,7 +4,7 @@
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { type ProcessSample, sampleProcesses } from '../idle-kill.ts'
+import type { ProcessSample } from '../idle-kill.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -35,9 +35,17 @@ type RunListingPresentation = {
     output_path: string | null
     writesRepo: boolean
   }): string | null
+  processObservation: {
+    sampleProcesses(): ProcessSample[]
+    processStartTime(pid: number): string | null
+  }
+  clock(): number
 }
 
-function processSamplesForRows(rows: Record<string, unknown>[]): ProcessSample[] {
+function processSamplesForRows(
+  rows: Record<string, unknown>[],
+  sampleProcesses: () => ProcessSample[],
+): ProcessSample[] {
   return rows.some((row) => row.status === 'running') ? sampleProcesses() : []
 }
 
@@ -47,7 +55,15 @@ export async function runListingCommand(
   presentation: RunListingPresentation,
 ): Promise<void> {
   const { has, flag, values } = flags
-  const { log, dur, chainIsStranded, strandedRecovery, thinOutputWarning } = presentation
+  const {
+    log,
+    dur,
+    chainIsStranded,
+    strandedRecovery,
+    thinOutputWarning,
+    processObservation,
+    clock,
+  } = presentation
   const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const jsonV1 = options.jsonV1
@@ -310,17 +326,18 @@ export async function runListingCommand(
     )
   }
 
-  const processSamples = processSamplesForRows(rows)
+  const processSamples = processSamplesForRows(rows, processObservation.sampleProcesses)
   rows = rows.map((r) => {
     const live = r.status === 'running'
     const lastEventAt = (r.last_event_at as string | null) ?? null
     const startedAt = String(r.current_started_at ?? r.started_at)
+    const observedAt = clock()
     const idle = live
-      ? idleLabel(lastEventAt, startedAt)
+      ? idleLabel(lastEventAt, startedAt, observedAt)
       : r.failure_kind === 'idle'
         ? 'idle-killed'
         : null
-    const since = live ? idleMsSince(lastEventAt, startedAt) : null
+    const since = live ? idleMsSince(lastEventAt, startedAt, observedAt) : null
     const stallObservation = live
       ? liveMemberStall(
           {
@@ -334,6 +351,9 @@ export async function runListingCommand(
             agent_start_time: (r.current_agent_start_time as string | null) ?? null,
           },
           processSamples,
+          observedAt,
+          undefined,
+          processObservation.processStartTime,
         )
       : null
     const {

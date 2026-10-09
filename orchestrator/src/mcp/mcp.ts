@@ -8,6 +8,7 @@ import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 registerStandardRuntime()
 
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
+import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
@@ -728,7 +729,7 @@ export function createDocsMcpServer(): McpServer {
     },
   )
 
-  registerDocTools(server, { selectCanonWriteTree })
+  registerDocTools(server, { selectCanonWriteTree, collectCanonLintInput })
 
   server.registerTool(
     'inspect_port_baseline',

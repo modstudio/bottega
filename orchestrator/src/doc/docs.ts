@@ -13,7 +13,7 @@ import {
   type DocStatus,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { collectCanonLintInput } from '../canon/canon-files.ts'
+import { collectCanonLintInput as productionCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
@@ -58,6 +58,12 @@ import {
 export type { Doc, DocRevision, DocRevisionMetadata }
 export type DocListFilters = StoreDocListFilters
 export type DocMetadata = StoreDocMetadata
+export type CanonLintInputCollector = (
+  root: string,
+) => Pick<
+  ReturnType<typeof productionCanonLintInput>,
+  'trackedPaths' | 'packageScripts' | 'sourceTexts'
+>
 
 import {
   assertLocalRevisionWrite,
@@ -96,6 +102,8 @@ export type DocWriteContext = {
   expectedRevision?: string
   /** A CLI-selected worktree for project-subject canon validation. */
   canonTree?: CanonWriteTree
+  /** Collects repository facts for canon validation. */
+  collectCanonLintInput?: CanonLintInputCollector
 }
 
 function assertInjectSize(input: {
@@ -319,10 +327,7 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
           targetProjectRows,
         ).map(({ slug, body }) => ({ slug, body }))
     const root = input.canonTree?.project.name === target.name ? input.canonTree.root : target.path
-    const collected =
-      input.canonTree?.project.name === target.name && input.canonTree.facts
-        ? input.canonTree.facts
-        : collectCanonLintInput(root)
+    const collected = (input.collectCanonLintInput ?? productionCanonLintInput)(root)
     return refuseCanonWrite({
       current: targetCurrent,
       next: targetNext,
@@ -335,9 +340,13 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
 }
 
-function assertCanonRemovalAllowed(doc: Doc, tree?: CanonWriteTree): void {
+function assertCanonRemovalAllowed(
+  doc: Doc,
+  tree: CanonWriteTree | undefined,
+  collectCanonLintInput: CanonLintInputCollector,
+): void {
   if (doc.scope !== 'canon') return
-  const refusal = storedCanonRemovalRefusal(doc, tree)
+  const refusal = storedCanonRemovalRefusal(doc, tree, collectCanonLintInput)
   if (refusal) throw new Error(refusal)
 }
 
@@ -525,7 +534,11 @@ export async function removeDoc(
     false,
   )
   if (context.canonRemovalDecision !== 'already-decided-next-set') {
-    assertCanonRemovalAllowed(doc, context.canonTree)
+    assertCanonRemovalAllowed(
+      doc,
+      context.canonTree,
+      context.collectCanonLintInput ?? productionCanonLintInput,
+    )
   }
   assertLocalDocRemovalAllowed(doc)
   return applyRecordWriteAuthority({

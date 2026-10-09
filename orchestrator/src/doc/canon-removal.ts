@@ -1,7 +1,7 @@
 // concern: docs
 /** Gathers stored canon and shared workflow facts for the pure removal decision. */
 
-import { collectCanonLintInput } from '../canon/canon-files.ts'
+import type { collectCanonLintInput } from '../canon/canon-files.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideCanonRemoval } from '../canon/canon-write-gate.ts'
 import { projectByName } from '../project/projects.ts'
@@ -9,6 +9,13 @@ import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
 import type { Doc } from './doc-read-store.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { type CanonWriteTree, canonRemovalRefusal } from './doc-write-allowed.ts'
+
+type CanonLintInputCollector = (
+  root: string,
+) => Pick<
+  ReturnType<typeof collectCanonLintInput>,
+  'trackedPaths' | 'packageScripts' | 'sourceTexts'
+>
 
 const withoutSlug = (rows: Doc[], slug: string) => rows.filter((row) => row.slug !== slug)
 const canonRows = (global: Doc[], project: Doc[]) =>
@@ -20,15 +27,14 @@ function removalRefusalForView(input: {
   next: { slug: string; body: string }[]
   workflowSteps: { slug: string; body: string }[]
   selectedTree?: CanonWriteTree
+  collectCanonLintInput: CanonLintInputCollector
 }): string | null {
   const project = input.subject ? projectByName(input.subject) : null
   const root =
     project && input.selectedTree?.project.name === project.name
       ? input.selectedTree.root
       : project?.path
-  const selectedTree = input.selectedTree
-  const suppliedFacts = selectedTree && selectedTree.root === root ? selectedTree.facts : undefined
-  const tree = suppliedFacts ? suppliedFacts : root ? collectCanonLintInput(root) : undefined
+  const tree = root ? input.collectCanonLintInput(root) : undefined
   return canonRemovalRefusal(
     decideCanonRemoval({
       current: input.current,
@@ -42,7 +48,11 @@ function removalRefusalForView(input: {
 }
 
 /** Checks one removal against every stored canon view that can see the removed row. */
-export function storedCanonRemovalRefusal(doc: Doc, selectedTree?: CanonWriteTree): string | null {
+export function storedCanonRemovalRefusal(
+  doc: Doc,
+  selectedTree: CanonWriteTree | undefined,
+  collectCanonLintInput: CanonLintInputCollector,
+): string | null {
   const workflowSteps = productionWorkflowTree().steps.map(({ slug, body }) => ({ slug, body }))
   if (doc.owner) {
     const current = listDocsStore({ scope: 'canon', subject: null, owner: doc.owner })
@@ -72,6 +82,7 @@ export function storedCanonRemovalRefusal(doc: Doc, selectedTree?: CanonWriteTre
       next,
       workflowSteps,
       selectedTree,
+      collectCanonLintInput,
     })
     if (refusal) return refusal
   }

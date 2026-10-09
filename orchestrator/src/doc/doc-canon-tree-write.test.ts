@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { upsertProject } from '../project/projects.ts'
+import { selectCanonWriteTree } from './doc-canon-tree.ts'
 import { docCommand } from './doc-commands.ts'
 import { getDoc } from './docs.ts'
 
@@ -72,6 +74,7 @@ async function command(args: string[], stdin = '') {
           code = value
         },
       },
+      { selectCanonWriteTree, collectCanonLintInput },
     )
   } catch (error) {
     code = 1

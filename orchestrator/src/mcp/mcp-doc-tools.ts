@@ -4,6 +4,7 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { SelectedCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import {
+  type CanonLintInputCollector,
   consumeDoc,
   getDoc,
   getDocRevision,
@@ -54,7 +55,10 @@ type CanonTreeSelector = (input: {
 
 export function registerDocTools(
   server: McpServer,
-  ports: { selectCanonWriteTree: CanonTreeSelector },
+  ports: {
+    selectCanonWriteTree: CanonTreeSelector
+    collectCanonLintInput: CanonLintInputCollector
+  },
 ): void {
   server.registerTool(
     'list_docs',
@@ -217,6 +221,7 @@ export function registerDocTools(
           author,
           expectedRevision: expected_revision,
           canonTree,
+          collectCanonLintInput: ports.collectCanonLintInput,
         }),
       )
       const root = repoRootForDoc(doc, canonTree?.root)
@@ -225,9 +230,7 @@ export function registerDocTools(
         warnings: root
           ? checkDoc(body, {
               repoRoot: root,
-              ...(canonTree?.root === root && canonTree.facts
-                ? { trackedFiles: new Set(canonTree.facts.trackedPaths) }
-                : {}),
+              trackedFiles: new Set(ports.collectCanonLintInput(root).trackedPaths),
             })
           : [],
         tree: canonTree?.root,
@@ -292,6 +295,7 @@ export function registerDocTools(
           author,
           expectedRevision: expected_revision,
           canonTree,
+          collectCanonLintInput: ports.collectCanonLintInput,
         }),
       )
       return text({ removed, tree: canonTree?.root })

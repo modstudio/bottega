@@ -2,6 +2,8 @@
 /** Registers documentation and register adapters. Must not own their behavior. */
 import { type Command, Option } from 'commander'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
+import { collectCanonLintInput } from '../canon/canon-files.ts'
+import { selectCanonWriteTree } from '../doc/doc-canon-tree.ts'
 import { docCommand } from '../doc/doc-commands.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
@@ -62,17 +64,23 @@ export function register(program: Command): void {
     .action(async (args, options) => {
       const argv = ['doc', ...args]
       const flags = optionFlags(options)
-      await docCommand(argv[1] ?? 'list', argv, flags, {
-        log,
-        error: console.error,
-        write,
-        stdinText: () => Bun.stdin.text(),
-        stdinIsTTY: process.stdin.isTTY,
-        cwd: process.cwd,
-        exitCode: (code) => {
-          process.exitCode = code
+      await docCommand(
+        argv[1] ?? 'list',
+        argv,
+        flags,
+        {
+          log,
+          error: console.error,
+          write,
+          stdinText: () => Bun.stdin.text(),
+          stdinIsTTY: process.stdin.isTTY,
+          cwd: process.cwd,
+          exitCode: (code) => {
+            process.exitCode = code
+          },
         },
-      })
+        { selectCanonWriteTree, collectCanonLintInput },
+      )
     })
 
   program

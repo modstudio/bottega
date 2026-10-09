@@ -17,12 +17,14 @@ const canonFacts = {
 }
 
 function smallCanonTree() {
-  return { project: projectByName(project)!, root: selectedTree, facts: canonFacts }
+  return { project: projectByName(project)!, root: selectedTree }
 }
+
+const collectCanonLintInput = () => canonFacts
 
 async function withDocClient(run: (client: Client) => Promise<void>): Promise<void> {
   const server = new McpServer({ name: 'orch-doc-test', version: '1.0.0' })
-  registerDocTools(server, { selectCanonWriteTree: smallCanonTree })
+  registerDocTools(server, { selectCanonWriteTree: smallCanonTree, collectCanonLintInput })
   const client = new Client({ name: 'orch-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -45,6 +47,7 @@ async function canonFixture() {
     body: initialBody,
     allowCanonBootstrap: true,
     canonTree: smallCanonTree(),
+    collectCanonLintInput,
   })
 }
 
