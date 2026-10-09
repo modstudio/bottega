@@ -619,8 +619,8 @@ async function mirrorCommentRow(
     return
   }
   await tx`INSERT INTO hub_task_comment
-    (id,legacy_local_id,space_id,project_name,task_key,task_id,body,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${null},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,task_key,task_id,body,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 async function mirrorDocumentRow(
@@ -647,8 +647,8 @@ async function mirrorDocumentRow(
     return
   }
   await tx`INSERT INTO hub_task_document
-    (id,legacy_local_id,space_id,project_name,task_key,task_id,role,title,body,version,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${null},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,task_key,task_id,role,title,body,version,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 async function mirrorStatusEventRow(
@@ -680,8 +680,8 @@ async function mirrorStatusEventRow(
     return
   }
   await tx`INSERT INTO hub_task_status_event
-    (id,legacy_local_id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${null},${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 async function mirrorTaskRows(tx: SQL, identity: TaskIdentity, body: MirrorBody) {

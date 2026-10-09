@@ -38,7 +38,7 @@ test('hosted note and report pulls refuse HTML and preserve their cursors', asyn
   ])
 })
 
-test('hosted send pull matches only by record id', async () => {
+test('hosted send pull updates the existing row with the same record id', async () => {
   writeTransaction((conn) => {
     conn
       .query(`INSERT INTO send(record_id,at,window,recipients,projects,items,status,error,test)
@@ -49,13 +49,13 @@ test('hosted send pull matches only by record id', async () => {
     Response.json({
       sends: [
         {
-          id: '01990000-0000-7000-8000-000000000302',
-          at: '2026-10-08T12:00:00.000Z',
+          id: '01990000-0000-7000-8000-000000000301',
+          at: '2026-10-08T13:00:00.000Z',
           window: 'day',
           recipients: '[]',
           projects: '[]',
           items: 1,
-          status: 'sent',
+          status: 'failed',
           error: null,
           test: 0,
           created_at: '2026-10-08T12:00:00.000Z',
@@ -67,5 +67,8 @@ test('hosted send pull matches only by record id', async () => {
 
   await pullHostedReports({ baseUrl: 'https://hub.example.test', token: 'session', fetch })
 
-  expect(db().query<{ count: number }, []>('SELECT count(*) count FROM send').get()?.count).toBe(2)
+  expect(db().query<{ count: number }, []>('SELECT count(*) count FROM send').get()?.count).toBe(1)
+  expect(
+    db().query<{ at: string; status: string }, []>('SELECT at,status FROM send').get(),
+  ).toEqual({ at: '2026-10-08T13:00:00.000Z', status: 'failed' })
 })

@@ -81,29 +81,6 @@ test('task push groups projects and children by destination and reports refusals
   ])
 })
 
-test('task push refuses a child without a record id before any request', async () => {
-  const at = '2026-09-24T12:00:00.000Z'
-  writeTransaction((conn) => {
-    conn
-      .query(`INSERT INTO task(record_id,key,project,title,status,status_category,source,first_seen,last_seen)
-        VALUES ('01990000-0000-7000-8000-000000000001','LOC-885','workshop','Push ids','open','open','local',?,?)`)
-      .run(at, at)
-    conn
-      .query(`INSERT INTO task_status_event(task_key,task_record_id,at,from_status,to_status)
-       VALUES ('LOC-885','01990000-0000-7000-8000-000000000001',?,NULL,'open')`)
-      .run(at)
-  })
-  let requests = 0
-  const fetch = async () => {
-    requests++
-    return Response.json({})
-  }
-  await expect(pushTasks({ fetch })).rejects.toThrow(
-    'task_status_event local row 1 has no record id',
-  )
-  expect(requests).toBe(0)
-})
-
 test('task push refuses an older server before its first mirror write', async () => {
   let writes = 0
   const fetch = async (input: string) => {

@@ -74,130 +74,13 @@ function changes(options: {
   }
 }
 
-function recordIds(table: string) {
-  return db()
-    .query<{ record_id: string | null }, []>(`SELECT record_id FROM ${table} ORDER BY id`)
-    .all()
-    .map((row) => row.record_id)
-}
-
-test('same legacy ids from another space insert distinct child rows', () => {
-  seedTask(TASK_A, 'DEV-1')
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO task_comment(id,record_id,task_key,task_record_id,body,created_at)
-         VALUES (101,'space-a-comment','DEV-1',?,'original',?)`,
-      )
-      .run(TASK_A, AT)
-    conn
-      .query(
-        `INSERT INTO task_document(id,record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
-         VALUES (102,'space-a-document','DEV-1',?,'original','body','v1',?,?)`,
-      )
-      .run(TASK_A, AT, AT)
-    conn
-      .query(
-        `INSERT INTO task_status_event(id,record_id,task_key,task_record_id,at,from_status,to_status)
-         VALUES (103,'space-a-event','DEV-1',?,?,'new','open')`,
-      )
-      .run(TASK_A, AT)
-  })
-
-  applyHostedTaskChanges(
-    changes({
-      ids: {
-        comment: 'space-b-comment',
-        document: 'space-b-document',
-        event: 'space-b-event',
-      },
-      legacy: { comment: 101, document: 102, event: 103 },
-    }),
-  )
-
-  expect(recordIds('task_comment')).toEqual(['space-a-comment', 'space-b-comment'])
-  expect(recordIds('task_document')).toEqual(['space-a-document', 'space-b-document'])
-  expect(recordIds('task_status_event')).toEqual(['space-a-event', 'space-b-event'])
-})
-
-test('tombstones with another row legacy id delete no child rows', () => {
-  seedTask(TASK_A, 'DEV-1')
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO task_comment(id,record_id,task_key,task_record_id,body,created_at)
-         VALUES (201,'kept-comment','DEV-1',?,'kept',?)`,
-      )
-      .run(TASK_A, AT)
-    conn
-      .query(
-        `INSERT INTO task_document(id,record_id,task_key,task_record_id,title,body,version,created_at,updated_at)
-         VALUES (202,'kept-document','DEV-1',?,'kept','body','v1',?,?)`,
-      )
-      .run(TASK_A, AT, AT)
-    conn
-      .query(
-        `INSERT INTO task_status_event(id,record_id,task_key,task_record_id,at,to_status)
-         VALUES (203,'kept-event','DEV-1',?,?,'open')`,
-      )
-      .run(TASK_A, AT)
-  })
-
-  applyHostedTaskChanges(
-    changes({
-      ids: { comment: 'other-comment', document: 'other-document', event: 'other-event' },
-      legacy: { comment: 201, document: 202, event: 203 },
-      deleted: true,
-    }),
-  )
-
-  expect(recordIds('task_comment')).toEqual(['kept-comment'])
-  expect(recordIds('task_document')).toEqual(['kept-document'])
-  expect(recordIds('task_status_event')).toEqual(['kept-event'])
-})
-
-test('legacy ids do not adopt unhosted child rows belonging to the same task', () => {
-  seedTask(TASK_A, 'DEV-1')
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO task_comment(id,task_key,task_record_id,body,created_at)
-         VALUES (301,'DEV-1',?,'local',?)`,
-      )
-      .run(TASK_A, AT)
-    conn
-      .query(
-        `INSERT INTO task_document(id,task_key,task_record_id,title,body,version,created_at,updated_at)
-         VALUES (302,'DEV-1',?,'local','body','v1',?,?)`,
-      )
-      .run(TASK_A, AT, AT)
-    conn
-      .query(
-        `INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status)
-         VALUES (303,'DEV-1',?,?,'open')`,
-      )
-      .run(TASK_A, AT)
-  })
-
-  applyHostedTaskChanges(
-    changes({
-      ids: { comment: 'adopt-comment', document: 'adopt-document', event: 'adopt-event' },
-      legacy: { comment: 301, document: 302, event: 303 },
-    }),
-  )
-
-  expect(recordIds('task_comment')).toEqual([null, 'adopt-comment'])
-  expect(recordIds('task_document')).toEqual([null, 'adopt-document'])
-  expect(recordIds('task_status_event')).toEqual([null, 'adopt-event'])
-})
-
 test('matching record ids update and delete child rows', () => {
   seedTask(TASK_A, 'DEV-1')
   writeTransaction((conn) => {
     conn
       .query(
-        `INSERT INTO task_comment(id,record_id,task_key,task_record_id,body,created_at)
-         VALUES (401,'matched-comment','DEV-1',?,'local',?)`,
+        `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+         VALUES ('matched-comment','DEV-1',?,'local',?)`,
       )
       .run(TASK_A, AT)
     conn
@@ -208,8 +91,8 @@ test('matching record ids update and delete child rows', () => {
       .run(TASK_A, AT, AT)
     conn
       .query(
-        `INSERT INTO task_status_event(id,record_id,task_key,task_record_id,at,to_status)
-         VALUES (403,'matched-event','DEV-1',?,?,'open')`,
+        `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status)
+         VALUES ('matched-event','DEV-1',?,?,'open')`,
       )
       .run(TASK_A, AT)
   })
@@ -226,16 +109,24 @@ test('matching record ids update and delete child rows', () => {
   )
 
   expect(
-    db().query<{ body: string }, []>(`SELECT body FROM task_comment WHERE id=401`).get()?.body,
+    db()
+      .query<{ body: string }, []>(
+        `SELECT body FROM task_comment WHERE record_id='matched-comment'`,
+      )
+      .get()?.body,
   ).toBe('hosted comment')
   expect(
     db().query<{ title: string }, []>(`SELECT title FROM task_document WHERE id=402`).get()?.title,
   ).toBe('hosted document')
   expect(
     db()
-      .query<{ to_status: string }, []>(`SELECT to_status FROM task_status_event WHERE id=403`)
+      .query<{ to_status: string }, []>(
+        `SELECT to_status FROM task_status_event WHERE record_id='matched-event'`,
+      )
       .get()?.to_status,
   ).toBe('active')
+  expect(db().query(`SELECT * FROM task_comment`).all()).toHaveLength(1)
+  expect(db().query(`SELECT * FROM task_status_event`).all()).toHaveLength(1)
 
   applyHostedTaskChanges(
     changes({
@@ -249,7 +140,7 @@ test('matching record ids update and delete child rows', () => {
     }),
   )
 
-  expect(recordIds('task_comment')).toEqual([])
-  expect(recordIds('task_document')).toEqual([])
-  expect(recordIds('task_status_event')).toEqual([])
+  expect(db().query(`SELECT * FROM task_comment`).all()).toEqual([])
+  expect(db().query(`SELECT * FROM task_document`).all()).toEqual([])
+  expect(db().query(`SELECT * FROM task_status_event`).all()).toEqual([])
 })
