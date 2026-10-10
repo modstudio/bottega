@@ -6,6 +6,7 @@ import {
   createPullRequest,
   recordTriageOverride,
 } from '../pull-request/pr-admission.ts'
+import { mergePullRequest } from '../pull-request/pr-merge.ts'
 import { log } from './support.ts'
 
 const forbiddenGithubFlag = (value: string): string | null => {
@@ -44,6 +45,14 @@ export function register(program: Command): void {
       if (result.overrideId !== null) {
         log(`pull-request triage admitted by operator override ${result.overrideId}`)
       }
+    })
+
+  pr.command('merge <number-or-url>')
+    .description('merge a pull request only when its head commit is proven')
+    .option('--cwd <tree>')
+    .allowExcessArguments(false)
+    .action((target: string, options) => {
+      log(mergePullRequest(target, options.cwd ?? process.cwd()))
     })
 
   pr.command('override')

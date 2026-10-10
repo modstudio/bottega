@@ -599,7 +599,7 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, then open the pull request with `orch pr create` and merge on GitHub. `orch pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. The local gate proves the commit; the pull request admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `orch pr create`, and merge it with `orch pr merge`. `orch pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `orch pr merge` refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. It merges exactly the commit it proved. The local gate proves the commit; the pull request admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
