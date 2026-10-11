@@ -33,6 +33,13 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     './doc-status.ts',
   ]),
+  module('orchestrator/src/doc/doc-read-store.ts', [
+    '../../../shared/doc-sections.ts',
+    '../../../shared/docs.ts',
+    '../database/db.ts',
+    './doc-audiences-codec.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/doc-tree-rules.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',

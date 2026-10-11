@@ -5,7 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes } from './record-api-access.ts'
@@ -113,7 +113,7 @@ type Deps = RecordSubjectRouteDeps & {
   readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
   searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
   searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
-  readDoc(input: Tenant & { id: string }): Promise<RecordDoc | null>
+  readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
   listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
   upsertDoc(
     input: Tenant & {
@@ -778,7 +778,9 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const doc = await deps.readDoc({ ...tenant, id: id.data })
+    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
+    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
+    const doc = await deps.readDoc({ ...tenant, id: id.data, audience: audience.data })
     return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
   })
   app.get('/v1/docs/:id/revisions', async (context) => {
