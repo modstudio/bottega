@@ -7,53 +7,16 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
-import type { StatusCategory } from './projects.ts'
+import {
+  HOSTED_TASK_UPDATE_COLUMNS,
+  type PushedStatusEvent,
+  type PushedTask,
+} from './push-contract.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
-export type HostedTask = {
-  id: string
-  newly_assigned?: boolean
-  key: string
-  project: string
-  project_name: string
-  title: string | null
-  status: string | null
-  status_category: StatusCategory | null
-  parent_key: string | null
-  parent_id?: string | null
-  body: string | null
-  assignee: string | null
-  opened_at: string | null
-  closed_at: string | null
-  source: 'mcp' | 'git' | 'local'
-  first_seen: string
-  last_seen: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-  next_document_number: number
-}
-
-/** Fields whose differences make the hosted task mirror update an existing row. */
-export const HOSTED_TASK_UPDATE_COLUMNS = [
-  'project_name',
-  'key',
-  'project',
-  'title',
-  'status',
-  'status_category',
-  'parent_key',
-  'parent_id',
-  'body',
-  'assignee',
-  'opened_at',
-  'closed_at',
-  'source',
-  'updated_at',
-  'deleted_at',
-  'next_document_number',
-] as const satisfies readonly (keyof HostedTask)[]
+export type HostedTask = PushedTask & { newly_assigned?: boolean }
+export { HOSTED_TASK_UPDATE_COLUMNS }
 export type HostedComment = {
   id: string
   task_key: string
@@ -78,18 +41,7 @@ export type HostedDocument = {
   updated_at: string
   deleted_at: string | null
 }
-export type HostedStatusEvent = {
-  id: string
-  task_key: string
-  task_id?: string | null
-  project_name: string
-  at: string
-  from_status: string | null
-  to_status: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
+export type HostedStatusEvent = PushedStatusEvent
 
 export const hostedTaskPullSerializers = {
   hub_task: (row: HostedTask) => row,

@@ -1,4 +1,4 @@
-import { HOSTED_TASK_UPDATE_COLUMNS, type HostedTask } from './hosted-tasks.ts'
+import { HOSTED_TASK_UPDATE_COLUMNS, type PushedTask } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 
 export type PushableTaskRow = Omit<TaskRow, 'record_id'> & { record_id: string | null }
@@ -10,7 +10,7 @@ function hostedInstant(value: string | null): string | null {
 }
 
 /** The single machine-task to hosted-task wire mapping. */
-export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): HostedTask {
+export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedTask {
   return {
     id,
     key: row.key,

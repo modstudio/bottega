@@ -1,14 +1,66 @@
-import type { StatusCategory } from '../../shared/trackers.ts'
-import type { HostedStatusEvent, HostedTask } from './hosted-tasks.ts'
-
 export const HOSTED_TASK_TABLE = 'hub_task'
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
 const PUSHABLE_HUB_CHANGE_TABLES = [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE] as const
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
-export type PushedStatusEvent = HostedStatusEvent
-export type PushedTask = Omit<HostedTask, 'newly_assigned'>
+export type PushedStatusEvent = {
+  id: string
+  task_key: string
+  task_id?: string | null
+  project_name: string
+  at: string
+  from_status: string | null
+  to_status: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
+export type TaskStatusCategory = (typeof TASK_STATUS_CATEGORIES)[number]
+
+export type PushedTask = {
+  id: string
+  key: string
+  project: string
+  project_name: string
+  title: string | null
+  status: string | null
+  status_category: TaskStatusCategory | null
+  parent_key: string | null
+  parent_id?: string | null
+  body: string | null
+  assignee: string | null
+  opened_at: string | null
+  closed_at: string | null
+  source: 'mcp' | 'git' | 'local'
+  first_seen: string
+  last_seen: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  next_document_number: number
+}
+
+export const HOSTED_TASK_UPDATE_COLUMNS = [
+  'project_name',
+  'key',
+  'project',
+  'title',
+  'status',
+  'status_category',
+  'parent_key',
+  'parent_id',
+  'body',
+  'assignee',
+  'opened_at',
+  'closed_at',
+  'source',
+  'updated_at',
+  'deleted_at',
+  'next_document_number',
+] as const satisfies readonly (keyof PushedTask)[]
 
 export type HostedPushChange =
   | { table: PushableHubChangeTable; id: string; op: 'delete' }
@@ -93,9 +145,7 @@ function taskFieldError(row: Record<string, unknown>): string | null {
       return `${HOSTED_TASK_TABLE} row.${field} must be a string or null`
   if (
     row.status_category !== null &&
-    !(['open', 'active', 'review', 'done', 'dropped'] satisfies StatusCategory[]).includes(
-      row.status_category as StatusCategory,
-    )
+    !TASK_STATUS_CATEGORIES.includes(row.status_category as TaskStatusCategory)
   )
     return `${HOSTED_TASK_TABLE} row.status_category must be open, active, review, done, dropped, or null`
   return null
