@@ -2,7 +2,7 @@
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
-import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -22,6 +22,15 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
+import {
+  type HostedArticleResponse,
+  hostedArticleProjectId,
+  hostedArticleResponse,
+  importedArticleSubjectNames,
+  replaceHostedRelatedSubjects,
+  resolveHostedArticleFields,
+  restoredArticleFields,
+} from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
@@ -31,6 +40,7 @@ import {
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
 import {
+  importedLiveArticleFields,
   newerHostedImportRefusal,
   normalizeRecordDocImport,
   type RecordDocImportInput,
@@ -105,22 +115,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   }
 }
 
-async function projectId(
-  tx: SQL,
-  spaceId: string,
-  name: string | null | undefined,
-): Promise<string | null> {
-  if (!name) return null
-  const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
-  if (rows.length !== 1) {
-    throw new RecordDocError(
-      `project ${name} has no hosted row in record space ${spaceId}; run \`orch project push\` to create it`,
-      422,
-    )
-  }
-  return String(rows[0]!.id)
-}
-
 export async function listRecordDocRevisions(
   input: Tenant & { id: string },
 ): Promise<RecordDocRevision[] | null> {
@@ -128,8 +122,10 @@ export async function listRecordDocRevisions(
     const docs = await tx`SELECT id,space_id FROM doc WHERE id=${input.id}::uuid`
     if (!docs.length) return null
     const rows = await tx`
-      SELECT * FROM doc_revision
-      WHERE space_id=${String(docs[0]!.space_id)}::uuid AND doc_id=${input.id}::uuid
+      SELECT r.*, own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(r.related_subject_ids)='array' THEN r.related_subject_ids ELSE '[]'::jsonb END) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
+      FROM doc_revision r LEFT JOIN subject own ON own.id=r.article_subject_id
+      WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
     `
     return rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row))
@@ -151,6 +147,10 @@ export async function upsertRecordDoc(
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     projectName?: string | null
     reason: string
@@ -163,7 +163,7 @@ export async function upsertRecordDoc(
     revisionId?: string
     expectedRevision?: string
   },
-): Promise<{ id: string; revisionId: string }> {
+): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
@@ -171,7 +171,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audiences, featured, status, kind, replacement_slug, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -229,11 +229,13 @@ export async function upsertRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(
+    const resolvedProject = await hostedArticleProjectId(
       tx,
       input.spaceId,
       input.projectName ?? docWriteProjectName(input.scope, input.subject),
     )
+    const { form, articleSubjectId, relatedSubjectIds, sourceFiles, subjectRows } =
+      await resolveHostedArticleFields(tx, { ...input, kind }, existing[0], resolvedProject)
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const audiences = storedDocAudiences(input, existing[0])
@@ -263,7 +265,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -271,14 +273,15 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${JSON.stringify(sourceFiles)}::jsonb, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
     }
+    await replaceHostedRelatedSubjects(tx, input.spaceId, docId, relatedSubjectIds)
     const revisionId = await insertRecordDocRevision(tx, {
       id: input.revisionId,
       spaceId: input.spaceId,
@@ -298,13 +301,24 @@ export async function upsertRecordDoc(
       featured,
       status,
       kind,
+      form,
+      articleSubjectId,
+      relatedSubjectIds,
+      sourceFiles,
       replacementSlug,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
       at: now,
     })
-    return { id: docId, revisionId }
+    const names = new Map(
+      subjectRows.map((row: Record<string, unknown>) => [String(row.id), String(row.name)]),
+    )
+    return {
+      id: docId,
+      revisionId,
+      ...hostedArticleResponse({ form, articleSubjectId, relatedSubjectIds, sourceFiles }, names),
+    }
   })
 }
 
@@ -470,7 +484,7 @@ export async function importRecordCanon(
         : {
             subject: input.address.subject,
             owner: null,
-            projectId: await projectId(tx, input.spaceId, input.address.subject),
+            projectId: await hostedArticleProjectId(tx, input.spaceId, input.address.subject),
           }
     if (input.address.kind === 'user') {
       await tx`SELECT id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE`
@@ -580,6 +594,9 @@ export async function deleteRecordDoc(
       }),
     )
     const now = new Date().toISOString()
+    const relatedSubjectIds = (
+      await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
+    ).map((row: Record<string, unknown>) => String(row.subject_id))
     await tx`
       UPDATE doc SET deleted_at=${now}::timestamptz, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid AND deleted_at IS NULL
@@ -601,6 +618,10 @@ export async function deleteRecordDoc(
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
+      form: doc.form == null ? null : (String(doc.form) as DocForm),
+      articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
+      relatedSubjectIds,
+      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -635,6 +656,9 @@ export async function consumeRecordDoc(
       scope: String(doc.scope),
     })
     const now = new Date().toISOString()
+    const relatedSubjectIds = (
+      await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
+    ).map((row: Record<string, unknown>) => String(row.subject_id))
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
     assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
@@ -659,6 +683,10 @@ export async function consumeRecordDoc(
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
+      form: doc.form == null ? null : (String(doc.form) as DocForm),
+      articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
+      relatedSubjectIds,
+      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -719,7 +747,11 @@ export async function restoreRecordDoc(
     // An unresolved project leaves the live document's project as it is.
     let resolvedProjectId: string | null = null
     try {
-      resolvedProjectId = await projectId(tx, input.spaceId, docWriteProjectName(scope, subject))
+      resolvedProjectId = await hostedArticleProjectId(
+        tx,
+        input.spaceId,
+        docWriteProjectName(scope, subject),
+      )
     } catch (error) {
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
@@ -732,6 +764,8 @@ export async function restoreRecordDoc(
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
+    const { form, articleSubjectId, relatedSubjectIds, sourceFiles } =
+      restoredArticleFields(revision)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -764,11 +798,12 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
+    await replaceHostedRelatedSubjects(tx, input.spaceId, input.id, relatedSubjectIds)
     const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
@@ -787,6 +822,10 @@ export async function restoreRecordDoc(
       featured,
       status,
       kind,
+      form,
+      articleSubjectId,
+      relatedSubjectIds,
+      sourceFiles,
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -845,35 +884,48 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
 
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
-): Promise<{ id: string; revisionIds: string[] }> {
-  const { doc, revisions } = normalizeRecordDocImport(input, newRecordId())
+): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
+  const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   const ownedAddress =
-    refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
-    refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
+    refuseOwnedDocAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner) ??
+    refuseSettingsAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner)
   if (ownedAddress) throw new RecordDocError(ownedAddress)
-  assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
+  assertWrite(
+    refuseMismatchedDocProject(importedDoc.scope, importedDoc.subject, importedDoc.projectName),
+  )
   for (const revision of revisions) {
-    assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
+    assertWrite(recordDocRevisionIdentityRefusal(importedDoc, revision, 'import'))
     assertDocSections(revision.body, recordDocAudiences(revision.audiences))
   }
-  assertDocSections(doc.body, recordDocAudiences(doc.audiences))
+  assertDocSections(importedDoc.body, recordDocAudiences(importedDoc.audiences))
   return tenant(input, async (tx) => {
-    const existing = await existingDocAtAddress(tx, input.spaceId, doc)
+    const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,
       isCreate: !existing,
-      scope: doc.scope,
+      scope: importedDoc.scope,
     })
-    if (existing && doc.deletedAt !== null && existing.deleted_at == null) {
+    if (existing && importedDoc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)
       throw new RecordDocError(
         `refusing import at ${String(existing.scope)}/${subject}/${String(existing.slug)}: a deleted import never targets a live row; delete the live doc through the doc service first if deletion is intended`,
         409,
       )
     }
-    const newerHosted = newerHostedImportRefusal(existing, doc)
+    const newerHosted = newerHostedImportRefusal(existing, importedDoc)
     if (newerHosted) throw new RecordDocError(newerHosted, 409)
+    const existingRelated = existing
+      ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing.id)}::uuid`
+      : []
+    const doc = {
+      ...importedDoc,
+      ...importedLiveArticleFields(
+        importedDoc,
+        existing,
+        existingRelated.map((row: Record<string, unknown>) => String(row.subject_id)),
+      ),
+    }
     assertWrite(
       recordDocLintRefusal(
         doc,
@@ -888,10 +940,17 @@ export async function importRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(
+    const resolvedProject = await hostedArticleProjectId(
       tx,
       input.spaceId,
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
+    )
+    const importedSubjectNames = await importedArticleSubjectNames(
+      tx,
+      { spaceId: input.spaceId, subject: doc.subject },
+      resolvedProject,
+      doc,
+      revisions,
     )
     const id = existing ? String(existing.id) : doc.id
     await validateImportedDocumentLifecycles(tx, { ...doc, spaceId: input.spaceId }, [
@@ -940,6 +999,10 @@ export async function importRecordDoc(
           featured: revision.featured,
           status: revision.status,
           kind: revision.kind,
+          form: revision.form,
+          articleSubjectId: revision.articleSubjectId,
+          relatedSubjectIds: revision.relatedSubjectIds,
+          sourceFiles: revision.sourceFiles,
           replacementSlug: revision.replacementSlug,
           author: revision.author,
           reason: revision.reason,
@@ -948,6 +1011,10 @@ export async function importRecordDoc(
         }),
       )
     }
-    return { id, revisionIds }
+    return {
+      id,
+      revisionIds,
+      ...hostedArticleResponse(doc, importedSubjectNames),
+    }
   })
 }

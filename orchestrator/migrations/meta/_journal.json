@@ -666,6 +666,13 @@
       "when": 1791550800000,
       "tag": "0094_doc_audience_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1791734400000,
+      "tag": "0095_doc_article_fields",
+      "breakpoints": true
     }
   ]
 }

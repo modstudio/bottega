@@ -27,7 +27,6 @@ import {
   type DocAudience,
   type DocAudiences,
   type DocKind,
-  type DocScope,
   type DocStatus,
   type FilingDocScope,
 } from '../../shared/docs.ts'
@@ -69,6 +68,7 @@ import {
   type SettingsPermissionList,
 } from '../../shared/settings-summary.ts'
 import { SHIP_TO_VALUES } from '../../shared/ship-to.ts'
+import type { ContractDocRow } from './doc-contract.ts'
 
 export type {
   OperatorWaitingItem,
@@ -559,28 +559,7 @@ export async function score(
   return orchProcess(args, 20_000, { env: requiredDashboardCapabilityEnvironment() })
 }
 
-export type { DocScope }
-
-export type DocRow = {
-  id: number
-  scope: DocScope
-  subject: string | null
-  slug: string
-  title: string
-  body: string
-  delivery: 'inject' | 'demand'
-  audiences: DocAudiences
-  parent_id: number | null
-  parent_slug: string | null
-  position: number
-  featured?: boolean
-  status?: DocStatus
-  kind?: DocKind
-  replacement_slug?: string | null
-  revision: string | null
-  created_at: string
-  updated_at: string
-}
+export type DocRow = ContractDocRow
 
 const DocRowSchema = z.object({
   id: z.number(),

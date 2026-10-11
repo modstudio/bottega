@@ -11,6 +11,14 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-article-fields.ts', [
+    '../../../shared/docs.ts',
+    '../canon/canon-files.ts',
+    '../canon/canon-hydrate.ts',
+    '../subject/subjects.ts',
+    './doc-read-store.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('shared/doc-sections.ts', [
     'mdast-util-directive',
     'mdast-util-from-markdown',

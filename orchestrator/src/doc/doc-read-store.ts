@@ -6,8 +6,10 @@ import {
   DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
+  type DocArticleSubject,
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocScope,
   type DocStatus,
@@ -30,6 +32,11 @@ export type Doc = {
   featured: boolean
   status: DocStatus
   kind: DocKind
+  form: DocForm | null
+  article_subject_id: string | null
+  articleSubject: DocArticleSubject | null
+  relatedSubjects: DocArticleSubject[]
+  sourceFiles: string[]
   replacement_slug: string | null
   parent_id: number | null
   parent_slug: string | null
@@ -50,6 +57,10 @@ export type DocMetadata = Pick<
   | 'featured'
   | 'status'
   | 'kind'
+  | 'form'
+  | 'articleSubject'
+  | 'relatedSubjects'
+  | 'sourceFiles'
   | 'replacement_slug'
   | 'parent_id'
   | 'parent_slug'
@@ -68,6 +79,7 @@ export type DocListFilters = {
   audience?: string
   status?: string
   kind?: string
+  articleSubject?: string
 }
 
 export type DocRevision = {
@@ -86,6 +98,11 @@ export type DocRevision = {
   featured: boolean
   status: DocStatus
   kind: DocKind
+  form: DocForm | null
+  article_subject_id: string | null
+  articleSubject: DocArticleSubject | null
+  relatedSubjects: DocArticleSubject[]
+  sourceFiles: string[]
   replacement_slug: string | null
   parent_id: number | null
   position: number
@@ -97,16 +114,68 @@ export type DocRevision = {
 }
 export type DocRevisionMetadata = Pick<
   DocRevision,
-  'id' | 'op' | 'author' | 'reason' | 'at' | 'status' | 'kind' | 'replacement_slug' | 'record_id'
+  | 'id'
+  | 'op'
+  | 'author'
+  | 'reason'
+  | 'at'
+  | 'status'
+  | 'kind'
+  | 'replacement_slug'
+  | 'record_id'
+  | 'form'
+  | 'articleSubject'
+  | 'relatedSubjects'
+  | 'sourceFiles'
 > & { bytes: number }
 
 const LATEST_REVISION_SQL =
   '(SELECT r.record_id FROM doc_revision r WHERE r.doc_id=d.id ORDER BY r.id DESC LIMIT 1)'
 
-const docRow = <T extends { featured: boolean | number; audiences: string | DocAudiences }>(
+const articleFields = (
+  database: Database,
+  row: {
+    kind?: string
+    record_id?: string | null
+    article_subject_id?: string | null
+    source_files?: string
+  },
+) => {
+  const own = row.article_subject_id
+    ? (database
+        .query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?')
+        .get(row.article_subject_id) ?? null)
+    : null
+  // Only an article can hold related subjects, so no other document reads the link table.
+  const related =
+    row.kind === 'article' && row.record_id
+      ? database
+          .query<{ id: string; name: string }, [string]>(
+            `SELECT s.id,s.name FROM doc_related_subject r JOIN subject s ON s.id=r.subject_id WHERE r.doc_record_id=? ORDER BY s.position,s.id`,
+          )
+          .all(row.record_id)
+      : []
+  return {
+    articleSubject: own,
+    relatedSubjects: related,
+    sourceFiles: JSON.parse(row.source_files ?? '[]') as string[],
+  }
+}
+
+const docRow = <
+  T extends {
+    featured: boolean | number
+    audiences: string | DocAudiences
+    record_id?: string | null
+    article_subject_id?: string | null
+    source_files?: string
+  },
+>(
+  database: Database,
   row: T,
-): Omit<T, 'audiences'> & { audiences: DocAudiences } => ({
+) => ({
   ...row,
+  ...articleFields(database, row),
   featured: Boolean(row.featured),
   audiences:
     typeof row.audiences === 'string' ? decodeStoredDocAudiences(row.audiences) : row.audiences,
@@ -205,7 +274,7 @@ export function getDocStore(
       `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join} WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(scope, subject, owner, slug) as (Doc & { featured: boolean | number }) | null
-  return row ? docRow(row) : null
+  return row ? docRow(database, row) : null
 }
 
 export function getDocForAudienceStore(
@@ -231,6 +300,7 @@ export function listDocsStore(
     audience?: string
     status?: string
     kind?: string
+    articleSubject?: string
   } = {},
   database: Database = db(),
 ): Doc[] {
@@ -257,15 +327,16 @@ export function listDocsStore(
       values.push(filters.kind)
     } else if (filters.kind !== 'working') where.push('0')
   }
+  const articleQuery = articleSubjectQuery(filters.articleSubject, where, values)
   return (
     database
       .query(
         `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-          `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
+          `ORDER BY ${articleQuery.order}d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
       )
-      .all(...values) as Array<Doc & { featured: boolean | number }>
+      .all(...articleQuery.values) as Array<Doc & { featured: boolean | number }>
   )
-    .map(docRow)
+    .map((row) => docRow(database, row))
     .map((doc) =>
       filters.audience
         ? { ...doc, body: docBodyForAudience(doc.body, filters.audience as DocAudience) }
@@ -273,22 +344,44 @@ export function listDocsStore(
     )
 }
 
+function articleSubjectQuery(
+  articleSubject: string | undefined,
+  where: string[],
+  values: string[],
+): { order: string; values: string[] } {
+  if (articleSubject === undefined) return { order: '', values }
+  where.push(
+    '(d.article_subject_id = ? OR EXISTS (SELECT 1 FROM doc_related_subject rs WHERE rs.doc_record_id=d.record_id AND rs.subject_id=?))',
+  )
+  values.push(articleSubject, articleSubject)
+  return {
+    order: 'CASE WHEN d.article_subject_id = ? THEN 0 ELSE 1 END, ',
+    values: [...values, articleSubject],
+  }
+}
+
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {
   const projectedBodyMatch = filters.audience !== undefined && filters.bodyMatch !== undefined
   const { where, values } = metadataFilters(
     projectedBodyMatch ? { ...filters, bodyMatch: undefined } : filters,
   )
-  const order = filters.updatedAtOrder
+  const baseOrder = filters.updatedAtOrder
     ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
     : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
+  const order =
+    filters.articleSubject !== undefined
+      ? `CASE WHEN d.article_subject_id = ? THEN 0 ELSE 1 END, ${baseOrder}`
+      : baseOrder
+  const queryValues =
+    filters.articleSubject !== undefined ? [...values, filters.articleSubject] : values
   const rows = (
     db()
       .query(
-        `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+        `SELECT d.id, d.record_id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.form, d.article_subject_id, d.source_files, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
       )
-      .all(...values) as Array<DocMetadata & { featured: boolean | number }>
-  ).map(docRow)
+      .all(...queryValues) as Array<DocMetadata & { featured: boolean | number }>
+  ).map((row) => docRow(db(), row))
   if (!projectedBodyMatch) return rows
   const needle = filters.bodyMatch!.toLocaleLowerCase()
   return rows.filter((row) => {
@@ -311,6 +404,12 @@ function metadataFilters(filters: DocListFilters): { where: string[]; values: st
     throw new Error('use scope or scopes, not both')
   }
   const { where, values } = addressFilters(filters)
+  if (filters.articleSubject !== undefined) {
+    where.push(
+      '(d.article_subject_id = ? OR EXISTS (SELECT 1 FROM doc_related_subject rs WHERE rs.doc_record_id=d.record_id AND rs.subject_id=?))',
+    )
+    values.push(filters.articleSubject, filters.articleSubject)
+  }
   if (filters.audience !== undefined) {
     validAudience(filters.audience)
     where.push('EXISTS (SELECT 1 FROM json_each(d.audiences) WHERE value = ?)')

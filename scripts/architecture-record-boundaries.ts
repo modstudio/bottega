@@ -70,6 +70,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../doc/doc-write-allowed.ts',
       './record-canon-facts.ts',
       './record-doc-audience-sql.ts',
+      './record-doc-article-fields.ts',
       './record-doc-audiences.ts',
       './record-doc-errors.ts',
       './record-doc-lifecycle.ts',
@@ -290,7 +291,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-docs-boundary',
     'shared/record/schema-docs.ts',
-    ['drizzle-orm', 'drizzle-orm/pg-core', '../docs.ts', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', '../docs.ts', './schema.ts', './schema-subjects.ts'],
     'Enforce the hosted doc schema concern boundary.',
   ),
   boundary(

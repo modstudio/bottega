@@ -6,10 +6,12 @@
 import { readFileSync } from 'node:fs'
 import {
   DOC_AUDIENCES,
+  DOC_FORMS,
   DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocStatus,
   normalizeDocAudiences,
@@ -46,7 +48,11 @@ const DOC_KEYWORD_LIST_LIMIT = 50
 const compareStoreText = (left: string, right: string) =>
   Buffer.compare(Buffer.from(left), Buffer.from(right))
 
-type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
+type DocFlags = {
+  has(name: string): boolean
+  flag(name: string): string | undefined
+  values?(name: string): string[]
+}
 type DocPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -267,6 +273,21 @@ function readDoc(
     : getDoc(address.scope, address.subject, slug, address.owner)
 }
 
+function readDocFilters(
+  flags: DocFlags,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+) {
+  return {
+    scope: address.scope,
+    ...(flags.has('subject') || flags.has('user') ? { subject: address.subject } : {}),
+    owner: address.owner,
+    audience: flags.flag('audience'),
+    status: flags.flag('status'),
+    kind: flags.flag('kind'),
+    articleSubject: flags.flag('article-subject'),
+  }
+}
+
 function handledReadDocCommand(
   sub: string,
   argv: string[],
@@ -276,26 +297,19 @@ function handledReadDocCommand(
 ): boolean {
   const { has } = flags
   if (sub === 'list') {
-    const filters = {
-      scope: address.scope,
-      ...(has('subject') || has('user') ? { subject: address.subject } : {}),
-      owner: address.owner,
-      audience: flags.flag('audience'),
-      status: flags.flag('status'),
-      kind: flags.flag('kind'),
-    }
+    const filters = readDocFilters(flags, address)
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
     const rows = listedDocs(filters, match, bodyMatch)
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(
-        'scope    subject          slug                     title                    kind     status      delivery  bytes  updated',
+        'scope    subject          slug                     title                    kind     form       article-subject  related  sources  status      delivery  bytes  updated',
       )
       for (const d of rows) {
         presentation.log(
           `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-            `${d.title.padEnd(24)} ${d.kind.padEnd(8)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+            `${d.title.padEnd(24)} ${d.kind.padEnd(8)} ${(d.form ?? '-').padEnd(10)} ${(d.articleSubject?.name ?? '-').padEnd(16)} ${String(d.relatedSubjects.length).padStart(7)} ${String(d.sourceFiles.length).padStart(7)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
         )
       }
     }
@@ -314,9 +328,32 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `kind: ${doc.kind}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
+}
+
+function clearedListOption(flags: DocFlags, value: string, clear: string): string[] | undefined {
+  const { has } = flags
+  if (has(value) && has(clear)) throw new Error(`use --${value} or --${clear}, not both`)
+  if (has(clear)) return []
+  return has(value) ? (flags.values?.(value) ?? []) : undefined
+}
+
+function articleTreeOptions(flags: DocFlags) {
+  const { has, flag } = flags
+  if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
+  const rawForm = flag('form')
+  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm))
+    throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
+  if (has('article-subject') && has('no-article-subject'))
+    throw new Error('use --article-subject or --no-article-subject, not both')
+  return {
+    form: has('no-form') ? null : (rawForm as DocForm | undefined),
+    articleSubject: has('no-article-subject') ? null : flag('article-subject'),
+    relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
+    sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
+  }
 }
 
 function setTreeOptions(flags: DocFlags): {
@@ -327,6 +364,10 @@ function setTreeOptions(flags: DocFlags): {
   status: DocStatus | undefined
   kind: DocKind | undefined
   replacementSlug: string | null | undefined
+  form: DocForm | null | undefined
+  articleSubject: string | null | undefined
+  relatedSubjects: string[] | undefined
+  sourceFiles: string[] | undefined
 } {
   const { has, flag } = flags
   const audiences = docAudiences(flag('audience'))
@@ -347,6 +388,7 @@ function setTreeOptions(flags: DocFlags): {
     status: docStatus(flag('status')),
     kind: docKind(flag('kind')),
     replacementSlug,
+    ...articleTreeOptions(flags),
   }
 }
 
@@ -559,7 +601,7 @@ export async function docCommand(
       else
         for (const revision of revisions) {
           presentation.log(
-            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
       return

@@ -50,6 +50,24 @@ export const DOC_STATUSES = ['draft', 'current', 'superseded', 'archived'] as co
 export type DocStatus = (typeof DOC_STATUSES)[number]
 export const DOC_KINDS = ['working', 'article'] as const
 export type DocKind = (typeof DOC_KINDS)[number]
+export const DOC_FORMS = ['feature', 'how-to', 'rule', 'model', 'overview'] as const
+export type DocForm = (typeof DOC_FORMS)[number]
+export type DocArticleSubject = { id: string; name: string }
+
+/** Validate one repository-relative source path at an input boundary. */
+export function normalizeDocSourceFiles(input: readonly string[]): string[] {
+  const seen = new Set<string>()
+  for (const path of input) {
+    if (!path || path.startsWith('/') || path.split('/').includes('..')) {
+      throw new Error(
+        `invalid source file "${path}": use a non-empty repository-relative path with no .. segment`,
+      )
+    }
+    if (seen.has(path)) throw new Error(`duplicate source file "${path}"`)
+    seen.add(path)
+  }
+  return [...input]
+}
 export const DOC_SUMMARY_MAX_LENGTH = 160
 
 /** Derive the short catalogue copy from the first prose paragraph in a markdown body. */

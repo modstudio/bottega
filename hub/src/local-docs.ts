@@ -1,17 +1,17 @@
 import { type DocAudience, docSummary } from '../../shared/docs.ts'
-import { DocSchema, DocTreeItemSchema } from './doc-contract.ts'
+import { ArticleDocFieldsSchema, DocSchema, DocTreeItemSchema } from './doc-contract.ts'
 import { type DocRow, docGet, docList } from './orch.ts'
+
+const LocalTreeSchema = DocTreeItemSchema.extend(ArticleDocFieldsSchema.shape)
+const LocalDocSchema = DocSchema.extend(ArticleDocFieldsSchema.shape)
 
 export type LocalDocFilters = Pick<
   NonNullable<Parameters<typeof docList>[0]>,
   'scope' | 'subject' | 'audience' | 'status' | 'kind'
 >
 
-function localDocContract(
-  row: DocRow,
-  includeBody: false,
-): ReturnType<typeof DocTreeItemSchema.parse>
-function localDocContract(row: DocRow, includeBody: true): ReturnType<typeof DocSchema.parse>
+function localDocContract(row: DocRow, includeBody: false): ReturnType<typeof LocalTreeSchema.parse>
+function localDocContract(row: DocRow, includeBody: true): ReturnType<typeof LocalDocSchema.parse>
 function localDocContract(row: DocRow, includeBody: boolean) {
   const item = {
     id: String(row.id),
@@ -29,8 +29,14 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     status: row.status ?? 'current',
     kind: row.kind ?? 'working',
     replacementSlug: row.replacement_slug ?? null,
+    form: row.form ?? null,
+    articleSubject: row.articleSubject ?? null,
+    relatedSubjects: row.relatedSubjects ?? [],
+    sourceFiles: row.sourceFiles ?? [],
   }
-  return includeBody ? DocSchema.parse({ ...item, body: row.body }) : DocTreeItemSchema.parse(item)
+  return includeBody
+    ? LocalDocSchema.parse({ ...item, body: row.body })
+    : LocalTreeSchema.parse(item)
 }
 
 export async function localDocsTree(filters: LocalDocFilters = {}) {

@@ -2,6 +2,7 @@
 /** Pulls hosted docs and verdicts into the local offline cache. Must not know CLI presentation. */
 import type { Database } from 'bun:sqlite'
 import { normalizeDocAudiences } from '../../../shared/docs.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
@@ -222,8 +223,8 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   const cache = recordCacheSpaces(identity)
-  const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
+  const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   let scores = 0
   let scoreCursor = readCursor(local, SCORES_CURSOR)
   for (;;) {
@@ -319,6 +320,39 @@ function pulledDocAudiences(item: Record<string, unknown>): string {
   return encodeStoredDocAudiences(normalizeDocAudiences(values))
 }
 
+function pulledDocArticleFields(local: Database, item: Record<string, unknown>, recordId: string) {
+  const articleSubject =
+    item.articleSubject && typeof item.articleSubject === 'object'
+      ? (item.articleSubject as Record<string, unknown>)
+      : null
+  const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
+  const relatedSubjectIds = Array.isArray(item.relatedSubjects)
+    ? item.relatedSubjects.map((value) => String((value as Record<string, unknown>).id))
+    : []
+  const sourceFiles = Array.isArray(item.sourceFiles) ? item.sourceFiles.map(String) : []
+  for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
+    Boolean(value),
+  )) {
+    if (!local.query('SELECT 1 FROM subject WHERE id=?').get(id))
+      throw new Error(
+        `record cache deferred document ${recordId}: subject ${id} is not local; cleared by: refresh subjects and pull again`,
+      )
+  }
+  return { articleSubjectId, relatedSubjectIds, sourceFiles }
+}
+
+function syncPulledDocRelatedSubjects(
+  local: Database,
+  recordId: string,
+  relatedSubjectIds: string[],
+): void {
+  local.query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(recordId)
+  for (const id of relatedSubjectIds)
+    local
+      .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
+      .run(newRecordId(), recordId, id)
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
@@ -343,6 +377,12 @@ function applyDoc(
   const position = item.position == null ? 0 : Number(item.position)
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)
+  const form = item.form == null ? null : String(item.form)
+  const { articleSubjectId, relatedSubjectIds, sourceFiles } = pulledDocArticleFields(
+    local,
+    item,
+    recordId,
+  )
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
   const parentId: number | null =
     parentRecordId == null
@@ -360,7 +400,7 @@ function applyDoc(
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE id=?',
       )
       .run(
         title,
@@ -372,12 +412,16 @@ function applyDoc(
         featured,
         status,
         kind,
+        form,
+        articleSubjectId,
+        JSON.stringify(sourceFiles),
         replacementSlug,
         updatedAt,
         subject,
         owner,
         existing.id,
       )
+    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   const byAddress = local
@@ -388,7 +432,7 @@ function applyDoc(
   if (byAddress) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
       )
       .run(
         title,
@@ -400,17 +444,21 @@ function applyDoc(
         featured,
         status,
         kind,
+        form,
+        articleSubjectId,
+        JSON.stringify(sourceFiles),
         replacementSlug,
         updatedAt,
         recordId,
         byAddress.id,
       )
+    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, replacement_slug, created_at, updated_at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       scope,
@@ -427,11 +475,15 @@ function applyDoc(
       featured,
       status,
       kind,
+      form,
+      articleSubjectId,
+      JSON.stringify(sourceFiles),
       replacementSlug,
       createdAt,
       updatedAt,
       recordId,
     )
+  syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {

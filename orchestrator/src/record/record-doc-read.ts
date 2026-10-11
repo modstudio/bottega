@@ -41,10 +41,13 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
     const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
     const rows = await tx`
       SELECT d.*, s.name AS space_name, p.name AS project_name,
+        own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects,
         to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
+      LEFT JOIN subject own ON own.id=d.article_subject_id
       WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
         AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
@@ -85,10 +88,12 @@ export async function getRecordDoc(
 ): Promise<RecordDoc | null> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name
+      SELECT d.*, s.name AS space_name, p.name AS project_name, own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
+      LEFT JOIN subject own ON own.id=d.article_subject_id
       WHERE d.id=${input.id}::uuid
     `
     if (!rows[0]) return null

@@ -4,7 +4,13 @@
  * Knows the local document and revision stores; must not know hosted transport, write gates, or CLI.
  */
 
-import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocArticleSubject,
+  DocAudiences,
+  DocForm,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
@@ -33,13 +39,32 @@ function getDoc(input: Address): Doc | null {
       `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(input.scope, input.subject, input.owner, input.slug) as
-    | (Omit<Doc, 'audiences'> & { featured: boolean | number; audiences: string })
+    | (Omit<Doc, 'audiences' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles'> & {
+        featured: boolean | number
+        audiences: string
+        source_files: string
+      })
     | null
   return row
     ? {
         ...row,
         audiences: decodeStoredDocAudiences(row.audiences),
         featured: Boolean(row.featured),
+        articleSubject: row.article_subject_id
+          ? (db()
+              .query<{ id: string; name: string }, [string]>(
+                'SELECT id,name FROM subject WHERE id=?',
+              )
+              .get(row.article_subject_id) ?? null)
+          : null,
+        relatedSubjects: row.record_id
+          ? db()
+              .query<{ id: string; name: string }, [string]>(
+                'SELECT s.id,s.name FROM doc_related_subject r JOIN subject s ON s.id=r.subject_id WHERE r.doc_record_id=? ORDER BY s.position,s.id',
+              )
+              .all(row.record_id)
+          : [],
+        sourceFiles: JSON.parse(row.source_files ?? '[]'),
       }
     : null
 }
@@ -55,6 +80,10 @@ type SetInput = Address & {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
@@ -77,7 +106,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -90,6 +119,9 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.featured ?? false,
           input.status ?? 'current',
           input.kind ?? existing.kind,
+          input.form ?? null,
+          input.articleSubject?.id ?? null,
+          JSON.stringify(input.sourceFiles ?? []),
           input.replacementSlug ?? null,
           at,
           input.recordId,
@@ -98,8 +130,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -116,11 +148,20 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.featured ?? false,
           input.status ?? 'current',
           input.kind ?? 'working',
+          input.form ?? null,
+          input.articleSubject?.id ?? null,
+          JSON.stringify(input.sourceFiles ?? []),
           input.replacementSlug ?? null,
           at,
           at,
           input.recordId,
         )
+    }
+    db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)
+    for (const subject of input.relatedSubjects ?? []) {
+      db()
+        .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
+        .run(newRecordId(), input.recordId, subject.id)
     }
     const doc = getDoc(input)!
     insertLocalRevision(
@@ -197,6 +238,10 @@ type RestoreInput = Address & {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
   expectedRevision?: string
   identity: WriteIdentity
@@ -226,7 +271,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -239,6 +284,9 @@ export function commitDocRestore(
           input.featured ?? false,
           input.status ?? 'current',
           input.kind ?? existing.kind,
+          input.form ?? null,
+          input.articleSubject?.id ?? null,
+          JSON.stringify(input.sourceFiles ?? []),
           input.replacementSlug ?? null,
           at,
           input.recordId,
@@ -247,8 +295,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -265,11 +313,20 @@ export function commitDocRestore(
           input.featured ?? false,
           input.status ?? 'current',
           input.kind ?? 'working',
+          input.form ?? null,
+          input.articleSubject?.id ?? null,
+          JSON.stringify(input.sourceFiles ?? []),
           input.replacementSlug ?? null,
           at,
           at,
           input.recordId,
         )
+    }
+    db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)
+    for (const subject of input.relatedSubjects ?? []) {
+      db()
+        .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
+        .run(newRecordId(), input.recordId, subject.id)
     }
     const doc = getDoc(input)!
     insertLocalRevision(doc, 'restore', input.identity, at, input.revisionId)

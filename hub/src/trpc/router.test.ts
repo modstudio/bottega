@@ -489,6 +489,10 @@ describe('doc router', () => {
     featured: false,
     status: 'current',
     kind: 'working',
+    form: null,
+    articleSubject: null,
+    relatedSubjects: [] as Array<{ id: string; name: string }>,
+    sourceFiles: [] as string[],
     replacementSlug: null,
   } as const
 

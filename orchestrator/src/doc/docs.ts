@@ -9,8 +9,6 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  type DocAudiences,
-  type DocKind,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -25,8 +23,18 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import {
+  type DocWriteContext,
+  type DocWriteInput,
+  hostedArticleWriteFields,
+  listLocalDocsByArticleSubject,
+  localRevisionArticleFields,
+  localRevisionArticleReferences,
+  resolveLocalDocArticleFields,
+} from './doc-article-fields.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
@@ -36,10 +44,7 @@ import {
   type DocRevisionMetadata,
   getDocForAudienceStore,
   getDocStore,
-  listDocMetadataStore,
   listDocsStore,
-  type DocListFilters as StoreDocListFilters,
-  type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
@@ -62,8 +67,6 @@ import {
 } from './local-doc-write.ts'
 
 export type { Doc, DocRevision, DocRevisionMetadata }
-export type DocListFilters = StoreDocListFilters
-export type DocMetadata = StoreDocMetadata
 
 import {
   assertLocalRevisionWrite,
@@ -90,21 +93,7 @@ import {
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
 
-export type DocWriteContext = {
-  author?: string
-  reason: string
-  forceInject?: string
-  /** A complete preflighted set used only while bootstrapping an empty canon store. */
-  canonSet?: CanonRow[]
-  allowCanonBootstrap?: boolean
-  /** The caller already decided the complete next canon set as one set. */
-  canonRemovalDecision?: 'already-decided-next-set'
-  expectedRevision?: string
-  /** A CLI-selected worktree for validating a project-subject document write. */
-  canonTree?: CanonWriteTree
-  /** Collects repository facts for canon validation. */
-  collectCanonLintInput?: CanonLintInputCollector
-}
+export type { DocWriteContext } from './doc-article-fields.ts'
 
 function assertInjectSize(input: {
   scope: string
@@ -159,6 +148,11 @@ function assertInjectSize(input: {
         featured: false,
         status: 'current',
         kind: 'working',
+        form: null,
+        article_subject_id: null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
         replacement_slug: null,
         parent_id: null,
         parent_slug: null,
@@ -240,31 +234,12 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 export { docSubjects }
 
 export const listDocs = listDocsStore
-/** A browsable projection: body contents are fetched only through getDoc. */
-export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] =>
-  listDocMetadataStore(filters)
+export const listDocMetadata = listLocalDocsByArticleSubject
 
 export const getDoc = getDocStore
 export const getDocForAudience = getDocForAudienceStore
 
 export { signedInDocOwner } from './doc-owner.ts'
-
-type DocWriteInput = {
-  scope: string
-  subject: string | null
-  owner?: string | null
-  slug: string
-  title: string
-  body: string
-  delivery?: 'inject' | 'demand'
-  audiences?: DocAudiences
-  parentSlug?: string | null
-  position?: number
-  featured?: boolean
-  status?: DocStatus
-  kind?: DocKind
-  replacementSlug?: string | null
-} & DocWriteContext
 
 const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
@@ -384,15 +359,16 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
-  if (!prior && kind === 'article' && input.audiences === undefined) {
-    throw new Error(
-      'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
-    )
-  }
+  const projectName = docWriteProjectName(input.scope, input.subject)
+  const { form, articleSubject, relatedSubjects, sourceFiles } = resolveLocalDocArticleFields(
+    input,
+    prior,
+    kind,
+    projectName,
+  )
   const tree = localDocTreeFields(input, prior)
   assertDocSections(input.body, tree.audiences)
   const lifecycle = localDocumentLifecycle(input, prior)
-  const projectName = docWriteProjectName(input.scope, input.subject)
   const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
   if (articleDelivery) throw new Error(articleDelivery)
   assertDocWriteAllowed({ ...input, delivery })
@@ -407,12 +383,16 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
+        form,
+        articleSubject,
+        relatedSubjects,
+        sourceFiles,
         requestedOp,
         identity,
       }),
     hosted: async () => {
       const client = await hostedDocClient(input.scope, input.subject)
-      const hosted = await client.upsertDoc({
+      const hostedInput: Parameters<typeof client.upsertDoc>[0] = {
         scope: input.scope,
         subject: input.subject,
         owner,
@@ -431,6 +411,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
+        ...hostedArticleWriteFields(input, {
+          form,
+          articleSubject,
+          relatedSubjects,
+          sourceFiles,
+        }),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -440,7 +426,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         op: requestedOp ?? (prior ? 'set' : 'create'),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
-      })
+      }
+      const hosted = await client.upsertDoc(hostedInput)
+      const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
+      if (compatibilityRefusal) throw new Error(compatibilityRefusal)
       return commitDocSet({
         ...input,
         owner,
@@ -448,6 +437,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
+        form,
+        articleSubject,
+        relatedSubjects,
+        sourceFiles,
         requestedOp,
         identity,
         recordId: hosted.id,
@@ -935,6 +928,7 @@ export async function restoreDoc(
       body: revision.body,
       delivery: revision.delivery,
       kind: revision.kind,
+      ...localRevisionArticleReferences(revision),
       ...context,
     },
     getDoc(scope, subject, slug, owner),
@@ -983,6 +977,7 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
+        ...localRevisionArticleFields(revision),
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
@@ -1027,6 +1022,9 @@ export async function restoreDoc(
           featured: revision.featured,
           status: revision.status,
           kind: revision.kind,
+          ...hostedArticleWriteFields(localRevisionArticleReferences(revision), {
+            ...localRevisionArticleFields(revision),
+          }),
           replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
@@ -1054,6 +1052,7 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
+        ...localRevisionArticleFields(revision),
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,

@@ -1,0 +1,1 @@
+ALTER TABLE "doc_related_subject" FORCE ROW LEVEL SECURITY;

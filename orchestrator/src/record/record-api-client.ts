@@ -1,7 +1,13 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { DocAudience, DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocAudience,
+  DocAudiences,
+  DocForm,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -26,6 +32,10 @@ import type {
   HostedBoardTakeClaimInput,
   HostedBoardThread,
 } from './record-board-contract.ts'
+import {
+  type RecordDocWriteResponse,
+  recordDocWriteResponseFields,
+} from './record-doc-transport-contract.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -55,6 +65,10 @@ export type RecordDocUpsertInput = {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubjectId?: string | null
+  relatedSubjectIds?: string[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
   projectName?: string | null
   reason: string
@@ -66,6 +80,8 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
 }
+type RecordDocWriteResult = RecordDocWriteResponse<{ id: string; revisionId: string }>
+type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 
 export type RecordDocImportInput = {
   expectedRevision?: string
@@ -84,6 +100,10 @@ export type RecordDocImportInput = {
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -105,6 +125,10 @@ export type RecordDocImportInput = {
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     author: string
     reason: string
@@ -187,7 +211,7 @@ export type RecordApiClient = {
   upsertDoc(
     input: RecordDocUpsertInput,
     destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionId: string }>
+  ): Promise<RecordDocWriteResult>
   applySettingsPermission(
     input: Omit<RecordSettingsPermissionInput, 'url' | 'userId' | 'spaceId' | 'spaceIds'>,
     destination?: RecordRequestDestination,
@@ -195,7 +219,7 @@ export type RecordApiClient = {
   importDoc(
     input: RecordDocImportInput,
     destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionIds: string[] }>
+  ): Promise<RecordDocImportResult>
   importCanon(
     input: RecordCanonImportInput,
     destination?: RecordRequestDestination,
@@ -418,15 +442,19 @@ function docSearchParams(query: {
   return search.toString()
 }
 
-function ids(body: unknown): { id: string; revisionId: string } {
+function ids(body: unknown): RecordDocWriteResult {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
     throw recordApiUnreachable(new Error('record API returned an invalid body'))
   }
-  return { id: record.id, revisionId: record.revisionId }
+  return {
+    id: record.id,
+    revisionId: record.revisionId,
+    ...recordDocWriteResponseFields(record),
+  }
 }
 
-function importIds(body: unknown): { id: string; revisionIds: string[] } {
+function importIds(body: unknown): RecordDocImportResult {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (
     typeof record.id !== 'string' ||
@@ -435,7 +463,11 @@ function importIds(body: unknown): { id: string; revisionIds: string[] } {
   ) {
     throw recordApiUnreachable(new Error('record API returned an invalid body'))
   }
-  return { id: record.id, revisionIds: record.revisionIds as string[] }
+  return {
+    id: record.id,
+    revisionIds: record.revisionIds as string[],
+    ...recordDocWriteResponseFields(record),
+  }
 }
 
 export function recordApiClient(): RecordApiClient {

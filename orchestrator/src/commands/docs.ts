@@ -19,6 +19,22 @@ class NoParentOption extends Option {
   }
 }
 
+class NamedNegativeOption extends Option {
+  private readonly attribute: string
+  constructor(flags: string, attribute: string) {
+    super(flags)
+    this.attribute = attribute
+  }
+  override attributeName(): string {
+    return this.attribute
+  }
+}
+
+const collectDocValue = (value: string, previous: string[] | undefined): string[] => [
+  ...(previous ?? []),
+  value,
+]
+
 export function assertUserCanonHydrateAllowed(
   flags: Flags,
   env: Record<string, string | undefined> = process.env,
@@ -49,6 +65,14 @@ export function register(program: Command): void {
     .option('--body-match <value>')
     .option('--parent <slug>')
     .addOption(new NoParentOption('--no-parent'))
+    .option('--form <value>')
+    .addOption(new NamedNegativeOption('--no-form', 'noForm'))
+    .option('--article-subject <value>')
+    .addOption(new NamedNegativeOption('--no-article-subject', 'noArticleSubject'))
+    .option('--related-subject <value>', 'related subject name or id', collectDocValue)
+    .addOption(new NamedNegativeOption('--no-related-subjects', 'noRelatedSubjects'))
+    .option('--source-file <value>', 'repository-relative source path', collectDocValue)
+    .addOption(new NamedNegativeOption('--no-source-files', 'noSourceFiles'))
     .option('--position <value>')
     .option('--featured')
     .option('--no-featured')

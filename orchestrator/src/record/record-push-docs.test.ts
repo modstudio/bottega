@@ -251,6 +251,30 @@ describe('record push-docs grouping', () => {
 })
 
 describe('record push-docs command', () => {
+  test('refuses an older import response when the document carries an article field', async () => {
+    const projectId = insertProject('article-import')
+    const docId = insertDoc({
+      scope: 'project',
+      subject: 'article-import',
+      slug: 'article',
+      title: 'Article',
+      body: 'Current.',
+      delivery: 'demand',
+      projectId,
+      createdAt: OLD,
+      updatedAt: NEW,
+    })
+    db()
+      .query("UPDATE doc SET kind='article', source_files='[\"src/article.ts\"]' WHERE id=?")
+      .run(docId)
+    const { client } = capturingClient()
+    installRecordApiClient(client)
+
+    await expect(pushDocsCommand({ dryRun: false }, { log: () => undefined })).rejects.toThrow(
+      'hosted API predates them',
+    )
+  })
+
   test('imports a superseded parent after its replacement and before its current child', async () => {
     const parentId = insertDoc({
       scope: 'global',
