@@ -169,6 +169,13 @@
       "when": 1791583736000,
       "tag": "0023_hosted_change_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791670136000,
+      "tag": "0024_hosted_change_evidence_send_family",
+      "breakpoints": true
     }
   ]
 }

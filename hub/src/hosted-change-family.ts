@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import type { HostedSpaceChange, HostedSpaceChangePage, TaskFetch } from './task-client.ts'
 import type { RegisteredTaskSpace, TaskDestinationIdentity } from './task-project-space.ts'
 
-export const HOSTED_CHANGE_FAMILIES = ['task', 'note'] as const
+export const HOSTED_CHANGE_FAMILIES = ['task', 'note', 'send'] as const
 export type HostedChangeFamilyName = (typeof HOSTED_CHANGE_FAMILIES)[number]
 
 export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>

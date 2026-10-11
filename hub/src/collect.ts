@@ -4,6 +4,7 @@ import {
   type HostedChangeLegReport,
   hostedChangeLegLine,
   pullHostedNoteChanges,
+  pullHostedSendChanges,
   pullHostedTaskChanges,
 } from './hosted-change-cache.ts'
 import { ingestGit } from './ingest/git.ts'
@@ -114,6 +115,7 @@ type HostedCollectDependencies = {
   tasks?: () => Promise<unknown>
   changes?: () => Promise<HostedChangeLegReport | null | undefined>
   noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
+  sendChanges?: () => Promise<HostedChangeLegReport | null | undefined>
   notes?: () => Promise<unknown>
   reports?: () => Promise<unknown>
 }
@@ -149,7 +151,12 @@ export async function hostedCollectLegs(
         ? { name: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges }
         : source === 'hosted notes'
           ? { name: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges }
-          : null
+          : source === 'hosted reports'
+            ? {
+                name: 'hosted send changes',
+                work: dependencies.sendChanges ?? pullHostedSendChanges,
+              }
+            : null
     if (!changeWork) continue
     const changeResult = await settleChangeLeg(changeWork.name, changeWork.work)
     if (!changeResult) continue
@@ -505,8 +512,9 @@ export async function collectOnce(
   }
   if (!only && process.env.HUB_HOSTED_URL) {
     guard.assertHeld(previous)
-    results.push(...(await hostedCollectLegs(guard)))
-    previous = 'hosted reports'
+    const hostedResults = await hostedCollectLegs(guard)
+    results.push(...hostedResults)
+    previous = hostedResults.at(-1)?.source ?? previous
     guard.assertHeld(previous)
   }
   guard.assertHeld(previous)

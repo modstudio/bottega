@@ -52,6 +52,14 @@ test('hosted change evidence rows have UUID record identities', () => {
   expect(recordId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 })
 
+test('hosted change evidence refuses a family outside the declared vocabulary', () => {
+  expect(() =>
+    writeTransaction((conn) =>
+      recordHostedChangeEvidence(conn, { ...event(), family: 'other' as 'task' }),
+    ),
+  ).toThrow('hosted change evidence family must be one of task, note, send')
+})
+
 test('hosted change evidence summary groups by table and differing column set', () => {
   writeTransaction((conn) => {
     recordHostedChangeEvidence(conn, event({ rowId: 'one' }))

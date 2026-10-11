@@ -508,6 +508,7 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
     noteChanges: async () => null,
     notes: async () => {},
     reports: async () => {},
+    sendChanges: async () => null,
   })
   expect(taskCursor('space-one')).toBe('stamp-after')
   expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()

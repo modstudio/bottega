@@ -298,6 +298,7 @@ describe('evidence sync planning', () => {
       notes: async () => {},
       noteChanges: async () => null,
       reports: async () => {},
+      sendChanges: async () => null,
     })
 
     expect(writes.map((write) => write.recordSpace)).toEqual(['space-a'])
