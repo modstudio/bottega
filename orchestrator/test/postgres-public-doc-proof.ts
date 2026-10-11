@@ -1,12 +1,16 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
-import { upsertRecordDoc } from '../src/record/record-docs.ts'
+import { getRecordDoc, upsertRecordDoc } from '../src/record/record-docs.ts'
 import {
   clearPublicDocProject,
   designatePublicDocProject,
   listPublicDocProjects,
 } from '../src/record/record-public-doc-designation.ts'
-import { getPublicRecordDoc, searchPublicRecordDocs } from '../src/record/record-public-docs.ts'
+import {
+  getPublicRecordDoc,
+  searchPublicRecordDocs,
+  searchRecordDocs,
+} from '../src/record/record-public-docs.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -163,6 +167,29 @@ export function registerPublicDocProofs(input: {
     const visible = await searchPublicRecordDocs({ url: actorUrl, query: 'searchable' })
     expect(visible).toHaveLength(1)
     expect(visible[0]?.snippet).not.toContain('hiddenmargin')
+  })
+
+  test('signed reads and search project mixed-audience documents only when requested', async () => {
+    const tenant = {
+      url: actorUrl,
+      userId: input.ownerUserId,
+      spaceId: publicSpaceId,
+      spaceIds: [publicSpaceId],
+    }
+    const customerDoc = await getRecordDoc({ ...tenant, id: PUBLIC_DOC, audience: 'customer' })
+    expect(customerDoc?.body).toBe('public searchable body\n')
+    expect(
+      await searchRecordDocs({
+        ...tenant,
+        query: 'hiddenmargin',
+        audience: 'customer',
+        acrossReadableSpaces: false,
+      }),
+    ).toEqual([])
+    const storedDoc = await getRecordDoc({ ...tenant, id: PUBLIC_DOC })
+    expect(storedDoc?.body).toBe(
+      'public searchable body\n:::section{audience="internal"}\nhiddenmargin\n:::',
+    )
   })
 
   test('record service refuses attaching another project address to the public project', async () => {
