@@ -239,7 +239,11 @@ describe('fresh tracker task read', () => {
         ?.count,
     ).toBe(1)
     expect(
-      db().query<{ count: number }, []>('SELECT count(*) count FROM hosted_outbox').get()?.count,
+      db()
+        .query<{ count: number }, []>(
+          `SELECT count(*) count FROM hosted_outbox WHERE table_name='hub_task_status_event'`,
+        )
+        .get()?.count,
     ).toBe(1)
     expect(
       writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
@@ -263,7 +267,11 @@ describe('fresh tracker task read', () => {
     })
 
     expect(
-      db().query<{ count: number }, []>('SELECT count(*) count FROM hosted_outbox').get()?.count,
+      db()
+        .query<{ count: number }, []>(
+          `SELECT count(*) count FROM hosted_outbox WHERE table_name='hub_task_status_event'`,
+        )
+        .get()?.count,
     ).toBe(0)
   })
 

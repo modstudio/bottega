@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { type HostedPushChange, parseHostedPushItem } from './push-contract.ts'
 
 const at = '2026-10-11T12:00:00.000Z'
@@ -10,8 +11,8 @@ const task: HostedPushChange = {
   row: {
     id,
     key: 'DEV-30',
-    project: 'bottega',
-    project_name: 'bottega',
+    project: PLATFORM_SLUG,
+    project_name: PLATFORM_SLUG,
     title: null,
     status: null,
     status_category: null,
