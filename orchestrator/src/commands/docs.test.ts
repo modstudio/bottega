@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { assertUserCanonHydrateAllowed, register } from './docs.ts'
+import { optionFlags } from './support.ts'
 
 const flags = (...names: string[]) => ({ has: (name: string) => names.includes(name) })
 
@@ -46,6 +47,34 @@ test('the registered doc command parses status, set, and filtered list lifecycle
     parsed: { operands: ['list'], unknown: [] },
     options: { kind: 'working' },
   })
+})
+
+test('the registered doc clear options are presence flags', () => {
+  const clearFlags = [
+    'no-parent',
+    'no-form',
+    'no-article-subject',
+    'no-related-subjects',
+    'no-source-files',
+  ]
+
+  const absent = optionFlags(parseDocOptions(['set', 'guide']).options)
+  for (const flag of clearFlags) expect(absent.has(flag)).toBeFalse()
+
+  for (const flag of clearFlags) {
+    const given = optionFlags(parseDocOptions(['set', 'guide', `--${flag}`]).options)
+    expect(given.has(flag)).toBeTrue()
+  }
+
+  const relatedSubject = optionFlags(
+    parseDocOptions(['set', 'guide', '--related-subject', 'subject']).options,
+  )
+  expect(relatedSubject.has('no-related-subjects')).toBeFalse()
+
+  const sourceFile = optionFlags(
+    parseDocOptions(['set', 'guide', '--source-file', 'docs/guide.md']).options,
+  )
+  expect(sourceFile.has('no-source-files')).toBeFalse()
 })
 
 test('an orch worker cannot hydrate user canon but can check it', () => {
