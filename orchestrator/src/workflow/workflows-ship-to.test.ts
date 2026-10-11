@@ -247,6 +247,38 @@ describe('ship-to workflow composition', () => {
     ])
   })
 
+  test.each(['trunk', 'production'] as const)(
+    'an on-demand rung cannot be the ship-to depth at %s',
+    (level) => {
+      const d = database()
+      publishShipToFixture(d, ['release', 'ship-to'])
+      d.query('UPDATE project SET settings=? WHERE name=?').run(
+        JSON.stringify({
+          release: {
+            ...release,
+            rungs: [{ name: 'hosted', branch: 'main', onDemand: true }],
+          },
+          docs: { protocol: 'orch-docs' },
+        }),
+        'fixture',
+      )
+
+      expect(() =>
+        composeWorkflow(
+          'ship-to-fixture',
+          'fixture',
+          undefined,
+          { depth: 'hosted' },
+          d,
+          {},
+          shipToAutonomy(level),
+        ),
+      ).toThrow(
+        'ship-to depth "hosted" names a rung released on demand with orch release fixture --rung hosted and cannot be a ship-to depth',
+      )
+    },
+  )
+
   test('a remaining rung closes to the configured in-review state', () => {
     const d = database()
     publishShipToFixture(d)

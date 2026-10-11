@@ -60,10 +60,15 @@ function shipToFact(
     throw new Error(
       `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>`,
     )
+  const rungs = project.settings.release?.rungs ?? []
+  const depthRung = rungs.find(({ name }) => name === args.depth)
+  if (depthRung?.onDemand)
+    throw new Error(
+      `ship-to depth "${depthRung.name}" names a rung released on demand with orch release ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
+    )
   const decision = decideShipToReach(
     autonomy.shipTo.value,
-    project.settings.release?.rungs.filter(({ onDemand }) => !onDemand).map(({ name }) => name) ??
-      [],
+    rungs.filter(({ onDemand }) => !onDemand).map(({ name }) => name),
     args.depth,
   )
   if (!decision.allowed) throw new Error(decision.refusal)

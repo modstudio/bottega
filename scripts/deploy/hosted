@@ -20,15 +20,19 @@ if (( $# != 1 )); then
   exit 1
 fi
 
-if [[ -z "${ORCH_RECORD_MIGRATE_URL:-}" ]]; then
-  if ! ORCH_RECORD_MIGRATE_URL="$(
+# Keep the credential out of shell traces whether it was inherited or read below.
+set +x
+record_migrate_url="${ORCH_RECORD_MIGRATE_URL:-}"
+unset ORCH_RECORD_MIGRATE_URL
+
+if [[ -z "$record_migrate_url" ]]; then
+  if ! record_migrate_url="$(
     env -u ORCH_RECORD_MIGRATE_URL \
       bun --no-env-file "$PROJECT_ROOT/scripts/read-hosted-migrate-url.ts" 2>/dev/null
   )"; then
     echo "REFUSE: ORCH_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
     exit 1
   fi
-  export ORCH_RECORD_MIGRATE_URL
 fi
 
 if ! command -v fly >/dev/null 2>&1; then
@@ -38,16 +42,16 @@ fi
 
 cd "$PROJECT_ROOT"
 
-if ! "$PROJECT_ROOT/bin/orch" record migrate; then
+if ! ORCH_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/orch" record migrate; then
   echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
   exit 1
 fi
 
 if [[ "$APP" == "api" ]]; then
-  exec fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
+  exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
 fi
 
-exec fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
+exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
   --build-arg VITE_HUB_MODE=hosted \
   --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
   --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
