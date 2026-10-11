@@ -11,6 +11,12 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('shared/doc-sections.ts', [
+    'mdast-util-directive',
+    'mdast-util-from-markdown',
+    'micromark-extension-directive',
+    './docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-audiences-codec.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
     '../project/projects.ts',

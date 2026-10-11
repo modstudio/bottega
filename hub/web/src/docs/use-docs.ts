@@ -1,4 +1,4 @@
-import { hashKey, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { hostedTrpc, queryClient, trpc } from '@/trpc/client'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { mapDoc, mapSearchMatch, mapTreeItem } from './map.ts'
@@ -50,36 +50,27 @@ export function useDocsDocument(
   audience: DocsAudience | null,
 ) {
   const localScope = selected && isScope(selected.scope) ? selected.scope : null
-  const localOptions = trpc.doc.read.queryOptions({
-    scope: (localScope ?? 'global') as DocScope,
-    subject: selected?.subject ?? null,
-    slug: selected?.slug ?? '',
-    audience: audience ?? undefined,
-  })
   const local = useQuery({
-    ...localOptions,
+    ...trpc.doc.read.queryOptions({
+      scope: (localScope ?? 'global') as DocScope,
+      subject: selected?.subject ?? null,
+      slug: selected?.slug ?? '',
+      audience: audience ?? undefined,
+    }),
     enabled: source === 'local' && Boolean(selected && localScope),
-    placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryHash === hashKey(localOptions.queryKey) ? previousData : undefined,
-  })
-  const hostedOptions = trpc.record.doc.queryOptions({
-    id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
-    audience: audience ?? undefined,
   })
   const hosted = useQuery({
-    ...hostedOptions,
+    ...trpc.record.doc.queryOptions({
+      id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
+      audience: audience ?? undefined,
+    }),
     enabled: source === 'hosted' && Boolean(selected?.id),
-    placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryHash === hashKey(hostedOptions.queryKey) ? previousData : undefined,
-  })
-  const publishedOptions = hostedTrpc.publicDocs.get.queryOptions({
-    id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
   })
   const published = useQuery({
-    ...publishedOptions,
+    ...hostedTrpc.publicDocs.get.queryOptions({
+      id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
+    }),
     enabled: source === 'public' && Boolean(selected?.id),
-    placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryHash === hashKey(publishedOptions.queryKey) ? previousData : undefined,
   })
   const result = source === 'local' ? local : source === 'hosted' ? hosted : published
   const document: DocsDoc | null = result.data

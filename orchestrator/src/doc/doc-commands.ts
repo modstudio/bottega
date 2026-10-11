@@ -257,6 +257,16 @@ function listedDocs(
   return keywordListDocs(filters, match, bodyMatch)
 }
 
+function readDoc(
+  address: { scope: string; subject: string | null; owner: string | null },
+  slug: string,
+  audience: DocAudience | undefined,
+) {
+  return audience
+    ? getDocForAudience(address.scope, address.subject, slug, audience, address.owner)
+    : getDoc(address.scope, address.subject, slug, address.owner)
+}
+
 function handledReadDocCommand(
   sub: string,
   argv: string[],
@@ -294,10 +304,11 @@ function handledReadDocCommand(
   if (sub !== 'show' && sub !== 'get') return false
   const slug = argv[2]
   if (!slug || !address.scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
-  const audience = docReadAudience(flags.flag('audience'))
-  const doc = audience
-    ? getDocForAudience(address.scope, address.subject, slug, audience, address.owner)
-    : getDoc(address.scope, address.subject, slug, address.owner)
+  const doc = readDoc(
+    { scope: address.scope, subject: address.subject, owner: address.owner },
+    slug,
+    docReadAudience(flags.flag('audience')),
+  )
   if (!doc)
     throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
   if (has('json')) presentation.log(JSON.stringify(doc))

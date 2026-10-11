@@ -70,12 +70,6 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('shared/doc-sections.ts', [
-    'mdast-util-directive',
-    'mdast-util-from-markdown',
-    'micromark-extension-directive',
-    './docs.ts',
-  ]),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,

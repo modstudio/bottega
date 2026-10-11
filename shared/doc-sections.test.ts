@@ -51,6 +51,18 @@ describe('document sections', () => {
     expect(docBodyForAudience(body, 'internal')).toBe('Everyone.\nBoth.\nInternal only.\nAfter.')
   })
 
+  test('projects a marked section inside a block quote', () => {
+    const body = [
+      '> Everyone.',
+      '> :::section{audience="internal"}',
+      '> Private margin.',
+      '> :::',
+      '> After.',
+    ].join('\n')
+    expect(docSectionRefusal(body, [...audiences])).toBeNull()
+    expect(docBodyForAudience(body, 'technical')).toBe('> Everyone.\n> After.')
+  })
+
   test('a directive-looking fence inside code is text, not a mark', () => {
     const body = '```md\n::: section{audience="internal"}\nsecret\n:::\n```'
     expect(docSections(body)).toEqual([])
