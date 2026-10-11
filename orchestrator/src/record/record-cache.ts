@@ -320,6 +320,39 @@ function pulledDocAudiences(item: Record<string, unknown>): string {
   return encodeStoredDocAudiences(normalizeDocAudiences(values))
 }
 
+function pulledDocArticleFields(local: Database, item: Record<string, unknown>, recordId: string) {
+  const articleSubject =
+    item.articleSubject && typeof item.articleSubject === 'object'
+      ? (item.articleSubject as Record<string, unknown>)
+      : null
+  const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
+  const relatedSubjectIds = Array.isArray(item.relatedSubjects)
+    ? item.relatedSubjects.map((value) => String((value as Record<string, unknown>).id))
+    : []
+  const sourceFiles = Array.isArray(item.sourceFiles) ? item.sourceFiles.map(String) : []
+  for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
+    Boolean(value),
+  )) {
+    if (!local.query('SELECT 1 FROM subject WHERE id=?').get(id))
+      throw new Error(
+        `record cache deferred document ${recordId}: subject ${id} is not local; cleared by: refresh subjects and pull again`,
+      )
+  }
+  return { articleSubjectId, relatedSubjectIds, sourceFiles }
+}
+
+function syncPulledDocRelatedSubjects(
+  local: Database,
+  recordId: string,
+  relatedSubjectIds: string[],
+): void {
+  local.query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(recordId)
+  for (const id of relatedSubjectIds)
+    local
+      .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
+      .run(newRecordId(), recordId, id)
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
@@ -345,30 +378,11 @@ function applyDoc(
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)
   const form = item.form == null ? null : String(item.form)
-  const articleSubject =
-    item.articleSubject && typeof item.articleSubject === 'object'
-      ? (item.articleSubject as Record<string, unknown>)
-      : null
-  const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
-  const relatedSubjectIds = Array.isArray(item.relatedSubjects)
-    ? item.relatedSubjects.map((value) => String((value as Record<string, unknown>).id))
-    : []
-  const sourceFiles = Array.isArray(item.sourceFiles) ? item.sourceFiles.map(String) : []
-  for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
-    Boolean(value),
-  )) {
-    if (!local.query('SELECT 1 FROM subject WHERE id=?').get(id))
-      throw new Error(
-        `record cache deferred document ${recordId}: subject ${id} is not local; cleared by: refresh subjects and pull again`,
-      )
-  }
-  const syncRelated = () => {
-    local.query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(recordId)
-    for (const id of relatedSubjectIds)
-      local
-        .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
-        .run(newRecordId(), recordId, id)
-  }
+  const { articleSubjectId, relatedSubjectIds, sourceFiles } = pulledDocArticleFields(
+    local,
+    item,
+    recordId,
+  )
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
   const parentId: number | null =
     parentRecordId == null
@@ -407,7 +421,7 @@ function applyDoc(
         owner,
         existing.id,
       )
-    syncRelated()
+    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   const byAddress = local
@@ -469,7 +483,7 @@ function applyDoc(
       updatedAt,
       recordId,
     )
-  syncRelated()
+  syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {

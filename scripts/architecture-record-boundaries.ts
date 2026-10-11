@@ -70,6 +70,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../doc/doc-write-allowed.ts',
       './record-canon-facts.ts',
       './record-doc-audience-sql.ts',
+      './record-doc-article-fields.ts',
       './record-doc-audiences.ts',
       './record-doc-errors.ts',
       './record-doc-lifecycle.ts',

@@ -320,25 +320,14 @@ export function listDocsStore(
       values.push(filters.kind)
     } else if (filters.kind !== 'working') where.push('0')
   }
-  if (filters.articleSubject !== undefined) {
-    where.push(
-      '(d.article_subject_id = ? OR EXISTS (SELECT 1 FROM doc_related_subject rs WHERE rs.doc_record_id=d.record_id AND rs.subject_id=?))',
-    )
-    values.push(filters.articleSubject, filters.articleSubject)
-  }
-  const subjectOrder =
-    filters.articleSubject !== undefined
-      ? 'CASE WHEN d.article_subject_id = ? THEN 0 ELSE 1 END, '
-      : ''
-  const queryValues =
-    filters.articleSubject !== undefined ? [...values, filters.articleSubject] : values
+  const articleQuery = articleSubjectQuery(filters.articleSubject, where, values)
   return (
     database
       .query(
         `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
-          `ORDER BY ${subjectOrder}d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
+          `ORDER BY ${articleQuery.order}d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
       )
-      .all(...queryValues) as Array<Doc & { featured: boolean | number }>
+      .all(...articleQuery.values) as Array<Doc & { featured: boolean | number }>
   )
     .map((row) => docRow(database, row))
     .map((doc) =>
@@ -346,6 +335,22 @@ export function listDocsStore(
         ? { ...doc, body: docBodyForAudience(doc.body, filters.audience as DocAudience) }
         : doc,
     )
+}
+
+function articleSubjectQuery(
+  articleSubject: string | undefined,
+  where: string[],
+  values: string[],
+): { order: string; values: string[] } {
+  if (articleSubject === undefined) return { order: '', values }
+  where.push(
+    '(d.article_subject_id = ? OR EXISTS (SELECT 1 FROM doc_related_subject rs WHERE rs.doc_record_id=d.record_id AND rs.subject_id=?))',
+  )
+  values.push(articleSubject, articleSubject)
+  return {
+    order: 'CASE WHEN d.article_subject_id = ? THEN 0 ELSE 1 END, ',
+    values: [...values, articleSubject],
+  }
 }
 
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {

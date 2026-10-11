@@ -273,6 +273,21 @@ function readDoc(
     : getDoc(address.scope, address.subject, slug, address.owner)
 }
 
+function readDocFilters(
+  flags: DocFlags,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+) {
+  return {
+    scope: address.scope,
+    ...(flags.has('subject') || flags.has('user') ? { subject: address.subject } : {}),
+    owner: address.owner,
+    audience: flags.flag('audience'),
+    status: flags.flag('status'),
+    kind: flags.flag('kind'),
+    articleSubject: flags.flag('article-subject'),
+  }
+}
+
 function handledReadDocCommand(
   sub: string,
   argv: string[],
@@ -282,16 +297,7 @@ function handledReadDocCommand(
 ): boolean {
   const { has } = flags
   if (sub === 'list') {
-    const articleSubject = flags.flag('article-subject')
-    const filters = {
-      scope: address.scope,
-      ...(has('subject') || has('user') ? { subject: address.subject } : {}),
-      owner: address.owner,
-      audience: flags.flag('audience'),
-      status: flags.flag('status'),
-      kind: flags.flag('kind'),
-      articleSubject,
-    }
+    const filters = readDocFilters(flags, address)
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
     const rows = listedDocs(filters, match, bodyMatch)
@@ -327,6 +333,29 @@ function handledReadDocCommand(
   return true
 }
 
+function clearedListOption(flags: DocFlags, value: string, clear: string): string[] | undefined {
+  const { has } = flags
+  if (has(value) && has(clear)) throw new Error(`use --${value} or --${clear}, not both`)
+  if (has(clear)) return []
+  return has(value) ? (flags.values?.(value) ?? []) : undefined
+}
+
+function articleTreeOptions(flags: DocFlags) {
+  const { has, flag } = flags
+  if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
+  const rawForm = flag('form')
+  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm))
+    throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
+  if (has('article-subject') && has('no-article-subject'))
+    throw new Error('use --article-subject or --no-article-subject, not both')
+  return {
+    form: has('no-form') ? null : (rawForm as DocForm | undefined),
+    articleSubject: has('no-article-subject') ? null : flag('article-subject'),
+    relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
+    sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
+  }
+}
+
 function setTreeOptions(flags: DocFlags): {
   audiences: ReturnType<typeof docAudiences>
   parentSlug: string | null | undefined
@@ -351,16 +380,6 @@ function setTreeOptions(flags: DocFlags): {
   const replacementSlug = has('replacement') ? flag('replacement') : undefined
   if (has('replacement') && !replacementSlug?.trim())
     throw new Error('--replacement requires a slug')
-  if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
-  const rawForm = flag('form')
-  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm))
-    throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
-  if (has('article-subject') && has('no-article-subject'))
-    throw new Error('use --article-subject or --no-article-subject, not both')
-  if (has('related-subject') && has('no-related-subjects'))
-    throw new Error('use --related-subject or --no-related-subjects, not both')
-  if (has('source-file') && has('no-source-files'))
-    throw new Error('use --source-file or --no-source-files, not both')
   return {
     audiences,
     parentSlug,
@@ -369,18 +388,7 @@ function setTreeOptions(flags: DocFlags): {
     status: docStatus(flag('status')),
     kind: docKind(flag('kind')),
     replacementSlug,
-    form: has('no-form') ? null : (rawForm as DocForm | undefined),
-    articleSubject: has('no-article-subject') ? null : flag('article-subject'),
-    relatedSubjects: has('no-related-subjects')
-      ? []
-      : has('related-subject')
-        ? (flags.values?.('related-subject') ?? [])
-        : undefined,
-    sourceFiles: has('no-source-files')
-      ? []
-      : has('source-file')
-        ? (flags.values?.('source-file') ?? [])
-        : undefined,
+    ...articleTreeOptions(flags),
   }
 }
 

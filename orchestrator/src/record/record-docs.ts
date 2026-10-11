@@ -9,7 +9,6 @@ import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import {
-  articleFieldRefusal,
   canonFindingsRefusal,
   consumeDocBody,
   type DocDelivery,
@@ -23,6 +22,14 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
+import {
+  hostedArticleProjectId,
+  hostedArticleResponse,
+  importedArticleSubjectNames,
+  replaceHostedRelatedSubjects,
+  resolveHostedArticleFields,
+  restoredArticleFields,
+} from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
@@ -105,22 +112,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   } finally {
     await client.close()
   }
-}
-
-async function projectId(
-  tx: SQL,
-  spaceId: string,
-  name: string | null | undefined,
-): Promise<string | null> {
-  if (!name) return null
-  const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
-  if (rows.length !== 1) {
-    throw new RecordDocError(
-      `project ${name} has no hosted row in record space ${spaceId}; run \`orch project push\` to create it`,
-      422,
-    )
-  }
-  return String(rows[0]!.id)
 }
 
 export async function listRecordDocRevisions(
@@ -244,71 +235,13 @@ export async function upsertRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(
+    const resolvedProject = await hostedArticleProjectId(
       tx,
       input.spaceId,
       input.projectName ?? docWriteProjectName(input.scope, input.subject),
     )
-    const form =
-      input.form === undefined
-        ? existing[0]?.form == null
-          ? null
-          : (String(existing[0].form) as DocForm)
-        : input.form
-    const articleSubjectId =
-      input.articleSubjectId === undefined
-        ? existing[0]?.article_subject_id == null
-          ? null
-          : String(existing[0].article_subject_id)
-        : input.articleSubjectId
-    const existingRelated = existing[0]
-      ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing[0].id)}::uuid`
-      : []
-    const relatedSubjectIds =
-      input.relatedSubjectIds ??
-      existingRelated.map((row: Record<string, unknown>) => String(row.subject_id))
-    const sourceFiles =
-      input.sourceFiles ??
-      (Array.isArray(existing[0]?.source_files) ? (existing[0]!.source_files as string[]) : [])
-    assertWrite(
-      articleFieldRefusal({
-        scope: input.scope,
-        kind,
-        form,
-        ownSubjectId: articleSubjectId,
-        relatedSubjectIds,
-        sourceFiles,
-      }),
-    )
-    const attached = new Set(
-      [
-        existing[0]?.article_subject_id,
-        ...existingRelated.map((row: Record<string, unknown>) => row.subject_id),
-      ]
-        .filter(Boolean)
-        .map(String),
-    )
-    const subjectIds = [
-      ...new Set(
-        [articleSubjectId, ...relatedSubjectIds].filter((id): id is string => Boolean(id)),
-      ),
-    ]
-    const subjectRows = subjectIds.length
-      ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id = ANY(${subjectIds}::uuid[])`
-      : []
-    for (const id of subjectIds) {
-      const row = subjectRows.find(
-        (candidate: Record<string, unknown>) => String(candidate.id) === id,
-      )
-      if (!row)
-        throw new RecordDocError(
-          `subject ${id} is not in the document project; cleared by: orch subject list ${input.subject}`,
-        )
-      if (row.retired_at != null && !attached.has(id))
-        throw new RecordDocError(
-          `subject ${id} is retired; cleared by: orch subject list ${input.subject}`,
-        )
-    }
+    const { form, articleSubjectId, relatedSubjectIds, sourceFiles, subjectRows } =
+      await resolveHostedArticleFields(tx, { ...input, kind }, existing[0], resolvedProject)
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const audiences = storedDocAudiences(input, existing[0])
@@ -354,9 +287,7 @@ export async function upsertRecordDoc(
         )
       `
     }
-    await tx`DELETE FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${docId}::uuid`
-    for (const subjectId of relatedSubjectIds)
-      await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${docId}::uuid,${subjectId}::uuid)`
+    await replaceHostedRelatedSubjects(tx, input.spaceId, docId, relatedSubjectIds)
     const revisionId = await insertRecordDocRevision(tx, {
       id: input.revisionId,
       spaceId: input.spaceId,
@@ -386,27 +317,13 @@ export async function upsertRecordDoc(
       sessionId: input.sessionId ?? null,
       at: now,
     })
+    const names = new Map(
+      subjectRows.map((row: Record<string, unknown>) => [String(row.id), String(row.name)]),
+    )
     return {
       id: docId,
       revisionId,
-      form,
-      articleSubject: articleSubjectId
-        ? {
-            id: articleSubjectId,
-            name: String(
-              subjectRows.find(
-                (row: Record<string, unknown>) => String(row.id) === articleSubjectId,
-              )!.name,
-            ),
-          }
-        : null,
-      relatedSubjects: relatedSubjectIds.map((id: string) => {
-        const row = subjectRows.find(
-          (subject: Record<string, unknown>) => String(subject.id) === id,
-        )!
-        return { id, name: String(row.name) }
-      }),
-      sourceFiles,
+      ...hostedArticleResponse({ form, articleSubjectId, relatedSubjectIds, sourceFiles }, names),
     }
   })
 }
@@ -836,7 +753,11 @@ export async function restoreRecordDoc(
     // An unresolved project leaves the live document's project as it is.
     let resolvedProjectId: string | null = null
     try {
-      resolvedProjectId = await projectId(tx, input.spaceId, docWriteProjectName(scope, subject))
+      resolvedProjectId = await hostedArticleProjectId(
+        tx,
+        input.spaceId,
+        docWriteProjectName(scope, subject),
+      )
     } catch (error) {
       if (!(error instanceof RecordDocError) || error.status !== 422) throw error
     }
@@ -849,15 +770,8 @@ export async function restoreRecordDoc(
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
-    const form = revision.form == null ? null : (String(revision.form) as DocForm)
-    const articleSubjectId =
-      revision.article_subject_id == null ? null : String(revision.article_subject_id)
-    const relatedSubjectIds = Array.isArray(revision.related_subject_ids)
-      ? revision.related_subject_ids.map(String)
-      : []
-    const sourceFiles = Array.isArray(revision.source_files)
-      ? revision.source_files.map(String)
-      : []
+    const { form, articleSubjectId, relatedSubjectIds, sourceFiles } =
+      restoredArticleFields(revision)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -895,9 +809,7 @@ export async function restoreRecordDoc(
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
-    await tx`DELETE FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
-    for (const subjectId of relatedSubjectIds)
-      await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${input.id}::uuid,${subjectId}::uuid)`
+    await replaceHostedRelatedSubjects(tx, input.spaceId, input.id, relatedSubjectIds)
     const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
@@ -1039,43 +951,18 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
           : undefined,
       ),
     )
-    const resolvedProject = await projectId(
+    const resolvedProject = await hostedArticleProjectId(
       tx,
       input.spaceId,
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
     )
-    assertWrite(
-      articleFieldRefusal({
-        scope: doc.scope,
-        kind: doc.kind,
-        form: doc.form,
-        ownSubjectId: doc.articleSubjectId,
-        relatedSubjectIds: doc.relatedSubjectIds,
-        sourceFiles: doc.sourceFiles,
-      }),
+    const importedSubjectNames = await importedArticleSubjectNames(
+      tx,
+      input,
+      resolvedProject,
+      doc,
+      revisions,
     )
-    const importedSubjectIds = [
-      ...new Set(
-        [
-          doc.articleSubjectId,
-          ...doc.relatedSubjectIds,
-          ...revisions.flatMap((revision) => [
-            revision.articleSubjectId,
-            ...revision.relatedSubjectIds,
-          ]),
-        ].filter((value): value is string => Boolean(value)),
-      ),
-    ]
-    const importedSubjectNames = new Map<string, string>()
-    if (importedSubjectIds.length) {
-      const rows =
-        await tx`SELECT id,name FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id=ANY(${importedSubjectIds}::uuid[])`
-      if (rows.length !== importedSubjectIds.length)
-        throw new RecordDocError(
-          `an article subject is not in the document project; cleared by: orch subject list ${doc.subject}`,
-        )
-      for (const row of rows) importedSubjectNames.set(String(row.id), String(row.name))
-    }
     const id = existing ? String(existing.id) : doc.id
     await validateImportedDocumentLifecycles(tx, { ...doc, spaceId: input.spaceId }, [
       { status: doc.status, replacementSlug: doc.replacementSlug },
@@ -1138,15 +1025,7 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
     return {
       id,
       revisionIds,
-      form: doc.form,
-      articleSubject: doc.articleSubjectId
-        ? { id: doc.articleSubjectId, name: importedSubjectNames.get(doc.articleSubjectId)! }
-        : null,
-      relatedSubjects: doc.relatedSubjectIds.map((subjectId: string) => ({
-        id: subjectId,
-        name: importedSubjectNames.get(subjectId)!,
-      })),
-      sourceFiles: doc.sourceFiles,
+      ...hostedArticleResponse(doc, importedSubjectNames),
     }
   })
 }

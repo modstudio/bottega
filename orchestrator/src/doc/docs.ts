@@ -9,12 +9,8 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
-  type DocAudiences,
-  type DocForm,
-  type DocKind,
   type DocScope,
   type DocStatus,
-  normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
@@ -29,8 +25,16 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { resolveSubject } from '../subject/subjects.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import {
+  type DocWriteContext,
+  type DocWriteInput,
+  hostedArticleWriteFields,
+  listLocalDocsByArticleSubject,
+  localRevisionArticleFields,
+  localRevisionArticleReferences,
+  resolveLocalDocArticleFields,
+} from './doc-article-fields.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
@@ -40,7 +44,6 @@ import {
   type DocRevisionMetadata,
   getDocForAudienceStore,
   getDocStore,
-  listDocMetadataStore,
   listDocsStore,
   type DocListFilters as StoreDocListFilters,
   type DocMetadata as StoreDocMetadata,
@@ -78,7 +81,6 @@ import {
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import {
-  articleFieldRefusal,
   type CanonWriteTree,
   canonFindingsRefusal,
   consumeDocBody,
@@ -95,21 +97,7 @@ import {
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
 
-export type DocWriteContext = {
-  author?: string
-  reason: string
-  forceInject?: string
-  /** A complete preflighted set used only while bootstrapping an empty canon store. */
-  canonSet?: CanonRow[]
-  allowCanonBootstrap?: boolean
-  /** The caller already decided the complete next canon set as one set. */
-  canonRemovalDecision?: 'already-decided-next-set'
-  expectedRevision?: string
-  /** A CLI-selected worktree for validating a project-subject document write. */
-  canonTree?: CanonWriteTree
-  /** Collects repository facts for canon validation. */
-  collectCanonLintInput?: CanonLintInputCollector
-}
+export type { DocWriteContext } from './doc-article-fields.ts'
 
 function assertInjectSize(input: {
   scope: string
@@ -252,41 +240,13 @@ export { docSubjects }
 export const listDocs = listDocsStore
 /** A browsable projection: body contents are fetched only through getDoc. */
 export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] => {
-  if (filters.articleSubject === undefined) return listDocMetadataStore(filters)
-  if (filters.scope !== 'project' || !filters.subject) {
-    throw new Error('article subject filter requires project scope and subject')
-  }
-  return listDocMetadataStore({
-    ...filters,
-    articleSubject: resolveSubject(filters.subject, filters.articleSubject).id,
-  })
+  return listLocalDocsByArticleSubject(filters)
 }
 
 export const getDoc = getDocStore
 export const getDocForAudience = getDocForAudienceStore
 
 export { signedInDocOwner } from './doc-owner.ts'
-
-type DocWriteInput = {
-  scope: string
-  subject: string | null
-  owner?: string | null
-  slug: string
-  title: string
-  body: string
-  delivery?: 'inject' | 'demand'
-  audiences?: DocAudiences
-  parentSlug?: string | null
-  position?: number
-  featured?: boolean
-  status?: DocStatus
-  kind?: DocKind
-  form?: DocForm | null
-  articleSubject?: string | null
-  relatedSubjects?: string[]
-  sourceFiles?: string[]
-  replacementSlug?: string | null
-} & DocWriteContext
 
 const currentCanon = { scope: 'canon', status: 'current' } as const
 function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: CanonRow[]) {
@@ -407,49 +367,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
-  const resolveAttachment = (reference: string, existing: Set<string>, restoring = false) => {
-    if (!projectName) throw new Error('article fields may be set only on project documents')
-    const row = resolveSubject(projectName, reference)
-    if (row.retiredAt && !existing.has(row.id) && !restoring) {
-      throw new Error(
-        `subject "${reference}" is retired; cleared by: orch subject list ${projectName}`,
-      )
-    }
-    return { id: row.id, name: row.name }
-  }
-  const existingIds = new Set([
-    ...(prior?.articleSubject ? [prior.articleSubject.id] : []),
-    ...(prior?.relatedSubjects.map(({ id }) => id) ?? []),
-  ])
-  const articleSubject =
-    input.articleSubject === undefined
-      ? (prior?.articleSubject ?? null)
-      : input.articleSubject === null
-        ? null
-        : resolveAttachment(input.articleSubject, existingIds)
-  const relatedSubjects =
-    input.relatedSubjects === undefined
-      ? (prior?.relatedSubjects ?? [])
-      : input.relatedSubjects.map((reference) => resolveAttachment(reference, existingIds))
-  const form = input.form === undefined ? (prior?.form ?? null) : input.form
-  const sourceFiles =
-    input.sourceFiles === undefined
-      ? (prior?.sourceFiles ?? [])
-      : normalizeDocSourceFiles(input.sourceFiles)
-  const articleRefusal = articleFieldRefusal({
-    scope: input.scope,
+  const { form, articleSubject, relatedSubjects, sourceFiles } = resolveLocalDocArticleFields(
+    input,
+    prior,
     kind,
-    form,
-    ownSubjectId: articleSubject?.id ?? null,
-    relatedSubjectIds: relatedSubjects.map(({ id }) => id),
-    sourceFiles,
-  })
-  if (articleRefusal) throw new Error(articleRefusal)
-  if (!prior && kind === 'article' && input.audiences === undefined) {
-    throw new Error(
-      'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
-    )
-  }
+    projectName,
+  )
   const tree = localDocTreeFields(input, prior)
   assertDocSections(input.body, tree.audiences)
   const lifecycle = localDocumentLifecycle(input, prior)
@@ -495,14 +418,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
-        ...(input.form !== undefined ? { form } : {}),
-        ...(input.articleSubject !== undefined
-          ? { articleSubjectId: articleSubject?.id ?? null }
-          : {}),
-        ...(input.relatedSubjects !== undefined
-          ? { relatedSubjectIds: relatedSubjects.map(({ id }) => id) }
-          : {}),
-        ...(input.sourceFiles !== undefined ? { sourceFiles } : {}),
+        ...hostedArticleWriteFields(input, {
+          form,
+          articleSubject,
+          relatedSubjects,
+          sourceFiles,
+        }),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -1014,10 +935,7 @@ export async function restoreDoc(
       body: revision.body,
       delivery: revision.delivery,
       kind: revision.kind,
-      form: revision.form,
-      articleSubject: revision.articleSubject?.id ?? null,
-      relatedSubjects: revision.relatedSubjects.map(({ id }) => id),
-      sourceFiles: revision.sourceFiles,
+      ...localRevisionArticleReferences(revision),
       ...context,
     },
     getDoc(scope, subject, slug, owner),
@@ -1066,10 +984,7 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
-        form: revision.form,
-        articleSubject: revision.articleSubject,
-        relatedSubjects: revision.relatedSubjects,
-        sourceFiles: revision.sourceFiles,
+        ...localRevisionArticleFields(revision),
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
@@ -1114,10 +1029,9 @@ export async function restoreDoc(
           featured: revision.featured,
           status: revision.status,
           kind: revision.kind,
-          form: revision.form,
-          articleSubjectId: revision.articleSubject?.id ?? null,
-          relatedSubjectIds: revision.relatedSubjects.map(({ id }) => id),
-          sourceFiles: revision.sourceFiles,
+          ...hostedArticleWriteFields(localRevisionArticleReferences(revision), {
+            ...localRevisionArticleFields(revision),
+          }),
           replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
@@ -1145,10 +1059,7 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
-        form: revision.form,
-        articleSubject: revision.articleSubject,
-        relatedSubjects: revision.relatedSubjects,
-        sourceFiles: revision.sourceFiles,
+        ...localRevisionArticleFields(revision),
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
