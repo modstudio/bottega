@@ -5,9 +5,9 @@ import {
   formatTaskIdentityDoctor,
   observedTaskKeyPrefixes,
   resolveTask,
-  taskKeyPrefix,
   taskIdentityDecision,
   taskIdentityDoctor,
+  taskKeyPrefix,
 } from './task-identity.ts'
 
 test('task key prefixes come only from canonical task keys', () => {

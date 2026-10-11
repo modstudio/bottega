@@ -1,6 +1,6 @@
 import { writeTransaction } from './db.ts'
-import type { RegisteredTaskSpace } from './task-project-space.ts'
 import { taskKeyPrefix } from './task-identity.ts'
+import type { RegisteredTaskSpace } from './task-project-space.ts'
 
 type StoredIntervalProject = {
   id: string
