@@ -1,10 +1,17 @@
+import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
   listHostedChanges,
   MAX_HUB_CHANGE_PAGE_SIZE,
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
 } from './hosted-changes.ts'
+import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  type HostedPushChange,
+  type HostedPushOutcome,
+  parseHostedPushItem,
+} from './push-contract.ts'
 
 const TEST_REFUSAL =
   'hub change API refuses real identity and database clients unless stubs are injected in tests'
@@ -13,7 +20,12 @@ type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
+  push?: typeof applyHostedPushChanges
 }
+type ChangeIdentity = Exclude<
+  Awaited<ReturnType<typeof taskSpaceIdentity>>,
+  null | { refusedSpace: string }
+>
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
 const allowedMessage = allowed.join(', ')
@@ -47,6 +59,51 @@ function requestInput(url: URL) {
   return { after, limit, tables: [...new Set(tables)] as ReadableHubChangeTable[] }
 }
 
+function hasTestDependencies(method: string, dependencies: Dependencies): boolean {
+  if (!dependencies.fetch) return false
+  return method === 'GET' ? Boolean(dependencies.list) : Boolean(dependencies.push)
+}
+
+function pushInput(
+  value: unknown,
+): { inputs: HostedPushChange[]; rejected: Map<number, HostedPushOutcome> } | { error: string } {
+  if (!Array.isArray(value)) return { error: 'body must be a list of pushed changes' }
+  const inputs: HostedPushChange[] = []
+  const rejected = new Map<number, HostedPushOutcome>()
+  for (const [index, item] of value.entries()) {
+    const parsed = parseHostedPushItem(item)
+    if ('input' in parsed) inputs.push(parsed.input)
+    else rejected.set(index, parsed.outcome)
+  }
+  return { inputs, rejected }
+}
+
+async function pushResponse(
+  request: Request,
+  config: Config,
+  dependencies: Dependencies,
+  who: ChangeIdentity,
+): Promise<Response> {
+  const access = recordSpaceAccessDecision('write', who.spaceId, who.memberships)
+  if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
+  const decision = pushInput(await request.json().catch(() => null))
+  if ('error' in decision) return json({ error: decision.error }, 400)
+  try {
+    const applied = await (dependencies.push ?? applyHostedPushChanges)(
+      config.recordDatabaseUrl,
+      who,
+      decision.inputs,
+    )
+    const outcomes: HostedPushOutcome[] = []
+    let appliedIndex = 0
+    for (let index = 0; index < decision.inputs.length + decision.rejected.size; index++)
+      outcomes.push(decision.rejected.get(index) ?? applied[appliedIndex++]!)
+    return json(outcomes)
+  } catch (error) {
+    return json({ error: (error as Error).message }, 409)
+  }
+}
+
 export async function changeApi(
   request: Request,
   config: Config,
@@ -54,8 +111,9 @@ export async function changeApi(
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (url.pathname !== '/v1/changes') return null
-  if (request.method !== 'GET') return new Response('not found', { status: 404 })
-  if (process.env.NODE_ENV === 'test' && (!dependencies.fetch || !dependencies.list))
+  if (request.method !== 'GET' && request.method !== 'POST')
+    return new Response('not found', { status: 404 })
+  if (process.env.NODE_ENV === 'test' && !hasTestDependencies(request.method, dependencies))
     throw new Error(TEST_REFUSAL)
   const who = await taskSpaceIdentity(
     request,
@@ -72,6 +130,7 @@ export async function changeApi(
       },
       403,
     )
+  if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
   let input: ReturnType<typeof requestInput>
   try {
     input = requestInput(url)

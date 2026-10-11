@@ -90,7 +90,7 @@ export async function refreshTrackerTask(
             `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
           )
         guard.assertHeld()
-        ;(dependencies.observe ?? observeTrackerTask)(task, undefined, true)
+        ;(dependencies.observe ?? observeTrackerTask)(task)
         guard.assertHeld()
         return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
       },

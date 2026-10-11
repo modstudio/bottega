@@ -9,9 +9,10 @@ import {
   trackerSourceFor,
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
-import type { HostedStatusEvent } from '../hosted-tasks.ts'
 import { credentials, Mcp } from '../mcp.ts'
+import { queueHostedChange } from '../outbox.ts'
 import { projects } from '../projects.ts'
+import { PUSHABLE_HUB_CHANGE_TABLES } from '../push-contract.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import { type CollectorMirrorPass, createCollectorMirrorPass } from './collector-mirror.ts'
 
@@ -378,51 +379,11 @@ type CachedTrackerTaskObservation = TrackerTaskObservation & {
   changed: boolean
 }
 
-const PENDING_TRACKER_STATUS_EVENTS_SETTING = 'tracker.status-events.pending-mirror'
-export const PENDING_TRACKER_STATUS_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
-
-export type PendingTrackerStatusEvent = {
-  eventRecordId: string
-  taskRecordId: string
-  project: string
-  key: string
-  fromCategory: string
-  toCategory: string
-  at: string
-}
-
-function readPendingTrackerStatusEventsOn(conn: Database): PendingTrackerStatusEvent[] {
-  const row = conn
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(PENDING_TRACKER_STATUS_EVENTS_SETTING)
-  if (!row) return []
-  try {
-    const parsed = JSON.parse(row.value)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writePendingTrackerStatusEventsOn(conn: Database, entries: PendingTrackerStatusEvent[]) {
-  conn
-    .query(
-      `INSERT INTO setting (key,value) VALUES (?,?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .run(PENDING_TRACKER_STATUS_EVENTS_SETTING, JSON.stringify(entries))
-}
-
-export function pendingTrackerStatusEvents(): PendingTrackerStatusEvent[] {
-  return readPendingTrackerStatusEventsOn(db())
-}
-
 /** Observe one tracker row and its category transition in the same transaction. */
 function observeTrackerTaskOn(
   conn: Database,
   task: TrackerTask,
   at: string,
-  pendingMirror = false,
 ): CachedTrackerTaskObservation {
   const { stored, times, changed } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
@@ -447,21 +408,7 @@ function observeTrackerTaskOn(
     .run(recordId, task.key, taskRecordId!, at, was, task.category)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
-  if (event && pendingMirror) {
-    const pending = readPendingTrackerStatusEventsOn(conn)
-    const appended = {
-      eventRecordId: event.recordId,
-      taskRecordId: taskRecordId!,
-      project: task.project,
-      key: taskKey,
-      fromCategory: event.fromCategory,
-      toCategory: event.toCategory,
-      at,
-    }
-    writePendingTrackerStatusEventsOn(conn, [
-      ...new Map([...pending, appended].map((entry) => [entry.eventRecordId, entry])).values(),
-    ])
-  }
+  if (event) queueHostedChange(conn, PUSHABLE_HUB_CHANGE_TABLES[0], event.recordId, 'upsert', at)
   return {
     at,
     taskRecordId,
@@ -472,17 +419,13 @@ function observeTrackerTaskOn(
   }
 }
 
-export function observeTrackerTask(
-  task: TrackerTask,
-  at = nowIso(),
-  pendingMirror = false,
-): TrackerTaskObservation {
+export function observeTrackerTask(task: TrackerTask, at = nowIso()): TrackerTaskObservation {
   return writeTransaction((conn) => {
     const {
       times: _times,
       changed: _changed,
       ...observation
-    } = observeTrackerTaskOn(conn, task, at, pendingMirror)
+    } = observeTrackerTaskOn(conn, task, at)
     return observation
   })
 }
@@ -518,26 +461,6 @@ function trackerTaskMirrorRow(
   }
 }
 
-function trackerStatusEventMirrorRow(
-  task: Pick<TrackerTask, 'project' | 'key'>,
-  event: NonNullable<TrackerTaskObservation['event']>,
-  taskRecordId: string,
-  at: string,
-): HostedStatusEvent {
-  return {
-    id: event.recordId,
-    task_key: task.key,
-    task_id: taskRecordId,
-    project_name: task.project,
-    at,
-    from_status: event.fromCategory,
-    to_status: event.toCategory,
-    created_at: at,
-    updated_at: at,
-    deleted_at: null,
-  }
-}
-
 async function mirrorTrackerSnapshot(
   mirror: CollectorMirrorPass,
   observations: TrackerCacheObservation[],
@@ -559,64 +482,6 @@ async function mirrorTrackerSnapshot(
       const result = await mirror.mirrorTasks(mirroredTasks.slice(index, index + 500))
       if (result === 'refused')
         throw new Error(mirror.refusedReason?.() ?? 'project destination was refused')
-    }
-    return null
-  } catch (error) {
-    return error as Error
-  }
-}
-
-function pendingStatusEventMirrorRow(entry: PendingTrackerStatusEvent): HostedStatusEvent {
-  return trackerStatusEventMirrorRow(
-    { project: entry.project, key: entry.key },
-    {
-      recordId: entry.eventRecordId,
-      fromCategory: entry.fromCategory,
-      toCategory: entry.toCategory,
-    },
-    entry.taskRecordId,
-    entry.at,
-  )
-}
-
-function removePendingTrackerStatusEvents(recordIds: ReadonlySet<string>) {
-  writeTransaction((conn) => {
-    const remaining = readPendingTrackerStatusEventsOn(conn).filter(
-      (entry) => !recordIds.has(entry.eventRecordId),
-    )
-    writePendingTrackerStatusEventsOn(conn, remaining)
-  })
-}
-
-export async function mirrorPendingTrackerStatusEvents(
-  mirror: CollectorMirrorPass,
-  project: Project,
-  now = Date.now(),
-): Promise<Error | null> {
-  const projectPending = pendingTrackerStatusEvents().filter((entry) => entry.project === project)
-  const expired = projectPending.filter(
-    (entry) => now - Date.parse(entry.at) > PENDING_TRACKER_STATUS_EVENT_RETENTION_MS,
-  )
-  if (expired.length) {
-    removePendingTrackerStatusEvents(new Set(expired.map((entry) => entry.eventRecordId)))
-    for (const entry of expired)
-      console.error(
-        `hub: tracker status event mirror dropped project=${entry.project} event=${entry.eventRecordId}: pending event exceeded retention window`,
-      )
-  }
-  const expiredIds = new Set(expired.map((entry) => entry.eventRecordId))
-  const pending = projectPending
-    .filter((entry) => !expiredIds.has(entry.eventRecordId))
-    .sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
-  if (!pending.length) return null
-  try {
-    for (let index = 0; index < pending.length; index += 500) {
-      const slice = pending.slice(index, index + 500)
-      const result = await mirror.mirrorStatusEvents(slice.map(pendingStatusEventMirrorRow))
-      if (result === 'refused')
-        return new Error(mirror.refusedReason?.() ?? 'project destination was refused')
-      if (result !== 'mirrored') return null
-      removePendingTrackerStatusEvents(new Set(slice.map((entry) => entry.eventRecordId)))
     }
     return null
   } catch (error) {
@@ -671,7 +536,7 @@ export function writeTrackerCache(
   const observations: TrackerCacheObservation[] = []
   writeTransaction((conn) => {
     for (const task of tasks) {
-      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at, true) })
+      observations.push({ task, observation: observeTrackerTaskOn(conn, task, at) })
     }
   })
   return observations
@@ -724,17 +589,6 @@ export async function ingestTrackers(
   const d = db()
   const at = nowIso()
   const registrations = trackerRegistrations(projects())
-  const registeredProjects = new Set(registrations.map((tracker) => tracker.project))
-  const orphanedPending = pendingTrackerStatusEvents().filter(
-    (entry) => !registeredProjects.has(entry.project),
-  )
-  if (orphanedPending.length) {
-    removePendingTrackerStatusEvents(new Set(orphanedPending.map((entry) => entry.eventRecordId)))
-    for (const entry of orphanedPending)
-      console.error(
-        `hub: tracker status event mirror dropped project=${entry.project} event=${entry.eventRecordId}: project is no longer registered`,
-      )
-  }
   const trackers = only
     ? registrations.filter((tracker) => only.has(tracker.project))
     : registrations
@@ -810,9 +664,6 @@ export async function ingestTrackers(
             let activity = observations.some(({ observation }) => observation.changed)
             const changed = observations.filter(({ observation }) => observation.event).length
             const mirrorError = await mirrorTrackerSnapshot(mirror, observations)
-            const pendingMirrorError = mirrorError
-              ? null
-              : await mirrorPendingTrackerStatusEvents(mirror, s.project)
 
             // Use the connection which already proved reachable for the handful of
             // closed tasks recent work names. A failed full sync is not immediately
@@ -825,9 +676,9 @@ export async function ingestTrackers(
                 tasks: unique.size,
                 changed,
                 activity,
-                ...(mirrorError || pendingMirrorError
+                ...(mirrorError
                   ? {
-                      error: `hosted mirror skipped: ${(mirrorError ?? pendingMirrorError)!.message}`,
+                      error: `hosted mirror skipped: ${mirrorError.message}`,
                     }
                   : {}),
               },

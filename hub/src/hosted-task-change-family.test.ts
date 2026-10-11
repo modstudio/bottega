@@ -514,6 +514,19 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
   expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()
   expect(cursor('space-one')).toBeNull()
   expect(results).toEqual([
+    {
+      source: 'hosted outbox',
+      ok: true,
+      hostedOutbox: {
+        queued: 0,
+        sent: 0,
+        rejected: 0,
+        quarantined: 0,
+        dropped: 0,
+        waitingOnRouting: {},
+        skippedCapability: false,
+      },
+    },
     { source: 'hosted evidence', ok: true },
     { source: 'hosted tasks', ok: true },
     {

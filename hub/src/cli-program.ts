@@ -27,6 +27,7 @@ import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { NOTE_USAGE, noteHelpRequested, runNoteCommand } from './note-cli.ts'
 import { startDashboardCapability } from './orch.ts'
+import { runHostedOutboxCommand } from './outbox.ts'
 import { projects } from './projects.ts'
 import { estateEngagedMs, tasksInWindow } from './query.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
@@ -157,6 +158,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub migrate                 apply pending checksummed schema migrations
   hub sync [--dry-run]        push changed local evidence to the hosted hub
   hub doctor                  report the live structural schema hash and user_version
+  hub outbox [--json]         list queued and quarantined hosted writes
+  hub outbox retry <ID>       clear quarantine and queue an entry for retry
   ${HOSTED_CHANGE_EVIDENCE_USAGE}
                               inspect timestamp-pull misses recorded by the change-log follower
   hub tasks [--hours N]       what has been worked on, newest window first
@@ -644,6 +647,7 @@ try {
     cmd === 'reconcile' ||
     cmd === 'rulings' ||
     cmd === 'doctor' ||
+    cmd === 'outbox' ||
     cmd === 'changes' ||
     cmd === 'note'
   if (usesDatabase) requireDatabase()
@@ -661,10 +665,13 @@ try {
       break
     }
     case 'doctor':
-      for (const line of hubDoctorLines()) console.log(line)
+      for (const line of await hubDoctorLines()) console.log(line)
       break
     case 'changes':
       for (const line of runHostedChangeEvidenceCommand(argv)) console.log(line)
+      break
+    case 'outbox':
+      for (const line of runHostedOutboxCommand(argv)) console.log(line)
       break
     case 'collect':
       if (has('watch')) {

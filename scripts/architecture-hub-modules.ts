@@ -1,8 +1,16 @@
 export const hubModuleSpecs = [
   {
     file: 'hub/src/change-api.ts',
-    allowed: ['./hosted-changes.ts', './hosted-route-identity.ts'],
+    allowed: [
+      '../../shared/record-space-request.ts',
+      './hosted-changes.ts',
+      './hosted-push-changes.ts',
+      './hosted-route-identity.ts',
+      './push-contract.ts',
+    ],
   },
+  { file: 'hub/src/push-contract.ts', allowed: [] },
+  { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   {
     file: 'hub/src/hosted-route-identity.ts',
     allowed: ['../../shared/record-space-membership.ts', '../../shared/record-space-request.ts'],

@@ -10,6 +10,7 @@ import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
 } from './operator-waiting-email-contract.ts'
+import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -28,6 +29,7 @@ export type HostedTaskIdentity = {
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
+    spacePush?: boolean
   }
 }
 
@@ -430,6 +432,66 @@ export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof req
     adoptions?: import('./hosted-tasks.ts').MirrorAdoption[]
   }>('/v1/tasks/mirror', 'PUT', body, options)
 
+export async function hostedPushChanges(
+  body: HostedPushChange[],
+  options: Parameters<typeof request>[3] = {},
+): Promise<HostedPushOutcome[]> {
+  const baseUrl = assertHostedTaskWriteConfigured(options)
+  if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
+  const token = options.token ?? readRecordSessionToken()
+  if (!token)
+    throw new Error(
+      'record session is absent. Run `orch record sign-in`, then `orch record doctor`.',
+    )
+  const url = `${baseUrl.replace(/\/$/, '')}/v1/changes`
+  let response: Response
+  try {
+    response = await (options.fetch ?? fetch)(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+  } catch (error) {
+    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
+  }
+  const result = await jsonBody(response, url)
+  if (!result.ok || !Array.isArray(result.value))
+    throw new Error(
+      `hosted hub returned a malformed push response from ${result.ok ? diagnosticUrl(url) : result.url}: expected a JSON list`,
+    )
+  if (!response.ok) throw new Error(`hosted hub refused the push request (${response.status})`)
+  const outcomes = result.value.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('hosted hub returned a malformed push outcome')
+    const row = value as Record<string, unknown>
+    if (
+      typeof row.id !== 'string' ||
+      (row.status !== 'applied' && row.status !== 'duplicate' && row.status !== 'rejected') ||
+      (row.status === 'rejected' && typeof row.reason !== 'string')
+    )
+      throw new Error('hosted hub returned a malformed push outcome')
+    return row as HostedPushOutcome
+  })
+  const expectedIds = Array.isArray(body)
+    ? body.map((value) =>
+        value && typeof value === 'object' ? (value as Record<string, unknown>).id : null,
+      )
+    : []
+  const returnedIds = outcomes.map((outcome) => outcome.id)
+  if (
+    expectedIds.some((id) => typeof id !== 'string') ||
+    new Set(returnedIds).size !== returnedIds.length ||
+    expectedIds.length !== returnedIds.length ||
+    expectedIds.some((id) => !returnedIds.includes(id as string))
+  )
+    throw new Error('hosted hub returned push outcomes that do not match the requested ids')
+  return outcomes
+}
+
 type TaskIdentityResult =
   | { unauthorized: true }
   | { unauthorized: false; value: Record<string, unknown> }
@@ -532,6 +594,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).spaceChanges === true,
+      spacePush:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).spacePush === true,
     },
   }
 }

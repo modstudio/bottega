@@ -1,4 +1,4 @@
-import type { HostedStatusEvent, HostedTask, MirrorAdoption } from '../hosted-tasks.ts'
+import type { HostedTask, MirrorAdoption } from '../hosted-tasks.ts'
 import { rememberHostedInstall } from '../install-binding.ts'
 import { projects } from '../projects.ts'
 import { persistTaskAdoptions } from '../task-adoption.ts'
@@ -55,17 +55,14 @@ function hostedTaskBody(row: CollectedTaskRow): HostedTask {
   }
 }
 
-type CollectorMirrorKind = 'tasks' | 'statusEvents'
 type CollectorMirrorSkip = {
   project: string
   reason: string
   tasks: number
-  statusEvents: number
 }
 
 export type CollectorMirrorPass = {
   mirrorTasks(rows: readonly CollectedTaskRow[]): Promise<CollectorMirrorResult>
-  mirrorStatusEvents(rows: readonly HostedStatusEvent[]): Promise<CollectorMirrorResult>
   refusedReason?(): string | null
   reportSkipped(): void
 }
@@ -96,24 +93,21 @@ export async function createCollectorMirrorPass(
   }
   const registered = projects()
   const skipped = new Map<string, CollectorMirrorSkip>()
-  const skip = (project: string, reason: string, kind: CollectorMirrorKind) => {
+  const skip = (project: string, reason: string) => {
     const key = `${project}\0${reason}`
-    const entry = skipped.get(key) ?? { project, reason, tasks: 0, statusEvents: 0 }
-    entry[kind]++
+    const entry = skipped.get(key) ?? { project, reason, tasks: 0 }
+    entry.tasks++
     skipped.set(key, entry)
   }
-  const grouped = <T extends { project_name: string }>(
-    rows: readonly T[],
-    kind: CollectorMirrorKind,
-  ) => {
+  const grouped = <T extends { project_name: string }>(rows: readonly T[]) => {
     if (!identity) {
-      for (const row of rows) skip(row.project_name, 'identity-unreadable', kind)
+      for (const row of rows) skip(row.project_name, 'identity-unreadable')
       return { destinations: new Map<string, T[]>(), refusals: new Map<string, Set<string>>() }
     }
     const partitioned = partitionProjectRows(rows, registered, identity)
     const refusals = new Map<string, Set<string>>()
     for (const [project, refusal] of partitioned.refusals) {
-      for (const _row of refusal.rows) skip(project, refusal.reason, kind)
+      for (const _row of refusal.rows) skip(project, refusal.reason)
       refusals.set(project, new Set([refusal.reason]))
     }
     return { destinations: partitioned.destinations, refusals }
@@ -139,7 +133,6 @@ export async function createCollectorMirrorPass(
   const deliver = async <T extends { project_name: string }>(
     destinations: Map<string, T[]>,
     refusals: Map<string, Set<string>>,
-    kind: CollectorMirrorKind,
     write: (spaceId: string, selected: T[]) => Promise<void>,
   ) => {
     let delivered = false
@@ -151,7 +144,7 @@ export async function createCollectorMirrorPass(
       } catch (error) {
         const reason = `delivery-failed: ${(error as Error).message}`
         for (const project of new Set(selected.map((row) => row.project_name))) {
-          skip(project, reason, kind)
+          skip(project, reason)
           const reasons = failures.get(project) ?? new Set<string>()
           reasons.add(reason)
           failures.set(project, reasons)
@@ -171,30 +164,12 @@ export async function createCollectorMirrorPass(
   return {
     async mirrorTasks(rows) {
       if (!identity && identityErrorBlocksMirroring) throw identityError
-      const { destinations, refusals } = grouped(rows.map(hostedTaskBody), 'tasks')
-      const delivered = await deliver(
-        destinations,
-        refusals,
-        'tasks',
-        async (spaceId, selected) => {
-          const response = await hostedMirrorTasks({ tasks: selected }, { recordSpace: spaceId })
-          const adoptions: MirrorAdoption[] = response.adoptions ?? []
-          persistTaskAdoptions(adoptions)
-        },
-      )
-      return resultAfterDelivery(delivered, refusals)
-    },
-    async mirrorStatusEvents(rows) {
-      if (!identity && identityErrorBlocksMirroring) throw identityError
-      const { destinations, refusals } = grouped(rows, 'statusEvents')
-      const delivered = await deliver(
-        destinations,
-        refusals,
-        'statusEvents',
-        async (spaceId, selected) => {
-          await hostedMirrorTasks({ tasks: [], statusEvents: selected }, { recordSpace: spaceId })
-        },
-      )
+      const { destinations, refusals } = grouped(rows.map(hostedTaskBody))
+      const delivered = await deliver(destinations, refusals, async (spaceId, selected) => {
+        const response = await hostedMirrorTasks({ tasks: selected }, { recordSpace: spaceId })
+        const adoptions: MirrorAdoption[] = response.adoptions ?? []
+        persistTaskAdoptions(adoptions)
+      })
       return resultAfterDelivery(delivered, refusals)
     },
     refusedReason() {
@@ -213,7 +188,7 @@ export async function createCollectorMirrorPass(
         (a, b) => a.project.localeCompare(b.project) || a.reason.localeCompare(b.reason),
       ))
         console.error(
-          `hub: ${label} mirror skipped project=${entry.project} reason=${entry.reason} tasks=${entry.tasks} statusEvents=${entry.statusEvents}${
+          `hub: ${label} mirror skipped project=${entry.project} reason=${entry.reason} tasks=${entry.tasks}${
             entry.reason === 'identity-unreadable' && identityError
               ? ` error=${identityError.message}`
               : ''

@@ -2,15 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
-import { db, writeTransaction } from './db.ts'
-import type { CollectorMirrorPass } from './ingest/collector-mirror.ts'
-import {
-  mirrorPendingTrackerStatusEvents,
-  observeTrackerTask,
-  PENDING_TRACKER_STATUS_EVENT_RETENTION_MS,
-  pendingTrackerStatusEvents,
-  writeTrackerCache,
-} from './ingest/trackers.ts'
+import { db } from './db.ts'
+import { observeTrackerTask, writeTrackerCache } from './ingest/trackers.ts'
 import type { RegisteredProject } from './projects.ts'
 import { showTask } from './task.ts'
 import { refreshTrackerTask } from './tracker-task-cli.ts'
@@ -245,14 +238,9 @@ describe('fresh tracker task read', () => {
       db().query<{ count: number }, []>('SELECT count(*) count FROM task_status_event').get()
         ?.count,
     ).toBe(1)
-    expect(pendingTrackerStatusEvents()).toEqual([
-      expect.objectContaining({
-        project: 'fixture',
-        key: 'FIX-1',
-        fromCategory: 'open',
-        toCategory: 'active',
-      }),
-    ])
+    expect(
+      db().query<{ count: number }, []>('SELECT count(*) count FROM hosted_outbox').get()?.count,
+    ).toBe(1)
     expect(
       writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
         ({ observation }) => observation.event,
@@ -264,7 +252,7 @@ describe('fresh tracker task read', () => {
     ).toBe(1)
   })
 
-  test('an unchanged fresh task leaves no pending status event', async () => {
+  test('an unchanged fresh task leaves no queued status event', async () => {
     observeTrackerTask(task)
 
     await refreshTrackerTask('FIX-1', undefined, {
@@ -274,164 +262,9 @@ describe('fresh tracker task read', () => {
       readBack: showTask,
     })
 
-    expect(pendingTrackerStatusEvents()).toEqual([])
-  })
-
-  test('the next tracker pass mirrors a pending fresh transition exactly once and clears it', async () => {
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    await refreshTrackerTask('FIX-1', undefined, {
-      ...dependencies(async () => task),
-      lease: withLease,
-      observe: observeTrackerTask,
-      readBack: showTask,
-    })
     expect(
-      writeTrackerCache([task], '2026-10-05T00:00:00.000Z').filter(
-        ({ observation }) => observation.event,
-      ),
-    ).toHaveLength(0)
-
-    const events: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0][number][] = []
-    const mirror = {
-      mirrorTasks: async () => 'mirrored' as const,
-      mirrorStatusEvents: async (
-        rows: Parameters<CollectorMirrorPass['mirrorStatusEvents']>[0],
-      ) => {
-        events.push(...rows)
-        return 'mirrored' as const
-      },
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-
-    expect(await mirrorPendingTrackerStatusEvents(mirror, 'fixture')).toBeNull()
-    expect(events).toEqual([
-      expect.objectContaining({
-        task_key: 'FIX-1',
-        project_name: 'fixture',
-        from_status: 'open',
-        to_status: 'active',
-      }),
-    ])
-    expect(pendingTrackerStatusEvents()).toEqual([])
-    expect(await mirrorPendingTrackerStatusEvents(mirror, 'fixture')).toBeNull()
-    expect(events).toHaveLength(1)
-  })
-
-  test('a failed pending-event mirror remains queued for a later tracker pass', async () => {
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    await refreshTrackerTask('FIX-1', undefined, {
-      ...dependencies(async () => task),
-      lease: withLease,
-      observe: observeTrackerTask,
-      readBack: showTask,
-    })
-    const failed = {
-      mirrorTasks: async () => 'mirrored' as const,
-      mirrorStatusEvents: async () => {
-        throw new Error('host unavailable')
-      },
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-    expect((await mirrorPendingTrackerStatusEvents(failed, 'fixture'))?.message).toBe(
-      'host unavailable',
-    )
-    expect(pendingTrackerStatusEvents()).toHaveLength(1)
-
-    let mirrored = 0
-    const recovered = {
-      mirrorTasks: async () => 'mirrored' as const,
-      mirrorStatusEvents: async () => {
-        mirrored++
-        return 'mirrored' as const
-      },
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-    expect(await mirrorPendingTrackerStatusEvents(recovered, 'fixture')).toBeNull()
-    expect(mirrored).toBe(1)
-    expect(pendingTrackerStatusEvents()).toEqual([])
-  })
-
-  test('a not-applicable pending event remains queued without a hosted write', async () => {
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
-    const mirror = {
-      mirrorTasks: async () => 'not-applicable' as const,
-      mirrorStatusEvents: async () => 'not-applicable' as const,
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-
-    expect(await mirrorPendingTrackerStatusEvents(mirror, 'fixture')).toBeNull()
-    expect(pendingTrackerStatusEvents()).toHaveLength(1)
-  })
-
-  test('a refused pending event reports the project reason and remains queued', async () => {
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
-    const mirror = {
-      mirrorTasks: async () => 'refused' as const,
-      mirrorStatusEvents: async () => 'refused' as const,
-      refusedReason: () => 'fixture: declared-space-not-member',
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-
-    expect((await mirrorPendingTrackerStatusEvents(mirror, 'fixture'))?.message).toBe(
-      'fixture: declared-space-not-member',
-    )
-    expect(pendingTrackerStatusEvents()).toHaveLength(1)
-  })
-
-  test('an unreadable pending event is kept, then dropped after the retention window', async () => {
-    const at = '2026-10-05T00:00:00.000Z'
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    observeTrackerTask(task, at, true)
-    const mirror = {
-      mirrorTasks: async () => 'unreadable' as const,
-      mirrorStatusEvents: async () => 'unreadable' as const,
-      reportSkipped: () => {},
-    } satisfies CollectorMirrorPass
-
-    expect(
-      await mirrorPendingTrackerStatusEvents(mirror, 'fixture', Date.parse(at) + 1_000),
-    ).toBeNull()
-    expect(pendingTrackerStatusEvents()).toHaveLength(1)
-
-    const errors: string[] = []
-    const originalError = console.error
-    console.error = (...args: unknown[]) => errors.push(args.map(String).join(' '))
-    try {
-      expect(
-        await mirrorPendingTrackerStatusEvents(
-          mirror,
-          'fixture',
-          Date.parse(at) + PENDING_TRACKER_STATUS_EVENT_RETENTION_MS + 1,
-        ),
-      ).toBeNull()
-    } finally {
-      console.error = originalError
-    }
-    expect(pendingTrackerStatusEvents()).toEqual([])
-    expect(errors).toEqual([expect.stringContaining('project=fixture event=')])
-  })
-
-  test('appending a pending event deduplicates the list by event record id', () => {
-    observeTrackerTask({ ...task, status: 'Open', category: 'open' })
-    observeTrackerTask(task, '2026-10-05T00:00:00.000Z', true)
-    const first = pendingTrackerStatusEvents()[0]!
-    writeTransaction((conn) =>
-      conn
-        .query(`UPDATE setting SET value=? WHERE key='tracker.status-events.pending-mirror'`)
-        .run(JSON.stringify([first, first])),
-    )
-
-    observeTrackerTask(
-      { ...task, status: 'Done', category: 'done' },
-      '2026-10-05T00:01:00.000Z',
-      true,
-    )
-
-    const pending = pendingTrackerStatusEvents()
-    expect(pending).toHaveLength(2)
-    expect(new Set(pending.map((entry) => entry.eventRecordId)).size).toBe(2)
+      db().query<{ count: number }, []>('SELECT count(*) count FROM hosted_outbox').get()?.count,
+    ).toBe(0)
   })
 
   test('an unchanged fresh task records no category event', async () => {

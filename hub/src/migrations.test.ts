@@ -90,6 +90,7 @@ const LATEST_MIGRATIONS = [
   '0023_hosted_change_evidence',
   '0024_hosted_change_evidence_send_family',
   '0025_send_pending_status',
+  '0026_outbox',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
@@ -172,7 +173,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(expectedSchemaHash()).toBe(
-      '7d61697dfcb87f8d0a6336dfe2532ea118c0bb2ec7ffcd0a2fb3ff355766b73d',
+      'e0e8b31c770a48189850c3463e10f6feb31bdf562381434dcd67dbf1256b9872',
     )
     d.close()
   })
