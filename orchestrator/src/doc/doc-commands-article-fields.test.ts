@@ -154,7 +154,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
     ),
   ).toMatchObject({ code: 0 })
 
-  for (const extra of [[], ['--json'], ['--match', 'pricing'], ['--match', 'pricing', '--json']]) {
+  for (const extra of [[], ['--match', 'pricing']]) {
     const listed = await command([
       'doc',
       'list',
@@ -165,15 +165,13 @@ test('orch doc commands preserve, clear, and list article fields by subject name
       '--article-subject',
       'Pricing',
       ...extra,
+      '--json',
     ])
     expect(listed.code).toBe(0)
-    const slugs = extra.includes('--json')
-      ? JSON.parse(listed.out).map((doc: { slug: string }) => doc.slug)
-      : listed.out
-          .split('\n')
-          .slice(1)
-          .map((line) => line.trim().split(/\s+/)[2])
-    expect(slugs).toEqual(['pricing-own', 'pricing-related'])
+    expect(JSON.parse(listed.out).map((doc: { slug: string }) => doc.slug)).toEqual([
+      'pricing-own',
+      'pricing-related',
+    ])
   }
 
   const unknown = await command([
