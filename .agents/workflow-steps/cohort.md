@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 Cluster the collected signals by mechanism, never by text similarity. Put every signal in exactly one cohort. A signal whose mechanism is unknown forms its own cohort and is marked unknown.
 

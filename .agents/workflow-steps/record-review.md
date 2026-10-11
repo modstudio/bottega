@@ -5,8 +5,7 @@ floor:
   - command-exit
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 After accepted findings are applied, run `orch review project-record {{branch}} --cwd {{worktree}} --reason "<one line naming the lenses and what was accepted>"`. The project command records the review rounds against the branch tip as it now stands.
 

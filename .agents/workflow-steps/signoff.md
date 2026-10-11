@@ -5,8 +5,7 @@ floor:
   - ruling
 job: null
 autonomy: ask
-needs:
-  []
+needs: []
 ---
 Present the proposed outcome, boundaries, chosen design, work breakdown, dependencies, risks, and acceptance criteria together. Call out any assumptions or unresolved items rather than burying them in the plan. Name `premise not checked` as an unresolved item for every requirement whose outcome evidence was not checked.
 

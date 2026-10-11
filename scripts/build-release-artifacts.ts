@@ -26,6 +26,7 @@ export type ReleaseManifest = {
 
 type CommandResult = { exitCode: number; stdout: string }
 export type ArtifactPorts = {
+  bunVersion: string
   git(argv: string[]): Promise<CommandResult>
 }
 
@@ -41,6 +42,7 @@ async function command(argv: string[]): Promise<CommandResult> {
 }
 
 const productionPorts: ArtifactPorts = {
+  bunVersion: Bun.version,
   git: (argv) => command(['git', ...argv]),
 }
 
@@ -94,7 +96,7 @@ export async function buildReleaseArtifacts(
   outputDirectory: string,
   ports: ArtifactPorts = productionPorts,
 ): Promise<string[]> {
-  requireReleaseBun()
+  requireReleaseBun(ports.bunVersion)
   const version = releaseVersion(tag)
   const dirty = await ports.git(['status', '--porcelain'])
   if (dirty.exitCode !== 0) throw new Error('could not establish whether the working tree is clean')
