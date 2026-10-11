@@ -403,6 +403,8 @@ export function DocsView({
         />
         <DocsReading
           doc={visible}
+          signedIn={signedIn}
+          audience={selectedAudience(model.stale)}
           pending={!visible && (Boolean(model.selected) || detached || !ready)}
           wide={wide}
           onWide={setWide}

@@ -1,10 +1,18 @@
-import { DOC_AUDIENCES } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, type DocForm } from '../../../../shared/docs.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 
 export const DOC_AUDIENCE_LABELS: Record<DocsAudience, string> = {
   technical: 'Technical',
   internal: 'Internal',
   customer: 'Customer',
+}
+
+export const DOC_FORM_LABELS: Record<DocForm, string> = {
+  feature: 'Feature',
+  'how-to': 'How-to',
+  rule: 'Rule',
+  model: 'Model',
+  overview: 'Overview',
 }
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
