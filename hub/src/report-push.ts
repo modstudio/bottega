@@ -17,7 +17,7 @@ export async function pushReports(options: ReportClientOptions & { dryRun?: bool
       recipients: row.recipients as string,
       projects: row.projects as string,
       items: row.items as number,
-      status: row.status as 'sent' | 'skipped' | 'failed',
+      status: row.status as 'pending' | 'sent' | 'skipped' | 'failed',
       error: row.error as string | null,
       test: row.test as number,
       created_at: row.at as string,

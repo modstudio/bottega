@@ -176,6 +176,13 @@
       "when": 1791670136000,
       "tag": "0024_hosted_change_evidence_send_family",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791756536000,
+      "tag": "0025_send_pending_status",
+      "breakpoints": true
     }
   ]
 }

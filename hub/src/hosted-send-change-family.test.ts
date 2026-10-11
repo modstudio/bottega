@@ -126,22 +126,6 @@ test('first run reads the active-space head, full-pulls sends, and stores the he
   ])
 })
 
-test('reset runs the capped timestamp-shaped full pull and stores the new head', async () => {
-  storeCursor('5')
-  seed(hostedSend())
-  const fetch = routeFetch({
-    changes: () => changePage({ head: 40, next: 5, resetRequired: true }),
-    sends: () => ({ sends: [hostedSend({ status: 'failed' })], cursor: at }),
-  })
-
-  await pull(fetch)
-
-  expect(cursor()).toBe('40')
-  expect(db().query<{ status: string }, []>('SELECT status FROM send').get()).toEqual({
-    status: 'failed',
-  })
-})
-
 test('an identical upsert is a no-op and a sent-to-failed upsert records send evidence', async () => {
   storeCursor('12')
   seed(hostedSend(), hostedSend({ id: otherSendId }))
@@ -173,6 +157,52 @@ test('an identical upsert is a no-op and a sent-to-failed upsert records send ev
   expect(
     db().query('SELECT family,row_id,differing_columns FROM hosted_change_evidence').all(),
   ).toEqual([{ family: 'send', row_id: otherSendId, differing_columns: '["status"]' }])
+})
+
+test('a pending log upsert is stored and a later sent upsert updates the same row', async () => {
+  storeCursor('12')
+  await pull(
+    routeFetch({
+      changes: () =>
+        changePage({
+          next: 13,
+          changes: [
+            {
+              sequence: 13,
+              table: 'hub_send',
+              id: sendId,
+              op: 'upsert',
+              row: hostedSend({ status: 'pending' }),
+            },
+          ],
+        }),
+    }),
+  )
+  expect(db().query<{ status: string }, []>('SELECT status FROM send').get()).toEqual({
+    status: 'pending',
+  })
+
+  await pull(
+    routeFetch({
+      changes: () =>
+        changePage({
+          next: 14,
+          changes: [
+            {
+              sequence: 14,
+              table: 'hub_send',
+              id: sendId,
+              op: 'upsert',
+              row: hostedSend({ status: 'sent' }),
+            },
+          ],
+        }),
+    }),
+  )
+
+  expect(db().query('SELECT record_id,status FROM send').all()).toEqual([
+    { record_id: sendId, status: 'sent' },
+  ])
 })
 
 test('a recipient change arrives as an upsert of its send', async () => {

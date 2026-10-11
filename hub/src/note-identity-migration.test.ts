@@ -37,6 +37,7 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     '0022_note_project_counter',
     '0023_hosted_change_evidence',
     '0024_hosted_change_evidence_send_family',
+    '0025_send_pending_status',
   ])
   expect(
     d
