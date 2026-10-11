@@ -30,7 +30,6 @@ import {
   type DocWriteContext,
   type DocWriteInput,
   hostedArticleWriteFields,
-  listLocalDocsByArticleSubject,
   localRevisionArticleFields,
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
@@ -38,13 +37,13 @@ import {
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
+import { listDocMetadata, listDocs } from './doc-list.ts'
 import {
   type Doc,
   type DocRevision,
   type DocRevisionMetadata,
   getDocForAudienceStore,
   getDocStore,
-  listDocsStore,
 } from './doc-read-store.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
@@ -231,10 +230,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   validateSubject(scope, subject)
 }
 
-export { docSubjects }
-
-export const listDocs = listDocsStore
-export const listDocMetadata = listLocalDocsByArticleSubject
+export { docSubjects, listDocMetadata, listDocs }
 
 export const getDoc = getDocStore
 export const getDocForAudience = getDocForAudienceStore
