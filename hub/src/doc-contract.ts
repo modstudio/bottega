@@ -1,5 +1,14 @@
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_FORMS, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_FORMS,
+  DOC_KINDS,
+  DOC_STATUSES,
+  type DocAudiences,
+  type DocKind,
+  type DocScope,
+  type DocStatus,
+} from '../../shared/docs.ts'
 
 export const ArticleDocFieldsSchema = z.object({
   form: z.enum(DOC_FORMS).nullable().optional(),
@@ -7,6 +16,28 @@ export const ArticleDocFieldsSchema = z.object({
   relatedSubjects: z.array(z.object({ id: z.string().uuid(), name: z.string() })).optional(),
   sourceFiles: z.array(z.string()).optional(),
 })
+type ArticleDocFields = z.infer<typeof ArticleDocFieldsSchema>
+
+export type ContractDocRow = ArticleDocFields & {
+  id: number
+  scope: DocScope
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+  delivery: 'inject' | 'demand'
+  audiences: DocAudiences
+  parent_id: number | null
+  parent_slug: string | null
+  position: number
+  featured?: boolean
+  status?: DocStatus
+  kind?: DocKind
+  replacement_slug?: string | null
+  revision: string | null
+  created_at: string
+  updated_at: string
+}
 
 export const DocTreeItemSchema = z.object({
   id: z.string(),

@@ -90,7 +90,7 @@ export async function resolveHostedArticleFields(
     ...new Set([articleSubjectId, ...relatedSubjectIds].filter((id): id is string => Boolean(id))),
   ]
   const subjectRows = subjectIds.length
-    ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${projectId}::uuid AND id = ANY(${subjectIds}::uuid[])`
+    ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${projectId}::uuid AND id = ANY(${tx.array(subjectIds, 'uuid')})`
     : []
   for (const id of subjectIds) {
     const row = subjectRows.find((candidate: Row) => String(candidate.id) === id)
@@ -160,7 +160,7 @@ export async function importedArticleSubjectNames(
   ]
   if (!ids.length) return new Map()
   const rows =
-    await tx`SELECT id,name FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${projectId}::uuid AND id=ANY(${ids}::uuid[])`
+    await tx`SELECT id,name FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${projectId}::uuid AND id=ANY(${tx.array(ids, 'uuid')})`
   if (rows.length !== ids.length)
     throw new RecordDocError(
       `an article subject is not in the document project; cleared by: orch subject list ${input.subject}`,

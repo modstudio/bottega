@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   importedLiveArticleFields,
@@ -11,7 +12,7 @@ test('an older import keeps populated live article fields and defaults revision 
     {
       doc: {
         scope: 'project',
-        subject: 'bottega',
+        subject: PLATFORM_NAME,
         slug: 'article',
         title: 'Article',
         body: 'Current.',
@@ -24,7 +25,7 @@ test('an older import keeps populated live article fields and defaults revision 
       revisions: [
         {
           scope: 'project',
-          subject: 'bottega',
+          subject: PLATFORM_NAME,
           slug: 'article',
           op: 'create',
           title: 'Article',
