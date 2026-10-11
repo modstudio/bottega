@@ -524,7 +524,6 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
         skippedCapability: false,
       },
     },
-    { source: 'hosted evidence', ok: true },
     { source: 'hosted tasks', ok: true },
     {
       source: 'hosted task changes',

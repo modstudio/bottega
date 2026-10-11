@@ -54,16 +54,21 @@ test('restated evidence queues nothing while material interval and day changes q
   writeTransaction((conn) =>
     conn.query(`UPDATE interval SET claude_tokens=11 WHERE record_id=?`).run(intervalId),
   )
+  expect(queued()).toEqual([
+    { table_name: 'hub_interval', row_id: intervalId, operation: 'upsert' },
+  ])
+  writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
   writeTransaction((conn) =>
     conn.query(`UPDATE interval SET open=0 WHERE record_id=?`).run(intervalId),
   )
+  expect(queued()).toEqual([
+    { table_name: 'hub_interval', row_id: intervalId, operation: 'upsert' },
+  ])
+  writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
   writeTransaction((conn) =>
     conn.query(`UPDATE day SET messages=1 WHERE record_id=?`).run(dayTwoId),
   )
-  expect(queued()).toEqual([
-    { table_name: 'hub_day', row_id: dayTwoId, operation: 'upsert' },
-    { table_name: 'hub_interval', row_id: intervalId, operation: 'upsert' },
-  ])
+  expect(queued()).toEqual([{ table_name: 'hub_day', row_id: dayTwoId, operation: 'upsert' }])
 
   writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
   correctStoredIntervalProjects([
@@ -98,11 +103,27 @@ test('only the newest day queues when collected_at changes', () => {
   expect(queued()).toEqual([{ table_name: 'hub_day', row_id: dayTwoId, operation: 'upsert' }])
 })
 
+test('a new day queues exactly one entry', () => {
+  insertDay(dayOneId, '2026-10-10')
+  expect(queued()).toEqual([{ table_name: 'hub_day', row_id: dayOneId, operation: 'upsert' }])
+})
+
 test('a trigger and queueHostedChange produce the same queue state except id and time', () => {
   insertInterval()
+  writeTransaction((conn) => {
+    conn.exec(`UPDATE hosted_outbox SET attempts=2,last_error='rejected',
+      quarantined_at='2026-10-11T11:00:00.000Z',quarantine_reason='rejected'`)
+    conn.query(`UPDATE interval SET open=0 WHERE record_id=?`).run(intervalId)
+  })
   const triggered = db().query<Record<string, unknown>, []>(`SELECT * FROM hosted_outbox`).get()!
   writeTransaction((conn) => {
     conn.exec(`DELETE FROM hosted_outbox`)
+    conn
+      .query(`INSERT INTO hosted_outbox
+      (id,table_name,row_id,operation,queued_at,attempts,last_error,quarantined_at,quarantine_reason)
+      VALUES ('prior','hub_interval',?,'upsert','2026-10-11T11:00:00.000Z',2,'rejected',
+        '2026-10-11T11:00:00.000Z','rejected')`)
+      .run(intervalId)
     queueHostedChange(conn, 'hub_interval', intervalId, 'upsert', '2026-10-11T12:00:00.000Z')
   })
   const explicit = db().query<Record<string, unknown>, []>(`SELECT * FROM hosted_outbox`).get()!

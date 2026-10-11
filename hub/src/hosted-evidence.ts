@@ -129,15 +129,6 @@ async function upsertOneInterval(
   return 'applied'
 }
 
-export async function upsertIntervalsInTransaction(
-  tx: SQL,
-  identity: EvidenceIdentity,
-  rows: IntervalEvidence[],
-) {
-  for (const row of rows) await upsertOneInterval(tx, identity, row)
-  return { upserted: rows.length }
-}
-
 export async function applyIntervalChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,

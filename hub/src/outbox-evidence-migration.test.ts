@@ -3,7 +3,12 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
+import {
+  applyMigrations,
+  expectedSchemaHash,
+  MIGRATIONS_FOLDER,
+  migrationJournal,
+} from './migrations.ts'
 
 function storeBeforeEvidenceOutbox() {
   const folder = mkdtempSync(join(tmpdir(), 'hub-evidence-outbox-migration-'))
@@ -75,4 +80,10 @@ test('evidence outbox rollout accepts an empty ledger', () => {
   expect(applyMigrations(database)).toEqual(['0028_outbox_evidence'])
   expect(database.query(`SELECT 1 FROM hosted_outbox`).all()).toEqual([])
   database.close()
+})
+
+test('evidence outbox rollout owns the current schema hash', () => {
+  expect(expectedSchemaHash()).toBe(
+    '6b1229a32d91bec1750678defaeb28ebbcff46094616e0671cb561e574d1f66c',
+  )
 })

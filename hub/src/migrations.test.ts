@@ -174,9 +174,6 @@ describe('hub migration journal', () => {
   test('fresh migrations equal trunk schema by structural hash', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
-    expect(expectedSchemaHash()).toBe(
-      '6b1229a32d91bec1750678defaeb28ebbcff46094616e0671cb561e574d1f66c',
-    )
     d.close()
   })
 

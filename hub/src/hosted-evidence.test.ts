@@ -7,12 +7,12 @@ import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { hubChangeReadability } from './hosted-changes.ts'
 import {
+  applyIntervalChangeInTransaction,
   type DayEvidence,
   hostedDayWrite,
   hostedIntervalWrite,
   type IntervalEvidence,
   upsertDaysInTransaction,
-  upsertIntervalsInTransaction,
 } from './hosted-evidence.ts'
 
 const interval = {
@@ -125,8 +125,10 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
   const collectedAt = '2026-10-05T19:50:00.000Z'
   const startAt = '2026-10-05T10:00:00.000Z'
   const endAt = '2026-10-05T12:00:00.000Z'
-  await upsertIntervalsInTransaction(sql, identity, [
-    {
+  await applyIntervalChangeInTransaction(sql, identity, {
+    id: intervalId,
+    op: 'upsert',
+    row: {
       id: intervalId,
       task_key: 'DEV-1240',
       project_name: 'workshop',
@@ -144,7 +146,7 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
       session_id: null,
       user_id: null,
     },
-  ])
+  })
   await upsertDaysInTransaction(sql, identity, [
     {
       id: dayId,
