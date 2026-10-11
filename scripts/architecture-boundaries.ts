@@ -636,6 +636,7 @@ export const importBoundaries: ImportBoundary[] = [
       'hono',
       'hono/cors',
       'zod',
+      '../../../shared/built-commit.ts',
       '../../../shared/docs.ts',
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',

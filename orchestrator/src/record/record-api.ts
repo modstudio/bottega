@@ -5,6 +5,7 @@ import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
+import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -281,7 +282,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     app.use('/public/v1/*', cors(options))
     app.use('/api/auth/*', cors(options))
   }
-  registerRecordAccessRoutes(app, deps)
+  registerRecordAccessRoutes(app, {
+    ...deps,
+    readVersion: () => builtCommitResponse(deps.readCommit()),
+  })
   registerPublicDocRoutes(app, deps)
   app.use('/v1/*', async (context, next) => {
     const identity = await deps.readSession(context.req.raw.headers)

@@ -5,7 +5,7 @@ import type { Env, Hono } from 'hono'
 type AccessRouteDeps = {
   auth: { handler(request: Request): Response | Promise<Response> }
   readHealth(): Promise<{ ok: boolean; migrations: number }>
-  readCommit(): string | undefined
+  readVersion(): { status: 200 | 503; body: object }
 }
 
 export function registerRecordAccessRoutes<E extends Env>(
@@ -17,10 +17,8 @@ export function registerRecordAccessRoutes<E extends Env>(
     return context.json(health, health.ok ? 200 : 503)
   })
   app.get('/version', (context) => {
-    const commit = deps.readCommit()
-    return commit
-      ? context.json({ commit })
-      : context.json({ commit: null, error: 'the commit this app was built from is unknown' }, 503)
+    const response = deps.readVersion()
+    return context.json(response.body, response.status)
   })
   app.all('/api/auth/*', async (context) => {
     const response = await deps.auth.handler(context.req.raw)

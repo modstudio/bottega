@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { parseBuiltCommit } from '../../../shared/built-commit.ts'
 import { identity, idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
@@ -617,19 +616,18 @@ describe('record API', () => {
     expect(await (await app.request('/health')).json()).toEqual({ ok: true, migrations: 14 })
   })
 
-  test.each([
-    '0123456789abcdef0123456789abcdef01234567',
-    undefined,
-    '0123456',
-    'g123456789abcdef0123456789abcdef01234567',
-  ])('reports only a valid commit without requiring a session', async (raw) => {
-    const commit = parseBuiltCommit(raw)
+  test('reports a valid commit without requiring a session', async () => {
+    const commit = '0123456789abcdef0123456789abcdef01234567'
     const response = await appWith(null, { readCommit: () => commit }).request('/version')
-    expect([response.status, await response.json()]).toEqual(
-      commit
-        ? [200, { commit }]
-        : [503, { commit: null, error: 'the commit this app was built from is unknown' }],
-    )
+    expect([response.status, await response.json()]).toEqual([200, { commit }])
+  })
+
+  test('reports an unknown commit without requiring a session', async () => {
+    const response = await appWith(null, { readCommit: () => undefined }).request('/version')
+    expect([response.status, await response.json()]).toEqual([
+      503,
+      { commit: null, error: 'the commit this app was built from is unknown' },
+    ])
   })
 
   test('an over-limit reset request returns the same status and body as the first request', async () => {
