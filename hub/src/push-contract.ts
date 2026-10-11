@@ -39,6 +39,31 @@ function rejected(id: string, reason: string): ParsedHostedPushItem {
   return { outcome: { id, status: 'rejected', reason } }
 }
 
+function parseStatusEventRow(
+  value: unknown,
+  id: string,
+  table: PushableHubChangeTable,
+): PushedStatusEvent | string {
+  const row = object(value)
+  if (!row) return `${table} upsert requires a row`
+  if (row.id !== id) return `${table} upsert requires a row whose id matches the pointer`
+  const stringFields = [
+    'task_key',
+    'project_name',
+    'at',
+    'to_status',
+    'created_at',
+    'updated_at',
+  ] as const
+  for (const field of stringFields)
+    if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
+  if (row.task_id !== undefined && !nullableString(row.task_id))
+    return `${table} row.task_id must be a string, null, or absent`
+  for (const field of ['from_status', 'deleted_at'] as const)
+    if (!nullableString(row[field])) return `${table} row.${field} must be a string or null`
+  return row as PushedStatusEvent
+}
+
 export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   const input = object(value)
   const id = typeof input?.id === 'string' ? input.id : String(input?.id ?? '')
@@ -54,26 +79,8 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
     return rejected(id, 'operation must be upsert or delete')
   const table = input.table as PushableHubChangeTable
   if (input.op === 'delete') return { input: { table, id: input.id, op: 'delete' } }
-  const row = object(input.row)
-  if (!row) return rejected(id, `${table} upsert requires a row`)
-  if (row.id !== input.id)
-    return rejected(id, `${table} upsert requires a row whose id matches the pointer`)
-  const stringFields = [
-    'task_key',
-    'project_name',
-    'at',
-    'to_status',
-    'created_at',
-    'updated_at',
-  ] as const
-  for (const field of stringFields)
-    if (typeof row[field] !== 'string')
-      return rejected(id, `${table} row.${field} must be a string`)
-  if (row.task_id !== undefined && !nullableString(row.task_id))
-    return rejected(id, `${table} row.task_id must be a string, null, or absent`)
-  for (const field of ['from_status', 'deleted_at'] as const)
-    if (!nullableString(row[field]))
-      return rejected(id, `${table} row.${field} must be a string or null`)
+  const row = parseStatusEventRow(input.row, input.id, table)
+  if (typeof row === 'string') return rejected(id, row)
   return {
     input: {
       table,
