@@ -461,11 +461,6 @@ export const modules: ArchitectureModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/release/release-decision.ts', ['../../../shared/release-tag.ts']),
-  module('orchestrator/src/release/live-reading.ts', [
-    '../../../shared/secret-shaped.ts',
-    '../git/git-environment.ts',
-    './release-decision.ts',
-  ]),
   module('orchestrator/src/release/release-service.ts', [
     'node:fs',
     'node:path',

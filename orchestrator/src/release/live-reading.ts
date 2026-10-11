@@ -32,7 +32,7 @@ function capturedText(text: string): string {
 }
 
 /** Parse a captured live command without observing a process or clock. */
-export function parseLiveReading(capture: LiveReadingCapture): LiveReading {
+function parseLiveReading(capture: LiveReadingCapture): LiveReading {
   if (capture.timedOut) {
     return { ok: false, kind: 'timeout', failure: 'live reading timed out' }
   }
