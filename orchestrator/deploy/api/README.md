@@ -20,8 +20,10 @@ fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
 
-The deploy script reads `ORCH_RECORD_MIGRATE_URL` from the environment, migrates the record,
-and confirms that applied migrations equal those shipped in the image before invoking Fly. The
+The deploy script takes `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one
+variable from the operator's env file when the environment lacks it. It gives the value to the
+migration only, never to Fly, then migrates the record and confirms that applied migrations
+equal those shipped in the image before invoking Fly. The
 image's release command uses its low-privilege `ORCH_RECORD_URL` and refuses a release with
 pending migrations, so a bare `fly deploy` cannot run ahead of the record schema.
 
