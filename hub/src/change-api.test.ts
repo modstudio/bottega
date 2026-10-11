@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { changeApi } from './change-api.ts'
+import { hostedPushChanges } from './task-client.ts'
 
 const config = {
   recordApiUrl: 'https://record.example.test',
@@ -17,6 +18,16 @@ const whoami = async () =>
 const request = (query: string, space = 'space-b') =>
   new Request(`https://hub.example.test/v1/changes?${query}`, {
     headers: { authorization: 'Bearer test', 'x-record-space': space },
+  })
+const pushRequest = (body: unknown, space = 'space-b') =>
+  new Request('https://hub.example.test/v1/changes', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer test',
+      'content-type': 'application/json',
+      'x-record-space': space,
+    },
+    body: JSON.stringify(body),
   })
 
 test('change route binds a requested member space and parses its bounded request', async () => {
@@ -41,6 +52,77 @@ test('change route binds a requested member space and parses its bounded request
     },
     input: { after: 0, limit: 500, tables: ['hub_task', 'hub_note'] },
   })
+})
+
+test('push route authorizes the requested space and refuses unaccepted tables', async () => {
+  const change = {
+    table: 'hub_task_status_event',
+    id: '01990000-0000-7000-8000-000000000001',
+    op: 'upsert',
+    row: { id: '01990000-0000-7000-8000-000000000001' },
+  }
+  let received: unknown
+  const response = await changeApi(pushRequest([change]), config, {
+    fetch: whoami,
+    push: async (_url, identity, body) => {
+      received = { identity, body }
+      return [{ id: change.id, status: 'applied' }]
+    },
+  })
+  expect(response?.status).toBe(200)
+  expect(received).toEqual({
+    identity: expect.objectContaining({ spaceId: 'space-b' }),
+    body: [change],
+  })
+
+  const refused = await changeApi(pushRequest([{ ...change, table: 'hub_note' }]), config, {
+    fetch: whoami,
+    push: async () => [],
+  })
+  expect(refused?.status).toBe(400)
+  expect(await refused?.json()).toEqual({
+    error: 'table hub_note is not accepted; accepted tables: hub_task_status_event',
+  })
+})
+
+test('push route requires write membership', async () => {
+  const readonlyWhoami = async () =>
+    Response.json({
+      user: { id: 'user-1' },
+      activeSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'active', permission: 'read' }],
+    })
+  let pushes = 0
+  const response = await changeApi(pushRequest([], 'space-a'), config, {
+    fetch: readonlyWhoami,
+    push: async () => {
+      pushes++
+      return []
+    },
+  })
+  expect(response?.status).toBe(403)
+  expect(pushes).toBe(0)
+})
+
+test('push client accepts one outcome per requested id and refuses a malformed set', async () => {
+  const body = [
+    { table: 'hub_task_status_event', id: 'event-one', op: 'upsert', row: { id: 'event-one' } },
+  ]
+  expect(
+    await hostedPushChanges(body, {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () => Response.json([{ id: 'event-one', status: 'applied' }]),
+    }),
+  ).toEqual([{ id: 'event-one', status: 'applied' }])
+  await expect(
+    hostedPushChanges(body, {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async () => Response.json([]),
+    }),
+  ).rejects.toThrow('do not match the requested ids')
 })
 
 test('change route refuses non-members before reading and validates every query boundary', async () => {

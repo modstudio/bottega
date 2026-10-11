@@ -517,6 +517,7 @@ describe('hosted-only task safety', () => {
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,
+        spacePush: true,
       },
     })
   })

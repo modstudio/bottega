@@ -23,15 +23,17 @@ CREATE INDEX hosted_outbox_pending
 INSERT OR IGNORE INTO hosted_outbox
   (id,table_name,row_id,operation,queued_at)
 SELECT
-  json_extract(value,'$.eventRecordId'),
+  json_extract(json_each.value,'$.eventRecordId'),
   'hub_task_status_event',
-  json_extract(value,'$.eventRecordId'),
+  json_extract(json_each.value,'$.eventRecordId'),
   'upsert',
-  json_extract(value,'$.at')
-FROM setting, json_each(setting.value)
+  json_extract(json_each.value,'$.at')
+FROM setting,
+  json_each(CASE
+    WHEN json_valid(setting.value) AND json_type(setting.value)='array' THEN setting.value
+    ELSE '[]'
+  END)
 WHERE setting.key='tracker.status-events.pending-mirror'
-  AND json_valid(setting.value)
-  AND json_type(setting.value)='array'
-  AND json_extract(value,'$.eventRecordId') IS NOT NULL;
+  AND json_extract(json_each.value,'$.eventRecordId') IS NOT NULL;
 DELETE FROM setting WHERE key='tracker.status-events.pending-mirror';
 -- /BACKFILL

@@ -5,6 +5,8 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import { bindTenant } from '../../shared/record/tenant.ts'
+import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { type HostedTask, mirrorHostedTaskBody } from './hosted-tasks.ts'
 
 const migrationsFolder = join(
@@ -197,4 +199,117 @@ test('task mirroring writes only changed or missing hosted rows', async () => {
   expect((await database.query(`SELECT title FROM hub_task WHERE id=$1`, [secondId])).rows).toEqual(
     [{ title: 'Second' }],
   )
+})
+
+test('pushed status events isolate a rejection with a savepoint', async () => {
+  const eventId = '01990000-0000-7000-8000-000000001260'
+  const collisionId = '01990000-0000-7000-8000-000000001261'
+  const laterId = '01990000-0000-7000-8000-000000001262'
+  const row = (id: string, at: string) => ({
+    id,
+    task_key: 'DEV-1',
+    task_id: firstId,
+    project_name: 'workshop',
+    at,
+    from_status: 'open',
+    to_status: 'active',
+    created_at: at,
+    updated_at: at,
+    deleted_at: null,
+  })
+  const outcomes = await database.transaction(async (transaction) => {
+    const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
+    return applyHostedPushChangesInTransaction(sql, identity, [
+      {
+        table: 'hub_task_status_event',
+        id: eventId,
+        op: 'upsert',
+        row: row(eventId, '2026-10-09T13:00:00.000Z'),
+      },
+      {
+        table: 'hub_task_status_event',
+        id: collisionId,
+        op: 'upsert',
+        row: row(collisionId, '2026-10-09T13:00:00.000Z'),
+      },
+      {
+        table: 'hub_task_status_event',
+        id: laterId,
+        op: 'upsert',
+        row: row(laterId, '2026-10-09T14:00:00.000Z'),
+      },
+    ])
+  })
+  expect(outcomes).toEqual([
+    { id: eventId, status: 'applied' },
+    { id: collisionId, status: 'rejected', reason: expect.stringContaining('already belongs') },
+    { id: laterId, status: 'applied' },
+  ])
+  expect(
+    (
+      await database.query<{ id: string }>(
+        `SELECT id::text FROM hub_task_status_event WHERE id=ANY($1::uuid[]) ORDER BY id`,
+        [[eventId, collisionId, laterId]],
+      )
+    ).rows,
+  ).toEqual([{ id: eventId }, { id: laterId }])
+
+  const duplicate = await database.transaction(async (transaction) => {
+    const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
+    return applyHostedPushChangesInTransaction(sql, identity, [
+      {
+        table: 'hub_task_status_event',
+        id: eventId,
+        op: 'upsert',
+        row: row(eventId, '2026-10-09T13:00:00.000Z'),
+      },
+    ])
+  })
+  expect(duplicate).toEqual([{ id: eventId, status: 'duplicate' }])
+})
+
+test('record policies reject a push into a space without write membership', async () => {
+  const refusedSpace = '01990000-0000-7000-8000-000000001270'
+  const eventId = '01990000-0000-7000-8000-000000001271'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO space(id,name,slug,created_at)
+    VALUES ('${refusedSpace}','Refused push','refused-push',now());
+    SET ROLE ${RECORD_ACTOR_ROLE};
+  `)
+  const outcomes = await database.transaction(async (transaction) => {
+    const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
+    await bindTenant(sql, { userId, spaceId: refusedSpace, spaceIds: [spaceId] })
+    return applyHostedPushChangesInTransaction(sql, { userId, spaceId: refusedSpace }, [
+      {
+        table: 'hub_task_status_event',
+        id: eventId,
+        op: 'upsert',
+        row: {
+          id: eventId,
+          task_key: 'DEV-404',
+          task_id: null,
+          project_name: 'workshop',
+          at: '2026-10-09T15:00:00.000Z',
+          from_status: 'open',
+          to_status: 'active',
+          created_at: '2026-10-09T15:00:00.000Z',
+          updated_at: '2026-10-09T15:00:00.000Z',
+          deleted_at: null,
+        },
+      },
+    ])
+  })
+  expect(outcomes).toEqual([
+    { id: eventId, status: 'rejected', reason: expect.stringContaining('row-level security') },
+  ])
+  expect(
+    (await database.query(`SELECT 1 FROM hub_task_status_event WHERE id=$1`, [eventId])).rows,
+  ).toHaveLength(0)
 })

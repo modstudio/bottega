@@ -97,13 +97,17 @@ export async function changeApi(
         },
         400,
       )
-    return json(
-      await (dependencies.push ?? applyHostedPushChanges)(
-        config.recordDatabaseUrl,
-        who,
-        body as Parameters<typeof applyHostedPushChanges>[2],
-      ),
-    )
+    try {
+      return json(
+        await (dependencies.push ?? applyHostedPushChanges)(
+          config.recordDatabaseUrl,
+          who,
+          body as Parameters<typeof applyHostedPushChanges>[2],
+        ),
+      )
+    } catch (error) {
+      return json({ error: (error as Error).message }, 409)
+    }
   }
   let input: ReturnType<typeof requestInput>
   try {

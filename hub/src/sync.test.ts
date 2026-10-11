@@ -305,6 +305,17 @@ describe('evidence sync planning', () => {
     expect(ran).toEqual(['following leg'])
     expect(results).toEqual([
       {
+        source: 'hosted outbox',
+        ok: true,
+        hostedOutbox: {
+          queued: 0,
+          sent: 0,
+          rejected: 0,
+          quarantined: 0,
+          skippedCapability: false,
+        },
+      },
+      {
         source: 'hosted evidence',
         ok: false,
         error: 'interval sync issues: missing: unregistered-project',

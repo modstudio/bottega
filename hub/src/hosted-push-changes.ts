@@ -22,6 +22,8 @@ export const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
   hub_task_status_event: {
     dependencyOrder: 1,
     async apply(tx, identity, input) {
+      if (input.op !== 'upsert' && input.op !== 'delete')
+        throw new Error('operation must be upsert or delete')
       if (input.op === 'delete') throw new Error('hub_task_status_event does not accept delete yet')
       if (!input.row || input.row.id !== input.id)
         throw new Error('hub_task_status_event upsert requires a row whose id matches the pointer')

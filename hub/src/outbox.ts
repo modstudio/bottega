@@ -4,7 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
-import { partitionProjectRows } from './task-project-space.ts'
+import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
 
 export const HOSTED_OUTBOX_BATCH_SIZE = 500
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
@@ -156,8 +156,9 @@ function recordOutcome(entry: OutboxEntry, outcome: PushOutcome, at: string) {
 export async function drainHostedOutbox(
   dependencies: {
     identity?: typeof hostedTaskIdentity
-    push?: typeof hostedPushChanges
+    push?: (changes: PushChange[], options: { recordSpace: string }) => Promise<PushOutcome[]>
     clock?: () => string
+    registered?: () => RegisteredTaskSpace[]
   } = {},
 ): Promise<HostedOutboxReport> {
   const entries = db()
@@ -205,8 +206,17 @@ export async function drainHostedOutbox(
           row,
         },
       })
+    else {
+      const action = recordOutcome(
+        entry,
+        { id: entry.id, status: 'rejected', reason: 'current machine row is absent' },
+        (dependencies.clock ?? nowIso)(),
+      )
+      report.rejected++
+      if (action === 'quarantine') report.quarantined++
+    }
   }
-  const partitioned = partitionProjectRows(rows, projects(), identity)
+  const partitioned = partitionProjectRows(rows, (dependencies.registered ?? projects)(), identity)
   for (const selected of partitioned.refusals.values()) {
     for (const item of selected.rows) {
       const action = recordOutcome(

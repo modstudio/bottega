@@ -81,9 +81,6 @@ mock.module('../mcp.ts', () => ({
 }))
 
 let refuseMirror = false
-let refuseTaskMirror = false
-let refuseStatusEventMirror = false
-let refuseStatusEventMirrorCall: number | null = null
 let refuseIdentity = false
 let supportsTargetSpace = true
 let refusedTargetSpace: string | null = null
@@ -91,8 +88,6 @@ const trackerStatuses: Record<string, string> = { ALP: 'started', STO: 'started'
 const trackerTaskOverrides: Record<string, Array<Record<string, unknown>> | undefined> = {}
 const mirrored = new Map<string, string[]>()
 const mirroredTaskRows: Array<Record<string, unknown>> = []
-const mirroredEvents: Array<{ task_key: string; project_name: string; at?: string }> = []
-const statusEventMirrorBatchSizes: number[] = []
 const mirroredTargets: string[] = []
 mock.module('../task-client.ts', () => ({
   assertProjectNoteCounters: () => {},
@@ -139,23 +134,12 @@ mock.module('../task-client.ts', () => ({
   hostedMirrorTasks: async (
     body: {
       tasks: Array<Record<string, unknown> & { id: string; key: string }>
-      statusEvents?: Array<{ task_key: string; project_name: string }>
     },
     options?: { recordSpace?: string | null },
   ) => {
     if (!options?.recordSpace) throw new Error('missing target space')
-    const statusEventCount = body.statusEvents?.length ?? 0
-    if (body.tasks.length + statusEventCount > 500)
-      throw new Error('mirror accepts at most 500 rows')
-    if (statusEventCount > 0) statusEventMirrorBatchSizes.push(statusEventCount)
-    if (
-      refuseMirror ||
-      (refuseTaskMirror && body.tasks.length > 0) ||
-      (refuseStatusEventMirror && statusEventCount > 0) ||
-      (statusEventCount > 0 &&
-        refuseStatusEventMirrorCall === statusEventMirrorBatchSizes.length) ||
-      refusedTargetSpace === options.recordSpace
-    )
+    if (body.tasks.length > 500) throw new Error('mirror accepts at most 500 rows')
+    if (refuseMirror || refusedTargetSpace === options.recordSpace)
       throw new Error('simulated hosted refusal')
     mirroredTargets.push(options.recordSpace)
     for (const task of body.tasks ?? []) {
@@ -164,7 +148,6 @@ mock.module('../task-client.ts', () => ({
       ids.push(task.id)
       mirrored.set(task.key, ids)
     }
-    mirroredEvents.push(...(body.statusEvents ?? []))
     return { upserted: (body.tasks ?? []).length, adoptions: [] }
   },
 }))
@@ -192,13 +175,8 @@ beforeEach(() => {
   })
   mirrored.clear()
   mirroredTaskRows.length = 0
-  mirroredEvents.length = 0
-  statusEventMirrorBatchSizes.length = 0
   mirroredTargets.length = 0
   refuseMirror = false
-  refuseTaskMirror = false
-  refuseStatusEventMirror = false
-  refuseStatusEventMirrorCall = null
   refuseIdentity = false
   supportsTargetSpace = true
   refusedTargetSpace = null
