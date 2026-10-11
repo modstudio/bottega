@@ -79,6 +79,7 @@ import type {
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
+import { observeProjectReleaseLive } from './release-live-observation.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
@@ -611,6 +612,9 @@ export async function monitor(
   for (const project of projects().filter(isProjectRepository)) {
     conditions.push(...observeProjectCanonDrift(project))
     conditions.push(...observeProjectHarnessLoad(project, process.env))
+    const releaseLive = observeProjectReleaseLive(project)
+    conditions.push(...releaseLive.conditions)
+    errors.push(...releaseLive.errors)
     const recipeDatabases = recipeDatabaseObservations(project, database)
     conditions.push(...recipeDatabases.conditions)
     errors.push(...recipeDatabases.errors)

@@ -461,6 +461,11 @@ export const modules: ArchitectureModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/release/release-decision.ts', ['../../../shared/release-tag.ts']),
+  module('orchestrator/src/release/live-reading.ts', [
+    '../../../shared/secret-shaped.ts',
+    '../git/git-environment.ts',
+    './release-decision.ts',
+  ]),
   module('orchestrator/src/release/release-service.ts', [
     'node:fs',
     'node:path',
@@ -472,6 +477,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/secret-shaped.ts',
     './release-decision.ts',
+    './live-reading.ts',
   ]),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',

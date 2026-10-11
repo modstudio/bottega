@@ -12,6 +12,11 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectLockState, withReleaseLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import {
+  type LiveReadingFailure,
+  RELEASE_LIVE_READING_TIMEOUT_MS,
+  readLiveCommit,
+} from './live-reading.ts'
+import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
@@ -99,23 +104,6 @@ function capturedReleaseText(text: string): string {
   return releaseCapturedText(text, containsSecretShaped(text))
 }
 
-function commitFromCommand(command: string, cwd: string, purpose: string): string {
-  const result = shell(command, cwd)
-  if (result.exitCode !== 0) {
-    const output = capturedReleaseText(result.output.trim())
-    throw new Error(
-      `${purpose} command failed (exit ${result.exitCode}): ${output || '(no output)'}; fix the registered live command or deployed endpoint, then retry`,
-    )
-  }
-  const commit = result.output.trim()
-  if (!/^[0-9a-f]{40}$/i.test(commit)) {
-    throw new Error(
-      `${purpose} command did not print one full commit sha: ${JSON.stringify(capturedReleaseText(commit))}; update release.rungs[].live to print only the deployed commit sha, then retry`,
-    )
-  }
-  return commit.toLowerCase()
-}
-
 function checkoutFacts(path: string, branch: string) {
   git(['fetch', 'origin'], path)
   const head = git(['rev-parse', 'HEAD'], path)
@@ -134,13 +122,38 @@ function checkoutFacts(path: string, branch: string) {
   }
 }
 
-function lastSuccessfulLive(project: string, rung: string): string | null {
+/** Return the candidate commit from a rung's newest successful ledger row. */
+export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
   const row = writableDb()
     .query<{ candidate_commit: string }, [string, string]>(
       'SELECT candidate_commit FROM release_ledger WHERE project=? AND rung=? AND exit_code=0 ORDER BY id DESC LIMIT 1',
     )
     .get(project, rung)
   return row?.candidate_commit ?? null
+}
+
+function liveReadingRefusal(
+  failure: LiveReadingFailure,
+  purpose: string,
+  rung: string,
+  command: string,
+): Error {
+  if (failure.kind === 'timeout') {
+    return new Error(
+      `${purpose} reading timed out after ${RELEASE_LIVE_READING_TIMEOUT_MS / 1_000}s for rung ${rung}; check the registered live command ${JSON.stringify(command)}, then retry`,
+    )
+  }
+  const remedy =
+    failure.kind === 'nonzero-exit'
+      ? 'fix the registered live command or deployed endpoint, then retry'
+      : 'update release.rungs[].live to print only the deployed commit sha, then retry'
+  return new Error(`${purpose} ${failure.failure.replace(/^live /, '')}; ${remedy}`)
+}
+
+function releaseLiveCommit(command: string, cwd: string, purpose: string, rung: string): string {
+  const reading = readLiveCommit(command, cwd)
+  if (!reading.ok) throw liveReadingRefusal(reading, purpose, rung, command)
+  return reading.commit
 }
 
 function insertStarted(input: {
@@ -232,8 +245,8 @@ export function releaseProject(
       const checkoutDecision = checkoutReleaseDecision(checkout)
       if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
       const live = selected.live
-        ? commitFromCommand(selected.live, project.path, 'pre-deploy live')
-        : lastSuccessfulLive(projectName, selected.name)
+        ? releaseLiveCommit(selected.live, project.path, 'pre-deploy live', selected.name)
+        : newestSuccessfulReleasedCommit(projectName, selected.name)
       const contained =
         live === null
           ? null
@@ -260,7 +273,7 @@ export function releaseProject(
       let warning: string | null = null
       if (deployed.exitCode === 0 && selected.live) {
         try {
-          after = commitFromCommand(selected.live, project.path, 'post-deploy live')
+          after = releaseLiveCommit(selected.live, project.path, 'post-deploy live', selected.name)
           const checked = postDeployLiveDecision(checkout.head, after)
           matches = checked.matches
           warning = checked.warning === null ? null : capturedReleaseText(checked.warning)
