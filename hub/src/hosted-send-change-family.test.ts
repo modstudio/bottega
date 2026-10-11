@@ -267,10 +267,7 @@ test('a failed send family leaves both earlier families and the timestamp send p
     spaces: [],
   }
   const results = await hostedCollectLegs(undefined, {
-    evidence: async () => ({
-      interval: { changed: 0, deleted: 0, deleteSkipped: false, local: 0, issues: [] },
-      day: { changed: 0, deleted: 0, deleteSkipped: false, local: 0 },
-    }),
+    correctIntervals: () => {},
     tasks: async () => {},
     changes: async () => emptyReport,
     notes: async () => {},

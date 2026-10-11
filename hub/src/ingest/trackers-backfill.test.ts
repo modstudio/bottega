@@ -136,7 +136,8 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
 
     const pointers = db()
       .query<{ table_name: string; row_id: string; operation: 'upsert' | 'delete' }, []>(
-        `SELECT table_name,row_id,operation FROM hosted_outbox`,
+        `SELECT table_name,row_id,operation FROM hosted_outbox
+         WHERE table_name IN ('hub_task','hub_task_status_event')`,
       )
       .all()
     const changes = pointers.map((pointer) => {

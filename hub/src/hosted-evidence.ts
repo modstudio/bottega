@@ -1,42 +1,9 @@
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
+import type { PushedDay, PushedInterval } from './push-contract.ts'
 
 export type EvidenceIdentity = { userId: string; spaceId: string }
-export type IntervalEvidence = {
-  id: string
-  task_key: string | null
-  project_name: string | null
-  source: string
-  agent: string | null
-  job: string | null
-  start_at: string
-  end_at: string
-  claude_tokens: number
-  vendor_tokens: number
-  vendor_cost_usd: number | null
-  ref: string
-  via: string | null
-  open: number
-  session_id: string | null
-  user_id: string | null
-}
-export type DayEvidence = {
-  id: string
-  day: string
-  claude_tokens: number
-  cache_read: number
-  messages: number
-  tasks: number
-  canon_tokens: number
-  other_tokens: number
-  commits: number
-  files: number
-  lines_product: number
-  lines_test: number
-  lines_docs: number
-  lines_config: number
-  lines_generated: number
-  collected_at: string
-}
+export type IntervalEvidence = PushedInterval
+export type DayEvidence = PushedDay
 function intervalIdentityConflict(row: IntervalEvidence, existingId: string): Error {
   return new Error(
     `interval identity conflict: tuple (${row.source}, ${row.ref}, ${row.start_at}) belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
@@ -67,19 +34,6 @@ export function hostedDayWrite(
   if (existingId) return 'update'
   if (existingDayId) throw dayIdentityConflict(row, existingDayId)
   return 'insert'
-}
-
-async function tenant<T>(url: string, identity: EvidenceIdentity, work: (tx: SQL) => Promise<T>) {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${identity.spaceId}, true)`
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
 }
 
 function intervalValues(row: IntervalEvidence) {
@@ -146,7 +100,7 @@ async function upsertOneInterval(
   tx: SQL,
   identity: EvidenceIdentity,
   row: IntervalEvidence,
-): Promise<void> {
+): Promise<'applied' | 'duplicate'> {
   const byId = await tx<{ id: string }[]>`
     SELECT id::text AS id FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
@@ -156,87 +110,81 @@ async function upsertOneInterval(
       AND start_at=${row.start_at}::timestamptz`
   const write = hostedIntervalWrite(row, byId[0]?.id ?? null, byTuple[0]?.id ?? null)
   if (write === 'update') {
+    const matches = await tx`SELECT 1 FROM hub_interval
+      WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
+        AND task_key IS NOT DISTINCT FROM ${row.task_key}
+        AND project_name IS NOT DISTINCT FROM ${row.project_name} AND source=${row.source}
+        AND agent IS NOT DISTINCT FROM ${row.agent} AND job IS NOT DISTINCT FROM ${row.job}
+        AND start_at=${row.start_at}::timestamptz AND end_at=${row.end_at}::timestamptz
+        AND claude_tokens=${row.claude_tokens} AND vendor_tokens=${row.vendor_tokens}
+        AND vendor_cost_usd IS NOT DISTINCT FROM ${row.vendor_cost_usd} AND ref=${row.ref}
+        AND via IS NOT DISTINCT FROM ${row.via} AND open=${row.open}
+        AND session_id IS NOT DISTINCT FROM ${row.session_id}
+        AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid`
+    if (matches.length) return 'duplicate'
     await updateHostedInterval(tx, identity, row.id, row)
-    return
+    return 'applied'
   }
   await insertHostedInterval(tx, identity, row.id, row)
+  return 'applied'
 }
 
-export async function upsertIntervalsInTransaction(
+export async function applyIntervalChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,
-  rows: IntervalEvidence[],
-) {
-  for (const row of rows) await upsertOneInterval(tx, identity, row)
-  return { upserted: rows.length }
+  change: { id: string; op: 'delete' } | { id: string; op: 'upsert'; row: IntervalEvidence },
+): Promise<'applied' | 'duplicate'> {
+  if (change.op === 'upsert') return upsertOneInterval(tx, identity, change.row)
+  const deleted = await tx`DELETE FROM hub_interval
+    WHERE space_id=${identity.spaceId}::uuid AND id=${change.id}::uuid RETURNING id`
+  return deleted.length ? 'applied' : 'duplicate'
 }
 
-export async function upsertIntervals(
-  url: string,
-  identity: EvidenceIdentity,
-  rows: IntervalEvidence[],
-) {
-  return tenant(url, identity, (tx) => upsertIntervalsInTransaction(tx, identity, rows))
-}
-
-export async function upsertDaysInTransaction(
+export async function applyDayChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,
-  rows: DayEvidence[],
-) {
-  for (const row of rows) {
-    const byId = await tx<{ id: string }[]>`
-        SELECT id::text AS id FROM hub_day
-        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-    const byDay = await tx<{ id: string }[]>`
-        SELECT id::text AS id FROM hub_day
-        WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
-    const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
-    if (write === 'update') {
-      await tx`
-          UPDATE hub_day SET
-            day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
-            messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
-            other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
-            lines_product=${row.lines_product}, lines_test=${row.lines_test},
-            lines_docs=${row.lines_docs}, lines_config=${row.lines_config},
-            lines_generated=${row.lines_generated}, collected_at=${row.collected_at}::timestamptz,
-            updated_at=now()
-          WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
-        `
-      continue
-    }
+  row: DayEvidence,
+): Promise<'applied' | 'duplicate'> {
+  const existing = await tx<{ id: string; by_id: boolean }[]>`
+    SELECT id::text AS id,id=${row.id}::uuid AS by_id FROM hub_day
+    WHERE space_id=${identity.spaceId}::uuid AND (id=${row.id}::uuid OR day=${row.day})`
+  const byId = existing.find((candidate) => candidate.by_id)?.id ?? null
+  const byDay = existing.find((candidate) => !candidate.by_id)?.id ?? byId
+  const write = hostedDayWrite(row, byId, byDay)
+  if (write === 'insert') {
     await tx`
-        INSERT INTO hub_day
-          (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
-           other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
-           lines_generated, collected_at, updated_at)
-        VALUES
-          (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
-           ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
-           ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
-           ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
-           ${row.collected_at}::timestamptz, now())
-      `
+      INSERT INTO hub_day
+        (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
+         other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
+         lines_generated, collected_at, updated_at)
+      VALUES
+        (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
+         ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
+         ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
+         ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
+         ${row.collected_at}::timestamptz, now())`
+    return 'applied'
   }
-  return { upserted: rows.length }
-}
-
-export async function upsertDays(url: string, identity: EvidenceIdentity, rows: DayEvidence[]) {
-  return tenant(url, identity, (tx) => upsertDaysInTransaction(tx, identity, rows))
-}
-
-export async function deleteIntervals(url: string, identity: EvidenceIdentity, ids: string[]) {
-  return tenant(url, identity, async (tx) => {
-    let deleted = 0
-    for (const id of ids) {
-      const rows = await tx`
-        DELETE FROM hub_interval
-        WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid
-        RETURNING id
-      `
-      deleted += rows.length
-    }
-    return { deleted }
-  })
+  const matches = await tx`SELECT 1 FROM hub_day
+    WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid AND day=${row.day}
+      AND claude_tokens=${row.claude_tokens} AND cache_read=${row.cache_read}
+      AND messages=${row.messages} AND tasks=${row.tasks} AND canon_tokens=${row.canon_tokens}
+      AND other_tokens=${row.other_tokens} AND commits=${row.commits} AND files=${row.files}
+      AND lines_product=${row.lines_product} AND lines_test=${row.lines_test}
+      AND lines_docs=${row.lines_docs} AND lines_config=${row.lines_config}
+      AND lines_generated=${row.lines_generated}
+      AND (day < (SELECT max(day) FROM hub_day WHERE space_id=${identity.spaceId}::uuid)
+        OR collected_at=${row.collected_at}::timestamptz)`
+  if (matches.length) return 'duplicate'
+  await tx`
+    UPDATE hub_day SET
+      day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
+      messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
+      other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
+      lines_product=${row.lines_product}, lines_test=${row.lines_test},
+      lines_docs=${row.lines_docs}, lines_config=${row.lines_config},
+      lines_generated=${row.lines_generated}, collected_at=${row.collected_at}::timestamptz,
+      updated_at=now()
+    WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
+  return 'applied'
 }

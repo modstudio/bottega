@@ -40,6 +40,7 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     '0025_send_pending_status',
     '0026_outbox',
     '0027_outbox_status_event_tasks',
+    '0028_outbox_evidence',
   ])
   expect(
     d

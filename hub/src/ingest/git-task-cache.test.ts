@@ -27,10 +27,14 @@ test('the git task and its outbox pointer roll back together', () => {
     conn.exec(`CREATE TEMP TRIGGER refuse_git_outbox BEFORE INSERT ON hosted_outbox
       BEGIN SELECT RAISE(ABORT,'refuse git outbox'); END`),
   )
-  expect(() =>
-    writeTransaction((conn) => upsertGitTasks(conn, [task], '2026-10-11T12:00:00.000Z')),
-  ).toThrow('refuse git outbox')
-  expect(db().query(`SELECT 1 FROM task WHERE key=?`).get(task.key)).toBeNull()
+  try {
+    expect(() =>
+      writeTransaction((conn) => upsertGitTasks(conn, [task], '2026-10-11T12:00:00.000Z')),
+    ).toThrow('refuse git outbox')
+    expect(db().query(`SELECT 1 FROM task WHERE key=?`).get(task.key)).toBeNull()
+  } finally {
+    writeTransaction((conn) => conn.exec(`DROP TRIGGER refuse_git_outbox`))
+  }
 })
 
 test('git observations never queue tracker or local owned rows', () => {

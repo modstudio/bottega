@@ -511,13 +511,11 @@ describe('hosted-only task safety', () => {
       ],
       capabilities: {
         targetSpaceTaskMirror: true,
-        targetSpaceIntervalEvidence: true,
-        intervalRecordId: true,
-        dayRecordId: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,
         spacePush: true,
+        spacePushTables: ['hub_task', 'hub_task_status_event', 'hub_interval', 'hub_day'],
       },
     })
   })

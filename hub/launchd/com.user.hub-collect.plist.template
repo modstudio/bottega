@@ -31,7 +31,7 @@
         <string>__HOME__</string>
         <key>__STATE_HOME_ENV__</key>
         <string>__STATE_HOME__</string>
-        <!-- Hosted hub for `hub sync` after slow passes; empty disables it.
+        <!-- Hosted hub for outbox delivery after slow passes; empty disables it.
              Filled from HUB_HOSTED_URL when hub/bin/install-launchd.sh runs. -->
         <key>HUB_HOSTED_URL</key>
         <string>__HUB_HOSTED_URL__</string>

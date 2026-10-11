@@ -1,8 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import {
+  HOSTED_DAY_TABLE,
+  HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
+  type PushedDay,
+  type PushedInterval,
 } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
@@ -11,11 +15,46 @@ type OutboxPointer = {
   table_name: string
   row_id: string
   operation: 'upsert' | 'delete'
+  routing_space_id?: string | null
+  routing_project?: string | null
 }
 
 export type LoadedOutboxChange = {
   projectName: string | null
+  acknowledgedSpaceId?: string | null
   change: HostedPushChange
+}
+
+function currentInterval(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<PushedInterval & { hosted_space_id: string | null }, [string]>(
+      `SELECT record_id id,task_key,project project_name,source,agent,job,start_at,end_at,
+      claude_tokens,vendor_tokens,vendor_cost_usd,ref,via,open,session_id,user_id,hosted_space_id
+     FROM interval WHERE record_id=?`,
+    )
+    .get(id)
+  if (!row) return null
+  const { hosted_space_id, ...evidence } = row
+  return {
+    projectName: row.project_name,
+    acknowledgedSpaceId: hosted_space_id,
+    change: { table: HOSTED_INTERVAL_TABLE, id, op: 'upsert', row: evidence },
+  }
+}
+
+function currentDay(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<PushedDay, [string]>(
+      `SELECT record_id id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
+      commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at
+     FROM day WHERE record_id=?`,
+    )
+    .get(id)
+  if (row && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.collected_at))
+    row.collected_at = new Date(`${row.collected_at.replace(' ', 'T')}Z`).toISOString()
+  return row
+    ? { projectName: null, change: { table: HOSTED_DAY_TABLE, id, op: 'upsert', row } }
+    : null
 }
 
 function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
@@ -66,15 +105,21 @@ export function loadOutboxChange(
 ): LoadedOutboxChange | null {
   if (pointer.operation === 'delete')
     return {
-      projectName: null,
+      projectName: pointer.routing_project ?? null,
+      acknowledgedSpaceId: pointer.routing_space_id ?? null,
       change: {
-        table:
-          pointer.table_name === HOSTED_TASK_TABLE ? HOSTED_TASK_TABLE : HOSTED_STATUS_EVENT_TABLE,
+        table: pointer.table_name as
+          | typeof HOSTED_TASK_TABLE
+          | typeof HOSTED_STATUS_EVENT_TABLE
+          | typeof HOSTED_INTERVAL_TABLE,
         id: pointer.row_id,
         op: 'delete',
       },
     }
-  return pointer.table_name === HOSTED_TASK_TABLE
-    ? currentTask(conn, pointer.row_id)
-    : currentStatusEvent(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_TASK_TABLE) return currentTask(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_STATUS_EVENT_TABLE)
+    return currentStatusEvent(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_INTERVAL_TABLE) return currentInterval(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_DAY_TABLE) return currentDay(conn, pointer.row_id)
+  return null
 }

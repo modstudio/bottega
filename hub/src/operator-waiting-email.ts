@@ -6,8 +6,7 @@ import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { waiting } from './orch.ts'
-import { signedInRecordUserId } from './sync.ts'
-import { hostedCreateOperatorWaitingEmail } from './task-client.ts'
+import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
 
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
 const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'
@@ -76,7 +75,7 @@ function recordPushed(item: OperatorWaitingItem): void {
 export async function deliverOperatorWaitingEmails(
   dependencies: {
     readWaiting?: typeof waiting
-    signedIn?: typeof signedInRecordUserId
+    signedIn?: typeof hostedSignedInUserId
     push?: typeof hostedCreateOperatorWaitingEmail
     now?: () => Date
     delay?: () => number
@@ -90,7 +89,7 @@ export async function deliverOperatorWaitingEmails(
   try {
     const delay = (dependencies.delay ?? operatorEmailDelayMinutes)()
     if (delay <= 0) return
-    if (!(await (dependencies.signedIn ?? signedInRecordUserId)())) return
+    if (!(await (dependencies.signedIn ?? hostedSignedInUserId)())) return
     const items = await (dependencies.readWaiting ?? waiting)()
     due = dueOperatorWaitingEmails(
       items,

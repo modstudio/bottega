@@ -2,8 +2,10 @@ import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import type { IntervalEvidence } from './hosted-evidence.ts'
-import { intervalOwningProject } from './interval-project-correction.ts'
-import { syncEvidence } from './sync.ts'
+import {
+  correctStoredIntervalProjects,
+  intervalOwningProject,
+} from './interval-project-correction.ts'
 
 beforeEach(resetFixtureStore)
 
@@ -77,36 +79,16 @@ function insertInterval() {
   })
 }
 
-test('sync corrects the machine row before routing it to the task owners space', async () => {
+test('collection correction persists the owner and queues the changed interval', () => {
   insertInterval()
-  const writes: Array<{ recordSpace: string | null }> = []
-  const result = await syncEvidence({
-    baseUrl: 'https://hub.example.test',
-    token: 'session',
-    registeredProjects: [{ name: 'alpha', settings: { space: 'alpha', keyPrefixes: ['ALP'] } }],
-    fetch: async (url, init) => {
-      if (url.endsWith('/v1/tasks/identity'))
-        return Response.json({
-          userId: 'user-1',
-          activeSpaceId: 'space-active',
-          memberships: [
-            { spaceId: 'space-active', slug: 'active', permission: 'write' },
-            { spaceId: 'space-a', slug: 'alpha', permission: 'write' },
-          ],
-          capabilities: {
-            targetSpaceIntervalEvidence: true,
-            intervalRecordId: true,
-            dayRecordId: true,
-          },
-        })
-      writes.push({ recordSpace: new Headers(init?.headers).get('x-record-space') })
-      return Response.json({ ok: true })
-    },
-  })
-
-  expect(result.interval.issues).toEqual([])
-  expect(writes.map((write) => write.recordSpace)).toEqual(['space-a'])
+  writeTransaction((conn) => conn.query(`DELETE FROM hosted_outbox`).run())
+  correctStoredIntervalProjects([
+    { name: 'alpha', settings: { space: 'alpha', keyPrefixes: ['ALP'] } },
+  ])
   expect(
     db().query<{ project: string }, []>(`SELECT project FROM interval WHERE ref='orch:1'`).get(),
   ).toEqual({ project: 'alpha' })
+  expect(db().query(`SELECT table_name FROM hosted_outbox`).get()).toEqual({
+    table_name: 'hub_interval',
+  })
 })

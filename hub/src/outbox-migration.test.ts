@@ -33,7 +33,11 @@ test('outbox migration moves pending tracker status events and retires the setti
     ]),
   )
 
-  expect(applyMigrations(database)).toEqual(['0026_outbox', '0027_outbox_status_event_tasks'])
+  expect(applyMigrations(database)).toEqual([
+    '0026_outbox',
+    '0027_outbox_status_event_tasks',
+    '0028_outbox_evidence',
+  ])
   expect(
     database
       .query(
@@ -98,7 +102,11 @@ test('the additive outbox migration brings each queued status event task once', 
     ]),
   )
 
-  expect(applyMigrations(database)).toEqual(['0026_outbox', '0027_outbox_status_event_tasks'])
+  expect(applyMigrations(database)).toEqual([
+    '0026_outbox',
+    '0027_outbox_status_event_tasks',
+    '0028_outbox_evidence',
+  ])
   expect(
     database
       .query(`SELECT table_name,row_id,queued_at FROM hosted_outbox ORDER BY table_name,row_id`)

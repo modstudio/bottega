@@ -4,7 +4,6 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
-import { evidenceApi } from './evidence-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
 import { hostedVersionResponse } from './hosted-version.ts'
 import { noteApi } from './note-api.ts'
@@ -40,8 +39,6 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
       if (health) return health
       const version = hostedVersionResponse(req, readBuiltCommit())
       if (version) return version
-      const evidence = await evidenceApi(req, config)
-      if (evidence) return evidence
       const changes = await changeApi(req, config)
       if (changes) return changes
       const tasks = await taskApi(req, config)

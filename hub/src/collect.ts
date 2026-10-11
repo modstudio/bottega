@@ -16,13 +16,13 @@ import {
   trackerProjects,
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
+import { correctStoredIntervalProjects } from './interval-project-correction.ts'
 import { pullHostedNotes } from './note-cache.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
 import { drainHostedOutbox, type HostedOutboxReport, hostedOutboxLine } from './outbox.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
-import { type SyncResult, syncEvidence } from './sync.ts'
 import { pullHostedTasks } from './task-cache.ts'
 import { hoursAgo } from './time.ts'
 
@@ -119,8 +119,8 @@ async function settleLeg(source: string, work: () => Promise<unknown>): Promise<
 }
 
 type HostedCollectDependencies = {
-  evidence?: () => Promise<SyncResult>
   outbox?: () => Promise<HostedOutboxReport>
+  correctIntervals?: () => void
   tasks?: () => Promise<unknown>
   changes?: () => Promise<HostedChangeLegReport | null | undefined>
   noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
@@ -133,18 +133,9 @@ export async function hostedCollectLegs(
   guard?: LeaseGuard,
   dependencies: HostedCollectDependencies = {},
 ): Promise<CollectLegResult[]> {
-  const evidence = async () => {
-    const result = await (dependencies.evidence ?? syncEvidence)()
-    if (result.interval.issues.length > 0)
-      throw new Error(
-        `interval sync issues: ${result.interval.issues
-          .map((issue) => `${issue.project ?? '(no project)'}: ${issue.reason}`)
-          .join('; ')}`,
-      )
-  }
+  ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
   const legs = [
     { name: 'hosted outbox', work: dependencies.outbox ?? drainHostedOutbox },
-    { name: 'hosted evidence', work: evidence },
     {
       name: 'hosted tasks',
       work: dependencies.tasks ?? pullHostedTasks,

@@ -499,10 +499,7 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
     registeredProjects: [{ name: 'one', settings: { space: 'one' } }],
   }
   const results = await hostedCollectLegs(undefined, {
-    evidence: async () => ({
-      interval: { changed: 0, deleted: 0, deleteSkipped: false, local: 0, issues: [] },
-      day: { changed: 0, deleted: 0, deleteSkipped: false, local: 0 },
-    }),
+    correctIntervals: () => {},
     tasks: () => pullHostedTasks(request),
     changes: () => pullHostedTaskChanges(request),
     noteChanges: async () => null,
@@ -524,10 +521,10 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
         quarantined: 0,
         dropped: 0,
         waitingOnRouting: {},
+        waitingOnHostedHub: {},
         skippedCapability: false,
       },
     },
-    { source: 'hosted evidence', ok: true },
     { source: 'hosted tasks', ok: true },
     {
       source: 'hosted task changes',
