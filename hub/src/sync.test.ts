@@ -50,6 +50,10 @@ function interval(ref: string, project: string | null): IntervalEvidence & { id:
   }
 }
 
+function taskedInterval(ref: string, project: string, taskKey: string) {
+  return { ...interval(ref, project), task_key: taskKey }
+}
+
 function insertInterval(row: IntervalEvidence & { id: string }) {
   writeTransaction((conn) => {
     conn
@@ -225,6 +229,28 @@ describe('evidence sync planning', () => {
     expect(writes).toHaveLength(2)
     expect(writes.map((write) => write.recordSpace).sort()).toEqual(['space-a', 'space-b'])
     expect(writes.some((write) => write.recordSpace === 'space-active')).toBe(false)
+  })
+
+  test('corrects an unregistered interval before routing it to the task owners space', async () => {
+    insertInterval(taskedInterval('1', 'temporary', 'ONE-12'))
+    const writes: Array<{
+      method: string
+      recordSpace: string | null
+      body: Record<string, unknown>
+    }> = []
+
+    const result = await syncEvidence({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: syncFetch(writes),
+      registeredProjects: [{ name: 'one', settings: { space: 'alpha', keyPrefixes: ['ONE'] } }],
+    })
+
+    expect(result.interval.issues).toEqual([])
+    expect(writes.map((write) => write.recordSpace)).toEqual(['space-a'])
+    expect(
+      db().query<{ project: string }, []>(`SELECT project FROM interval WHERE ref='orch:1'`).get(),
+    ).toEqual({ project: 'one' })
   })
 
   test('sends a projectless interval to the active space', async () => {

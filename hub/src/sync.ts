@@ -13,6 +13,7 @@ import {
   hostedTaskIdentity,
 } from './task-client.ts'
 import {
+  intervalOwningProject,
   partitionProjectRows,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
@@ -65,7 +66,7 @@ export function batches<T>(rows: T[], size = 500): T[][] {
   return result
 }
 
-function localIntervals() {
+function localIntervals(registered: readonly RegisteredTaskSpace[], persistCorrections: boolean) {
   const rows = db()
     .query<IntervalEvidence & { id: string }, []>(
       `SELECT record_id AS id, task_key, project AS project_name, source, agent, job, start_at, end_at,
@@ -73,7 +74,19 @@ function localIntervals() {
          FROM interval ORDER BY source, ref, start_at`,
     )
     .all()
-  return rows.map((row) => ({ key: row.id, row }))
+  const corrected = rows.map((row) => ({
+    ...row,
+    project_name: intervalOwningProject(row.project_name, row.task_key, registered),
+  }))
+  if (persistCorrections) {
+    const changed = corrected.filter((row, index) => row.project_name !== rows[index]!.project_name)
+    if (changed.length > 0)
+      writeTransaction((conn) => {
+        const update = conn.query(`UPDATE interval SET project=? WHERE record_id=?`)
+        for (const row of changed) update.run(row.project_name, row.id)
+      })
+  }
+  return corrected.map((row) => ({ key: row.id, row }))
 }
 
 function localDays() {
@@ -363,7 +376,8 @@ export async function syncEvidence(
 ): Promise<SyncResult> {
   const baseUrl = options.baseUrl ?? process.env.HUB_HOSTED_URL
   if (process.env.NODE_ENV === 'test' && baseUrl && !options.fetch) throw new Error(TEST_REFUSAL)
-  const intervalRows = localIntervals()
+  const registered = options.registeredProjects ?? projects()
+  const intervalRows = localIntervals(registered, !options.dryRun)
   const intervalLedger = ledger('interval')
   const invalidIntervalLedger = intervalLedger.filter((row) => !hasRecordIdShape(row.local_key))
   const validIntervalLedger = intervalLedger.filter((row) => hasRecordIdShape(row.local_key))
@@ -392,12 +406,7 @@ export async function syncEvidence(
   assertTargetSpaceIntervalEvidence(identity)
   assertIntervalRecordId(identity)
   if (day.changed.length > 0) assertDayRecordId(identity)
-  const interval = intervalDeliveries(
-    intervalRows,
-    validIntervalLedger,
-    options.registeredProjects ?? projects(),
-    identity,
-  )
+  const interval = intervalDeliveries(intervalRows, validIntervalLedger, registered, identity)
   const currentKeys = new Set(intervalRows.map((row) => row.key))
   const deleteSkipped = intervalRows.length === 0 && validIntervalLedger.length > 0
   const vanished = deleteSkipped

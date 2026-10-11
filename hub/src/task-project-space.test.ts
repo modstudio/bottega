@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { taskProjectDestination } from './task-project-space.ts'
+import { intervalOwningProject, taskProjectDestination } from './task-project-space.ts'
 
 const registered = [
   { name: 'defaulted', settings: {} },
@@ -37,4 +37,29 @@ test('project destination resolves declarations, fallback, and each refusal', ()
     project: 'unregistered',
     refused: 'unregistered-project',
   })
+})
+
+test('an unregistered interval project follows the sole owner of its task prefix', () => {
+  const projects = [
+    { name: 'alpha', settings: { keyPrefixes: ['ALP'] } },
+    { name: 'beta', settings: { keyPrefixes: ['BET'] } },
+  ]
+  expect(intervalOwningProject('temporary', 'ALP-12', projects)).toBe('alpha')
+  expect(intervalOwningProject('temporary', 'OTHER-12', projects)).toBe('temporary')
+  expect(
+    intervalOwningProject('temporary', 'SHR-12', [
+      ...projects,
+      { name: 'gamma', settings: { keyPrefixes: ['SHR'] } },
+      { name: 'delta', settings: { keyPrefixes: ['SHR'] } },
+    ]),
+  ).toBe('temporary')
+  expect(intervalOwningProject('temporary', null, projects)).toBe('temporary')
+})
+
+test('a registered interval project is never changed by its task prefix', () => {
+  const projects = [
+    { name: 'alpha', settings: { keyPrefixes: ['ALP'] } },
+    { name: 'beta', settings: { keyPrefixes: ['BET'] } },
+  ]
+  expect(intervalOwningProject('alpha', 'BET-12', projects)).toBe('alpha')
 })

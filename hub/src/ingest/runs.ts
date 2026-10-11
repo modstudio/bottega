@@ -4,6 +4,8 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
 import { readRuns, readWorkflowRulings } from '../orch.ts'
+import { projects } from '../projects.ts'
+import { intervalOwningProject } from '../task-project-space.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -338,8 +340,13 @@ function ingestRunRows(
   upsertWorkflowQuestions(conn, workflowQuestions)
   let rows = 0
   let skipped = 0
+  const registered = projects()
   for (const run of runs) {
-    const attribution = attributeRun(run)
+    const attributed = attributeRun(run)
+    const attribution = {
+      ...attributed,
+      project: intervalOwningProject(attributed.project, attributed.key, registered),
+    }
     replaceQuestions(run, attribution.key)
     // A probe is a smoke test — "reply with ok" — that did no work on
     // anything, so it is not engaged time on any task. A question on it is
