@@ -12,7 +12,7 @@ CREATE TABLE hosted_outbox (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX hosted_outbox_one_entry
-  ON hosted_outbox(table_name,row_id,operation);
+  ON hosted_outbox(table_name,row_id);
 --> statement-breakpoint
 CREATE INDEX hosted_outbox_pending
   ON hosted_outbox(queued_at,id)

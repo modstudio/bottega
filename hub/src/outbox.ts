@@ -63,7 +63,8 @@ export function queueHostedChange(
   conn
     .query(
       `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at)
-       VALUES (?,?,?,?,?) ON CONFLICT(table_name,row_id,operation) DO UPDATE SET
+       VALUES (?,?,?,?,?) ON CONFLICT(table_name,row_id) DO UPDATE SET
+       operation=excluded.operation,queued_at=excluded.queued_at,
        generation=hosted_outbox.generation+1,attempts=0,last_error=NULL,
        quarantined_at=NULL,quarantine_reason=NULL`,
     )

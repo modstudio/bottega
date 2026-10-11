@@ -34,6 +34,10 @@ const object = (value: unknown): Record<string, unknown> | null =>
 
 const nullableString = (value: unknown): value is string | null =>
   value === null || typeof value === 'string'
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const isTimestamp = (value: unknown): value is string =>
+  typeof value === 'string' && TIMESTAMP.test(value) && !Number.isNaN(Date.parse(value))
 
 function rejected(id: string, reason: string): ParsedHostedPushItem {
   return { outcome: { id, status: 'rejected', reason } }
@@ -47,20 +51,18 @@ function parseStatusEventRow(
   const row = object(value)
   if (!row) return `${table} upsert requires a row`
   if (row.id !== id) return `${table} upsert requires a row whose id matches the pointer`
-  const stringFields = [
-    'task_key',
-    'project_name',
-    'at',
-    'to_status',
-    'created_at',
-    'updated_at',
-  ] as const
+  const stringFields = ['task_key', 'project_name', 'to_status'] as const
   for (const field of stringFields)
     if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
   if (row.task_id !== undefined && !nullableString(row.task_id))
     return `${table} row.task_id must be a string, null, or absent`
-  for (const field of ['from_status', 'deleted_at'] as const)
-    if (!nullableString(row[field])) return `${table} row.${field} must be a string or null`
+  if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
+    return `${table} row.task_id must be a UUID, null, or absent`
+  if (!nullableString(row.from_status)) return `${table} row.from_status must be a string or null`
+  for (const field of ['at', 'created_at', 'updated_at'] as const)
+    if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
+  if (row.deleted_at !== null && !isTimestamp(row.deleted_at))
+    return `${table} row.deleted_at must be an ISO timestamp or null`
   return row as PushedStatusEvent
 }
 
@@ -70,6 +72,7 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   if (!input) return rejected(id, 'pushed change must be an object')
   if (typeof input.id !== 'string' || input.id.length === 0)
     return rejected(id, 'pushed change id must be a non-empty string')
+  if (!UUID.test(input.id)) return rejected(id, 'pushed change id must be a UUID')
   if (!PUSHABLE_HUB_CHANGE_TABLES.includes(input.table as PushableHubChangeTable))
     return rejected(
       id,

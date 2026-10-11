@@ -72,11 +72,77 @@ describe('hosted outbox', () => {
 
   test('queuing the same operation twice advances one pointer generation', () => {
     writeTransaction((conn) => {
-      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, 'row-one', 'upsert')
-      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, 'row-one', 'upsert')
+      queueHostedChange(
+        conn,
+        HOSTED_STATUS_EVENT_TABLE,
+        'row-one',
+        'upsert',
+        '2026-10-11T12:00:00.000Z',
+      )
+      queueHostedChange(
+        conn,
+        HOSTED_STATUS_EVENT_TABLE,
+        'row-one',
+        'upsert',
+        '2026-10-11T12:01:00.000Z',
+      )
     })
     expect(listHostedOutbox()).toHaveLength(1)
-    expect(listHostedOutbox()[0]?.generation).toBe(2)
+    expect(listHostedOutbox()[0]).toMatchObject({
+      generation: 2,
+      queued_at: '2026-10-11T12:01:00.000Z',
+    })
+  })
+
+  test('upsert then delete sends only the delete and still delivers an unrelated entry', async () => {
+    const replacedId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const unrelatedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    writeTransaction((conn) =>
+      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'delete'),
+    )
+    let sent: HostedPushChange[] = []
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async (changes) => {
+        sent = changes
+        return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+      },
+    })
+    expect(sent).toEqual(
+      expect.arrayContaining([
+        { table: HOSTED_STATUS_EVENT_TABLE, id: replacedId, op: 'delete' },
+        expect.objectContaining({ id: unrelatedId, op: 'upsert' }),
+      ]),
+    )
+    expect(sent).toHaveLength(2)
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+
+  test('delete then upsert sends only the current row and still delivers an unrelated entry', async () => {
+    const replacedId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const unrelatedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
+    writeTransaction((conn) => {
+      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'delete')
+      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, replacedId, 'upsert')
+    })
+    let sent: HostedPushChange[] = []
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async (changes) => {
+        sent = changes
+        return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+      },
+    })
+    expect(sent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: unrelatedId, op: 'upsert' }),
+        expect.objectContaining({ id: replacedId, op: 'upsert' }),
+      ]),
+    )
+    expect(sent).toHaveLength(2)
+    expect(listHostedOutbox()).toHaveLength(0)
   })
 
   test('sends current state, accepts success, and continues after rejection', async () => {
@@ -204,6 +270,41 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox()[0]).toMatchObject({ generation: 2, attempts: 0 })
     await drainHostedOutbox({ identity: async () => identity, registered: () => [project], push })
     expect(seen).toEqual(['open', 'newer'])
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+
+  test('an acknowledgement for an old operation leaves the replacement queued', async () => {
+    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    writeTransaction((conn) =>
+      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, eventId, 'delete'),
+    )
+    let first = true
+    const operations: Array<HostedPushChange['op']> = []
+    const push = async (changes: HostedPushChange[]) => {
+      operations.push(changes[0]!.op)
+      if (first) {
+        first = false
+        writeTransaction((conn) =>
+          queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, eventId, 'upsert'),
+        )
+      }
+      return [{ id: eventId, status: 'applied' as const }]
+    }
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push,
+    })
+    expect(listHostedOutbox()[0]).toMatchObject({
+      operation: 'upsert',
+      generation: 3,
+    })
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push,
+    })
+    expect(operations).toEqual(['delete', 'upsert'])
     expect(listHostedOutbox()).toHaveLength(0)
   })
 

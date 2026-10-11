@@ -162,6 +162,66 @@ test('push route rejects an invalid item in place and passes only validated rows
   ])
 })
 
+test('push route rejects malformed UUIDs and timestamps at their batch positions', async () => {
+  const at = '2026-10-11T12:00:00.000Z'
+  const valid = {
+    table: 'hub_task_status_event',
+    id: '01990000-0000-7000-8000-000000000020',
+    op: 'upsert',
+    row: {
+      id: '01990000-0000-7000-8000-000000000020',
+      task_key: 'DEV-20',
+      task_id: '01990000-0000-7000-8000-000000000021',
+      project_name: 'workshop',
+      at,
+      from_status: 'open',
+      to_status: 'active',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  const body = [
+    { ...valid, id: 'not-a-uuid', row: { ...valid.row, id: 'not-a-uuid' } },
+    { ...valid, row: { ...valid.row, task_id: 'not-a-uuid' } },
+    { ...valid, row: { ...valid.row, at: 'yesterday' } },
+    { table: valid.table, op: 'delete' },
+    valid,
+  ]
+  let received: unknown
+  const response = await changeApi(pushRequest(body), config, {
+    fetch: whoami,
+    push: async (_url, _identity, inputs) => {
+      received = inputs
+      return [{ id: valid.id, status: 'applied' }]
+    },
+  })
+  expect(received).toEqual([valid])
+  expect(await response?.json()).toEqual([
+    {
+      id: 'not-a-uuid',
+      status: 'rejected',
+      reason: 'pushed change id must be a UUID',
+    },
+    {
+      id: valid.id,
+      status: 'rejected',
+      reason: 'hub_task_status_event row.task_id must be a UUID, null, or absent',
+    },
+    {
+      id: valid.id,
+      status: 'rejected',
+      reason: 'hub_task_status_event row.at must be an ISO timestamp',
+    },
+    {
+      id: '',
+      status: 'rejected',
+      reason: 'pushed change id must be a non-empty string',
+    },
+    { id: valid.id, status: 'applied' },
+  ])
+})
+
 test('push client accepts one outcome per requested id and refuses a malformed set', async () => {
   const body = [{ table: 'hub_task_status_event' as const, id: 'event-one', op: 'delete' as const }]
   expect(
