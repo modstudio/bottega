@@ -145,10 +145,10 @@ export type NormalizedRecordDocImport = {
     featured: boolean
     status: DocStatus
     kind: DocKind
-    form: DocForm | null
-    articleSubjectId: string | null
-    relatedSubjectIds: string[]
-    sourceFiles: string[]
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug: string | null
   }
   revisions: Array<
@@ -202,10 +202,6 @@ export function normalizeRecordDocImport(
       featured: input.doc.featured ?? false,
       status: input.doc.status ?? 'current',
       kind: input.doc.kind ?? 'working',
-      form: input.doc.form ?? null,
-      articleSubjectId: input.doc.articleSubjectId ?? null,
-      relatedSubjectIds: input.doc.relatedSubjectIds ?? [],
-      sourceFiles: input.doc.sourceFiles ?? [],
       replacementSlug: input.doc.replacementSlug ?? null,
     },
     revisions: input.revisions.map((revision) => ({
@@ -222,6 +218,42 @@ export function normalizeRecordDocImport(
       sourceFiles: revision.sourceFiles ?? [],
       replacementSlug: revision.replacementSlug ?? null,
     })),
+  }
+}
+
+export function importedLiveArticleFields(
+  incoming: Pick<
+    NormalizedRecordDocImport['doc'],
+    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles'
+  >,
+  existing?: Record<string, unknown>,
+  existingRelatedSubjectIds: readonly string[] = [],
+): {
+  form: DocForm | null
+  articleSubjectId: string | null
+  relatedSubjectIds: string[]
+  sourceFiles: string[]
+} {
+  return {
+    form:
+      incoming.form !== undefined
+        ? incoming.form
+        : existing?.form == null
+          ? null
+          : (String(existing.form) as DocForm),
+    articleSubjectId:
+      incoming.articleSubjectId !== undefined
+        ? incoming.articleSubjectId
+        : existing?.article_subject_id == null
+          ? null
+          : String(existing.article_subject_id),
+    relatedSubjectIds:
+      incoming.relatedSubjectIds !== undefined
+        ? incoming.relatedSubjectIds
+        : [...existingRelatedSubjectIds],
+    sourceFiles:
+      incoming.sourceFiles ??
+      (Array.isArray(existing?.source_files) ? (existing.source_files as string[]) : []),
   }
 }
 

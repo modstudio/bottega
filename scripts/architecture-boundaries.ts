@@ -687,6 +687,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-snapshots.ts',
       './record-settings.ts',
       './record-subjects.ts',
+      './record-doc-transport-contract.ts',
     ],
     'Enforce the record API client concern boundary.',
     ['../canon/canon-lint.ts', './record-board-contract.ts', './record-public-docs.ts'],
@@ -733,6 +734,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-cache.ts',
     [
       '../../../shared/docs.ts',
+      '../../../shared/record/schema.ts',
       '../../../shared/record-space-membership.ts',
       '../database/db.ts',
       '../doc/doc-audiences-codec.ts',
@@ -771,6 +773,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../doc/doc-audiences-codec.ts',
       './record-api-client.ts',
+      './record-doc-transport-contract.ts',
       '../doc/doc-write-allowed.ts',
       '../project/projects.ts',
       './record-project-destination.ts',

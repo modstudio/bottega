@@ -13,10 +13,30 @@ import type {
   RecordRequestDestination,
 } from './record-api-client.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { recordDocArticleCompatibilityRefusal } from './record-doc-transport-contract.ts'
 import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
 import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 
 type Presentation = { log(value: string): void }
+
+function carriedArticleFields(input: {
+  form: DocForm | null
+  articleSubjectId: string | null
+  relatedSubjectIds: string[]
+  sourceFiles: string[]
+}): Partial<
+  Pick<
+    RecordDocImportInput['doc'],
+    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles'
+  >
+> {
+  return {
+    ...(input.form ? { form: input.form } : {}),
+    ...(input.articleSubjectId ? { articleSubjectId: input.articleSubjectId } : {}),
+    ...(input.relatedSubjectIds.length ? { relatedSubjectIds: input.relatedSubjectIds } : {}),
+    ...(input.sourceFiles.length ? { sourceFiles: input.sourceFiles } : {}),
+  }
+}
 
 type LocalDoc = {
   id: number
@@ -128,10 +148,12 @@ function asRevision(
     featured: Boolean(row.featured),
     status: row.status,
     kind: row.kind,
-    form: row.form,
-    articleSubjectId: row.article_subject_id,
-    relatedSubjectIds: JSON.parse(row.related_subject_ids),
-    sourceFiles: JSON.parse(row.source_files),
+    ...carriedArticleFields({
+      form: row.form,
+      articleSubjectId: row.article_subject_id,
+      relatedSubjectIds: JSON.parse(row.related_subject_ids),
+      sourceFiles: JSON.parse(row.source_files),
+    }),
     replacementSlug: row.replacement_slug,
     author: row.author,
     reason: row.reason,
@@ -170,10 +192,12 @@ function groupFromLive(
         featured: Boolean(doc.featured),
         status: doc.status,
         kind: doc.kind,
-        form: doc.form,
-        articleSubjectId: doc.article_subject_id,
-        relatedSubjectIds: relatedIds,
-        sourceFiles: JSON.parse(doc.source_files),
+        ...carriedArticleFields({
+          form: doc.form,
+          articleSubjectId: doc.article_subject_id,
+          relatedSubjectIds: relatedIds,
+          sourceFiles: JSON.parse(doc.source_files),
+        }),
         replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
@@ -215,10 +239,12 @@ function groupFromDeleted(
         body: last.body,
         delivery: last.delivery,
         audiences: decodeStoredDocAudiences(last.audiences),
-        form: last.form,
-        articleSubjectId: last.article_subject_id,
-        relatedSubjectIds: JSON.parse(last.related_subject_ids),
-        sourceFiles: JSON.parse(last.source_files),
+        ...carriedArticleFields({
+          form: last.form,
+          articleSubjectId: last.article_subject_id,
+          relatedSubjectIds: JSON.parse(last.related_subject_ids),
+          sourceFiles: JSON.parse(last.source_files),
+        }),
         featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,
@@ -456,21 +482,11 @@ export async function pushDocsCommand(
     const destination = await destinationFor(group.payload.doc.projectName ?? null)
     const payload = payloadWithImportedParentIds(group, importedIds)
     const hosted = await client.importDoc(payload, destination)
-    const sentArticleFields = [payload.doc, ...payload.revisions].some(
-      (row) =>
-        row.form != null ||
-        row.articleSubjectId != null ||
-        (row.relatedSubjectIds?.length ?? 0) > 0 ||
-        (row.sourceFiles?.length ?? 0) > 0,
+    const compatibilityRefusal = recordDocArticleCompatibilityRefusal(
+      [payload.doc, ...payload.revisions],
+      hosted,
     )
-    if (
-      sentArticleFields &&
-      !['form', 'articleSubject', 'relatedSubjects', 'sourceFiles'].every((key) => key in hosted)
-    ) {
-      throw new Error(
-        "the document's other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API",
-      )
-    }
+    if (compatibilityRefusal) throw new Error(compatibilityRefusal)
     importedIds.set(group.sourceDocId, hosted.id)
     recordReturnedIds(local, group, hosted)
   }

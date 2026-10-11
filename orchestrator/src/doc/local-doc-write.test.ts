@@ -188,32 +188,6 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
   }
   await expect(
     setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'wrong-scope',
-      title: 'Wrong',
-      body: 'Body.',
-      delivery: 'demand',
-      kind: 'article',
-      audiences: ['technical'],
-      form: 'rule',
-      reason: 'prove scope refusal',
-    }),
-  ).rejects.toThrow('scope is project')
-  await expect(
-    setDoc({
-      scope: 'project',
-      subject: 'articles',
-      slug: 'wrong-kind',
-      title: 'Wrong',
-      body: 'Body.',
-      delivery: 'demand',
-      form: 'rule',
-      reason: 'prove kind refusal',
-    }),
-  ).rejects.toThrow('kind is article')
-  await expect(
-    setDoc({
       scope: 'project',
       subject: 'articles',
       slug: 'foreign-subject',

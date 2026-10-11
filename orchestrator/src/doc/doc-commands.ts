@@ -17,7 +17,6 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
-import { resolveSubject } from '../subject/subjects.ts'
 import { searchDocs } from './doc-search.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
@@ -254,9 +253,6 @@ function handledReadDocCommand(
   const { has } = flags
   if (sub === 'list') {
     const articleSubject = flags.flag('article-subject')
-    if (articleSubject && (!address.subject || address.scope !== 'project')) {
-      throw new Error('--article-subject requires --scope project and the project --subject')
-    }
     const filters = {
       scope: address.scope,
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
@@ -264,9 +260,7 @@ function handledReadDocCommand(
       audience: flags.flag('audience'),
       status: flags.flag('status'),
       kind: flags.flag('kind'),
-      articleSubject: articleSubject
-        ? resolveSubject(address.subject!, articleSubject).id
-        : undefined,
+      articleSubject,
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')

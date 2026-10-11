@@ -1,6 +1,66 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { recordDocRow } from './record-doc-mapping.ts'
+import {
+  importedLiveArticleFields,
+  normalizeRecordDocImport,
+  recordDocRow,
+} from './record-doc-mapping.ts'
+
+test('an older import keeps populated live article fields and defaults revision snapshots', () => {
+  const normalized = normalizeRecordDocImport(
+    {
+      doc: {
+        scope: 'project',
+        subject: 'bottega',
+        slug: 'article',
+        title: 'Article',
+        body: 'Current.',
+        delivery: 'demand',
+        kind: 'article',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        updatedAt: '2026-10-11T00:00:00.000Z',
+        deletedAt: null,
+      },
+      revisions: [
+        {
+          scope: 'project',
+          subject: 'bottega',
+          slug: 'article',
+          op: 'create',
+          title: 'Article',
+          body: 'Earlier.',
+          delivery: 'demand',
+          author: 'old-client',
+          reason: 'import old snapshot',
+          at: '2026-10-10T00:00:00.000Z',
+        },
+      ],
+    },
+    newRecordId(),
+  )
+  expect(
+    importedLiveArticleFields(
+      normalized.doc,
+      {
+        form: 'feature',
+        article_subject_id: 'own',
+        source_files: ['src/article.ts'],
+      },
+      ['related'],
+    ),
+  ).toEqual({
+    form: 'feature',
+    articleSubjectId: 'own',
+    relatedSubjectIds: ['related'],
+    sourceFiles: ['src/article.ts'],
+  })
+  expect(normalized.revisions[0]).toMatchObject({
+    form: null,
+    articleSubjectId: null,
+    relatedSubjectIds: [],
+    sourceFiles: [],
+  })
+})
 
 test('document row timestamps keep milliseconds when the driver returns Dates', () => {
   const timestamp = new Date('2026-10-09T12:34:56.789Z')

@@ -25,6 +25,7 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
@@ -75,6 +76,7 @@ import {
 } from './doc-revision-store.ts'
 import {
   type CanonWriteTree,
+  articleFieldRefusal,
   canonFindingsRefusal,
   consumeDocBody,
   docWriteProjectName,
@@ -246,8 +248,16 @@ export { docSubjects }
 
 export const listDocs = listDocsStore
 /** A browsable projection: body contents are fetched only through getDoc. */
-export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] =>
-  listDocMetadataStore(filters)
+export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] => {
+  if (filters.articleSubject === undefined) return listDocMetadataStore(filters)
+  if (filters.scope !== 'project' || !filters.subject) {
+    throw new Error('article subject filter requires project scope and subject')
+  }
+  return listDocMetadataStore({
+    ...filters,
+    articleSubject: resolveSubject(filters.subject, filters.articleSubject).id,
+  })
+}
 
 export const getDoc = getDocStore
 
@@ -417,28 +427,20 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     input.relatedSubjects === undefined
       ? (prior?.relatedSubjects ?? [])
       : input.relatedSubjects.map((reference) => resolveAttachment(reference, existingIds))
-  if (new Set(relatedSubjects.map(({ id }) => id)).size !== relatedSubjects.length) {
-    throw new Error('related subjects must not contain duplicates')
-  }
-  if (articleSubject && relatedSubjects.some(({ id }) => id === articleSubject.id)) {
-    throw new Error('the article subject must not also be a related subject')
-  }
   const form = input.form === undefined ? (prior?.form ?? null) : input.form
   const sourceFiles =
     input.sourceFiles === undefined
       ? (prior?.sourceFiles ?? [])
       : normalizeDocSourceFiles(input.sourceFiles)
-  const setArticleFields = [
-    form ? 'form' : null,
-    articleSubject ? 'articleSubject' : null,
-    relatedSubjects.length ? 'relatedSubjects' : null,
-    sourceFiles.length ? 'sourceFiles' : null,
-  ].filter(Boolean)
-  if (setArticleFields.length && (input.scope !== 'project' || kind !== 'article')) {
-    throw new Error(
-      `article fields may be set only when kind is article and scope is project; clear first: ${setArticleFields.join(', ')}`,
-    )
-  }
+  const articleRefusal = articleFieldRefusal({
+    scope: input.scope,
+    kind,
+    form,
+    ownSubjectId: articleSubject?.id ?? null,
+    relatedSubjectIds: relatedSubjects.map(({ id }) => id),
+    sourceFiles,
+  })
+  if (articleRefusal) throw new Error(articleRefusal)
   if (!prior && kind === 'article' && input.audiences === undefined) {
     throw new Error(
       'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
@@ -469,7 +471,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
       }),
     hosted: async () => {
       const client = await hostedDocClient(input.scope, input.subject)
-      const hosted = await client.upsertDoc({
+      const hostedInput: Parameters<typeof client.upsertDoc>[0] = {
         scope: input.scope,
         subject: input.subject,
         owner,
@@ -488,10 +490,14 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
-        form,
-        articleSubjectId: articleSubject?.id ?? null,
-        relatedSubjectIds: relatedSubjects.map(({ id }) => id),
-        sourceFiles,
+        ...(input.form !== undefined ? { form } : {}),
+        ...(input.articleSubject !== undefined
+          ? { articleSubjectId: articleSubject?.id ?? null }
+          : {}),
+        ...(input.relatedSubjects !== undefined
+          ? { relatedSubjectIds: relatedSubjects.map(({ id }) => id) }
+          : {}),
+        ...(input.sourceFiles !== undefined ? { sourceFiles } : {}),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -501,17 +507,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         op: requestedOp ?? (prior ? 'set' : 'create'),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
-      })
-      if (
-        [input.form, input.articleSubject, input.relatedSubjects, input.sourceFiles].some(
-          (value) => value !== undefined,
-        ) &&
-        !['form', 'articleSubject', 'relatedSubjects', 'sourceFiles'].every((key) => key in hosted)
-      ) {
-        throw new Error(
-          "the document's other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API",
-        )
       }
+      const hosted = await client.upsertDoc(hostedInput)
+      const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
+      if (compatibilityRefusal) throw new Error(compatibilityRefusal)
       return commitDocSet({
         ...input,
         owner,

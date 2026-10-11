@@ -130,20 +130,46 @@ export function listStoredDocRevisions(
   validateHistoricDocAddress(scope, slug)
   const rows = db()
     .query(
-      `SELECT id, op, author, reason, at, status, kind, form, replacement_slug, record_id,
+      `SELECT id, op, author, reason, at, status, kind, form, article_subject_id, related_subject_ids, source_files, replacement_slug, record_id,
               length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
     .all(scope, subject, owner, slug) as Array<
-    Omit<DocRevisionMetadata, 'articleSubject' | 'relatedSubjects' | 'sourceFiles'>
+    Omit<DocRevisionMetadata, 'articleSubject' | 'relatedSubjects' | 'sourceFiles'> & {
+      article_subject_id: string | null
+      related_subject_ids: string
+      source_files: string
+    }
   >
+  const subjectIds = [
+    ...new Set(
+      rows.flatMap((row) => [
+        ...(row.article_subject_id ? [row.article_subject_id] : []),
+        ...(JSON.parse(row.related_subject_ids) as string[]),
+      ]),
+    ),
+  ]
+  const subjects = new Map<string, { id: string; name: string }>()
+  if (subjectIds.length) {
+    const placeholders = subjectIds.map(() => '?').join(',')
+    for (const row of db()
+      .query<{ id: string; name: string }, string[]>(
+        `SELECT id,name FROM subject WHERE id IN (${placeholders})`,
+      )
+      .all(...subjectIds)) {
+      subjects.set(row.id, row)
+    }
+  }
   return rows.map((row) => {
-    const revision = getStoredDocRevision(row.id, owner)!
+    const relatedIds = JSON.parse(row.related_subject_ids) as string[]
+    const { article_subject_id, related_subject_ids: _, source_files, ...metadata } = row
     return {
-      ...row,
-      articleSubject: revision.articleSubject,
-      relatedSubjects: revision.relatedSubjects,
-      sourceFiles: revision.sourceFiles,
+      ...metadata,
+      articleSubject: article_subject_id ? (subjects.get(article_subject_id) ?? null) : null,
+      relatedSubjects: relatedIds
+        .map((id) => subjects.get(id))
+        .filter((value): value is { id: string; name: string } => value !== undefined),
+      sourceFiles: JSON.parse(source_files) as string[],
     }
   })
 }

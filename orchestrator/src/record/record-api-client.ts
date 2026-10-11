@@ -44,6 +44,10 @@ import type {
 } from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import {
+  type RecordDocWriteResponse,
+  recordDocWriteResponseFields,
+} from './record-doc-transport-contract.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
@@ -76,12 +80,8 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
 }
-export type RecordDocWriteResult = { id: string; revisionId: string } & Partial<
-  Record<'form' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles', unknown>
->
-export type RecordDocImportResult = { id: string; revisionIds: string[] } & Partial<
-  Record<'form' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles', unknown>
->
+type RecordDocWriteResult = RecordDocWriteResponse<{ id: string; revisionId: string }>
+type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 
 export type RecordDocImportInput = {
   expectedRevision?: string
@@ -450,11 +450,7 @@ function ids(body: unknown): RecordDocWriteResult {
   return {
     id: record.id,
     revisionId: record.revisionId,
-    ...Object.fromEntries(
-      ['form', 'articleSubject', 'relatedSubjects', 'sourceFiles']
-        .filter((key) => key in record)
-        .map((key) => [key, record[key]]),
-    ),
+    ...recordDocWriteResponseFields(record),
   }
 }
 
@@ -470,11 +466,7 @@ function importIds(body: unknown): RecordDocImportResult {
   return {
     id: record.id,
     revisionIds: record.revisionIds as string[],
-    ...Object.fromEntries(
-      ['form', 'articleSubject', 'relatedSubjects', 'sourceFiles']
-        .filter((key) => key in record)
-        .map((key) => [key, record[key]]),
-    ),
+    ...recordDocWriteResponseFields(record),
   }
 }
 

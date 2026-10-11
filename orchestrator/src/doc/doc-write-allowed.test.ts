@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  articleFieldRefusal,
   canonRemovalRefusal,
   decideDocRevisionWrite,
   docWriteProjectName,
@@ -11,6 +12,26 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('article fields require an article project and distinct subject attachments', () => {
+  const valid = {
+    scope: 'project',
+    kind: 'article' as const,
+    form: 'rule',
+    ownSubjectId: 'own',
+    relatedSubjectIds: ['related'],
+    sourceFiles: ['src/rule.ts'],
+  }
+  expect(articleFieldRefusal(valid)).toBeNull()
+  expect(articleFieldRefusal({ ...valid, scope: 'global' })).toContain('scope is project')
+  expect(articleFieldRefusal({ ...valid, kind: 'working' })).toContain('kind is article')
+  expect(articleFieldRefusal({ ...valid, relatedSubjectIds: ['related', 'related'] })).toBe(
+    'related subjects must not contain duplicates',
+  )
+  expect(articleFieldRefusal({ ...valid, relatedSubjectIds: ['own'] })).toBe(
+    'the article subject must not also be a related subject',
+  )
+})
 
 test('articles are demand-only and excluded from canon', () => {
   const base = { scope: 'job', subject: 'understand', slug: 'guide', kind: 'article' as const }

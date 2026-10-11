@@ -14,6 +14,7 @@ import { planCanonImport } from '../canon/canon-import-policy.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import {
+  articleFieldRefusal,
   canonFindingsRefusal,
   consumeDocBody,
   type DocDelivery,
@@ -37,6 +38,7 @@ import {
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
 import {
+  importedLiveArticleFields,
   newerHostedImportRefusal,
   normalizeRecordDocImport,
   type RecordDoc,
@@ -341,20 +343,16 @@ export async function upsertRecordDoc(
     const sourceFiles =
       input.sourceFiles ??
       (Array.isArray(existing[0]?.source_files) ? (existing[0]!.source_files as string[]) : [])
-    const fieldNames = [
-      form ? 'form' : null,
-      articleSubjectId ? 'articleSubject' : null,
-      relatedSubjectIds.length ? 'relatedSubjects' : null,
-      sourceFiles.length ? 'sourceFiles' : null,
-    ].filter(Boolean)
-    if (fieldNames.length && (input.scope !== 'project' || kind !== 'article'))
-      throw new RecordDocError(
-        `article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`,
-      )
-    if (articleSubjectId && relatedSubjectIds.includes(articleSubjectId))
-      throw new RecordDocError('the article subject must not also be a related subject')
-    if (new Set(relatedSubjectIds).size !== relatedSubjectIds.length)
-      throw new RecordDocError('related subjects must not contain duplicates')
+    assertWrite(
+      articleFieldRefusal({
+        scope: input.scope,
+        kind,
+        form,
+        ownSubjectId: articleSubjectId,
+        relatedSubjectIds,
+        sourceFiles,
+      }),
+    )
     const attached = new Set(
       [
         existing[0]?.article_subject_id,
@@ -1055,32 +1053,45 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
   relatedSubjects?: Array<{ id: string; name: string }>
   sourceFiles?: string[]
 }> {
-  const { doc, revisions } = normalizeRecordDocImport(input, newRecordId())
+  const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   const ownedAddress =
-    refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
-    refuseSettingsAddress(doc.scope, doc.subject, doc.owner)
+    refuseOwnedDocAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner) ??
+    refuseSettingsAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner)
   if (ownedAddress) throw new RecordDocError(ownedAddress)
-  assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
+  assertWrite(
+    refuseMismatchedDocProject(importedDoc.scope, importedDoc.subject, importedDoc.projectName),
+  )
   for (const revision of revisions) {
-    assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
+    assertWrite(recordDocRevisionIdentityRefusal(importedDoc, revision, 'import'))
   }
   return tenant(input, async (tx) => {
-    const existing = await existingDocAtAddress(tx, input.spaceId, doc)
+    const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,
       isCreate: !existing,
-      scope: doc.scope,
+      scope: importedDoc.scope,
     })
-    if (existing && doc.deletedAt !== null && existing.deleted_at == null) {
+    if (existing && importedDoc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)
       throw new RecordDocError(
         `refusing import at ${String(existing.scope)}/${subject}/${String(existing.slug)}: a deleted import never targets a live row; delete the live doc through the doc service first if deletion is intended`,
         409,
       )
     }
-    const newerHosted = newerHostedImportRefusal(existing, doc)
+    const newerHosted = newerHostedImportRefusal(existing, importedDoc)
     if (newerHosted) throw new RecordDocError(newerHosted, 409)
+    const existingRelated = existing
+      ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing.id)}::uuid`
+      : []
+    const doc = {
+      ...importedDoc,
+      ...importedLiveArticleFields(
+        importedDoc,
+        existing,
+        existingRelated.map((row: Record<string, unknown>) => String(row.subject_id)),
+      ),
+    }
     assertWrite(
       recordDocLintRefusal(
         doc,
@@ -1100,20 +1111,16 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
       input.spaceId,
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
     )
-    const importedFields = [
-      doc.form ? 'form' : null,
-      doc.articleSubjectId ? 'articleSubject' : null,
-      doc.relatedSubjectIds.length ? 'relatedSubjects' : null,
-      doc.sourceFiles.length ? 'sourceFiles' : null,
-    ].filter(Boolean)
-    if (importedFields.length && (doc.scope !== 'project' || doc.kind !== 'article'))
-      throw new RecordDocError(
-        `article fields may be set only when kind is article and scope is project; clear first: ${importedFields.join(', ')}`,
-      )
-    if (doc.articleSubjectId && doc.relatedSubjectIds.includes(doc.articleSubjectId))
-      throw new RecordDocError('the article subject must not also be a related subject')
-    if (new Set(doc.relatedSubjectIds).size !== doc.relatedSubjectIds.length)
-      throw new RecordDocError('related subjects must not contain duplicates')
+    assertWrite(
+      articleFieldRefusal({
+        scope: doc.scope,
+        kind: doc.kind,
+        form: doc.form,
+        ownSubjectId: doc.articleSubjectId,
+        relatedSubjectIds: doc.relatedSubjectIds,
+        sourceFiles: doc.sourceFiles,
+      }),
+    )
     const importedSubjectIds = [
       ...new Set(
         [
@@ -1202,7 +1209,7 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
       articleSubject: doc.articleSubjectId
         ? { id: doc.articleSubjectId, name: importedSubjectNames.get(doc.articleSubjectId)! }
         : null,
-      relatedSubjects: doc.relatedSubjectIds.map((subjectId) => ({
+      relatedSubjects: doc.relatedSubjectIds.map((subjectId: string) => ({
         id: subjectId,
         name: importedSubjectNames.get(subjectId)!,
       })),

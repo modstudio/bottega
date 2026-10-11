@@ -104,6 +104,33 @@ export function refuseArticleDelivery(input: {
   return null
 }
 
+/** Enforces article attachment invariants after adapters resolve subject references. */
+export function articleFieldRefusal(input: {
+  scope: string
+  kind: DocKind
+  form: string | null
+  ownSubjectId: string | null
+  relatedSubjectIds: readonly string[]
+  sourceFiles: readonly string[]
+}): string | null {
+  const fieldNames = [
+    input.form ? 'form' : null,
+    input.ownSubjectId ? 'articleSubject' : null,
+    input.relatedSubjectIds.length ? 'relatedSubjects' : null,
+    input.sourceFiles.length ? 'sourceFiles' : null,
+  ].filter((value): value is string => value !== null)
+  if (fieldNames.length && (input.scope !== 'project' || input.kind !== 'article')) {
+    return `article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`
+  }
+  if (new Set(input.relatedSubjectIds).size !== input.relatedSubjectIds.length) {
+    return 'related subjects must not contain duplicates'
+  }
+  if (input.ownSubjectId && input.relatedSubjectIds.includes(input.ownSubjectId)) {
+    return 'the article subject must not also be a related subject'
+  }
+  return null
+}
+
 export function docWriteProjectName(scope: string, subject: string | null): string | null {
   return docScopeHasProjectSubject(scope) ? subject : null
 }
