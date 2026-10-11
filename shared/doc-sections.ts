@@ -46,21 +46,25 @@ function lineEnd(body: string, offset: number): number {
   return newline < 0 ? body.length : newline + 1
 }
 
-/** Parse all marked sections. Other directive kinds are deliberately ignored. */
-export function docSections(body: string): DocSection[] {
-  const tree = fromMarkdown(body, {
+function sourceLine(body: string, line: number): string {
+  return body.split('\n')[line - 1] ?? ''
+}
+
+function parseDoc(body: string): Node {
+  return fromMarkdown(body, {
     extensions: [directive()],
     mdastExtensions: [directiveFromMarkdown()],
   }) as Node
+}
+
+function sectionsFromTree(body: string, tree: Node): DocSection[] {
   const sections: DocSection[] = []
   const visit = (node: Node, insideSection: boolean) => {
     const marked = node.type === 'containerDirective' && node.name === 'section'
     if (marked && node.position) {
       const start = node.position.start.offset ?? 0
       const end = node.position.end.offset ?? body.length
-      const children = node.children ?? []
-      const lastChildLine = children.at(-1)?.position?.end.line ?? node.position.start.line
-      const closed = node.position.end.line > lastChildLine
+      const closed = /^\s*:{3,}\s*$/.test(sourceLine(body, node.position.end.line))
       const openingEnd = lineEnd(body, start)
       const closingStart = closed ? lineStart(body, end) : end
       sections.push({
@@ -81,8 +85,47 @@ export function docSections(body: string): DocSection[] {
   return sections
 }
 
+function invalidSectionMarkLine(body: string, tree: Node): number | null {
+  let found: number | null = null
+  const visit = (node: Node) => {
+    if (found !== null) return
+    const directiveNamedSection = node.name?.toLowerCase() === 'section'
+    if (
+      node.position &&
+      ((node.type === 'containerDirective' && directiveNamedSection && node.name !== 'section') ||
+        ((node.type === 'leafDirective' || node.type === 'textDirective') && directiveNamedSection))
+    ) {
+      found = node.position.start.line
+      return
+    }
+    if (node.type === 'paragraph' && node.position) {
+      const lines = body
+        .slice(node.position.start.offset ?? 0, node.position.end.offset ?? body.length)
+        .split('\n')
+      const index = lines.findIndex((line) => /^:{2,}\s*section\b/i.test(line))
+      if (index >= 0) {
+        found = node.position.start.line + index
+        return
+      }
+    }
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(tree)
+  return found
+}
+
+/** Parse all marked sections. Other directive kinds are deliberately ignored. */
+export function docSections(body: string): DocSection[] {
+  return sectionsFromTree(body, parseDoc(body))
+}
+
 export function docSectionRefusal(body: string, documentAudiences: DocAudiences): string | null {
-  const sections = docSections(body)
+  const tree = parseDoc(body)
+  const invalidLine = invalidSectionMarkLine(body, tree)
+  if (invalidLine !== null) {
+    return `line ${invalidLine} looks like a section mark but is not valid; use :::section{audience="…"}`
+  }
+  const sections = sectionsFromTree(body, tree)
   const nested = sections.find((section) => section.nested)
   if (nested) {
     return `section ${JSON.stringify(nested.firstLine)} is nested inside another marked section; move it outside the other section`
@@ -111,6 +154,16 @@ export function docSectionRefusal(body: string, documentAudiences: DocAudiences)
     }
   }
   return null
+}
+
+export function docAudienceRefusal(
+  address: string,
+  documentAudiences: DocAudiences,
+  audience: DocAudience,
+): string | null {
+  return documentAudiences.includes(audience)
+    ? null
+    : `document ${address} does not list audience ${JSON.stringify(audience)}; choose one of ${documentAudiences.join(', ')}`
 }
 
 export function assertDocSections(body: string, documentAudiences: DocAudiences): void {

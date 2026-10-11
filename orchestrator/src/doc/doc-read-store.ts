@@ -1,6 +1,6 @@
 /** Owns local document list queries. Must not know hosted transport, canon files, or CLI. */
 import type { Database } from 'bun:sqlite'
-import { docBodyForAudience } from '../../../shared/doc-sections.ts'
+import { docAudienceRefusal, docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
@@ -218,11 +218,8 @@ export function getDocForAudienceStore(
 ): Doc | null {
   const doc = getDocStore(scope, subject, slug, owner, database)
   if (!doc) return null
-  if (!doc.audiences.includes(audience)) {
-    throw new Error(
-      `document ${scope}/${subject ?? '_'}/${slug} does not list audience ${JSON.stringify(audience)}; choose one of ${doc.audiences.join(', ')}`,
-    )
-  }
+  const refusal = docAudienceRefusal(`${scope}/${subject ?? '_'}/${slug}`, doc.audiences, audience)
+  if (refusal) throw new Error(refusal)
   return { ...doc, body: docBodyForAudience(doc.body, audience) }
 }
 

@@ -8,6 +8,7 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
+  type DocAudience,
   type DocAudiences,
   type DocKind,
   type DocStatus,
@@ -115,10 +116,10 @@ function docAudiences(value: string | undefined): DocAudiences | undefined {
   }
 }
 
-function docReadAudience(value: string | undefined): (typeof DOC_AUDIENCES)[number] | undefined {
+function docReadAudience(value: string | undefined): DocAudience | undefined {
   if (value === undefined) return undefined
-  if (DOC_AUDIENCES.includes(value as (typeof DOC_AUDIENCES)[number])) {
-    return value as (typeof DOC_AUDIENCES)[number]
+  if (DOC_AUDIENCES.includes(value as DocAudience)) {
+    return value as DocAudience
   }
   throw new Error(`--audience must be one of ${DOC_AUDIENCES.join(', ')}`)
 }

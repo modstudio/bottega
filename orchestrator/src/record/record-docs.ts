@@ -1,6 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
+import { docAudienceRefusal } from '../../../shared/doc-sections.ts'
 import { assertDocSections, docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   type DocAudience,
@@ -197,11 +198,9 @@ export async function getRecordDoc(
     if (!rows[0]) return null
     const doc = recordDocRow(rows[0] as Record<string, unknown>)
     if (!input.audience) return doc
-    if (!doc.audiences.includes(input.audience)) {
-      throw new RecordDocError(
-        `document ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} does not list audience ${JSON.stringify(input.audience)}; choose one of ${doc.audiences.join(', ')}`,
-      )
-    }
+    const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
+    const refusal = docAudienceRefusal(address, doc.audiences, input.audience)
+    if (refusal) throw new RecordDocError(refusal)
     return { ...doc, body: docBodyForAudience(doc.body, input.audience) }
   })
 }
