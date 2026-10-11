@@ -15,6 +15,7 @@ import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type HostedTaskIdentity = {
@@ -471,7 +472,11 @@ export async function hostedPushChanges(
     if (
       typeof row.id !== 'string' ||
       (row.status !== 'applied' && row.status !== 'duplicate' && row.status !== 'rejected') ||
-      (row.status === 'rejected' && typeof row.reason !== 'string')
+      (row.status === 'rejected' && typeof row.reason !== 'string') ||
+      (row.status === 'rejected' && row.adoptedId !== undefined) ||
+      (row.status !== 'rejected' &&
+        row.adoptedId !== undefined &&
+        (typeof row.adoptedId !== 'string' || !UUID.test(row.adoptedId)))
     )
       throw new Error('hosted hub returned a malformed push outcome')
     return row as HostedPushOutcome

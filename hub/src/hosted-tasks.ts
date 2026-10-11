@@ -485,6 +485,16 @@ function taskMirrorAdoption(row: HostedTask, id: string): MirrorAdoption {
   return { table: 'task', project: row.project, key: row.key, id }
 }
 
+function assertTaskSourcePrecedence(
+  existing: { key: string; source: HostedTask['source'] } | undefined,
+  incoming: HostedTask,
+): void {
+  if (!existing || incoming.source !== 'git' || existing.source === 'git') return
+  throw new Error(
+    `refusing to mirror task ${incoming.key} from git over hosted ${existing.source} task ${existing.key}`,
+  )
+}
+
 function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
   row: T | undefined,
   naturalKey: (row: T) => string,
@@ -524,14 +534,17 @@ async function statusEventNaturalKeyHolder(
   )[0]
 }
 
-async function mirrorTaskRow(
+export async function mirrorTaskRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedTask,
 ): Promise<MirrorAdoption | null> {
-  const existing = rows<{ id: string; space_id: string; key: string }>(
-    await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
-  )[0]
+  const existing = rows<{
+    id: string
+    space_id: string
+    key: string
+    source: HostedTask['source']
+  }>(await tx`SELECT id,space_id,key,source FROM hub_task WHERE id=${row.id}::uuid`)[0]
   const keyHolder = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
@@ -549,6 +562,7 @@ async function mirrorTaskRow(
     },
   )
   applyMirrorDecision(decision)
+  assertTaskSourcePrecedence(existing, row)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
   if (decision.action === 'adopt' || decision.action === 'update-same-row') {
     const targetId = decision.action === 'adopt' ? decision.id : row.id

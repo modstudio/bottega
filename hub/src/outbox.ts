@@ -2,17 +2,19 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
+import { loadOutboxChange } from './outbox-row.ts'
 import { projects } from './projects.ts'
 import {
+  HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
-  PUSHABLE_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
+import { orderHostedPushChanges } from './push-order.ts'
+import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
 
 const HOSTED_OUTBOX_BATCH_SIZE = 500
-const HOSTED_STATUS_EVENT_TABLE = PUSHABLE_HUB_CHANGE_TABLES[0]
 
 type OutboxEntry = {
   id: string
@@ -92,68 +94,17 @@ export function retryHostedOutboxEntry(id: string): boolean {
   )
 }
 
-type CurrentStatusEvent = {
-  project_name: string
-  id: string
-  task_key: string
-  task_id: string
-  at: string
-  from_status: string | null
-  to_status: string
-  created_at: string
-  updated_at: string
-  deleted_at: null
-}
-
-type LoadedOutboxRow = OutboxEntry & {
-  event_id: string | null
-  task_key: string | null
-  task_record_id: string | null
-  event_at: string | null
-  from_status: string | null
-  to_status: string | null
-  project_name: string | null
-}
-
-function loadPendingOutboxRows(): LoadedOutboxRow[] {
+function loadPendingOutboxRows(): OutboxEntry[] {
   return db()
-    .query<LoadedOutboxRow, []>(
-      `SELECT o.*,e.record_id event_id,e.task_key,e.task_record_id,e.at event_at,
-        e.from_status,e.to_status,t.project project_name
-       FROM hosted_outbox o
-       LEFT JOIN task_status_event e
-         ON o.table_name='hub_task_status_event' AND e.record_id=o.row_id
-       LEFT JOIN task t ON t.record_id=e.task_record_id
-       WHERE o.quarantined_at IS NULL ORDER BY o.queued_at,o.id`,
+    .query<OutboxEntry, []>(
+      `SELECT * FROM hosted_outbox
+       WHERE quarantined_at IS NULL ORDER BY queued_at,id`,
     )
     .all()
 }
 
-function currentStatusEvent(row: LoadedOutboxRow): CurrentStatusEvent | null {
-  if (
-    !row.event_id ||
-    !row.task_key ||
-    !row.task_record_id ||
-    !row.event_at ||
-    !row.to_status ||
-    !row.project_name
-  )
-    return null
-  return {
-    project_name: row.project_name,
-    id: row.event_id,
-    task_key: row.task_key,
-    task_id: row.task_record_id,
-    at: row.event_at,
-    from_status: row.from_status,
-    to_status: row.to_status,
-    created_at: row.event_at,
-    updated_at: row.event_at,
-    deleted_at: null,
-  }
-}
-
-function recordOutcome(entry: OutboxEntry, outcome: HostedPushOutcome, at: string) {
+function recordOutcome(item: PreparedOutboxRow, outcome: HostedPushOutcome, at: string) {
+  const { entry } = item
   const decision = decideOutboxLifecycle(
     entry.attempts,
     outcome.status === 'rejected'
@@ -162,9 +113,25 @@ function recordOutcome(entry: OutboxEntry, outcome: HostedPushOutcome, at: strin
   )
   const changed = writeTransaction((conn) => {
     if (decision.action === 'sent') {
-      return conn
+      const removed = conn
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
         .run(entry.id, entry.generation).changes
+      if (
+        removed > 0 &&
+        outcome.status !== 'rejected' &&
+        outcome.adoptedId &&
+        item.change.table === HOSTED_TASK_TABLE &&
+        item.change.op === 'upsert'
+      )
+        persistTaskAdoptionsOn(conn, [
+          {
+            table: 'task',
+            project: item.change.row.project,
+            key: item.change.row.key,
+            id: outcome.adoptedId,
+          },
+        ])
+      return removed
     } else if (decision.action === 'retry') {
       return conn
         .query(
@@ -187,21 +154,13 @@ function recordOutcome(entry: OutboxEntry, outcome: HostedPushOutcome, at: strin
 }
 
 function prepareOutboxRows(
-  entries: LoadedOutboxRow[],
+  entries: OutboxEntry[],
   report: HostedOutboxReport,
 ): PreparedOutboxRow[] {
   const rows: PreparedOutboxRow[] = []
   for (const entry of entries) {
-    if (entry.operation === 'delete') {
-      rows.push({
-        entry,
-        project_name: null,
-        change: { table: HOSTED_STATUS_EVENT_TABLE, id: entry.row_id, op: 'delete' },
-      })
-      continue
-    }
-    const row = currentStatusEvent(entry)
-    if (!row) {
+    const loaded = loadOutboxChange(db(), entry)
+    if (!loaded) {
       const removed = writeTransaction(
         (conn) =>
           conn
@@ -213,13 +172,8 @@ function prepareOutboxRows(
     }
     rows.push({
       entry,
-      project_name: row.project_name,
-      change: {
-        table: HOSTED_STATUS_EVENT_TABLE,
-        id: entry.row_id,
-        op: 'upsert',
-        row,
-      },
+      project_name: loaded.projectName,
+      change: loaded.change,
     })
   }
   return rows
@@ -244,7 +198,7 @@ function recordBatchOutcomes(
   for (const item of batch) {
     const outcome = byId.get(item.change.id)
     if (!outcome) continue
-    const action = recordOutcome(item.entry, outcome, clock())
+    const action = recordOutcome(item, outcome, clock())
     if (action === 'sent') report.sent++
     else if (action) {
       report.rejected++
@@ -260,8 +214,12 @@ async function drainDestinations(
 ): Promise<void> {
   const clock = dependencies.clock ?? nowIso
   for (const [spaceId, selected] of destinations) {
-    for (let index = 0; index < selected.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
-      const batch = selected.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
+    const byId = new Map(selected.map((item) => [item.change.id, item]))
+    const ordered = orderHostedPushChanges(selected.map((item) => item.change)).map(
+      (change) => byId.get(change.id)!,
+    )
+    for (let index = 0; index < ordered.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
+      const batch = ordered.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
       try {
         const outcomes = await (dependencies.push ?? hostedPushChanges)(
           batch.map((item) => item.change),
@@ -329,26 +287,13 @@ export async function hostedOutboxDoctorLines(
     ? [`hosted outbox ${count} quarantined; run \`hub outbox\` and \`hub outbox retry <ID>\``]
     : []
   const rows = loadPendingOutboxRows().flatMap((entry): PreparedOutboxRow[] => {
-    if (entry.operation === 'delete')
-      return [
-        {
-          entry,
-          project_name: null,
-          change: { table: HOSTED_STATUS_EVENT_TABLE, id: entry.row_id, op: 'delete' },
-        },
-      ]
-    const row = currentStatusEvent(entry)
-    return row
+    const loaded = loadOutboxChange(db(), entry)
+    return loaded
       ? [
           {
             entry,
-            project_name: row.project_name,
-            change: {
-              table: HOSTED_STATUS_EVENT_TABLE,
-              id: entry.row_id,
-              op: 'upsert',
-              row,
-            },
+            project_name: loaded.projectName,
+            change: loaded.change,
           },
         ]
       : []

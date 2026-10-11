@@ -6,7 +6,7 @@ import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { mirrorHostedTaskBody } from './hosted-tasks.ts'
-import type { HostedPushChange, PushedStatusEvent } from './push-contract.ts'
+import type { HostedPushChange, PushedStatusEvent, PushedTask } from './push-contract.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
@@ -25,6 +25,29 @@ const row = (id: string, at: string, task = taskId): PushedStatusEvent => ({
   created_at: at,
   updated_at: at,
   deleted_at: null,
+})
+
+const taskRow = (id: string, key: string, source: PushedTask['source'] = 'git'): PushedTask => ({
+  id,
+  key,
+  project: 'workshop',
+  project_name: 'workshop',
+  title: source === 'git' ? null : key,
+  status: source === 'git' ? null : 'active',
+  status_category: source === 'git' ? null : 'active',
+  parent_key: null,
+  parent_id: null,
+  body: null,
+  assignee: null,
+  opened_at: '2026-10-09T10:00:00.000Z',
+  closed_at: null,
+  source,
+  first_seen: '2026-10-09T10:00:00.000Z',
+  last_seen: '2026-10-09T11:00:00.000Z',
+  created_at: '2026-10-09T10:00:00.000Z',
+  updated_at: '2026-10-09T11:00:00.000Z',
+  deleted_at: null,
+  next_document_number: 1,
 })
 
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
@@ -140,6 +163,49 @@ test('keeps a pushed status event idempotent while its task is absent', async ()
     (await database.query(`SELECT task_id FROM hub_task_status_event WHERE id=$1`, [event.id]))
       .rows,
   ).toEqual([{ task_id: null }])
+})
+
+test('applies and deduplicates tasks while isolating collisions and source refusals', async () => {
+  const insertedId = '01990000-0000-7000-8000-000000001280'
+  const laterId = '01990000-0000-7000-8000-000000001281'
+  const adoptFromId = '01990000-0000-7000-8000-000000001282'
+  const collisionId = '01990000-0000-7000-8000-000000001283'
+  const inserted = taskRow(insertedId, 'DEV-80')
+  expect(await apply([{ table: 'hub_task', id: insertedId, op: 'upsert', row: inserted }])).toEqual(
+    [{ id: insertedId, status: 'applied' }],
+  )
+  expect(await apply([{ table: 'hub_task', id: insertedId, op: 'upsert', row: inserted }])).toEqual(
+    [{ id: insertedId, status: 'duplicate' }],
+  )
+  expect(
+    await apply([
+      {
+        table: 'hub_task',
+        id: adoptFromId,
+        op: 'upsert',
+        row: { ...taskRow(adoptFromId, 'DEV-1', 'mcp'), title: 'First' },
+      },
+    ]),
+  ).toEqual([{ id: adoptFromId, status: 'applied', adoptedId: taskId }])
+
+  const outcomes = await apply([
+    {
+      table: 'hub_task',
+      id: collisionId,
+      op: 'upsert',
+      row: taskRow(collisionId, 'DEV-80', 'local'),
+    },
+    { table: 'hub_task', id: taskId, op: 'upsert', row: taskRow(taskId, 'DEV-1') },
+    { table: 'hub_task', id: laterId, op: 'upsert', row: taskRow(laterId, 'DEV-82') },
+  ])
+  expect(outcomes).toEqual([
+    { id: collisionId, status: 'rejected', reason: expect.stringContaining('already belongs') },
+    { id: taskId, status: 'rejected', reason: expect.stringContaining('from git over hosted mcp') },
+    { id: laterId, status: 'applied' },
+  ])
+  expect((await database.query(`SELECT key FROM hub_task WHERE id=$1`, [laterId])).rows).toEqual([
+    { key: 'DEV-82' },
+  ])
 })
 
 test('real policies reject a push into a space without write membership', async () => {
