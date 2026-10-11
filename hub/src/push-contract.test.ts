@@ -37,6 +37,7 @@ test('task push validation accepts the mirror row and rejects every non-string e
   for (const [field, value] of [
     ['key', null],
     ['title', 1],
+    ['status_category', 'waiting'],
     ['parent_id', 'not-a-uuid'],
     ['opened_at', 'yesterday'],
     ['source', 'unknown'],

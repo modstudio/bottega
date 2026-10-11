@@ -3,7 +3,6 @@ import { db, writeTransaction } from './db.ts'
 import type { MirrorAdoption } from './hosted-tasks.ts'
 import { rememberHostedInstall } from './install-binding.ts'
 import { projects } from './projects.ts'
-import type { TaskRow } from './task.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import {
   assertTargetSpaceTaskMirror,
@@ -13,6 +12,7 @@ import {
   type TaskFetch,
 } from './task-client.ts'
 import { resolveTask, taskKeyPrefix } from './task-identity.ts'
+import { hostedTaskFromTaskRow, type PushableTaskRow } from './task-hosted-row.ts'
 import {
   issueForDestination,
   type PushCollections,
@@ -119,29 +119,10 @@ function persistMirrorBatch(
 }
 
 export async function pushTasks(options: Options = {}) {
-  const taskRows = db().query<TaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
+  const taskRows = db().query<PushableTaskRow, []>(`SELECT * FROM task ORDER BY key`).all()
   const tasks = taskRows.map((row) => ({
-    id: row.record_id ?? newRecordId(),
+    ...hostedTaskFromTaskRow(row, row.record_id ?? newRecordId()),
     newly_assigned: row.record_id === null,
-    key: row.key,
-    project: row.project,
-    project_name: row.project,
-    title: row.title,
-    status: row.status,
-    status_category: row.status_category,
-    parent_key: row.parent_key,
-    parent_id: row.parent_record_id,
-    body: row.body,
-    assignee: row.assignee,
-    opened_at: row.opened_at,
-    closed_at: row.closed_at,
-    source: row.source,
-    first_seen: row.first_seen,
-    last_seen: row.last_seen,
-    created_at: row.first_seen,
-    updated_at: row.updated_at ?? row.last_seen,
-    deleted_at: null,
-    next_document_number: row.next_document_number,
   }))
   const taskByKey = new Map(tasks.map((row) => [row.key, row]))
   const taskByRecordId = new Map(tasks.map((row) => [row.id, row]))

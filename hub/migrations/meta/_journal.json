@@ -190,6 +190,13 @@
       "when": 1791842936000,
       "tag": "0026_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791929336000,
+      "tag": "0027_outbox_status_event_tasks",
+      "breakpoints": true
     }
   ]
 }

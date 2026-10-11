@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { type MachineTaskRow, pushedTaskFromMachineRow } from './machine-task-row.ts'
+import type { TaskRow } from './task.ts'
+import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
 import {
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
@@ -18,11 +19,11 @@ export type LoadedOutboxChange = {
 }
 
 function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
-  const row = conn.query<MachineTaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`).get(id)
+  const row = conn.query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`).get(id)
   return row
     ? {
         projectName: row.project,
-        change: { table: HOSTED_TASK_TABLE, id, op: 'upsert', row: pushedTaskFromMachineRow(row) },
+        change: { table: HOSTED_TASK_TABLE, id, op: 'upsert', row: hostedTaskFromTaskRow(row, id) },
       }
     : null
 }

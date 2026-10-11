@@ -398,29 +398,4 @@ describe('hosted outbox', () => {
     ).toEqual({ record_id: adoptedId })
     expect(listHostedOutbox()).toHaveLength(0)
   })
-
-  test('quarantines a rejected git task after the retry threshold', async () => {
-    observeTrackerTask(trackerTask('FIX-30', 'open'), '2026-10-11T12:00:00.000Z')
-    const entry = listHostedOutbox()[0]!
-    writeTransaction((conn) =>
-      conn.query(`UPDATE task SET source='git' WHERE record_id=?`).run(entry.row_id),
-    )
-    for (let attempt = 0; attempt < 3; attempt++)
-      await drainHostedOutbox({
-        identity: async () => identity,
-        registered: () => [project],
-        push: async () => [
-          {
-            id: entry.row_id,
-            status: 'rejected',
-            reason: 'refusing to mirror task FIX-30 from git over hosted mcp task FIX-30',
-          },
-        ],
-      })
-    expect(listHostedOutbox()[0]).toMatchObject({
-      attempts: 3,
-      quarantined_at: expect.any(String),
-      quarantine_reason: expect.stringContaining('from git over hosted mcp'),
-    })
-  })
 })

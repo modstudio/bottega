@@ -8,6 +8,7 @@ import {
   taskIdFor,
 } from './hosted-task-reference.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
+import type { StatusCategory } from './projects.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = {
@@ -18,7 +19,7 @@ export type HostedTask = {
   project_name: string
   title: string | null
   status: string | null
-  status_category: string | null
+  status_category: StatusCategory | null
   parent_key: string | null
   parent_id?: string | null
   body: string | null
@@ -33,6 +34,26 @@ export type HostedTask = {
   deleted_at: string | null
   next_document_number: number
 }
+
+/** Fields whose differences make the hosted task mirror update an existing row. */
+export const HOSTED_TASK_UPDATE_COLUMNS = [
+  'project_name',
+  'key',
+  'project',
+  'title',
+  'status',
+  'status_category',
+  'parent_key',
+  'parent_id',
+  'body',
+  'assignee',
+  'opened_at',
+  'closed_at',
+  'source',
+  'updated_at',
+  'deleted_at',
+  'next_document_number',
+] as const satisfies readonly (keyof HostedTask)[]
 export type HostedComment = {
   id: string
   task_key: string
