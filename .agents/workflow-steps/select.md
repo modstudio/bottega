@@ -6,8 +6,7 @@ floor:
 operatorRuling: true
 job: null
 autonomy: ask
-needs:
-  []
+needs: []
 ---
 Present every cohort with its signal count, live-work count, and closed-fix count. The operator chooses whether each cohort is worked and, for every selected cohort, whether it is one related group planned together or a set of unrelated fixes planned separately.
 

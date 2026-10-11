@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 Turn the chosen solution into concrete, reviewable work. Prefer independent vertical slices that deliver behavior end to end over horizontal layers. Split work by what can be reviewed and rolled back coherently, not by an estimate of elapsed time.
 

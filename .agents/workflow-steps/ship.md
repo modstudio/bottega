@@ -6,7 +6,6 @@ floor:
   - recorded-artifact
 job: null
 autonomy: ask
-needs:
-  []
+needs: []
 ---
 Ship the fix through the `ship-task` workflow: gate, pull request, merge.

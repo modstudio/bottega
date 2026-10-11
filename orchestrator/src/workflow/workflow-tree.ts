@@ -31,10 +31,14 @@ function treePath(folder: WorkflowTreeFolder, slug: string): string {
   return `${WORKFLOW_TREE_ROOT}/${folder}/${slug}.md`
 }
 
+export function normalizeWorkflowYaml(yaml: string): string {
+  return yaml.replace(/ +$/gm, '').replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
+}
+
 function document(frontMatter: Record<string, unknown>, body: string): string {
   // An indent selects block style; without one Bun writes a single flow line.
   // Bun leaves a trailing space after a key whose value is a nested block.
-  const yaml = Bun.YAML.stringify(frontMatter, null, 2).replace(/ +$/gm, '')
+  const yaml = normalizeWorkflowYaml(Bun.YAML.stringify(frontMatter, null, 2))
   return `---\n${yaml}\n---\n${body}\n`
 }
 
