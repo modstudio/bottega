@@ -31,11 +31,13 @@ describe('release live conditions', () => {
     ])
   })
 
-  test('no successful ledger row gives no condition', () => {
-    expect(releaseLiveConditions([observation('production', { commit: 'abc' }, null)])).toEqual({
-      conditions: [],
-      errors: [],
-    })
+  test('no successful ledger row gives nothing, whatever the reading', () => {
+    expect(
+      releaseLiveConditions([
+        observation('production', { commit: 'abc' }, null),
+        observation('preview', { failure: 'live reading timed out' }, null),
+      ]),
+    ).toEqual({ conditions: [], errors: [] })
   })
 
   test('a failed reading gives an error and no condition', () => {

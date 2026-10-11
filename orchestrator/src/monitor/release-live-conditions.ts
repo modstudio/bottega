@@ -18,17 +18,14 @@ export function releaseLiveConditions(observations: readonly ReleaseLiveObservat
   const conditions: MonitorCondition[] = []
   const errors: string[] = []
   for (const observation of observations) {
+    if (observation.lastReleasedCommit === null) continue
     if ('failure' in observation.live) {
       errors.push(
         `${observation.project} release rung ${observation.rung} live reading failed: ${observation.live.failure}`,
       )
       continue
     }
-    if (
-      observation.lastReleasedCommit === null ||
-      observation.live.commit === observation.lastReleasedCommit
-    )
-      continue
+    if (observation.live.commit === observation.lastReleasedCommit) continue
     conditions.push({
       kind: 'release-live-differs',
       subject: `${observation.project}:${observation.rung}`,

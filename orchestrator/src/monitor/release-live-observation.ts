@@ -14,6 +14,8 @@ export function observeProjectReleaseLive(project: Project) {
     if (!rung.live) continue
     try {
       const lastReleasedCommit = newestSuccessfulReleasedCommit(project.name, rung.name)
+      // With no release to compare against, the rung is not read.
+      if (lastReleasedCommit === null) continue
       const reading = readLiveCommit(rung.live, project.path)
       observations.push({
         project: project.name,
