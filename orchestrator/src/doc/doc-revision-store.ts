@@ -1,7 +1,7 @@
 // concern: local-doc-revisions
 /** Owns local revision ordering and compare-and-set facts. Must not know hosted transport or CLI. */
 
-import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { db, sessionId } from '../database/db.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
@@ -24,6 +24,10 @@ type RevisionDoc = {
   featured: boolean
   status: DocStatus
   kind: DocKind
+  form: DocForm | null
+  article_subject_id: string | null
+  relatedSubjects: Array<{ id: string; name: string }>
+  sourceFiles: string[]
   replacement_slug: string | null
 }
 
@@ -84,8 +88,8 @@ export function insertLocalRevision(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, replacement_slug, author, reason, session_id, at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, owner, project_id, slug, op, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, replacement_slug, author, reason, session_id, at, record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       doc.id,
@@ -104,6 +108,10 @@ export function insertLocalRevision(
       doc.featured,
       doc.status,
       doc.kind,
+      doc.form,
+      doc.article_subject_id,
+      JSON.stringify(doc.relatedSubjects.map(({ id }) => id)),
+      JSON.stringify(doc.sourceFiles),
       doc.replacement_slug,
       identity.author,
       identity.reason,
@@ -120,13 +128,17 @@ export function listStoredDocRevisions(
   owner: string | null = null,
 ): DocRevisionMetadata[] {
   validateHistoricDocAddress(scope, slug)
-  return db()
+  const rows = db()
     .query(
-      `SELECT id, op, author, reason, at, status, kind, replacement_slug, record_id,
+      `SELECT id, op, author, reason, at, status, kind, form, replacement_slug, record_id,
               length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
-    .all(scope, subject, owner, slug) as DocRevisionMetadata[]
+    .all(scope, subject, owner, slug) as Array<Omit<DocRevisionMetadata, 'articleSubject' | 'relatedSubjects' | 'sourceFiles'>>
+  return rows.map((row) => {
+    const revision = getStoredDocRevision(row.id, owner)!
+    return { ...row, articleSubject: revision.articleSubject, relatedSubjects: revision.relatedSubjects, sourceFiles: revision.sourceFiles }
+  })
 }
 
 export function getStoredDocRevision(id: number, owner: string | null = null): DocRevision | null {
@@ -138,6 +150,9 @@ export function getStoredDocRevision(id: number, owner: string | null = null): D
         ...row,
         featured: Boolean(row.featured),
         audiences: decodeStoredDocAudiences(row.audiences),
+        articleSubject: row.article_subject_id ? db().query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?').get(row.article_subject_id) ?? null : null,
+        relatedSubjects: (JSON.parse((row as unknown as { related_subject_ids: string }).related_subject_ids) as string[]).map((subjectId) => db().query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?').get(subjectId)).filter((subject): subject is { id: string; name: string } => Boolean(subject)),
+        sourceFiles: JSON.parse((row as unknown as { source_files: string }).source_files) as string[],
       }
     : null
 }

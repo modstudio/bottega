@@ -1,7 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import type { DocAudience, DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocAudience, DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -137,10 +137,13 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
     const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
     const rows = await tx`
       SELECT d.*, s.name AS space_name, p.name AS project_name,
+        own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects,
         to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
+      LEFT JOIN subject own ON own.id=d.article_subject_id
       WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
         AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
         AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
@@ -173,10 +176,12 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
 export async function getRecordDoc(input: Tenant & { id: string }): Promise<RecordDoc | null> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name
+      SELECT d.*, s.name AS space_name, p.name AS project_name, own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects
       FROM doc d
       JOIN space s ON s.id=d.space_id
       LEFT JOIN project p ON p.id=d.project_id
+      LEFT JOIN subject own ON own.id=d.article_subject_id
       WHERE d.id=${input.id}::uuid
     `
     return rows[0] ? recordDocRow(rows[0] as Record<string, unknown>) : null
@@ -190,8 +195,10 @@ export async function listRecordDocRevisions(
     const docs = await tx`SELECT id,space_id FROM doc WHERE id=${input.id}::uuid`
     if (!docs.length) return null
     const rows = await tx`
-      SELECT * FROM doc_revision
-      WHERE space_id=${String(docs[0]!.space_id)}::uuid AND doc_id=${input.id}::uuid
+      SELECT r.*, own.name AS article_subject_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(r.related_subject_ids) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
+      FROM doc_revision r LEFT JOIN subject own ON own.id=r.article_subject_id
+      WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
     `
     return rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row))
@@ -213,6 +220,10 @@ export async function upsertRecordDoc(
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     projectName?: string | null
     reason: string
@@ -225,7 +236,7 @@ export async function upsertRecordDoc(
     revisionId?: string
     expectedRevision?: string
   },
-): Promise<{ id: string; revisionId: string }> {
+): Promise<{ id: string; revisionId: string; form?: DocForm | null; articleSubject?: { id: string; name: string } | null; relatedSubjects?: Array<{ id: string; name: string }>; sourceFiles?: string[] }> {
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
@@ -233,7 +244,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audiences, featured, status, kind, replacement_slug, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -296,6 +307,23 @@ export async function upsertRecordDoc(
       input.spaceId,
       input.projectName ?? docWriteProjectName(input.scope, input.subject),
     )
+    const form = input.form === undefined ? (existing[0]?.form == null ? null : String(existing[0].form) as DocForm) : input.form
+    const articleSubjectId = input.articleSubjectId === undefined ? (existing[0]?.article_subject_id == null ? null : String(existing[0].article_subject_id)) : input.articleSubjectId
+    const existingRelated = existing[0] ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing[0].id)}::uuid` : []
+    const relatedSubjectIds = input.relatedSubjectIds ?? existingRelated.map((row: Record<string, unknown>) => String(row.subject_id))
+    const sourceFiles = input.sourceFiles ?? (Array.isArray(existing[0]?.source_files) ? existing[0]!.source_files as string[] : [])
+    const fieldNames = [form ? 'form' : null, articleSubjectId ? 'articleSubject' : null, relatedSubjectIds.length ? 'relatedSubjects' : null, sourceFiles.length ? 'sourceFiles' : null].filter(Boolean)
+    if (fieldNames.length && (input.scope !== 'project' || kind !== 'article')) throw new RecordDocError(`article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`)
+    if (articleSubjectId && relatedSubjectIds.includes(articleSubjectId)) throw new RecordDocError('the article subject must not also be a related subject')
+    if (new Set(relatedSubjectIds).size !== relatedSubjectIds.length) throw new RecordDocError('related subjects must not contain duplicates')
+    const attached = new Set([existing[0]?.article_subject_id, ...existingRelated.map((row: Record<string, unknown>) => row.subject_id)].filter(Boolean).map(String))
+    const subjectIds = [...new Set([articleSubjectId, ...relatedSubjectIds].filter((id): id is string => Boolean(id)))]
+    const subjectRows = subjectIds.length ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id = ANY(${subjectIds}::uuid[])` : []
+    for (const id of subjectIds) {
+      const row = subjectRows.find((candidate: Record<string, unknown>) => String(candidate.id) === id)
+      if (!row) throw new RecordDocError(`subject ${id} is not in the document project; cleared by: orch subject list ${input.subject}`)
+      if (row.retired_at != null && !attached.has(id)) throw new RecordDocError(`subject ${id} is retired; cleared by: orch subject list ${input.subject}`)
+    }
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const audiences = storedDocAudiences(input, existing[0])
@@ -324,7 +352,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -332,14 +360,16 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${JSON.stringify(sourceFiles)}::jsonb, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
     }
+    await tx`DELETE FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${docId}::uuid`
+    for (const subjectId of relatedSubjectIds) await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${docId}::uuid,${subjectId}::uuid)`
     const revisionId = await insertRecordDocRevision(tx, {
       id: input.revisionId,
       spaceId: input.spaceId,
@@ -359,13 +389,17 @@ export async function upsertRecordDoc(
       featured,
       status,
       kind,
+      form,
+      articleSubjectId,
+      relatedSubjectIds,
+      sourceFiles,
       replacementSlug,
       author: input.author,
       reason: input.reason,
       sessionId: input.sessionId ?? null,
       at: now,
     })
-    return { id: docId, revisionId }
+    return { id: docId, revisionId, form, articleSubject: articleSubjectId ? { id: articleSubjectId, name: String(subjectRows.find((row: Record<string, unknown>) => String(row.id) === articleSubjectId)!.name) } : null, relatedSubjects: relatedSubjectIds.map((id: string) => { const row = subjectRows.find((subject: Record<string, unknown>) => String(subject.id) === id)!; return { id, name: String(row.name) } }), sourceFiles }
   })
 }
 

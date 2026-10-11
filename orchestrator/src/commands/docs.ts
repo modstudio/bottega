@@ -9,7 +9,7 @@ import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-import { log, optionFlags, write, writeStdout } from './support.ts'
+import { collect, log, optionFlags, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
 
@@ -17,6 +17,12 @@ class NoParentOption extends Option {
   override attributeName(): string {
     return 'noParent'
   }
+}
+
+class NamedNegativeOption extends Option {
+  private readonly attribute: string
+  constructor(flags: string, attribute: string) { super(flags); this.attribute = attribute }
+  override attributeName(): string { return this.attribute }
 }
 
 export function assertUserCanonHydrateAllowed(
@@ -49,6 +55,14 @@ export function register(program: Command): void {
     .option('--body-match <value>')
     .option('--parent <slug>')
     .addOption(new NoParentOption('--no-parent'))
+    .option('--form <value>')
+    .addOption(new NamedNegativeOption('--no-form', 'noForm'))
+    .option('--article-subject <value>')
+    .addOption(new NamedNegativeOption('--no-article-subject', 'noArticleSubject'))
+    .option('--related-subject <value>', 'related subject name or id', collect, [])
+    .addOption(new NamedNegativeOption('--no-related-subjects', 'noRelatedSubjects'))
+    .option('--source-file <value>', 'repository-relative source path', collect, [])
+    .addOption(new NamedNegativeOption('--no-source-files', 'noSourceFiles'))
     .option('--position <value>')
     .option('--featured')
     .option('--no-featured')

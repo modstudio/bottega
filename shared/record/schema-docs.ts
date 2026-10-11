@@ -8,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgPolicy,
   pgTable,
   primaryKey,
@@ -25,6 +26,8 @@ import {
   tenantPolicies,
   user,
 } from './schema.ts'
+import { subject as articleSubject } from './schema-subjects.ts'
+import { DOC_FORMS } from '../docs.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
@@ -88,6 +91,9 @@ export const doc = pgTable.withRLS(
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
     kind: text().notNull().default('working'),
+    form: text(),
+    articleSubjectId: uuid('article_subject_id'),
+    sourceFiles: jsonb('source_files').$type<string[]>().notNull().default([]),
     replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
@@ -120,6 +126,8 @@ export const doc = pgTable.withRLS(
       'doc_kind_check',
       sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
+    check('doc_form_check', sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`),
+    foreignKey({ columns: [table.spaceId, table.projectId, table.articleSubjectId], foreignColumns: [articleSubject.spaceId, articleSubject.projectId, articleSubject.id], name: 'doc_article_subject_same_project_fk' }),
     check(
       'doc_replacement_check',
       sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
@@ -200,6 +208,10 @@ export const docRevision = pgTable.withRLS(
     featured: boolean().notNull().default(false),
     status: text().notNull().default('current'),
     kind: text().notNull().default('working'),
+    form: text(),
+    articleSubjectId: uuid('article_subject_id'),
+    relatedSubjectIds: jsonb('related_subject_ids').$type<string[]>().notNull().default([]),
+    sourceFiles: jsonb('source_files').$type<string[]>().notNull().default([]),
     replacementSlug: text('replacement_slug'),
     parentId: uuid('parent_id'),
     position: integer().notNull().default(0),
@@ -226,6 +238,7 @@ export const docRevision = pgTable.withRLS(
       'doc_revision_kind_check',
       sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
+    check('doc_revision_form_check', sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`),
     check(
       'doc_revision_replacement_check',
       sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
@@ -248,5 +261,19 @@ export const docRevision = pgTable.withRLS(
     ),
     ...tenantPolicies('doc_revision', table.spaceId),
     ...ownerPolicies('doc_revision', table.ownerUserId),
+  ],
+)
+
+export const docRelatedSubject = pgTable.withRLS(
+  'doc_related_subject',
+  {
+    id: recordIdentity(),
+    spaceId: spaceIdentity(),
+    docId: uuid('doc_id').notNull().references(() => doc.id, { onDelete: 'cascade' }),
+    subjectId: uuid('subject_id').notNull().references(() => articleSubject.id),
+  },
+  (table) => [
+    uniqueIndex('doc_related_subject_pair').on(table.spaceId, table.docId, table.subjectId),
+    ...tenantPolicies('doc_related_subject', table.spaceId),
   ],
 )

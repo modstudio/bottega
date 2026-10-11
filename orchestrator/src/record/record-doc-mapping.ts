@@ -3,6 +3,8 @@
 import {
   type DocAudiences,
   type DocKind,
+  type DocForm,
+  type DocArticleSubject,
   type DocStatus,
   docSummary,
 } from '../../../shared/docs.ts'
@@ -26,6 +28,10 @@ export type RecordDoc = {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
   summary?: string
   projectName: string | null
@@ -51,6 +57,10 @@ export type RecordDocRevision = {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
   author: string
   reason: string
@@ -75,6 +85,10 @@ export type RecordDocImportInput = {
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -96,6 +110,10 @@ export type RecordDocImportInput = {
     featured?: boolean
     status?: DocStatus
     kind?: DocKind
+    form?: DocForm | null
+    articleSubjectId?: string | null
+    relatedSubjectIds?: string[]
+    sourceFiles?: string[]
     replacementSlug?: string | null
     author: string
     reason: string
@@ -162,6 +180,10 @@ export function normalizeRecordDocImport(
       featured: input.doc.featured ?? false,
       status: input.doc.status ?? 'current',
       kind: input.doc.kind ?? 'working',
+      form: input.doc.form ?? null,
+      articleSubjectId: input.doc.articleSubjectId ?? null,
+      relatedSubjectIds: input.doc.relatedSubjectIds ?? [],
+      sourceFiles: input.doc.sourceFiles ?? [],
       replacementSlug: input.doc.replacementSlug ?? null,
     },
     revisions: input.revisions.map((revision) => ({
@@ -172,6 +194,10 @@ export function normalizeRecordDocImport(
       featured: revision.featured ?? false,
       status: revision.status ?? 'current',
       kind: revision.kind ?? 'working',
+      form: revision.form ?? null,
+      articleSubjectId: revision.articleSubjectId ?? null,
+      relatedSubjectIds: revision.relatedSubjectIds ?? [],
+      sourceFiles: revision.sourceFiles ?? [],
       replacementSlug: revision.replacementSlug ?? null,
     })),
   }
@@ -209,6 +235,7 @@ const recordDocIso = (value: unknown) =>
   value == null ? null : (value instanceof Date ? value : new Date(String(value))).toISOString()
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {
+  const relatedSubjects = Array.isArray(row.related_subjects) ? row.related_subjects : []
   return {
     id: String(row.id),
     spaceId: String(row.space_id),
@@ -226,6 +253,10 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
+    form: row.form == null ? null : String(row.form) as DocForm,
+    articleSubject: row.article_subject_id == null ? null : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
+    relatedSubjects: relatedSubjects.map((subject) => ({ id: String((subject as Record<string, unknown>).id), name: String((subject as Record<string, unknown>).name) })),
+    sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
@@ -236,6 +267,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
 }
 
 export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRevision {
+  const relatedSubjects = Array.isArray(row.related_subjects) ? row.related_subjects : []
   return {
     id: String(row.id),
     docId: String(row.doc_id),
@@ -253,6 +285,10 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
+    form: row.form == null ? null : String(row.form) as DocForm,
+    articleSubject: row.article_subject_id == null ? null : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
+    relatedSubjects: relatedSubjects.map((subject) => ({ id: String((subject as Record<string, unknown>).id), name: String((subject as Record<string, unknown>).name) })),
+    sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     reason: String(row.reason),

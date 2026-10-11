@@ -7,9 +7,11 @@ import { readFileSync } from 'node:fs'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
+  DOC_FORMS,
   DOC_STATUSES,
   type DocAudiences,
   type DocKind,
+  type DocForm,
   type DocStatus,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
@@ -17,6 +19,7 @@ import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { searchDocs } from './doc-search.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 import {
   collectDocReferenceProjects,
   consumeDoc,
@@ -44,7 +47,7 @@ const DOC_KEYWORD_LIST_LIMIT = 50
 const compareStoreText = (left: string, right: string) =>
   Buffer.compare(Buffer.from(left), Buffer.from(right))
 
-type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined }
+type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined; values?(name: string): string[] }
 type DocPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -246,6 +249,10 @@ function handledReadDocCommand(
 ): boolean {
   const { has } = flags
   if (sub === 'list') {
+    const articleSubject = flags.flag('article-subject')
+    if (articleSubject && (!address.subject || address.scope !== 'project')) {
+      throw new Error('--article-subject requires --scope project and the project --subject')
+    }
     const filters = {
       scope: address.scope,
       ...(has('subject') || has('user') ? { subject: address.subject } : {}),
@@ -253,6 +260,7 @@ function handledReadDocCommand(
       audience: flags.flag('audience'),
       status: flags.flag('status'),
       kind: flags.flag('kind'),
+      articleSubject: articleSubject ? resolveSubject(address.subject!, articleSubject).id : undefined,
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
@@ -280,7 +288,7 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `kind: ${doc.kind}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
@@ -293,6 +301,10 @@ function setTreeOptions(flags: DocFlags): {
   status: DocStatus | undefined
   kind: DocKind | undefined
   replacementSlug: string | null | undefined
+  form: DocForm | null | undefined
+  articleSubject: string | null | undefined
+  relatedSubjects: string[] | undefined
+  sourceFiles: string[] | undefined
 } {
   const { has, flag } = flags
   const audiences = docAudiences(flag('audience'))
@@ -305,6 +317,12 @@ function setTreeOptions(flags: DocFlags): {
   const replacementSlug = has('replacement') ? flag('replacement') : undefined
   if (has('replacement') && !replacementSlug?.trim())
     throw new Error('--replacement requires a slug')
+  if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
+  const rawForm = flag('form')
+  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm)) throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
+  if (has('article-subject') && has('no-article-subject')) throw new Error('use --article-subject or --no-article-subject, not both')
+  if (has('related-subject') && has('no-related-subjects')) throw new Error('use --related-subject or --no-related-subjects, not both')
+  if (has('source-file') && has('no-source-files')) throw new Error('use --source-file or --no-source-files, not both')
   return {
     audiences,
     parentSlug,
@@ -313,6 +331,10 @@ function setTreeOptions(flags: DocFlags): {
     status: docStatus(flag('status')),
     kind: docKind(flag('kind')),
     replacementSlug,
+    form: has('no-form') ? null : rawForm as DocForm | undefined,
+    articleSubject: has('no-article-subject') ? null : flag('article-subject'),
+    relatedSubjects: has('no-related-subjects') ? [] : has('related-subject') ? flags.values?.('related-subject') ?? [] : undefined,
+    sourceFiles: has('no-source-files') ? [] : has('source-file') ? flags.values?.('source-file') ?? [] : undefined,
   }
 }
 

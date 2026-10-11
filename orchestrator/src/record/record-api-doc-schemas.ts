@@ -4,10 +4,12 @@ import { z } from 'zod'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
+  DOC_FORMS,
   DOC_STATUSES,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
+import { normalizeDocSourceFiles } from '../../../shared/docs.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
 const deliverySchema = z.enum(['inject', 'demand'])
@@ -36,6 +38,10 @@ const recordDocTreeFieldShape = {
   featured: z.boolean().optional(),
   status: z.enum(DOC_STATUSES).optional(),
   kind: z.enum(DOC_KINDS).optional(),
+  form: z.enum(DOC_FORMS).nullable().optional(),
+  articleSubjectId: z.string().uuid().nullable().optional(),
+  relatedSubjectIds: z.array(z.string().uuid()).optional(),
+  sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
   replacementSlug: z.string().min(1).nullable().optional(),
 }
 
@@ -76,6 +82,10 @@ export const recordDocImportSchema = z.object({
     featured: z.boolean().optional().default(false),
     status: z.enum(DOC_STATUSES).optional().default('current'),
     kind: z.enum(DOC_KINDS).optional().default('working'),
+    form: z.enum(DOC_FORMS).nullable().optional().default(null),
+    articleSubjectId: z.string().uuid().nullable().optional().default(null),
+    relatedSubjectIds: z.array(z.string().uuid()).optional().default([]),
+    sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional().default([]),
     replacementSlug: z.string().min(1).nullable().optional().default(null),
     projectName: z.string().nullable().optional(),
     createdAt: isoSchema,
@@ -98,6 +108,10 @@ export const recordDocImportSchema = z.object({
       featured: z.boolean().optional().default(false),
       status: z.enum(DOC_STATUSES).optional().default('current'),
       kind: z.enum(DOC_KINDS).optional().default('working'),
+      form: z.enum(DOC_FORMS).nullable().optional().default(null),
+      articleSubjectId: z.string().uuid().nullable().optional().default(null),
+      relatedSubjectIds: z.array(z.string().uuid()).optional().default([]),
+      sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional().default([]),
       replacementSlug: z.string().min(1).nullable().optional().default(null),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),

@@ -8,10 +8,12 @@ import {
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
+import { normalizeDocSourceFiles } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
   type CanonLintInputCollector,
@@ -23,6 +25,7 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
@@ -156,6 +159,11 @@ function assertInjectSize(input: {
         featured: false,
         status: 'current',
         kind: 'working',
+        form: null,
+        article_subject_id: null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
         replacement_slug: null,
         parent_id: null,
         parent_slug: null,
@@ -259,6 +267,10 @@ type DocWriteInput = {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: string | null
+  relatedSubjects?: string[]
+  sourceFiles?: string[]
   replacementSlug?: string | null
 } & DocWriteContext
 
@@ -380,6 +392,37 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
+  const projectName = docWriteProjectName(input.scope, input.subject)
+  const resolveAttachment = (reference: string, existing: Set<string>, restoring = false) => {
+    if (!projectName) throw new Error('article fields may be set only on project documents')
+    const row = resolveSubject(projectName, reference)
+    if (row.retiredAt && !existing.has(row.id) && !restoring) {
+      throw new Error(`subject "${reference}" is retired; cleared by: orch subject list ${projectName}`)
+    }
+    return { id: row.id, name: row.name }
+  }
+  const existingIds = new Set([
+    ...(prior?.articleSubject ? [prior.articleSubject.id] : []),
+    ...(prior?.relatedSubjects.map(({ id }) => id) ?? []),
+  ])
+  const articleSubject = input.articleSubject === undefined
+    ? prior?.articleSubject ?? null
+    : input.articleSubject === null ? null : resolveAttachment(input.articleSubject, existingIds)
+  const relatedSubjects = input.relatedSubjects === undefined
+    ? prior?.relatedSubjects ?? []
+    : input.relatedSubjects.map((reference) => resolveAttachment(reference, existingIds))
+  if (new Set(relatedSubjects.map(({ id }) => id)).size !== relatedSubjects.length) {
+    throw new Error('related subjects must not contain duplicates')
+  }
+  if (articleSubject && relatedSubjects.some(({ id }) => id === articleSubject.id)) {
+    throw new Error('the article subject must not also be a related subject')
+  }
+  const form = input.form === undefined ? prior?.form ?? null : input.form
+  const sourceFiles = input.sourceFiles === undefined ? prior?.sourceFiles ?? [] : normalizeDocSourceFiles(input.sourceFiles)
+  const setArticleFields = [form ? 'form' : null, articleSubject ? 'articleSubject' : null, relatedSubjects.length ? 'relatedSubjects' : null, sourceFiles.length ? 'sourceFiles' : null].filter(Boolean)
+  if (setArticleFields.length && (input.scope !== 'project' || kind !== 'article')) {
+    throw new Error(`article fields may be set only when kind is article and scope is project; clear first: ${setArticleFields.join(', ')}`)
+  }
   if (!prior && kind === 'article' && input.audiences === undefined) {
     throw new Error(
       'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
@@ -387,7 +430,6 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   }
   const tree = localDocTreeFields(input, prior)
   const lifecycle = localDocumentLifecycle(input, prior)
-  const projectName = docWriteProjectName(input.scope, input.subject)
   const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
   if (articleDelivery) throw new Error(articleDelivery)
   assertDocWriteAllowed({ ...input, delivery })
@@ -402,6 +444,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
+        form,
+        articleSubject,
+        relatedSubjects,
+        sourceFiles,
         requestedOp,
         identity,
       }),
@@ -426,6 +472,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
+        form,
+        articleSubjectId: articleSubject?.id ?? null,
+        relatedSubjectIds: relatedSubjects.map(({ id }) => id),
+        sourceFiles,
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -436,6 +486,9 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
       })
+      if ([input.form, input.articleSubject, input.relatedSubjects, input.sourceFiles].some((value) => value !== undefined) && !['form','articleSubject','relatedSubjects','sourceFiles'].every((key) => key in hosted)) {
+        throw new Error('the document\'s other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API')
+      }
       return commitDocSet({
         ...input,
         owner,
@@ -443,6 +496,10 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
+        form,
+        articleSubject,
+        relatedSubjects,
+        sourceFiles,
         requestedOp,
         identity,
         recordId: hosted.id,
@@ -929,6 +986,10 @@ export async function restoreDoc(
       body: revision.body,
       delivery: revision.delivery,
       kind: revision.kind,
+      form: revision.form,
+      articleSubject: revision.articleSubject?.id ?? null,
+      relatedSubjects: revision.relatedSubjects.map(({ id }) => id),
+      sourceFiles: revision.sourceFiles,
       ...context,
     },
     getDoc(scope, subject, slug, owner),
@@ -976,6 +1037,10 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
+        form: revision.form,
+        articleSubject: revision.articleSubject,
+        relatedSubjects: revision.relatedSubjects,
+        sourceFiles: revision.sourceFiles,
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,
@@ -1020,6 +1085,10 @@ export async function restoreDoc(
           featured: revision.featured,
           status: revision.status,
           kind: revision.kind,
+          form: revision.form,
+          articleSubjectId: revision.articleSubject?.id ?? null,
+          relatedSubjectIds: revision.relatedSubjects.map(({ id }) => id),
+          sourceFiles: revision.sourceFiles,
           replacementSlug: revision.replacement_slug,
           projectName,
           reason: identity.reason,
@@ -1047,6 +1116,10 @@ export async function restoreDoc(
         ...tree,
         status: revision.status,
         kind: revision.kind,
+        form: revision.form,
+        articleSubject: revision.articleSubject,
+        relatedSubjects: revision.relatedSubjects,
+        sourceFiles: revision.sourceFiles,
         replacementSlug: revision.replacement_slug,
         identity,
         ...context,

@@ -1,6 +1,7 @@
 /** Writes one normalized hosted document import. Must not know validation or transaction ownership. */
 import type { SQL } from 'bun'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import type { NormalizedRecordDocImport } from './record-doc-mapping.ts'
 
 export async function writeImportedRecordDoc(
@@ -18,23 +19,23 @@ export async function writeImportedRecordDoc(
     await tx`
       UPDATE doc
       SET title=${doc.title}, body=${doc.body}, delivery=${doc.delivery},
-          audiences=${bindRecordDocAudiences(tx, doc.audiences)}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
+          audiences=${bindRecordDocAudiences(tx, doc.audiences)}, featured=${doc.featured}, status=${doc.status}, kind=${doc.kind}, form=${doc.form}, article_subject_id=${doc.articleSubjectId}::uuid, source_files=${JSON.stringify(doc.sourceFiles)}::jsonb, replacement_slug=${doc.replacementSlug}, parent_id=${doc.parentId}::uuid, position=${doc.position},
           owner_user_id=${doc.owner ?? null}::uuid, project_id=${projectId}::uuid,
           created_at=${doc.createdAt}::timestamptz,
           updated_at=${doc.updatedAt}::timestamptz,
           deleted_at=${doc.deletedAt}::timestamptz
       WHERE id=${id}::uuid AND space_id=${spaceId}::uuid
     `
-    return
-  }
-  await tx`
+  } else await tx`
     INSERT INTO doc (
-      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id,
+      id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id,
       created_at, updated_at, deleted_at
     ) VALUES (
       ${id}::uuid, ${spaceId}::uuid, ${doc.scope}, ${doc.subject}, ${doc.owner ?? null}::uuid, ${doc.slug},
-      ${doc.title}, ${doc.body}, ${doc.delivery}, ${bindRecordDocAudiences(tx, doc.audiences)}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
+      ${doc.title}, ${doc.body}, ${doc.delivery}, ${bindRecordDocAudiences(tx, doc.audiences)}, ${doc.featured}, ${doc.status}, ${doc.kind}, ${doc.form}, ${doc.articleSubjectId}::uuid, ${JSON.stringify(doc.sourceFiles)}::jsonb, ${doc.replacementSlug}, ${doc.parentId}::uuid, ${doc.position}, ${projectId}::uuid,
       ${doc.createdAt}::timestamptz, ${doc.updatedAt}::timestamptz, ${doc.deletedAt}::timestamptz
     )
   `
+  await tx`DELETE FROM doc_related_subject WHERE space_id=${spaceId}::uuid AND doc_id=${id}::uuid`
+  for (const subjectId of doc.relatedSubjectIds ?? []) await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${id}::uuid,${subjectId}::uuid)`
 }

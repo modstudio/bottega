@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
+  DOC_FORMS,
   DOC_STATUSES,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
@@ -21,6 +22,8 @@ import {
   signedInDocOwner,
 } from '../doc/docs.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
+import { normalizeDocSourceFiles } from '../../../shared/docs.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 
 const text = (value: unknown) => ({
   content: [
@@ -97,6 +100,7 @@ export function registerDocTools(
         audience: z.enum(DOC_AUDIENCES).optional(),
         status: z.enum(DOC_STATUSES).optional(),
         kind: z.enum(DOC_KINDS).optional(),
+        article_subject: z.string().min(1).optional(),
       }),
     },
     async ({
@@ -110,8 +114,10 @@ export function registerDocTools(
       audience,
       status,
       kind,
+      article_subject,
     }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      if (article_subject && (!subject || scope !== 'project')) throw new Error('article_subject requires project scope and subject')
       const owner = user ? await signedInDocOwner() : null
       return text(
         listDocMetadata({
@@ -125,6 +131,7 @@ export function registerDocTools(
           audience,
           status,
           kind,
+          articleSubject: article_subject ? resolveSubject(subject!, article_subject).id : undefined,
         }),
       )
     },
@@ -173,6 +180,10 @@ export function registerDocTools(
         featured: z.boolean().optional(),
         status: z.enum(DOC_STATUSES).optional(),
         kind: z.enum(DOC_KINDS).optional(),
+        form: z.enum(DOC_FORMS).nullable().optional(),
+        article_subject: z.string().min(1).nullable().optional(),
+        related_subjects: z.array(z.string().min(1)).optional(),
+        source_files: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
         replacement: z.string().trim().min(1).nullable().optional(),
         force_inject: z
           .string()
@@ -204,6 +215,10 @@ export function registerDocTools(
       featured,
       status,
       kind,
+      form,
+      article_subject,
+      related_subjects,
+      source_files,
       replacement,
       force_inject,
       reason,
@@ -228,6 +243,10 @@ export function registerDocTools(
           featured,
           status,
           kind,
+          form,
+          articleSubject: article_subject,
+          relatedSubjects: related_subjects,
+          sourceFiles: source_files,
           replacementSlug: replacement,
           forceInject: force_inject,
           reason,
