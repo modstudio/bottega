@@ -75,8 +75,8 @@ import {
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import {
-  type CanonWriteTree,
   articleFieldRefusal,
+  type CanonWriteTree,
   canonFindingsRefusal,
   consumeDocBody,
   docWriteProjectName,

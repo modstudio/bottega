@@ -24,8 +24,7 @@ const ARTICLE_WRITE_FIELDS: readonly ArticleWriteField[] = [
   'sourceFiles',
 ]
 
-const owns = (value: object, key: PropertyKey): boolean =>
-  Object.prototype.hasOwnProperty.call(value, key)
+const owns = (value: object, key: PropertyKey): boolean => Object.hasOwn(value, key)
 
 export function recordDocArticleCompatibilityRefusal(
   rows: readonly object[],
