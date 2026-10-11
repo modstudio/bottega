@@ -124,6 +124,6 @@ test('selects an on-demand rung by name without changing default selection', () 
     { name: 'hosted', deploy: 'deploy hosted', onDemand: true },
   ]
 
-  expect(selectReleaseRung(rungs, 'hosted')).toEqual(rungs[1])
+  expect(selectReleaseRung(rungs, 'hosted')).toEqual(rungs[1]!)
   expect(selectReleaseRung(rungs)).toMatchObject({ refusal: expect.stringContaining('--rung') })
 })
