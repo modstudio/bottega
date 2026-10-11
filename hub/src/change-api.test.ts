@@ -129,7 +129,6 @@ test('push route rejects an invalid item in place and passes only validated rows
     row: {
       id: '01990000-0000-7000-8000-000000000010',
       task_key: 'DEV-10',
-      task_id: null,
       project_name: 'workshop',
       at,
       from_status: 'open',

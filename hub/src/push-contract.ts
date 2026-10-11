@@ -5,7 +5,7 @@ export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 export type PushedStatusEvent = {
   id: string
   task_key: string
-  task_id: string | null
+  task_id?: string | null
   project_name: string
   at: string
   from_status: string | null
@@ -69,7 +69,9 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   for (const field of stringFields)
     if (typeof row[field] !== 'string')
       return rejected(id, `${table} row.${field} must be a string`)
-  for (const field of ['task_id', 'from_status', 'deleted_at'] as const)
+  if (row.task_id !== undefined && !nullableString(row.task_id))
+    return rejected(id, `${table} row.task_id must be a string, null, or absent`)
+  for (const field of ['from_status', 'deleted_at'] as const)
     if (!nullableString(row[field]))
       return rejected(id, `${table} row.${field} must be a string or null`)
   return {
