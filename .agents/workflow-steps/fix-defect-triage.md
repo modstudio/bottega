@@ -5,7 +5,6 @@ floor:
   - ruling
 job: null
 autonomy: ask
-needs:
-  []
+needs: []
 ---
 The architect triages every recorded finding before the issue can land.

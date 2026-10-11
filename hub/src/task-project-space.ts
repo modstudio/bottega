@@ -4,7 +4,10 @@ import {
 } from '../../shared/record-space-membership.ts'
 import { declaredProjectSpace } from './hosted-write-mode.ts'
 
-export type RegisteredTaskSpace = { name: string; settings: { space?: string } }
+export type RegisteredTaskSpace = {
+  name: string
+  settings: { space?: string; keyPrefixes?: string[] }
+}
 export type TaskDestinationIdentity = {
   activeSpaceId: string
   memberships: readonly RecordSpaceMembership[]

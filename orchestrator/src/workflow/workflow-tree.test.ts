@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
-import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { normalizeWorkflowYaml, parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 
 const store: WorkflowTreeStore = {
@@ -44,6 +44,16 @@ const store: WorkflowTreeStore = {
     },
   ],
 }
+
+describe('normalizeWorkflowYaml', () => {
+  test.each([
+    ['two-line empty array', 'needs: \n  []', 'needs: []'],
+    ['one-line empty array', 'needs: []', 'needs: []'],
+    ['two-line empty array under another key', 'arguments: \n  []', 'arguments: []'],
+  ])('%s has one stable spelling', (_label, yaml, expected) => {
+    expect(normalizeWorkflowYaml(yaml)).toBe(expected)
+  })
+})
 
 describe('planWorkflowHydration', () => {
   test('writes every production row into an empty tree and the resulting tree is stable', () => {

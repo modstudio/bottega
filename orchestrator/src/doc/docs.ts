@@ -3,6 +3,8 @@
  * injected; project and global facts are demand-only, while software instructions are canon.
  * Subject-bearing facts name one subject; resume briefs use the project and epic slug.
  */
+
+import { assertDocSections } from '../../../shared/doc-sections.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
@@ -36,6 +38,7 @@ import {
   type Doc,
   type DocRevision,
   type DocRevisionMetadata,
+  getDocForAudienceStore,
   getDocStore,
   listDocMetadataStore,
   listDocsStore,
@@ -260,6 +263,7 @@ export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] => 
 }
 
 export const getDoc = getDocStore
+export const getDocForAudience = getDocForAudienceStore
 
 export { signedInDocOwner } from './doc-owner.ts'
 
@@ -447,6 +451,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     )
   }
   const tree = localDocTreeFields(input, prior)
+  assertDocSections(input.body, tree.audiences)
   const lifecycle = localDocumentLifecycle(input, prior)
   const articleDelivery = refuseArticleDelivery({ ...input, delivery, kind })
   if (articleDelivery) throw new Error(articleDelivery)
@@ -694,6 +699,7 @@ export async function consumeDoc(
     throw new Error(`${scope} doc "${slug}" ${message.replace(/^document /, '')}`)
   }
   if (patched.alreadyConsumed) return { ...doc, already_consumed: true }
+  assertDocSections(patched.body, doc.audiences)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     doc.revision,
@@ -1042,6 +1048,7 @@ export async function restoreDoc(
     },
     getDoc(scope, subject, slug, owner),
   )
+  assertDocSections(revision.body, tree.audiences)
   return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.

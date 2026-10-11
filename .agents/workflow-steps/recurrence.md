@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 Find every prior task, pull request, fix document, and commit that addressed this mechanism, and read what each fix did. Determine whether the present report is a new symptom or evidence that the original fix was wrong. A second patch aimed at one mechanism is the signal to step back and make this determination before designing another fix.
 

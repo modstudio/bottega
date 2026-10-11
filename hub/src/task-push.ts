@@ -12,7 +12,7 @@ import {
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
-import { resolveTask } from './task-identity.ts'
+import { resolveTask, taskKeyPrefix } from './task-identity.ts'
 import {
   issueForDestination,
   type PushCollections,
@@ -63,12 +63,11 @@ function localCounts(rows: PushCollections) {
 function sequenceRaises(tasks: PushCollections['tasks']) {
   const maxima = new Map<string, { project: string; prefix: string; next: number }>()
   for (const task of tasks) {
-    const match = /^([A-Z][A-Z0-9]*)-(\d+)$/.exec(task.key)
-    if (!match) continue
-    const old = maxima.get(match[1]!)
-    const next = Number(match[2]) + 1
-    if (!old || next > old.next)
-      maxima.set(match[1]!, { project: task.project, prefix: match[1]!, next })
+    const prefix = taskKeyPrefix(task.key)
+    if (!prefix) continue
+    const old = maxima.get(prefix)
+    const next = Number(task.key.slice(prefix.length + 1)) + 1
+    if (!old || next > old.next) maxima.set(prefix, { project: task.project, prefix, next })
   }
   return [...maxima.values()]
 }

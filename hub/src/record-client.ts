@@ -565,7 +565,8 @@ export function createRecordClient(options: RecordClientOptions) {
         }),
         docsSchema,
       ),
-    doc: (id: string) => request(options, `/v1/docs/${encodeURIComponent(id)}`, docSchema),
+    doc: (id: string, audience?: DocAudience) =>
+      request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema),
     docSearch: (input: {
       query: string
       scope?: string

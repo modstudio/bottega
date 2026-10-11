@@ -985,7 +985,14 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         '--json',
       ]
     case 'get':
-      return ['doc', 'show', input.slug!, ...docAddressFlags(input), '--json']
+      return [
+        'doc',
+        'show',
+        input.slug!,
+        ...docAddressFlags(input),
+        ...(input.audience ? ['--audience', input.audience] : []),
+        '--json',
+      ]
     case 'set':
       return [
         'doc',
@@ -1024,8 +1031,12 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
 export const docList = (filters: DocListFilters = {}) =>
   jsonDocument<DocRow[]>(docArgv('list', filters))
 
-export const docGet = (scope: string, subject: string | null, slug: string) =>
-  jsonDocument<DocRow>(docArgv('get', { scope, subject, slug }))
+export const docGet = (
+  scope: string,
+  subject: string | null,
+  slug: string,
+  audience?: DocAudience,
+) => jsonDocument<DocRow>(docArgv('get', { scope, subject, slug, audience }))
 
 export const docSet = (input: DocSetInput) =>
   jsonDocument<DocRow>(docArgv('set', input), { stdin: input.body })

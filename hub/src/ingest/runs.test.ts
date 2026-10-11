@@ -99,6 +99,24 @@ describe('run ingest', () => {
     ).toEqual([first])
   })
 
+  test('re-ingesting a run keeps the project corrected from its task prefix', async () => {
+    const run = runFixture({
+      id: 9199,
+      repo: 'temporary',
+      cwd: '/fixtures/repos/temporary',
+      launch_key: 'ALP-118',
+    })
+    await ingestRunFixtures(run)
+    await ingestRunFixtures(run)
+    expect(
+      db()
+        .query<{ project: string; task_key: string }, []>(
+          `SELECT project,task_key FROM interval WHERE source='orch' AND ref='orch:9199'`,
+        )
+        .all(),
+    ).toEqual([{ project: 'alpha', task_key: 'ALP-118' }])
+  })
+
   test('routing replaces a pending reservation with the real interval', async () => {
     await ingestRunFixtures(runFixture({ id: 9101, agent: '(pending)' }))
     await ingestRunFixtures(

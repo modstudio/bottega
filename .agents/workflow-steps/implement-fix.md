@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: implement
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 Write the fix specification to a file: the recorded diagnosis, the before-fix reproduction, the fix to make, and what must remain true. Dispatch `orch do implement --key {{key}} --file <specification file>`. Fix the diagnosed root cause across the whole affected cohort without broadening the task beyond that cause.
 

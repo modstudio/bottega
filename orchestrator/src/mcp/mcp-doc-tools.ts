@@ -14,6 +14,7 @@ import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
   consumeDoc,
   getDoc,
+  getDocForAudience,
   getDocRevision,
   listDocMetadata,
   listDocRevisions,
@@ -144,18 +145,17 @@ export function registerDocTools(
         subject: z.string().nullable().optional(),
         slug: z.string(),
         user: z.boolean().optional(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
       }),
     },
-    async ({ scope, subject, slug, user }) => {
+    async ({ scope, subject, slug, user, audience }) => {
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
-      const doc = getDoc(
-        resolvedScope,
-        user ? null : (subject ?? null),
-        slug,
-        user ? await signedInDocOwner() : null,
-      )
+      const owner = user ? await signedInDocOwner() : null
+      const doc = audience
+        ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
+        : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
       return text(doc)
     },

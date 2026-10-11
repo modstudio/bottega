@@ -5,8 +5,7 @@ floor:
   - ruling
 job: null
 autonomy: ask
-needs:
-  []
+needs: []
 ---
 Begin only after the requirements are locked and the existing system has been researched. Develop at least two genuinely different approaches wherever the solution space allows it. For each, explain how it fits the existing system, its complexity, coupling, migration and compatibility risks, what it forecloses, and how it can be rolled back. Do not present cosmetic variations as separate choices.
 

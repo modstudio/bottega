@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 State the failing case as input, expected result, and actual result, then run it in the failing condition. Preserve the command, request, test, or observation and its result so a later worker can repeat the same measurement. A description of what should fail is a hypothesis, not a reproduction, and does not complete this step.
 

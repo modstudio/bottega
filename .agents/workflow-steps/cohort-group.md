@@ -5,8 +5,7 @@ floor:
   - recorded-artifact
 job: null
 autonomy: auto
-needs:
-  []
+needs: []
 ---
 Read the required `signal` argument from the composition and query that exact production signal. If cohort mode was composed without a non-empty signal, stop and report the missing required mode argument.
 
