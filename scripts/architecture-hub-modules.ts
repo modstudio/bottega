@@ -62,6 +62,7 @@ export const hubModuleSpecs = [
       './hosted-route-identity.ts',
       './hosted-task-prune.ts',
       './hosted-tasks.ts',
+      './push-contract.ts',
     ],
   },
   {

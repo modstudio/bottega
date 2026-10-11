@@ -1,14 +1,18 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
+import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
+import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
   type PushedDay,
   type PushedInterval,
   parseHostedPushItem,
 } from './push-contract.ts'
+import { rollUpDays } from './query.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000008301'
 const userId = '01990000-0000-7000-8000-000000008302'
@@ -66,6 +70,8 @@ beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
 })
 
+beforeEach(resetFixtureStore)
+
 afterAll(async () => {
   if (database) await database.close()
 })
@@ -105,4 +111,40 @@ test('an absent interval delete is duplicate and a present interval delete appli
   expect(await apply([{ table: 'hub_interval', id: intervalId, op: 'delete' }])).toEqual([
     { id: intervalId, status: 'applied' },
   ])
+})
+
+test('real and legacy machine day timestamps serialize through the strict edge', async () => {
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO interval(record_id,source,start_at,end_at,claude_tokens,ref)
+        VALUES ('01990000-0000-7000-8000-000000008310','claude',
+          '2026-10-09T10:00:00.000Z','2026-10-09T10:01:00.000Z',10,'claude:day-wire')`)
+      .run()
+  })
+  expect(rollUpDays()).toBe(1)
+  const current = db()
+    .query<{ record_id: string; collected_at: string }, []>(
+      `SELECT record_id,collected_at FROM day WHERE day='2026-10-09'`,
+    )
+    .get()!
+  expect(current.collected_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+  const legacyId = '01990000-0000-7000-8000-000000008311'
+  writeTransaction((conn) =>
+    conn
+      .query(`INSERT INTO day(record_id,day,collected_at)
+        VALUES (?,'2026-10-10','2026-10-10 23:00:00')`)
+      .run(legacyId),
+  )
+  const inputs = [current.record_id, legacyId].map((row_id) =>
+    loadOutboxChange(db(), { table_name: 'hub_day', row_id, operation: 'upsert' }),
+  )
+  expect(inputs.every(Boolean)).toBeTrue()
+  const changes = inputs.map((loaded) => loaded!.change)
+  expect(changes.map(parseHostedPushItem)).toEqual(changes.map((input) => ({ input })))
+  expect(await apply(changes)).toEqual(
+    changes.map(({ id }) => ({ id, status: 'applied' as const })),
+  )
+  expect(await apply(changes)).toEqual(
+    changes.map(({ id }) => ({ id, status: 'duplicate' as const })),
+  )
 })

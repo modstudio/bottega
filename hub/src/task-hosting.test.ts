@@ -515,6 +515,7 @@ describe('hosted-only task safety', () => {
         targetSpaceNotes: true,
         spaceChanges: true,
         spacePush: true,
+        spacePushTables: ['hub_task', 'hub_task_status_event', 'hub_interval', 'hub_day'],
       },
     })
   })

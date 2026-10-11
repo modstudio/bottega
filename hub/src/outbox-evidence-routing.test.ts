@@ -14,7 +14,15 @@ const identity = {
     { spaceId: 'space-old', slug: 'old', permission: 'write' as const },
     { spaceId: 'space-new', slug: 'new', permission: 'write' as const },
   ],
-  capabilities: { spacePush: true },
+  capabilities: {
+    spacePush: true,
+    spacePushTables: [
+      'hub_task' as const,
+      'hub_task_status_event' as const,
+      'hub_interval' as const,
+      'hub_day' as const,
+    ],
+  },
 }
 const registered = () => [
   { name: 'old-project', path: '/old', repository: true, settings: { space: 'old' } },
@@ -107,17 +115,66 @@ test('delete precedes a recreated interval with the same natural tuple', async (
     conn.query(`DELETE FROM interval WHERE record_id=?`).run(oldId)
     conn
       .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
-      VALUES (?,'old-project','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
+      VALUES (?,'new-project','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
       .run(newId)
   })
   const order: string[] = []
   await drainHostedOutbox({
     identity: async () => identity,
     registered,
-    push: async (changes) => {
-      order.push(...changes.map((change) => `${change.op}:${change.id}`))
+    push: async (changes, { recordSpace }) => {
+      order.push(...changes.map((change) => `${recordSpace}:${change.op}:${change.id}`))
       return changes.map(({ id }) => ({ id, status: 'applied' as const }))
     },
   })
-  expect(order).toEqual([`delete:${oldId}`, `upsert:${newId}`])
+  expect(order).toEqual([`space-old:delete:${oldId}`, `space-new:upsert:${newId}`])
+})
+
+test('recreating an acknowledged interval id carries its old space into the move', async () => {
+  insert(oldId)
+  writeTransaction((conn) => {
+    conn.query(`UPDATE interval SET hosted_space_id='space-old' WHERE record_id=?`).run(oldId)
+    conn.query(`DELETE FROM hosted_outbox`).run()
+    conn.query(`DELETE FROM interval WHERE record_id=?`).run(oldId)
+    conn
+      .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
+      VALUES (?,'new-project','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
+      .run(oldId)
+  })
+  expect(db().query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(oldId)).toEqual({
+    hosted_space_id: 'space-old',
+  })
+  const order: string[] = []
+  await drainHostedOutbox({
+    identity: async () => identity,
+    registered,
+    push: async (changes, { recordSpace }) => {
+      order.push(...changes.map((change) => `${recordSpace}:${change.op}`))
+      return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+    },
+  })
+  expect(order).toEqual(['space-old:delete', 'space-new:upsert'])
+  expect(db().query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(oldId)).toEqual({
+    hosted_space_id: 'space-new',
+  })
+})
+
+test('an acknowledged stale generation still records the delivered interval space', async () => {
+  insert(oldId)
+  await drainHostedOutbox({
+    identity: async () => identity,
+    registered,
+    push: async (changes) => {
+      writeTransaction((conn) =>
+        conn.query(`UPDATE interval SET claude_tokens=1 WHERE record_id=?`).run(oldId),
+      )
+      return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+    },
+  })
+  expect(db().query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(oldId)).toEqual({
+    hosted_space_id: 'space-old',
+  })
+  expect(db().query(`SELECT attempts FROM hosted_outbox WHERE row_id=?`).get(oldId)).toEqual({
+    attempts: 0,
+  })
 })

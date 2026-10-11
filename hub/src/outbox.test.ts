@@ -230,6 +230,47 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox()[0]?.attempts).toBe(0)
   })
 
+  test('an older hosted hub sends supported task rows and waits on evidence tables', async () => {
+    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const intervalId = '01990000-0000-7000-8000-000000009001'
+    const dayId = '01990000-0000-7000-8000-000000009002'
+    writeTransaction((conn) => {
+      conn
+        .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
+          VALUES (?,'fixture','orch','2026-10-11T10:00:00.000Z',
+            '2026-10-11T10:01:00.000Z','orch:9001')`)
+        .run(intervalId)
+      conn
+        .query(`INSERT INTO day(record_id,day,collected_at)
+          VALUES (?,'2026-10-11','2026-10-11T23:00:00.000Z')`)
+        .run(dayId)
+    })
+    const sent: HostedPushChange[] = []
+    const report = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async (changes) => {
+        sent.push(...changes)
+        return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+      },
+    })
+    expect(sent.map((change) => change.id)).toEqual([eventId])
+    expect(report.waitingOnHostedHub).toEqual({ hub_day: 1, hub_interval: 1 })
+    expect(listHostedOutbox().map((entry) => [entry.table_name, entry.attempts])).toEqual([
+      ['hub_interval', 0],
+      ['hub_day', 0],
+    ])
+    expect(
+      await hostedOutboxDoctorLines({
+        identity: async () => identity,
+        registered: () => [project],
+      }),
+    ).toEqual([
+      'hosted outbox 1 waiting on hosted hub: hub_day',
+      'hosted outbox 1 waiting on hosted hub: hub_interval',
+    ])
+  })
+
   test('an unroutable entry waits without attempts and delivers when routing resolves', async () => {
     const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     let registered: (typeof project)[] = []

@@ -17,6 +17,7 @@ import {
   patchHostedTask,
   softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
+import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
 const TEST_REFUSAL =
   'hub task API refuses real identity and database clients unless stubs are injected in tests'
@@ -263,6 +264,7 @@ export async function taskApi(
         targetSpaceNotes: true,
         spaceChanges: true,
         spacePush: true,
+        spacePushTables: PUSHABLE_HUB_CHANGE_TABLES,
       },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)

@@ -7,12 +7,12 @@ import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { hubChangeReadability } from './hosted-changes.ts'
 import {
+  applyDayChangeInTransaction,
   applyIntervalChangeInTransaction,
   type DayEvidence,
   hostedDayWrite,
   hostedIntervalWrite,
   type IntervalEvidence,
-  upsertDaysInTransaction,
 } from './hosted-evidence.ts'
 
 const interval = {
@@ -147,26 +147,24 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
       user_id: null,
     },
   })
-  await upsertDaysInTransaction(sql, identity, [
-    {
-      id: dayId,
-      day: '2026-10-05',
-      claude_tokens: DAY_TOKENS,
-      cache_read: DAY_TOKENS,
-      messages: 1,
-      tasks: 1,
-      canon_tokens: DAY_TOKENS,
-      other_tokens: DAY_TOKENS,
-      commits: 0,
-      files: 0,
-      lines_product: 0,
-      lines_test: 0,
-      lines_docs: 0,
-      lines_config: 0,
-      lines_generated: 0,
-      collected_at: collectedAt,
-    },
-  ])
+  await applyDayChangeInTransaction(sql, identity, {
+    id: dayId,
+    day: '2026-10-05',
+    claude_tokens: DAY_TOKENS,
+    cache_read: DAY_TOKENS,
+    messages: 1,
+    tasks: 1,
+    canon_tokens: DAY_TOKENS,
+    other_tokens: DAY_TOKENS,
+    commits: 0,
+    files: 0,
+    lines_product: 0,
+    lines_test: 0,
+    lines_docs: 0,
+    lines_config: 0,
+    lines_generated: 0,
+    collected_at: collectedAt,
+  })
 
   const storedDay = (
     await database.query<{

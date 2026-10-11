@@ -10,7 +10,11 @@ import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
 } from './operator-waiting-email-contract.ts'
-import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
+import type {
+  HostedPushChange,
+  HostedPushOutcome,
+  PushableHubChangeTable,
+} from './push-contract.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -28,6 +32,7 @@ export type HostedTaskIdentity = {
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
     spacePush?: boolean
+    spacePushTables?: PushableHubChangeTable[]
   }
 }
 
@@ -561,6 +566,13 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).spacePush === true,
+      spacePushTables:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        Array.isArray((value.capabilities as Record<string, unknown>).spacePushTables)
+          ? ((value.capabilities as Record<string, unknown>)
+              .spacePushTables as PushableHubChangeTable[])
+          : undefined,
     },
   }
 }

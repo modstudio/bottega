@@ -140,61 +140,29 @@ export async function applyIntervalChangeInTransaction(
   return deleted.length ? 'applied' : 'duplicate'
 }
 
-export async function upsertDaysInTransaction(
-  tx: SQL,
-  identity: EvidenceIdentity,
-  rows: DayEvidence[],
-) {
-  for (const row of rows) {
-    const byId = await tx<{ id: string }[]>`
-        SELECT id::text AS id FROM hub_day
-        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-    const byDay = await tx<{ id: string }[]>`
-        SELECT id::text AS id FROM hub_day
-        WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
-    const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
-    if (write === 'update') {
-      await tx`
-          UPDATE hub_day SET
-            day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
-            messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
-            other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
-            lines_product=${row.lines_product}, lines_test=${row.lines_test},
-            lines_docs=${row.lines_docs}, lines_config=${row.lines_config},
-            lines_generated=${row.lines_generated}, collected_at=${row.collected_at}::timestamptz,
-            updated_at=now()
-          WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
-        `
-      continue
-    }
-    await tx`
-        INSERT INTO hub_day
-          (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
-           other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
-           lines_generated, collected_at, updated_at)
-        VALUES
-          (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
-           ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
-           ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
-           ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
-           ${row.collected_at}::timestamptz, now())
-      `
-  }
-  return { upserted: rows.length }
-}
-
 export async function applyDayChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,
   row: DayEvidence,
 ): Promise<'applied' | 'duplicate'> {
-  const byId = await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_day
-    WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
-  const byDay = await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_day
-    WHERE space_id=${identity.spaceId}::uuid AND day=${row.day}`
-  const write = hostedDayWrite(row, byId[0]?.id ?? null, byDay[0]?.id ?? null)
+  const existing = await tx<{ id: string; by_id: boolean }[]>`
+    SELECT id::text AS id,id=${row.id}::uuid AS by_id FROM hub_day
+    WHERE space_id=${identity.spaceId}::uuid AND (id=${row.id}::uuid OR day=${row.day})`
+  const byId = existing.find((candidate) => candidate.by_id)?.id ?? null
+  const byDay = existing.find((candidate) => !candidate.by_id)?.id ?? byId
+  const write = hostedDayWrite(row, byId, byDay)
   if (write === 'insert') {
-    await upsertDaysInTransaction(tx, identity, [row])
+    await tx`
+      INSERT INTO hub_day
+        (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
+         other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
+         lines_generated, collected_at, updated_at)
+      VALUES
+        (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
+         ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
+         ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
+         ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
+         ${row.collected_at}::timestamptz, now())`
     return 'applied'
   }
   const matches = await tx`SELECT 1 FROM hub_day
@@ -208,6 +176,15 @@ export async function applyDayChangeInTransaction(
       AND (day < (SELECT max(day) FROM hub_day WHERE space_id=${identity.spaceId}::uuid)
         OR collected_at=${row.collected_at}::timestamptz)`
   if (matches.length) return 'duplicate'
-  await upsertDaysInTransaction(tx, identity, [row])
+  await tx`
+    UPDATE hub_day SET
+      day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
+      messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
+      other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
+      lines_product=${row.lines_product}, lines_test=${row.lines_test},
+      lines_docs=${row.lines_docs}, lines_config=${row.lines_config},
+      lines_generated=${row.lines_generated}, collected_at=${row.collected_at}::timestamptz,
+      updated_at=now()
+    WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return 'applied'
 }

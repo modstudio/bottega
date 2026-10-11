@@ -50,6 +50,8 @@ function currentDay(conn: Database, id: string): LoadedOutboxChange | null {
      FROM day WHERE record_id=?`,
     )
     .get(id)
+  if (row && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.collected_at))
+    row.collected_at = new Date(`${row.collected_at.replace(' ', 'T')}Z`).toISOString()
   return row
     ? { projectName: null, change: { table: HOSTED_DAY_TABLE, id, op: 'upsert', row } }
     : null

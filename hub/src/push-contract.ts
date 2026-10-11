@@ -2,7 +2,7 @@ export const HOSTED_TASK_TABLE = 'hub_task'
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
 export const HOSTED_INTERVAL_TABLE = 'hub_interval'
 export const HOSTED_DAY_TABLE = 'hub_day'
-const PUSHABLE_HUB_CHANGE_TABLES = [
+export const PUSHABLE_HUB_CHANGE_TABLES = [
   HOSTED_TASK_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_INTERVAL_TABLE,

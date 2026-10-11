@@ -191,7 +191,7 @@ export function rollUpDays(): number {
   writeTransaction((conn) => {
     const stmt = conn.query(
       `INSERT INTO day (record_id, day, claude_tokens, messages, collected_at)
-     VALUES (?,?,?,?,datetime('now'))
+     VALUES (?,?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
        -- Only a pass that FOUND tokens may overwrite them. Transcripts are
        -- pruned and work done on another machine never had any here, so a later
@@ -204,7 +204,8 @@ export function rollUpDays(): number {
                             THEN excluded.messages ELSE day.messages END,
        collected_at  = excluded.collected_at`,
     )
-    for (const r of rows) stmt.run(newRecordId(), r.day, r.claude, r.msgs)
+    const collectedAt = new Date().toISOString()
+    for (const r of rows) stmt.run(newRecordId(), r.day, r.claude, r.msgs, collectedAt)
   })
   return rows.length
 }

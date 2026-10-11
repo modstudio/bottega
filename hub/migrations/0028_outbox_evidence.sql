@@ -33,6 +33,15 @@ ON CONFLICT(table_name,row_id) DO UPDATE SET
 DROP TABLE record_ledger;
 --> statement-breakpoint
 CREATE TRIGGER interval_hosted_insert AFTER INSERT ON interval BEGIN
+  UPDATE interval SET hosted_space_id = (
+    SELECT routing_space_id FROM hosted_outbox
+    WHERE table_name='hub_interval' AND row_id=NEW.record_id AND operation='delete'
+  )
+  WHERE record_id=NEW.record_id AND EXISTS (
+    SELECT 1 FROM hosted_outbox
+    WHERE table_name='hub_interval' AND row_id=NEW.record_id AND operation='delete'
+      AND routing_space_id IS NOT NULL
+  );
   INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at)
   VALUES (NEW.record_id,'hub_interval',NEW.record_id,'upsert',strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   ON CONFLICT(table_name,row_id) DO UPDATE SET

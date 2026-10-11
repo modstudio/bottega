@@ -449,7 +449,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../../shared/built-commit.ts',
       './app-static.ts',
       './change-api.ts',
-      './evidence-api.ts',
       './hosted-health.ts',
       './hosted-version.ts',
       './note-api.ts',

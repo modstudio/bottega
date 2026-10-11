@@ -3,12 +3,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import {
-  deleteIntervals,
-  type IntervalEvidence,
-  upsertDays,
-  upsertIntervals,
-} from '../src/hosted-evidence.ts'
+import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import {
   createHostedNote,
@@ -18,6 +13,7 @@ import {
   promoteHostedNote,
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
+import { applyHostedPushChanges } from '../src/hosted-push-changes.ts'
 import { hostedGatherReport } from '../src/hosted-report-gather.ts'
 import {
   appendHostedSend,
@@ -54,6 +50,7 @@ import {
   OperatorEmailBudgetExceededError,
   sendOperatorWaitingEmail,
 } from '../src/operator-waiting-email-hosted.ts'
+import type { HostedPushChange, PushedDay } from '../src/push-contract.ts'
 import {
   hostedDeliveryRepository,
   sendHostedReportSubscriptionTest,
@@ -111,6 +108,45 @@ const day = {
 // The proof seeds a second day on September 18; keep both days behind the reporting clock.
 const FIXED_CLOCK = Date.parse('2026-09-19T20:00:00.000Z')
 
+async function pushEvidence(
+  url: string,
+  identity: { userId: string; spaceId: string },
+  changes: HostedPushChange[],
+) {
+  const outcomes = await applyHostedPushChanges(url, identity, changes)
+  const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
+  if (rejected?.status === 'rejected') throw new Error(rejected.reason)
+}
+
+const pushIntervals = (
+  url: string,
+  identity: { userId: string; spaceId: string },
+  rows: IntervalEvidence[],
+) =>
+  pushEvidence(
+    url,
+    identity,
+    rows.map((row) => ({ table: 'hub_interval', id: row.id, op: 'upsert', row })),
+  )
+
+const pushDays = (url: string, identity: { userId: string; spaceId: string }, rows: PushedDay[]) =>
+  pushEvidence(
+    url,
+    identity,
+    rows.map((row) => ({ table: 'hub_day', id: row.id, op: 'upsert', row })),
+  )
+
+const pushIntervalDeletes = (
+  url: string,
+  identity: { userId: string; spaceId: string },
+  ids: string[],
+) =>
+  pushEvidence(
+    url,
+    identity,
+    ids.map((id) => ({ table: 'hub_interval', id, op: 'delete' })),
+  )
+
 const admin = new SQL(adminUrl)
 try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
@@ -132,9 +168,9 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
 
-  await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-  await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-  await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
+  await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
+  await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
+  await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
 
   const client = new SQL(actorUrl)
   try {
@@ -153,11 +189,9 @@ try {
     if ((await count(SPACE_A, 'hub_day')) !== 1) throw new Error('day upsert did not land')
     if ((await count(SPACE_B, 'hub_interval')) !== 0 || (await count(SPACE_B, 'hub_day')) !== 0)
       throw new Error('another space observed hosted hub evidence')
-    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [{ ...day, messages: 3 }])
+    await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [{ ...day, messages: 3 }])
     const otherDayId = newRecordId()
-    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-      { ...day, id: otherDayId },
-    ]).then(
+    await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [{ ...day, id: otherDayId }]).then(
       () => {
         throw new Error('unknown id replaced the UUID already owning its day')
       },
@@ -166,7 +200,7 @@ try {
         if (!message.includes(day.id) || !message.includes(otherDayId)) throw error
       },
     )
-    await upsertDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...day, id: newRecordId(), day: '2026-09-18' },
     ])
     const crossSpaceProjects = await client.begin(async (tx) => {
@@ -181,17 +215,17 @@ try {
       const rows = await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_interval`
       return rows[0]!.id
     })
-    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [hostedId])
+    await pushIntervalDeletes(actorUrl, { userId: USER, spaceId: SPACE_A }, [hostedId])
     if ((await count(SPACE_A, 'hub_interval')) !== 0)
       throw new Error('vanished interval was not deleted')
 
     const clientIntervalId = interval.id
     const otherIntervalId = newRecordId()
-    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
+    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...interval, id: clientIntervalId, vendor_tokens: 250 },
     ])
-    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...interval, id: otherIntervalId },
     ]).then(
       () => {
@@ -214,10 +248,10 @@ try {
       Number(tokens[0]!.vendor_tokens) !== 250
     )
       throw new Error('known id did not update in place')
-    await upsertIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...interval, id: otherIntervalId, ref: 'orch:other', start_at: '2026-09-17T13:00:00.000Z' },
     ])
-    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [otherIntervalId])
+    await pushIntervalDeletes(actorUrl, { userId: USER, spaceId: SPACE_A }, [otherIntervalId])
     const remaining = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
@@ -225,7 +259,7 @@ try {
     })
     if (remaining.length !== 1 || remaining[0]!.id !== clientIntervalId)
       throw new Error('delete by id removed a row outside the requested id')
-    await deleteIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [clientIntervalId])
+    await pushIntervalDeletes(actorUrl, { userId: USER, spaceId: SPACE_A }, [clientIntervalId])
 
     const identity = { userId: USER, spaceId: SPACE_A }
     const stamp = '2026-09-17T12:10:00.000Z'
@@ -392,7 +426,7 @@ try {
         if (!message.includes(document.id) || !message.includes(collidingDocumentId)) throw error
       },
     )
-    await upsertIntervals(actorUrl, identity, [
+    await pushIntervals(actorUrl, identity, [
       { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture', user_id: USER },
     ])
     const hostedDone = await hostedFlightDone(
@@ -1160,7 +1194,7 @@ try {
         user_id: null,
       },
     ]
-    await upsertIntervals(actorUrl, identity, measureIntervals)
+    await pushIntervals(actorUrl, identity, measureIntervals)
     await mirrorHostedTasks(actorUrl, identity, {
       tasks: [
         {
@@ -1333,8 +1367,8 @@ try {
       vendor_tokens: aboveInt32,
       ref: 'orch:wide-token-proof',
     }
-    await upsertDays(actorUrl, identity, [wideDay])
-    await upsertIntervals(actorUrl, identity, [wideInterval])
+    await pushDays(actorUrl, identity, [wideDay])
+    await pushIntervals(actorUrl, identity, [wideInterval])
     const wideRows = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`

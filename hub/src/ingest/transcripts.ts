@@ -8,7 +8,7 @@ import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
-import { hostedSignedInUserId as signedInRecordUserId } from '../task-client.ts'
+import { hostedSignedInUserId } from '../task-client.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
@@ -246,7 +246,7 @@ export async function ingestTranscripts(
     throw new Error(unreadableTranscriptRootMessage(root.path))
   }
 
-  const userId = attributedUserId === undefined ? await signedInRecordUserId() : attributedUserId
+  const userId = attributedUserId === undefined ? await hostedSignedInUserId() : attributedUserId
   const sinceMs = new Date(since).getTime()
   const sinceDay = since.slice(0, 10)
   // Replace this file's window by (source, ref, start_at): a surviving start
