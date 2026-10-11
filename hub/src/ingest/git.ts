@@ -1,9 +1,9 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
-import { db, nowIso, type Project, writeTransaction } from '../db.ts'
+import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
-import { type CollectorMirrorPass, createCollectorMirrorPass } from './collector-mirror.ts'
+import { upsertGitTasks } from './git-task-cache.ts'
 
 /**
  * Generated files, which are not work.
@@ -46,8 +46,6 @@ type GitTask = {
   last: string
   commits: number
 }
-
-type StoredGitTask = Parameters<CollectorMirrorPass['mirrorTasks']>[0][number]
 
 function blank(): DayActivity {
   return {
@@ -146,7 +144,6 @@ function scanGit(since: string) {
  * vanish from the view entirely.
  */
 export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
-  const mirror = await createCollectorMirrorPass('git')
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
   writeTransaction((conn) => {
@@ -163,24 +160,6 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
        lines_product=excluded.lines_product, lines_test=excluded.lines_test,
        lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
-    )
-
-    // Never downgrade a tracker's row to a git-derived one. A task the MCP server
-    // told us about knows its own title and status; git knows neither, and
-    // letting the git leg overwrite it would blank the view every collect.
-    const taskStmt = conn.query(
-      `INSERT INTO task (record_id,key, project, source, opened_at, updated_at, first_seen, last_seen)
-     VALUES (?,?,?,'git',?,?,?,?)
-     ON CONFLICT(project,key) DO UPDATE SET
-       record_id = COALESCE(task.record_id, excluded.record_id),
-       last_seen  = excluded.last_seen,
-       updated_at = MAX(COALESCE(task.updated_at,''), excluded.updated_at),
-       opened_at  = CASE
-         WHEN task.source != 'git' THEN task.opened_at
-         WHEN task.opened_at IS NULL THEN excluded.opened_at
-         WHEN excluded.opened_at < task.opened_at THEN excluded.opened_at
-         ELSE task.opened_at
-       END`,
     )
 
     const commitStmt = conn.query(
@@ -204,53 +183,13 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
         at,
       )
     }
-    for (const t of tasks.values())
-      taskStmt.run(newRecordId(), t.key, t.project, t.first, t.last, at, at)
+    // Never downgrade a tracker's row to a git-derived one. The cache adapter
+    // also queues only inserts and meaningful changes in this transaction.
+    upsertGitTasks(conn, tasks.values(), at)
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(JSON.stringify(at))
   })
-  try {
-    const mirrored = [...tasks.values()].flatMap((task) => {
-      const stored = db()
-        .query<StoredGitTask, [string, string]>(`SELECT * FROM task WHERE project=? AND key=?`)
-        .get(task.project, task.key)
-      if (!stored)
-        throw new Error(`task missing after upsert: project=${task.project} key=${task.key}`)
-      if (stored.source === 'git') return [stored]
-      return [
-        {
-          record_id: stored.record_id,
-          next_document_number: stored.next_document_number,
-          key: task.key,
-          project: task.project,
-          title: null,
-          status: null,
-          status_category: null,
-          parent_key: null,
-          body: null,
-          assignee: null,
-          opened_at: task.first,
-          closed_at: null,
-          source: 'git' as const,
-          first_seen: at,
-          last_seen: at,
-          updated_at: task.last,
-        },
-      ]
-    })
-    for (let index = 0; index < mirrored.length; index += 500) {
-      try {
-        await mirror.mirrorTasks(mirrored.slice(index, index + 500))
-      } catch (error) {
-        console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
-      }
-    }
-  } catch (error) {
-    console.error(`hub: git task mirror skipped: ${(error as Error).message}`)
-  } finally {
-    mirror.reportSkipped()
-  }
   return { days: days.size, tasks: tasks.size }
 }

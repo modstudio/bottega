@@ -10,12 +10,11 @@ import {
   retryHostedOutboxEntry,
 } from './outbox.ts'
 import {
+  HOSTED_STATUS_EVENT_TABLE,
+  HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
-  PUSHABLE_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
-
-const HOSTED_STATUS_EVENT_TABLE = PUSHABLE_HUB_CHANGE_TABLES[0]
 
 const project = {
   name: 'fixture',
@@ -42,12 +41,29 @@ const trackerTask = (key: string, category: 'open' | 'active') => ({
 
 function queueTransition(key: string, at: string) {
   observeTrackerTask(trackerTask(key, 'open'), at)
-  return observeTrackerTask(trackerTask(key, 'active'), at).event!.recordId
+  const event = observeTrackerTask(trackerTask(key, 'active'), at).event!.recordId
+  writeTransaction((conn) =>
+    conn.query(`DELETE FROM hosted_outbox WHERE table_name='hub_task'`).run(),
+  )
+  return event
 }
 
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('a tracker task queues only when its machine row changes', () => {
+    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z')
+    expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
+    writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
+    observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:01:00.000Z')
+    expect(listHostedOutbox()).toHaveLength(0)
+    observeTrackerTask(
+      { ...trackerTask('FIX-0', 'open'), title: 'changed' },
+      '2026-10-11T11:02:00.000Z',
+    )
+    expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
+  })
+
   test('the status event and pointer commit and roll back together', () => {
     const committed = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     expect(listHostedOutbox().map((entry) => entry.row_id)).toEqual([committed])
@@ -254,7 +270,11 @@ describe('hosted outbox', () => {
     const seen: Array<string | null> = []
     let first = true
     const push = async (changes: HostedPushChange[]) => {
-      seen.push(changes[0]?.op === 'upsert' ? changes[0].row.from_status : null)
+      seen.push(
+        changes[0]?.table === HOSTED_STATUS_EVENT_TABLE && changes[0].op === 'upsert'
+          ? changes[0].row.from_status
+          : null,
+      )
       if (first) {
         first = false
         writeTransaction((conn) => {
@@ -326,5 +346,56 @@ describe('hosted outbox', () => {
       },
     })
     expect(destinations).toEqual(['space-two'])
+  })
+
+  test('orders a parent task before its child and status event', async () => {
+    observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z')
+    observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z')
+    const parentId = db()
+      .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-10'`)
+      .get()!.record_id
+    writeTransaction((conn) =>
+      conn
+        .query(`UPDATE task SET parent_key='FIX-10',parent_record_id=? WHERE key='FIX-11'`)
+        .run(parentId),
+    )
+    observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z')
+    let sent: HostedPushChange[] = []
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async (changes) => {
+        sent = changes
+        return changes.map(({ id }) => ({ id, status: 'applied' as const }))
+      },
+    })
+    expect(sent.map((change) => change.table)).toEqual([
+      HOSTED_TASK_TABLE,
+      HOSTED_TASK_TABLE,
+      HOSTED_STATUS_EVENT_TABLE,
+    ])
+    expect(
+      sent
+        .slice(0, 2)
+        .map((change) =>
+          change.table === HOSTED_TASK_TABLE && change.op === 'upsert' ? change.row.key : null,
+        ),
+    ).toEqual(['FIX-10', 'FIX-11'])
+  })
+
+  test('adopts the hosted task id in the transaction that completes its entry', async () => {
+    observeTrackerTask(trackerTask('FIX-20', 'open'), '2026-10-11T12:00:00.000Z')
+    const oldId = listHostedOutbox()[0]!.row_id
+    const adoptedId = '01990000-0000-7000-8000-000000000020'
+    const report = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async () => [{ id: oldId, status: 'applied', adoptedId }],
+    })
+    expect(report.sent).toBe(1)
+    expect(
+      db().query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-20'`).get(),
+    ).toEqual({ record_id: adoptedId })
+    expect(listHostedOutbox()).toHaveLength(0)
   })
 })

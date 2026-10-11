@@ -1,16 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import { db, writeTransaction } from './db.ts'
+import { db } from './db.ts'
 import type { MirrorAdoption } from './hosted-tasks.ts'
 
 const COLLISION_COUNT_KEY = 'task.adoption_collisions'
-
-export function persistTaskAdoptions(
-  adoptions: readonly Extract<MirrorAdoption, { table: 'task' }>[],
-  conn: Database = db(),
-): number {
-  if (!adoptions.length) return 0
-  return writeTransaction((transaction) => persistTaskAdoptionsOn(transaction, adoptions), conn)
-}
 
 export function persistTaskAdoptionsOn(
   transaction: Database,

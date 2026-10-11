@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeOutbox() {
@@ -32,7 +33,7 @@ test('outbox migration moves pending tracker status events and retires the setti
     ]),
   )
 
-  expect(applyMigrations(database)).toEqual(['0026_outbox'])
+  expect(applyMigrations(database)).toEqual(['0026_outbox', '0027_outbox_status_event_tasks'])
   expect(
     database
       .query(
@@ -69,5 +70,51 @@ test('outbox migration moves pending tracker status events and retires the setti
   expect(
     database.query(`SELECT 1 FROM setting WHERE key='tracker.status-events.pending-mirror'`).get(),
   ).toBeNull()
+  database.close()
+})
+
+test('the additive outbox migration brings each queued status event task once', () => {
+  const database = storeBeforeOutbox()
+  const taskId = '0199b001-0000-7000-8000-000000000010'
+  const firstEvent = '0199b001-0000-7000-8000-000000000011'
+  const secondEvent = '0199b001-0000-7000-8000-000000000012'
+  database
+    .query(
+      `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+       VALUES (?,'DEV-10',?,'mcp','2026-10-10T00:00:00.000Z','2026-10-11T00:00:00.000Z')`,
+    )
+    .run(taskId, PLATFORM_SLUG)
+  const insertEvent = database.query(
+    `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
+     VALUES (?,'DEV-10',?,?,'open','active')`,
+  )
+  insertEvent.run(firstEvent, taskId, '2026-10-11T12:00:00.000Z')
+  insertEvent.run(secondEvent, taskId, '2026-10-11T12:01:00.000Z')
+  database.query(`INSERT INTO setting(key,value) VALUES (?,?)`).run(
+    'tracker.status-events.pending-mirror',
+    JSON.stringify([
+      { eventRecordId: firstEvent, at: '2026-10-11T12:00:00.000Z' },
+      { eventRecordId: secondEvent, at: '2026-10-11T12:01:00.000Z' },
+    ]),
+  )
+
+  expect(applyMigrations(database)).toEqual(['0026_outbox', '0027_outbox_status_event_tasks'])
+  expect(
+    database
+      .query(`SELECT table_name,row_id,queued_at FROM hosted_outbox ORDER BY table_name,row_id`)
+      .all(),
+  ).toEqual([
+    { table_name: 'hub_task', row_id: taskId, queued_at: '2026-10-11T12:00:00.000Z' },
+    {
+      table_name: 'hub_task_status_event',
+      row_id: firstEvent,
+      queued_at: '2026-10-11T12:00:00.000Z',
+    },
+    {
+      table_name: 'hub_task_status_event',
+      row_id: secondEvent,
+      queued_at: '2026-10-11T12:01:00.000Z',
+    },
+  ])
   database.close()
 })

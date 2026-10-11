@@ -7,32 +7,11 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
+import type { PushedStatusEvent, PushedTask } from './push-contract.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
-export type HostedTask = {
-  id: string
-  newly_assigned?: boolean
-  key: string
-  project: string
-  project_name: string
-  title: string | null
-  status: string | null
-  status_category: string | null
-  parent_key: string | null
-  parent_id?: string | null
-  body: string | null
-  assignee: string | null
-  opened_at: string | null
-  closed_at: string | null
-  source: 'mcp' | 'git' | 'local'
-  first_seen: string
-  last_seen: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-  next_document_number: number
-}
+export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = {
   id: string
   task_key: string
@@ -57,18 +36,7 @@ export type HostedDocument = {
   updated_at: string
   deleted_at: string | null
 }
-export type HostedStatusEvent = {
-  id: string
-  task_key: string
-  task_id?: string | null
-  project_name: string
-  at: string
-  from_status: string | null
-  to_status: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
+export type HostedStatusEvent = PushedStatusEvent
 
 export const hostedTaskPullSerializers = {
   hub_task: (row: HostedTask) => row,
@@ -485,6 +453,16 @@ function taskMirrorAdoption(row: HostedTask, id: string): MirrorAdoption {
   return { table: 'task', project: row.project, key: row.key, id }
 }
 
+function assertTaskSourcePrecedence(
+  existing: { key: string; source: HostedTask['source'] } | undefined,
+  incoming: HostedTask,
+): void {
+  if (!existing || incoming.source !== 'git' || existing.source === 'git') return
+  throw new Error(
+    `refusing to mirror task ${incoming.key} from git over hosted ${existing.source} task ${existing.key}`,
+  )
+}
+
 function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
   row: T | undefined,
   naturalKey: (row: T) => string,
@@ -524,14 +502,17 @@ async function statusEventNaturalKeyHolder(
   )[0]
 }
 
-async function mirrorTaskRow(
+export async function mirrorTaskRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedTask,
 ): Promise<MirrorAdoption | null> {
-  const existing = rows<{ id: string; space_id: string; key: string }>(
-    await tx`SELECT id,space_id,key FROM hub_task WHERE id=${row.id}::uuid`,
-  )[0]
+  const existing = rows<{
+    id: string
+    space_id: string
+    key: string
+    source: HostedTask['source']
+  }>(await tx`SELECT id,space_id,key,source FROM hub_task WHERE id=${row.id}::uuid`)[0]
   const keyHolder = rows<{ id: string; space_id: string; key: string }>(
     await tx`SELECT id,space_id,key FROM hub_task
       WHERE space_id=${identity.spaceId}::uuid AND key=${row.key}`,
@@ -549,6 +530,7 @@ async function mirrorTaskRow(
     },
   )
   applyMirrorDecision(decision)
+  assertTaskSourcePrecedence(existing, row)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
   if (decision.action === 'adopt' || decision.action === 'update-same-row') {
     const targetId = decision.action === 'adopt' ? decision.id : row.id

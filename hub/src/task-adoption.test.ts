@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations } from './migrations.ts'
-import { persistTaskAdoptions, taskAdoptionCollisionCount } from './task-adoption.ts'
+import { persistTaskAdoptionsOn, taskAdoptionCollisionCount } from './task-adoption.ts'
 
 test('task adoption re-keys a local task and cascades to its children', () => {
   const conn = new Database(':memory:')
@@ -16,10 +16,9 @@ test('task adoption re-keys a local task and cascades to its children', () => {
   `)
 
   expect(
-    persistTaskAdoptions(
-      [{ table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' }],
-      conn,
-    ),
+    persistTaskAdoptionsOn(conn, [
+      { table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' },
+    ]),
   ).toBe(0)
   expect(conn.query<{ record_id: string }, []>(`SELECT record_id FROM task`).get()?.record_id).toBe(
     'hosted-id',
@@ -42,10 +41,9 @@ test('task adoption records and skips a local id collision', () => {
   const log = spyOn(console, 'error').mockImplementation(() => {})
   try {
     expect(
-      persistTaskAdoptions(
-        [{ table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' }],
-        conn,
-      ),
+      persistTaskAdoptionsOn(conn, [
+        { table: 'task', project: PLATFORM_SLUG, key: 'DEV-895', id: 'hosted-id' },
+      ]),
     ).toBe(1)
     expect(taskAdoptionCollisionCount(conn)).toBe(1)
     expect(log).toHaveBeenCalledTimes(1)
