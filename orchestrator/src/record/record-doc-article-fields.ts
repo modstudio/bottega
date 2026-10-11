@@ -4,7 +4,6 @@ import type { DocForm, DocKind } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
-import type { RecordDocRevision } from './record-doc-mapping.ts'
 
 type Row = Record<string, unknown>
 type Fields = {
@@ -12,6 +11,13 @@ type Fields = {
   articleSubjectId: string | null
   relatedSubjectIds: string[]
   sourceFiles: string[]
+}
+
+export type HostedArticleResponse = {
+  form?: DocForm | null
+  articleSubject?: { id: string; name: string } | null
+  relatedSubjects?: Array<{ id: string; name: string }>
+  sourceFiles?: string[]
 }
 
 export async function hostedArticleProjectId(
@@ -128,7 +134,7 @@ export async function importedArticleSubjectNames(
   input: { spaceId: string; subject: string | null },
   projectId: string | null,
   doc: Fields & { scope: string; kind: DocKind },
-  revisions: RecordDocRevision[],
+  revisions: Array<{ articleSubjectId: string | null; relatedSubjectIds: string[] }>,
 ): Promise<Map<string, string>> {
   assertWrite(
     articleFieldRefusal({

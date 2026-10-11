@@ -18,7 +18,6 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/schema.ts',
     '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
-    './record-doc-mapping.ts',
   ]),
   module('orchestrator/src/record/record-doc-transport-contract.ts', []),
   module('orchestrator/src/record/record-cursor.ts', ['zod']),

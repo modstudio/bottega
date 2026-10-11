@@ -452,7 +452,7 @@ function applyDoc(
         recordId,
         byAddress.id,
       )
-    syncRelated()
+    syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
   }
   local

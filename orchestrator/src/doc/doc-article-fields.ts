@@ -51,7 +51,7 @@ export type DocWriteInput = {
 } & DocWriteContext
 
 type ArticleFieldInput = {
-  scope: string
+  scope?: string
   audiences?: unknown
   form?: DocForm | null
   articleSubject?: string | null
@@ -60,7 +60,7 @@ type ArticleFieldInput = {
 }
 
 export function resolveLocalDocArticleFields(
-  input: ArticleFieldInput,
+  input: ArticleFieldInput & { scope: string },
   prior: Doc | null,
   kind: DocKind,
   projectName: string | null,
@@ -111,7 +111,7 @@ export function resolveLocalDocArticleFields(
   return { form, articleSubject, relatedSubjects, sourceFiles }
 }
 
-export function listLocalDocsByArticleSubject(filters: DocListFilters) {
+export function listLocalDocsByArticleSubject(filters: DocListFilters = {}) {
   if (filters.articleSubject === undefined) return listDocMetadataStore(filters)
   if (filters.scope !== 'project' || !filters.subject) {
     throw new Error('article subject filter requires project scope and subject')

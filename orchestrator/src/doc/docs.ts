@@ -45,8 +45,6 @@ import {
   getDocForAudienceStore,
   getDocStore,
   listDocsStore,
-  type DocListFilters as StoreDocListFilters,
-  type DocMetadata as StoreDocMetadata,
 } from './doc-read-store.ts'
 import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
@@ -69,8 +67,6 @@ import {
 } from './local-doc-write.ts'
 
 export type { Doc, DocRevision, DocRevisionMetadata }
-export type DocListFilters = StoreDocListFilters
-export type DocMetadata = StoreDocMetadata
 
 import {
   assertLocalRevisionWrite,
@@ -238,10 +234,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
 export { docSubjects }
 
 export const listDocs = listDocsStore
-/** A browsable projection: body contents are fetched only through getDoc. */
-export const listDocMetadata = (filters: DocListFilters = {}): DocMetadata[] => {
-  return listLocalDocsByArticleSubject(filters)
-}
+export const listDocMetadata = listLocalDocsByArticleSubject
 
 export const getDoc = getDocStore
 export const getDocForAudience = getDocForAudienceStore

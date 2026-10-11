@@ -23,6 +23,7 @@ import {
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
 import {
+  type HostedArticleResponse,
   hostedArticleProjectId,
   hostedArticleResponse,
   importedArticleSubjectNames,
@@ -162,14 +163,7 @@ export async function upsertRecordDoc(
     revisionId?: string
     expectedRevision?: string
   },
-): Promise<{
-  id: string
-  revisionId: string
-  form?: DocForm | null
-  articleSubject?: { id: string; name: string } | null
-  relatedSubjects?: Array<{ id: string; name: string }>
-  sourceFiles?: string[]
-}> {
+): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
@@ -490,7 +484,7 @@ export async function importRecordCanon(
         : {
             subject: input.address.subject,
             owner: null,
-            projectId: await projectId(tx, input.spaceId, input.address.subject),
+            projectId: await hostedArticleProjectId(tx, input.spaceId, input.address.subject),
           }
     if (input.address.kind === 'user') {
       await tx`SELECT id FROM "user" WHERE id=${input.userId}::uuid FOR UPDATE`
@@ -888,14 +882,9 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
   })
 }
 
-export async function importRecordDoc(input: Tenant & RecordDocImportInput): Promise<{
-  id: string
-  revisionIds: string[]
-  form?: DocForm | null
-  articleSubject?: { id: string; name: string } | null
-  relatedSubjects?: Array<{ id: string; name: string }>
-  sourceFiles?: string[]
-}> {
+export async function importRecordDoc(
+  input: Tenant & RecordDocImportInput,
+): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
   const { doc: importedDoc, revisions } = normalizeRecordDocImport(input, newRecordId())
   const ownedAddress =
     refuseOwnedDocAddress(importedDoc.scope, importedDoc.subject, importedDoc.owner) ??
@@ -958,7 +947,7 @@ export async function importRecordDoc(input: Tenant & RecordDocImportInput): Pro
     )
     const importedSubjectNames = await importedArticleSubjectNames(
       tx,
-      input,
+      { spaceId: input.spaceId, subject: doc.subject },
       resolvedProject,
       doc,
       revisions,
