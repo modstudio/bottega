@@ -1,4 +1,5 @@
 import {
+  HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -29,9 +30,10 @@ export function orderHostedPushChanges(changes: readonly HostedPushChange[]): Ho
     .map((change, index) => ({ change, index }))
     .sort((left, right) => {
       const rank = (change: HostedPushChange) => {
+        if (change.table === HOSTED_INTERVAL_TABLE) return change.op === 'delete' ? -1 : 0
         if (change.table === HOSTED_STATUS_EVENT_TABLE) return Number.MAX_SAFE_INTEGER
         if (change.op === 'delete') return 0
-        return taskDepth(change, tasks)
+        return change.table === HOSTED_TASK_TABLE ? taskDepth(change, tasks) : 0
       }
       return rank(left.change) - rank(right.change) || left.index - right.index
     })

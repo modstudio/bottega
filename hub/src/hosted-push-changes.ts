@@ -1,7 +1,10 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { mirrorStatusEventRow, mirrorTaskRow, type TaskIdentity } from './hosted-tasks.ts'
 import {
+  HOSTED_DAY_TABLE,
+  HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -79,6 +82,23 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (!(await statusEventEquals(tx, identity, row)))
         throw new Error(`hub_task_status_event ${input.id} differs from the pushed row`)
       return { id: input.id, status: 'duplicate' }
+    },
+  },
+  [HOSTED_INTERVAL_TABLE]: {
+    async apply(tx, identity, input) {
+      if (input.table !== HOSTED_INTERVAL_TABLE)
+        throw new Error(`${input.table} was routed to the interval handler`)
+      const status = await applyIntervalChangeInTransaction(tx, identity, input)
+      return { id: input.id, status }
+    },
+  },
+  [HOSTED_DAY_TABLE]: {
+    async apply(tx, identity, input) {
+      if (input.table !== HOSTED_DAY_TABLE)
+        throw new Error(`${input.table} was routed to the day handler`)
+      if (input.op === 'delete') throw new Error('hub_day does not accept delete')
+      const status = await applyDayChangeInTransaction(tx, identity, input.row)
+      return { id: input.id, status }
     },
   },
 }

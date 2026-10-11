@@ -511,9 +511,6 @@ describe('hosted-only task safety', () => {
       ],
       capabilities: {
         targetSpaceTaskMirror: true,
-        targetSpaceIntervalEvidence: true,
-        intervalRecordId: true,
-        dayRecordId: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,

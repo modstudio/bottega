@@ -41,14 +41,6 @@ export const hubModuleSpecs = [
     file: 'hub/src/board-contract.ts',
     allowed: ['zod', '../../shared/record-id.ts'],
   },
-  {
-    file: 'hub/src/evidence-api.ts',
-    allowed: [
-      '../../shared/record-space-membership.ts',
-      '../../shared/record-space-request.ts',
-      './hosted-evidence.ts',
-    ],
-  },
   { file: 'hub/deploy/site/src/decision.ts', allowed: [] },
   {
     file: 'hub/deploy/site/src/worker.ts',

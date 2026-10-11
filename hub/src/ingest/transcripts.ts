@@ -8,7 +8,7 @@ import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, writeTransaction } from '../db.ts'
-import { signedInRecordUserId } from '../sync.ts'
+import { hostedSignedInUserId as signedInRecordUserId } from '../task-client.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }

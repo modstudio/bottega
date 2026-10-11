@@ -1,6 +1,13 @@
 export const HOSTED_TASK_TABLE = 'hub_task'
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
-const PUSHABLE_HUB_CHANGE_TABLES = [HOSTED_TASK_TABLE, HOSTED_STATUS_EVENT_TABLE] as const
+export const HOSTED_INTERVAL_TABLE = 'hub_interval'
+export const HOSTED_DAY_TABLE = 'hub_day'
+const PUSHABLE_HUB_CHANGE_TABLES = [
+  HOSTED_TASK_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
+  HOSTED_INTERVAL_TABLE,
+  HOSTED_DAY_TABLE,
+] as const
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
@@ -15,6 +22,44 @@ export type PushedStatusEvent = {
   created_at: string
   updated_at: string
   deleted_at: string | null
+}
+
+export type PushedInterval = {
+  id: string
+  task_key: string | null
+  project_name: string | null
+  source: string
+  agent: string | null
+  job: string | null
+  start_at: string
+  end_at: string
+  claude_tokens: number
+  vendor_tokens: number
+  vendor_cost_usd: number | null
+  ref: string
+  via: string | null
+  open: number
+  session_id: string | null
+  user_id: string | null
+}
+
+export type PushedDay = {
+  id: string
+  day: string
+  claude_tokens: number
+  cache_read: number
+  messages: number
+  tasks: number
+  canon_tokens: number
+  other_tokens: number
+  commits: number
+  files: number
+  lines_product: number
+  lines_test: number
+  lines_docs: number
+  lines_config: number
+  lines_generated: number
+  collected_at: string
 }
 
 const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
@@ -71,6 +116,9 @@ export type HostedPushChange =
       op: 'upsert'
       row: PushedStatusEvent
     }
+  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
+  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
+  | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
 
 export type HostedPushOutcome =
   | { id: string; status: 'applied' | 'duplicate'; adoptedId?: string }
@@ -137,6 +185,82 @@ function parseTaskRow(value: unknown, id: string): PushedTask | string {
   return row as PushedTask
 }
 
+function evidenceFieldError(
+  row: Record<string, unknown>,
+  table: typeof HOSTED_INTERVAL_TABLE | typeof HOSTED_DAY_TABLE,
+  strings: readonly string[],
+  nullable: readonly string[],
+  numbers: readonly string[],
+): string | null {
+  for (const field of strings)
+    if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
+  for (const field of nullable)
+    if (!nullableString(row[field])) return `${table} row.${field} must be a string or null`
+  for (const field of numbers)
+    if (typeof row[field] !== 'number' || !Number.isFinite(row[field]))
+      return `${table} row.${field} must be a finite number`
+  return null
+}
+
+function parseIntervalRow(value: unknown, id: string): PushedInterval | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_INTERVAL_TABLE} upsert requires a row`
+  if (row.id !== id)
+    return `${HOSTED_INTERVAL_TABLE} upsert requires a row whose id matches the pointer`
+  const error = evidenceFieldError(
+    row,
+    HOSTED_INTERVAL_TABLE,
+    ['source', 'start_at', 'end_at', 'ref'],
+    ['task_key', 'project_name', 'agent', 'job', 'via', 'session_id', 'user_id'],
+    ['claude_tokens', 'vendor_tokens', 'open'],
+  )
+  if (error) return error
+  if (
+    row.vendor_cost_usd !== null &&
+    (typeof row.vendor_cost_usd !== 'number' || !Number.isFinite(row.vendor_cost_usd))
+  )
+    return `${HOSTED_INTERVAL_TABLE} row.vendor_cost_usd must be a finite number or null`
+  for (const field of ['start_at', 'end_at'] as const)
+    if (!isTimestamp(row[field]))
+      return `${HOSTED_INTERVAL_TABLE} row.${field} must be an ISO timestamp`
+  if (typeof row.user_id === 'string' && !UUID.test(row.user_id))
+    return `${HOSTED_INTERVAL_TABLE} row.user_id must be a UUID, null, or absent`
+  return row as PushedInterval
+}
+
+function parseDayRow(value: unknown, id: string): PushedDay | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_DAY_TABLE} upsert requires a row`
+  if (row.id !== id) return `${HOSTED_DAY_TABLE} upsert requires a row whose id matches the pointer`
+  const error = evidenceFieldError(
+    row,
+    HOSTED_DAY_TABLE,
+    ['day', 'collected_at'],
+    [],
+    [
+      'claude_tokens',
+      'cache_read',
+      'messages',
+      'tasks',
+      'canon_tokens',
+      'other_tokens',
+      'commits',
+      'files',
+      'lines_product',
+      'lines_test',
+      'lines_docs',
+      'lines_config',
+      'lines_generated',
+    ],
+  )
+  if (error) return error
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(row.day as string))
+    return `${HOSTED_DAY_TABLE} row.day must be a date`
+  if (!isTimestamp(row.collected_at))
+    return `${HOSTED_DAY_TABLE} row.collected_at must be an ISO timestamp`
+  return row as PushedDay
+}
+
 function taskFieldError(row: Record<string, unknown>): string | null {
   for (const field of ['key', 'project', 'project_name'] as const)
     if (typeof row[field] !== 'string') return `${HOSTED_TASK_TABLE} row.${field} must be a string`
@@ -169,6 +293,31 @@ function taskTimestampError(row: Record<string, unknown>): string | null {
   return null
 }
 
+function parseHostedUpsert(
+  input: Record<string, unknown> & { id: string },
+  table: PushableHubChangeTable,
+): ParsedHostedPushItem {
+  const id = input.id
+  if (table === HOSTED_TASK_TABLE) {
+    const row = parseTaskRow(input.row, id)
+    if (typeof row === 'string') return rejected(id, row)
+    return { input: { table, id, op: 'upsert', row } }
+  }
+  if (table === HOSTED_INTERVAL_TABLE) {
+    const row = parseIntervalRow(input.row, id)
+    if (typeof row === 'string') return rejected(id, row)
+    return { input: { table, id, op: 'upsert', row } }
+  }
+  if (table === HOSTED_DAY_TABLE) {
+    const row = parseDayRow(input.row, id)
+    if (typeof row === 'string') return rejected(id, row)
+    return { input: { table, id, op: 'upsert', row } }
+  }
+  const row = parseStatusEventRow(input.row, id, table)
+  if (typeof row === 'string') return rejected(id, row)
+  return { input: { table, id, op: 'upsert', row } }
+}
+
 export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   const input = object(value)
   const id = typeof input?.id === 'string' ? input.id : String(input?.id ?? '')
@@ -184,13 +333,8 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   if (input.op !== 'upsert' && input.op !== 'delete')
     return rejected(id, 'operation must be upsert or delete')
   const table = input.table as PushableHubChangeTable
-  if (input.op === 'delete') return { input: { table, id: input.id, op: 'delete' } }
-  if (table === HOSTED_TASK_TABLE) {
-    const row = parseTaskRow(input.row, input.id)
-    if (typeof row === 'string') return rejected(id, row)
-    return { input: { table, id: input.id, op: 'upsert', row } }
-  }
-  const row = parseStatusEventRow(input.row, input.id, table)
-  if (typeof row === 'string') return rejected(id, row)
-  return { input: { table, id: input.id, op: 'upsert', row } }
+  if (input.op === 'upsert')
+    return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
+  if (table === HOSTED_DAY_TABLE) return rejected(id, `${HOSTED_DAY_TABLE} does not accept delete`)
+  return { input: { table, id: input.id, op: 'delete' } as HostedPushChange }
 }

@@ -501,10 +501,7 @@ test('a note collision refuses the page and leaves its cursor in place', async (
 
 test('one change family failing leaves the other family result intact', async () => {
   const results = await hostedCollectLegs(undefined, {
-    evidence: async () => ({
-      interval: { changed: 0, deleted: 0, deleteSkipped: false, local: 0, issues: [] },
-      day: { changed: 0, deleted: 0, deleteSkipped: false, local: 0 },
-    }),
+    correctIntervals: () => {},
     tasks: async () => {},
     changes: async () => {
       throw new Error('task log unavailable')

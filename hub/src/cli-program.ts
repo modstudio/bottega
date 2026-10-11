@@ -46,7 +46,6 @@ import {
   stopRecordedServe,
 } from './serve-lifecycle.ts'
 import { startRevisionMonitor } from './service-revision.ts'
-import { printSyncResult, syncEvidence } from './sync.ts'
 import {
   commentTask,
   createTask,
@@ -156,7 +155,6 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
                               Safe beside a running dashboard: a lease in the
                               database means only one process collects.
   hub migrate                 apply pending checksummed schema migrations
-  hub sync [--dry-run]        push changed local evidence to the hosted hub
   hub doctor                  report the live structural schema hash and user_version
   hub outbox [--json]         list queued and quarantined hosted writes
   hub outbox retry <ID>       clear quarantine and queue an entry for retry
@@ -701,9 +699,6 @@ try {
           process.exit(1)
         }
       }
-      break
-    case 'sync':
-      printSyncResult(await syncEvidence({ dryRun: has('dry-run') }))
       break
     case 'tasks':
       tasks()

@@ -96,7 +96,8 @@ test('push route authorizes the requested space and refuses unaccepted tables', 
     {
       id: change.id,
       status: 'rejected',
-      reason: 'table hub_note is not accepted; accepted tables: hub_task, hub_task_status_event',
+      reason:
+        'table hub_note is not accepted; accepted tables: hub_task, hub_task_status_event, hub_interval, hub_day',
     },
   ])
 })

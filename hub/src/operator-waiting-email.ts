@@ -6,8 +6,10 @@ import { operatorInboxPath } from '../../shared/operator-inbox.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { waiting } from './orch.ts'
-import { signedInRecordUserId } from './sync.ts'
-import { hostedCreateOperatorWaitingEmail } from './task-client.ts'
+import {
+  hostedCreateOperatorWaitingEmail,
+  hostedSignedInUserId as signedInRecordUserId,
+} from './task-client.ts'
 
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
 const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'

@@ -83,7 +83,6 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../../shared/orch-contract.ts',
     './db.ts',
     './orch.ts',
-    './sync.ts',
     './task-client.ts',
   ]),
   module('hub/src/operator-waiting-email-hosted.ts', [

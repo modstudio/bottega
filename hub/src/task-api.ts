@@ -259,9 +259,6 @@ export async function taskApi(
       memberships: who.memberships,
       capabilities: {
         targetSpaceTaskMirror: true,
-        targetSpaceIntervalEvidence: true,
-        intervalRecordId: true,
-        dayRecordId: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,

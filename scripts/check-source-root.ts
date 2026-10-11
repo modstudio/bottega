@@ -59,12 +59,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/cli-program.ts',
-    line: 237,
+    line: 235,
     reason: 'task import is a source-checkout maintenance command and needs its registered project',
   },
   {
     path: 'hub/src/cli-program.ts',
-    line: 251,
+    line: 249,
     reason: 'task import reads checkout git history only in that source maintenance command',
   },
   {
@@ -74,12 +74,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 63,
+    line: 60,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
   {
     path: 'hub/src/hosted.ts',
-    line: 70,
+    line: 67,
     reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
 ]

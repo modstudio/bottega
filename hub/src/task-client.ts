@@ -24,9 +24,6 @@ export type HostedTaskIdentity = {
   memberships: RecordSpaceMembership[]
   capabilities?: {
     targetSpaceTaskMirror?: boolean
-    targetSpaceIntervalEvidence?: boolean
-    intervalRecordId?: boolean
-    dayRecordId?: boolean
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
@@ -42,33 +39,6 @@ export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
     throw new Error(
       `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
     )
-}
-
-const TARGET_SPACE_INTERVAL_REMEDY =
-  'deploy the hub server at or after the target-space interval evidence change'
-
-export function assertTargetSpaceIntervalEvidence(identity: HostedTaskIdentity) {
-  if (identity.capabilities?.targetSpaceIntervalEvidence !== true)
-    throw new Error(
-      `hosted hub does not advertise target-space interval evidence support; ${TARGET_SPACE_INTERVAL_REMEDY}`,
-    )
-}
-
-const INTERVAL_RECORD_ID_REMEDY =
-  'deploy the hub server at or after the interval UUID identity change'
-
-export function assertIntervalRecordId(identity: HostedTaskIdentity) {
-  if (identity.capabilities?.intervalRecordId !== true)
-    throw new Error(
-      `hosted hub does not advertise interval record id support; ${INTERVAL_RECORD_ID_REMEDY}`,
-    )
-}
-
-const DAY_RECORD_ID_REMEDY = 'deploy the hub server at or after the day UUID identity change'
-
-export function assertDayRecordId(identity: HostedTaskIdentity) {
-  if (identity.capabilities?.dayRecordId !== true)
-    throw new Error(`hosted hub does not advertise day record id support; ${DAY_RECORD_ID_REMEDY}`)
 }
 
 const PROJECT_NOTE_COUNTERS_REMEDY =
@@ -575,18 +545,6 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
-      targetSpaceIntervalEvidence:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).targetSpaceIntervalEvidence === true,
-      intervalRecordId:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).intervalRecordId === true,
-      dayRecordId:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).dayRecordId === true,
       projectNoteCounters:
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&

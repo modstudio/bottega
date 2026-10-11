@@ -1,4 +1,5 @@
-import { writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
+import { projects } from './projects.ts'
 import { taskKeyPrefix } from './task-identity.ts'
 import type { RegisteredTaskSpace } from './task-project-space.ts'
 
@@ -26,7 +27,7 @@ export function intervalOwningProject(
 }
 
 /** Correct legacy stored interval projects before evidence routing reads them. */
-export function correctIntervalProjects<T extends StoredIntervalProject>(
+function correctIntervalProjects<T extends StoredIntervalProject>(
   rows: readonly T[],
   registered: readonly RegisteredTaskSpace[],
   persist: boolean,
@@ -44,4 +45,16 @@ export function correctIntervalProjects<T extends StoredIntervalProject>(
       })
   }
   return corrected
+}
+
+/** Persist legacy project corrections before the hosted outbox is drained. */
+export function correctStoredIntervalProjects(
+  registered: readonly RegisteredTaskSpace[] = projects(),
+): void {
+  const rows = db()
+    .query<StoredIntervalProject, []>(
+      `SELECT record_id id,task_key,project project_name FROM interval ORDER BY record_id`,
+    )
+    .all()
+  correctIntervalProjects(rows, registered, true)
 }

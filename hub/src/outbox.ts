@@ -5,6 +5,7 @@ import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import { projects } from './projects.ts'
 import {
+  HOSTED_INTERVAL_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
@@ -27,6 +28,8 @@ type OutboxEntry = {
   last_error: string | null
   quarantined_at: string | null
   quarantine_reason: string | null
+  routing_space_id: string | null
+  routing_project: string | null
 }
 
 export type HostedOutboxReport = {
@@ -53,6 +56,8 @@ type PreparedOutboxRow = {
   entry: OutboxEntry
   project_name: string | null
   change: HostedPushChange
+  acknowledgedSpaceId: string | null
+  destinationSpaceId: string | null
 }
 
 export function queueHostedChange(
@@ -118,6 +123,15 @@ function recordOutcome(item: PreparedOutboxRow, outcome: HostedPushOutcome, at: 
         .run(entry.id, entry.generation).changes
       if (
         removed > 0 &&
+        item.change.table === HOSTED_INTERVAL_TABLE &&
+        item.change.op === 'upsert' &&
+        outcome.status !== 'rejected'
+      )
+        conn
+          .query(`UPDATE interval SET hosted_space_id=? WHERE record_id=?`)
+          .run(item.destinationSpaceId, item.change.id)
+      if (
+        removed > 0 &&
         outcome.status !== 'rejected' &&
         outcome.adoptedId &&
         item.change.table === HOSTED_TASK_TABLE &&
@@ -174,6 +188,8 @@ function prepareOutboxRows(
       entry,
       project_name: loaded.projectName,
       change: loaded.change,
+      acknowledgedSpaceId: loaded.acknowledgedSpaceId ?? null,
+      destinationSpaceId: null,
     })
   }
   return rows
@@ -211,9 +227,10 @@ async function drainDestinations(
   destinations: Map<string, PreparedOutboxRow[]>,
   dependencies: DrainDependencies,
   report: HostedOutboxReport,
-): Promise<void> {
+): Promise<boolean> {
   const clock = dependencies.clock ?? nowIso
   for (const [spaceId, selected] of destinations) {
+    for (const item of selected) item.destinationSpaceId = spaceId
     const byId = new Map(selected.map((item) => [item.change.id, item]))
     const ordered = orderHostedPushChanges(selected.map((item) => item.change)).map(
       (change) => byId.get(change.id)!,
@@ -227,10 +244,96 @@ async function drainDestinations(
         )
         recordBatchOutcomes(batch, outcomes, report, clock)
       } catch {
-        break
+        return false
       }
     }
   }
+  return true
+}
+
+async function removeMovedIntervals(
+  destinations: Map<string, PreparedOutboxRow[]>,
+  dependencies: DrainDependencies,
+  report: HostedOutboxReport,
+): Promise<boolean> {
+  const push = dependencies.push ?? hostedPushChanges
+  const clock = dependencies.clock ?? nowIso
+  const blocked = new Set<PreparedOutboxRow>()
+  for (const [destination, rows] of destinations) {
+    for (const item of rows) {
+      const result = await removeMovedInterval(item, destination, push, clock, report)
+      if (result === 'failed') return false
+      if (result === 'blocked') blocked.add(item)
+    }
+    destinations.set(
+      destination,
+      rows.filter((row) => !blocked.has(row)),
+    )
+  }
+  return true
+}
+
+async function removeMovedInterval(
+  item: PreparedOutboxRow,
+  destination: string,
+  push: NonNullable<DrainDependencies['push']>,
+  clock: () => string,
+  report: HostedOutboxReport,
+): Promise<'ready' | 'blocked' | 'failed'> {
+  if (
+    item.change.table !== HOSTED_INTERVAL_TABLE ||
+    item.change.op !== 'upsert' ||
+    !item.acknowledgedSpaceId ||
+    item.acknowledgedSpaceId === destination
+  )
+    return 'ready'
+  let outcomes: HostedPushOutcome[]
+  try {
+    outcomes = await push([{ table: HOSTED_INTERVAL_TABLE, id: item.change.id, op: 'delete' }], {
+      recordSpace: item.acknowledgedSpaceId,
+    })
+  } catch {
+    return 'failed'
+  }
+  const outcome = outcomes[0]
+  if (!outcome) return 'failed'
+  if (outcome.status === 'applied' || outcome.status === 'duplicate') {
+    writeTransaction((conn) =>
+      conn
+        .query(`UPDATE interval SET hosted_space_id=NULL WHERE record_id=? AND hosted_space_id=?`)
+        .run(item.change.id, item.acknowledgedSpaceId),
+    )
+    item.acknowledgedSpaceId = null
+    return 'ready'
+  }
+  const action = recordOutcome(item, outcome, clock())
+  if (action) report.rejected++
+  if (action === 'quarantine') report.quarantined++
+  return 'blocked'
+}
+
+function routeOutboxRows(
+  rows: PreparedOutboxRow[],
+  registered: RegisteredTaskSpace[],
+  identity: Awaited<ReturnType<typeof hostedTaskIdentity>>,
+) {
+  const fixed = rows.filter(
+    (row) =>
+      row.change.table === HOSTED_INTERVAL_TABLE &&
+      row.change.op === 'delete' &&
+      row.acknowledgedSpaceId,
+  )
+  const routed = partitionProjectRows(
+    rows.filter((row) => !fixed.includes(row)),
+    registered,
+    identity,
+  )
+  for (const row of fixed) {
+    const selected = routed.destinations.get(row.acknowledgedSpaceId!) ?? []
+    selected.push(row)
+    routed.destinations.set(row.acknowledgedSpaceId!, selected)
+  }
+  return routed
 }
 
 export async function drainHostedOutbox(
@@ -254,9 +357,10 @@ export async function drainHostedOutbox(
     report.skippedCapability = true
     return report
   }
-  const partitioned = partitionProjectRows(rows, (dependencies.registered ?? projects)(), identity)
+  const partitioned = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
   recordRoutingWaits(partitioned.refusals, report)
-  await drainDestinations(partitioned.destinations, dependencies, report)
+  if (await removeMovedIntervals(partitioned.destinations, dependencies, report))
+    await drainDestinations(partitioned.destinations, dependencies, report)
   return report
 }
 
@@ -294,6 +398,8 @@ export async function hostedOutboxDoctorLines(
             entry,
             project_name: loaded.projectName,
             change: loaded.change,
+            acknowledgedSpaceId: loaded.acknowledgedSpaceId ?? null,
+            destinationSpaceId: null,
           },
         ]
       : []
