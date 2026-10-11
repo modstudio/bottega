@@ -1,9 +1,11 @@
+import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
   listHostedChanges,
   MAX_HUB_CHANGE_PAGE_SIZE,
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
 } from './hosted-changes.ts'
+import { applyHostedPushChanges, PUSHABLE_HUB_CHANGE_TABLES } from './hosted-push-changes.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 
 const TEST_REFUSAL =
@@ -13,6 +15,7 @@ type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
+  push?: typeof applyHostedPushChanges
 }
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
@@ -54,8 +57,12 @@ export async function changeApi(
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (url.pathname !== '/v1/changes') return null
-  if (request.method !== 'GET') return new Response('not found', { status: 404 })
-  if (process.env.NODE_ENV === 'test' && (!dependencies.fetch || !dependencies.list))
+  if (request.method !== 'GET' && request.method !== 'POST')
+    return new Response('not found', { status: 404 })
+  if (
+    process.env.NODE_ENV === 'test' &&
+    (!dependencies.fetch || (request.method === 'GET' ? !dependencies.list : !dependencies.push))
+  )
     throw new Error(TEST_REFUSAL)
   const who = await taskSpaceIdentity(
     request,
@@ -72,6 +79,32 @@ export async function changeApi(
       },
       403,
     )
+  if (request.method === 'POST') {
+    const access = recordSpaceAccessDecision('write', who.spaceId, who.memberships)
+    if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
+    const body = await request.json().catch(() => null)
+    if (!Array.isArray(body)) return json({ error: 'body must be a list of pushed changes' }, 400)
+    const invalidTable = body.find(
+      (input) =>
+        !input ||
+        typeof input !== 'object' ||
+        !PUSHABLE_HUB_CHANGE_TABLES.includes((input as Record<string, unknown>).table as string),
+    ) as Record<string, unknown> | undefined
+    if (invalidTable)
+      return json(
+        {
+          error: `table ${String(invalidTable.table)} is not accepted; accepted tables: ${PUSHABLE_HUB_CHANGE_TABLES.join(', ')}`,
+        },
+        400,
+      )
+    return json(
+      await (dependencies.push ?? applyHostedPushChanges)(
+        config.recordDatabaseUrl,
+        who,
+        body as Parameters<typeof applyHostedPushChanges>[2],
+      ),
+    )
+  }
   let input: ReturnType<typeof requestInput>
   try {
     input = requestInput(url)

@@ -28,6 +28,7 @@ export type HostedTaskIdentity = {
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
+    spacePush?: boolean
   }
 }
 
@@ -430,6 +431,14 @@ export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof req
     adoptions?: import('./hosted-tasks.ts').MirrorAdoption[]
   }>('/v1/tasks/mirror', 'PUT', body, options)
 
+export const hostedPushChanges = (body: unknown, options?: Parameters<typeof request>[3]) =>
+  request<
+    Array<
+      | { id: string; status: 'applied' | 'duplicate' }
+      | { id: string; status: 'rejected'; reason: string }
+    >
+  >('/v1/changes', 'POST', body, options)
+
 type TaskIdentityResult =
   | { unauthorized: true }
   | { unauthorized: false; value: Record<string, unknown> }
@@ -532,6 +541,10 @@ export async function hostedTaskIdentity(
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
         (value.capabilities as Record<string, unknown>).spaceChanges === true,
+      spacePush:
+        typeof value.capabilities === 'object' &&
+        value.capabilities !== null &&
+        (value.capabilities as Record<string, unknown>).spacePush === true,
     },
   }
 }

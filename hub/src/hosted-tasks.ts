@@ -700,7 +700,7 @@ async function mirrorDocumentRow(
       WHERE id=${taskId}::uuid`
 }
 
-async function mirrorStatusEventRow(
+export async function mirrorStatusEventRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedStatusEvent,

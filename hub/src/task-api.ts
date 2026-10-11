@@ -265,6 +265,7 @@ export async function taskApi(
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,
+        spacePush: true,
       },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)

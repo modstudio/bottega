@@ -19,6 +19,7 @@ import { ingestTranscripts } from './ingest/transcripts.ts'
 import { pullHostedNotes } from './note-cache.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
+import { drainHostedOutbox, type HostedOutboxReport, hostedOutboxLine } from './outbox.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
 import { type SyncResult, syncEvidence } from './sync.ts'
@@ -88,7 +89,12 @@ export class TrackerPollSchedule {
 const trackerSchedule = new TrackerPollSchedule()
 
 export type CollectLegResult =
-  | { source: string; ok: true; hostedChanges?: HostedChangeLegReport }
+  | {
+      source: string
+      ok: true
+      hostedChanges?: HostedChangeLegReport
+      hostedOutbox?: HostedOutboxReport
+    }
   | { source: string; ok: false; error: string }
 
 export function formatCollectLeg(result: CollectLegResult): string {
@@ -96,6 +102,8 @@ export function formatCollectLeg(result: CollectLegResult): string {
   if (!result.ok) return `${result.source.padEnd(18)}${separator}FAILED: ${result.error}`
   if (result.hostedChanges)
     return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
+  if (result.hostedOutbox)
+    return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
   return `${result.source.padEnd(18)}ok`
 }
 
@@ -112,6 +120,7 @@ async function settleLeg(source: string, work: () => Promise<unknown>): Promise<
 
 type HostedCollectDependencies = {
   evidence?: () => Promise<SyncResult>
+  outbox?: () => Promise<HostedOutboxReport>
   tasks?: () => Promise<unknown>
   changes?: () => Promise<HostedChangeLegReport | null | undefined>
   noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
@@ -134,6 +143,7 @@ export async function hostedCollectLegs(
       )
   }
   const legs = [
+    { name: 'hosted outbox', work: dependencies.outbox ?? drainHostedOutbox },
     { name: 'hosted evidence', work: evidence },
     {
       name: 'hosted tasks',
@@ -164,7 +174,15 @@ export async function hostedCollectLegs(
   let previous: string | undefined
   for (const { name: source, work, ...leg } of legs) {
     guard?.assertHeld(previous)
-    results.push(await settleLeg(source, work))
+    if (source === 'hosted outbox') {
+      try {
+        results.push({ source, ok: true, hostedOutbox: (await work()) as HostedOutboxReport })
+      } catch (error) {
+        const message = (error as Error).message
+        console.error(`hub: ${source} collect failed: ${message}`)
+        results.push({ source, ok: false, error: message })
+      }
+    } else results.push(await settleLeg(source, work))
     previous = source
     guard?.assertHeld(source)
     const changeWork = 'change' in leg ? leg.change : null
