@@ -4,6 +4,7 @@ import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { DayEvidence, IntervalEvidence } from './hosted-evidence.ts'
+import { correctIntervalProjects } from './interval-project-correction.ts'
 import { projects } from './projects.ts'
 import {
   assertDayRecordId,
@@ -13,7 +14,6 @@ import {
   hostedTaskIdentity,
 } from './task-client.ts'
 import {
-  intervalOwningProject,
   partitionProjectRows,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
@@ -74,19 +74,10 @@ function localIntervals(registered: readonly RegisteredTaskSpace[], persistCorre
          FROM interval ORDER BY source, ref, start_at`,
     )
     .all()
-  const corrected = rows.map((row) => ({
-    ...row,
-    project_name: intervalOwningProject(row.project_name, row.task_key, registered),
+  return correctIntervalProjects(rows, registered, persistCorrections).map((row) => ({
+    key: row.id,
+    row,
   }))
-  if (persistCorrections) {
-    const changed = corrected.filter((row, index) => row.project_name !== rows[index]!.project_name)
-    if (changed.length > 0)
-      writeTransaction((conn) => {
-        const update = conn.query(`UPDATE interval SET project=? WHERE record_id=?`)
-        for (const row of changed) update.run(row.project_name, row.id)
-      })
-  }
-  return corrected.map((row) => ({ key: row.id, row }))
 }
 
 function localDays() {

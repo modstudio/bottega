@@ -23,23 +23,6 @@ export type ProjectRowsRefusal<T> = {
   rows: T[]
 }
 
-/** Point an interval from an unknown project at the sole registered owner of its task prefix. */
-export function intervalOwningProject(
-  project: string | null,
-  taskKey: string | null,
-  registered: readonly RegisteredTaskSpace[],
-): string | null {
-  if (project === null || registered.some((candidate) => candidate.name === project)) return project
-  const prefix = taskKey?.toUpperCase().match(/^([A-Z][A-Z0-9]*)-\d+$/)?.[1]
-  if (!prefix) return project
-  const owners = registered.filter((candidate) =>
-    candidate.settings.keyPrefixes?.some(
-      (candidatePrefix) => candidatePrefix.toUpperCase() === prefix,
-    ),
-  )
-  return owners.length === 1 ? owners[0]!.name : project
-}
-
 /** Spaces the task pull reads: the active space plus every registered destination. */
 export function taskPullSpaces(
   registered: readonly RegisteredTaskSpace[],
