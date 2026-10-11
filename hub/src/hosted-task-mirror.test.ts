@@ -217,33 +217,46 @@ test('pushed status events isolate a rejection with a savepoint', async () => {
     updated_at: at,
     deleted_at: null,
   })
-  const outcomes = await database.transaction(async (transaction) => {
-    const sql = pgliteSql(transaction as unknown as PGlite)
-    sql.unsafe = (async (statement: string) =>
-      (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, identity, [
+  const apply = (inputs: Parameters<typeof applyHostedPushChangesInTransaction>[2]) =>
+    database.transaction(async (transaction) => {
+      const sql = pgliteSql(transaction as unknown as PGlite)
+      sql.unsafe = (async (statement: string) =>
+        (await transaction.query(statement)).rows) as SQL['unsafe']
+      return applyHostedPushChangesInTransaction(sql, identity, inputs)
+    })
+  expect(
+    await apply([
       {
         table: 'hub_task_status_event',
         id: eventId,
         op: 'upsert',
         row: row(eventId, '2026-10-09T13:00:00.000Z'),
       },
-      {
-        table: 'hub_task_status_event',
-        id: collisionId,
-        op: 'upsert',
-        row: row(collisionId, '2026-10-09T13:00:00.000Z'),
-      },
-      {
-        table: 'hub_task_status_event',
-        id: laterId,
-        op: 'upsert',
-        row: row(laterId, '2026-10-09T14:00:00.000Z'),
-      },
-    ])
-  })
+    ]),
+  ).toEqual([{ id: eventId, status: 'applied' }])
+
+  const outcomes = await apply([
+    {
+      table: 'hub_task_status_event',
+      id: eventId,
+      op: 'upsert',
+      row: row(eventId, '2026-10-09T13:00:00.000Z'),
+    },
+    {
+      table: 'hub_task_status_event',
+      id: collisionId,
+      op: 'upsert',
+      row: row(collisionId, '2026-10-09T13:00:00.000Z'),
+    },
+    {
+      table: 'hub_task_status_event',
+      id: laterId,
+      op: 'upsert',
+      row: row(laterId, '2026-10-09T14:00:00.000Z'),
+    },
+  ])
   expect(outcomes).toEqual([
-    { id: eventId, status: 'applied' },
+    { id: eventId, status: 'duplicate' },
     { id: collisionId, status: 'rejected', reason: expect.stringContaining('already belongs') },
     { id: laterId, status: 'applied' },
   ])
@@ -256,20 +269,55 @@ test('pushed status events isolate a rejection with a savepoint', async () => {
     ).rows,
   ).toEqual([{ id: eventId }, { id: laterId }])
 
-  const duplicate = await database.transaction(async (transaction) => {
-    const sql = pgliteSql(transaction as unknown as PGlite)
-    sql.unsafe = (async (statement: string) =>
-      (await transaction.query(statement)).rows) as SQL['unsafe']
-    return applyHostedPushChangesInTransaction(sql, identity, [
-      {
-        table: 'hub_task_status_event',
-        id: eventId,
-        op: 'upsert',
-        row: row(eventId, '2026-10-09T13:00:00.000Z'),
-      },
-    ])
-  })
-  expect(duplicate).toEqual([{ id: eventId, status: 'duplicate' }])
+  const differing = await apply([
+    {
+      table: 'hub_task_status_event',
+      id: eventId,
+      op: 'upsert',
+      row: { ...row(eventId, '2026-10-09T13:00:00.000Z'), to_status: 'review' },
+    },
+  ])
+  expect(differing).toEqual([
+    { id: eventId, status: 'rejected', reason: expect.stringContaining('differs') },
+  ])
+  expect(
+    (
+      await database.query<{ to_status: string }>(
+        `SELECT to_status FROM hub_task_status_event WHERE id=$1`,
+        [eventId],
+      )
+    ).rows,
+  ).toEqual([{ to_status: 'active' }])
+})
+
+test('a pushed status event stays idempotent while its task is absent', async () => {
+  const event = {
+    id: '01990000-0000-7000-8000-000000001269',
+    task_key: 'DEV-404',
+    task_id: '01990000-0000-7000-8000-000000009999',
+    project_name: 'workshop',
+    at: '2026-10-09T15:00:00.000Z',
+    from_status: 'open',
+    to_status: 'active',
+    created_at: '2026-10-09T15:00:00.000Z',
+    updated_at: '2026-10-09T15:00:00.000Z',
+    deleted_at: null,
+  }
+  const apply = () =>
+    database.transaction(async (transaction) => {
+      const sql = pgliteSql(transaction as unknown as PGlite)
+      sql.unsafe = (async (statement: string) =>
+        (await transaction.query(statement)).rows) as SQL['unsafe']
+      return applyHostedPushChangesInTransaction(sql, identity, [
+        { table: 'hub_task_status_event', id: event.id, op: 'upsert', row: event },
+      ])
+    })
+  expect(await apply()).toEqual([{ id: event.id, status: 'applied' }])
+  expect(await apply()).toEqual([{ id: event.id, status: 'duplicate' }])
+  expect(
+    (await database.query(`SELECT task_id FROM hub_task_status_event WHERE id=$1`, [event.id]))
+      .rows,
+  ).toEqual([{ task_id: null }])
 })
 
 test('record policies reject a push into a space without write membership', async () => {

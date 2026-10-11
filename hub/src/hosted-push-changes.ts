@@ -18,7 +18,22 @@ type PushDeclaration = {
   apply(tx: SQL, identity: TaskIdentity, input: PushInput): Promise<'applied' | 'duplicate'>
 }
 
-export const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
+async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: HostedStatusEvent) {
+  const matches = (await tx`SELECT 1 FROM hub_task_status_event
+    WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
+      AND project_name=${row.project_name} AND task_key=${row.task_key}
+      AND at=${row.at}::timestamptz
+      AND from_status IS NOT DISTINCT FROM ${row.from_status}
+      AND to_status=${row.to_status}
+      AND created_at=${row.created_at}::timestamptz
+      AND updated_at=${row.updated_at}::timestamptz
+      AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`) as Array<{
+    '?column?': 1
+  }>
+  return matches.length > 0
+}
+
+const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
   hub_task_status_event: {
     dependencyOrder: 1,
     async apply(tx, identity, input) {
@@ -27,10 +42,14 @@ export const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
       if (input.op === 'delete') throw new Error('hub_task_status_event does not accept delete yet')
       if (!input.row || input.row.id !== input.id)
         throw new Error('hub_task_status_event upsert requires a row whose id matches the pointer')
+      const row = input.row as unknown as HostedStatusEvent
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
-      await mirrorStatusEventRow(tx, identity, input.row as unknown as HostedStatusEvent)
-      return existing.length ? 'duplicate' : 'applied'
+      await mirrorStatusEventRow(tx, identity, row)
+      if (!existing.length) return 'applied'
+      if (!(await statusEventEquals(tx, identity, row)))
+        throw new Error(`hub_task_status_event ${input.id} differs from the pushed row`)
+      return 'duplicate'
     },
   },
 }

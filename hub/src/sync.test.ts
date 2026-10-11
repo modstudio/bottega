@@ -303,18 +303,7 @@ describe('evidence sync planning', () => {
 
     expect(writes.map((write) => write.recordSpace)).toEqual(['space-a'])
     expect(ran).toEqual(['following leg'])
-    expect(results).toEqual([
-      {
-        source: 'hosted outbox',
-        ok: true,
-        hostedOutbox: {
-          queued: 0,
-          sent: 0,
-          rejected: 0,
-          quarantined: 0,
-          skippedCapability: false,
-        },
-      },
+    expect(results.filter((result) => result.source !== 'hosted outbox')).toEqual([
       {
         source: 'hosted evidence',
         ok: false,

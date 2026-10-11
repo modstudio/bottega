@@ -6,7 +6,7 @@ import { projects } from './projects.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
 
-export const HOSTED_OUTBOX_BATCH_SIZE = 500
+const HOSTED_OUTBOX_BATCH_SIZE = 500
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
 
 export type OutboxEntry = {
@@ -22,7 +22,7 @@ export type OutboxEntry = {
   quarantine_reason: string | null
 }
 
-export type PushChange = {
+type PushChange = {
   table: typeof HOSTED_STATUS_EVENT_TABLE
   id: string
   op: 'upsert' | 'delete'
@@ -39,6 +39,19 @@ export type HostedOutboxReport = {
   rejected: number
   quarantined: number
   skippedCapability: boolean
+}
+
+type DrainDependencies = {
+  identity?: typeof hostedTaskIdentity
+  push?: (changes: PushChange[], options: { recordSpace: string }) => Promise<PushOutcome[]>
+  clock?: () => string
+  registered?: () => RegisteredTaskSpace[]
+}
+
+type PreparedOutboxRow = {
+  entry: OutboxEntry
+  project_name: string | null
+  change: PushChange
 }
 
 export function queueHostedChange(
@@ -153,13 +166,103 @@ function recordOutcome(entry: OutboxEntry, outcome: PushOutcome, at: string) {
   return decision.action
 }
 
+function recordRejection(
+  entry: OutboxEntry,
+  reason: string,
+  report: HostedOutboxReport,
+  clock: () => string,
+): void {
+  const action = recordOutcome(entry, { id: entry.id, status: 'rejected', reason }, clock())
+  report.rejected++
+  if (action === 'quarantine') report.quarantined++
+}
+
+function prepareOutboxRows(
+  entries: OutboxEntry[],
+  report: HostedOutboxReport,
+  clock: () => string,
+): PreparedOutboxRow[] {
+  const rows: PreparedOutboxRow[] = []
+  for (const entry of entries) {
+    if (entry.operation === 'delete') {
+      rows.push({
+        entry,
+        project_name: null,
+        change: { table: HOSTED_STATUS_EVENT_TABLE, id: entry.row_id, op: 'delete' },
+      })
+      continue
+    }
+    const row = currentStatusEvent(entry)
+    if (!row) {
+      recordRejection(entry, 'current machine row is absent', report, clock)
+      continue
+    }
+    rows.push({
+      entry,
+      project_name: row.project_name,
+      change: {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: entry.row_id,
+        op: 'upsert',
+        row,
+      },
+    })
+  }
+  return rows
+}
+
+function recordPartitionRefusals(
+  refusals: Map<string, { reason: string; rows: PreparedOutboxRow[] }>,
+  report: HostedOutboxReport,
+  clock: () => string,
+): void {
+  for (const selected of refusals.values())
+    for (const item of selected.rows) recordRejection(item.entry, selected.reason, report, clock)
+}
+
+function recordBatchOutcomes(
+  batch: PreparedOutboxRow[],
+  outcomes: PushOutcome[],
+  report: HostedOutboxReport,
+  clock: () => string,
+): void {
+  const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
+  for (const item of batch) {
+    const outcome = byId.get(item.change.id)
+    if (!outcome) continue
+    const action = recordOutcome(item.entry, outcome, clock())
+    if (action === 'sent') report.sent++
+    else {
+      report.rejected++
+      if (action === 'quarantine') report.quarantined++
+    }
+  }
+}
+
+async function drainDestinations(
+  destinations: Map<string, PreparedOutboxRow[]>,
+  dependencies: DrainDependencies,
+  report: HostedOutboxReport,
+): Promise<void> {
+  const clock = dependencies.clock ?? nowIso
+  for (const [spaceId, selected] of destinations) {
+    for (let index = 0; index < selected.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
+      const batch = selected.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
+      try {
+        const outcomes = await (dependencies.push ?? hostedPushChanges)(
+          batch.map((item) => item.change),
+          { recordSpace: spaceId },
+        )
+        recordBatchOutcomes(batch, outcomes, report, clock)
+      } catch {
+        break
+      }
+    }
+  }
+}
+
 export async function drainHostedOutbox(
-  dependencies: {
-    identity?: typeof hostedTaskIdentity
-    push?: (changes: PushChange[], options: { recordSpace: string }) => Promise<PushOutcome[]>
-    clock?: () => string
-    registered?: () => RegisteredTaskSpace[]
-  } = {},
+  dependencies: DrainDependencies = {},
 ): Promise<HostedOutboxReport> {
   const entries = db()
     .query<OutboxEntry, []>(
@@ -180,79 +283,11 @@ export async function drainHostedOutbox(
     report.skippedCapability = true
     return report
   }
-  const rows: Array<{
-    entry: OutboxEntry
-    project_name: string | null
-    change: PushChange
-  }> = []
-  for (const entry of entries) {
-    if (entry.operation === 'delete') {
-      rows.push({
-        entry,
-        project_name: null,
-        change: { table: HOSTED_STATUS_EVENT_TABLE, id: entry.row_id, op: 'delete' },
-      })
-      continue
-    }
-    const row = currentStatusEvent(entry)
-    if (row)
-      rows.push({
-        entry,
-        project_name: row.project_name,
-        change: {
-          table: HOSTED_STATUS_EVENT_TABLE,
-          id: entry.row_id,
-          op: 'upsert',
-          row,
-        },
-      })
-    else {
-      const action = recordOutcome(
-        entry,
-        { id: entry.id, status: 'rejected', reason: 'current machine row is absent' },
-        (dependencies.clock ?? nowIso)(),
-      )
-      report.rejected++
-      if (action === 'quarantine') report.quarantined++
-    }
-  }
+  const clock = dependencies.clock ?? nowIso
+  const rows = prepareOutboxRows(entries, report, clock)
   const partitioned = partitionProjectRows(rows, (dependencies.registered ?? projects)(), identity)
-  for (const selected of partitioned.refusals.values()) {
-    for (const item of selected.rows) {
-      const action = recordOutcome(
-        item.entry,
-        { id: item.entry.id, status: 'rejected', reason: selected.reason },
-        (dependencies.clock ?? nowIso)(),
-      )
-      report.rejected++
-      if (action === 'quarantine') report.quarantined++
-    }
-  }
-  for (const [spaceId, selected] of partitioned.destinations) {
-    for (let index = 0; index < selected.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
-      const slice = selected.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
-      let outcomes: PushOutcome[]
-      try {
-        outcomes = await (dependencies.push ?? hostedPushChanges)(
-          slice.map((item) => item.change),
-          { recordSpace: spaceId },
-        )
-      } catch {
-        break
-      }
-      const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
-      for (const item of slice) {
-        const outcome = byId.get(item.change.id)
-        if (!outcome) continue
-        const action = recordOutcome(item.entry, outcome, (dependencies.clock ?? nowIso)())
-        if (action === 'sent') report.sent++
-        else {
-          report.rejected++
-          if (action === 'quarantine') report.quarantined++
-        }
-      }
-    }
-  }
+  recordPartitionRefusals(partitioned.refusals, report, clock)
+  await drainDestinations(partitioned.destinations, dependencies, report)
   return report
 }
 
