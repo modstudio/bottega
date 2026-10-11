@@ -5,9 +5,17 @@ import {
   formatTaskIdentityDoctor,
   observedTaskKeyPrefixes,
   resolveTask,
+  taskKeyPrefix,
   taskIdentityDecision,
   taskIdentityDoctor,
 } from './task-identity.ts'
+
+test('task key prefixes come only from canonical task keys', () => {
+  expect(taskKeyPrefix('DEV-1208')).toBe('DEV')
+  expect(taskKeyPrefix('dev-1208')).toBe('DEV')
+  expect(taskKeyPrefix('DEV-1208/3')).toBeUndefined()
+  expect(taskKeyPrefix('DEV')).toBeUndefined()
+})
 
 test('observed task prefixes include task rows and claim-only identities', () => {
   const conn = new Database(':memory:')

@@ -1,5 +1,6 @@
 import { writeTransaction } from './db.ts'
 import type { RegisteredTaskSpace } from './task-project-space.ts'
+import { taskKeyPrefix } from './task-identity.ts'
 
 type StoredIntervalProject = {
   id: string
@@ -14,7 +15,7 @@ export function intervalOwningProject(
   registered: readonly RegisteredTaskSpace[],
 ): string | null {
   if (project === null || registered.some((candidate) => candidate.name === project)) return project
-  const prefix = taskKey?.toUpperCase().match(/^([A-Z][A-Z0-9]*)-\d+$/)?.[1]
+  const prefix = taskKey ? taskKeyPrefix(taskKey) : undefined
   if (!prefix) return project
   const owners = registered.filter((candidate) =>
     candidate.settings.keyPrefixes?.some(
