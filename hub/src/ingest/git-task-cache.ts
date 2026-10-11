@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { queueHostedChange } from '../outbox.ts'
 import { HOSTED_TASK_TABLE } from '../push-contract.ts'
 import type { TaskRow } from '../task.ts'
-import { gitTaskShouldQueue } from '../task-hosted-row.ts'
+import { collectorTaskShouldQueue, gitTaskChanged } from '../task-hosted-row.ts'
 
 export type GitTaskObservation = {
   key: string
@@ -38,7 +38,7 @@ export function upsertGitTasks(
     const before = select.get(task.project, task.key) ?? null
     upsert.run(newRecordId(), task.key, task.project, task.first, task.last, at, at)
     const after = select.get(task.project, task.key)!
-    if (gitTaskShouldQueue(before, after))
+    if (collectorTaskShouldQueue('git', after, gitTaskChanged(before, after)))
       queueHostedChange(conn, HOSTED_TASK_TABLE, after.record_id, 'upsert', at)
   }
 }

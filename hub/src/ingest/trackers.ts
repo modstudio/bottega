@@ -13,6 +13,7 @@ import { credentials, Mcp } from '../mcp.ts'
 import { queueHostedChange } from '../outbox.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
+import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
@@ -395,7 +396,10 @@ function observeTrackerTaskOn(
   const observed = trackerIdentityRow(conn, task)
   const taskRecordId = observed?.source === 'local' ? null : (observed?.record_id ?? null)
   const taskKey = observed?.key ?? task.key
-  if (taskRecordId && (changed || stored?.updated_at === null))
+  if (
+    taskRecordId &&
+    collectorTaskShouldQueue('mcp', observed, changed || stored?.updated_at === null)
+  )
     queueHostedChange(conn, HOSTED_TASK_TABLE, taskRecordId, 'upsert', at)
   if (!recordsTransition) return { at, taskRecordId, taskKey, times, changed, event: null }
 
@@ -500,7 +504,14 @@ async function backfillTrackerTasks(
       const { changed } = writeTransaction((conn) => {
         const result = upsertTrackerTaskOn(conn, task, at)
         const stored = trackerIdentityRow(conn, task)
-        if (stored && (result.changed || result.stored?.updated_at === null))
+        if (
+          stored &&
+          collectorTaskShouldQueue(
+            'mcp',
+            stored,
+            result.changed || result.stored?.updated_at === null,
+          )
+        )
           queueHostedChange(conn, HOSTED_TASK_TABLE, stored.record_id, 'upsert', at)
         return result
       })

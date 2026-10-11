@@ -35,8 +35,15 @@ export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedT
   }
 }
 
-export function gitTaskShouldQueue(before: TaskRow | null, after: TaskRow): boolean {
-  if (after.source !== 'git') return false
+export function collectorTaskShouldQueue(
+  source: 'mcp' | 'git',
+  row: { source: string } | null,
+  changed: boolean,
+): boolean {
+  return row?.source === source && changed
+}
+
+export function gitTaskChanged(before: TaskRow | null, after: TaskRow): boolean {
   if (before === null) return true
   const beforeHosted = hostedTaskFromTaskRow(before, before.record_id)
   const afterHosted = hostedTaskFromTaskRow(after, after.record_id)
