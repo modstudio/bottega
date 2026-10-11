@@ -1,5 +1,7 @@
 import {
+  DOC_FORMS,
   DOC_STATUSES,
+  type DocArticleSubject,
   type DocAudiences,
   type DocStatus,
   docScopeHasProjectSubject,
@@ -18,6 +20,22 @@ function deliveryOf(value: unknown): DocsTreeItem['delivery'] {
 
 function statusOf(value: unknown): DocStatus {
   return DOC_STATUSES.includes(value as DocStatus) ? (value as DocStatus) : 'current'
+}
+
+function articleSubjectOf(value: unknown): DocArticleSubject | null | undefined {
+  if (value === null) return null
+  if (!value || typeof value !== 'object') return undefined
+  const subject = value as Record<string, unknown>
+  if (typeof subject.id !== 'string' || typeof subject.name !== 'string') return undefined
+  return { id: subject.id, name: subject.name }
+}
+
+function relatedSubjectsOf(value: unknown): DocArticleSubject[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const subjects = value.map(articleSubjectOf)
+  return subjects.every((subject): subject is DocArticleSubject => Boolean(subject))
+    ? subjects
+    : undefined
 }
 
 function projectNameOf(
@@ -56,7 +74,21 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
 }
 
 export function mapDoc(row: Record<string, unknown>): DocsDoc {
-  return { ...mapTreeItem(row), body: String(row.body ?? '') }
+  return {
+    ...mapTreeItem(row),
+    body: String(row.body ?? ''),
+    form:
+      row.form === null
+        ? null
+        : DOC_FORMS.includes(row.form as (typeof DOC_FORMS)[number])
+          ? (row.form as (typeof DOC_FORMS)[number])
+          : undefined,
+    articleSubject: articleSubjectOf(row.articleSubject),
+    relatedSubjects: relatedSubjectsOf(row.relatedSubjects),
+    sourceFiles: Array.isArray(row.sourceFiles)
+      ? row.sourceFiles.filter((path): path is string => typeof path === 'string')
+      : undefined,
+  }
 }
 
 export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {

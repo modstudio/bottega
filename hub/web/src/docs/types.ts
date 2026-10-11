@@ -1,4 +1,10 @@
-import type { DocAudience, DocAudiences, DocStatus } from '../../../../shared/docs.ts'
+import type {
+  DocArticleSubject,
+  DocAudience,
+  DocAudiences,
+  DocForm,
+  DocStatus,
+} from '../../../../shared/docs.ts'
 
 export type DocsAudience = DocAudience
 type DocsDelivery = 'inject' | 'demand'
@@ -23,7 +29,13 @@ export type DocsTreeItem = {
   projectName?: string
 }
 
-export type DocsDoc = DocsTreeItem & { body: string }
+export type DocsDoc = DocsTreeItem & {
+  body: string
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
+}
 
 export type DocsSearchMatch = {
   id: string
