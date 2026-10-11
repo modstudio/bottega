@@ -36,7 +36,7 @@ test('outbox migration moves pending tracker status events and retires the setti
   expect(
     database
       .query(
-        `SELECT id,table_name,row_id,operation,queued_at,attempts,last_error,sent_at,
+        `SELECT id,table_name,row_id,operation,queued_at,generation,attempts,last_error,
           quarantined_at,quarantine_reason FROM hosted_outbox ORDER BY queued_at`,
       )
       .all(),
@@ -47,9 +47,9 @@ test('outbox migration moves pending tracker status events and retires the setti
       row_id: '0199b001-0000-7000-8000-000000000001',
       operation: 'upsert',
       queued_at: '2026-10-11T12:00:00Z',
+      generation: 1,
       attempts: 0,
       last_error: null,
-      sent_at: null,
       quarantined_at: null,
       quarantine_reason: null,
     },
@@ -59,9 +59,9 @@ test('outbox migration moves pending tracker status events and retires the setti
       row_id: '0199b001-0000-7000-8000-000000000002',
       operation: 'upsert',
       queued_at: '2026-10-11T12:01:00Z',
+      generation: 1,
       attempts: 0,
       last_error: null,
-      sent_at: null,
       quarantined_at: null,
       quarantine_reason: null,
     },

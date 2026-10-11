@@ -522,6 +522,8 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
         sent: 0,
         rejected: 0,
         quarantined: 0,
+        dropped: 0,
+        waitingOnRouting: {},
         skippedCapability: false,
       },
     },

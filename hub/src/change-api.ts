@@ -5,8 +5,13 @@ import {
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
 } from './hosted-changes.ts'
-import { applyHostedPushChanges, PUSHABLE_HUB_CHANGE_TABLES } from './hosted-push-changes.ts'
+import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  type HostedPushChange,
+  type HostedPushOutcome,
+  parseHostedPushItem,
+} from './push-contract.ts'
 
 const TEST_REFUSAL =
   'hub change API refuses real identity and database clients unless stubs are injected in tests'
@@ -21,7 +26,6 @@ type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
   null | { refusedSpace: string }
 >
-type PushInput = Parameters<typeof applyHostedPushChanges>[2]
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
 const allowedMessage = allowed.join(', ')
@@ -60,19 +64,18 @@ function hasTestDependencies(method: string, dependencies: Dependencies): boolea
   return method === 'GET' ? Boolean(dependencies.list) : Boolean(dependencies.push)
 }
 
-function pushInput(value: unknown): { input: PushInput } | { error: string } {
+function pushInput(
+  value: unknown,
+): { inputs: HostedPushChange[]; rejected: Map<number, HostedPushOutcome> } | { error: string } {
   if (!Array.isArray(value)) return { error: 'body must be a list of pushed changes' }
-  const invalid = value.find(
-    (input) =>
-      !input ||
-      typeof input !== 'object' ||
-      !PUSHABLE_HUB_CHANGE_TABLES.includes((input as Record<string, unknown>).table as string),
-  ) as Record<string, unknown> | undefined
-  if (invalid)
-    return {
-      error: `table ${String(invalid.table)} is not accepted; accepted tables: ${PUSHABLE_HUB_CHANGE_TABLES.join(', ')}`,
-    }
-  return { input: value as PushInput }
+  const inputs: HostedPushChange[] = []
+  const rejected = new Map<number, HostedPushOutcome>()
+  for (const [index, item] of value.entries()) {
+    const parsed = parseHostedPushItem(item)
+    if ('input' in parsed) inputs.push(parsed.input)
+    else rejected.set(index, parsed.outcome)
+  }
+  return { inputs, rejected }
 }
 
 async function pushResponse(
@@ -86,13 +89,16 @@ async function pushResponse(
   const decision = pushInput(await request.json().catch(() => null))
   if ('error' in decision) return json({ error: decision.error }, 400)
   try {
-    return json(
-      await (dependencies.push ?? applyHostedPushChanges)(
-        config.recordDatabaseUrl,
-        who,
-        decision.input,
-      ),
+    const applied = await (dependencies.push ?? applyHostedPushChanges)(
+      config.recordDatabaseUrl,
+      who,
+      decision.inputs,
     )
+    const outcomes: HostedPushOutcome[] = []
+    let appliedIndex = 0
+    for (let index = 0; index < decision.inputs.length + decision.rejected.size; index++)
+      outcomes.push(decision.rejected.get(index) ?? applied[appliedIndex++]!)
+    return json(outcomes)
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }

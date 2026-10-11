@@ -10,6 +10,7 @@ import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
 } from './operator-waiting-email-contract.ts'
+import type { HostedPushChange, HostedPushOutcome } from './push-contract.ts'
 
 const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
 const REMEDY = MISSING_HOSTED_URL_REMEDY
@@ -431,12 +432,8 @@ export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof req
     adoptions?: import('./hosted-tasks.ts').MirrorAdoption[]
   }>('/v1/tasks/mirror', 'PUT', body, options)
 
-type HostedPushOutcome =
-  | { id: string; status: 'applied' | 'duplicate' }
-  | { id: string; status: 'rejected'; reason: string }
-
 export async function hostedPushChanges(
-  body: unknown,
+  body: HostedPushChange[],
   options: Parameters<typeof request>[3] = {},
 ): Promise<HostedPushOutcome[]> {
   const baseUrl = assertHostedTaskWriteConfigured(options)

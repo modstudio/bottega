@@ -665,7 +665,7 @@ try {
       break
     }
     case 'doctor':
-      for (const line of hubDoctorLines()) console.log(line)
+      for (const line of await hubDoctorLines()) console.log(line)
       break
     case 'changes':
       for (const line of runHostedChangeEvidenceCommand(argv)) console.log(line)

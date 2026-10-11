@@ -4,12 +4,18 @@ import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
   drainHostedOutbox,
-  HOSTED_STATUS_EVENT_TABLE,
+  hostedOutboxDoctorLines,
   listHostedOutbox,
-  type PushOutcome,
   queueHostedChange,
   retryHostedOutboxEntry,
 } from './outbox.ts'
+import {
+  type HostedPushChange,
+  type HostedPushOutcome,
+  PUSHABLE_HUB_CHANGE_TABLES,
+} from './push-contract.ts'
+
+const HOSTED_STATUS_EVENT_TABLE = PUSHABLE_HUB_CHANGE_TABLES[0]
 
 const project = {
   name: 'fixture',
@@ -64,12 +70,13 @@ describe('hosted outbox', () => {
     writeTransaction((conn) => conn.exec('DROP TRIGGER refuse_outbox'))
   })
 
-  test('queuing the same operation twice keeps one unsent pointer', () => {
+  test('queuing the same operation twice advances one pointer generation', () => {
     writeTransaction((conn) => {
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, 'row-one', 'upsert')
       queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, 'row-one', 'upsert')
     })
     expect(listHostedOutbox()).toHaveLength(1)
+    expect(listHostedOutbox()[0]?.generation).toBe(2)
   })
 
   test('sends current state, accepts success, and continues after rejection', async () => {
@@ -109,7 +116,7 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox()).toHaveLength(0)
 
     const rejectedId = queueTransition('FIX-2', '2026-10-11T12:01:00.000Z')
-    const reject = async (): Promise<PushOutcome[]> => [
+    const reject = async (): Promise<HostedPushOutcome[]> => [
       { id: rejectedId, status: 'rejected', reason: 'invalid' },
     ]
     for (let pass = 0; pass < 3; pass++)
@@ -139,5 +146,84 @@ describe('hosted outbox', () => {
     })
     expect(report.skippedCapability).toBeTrue()
     expect(listHostedOutbox()[0]?.attempts).toBe(0)
+  })
+
+  test('an unroutable entry waits without attempts and delivers when routing resolves', async () => {
+    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    let registered: (typeof project)[] = []
+    const waiting = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => registered,
+      push: async () => {
+        throw new Error('must not push without routing')
+      },
+    })
+    expect(waiting.waitingOnRouting).toEqual({ 'unregistered-project': 1 })
+    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 0, last_error: null })
+    expect(
+      await hostedOutboxDoctorLines({ identity: async () => identity, registered: () => [] }),
+    ).toContain('hosted outbox 1 waiting on routing: unregistered-project')
+
+    registered = [project]
+    const delivered = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => registered,
+      push: async () => [{ id: eventId, status: 'applied' }],
+    })
+    expect(delivered.sent).toBe(1)
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+
+  test('drops an obsolete upsert whose current row is gone', async () => {
+    writeTransaction((conn) =>
+      queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, 'gone-row', 'upsert'),
+    )
+    const report = await drainHostedOutbox({ identity: async () => identity })
+    expect(report).toMatchObject({ dropped: 1, rejected: 0, quarantined: 0 })
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+
+  test('an acknowledgement completes only the generation that was sent', async () => {
+    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const seen: Array<string | null> = []
+    let first = true
+    const push = async (changes: HostedPushChange[]) => {
+      seen.push(changes[0]?.op === 'upsert' ? changes[0].row.from_status : null)
+      if (first) {
+        first = false
+        writeTransaction((conn) => {
+          conn
+            .query(`UPDATE task_status_event SET from_status='newer' WHERE record_id=?`)
+            .run(eventId)
+          queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, eventId, 'upsert')
+        })
+      }
+      return [{ id: eventId, status: 'applied' as const }]
+    }
+    await drainHostedOutbox({ identity: async () => identity, registered: () => [project], push })
+    expect(listHostedOutbox()[0]).toMatchObject({ generation: 2, attempts: 0 })
+    await drainHostedOutbox({ identity: async () => identity, registered: () => [project], push })
+    expect(seen).toEqual(['open', 'newer'])
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
+
+  test('routes a queued transition using the project declaration at drain time', async () => {
+    const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const destinations: string[] = []
+    await drainHostedOutbox({
+      identity: async () => ({
+        ...identity,
+        memberships: [
+          ...identity.memberships,
+          { spaceId: 'space-two', slug: 'two', permission: 'write' as const },
+        ],
+      }),
+      registered: () => [{ ...project, settings: { ...project.settings, space: 'two' } }],
+      push: async (_changes, options) => {
+        destinations.push(options.recordSpace)
+        return [{ id: eventId, status: 'applied' }]
+      },
+    })
+    expect(destinations).toEqual(['space-two'])
   })
 })

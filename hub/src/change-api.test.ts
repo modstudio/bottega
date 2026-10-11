@@ -55,11 +55,23 @@ test('change route binds a requested member space and parses its bounded request
 })
 
 test('push route authorizes the requested space and refuses unaccepted tables', async () => {
+  const at = '2026-10-11T12:00:00.000Z'
   const change = {
-    table: 'hub_task_status_event',
+    table: 'hub_task_status_event' as const,
     id: '01990000-0000-7000-8000-000000000001',
-    op: 'upsert',
-    row: { id: '01990000-0000-7000-8000-000000000001' },
+    op: 'upsert' as const,
+    row: {
+      id: '01990000-0000-7000-8000-000000000001',
+      task_key: 'DEV-1',
+      task_id: null,
+      project_name: 'workshop',
+      at,
+      from_status: 'open',
+      to_status: 'active',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
   }
   let received: unknown
   const response = await changeApi(pushRequest([change]), config, {
@@ -79,10 +91,14 @@ test('push route authorizes the requested space and refuses unaccepted tables', 
     fetch: whoami,
     push: async () => [],
   })
-  expect(refused?.status).toBe(400)
-  expect(await refused?.json()).toEqual({
-    error: 'table hub_note is not accepted; accepted tables: hub_task_status_event',
-  })
+  expect(refused?.status).toBe(200)
+  expect(await refused?.json()).toEqual([
+    {
+      id: change.id,
+      status: 'rejected',
+      reason: 'table hub_note is not accepted; accepted tables: hub_task_status_event',
+    },
+  ])
 })
 
 test('push route requires write membership', async () => {
@@ -104,10 +120,51 @@ test('push route requires write membership', async () => {
   expect(pushes).toBe(0)
 })
 
+test('push route rejects an invalid item in place and passes only validated rows to the handler', async () => {
+  const at = '2026-10-11T12:00:00.000Z'
+  const valid = {
+    table: 'hub_task_status_event',
+    id: '01990000-0000-7000-8000-000000000010',
+    op: 'upsert',
+    row: {
+      id: '01990000-0000-7000-8000-000000000010',
+      task_key: 'DEV-10',
+      task_id: null,
+      project_name: 'workshop',
+      at,
+      from_status: 'open',
+      to_status: 'active',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  const invalid = {
+    ...valid,
+    id: '01990000-0000-7000-8000-000000000011',
+    row: { ...valid.row, id: 'different' },
+  }
+  let received: unknown
+  const response = await changeApi(pushRequest([invalid, valid]), config, {
+    fetch: whoami,
+    push: async (_url, _identity, inputs) => {
+      received = inputs
+      return [{ id: valid.id, status: 'applied' }]
+    },
+  })
+  expect(received).toEqual([valid])
+  expect(await response?.json()).toEqual([
+    {
+      id: invalid.id,
+      status: 'rejected',
+      reason: 'hub_task_status_event upsert requires a row whose id matches the pointer',
+    },
+    { id: valid.id, status: 'applied' },
+  ])
+})
+
 test('push client accepts one outcome per requested id and refuses a malformed set', async () => {
-  const body = [
-    { table: 'hub_task_status_event', id: 'event-one', op: 'upsert', row: { id: 'event-one' } },
-  ]
+  const body = [{ table: 'hub_task_status_event' as const, id: 'event-one', op: 'delete' as const }]
   expect(
     await hostedPushChanges(body, {
       baseUrl: 'https://hub.example.test',

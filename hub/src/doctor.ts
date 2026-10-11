@@ -2,13 +2,13 @@ import { DB_PATH, db } from './db.ts'
 import { formatProjectWriteModes } from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
-import { hostedOutboxDoctorLine } from './outbox.ts'
+import { hostedOutboxDoctorLines } from './outbox.ts'
 import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
-export function hubDoctorLines(): string[] {
-  const outbox = hostedOutboxDoctorLine()
+export async function hubDoctorLines(): Promise<string[]> {
+  const outbox = await hostedOutboxDoctorLines()
   return [
     `database       ${DB_PATH}`,
     `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
@@ -16,6 +16,6 @@ export function hubDoctorLines(): string[] {
     ...formatTaskIdentityDoctor(taskIdentityDoctor()),
     ...formatServiceRevisionDoctor(),
     ...formatProjectWriteModes(projects(), readInstallBinding(), process.env.HUB_HOSTED_URL),
-    ...(outbox ? [outbox] : []),
+    ...outbox,
   ]
 }

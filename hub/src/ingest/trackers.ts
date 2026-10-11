@@ -10,8 +10,9 @@ import {
 } from '../../../shared/trackers.ts'
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
-import { HOSTED_STATUS_EVENT_TABLE, queueHostedChange } from '../outbox.ts'
+import { queueHostedChange } from '../outbox.ts'
 import { projects } from '../projects.ts'
+import { PUSHABLE_HUB_CHANGE_TABLES } from '../push-contract.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import { type CollectorMirrorPass, createCollectorMirrorPass } from './collector-mirror.ts'
 
@@ -407,7 +408,7 @@ function observeTrackerTaskOn(
     .run(recordId, task.key, taskRecordId!, at, was, task.category)
   const event =
     inserted.changes > 0 ? { recordId, fromCategory: was!, toCategory: task.category } : null
-  if (event) queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, event.recordId, 'upsert', at)
+  if (event) queueHostedChange(conn, PUSHABLE_HUB_CHANGE_TABLES[0], event.recordId, 'upsert', at)
   return {
     at,
     taskRecordId,
@@ -418,11 +419,7 @@ function observeTrackerTaskOn(
   }
 }
 
-export function observeTrackerTask(
-  task: TrackerTask,
-  at = nowIso(),
-  _pendingMirror = false,
-): TrackerTaskObservation {
+export function observeTrackerTask(task: TrackerTask, at = nowIso()): TrackerTaskObservation {
   return writeTransaction((conn) => {
     const {
       times: _times,

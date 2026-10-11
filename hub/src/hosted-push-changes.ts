@@ -1,24 +1,20 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { type HostedStatusEvent, mirrorStatusEventRow, type TaskIdentity } from './hosted-tasks.ts'
-
-type PushInput = {
-  table: string
-  id: string
-  op: 'upsert' | 'delete'
-  row?: Record<string, unknown>
-}
-
-export type HostedPushOutcome =
-  | { id: string; status: 'applied' | 'duplicate' }
-  | { id: string; status: 'rejected'; reason: string }
+import { mirrorStatusEventRow, type TaskIdentity } from './hosted-tasks.ts'
+import {
+  type HostedPushChange,
+  type HostedPushOutcome,
+  PUSHABLE_HUB_CHANGE_TABLES,
+  type PushableHubChangeTable,
+  type PushedStatusEvent,
+} from './push-contract.ts'
 
 type PushDeclaration = {
   dependencyOrder: number
-  apply(tx: SQL, identity: TaskIdentity, input: PushInput): Promise<'applied' | 'duplicate'>
+  apply(tx: SQL, identity: TaskIdentity, input: HostedPushChange): Promise<'applied' | 'duplicate'>
 }
 
-async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: HostedStatusEvent) {
+async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: PushedStatusEvent) {
   const matches = (await tx`SELECT 1 FROM hub_task_status_event
     WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid
       AND project_name=${row.project_name} AND task_key=${row.task_key}
@@ -33,16 +29,12 @@ async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: HostedSta
   return matches.length > 0
 }
 
-const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
-  hub_task_status_event: {
+const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
+  [PUSHABLE_HUB_CHANGE_TABLES[0]]: {
     dependencyOrder: 1,
     async apply(tx, identity, input) {
-      if (input.op !== 'upsert' && input.op !== 'delete')
-        throw new Error('operation must be upsert or delete')
       if (input.op === 'delete') throw new Error('hub_task_status_event does not accept delete yet')
-      if (!input.row || input.row.id !== input.id)
-        throw new Error('hub_task_status_event upsert requires a row whose id matches the pointer')
-      const row = input.row as unknown as HostedStatusEvent
+      const row = input.row
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
       await mirrorStatusEventRow(tx, identity, row)
@@ -54,12 +46,10 @@ const PUSHABLE_HUB_CHANGES: Record<string, PushDeclaration> = {
   },
 }
 
-export const PUSHABLE_HUB_CHANGE_TABLES = Object.keys(PUSHABLE_HUB_CHANGES)
-
 export async function applyHostedPushChangesInTransaction(
   tx: SQL,
   identity: TaskIdentity,
-  inputs: PushInput[],
+  inputs: HostedPushChange[],
 ): Promise<HostedPushOutcome[]> {
   const ordered = inputs
     .map((input, index) => ({ input, index }))
@@ -87,7 +77,7 @@ export async function applyHostedPushChangesInTransaction(
 export async function applyHostedPushChanges(
   url: string,
   identity: TaskIdentity,
-  inputs: PushInput[],
+  inputs: HostedPushChange[],
 ) {
   const client = new SQL(url)
   try {

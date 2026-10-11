@@ -14,8 +14,8 @@ describe('hub doctor', () => {
     else process.env.HUB_HOSTED_URL = previousHostedUrl
   })
 
-  test('reports the write mode of each registered project', () => {
-    const lines = hubDoctorLines()
+  test('reports the write mode of each registered project', async () => {
+    const lines = await hubDoctorLines()
     expect(lines.some((line) => line.startsWith('install        never-bound'))).toBe(true)
     expect(lines.some((line) => line.startsWith('write mode     local-authoritative'))).toBe(true)
     expect(lines.some((line) => /\balpha\b/.test(line) && line.includes('refused'))).toBe(true)
