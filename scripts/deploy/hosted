@@ -20,6 +20,22 @@ if (( $# != 1 )); then
   exit 1
 fi
 
+release_command="orch release bottega --rung hosted-$APP"
+for release_variable in ORCH_RELEASE_PROJECT ORCH_RELEASE_RUNG ORCH_RELEASE_COMMIT; do
+  if [[ -z "${!release_variable:-}" ]]; then
+    echo "REFUSE: $release_variable is unset or empty; deploy with $release_command" >&2
+    exit 1
+  fi
+done
+if [[ "$ORCH_RELEASE_PROJECT" != "bottega" ]]; then
+  echo "REFUSE: ORCH_RELEASE_PROJECT must be bottega; deploy with $release_command" >&2
+  exit 1
+fi
+if [[ "$ORCH_RELEASE_RUNG" != "hosted-$APP" ]]; then
+  echo "REFUSE: ORCH_RELEASE_RUNG must be hosted-$APP for $APP; deploy with $release_command" >&2
+  exit 1
+fi
+
 # Keep the credential out of shell traces whether it was inherited or read below,
 # and out of the environment of every command that does not need it.
 set +x
@@ -27,6 +43,10 @@ record_migrate_url="${ORCH_RECORD_MIGRATE_URL:-}"
 unset ORCH_RECORD_MIGRATE_URL
 
 commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+if [[ "$ORCH_RELEASE_COMMIT" != "$commit" ]]; then
+  echo "REFUSE: ORCH_RELEASE_COMMIT does not match checkout commit $commit; deploy with $release_command" >&2
+  exit 1
+fi
 if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=no)" ]]; then
   echo "REFUSE: tracked files differ from the commit being deployed; commit or stash them, then release with orch release" >&2
   exit 1

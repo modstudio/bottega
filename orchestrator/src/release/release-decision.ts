@@ -5,6 +5,19 @@ import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-ta
 
 export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
 
+/** Identify the release and checked candidate to the registered deploy command. */
+export function releaseCommandEnvironment(
+  project: string,
+  rung: string,
+  candidate: string,
+): Record<string, string> {
+  return {
+    ORCH_RELEASE_PROJECT: project,
+    ORCH_RELEASE_RUNG: rung,
+    ORCH_RELEASE_COMMIT: candidate,
+  }
+}
+
 /** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
 export function releaseCapturedText(text: string, secretShaped: boolean): string {
   return secretShaped ? RELEASE_OUTPUT_WITHHELD : text

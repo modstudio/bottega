@@ -14,13 +14,14 @@ fly secrets set -a bottega-api \
   SES_SECRET_ACCESS_KEY='<secret-access-key>' \
   SES_REGION='us-east-2' \
   SES_FROM_ADDRESS='<display name and verified sender address>'
-scripts/deploy/hosted api
+orch release bottega --rung hosted-api
 fly ips allocate-v4 --shared -a bottega-api
 fly ips allocate-v6 -a bottega-api
 fly certs add api.bottega.run -a bottega-api
 ```
 
-The deploy script takes `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one
+The app is deployed with `orch release bottega --rung hosted-api`; the deploy script refuses a
+direct call. The deploy script takes `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one
 variable from the operator's env file when the environment lacks it. It gives the value to the
 migration only, never to Fly, then migrates the record and confirms that applied migrations
 equal those shipped in the image before invoking Fly. The

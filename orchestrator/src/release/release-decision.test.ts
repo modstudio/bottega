@@ -5,11 +5,20 @@ import {
   postDeployLiveDecision,
   RELEASE_OUTPUT_WITHHELD,
   releaseCapturedText,
+  releaseCommandEnvironment,
   releaseLockDecision,
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
 } from './release-decision.ts'
+
+test('identifies the release to its deploy command', () => {
+  expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123')).toEqual({
+    ORCH_RELEASE_PROJECT: 'project-name',
+    ORCH_RELEASE_RUNG: 'hosted-api',
+    ORCH_RELEASE_COMMIT: 'abc123',
+  })
+})
 
 const level = {
   branch: 'main',
