@@ -10,6 +10,7 @@ import {
   writeChecksumSet,
   writeReleaseManifest,
 } from './build-release-artifacts.ts'
+import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 test('artifact names and SHA256SUMS lines follow the release format', () => {
   const filename = `${PLATFORM_SLUG}-1.2.3-linux-arm64.tar.gz`
@@ -49,7 +50,17 @@ test('checksum and release manifest writers describe the assembled artifacts', (
 test('release artifact assembly refuses a dirty tree before building', async () => {
   await expect(
     buildReleaseArtifacts('v1.2.3', '/unused', {
+      bunVersion: RELEASE_BUN_VERSION,
       git: async () => ({ exitCode: 0, stdout: ' M package.json' }),
     }),
   ).rejects.toThrow('dirty working tree')
+})
+
+test('release artifact assembly refuses a Bun version other than the release pin', async () => {
+  await expect(
+    buildReleaseArtifacts('v1.2.3', '/unused', {
+      bunVersion: '0.0.0-test',
+      git: async () => ({ exitCode: 0, stdout: '' }),
+    }),
+  ).rejects.toThrow(`release builds require Bun ${RELEASE_BUN_VERSION}, received 0.0.0-test`)
 })
