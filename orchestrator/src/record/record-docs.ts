@@ -1,8 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { docAudienceRefusal } from '../../../shared/doc-sections.ts'
-import { assertDocSections, docBodyForAudience } from '../../../shared/doc-sections.ts'
+import * as sections from '../../../shared/doc-sections.ts'
 import {
   type DocAudience,
   type DocAudiences,
@@ -173,7 +172,7 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
     `
     return rows.map((row: Record<string, unknown>) => {
       const doc = recordDocRow(row)
-      const body = input.audience ? docBodyForAudience(doc.body, input.audience) : doc.body
+      const body = input.audience ? sections.docBodyForAudience(doc.body, input.audience) : doc.body
       return {
         ...doc,
         body,
@@ -199,9 +198,9 @@ export async function getRecordDoc(
     const doc = recordDocRow(rows[0] as Record<string, unknown>)
     if (!input.audience) return doc
     const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
-    const refusal = docAudienceRefusal(address, doc.audiences, input.audience)
+    const refusal = sections.docAudienceRefusal(address, doc.audiences, input.audience)
     if (refusal) throw new RecordDocError(refusal)
-    return { ...doc, body: docBodyForAudience(doc.body, input.audience) }
+    return { ...doc, body: sections.docBodyForAudience(doc.body, input.audience) }
   })
 }
 
@@ -321,7 +320,7 @@ export async function upsertRecordDoc(
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const audiences = storedDocAudiences(input, existing[0])
-    assertDocSections(input.body, audiences)
+    sections.assertDocSections(input.body, audiences)
     const parentId = storedDocParentId(input, existing[0])
     assertWrite(
       await recordTreeWriteRefusal(tx, {
@@ -546,7 +545,7 @@ async function deleteMissingCanonRows(
 export async function importRecordCanon(
   input: Tenant & RecordCanonImportInput,
 ): Promise<RecordCanonImportResult> {
-  for (const row of input.rows) assertDocSections(row.body, ['technical'])
+  for (const row of input.rows) sections.assertDocSections(row.body, ['technical'])
   return tenant(input, async (tx) => {
     const address =
       input.address.kind === 'user'
@@ -721,7 +720,7 @@ export async function consumeRecordDoc(
     const now = new Date().toISOString()
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
-    assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
+    sections.assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
     await tx`
       UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -810,7 +809,7 @@ export async function restoreRecordDoc(
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
-    assertDocSections(body, audiences)
+    sections.assertDocSections(body, audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
@@ -938,9 +937,9 @@ export async function importRecordDoc(
   assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
   for (const revision of revisions) {
     assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
-    assertDocSections(revision.body, recordDocAudiences(revision.audiences))
+    sections.assertDocSections(revision.body, recordDocAudiences(revision.audiences))
   }
-  assertDocSections(doc.body, recordDocAudiences(doc.audiences))
+  sections.assertDocSections(doc.body, recordDocAudiences(doc.audiences))
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, doc)
     assertRevisionWrite({
