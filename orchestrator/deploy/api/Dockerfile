@@ -12,5 +12,8 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
+ARG GIT_SHA
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 3000
 CMD ["bun", "orchestrator/src/record/record-api-server.ts"]

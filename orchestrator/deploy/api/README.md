@@ -26,6 +26,8 @@ migration only, never to Fly, then migrates the record and confirms that applied
 equal those shipped in the image before invoking Fly. The
 image's release command uses its low-privilege `ORCH_RECORD_URL` and refuses a release with
 pending migrations, so a bare `fly deploy` cannot run ahead of the record schema.
+The app serves `GET /version` with the commit it was built from; the deploy script supplies that
+commit as a build argument.
 
 Before migrating, create the dedicated Better Auth login and public-read role as the PostgreSQL
 administrator. Granting the public role without inheritance lets the application actor switch to

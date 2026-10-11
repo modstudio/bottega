@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { identity, idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
@@ -10,22 +10,14 @@ import {
   type RecordSettingsPermissionInput,
 } from './record-settings.ts'
 
-const identity: RecordIdentity = {
-  user: { id: 'user-a', email: 'a@example.test' },
-  activeSpaceId: 'space-a',
-  personalSpaceId: 'space-a',
-  memberships: [
-    { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
-  ],
-}
-
-function appWith(session: RecordIdentity | null, overrides: Record<string, unknown> = {}) {
+function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   return recordApi({
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,
     readHealth: async () => ({ ok: true, migrations: 14 }),
+    readCommit: () => undefined,
     readRuns: async () => [],
     readRunsWindow: async (input: { offset: number; limit: 25 | 50 | 100 }) => ({
       items: [],
@@ -622,6 +614,20 @@ describe('record API', () => {
     const app = appWith(identity)
     expect(await (await app.request('/api/auth/session')).json()).toEqual({ handled: true })
     expect(await (await app.request('/health')).json()).toEqual({ ok: true, migrations: 14 })
+  })
+
+  test('reports a valid commit without requiring a session', async () => {
+    const commit = '0123456789abcdef0123456789abcdef01234567'
+    const response = await appWith(null, { readCommit: () => commit }).request('/version')
+    expect([response.status, await response.json()]).toEqual([200, { commit }])
+  })
+
+  test('reports an unknown commit without requiring a session', async () => {
+    const response = await appWith(null, { readCommit: () => undefined }).request('/version')
+    expect([response.status, await response.json()]).toEqual([
+      503,
+      { commit: null, error: 'the commit this app was built from is unknown' },
+    ])
   })
 
   test('an over-limit reset request returns the same status and body as the first request', async () => {

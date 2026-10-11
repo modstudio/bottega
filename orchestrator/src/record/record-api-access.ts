@@ -5,6 +5,7 @@ import type { Env, Hono } from 'hono'
 type AccessRouteDeps = {
   auth: { handler(request: Request): Response | Promise<Response> }
   readHealth(): Promise<{ ok: boolean; migrations: number }>
+  readVersion(): { status: 200 | 503; body: object }
 }
 
 export function registerRecordAccessRoutes<E extends Env>(
@@ -14,6 +15,10 @@ export function registerRecordAccessRoutes<E extends Env>(
   app.get('/health', async (context) => {
     const health = await deps.readHealth()
     return context.json(health, health.ok ? 200 : 503)
+  })
+  app.get('/version', (context) => {
+    const response = deps.readVersion()
+    return context.json(response.body, response.status)
   })
   app.all('/api/auth/*', async (context) => {
     const response = await deps.auth.handler(context.req.raw)

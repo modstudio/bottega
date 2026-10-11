@@ -22,6 +22,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readSession: async () => session,
     setActiveSpace: async () => undefined,
     readHealth: async () => ({ ok: true, migrations: 14 }),
+    readCommit: () => undefined,
     readRuns: async () => [],
     readRunsWindow: async (input: { offset: number; limit: 25 | 50 | 100 }) => ({
       items: [],
