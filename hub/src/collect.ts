@@ -134,29 +134,40 @@ export async function hostedCollectLegs(
       )
   }
   const legs = [
-    ['hosted evidence', evidence],
-    ['hosted tasks', dependencies.tasks ?? pullHostedTasks],
-    ['hosted notes', dependencies.notes ?? pullHostedNotes],
-    ['hosted reports', dependencies.reports ?? pullHostedReports],
+    { name: 'hosted evidence', work: evidence },
+    {
+      name: 'hosted tasks',
+      work: dependencies.tasks ?? pullHostedTasks,
+      change: {
+        name: 'hosted task changes',
+        work: dependencies.changes ?? pullHostedTaskChanges,
+      },
+    },
+    {
+      name: 'hosted notes',
+      work: dependencies.notes ?? pullHostedNotes,
+      change: {
+        name: 'hosted note changes',
+        work: dependencies.noteChanges ?? pullHostedNoteChanges,
+      },
+    },
+    {
+      name: 'hosted reports',
+      work: dependencies.reports ?? pullHostedReports,
+      change: {
+        name: 'hosted send changes',
+        work: dependencies.sendChanges ?? pullHostedSendChanges,
+      },
+    },
   ] as const
   const results: CollectLegResult[] = []
   let previous: string | undefined
-  for (const [source, work] of legs) {
+  for (const { name: source, work, ...leg } of legs) {
     guard?.assertHeld(previous)
     results.push(await settleLeg(source, work))
     previous = source
     guard?.assertHeld(source)
-    const changeWork =
-      source === 'hosted tasks'
-        ? { name: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges }
-        : source === 'hosted notes'
-          ? { name: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges }
-          : source === 'hosted reports'
-            ? {
-                name: 'hosted send changes',
-                work: dependencies.sendChanges ?? pullHostedSendChanges,
-              }
-            : null
+    const changeWork = 'change' in leg ? leg.change : null
     if (!changeWork) continue
     const changeResult = await settleChangeLeg(changeWork.name, changeWork.work)
     if (!changeResult) continue
@@ -437,6 +448,7 @@ export async function deliverOperatorNotifications(
 /** The remote and commit-shaped legs. */
 async function collectSlow(scheduled = false, guard?: LeaseGuard) {
   const results = [] as CollectLegResult[]
+  let lastCompleted = 'tasks'
   guard?.assertHeld()
   results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
   guard?.assertHeld('git')
@@ -454,10 +466,12 @@ async function collectSlow(scheduled = false, guard?: LeaseGuard) {
   stamp('collect.slow.at')
   if (process.env.HUB_HOSTED_URL) {
     guard?.assertHeld('tasks')
-    results.push(...(await hostedCollectLegs(guard)))
+    const hostedResults = await hostedCollectLegs(guard)
+    results.push(...hostedResults)
+    lastCompleted = hostedResults.at(-1)?.source ?? lastCompleted
     guard?.assertHeld('hosted')
   }
-  guard?.assertHeld(process.env.HUB_HOSTED_URL ? 'hosted reports' : 'tasks')
+  guard?.assertHeld(lastCompleted)
   stamp('collect.at')
   return results
 }
