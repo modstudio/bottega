@@ -24,14 +24,29 @@ import {
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 
 const releaseSchema = strictObject({
-  rungs: z.array(
-    strictObject({
-      name: z.string(),
-      branch: z.string(),
-      deploy: z.string().optional(),
-      live: z.string().trim().min(1).optional(),
+  rungs: z
+    .array(
+      strictObject({
+        name: z.string(),
+        branch: z.string(),
+        deploy: z.string().optional(),
+        live: z.string().trim().min(1).optional(),
+        onDemand: z.boolean().optional(),
+      }),
+    )
+    .superRefine((rungs, context) => {
+      const seen = new Set<string>()
+      for (const [index, rung] of rungs.entries()) {
+        if (seen.has(rung.name)) {
+          context.addIssue({
+            code: 'custom',
+            path: [index, 'name'],
+            message: `release rung name "${rung.name}" is repeated; use each name at most once`,
+          })
+        }
+        seen.add(rung.name)
+      }
     }),
-  ),
   mergeMethod: z.enum(['squash', 'merge', 'rebase']),
   requiredChecks: z.array(z.string()),
   observationWindowHours: z.number().int().positive().optional(),

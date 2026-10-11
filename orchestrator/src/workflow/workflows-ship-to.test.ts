@@ -179,6 +179,106 @@ describe('ship-to workflow composition', () => {
     expect(served.expectedStatus).toBe('none')
   })
 
+  test('on-demand rungs do not affect ship-to reach, remaining, or closure', () => {
+    const d = database()
+    publishShipToFixture(d, ['tracker', 'release', 'ship-to'])
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        release: {
+          ...release,
+          rungs: [{ name: 'hosted', branch: 'main', onDemand: true }],
+        },
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+
+    const facts = composeWorkflow(
+      'ship-to-fixture',
+      'fixture',
+      undefined,
+      {},
+      d,
+      {},
+      shipToAutonomy('trunk'),
+    ).facts
+
+    expect(facts.shipTo).toMatchObject({ reach: [], remaining: [], closeAction: 'done' })
+    expect(facts.release?.rungs).toEqual([{ name: 'hosted', branch: 'main', onDemand: true }])
+  })
+
+  test('only ordinary rungs remain at ship-to trunk', () => {
+    const d = database()
+    publishShipToFixture(d, ['tracker', 'release', 'ship-to'])
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        release: {
+          ...release,
+          rungs: [
+            { name: 'production', branch: 'production' },
+            { name: 'hosted', branch: 'main', onDemand: true },
+          ],
+        },
+        docs: { protocol: 'orch-docs' },
+      }),
+      'fixture',
+    )
+
+    const facts = composeWorkflow(
+      'ship-to-fixture',
+      'fixture',
+      undefined,
+      {},
+      d,
+      {},
+      shipToAutonomy('trunk'),
+    ).facts
+
+    expect(facts.shipTo).toMatchObject({
+      reach: [],
+      remaining: ['production'],
+      closeAction: 'review',
+    })
+    expect(facts.release?.rungs).toEqual([
+      { name: 'production', branch: 'production' },
+      { name: 'hosted', branch: 'main', onDemand: true },
+    ])
+  })
+
+  test.each(['trunk', 'production'] as const)(
+    'an on-demand rung cannot be the ship-to depth at %s',
+    (level) => {
+      const d = database()
+      publishShipToFixture(d, ['release', 'ship-to'])
+      d.query('UPDATE project SET settings=? WHERE name=?').run(
+        JSON.stringify({
+          release: {
+            ...release,
+            rungs: [{ name: 'hosted', branch: 'main', onDemand: true }],
+          },
+          docs: { protocol: 'orch-docs' },
+        }),
+        'fixture',
+      )
+
+      expect(() =>
+        composeWorkflow(
+          'ship-to-fixture',
+          'fixture',
+          undefined,
+          { depth: 'hosted' },
+          d,
+          {},
+          shipToAutonomy(level),
+        ),
+      ).toThrow(
+        'ship-to depth "hosted" names a rung released on demand with orch release fixture --rung hosted and cannot be a ship-to depth',
+      )
+    },
+  )
+
   test('a remaining rung closes to the configured in-review state', () => {
     const d = database()
     publishShipToFixture(d)

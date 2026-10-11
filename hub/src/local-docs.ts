@@ -1,10 +1,9 @@
 import { type DocAudience, docSummary } from '../../shared/docs.ts'
 import { ArticleDocFieldsSchema, DocSchema, DocTreeItemSchema } from './doc-contract.ts'
+import { type DocRow, docGet, docList } from './orch.ts'
 
 const LocalTreeSchema = DocTreeItemSchema.extend(ArticleDocFieldsSchema.shape)
 const LocalDocSchema = DocSchema.extend(ArticleDocFieldsSchema.shape)
-
-import { type DocRow, docGet, docList } from './orch.ts'
 
 export type LocalDocFilters = Pick<
   NonNullable<Parameters<typeof docList>[0]>,

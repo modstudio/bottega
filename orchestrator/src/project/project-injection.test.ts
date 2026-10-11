@@ -137,6 +137,27 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('release.rungs.0.live: Too small')])
   })
 
+  test('refuses repeated rung names and a non-boolean on-demand marker', () => {
+    expect(
+      validateProjectSettings({
+        release: {
+          ...release,
+          rungs: [release.rungs[0]!, { ...release.rungs[0]!, branch: 'preview' }],
+        },
+      }),
+    ).toEqual([
+      expect.stringContaining('release.rungs.1.name: release rung name "production" is repeated'),
+    ])
+    expect(
+      validateProjectSettings({
+        release: {
+          ...release,
+          rungs: [{ ...release.rungs[0]!, onDemand: 'yes' }],
+        },
+      } as unknown as Project['settings']),
+    ).toEqual([expect.stringContaining('release.rungs.0.onDemand: Invalid input')])
+  })
+
   test('refuses the retired release.deployCommand instead of silently accepting it', () => {
     expect(
       validateProjectSettings({
