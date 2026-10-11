@@ -40,6 +40,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-notices.ts',
     './monitor-outbox.ts',
     './monitor-types.ts',
+    './release-live-observation.ts',
     '../../../shared/process-identity.ts',
     '../project/project-lock.ts',
     '../project/projects.ts',
@@ -58,6 +59,13 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/secret-shaped.ts',
     '../recipe/database-connection.ts',
     './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/release-live-conditions.ts', ['./monitor-types.ts']),
+  module('orchestrator/src/monitor/release-live-observation.ts', [
+    '../project/projects.ts',
+    '../release/live-reading.ts',
+    '../release/release-service.ts',
+    './release-live-conditions.ts',
   ]),
   module('orchestrator/src/monitor/monitor-branches.ts', []),
   module('orchestrator/src/monitor/monitor-harness-load.ts', [

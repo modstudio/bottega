@@ -472,6 +472,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/secret-shaped.ts',
     './release-decision.ts',
+    './live-reading.ts',
   ]),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',
