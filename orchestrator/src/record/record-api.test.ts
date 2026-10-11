@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { parseBuiltCommit } from '../../../shared/built-commit.ts'
-import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { identity, idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
@@ -11,16 +11,7 @@ import {
   type RecordSettingsPermissionInput,
 } from './record-settings.ts'
 
-const identity: RecordIdentity = {
-  user: { id: 'user-a', email: 'a@example.test' },
-  activeSpaceId: 'space-a',
-  personalSpaceId: 'space-a',
-  memberships: [
-    { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
-  ],
-}
-
-function appWith(session: RecordIdentity | null, overrides: Record<string, unknown> = {}) {
+function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   return recordApi({
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },
@@ -626,26 +617,20 @@ describe('record API', () => {
     expect(await (await app.request('/health')).json()).toEqual({ ok: true, migrations: 14 })
   })
 
-  test('reports the commit without requiring a session', async () => {
-    const commit = '0123456789abcdef0123456789abcdef01234567'
+  test.each([
+    '0123456789abcdef0123456789abcdef01234567',
+    undefined,
+    '0123456',
+    'g123456789abcdef0123456789abcdef01234567',
+  ])('reports only a valid commit without requiring a session', async (raw) => {
+    const commit = parseBuiltCommit(raw)
     const response = await appWith(null, { readCommit: () => commit }).request('/version')
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ commit })
+    expect([response.status, await response.json()]).toEqual(
+      commit
+        ? [200, { commit }]
+        : [503, { commit: null, error: 'the commit this app was built from is unknown' }],
+    )
   })
-
-  test.each([undefined, '0123456', 'g123456789abcdef0123456789abcdef01234567'])(
-    'reports an unknown commit for %p',
-    async (commit) => {
-      const response = await appWith(null, { readCommit: () => parseBuiltCommit(commit) }).request(
-        '/version',
-      )
-      expect(response.status).toBe(503)
-      expect(await response.json()).toEqual({
-        commit: null,
-        error: 'the commit this app was built from is unknown',
-      })
-    },
-  )
 
   test('an over-limit reset request returns the same status and body as the first request', async () => {
     let requests = 0

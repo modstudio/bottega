@@ -13,7 +13,17 @@ import type {
   RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
+import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { RecordBoardError } from '../../src/record/record-board-contract.ts'
+
+export const identity: RecordIdentity = {
+  user: { id: 'user-a', email: 'a@example.test' },
+  activeSpaceId: 'space-a',
+  personalSpaceId: 'space-a',
+  memberships: [
+    { space_id: 'space-a', name: 'Space A', slug: 'space-a', role: 'owner', permission: 'write' },
+  ],
+}
 
 export function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
