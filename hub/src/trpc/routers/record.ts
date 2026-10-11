@@ -290,8 +290,8 @@ export const recordRouter = t.router({
     )
     .query(({ ctx, input }) => recordClient(ctx).docs(input)),
   doc: t.procedure
-    .input(z.object({ id: uuid }))
-    .query(({ ctx, input }) => recordClient(ctx).doc(input.id)),
+    .input(z.object({ id: uuid, audience: z.enum(DOC_AUDIENCES).optional() }))
+    .query(({ ctx, input }) => recordClient(ctx).doc(input.id, input.audience)),
   docSearch: t.procedure
     .input(
       z.object({

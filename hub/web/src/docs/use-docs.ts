@@ -44,13 +44,18 @@ export function useDocsTree(source: DocsSource) {
   return { items, isPending: result.isPending, error: result.error }
 }
 
-export function useDocsDocument(source: DocsSource, selected: DocsTreeItem | null) {
+export function useDocsDocument(
+  source: DocsSource,
+  selected: DocsTreeItem | null,
+  audience: DocsAudience | null,
+) {
   const localScope = selected && isScope(selected.scope) ? selected.scope : null
   const local = useQuery({
     ...trpc.doc.read.queryOptions({
       scope: (localScope ?? 'global') as DocScope,
       subject: selected?.subject ?? null,
       slug: selected?.slug ?? '',
+      audience: audience ?? undefined,
     }),
     enabled: source === 'local' && Boolean(selected && localScope),
     placeholderData: keepPreviousData,
@@ -58,6 +63,7 @@ export function useDocsDocument(source: DocsSource, selected: DocsTreeItem | nul
   const hosted = useQuery({
     ...trpc.record.doc.queryOptions({
       id: selected?.id ?? '00000000-0000-4000-8000-000000000000',
+      audience: audience ?? undefined,
     }),
     enabled: source === 'hosted' && Boolean(selected?.id),
     placeholderData: keepPreviousData,

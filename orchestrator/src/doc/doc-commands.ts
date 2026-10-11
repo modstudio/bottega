@@ -24,6 +24,7 @@ import {
   docSubjects,
   exportDocs,
   getDoc,
+  getDocForAudience,
   importDocs,
   lintStoredDoc,
   listDocMetadata,
@@ -112,6 +113,14 @@ function docAudiences(value: string | undefined): DocAudiences | undefined {
       `--audience must be a comma-separated set of ${DOC_AUDIENCES.join(' or ')}: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+function docReadAudience(value: string | undefined): (typeof DOC_AUDIENCES)[number] | undefined {
+  if (value === undefined) return undefined
+  if (DOC_AUDIENCES.includes(value as (typeof DOC_AUDIENCES)[number])) {
+    return value as (typeof DOC_AUDIENCES)[number]
+  }
+  throw new Error(`--audience must be one of ${DOC_AUDIENCES.join(', ')}`)
 }
 
 function docStatus(value: string | undefined): DocStatus | undefined {
@@ -224,7 +233,17 @@ function keywordListDocs(
         compareStoreText(left.title, right.title),
     )
     .slice(0, DOC_KEYWORD_LIST_LIMIT)
-    .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null))
+    .map((doc) =>
+      filters.audience
+        ? getDocForAudience(
+            doc.scope,
+            doc.subject,
+            doc.slug,
+            filters.audience as (typeof DOC_AUDIENCES)[number],
+            filters.owner ?? null,
+          )
+        : getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null),
+    )
     .filter((doc) => doc !== null)
 }
 
@@ -274,7 +293,10 @@ function handledReadDocCommand(
   if (sub !== 'show' && sub !== 'get') return false
   const slug = argv[2]
   if (!slug || !address.scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
-  const doc = getDoc(address.scope, address.subject, slug, address.owner)
+  const audience = docReadAudience(flags.flag('audience'))
+  const doc = audience
+    ? getDocForAudience(address.scope, address.subject, slug, audience, address.owner)
+    : getDoc(address.scope, address.subject, slug, address.owner)
   if (!doc)
     throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
   if (has('json')) presentation.log(JSON.stringify(doc))

@@ -1,5 +1,6 @@
 /** Owns local document list queries. Must not know hosted transport, canon files, or CLI. */
 import type { Database } from 'bun:sqlite'
+import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
@@ -207,6 +208,24 @@ export function getDocStore(
   return row ? docRow(row) : null
 }
 
+export function getDocForAudienceStore(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  audience: DocAudience,
+  owner: string | null = null,
+  database: Database = db(),
+): Doc | null {
+  const doc = getDocStore(scope, subject, slug, owner, database)
+  if (!doc) return null
+  if (!doc.audiences.includes(audience)) {
+    throw new Error(
+      `document ${scope}/${subject ?? '_'}/${slug} does not list audience ${JSON.stringify(audience)}; choose one of ${doc.audiences.join(', ')}`,
+    )
+  }
+  return { ...doc, body: docBodyForAudience(doc.body, audience) }
+}
+
 export function listDocsStore(
   filters: {
     scope?: string
@@ -248,15 +267,24 @@ export function listDocsStore(
           `ORDER BY d.scope, COALESCE(d.subject, ''), ${tree.position}, d.title`,
       )
       .all(...values) as Array<Doc & { featured: boolean | number }>
-  ).map(docRow)
+  )
+    .map(docRow)
+    .map((doc) =>
+      filters.audience
+        ? { ...doc, body: docBodyForAudience(doc.body, filters.audience as DocAudience) }
+        : doc,
+    )
 }
 
 export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[] {
-  const { where, values } = metadataFilters(filters)
+  const projectedBodyMatch = filters.audience !== undefined && filters.bodyMatch !== undefined
+  const { where, values } = metadataFilters(
+    projectedBodyMatch ? { ...filters, bodyMatch: undefined } : filters,
+  )
   const order = filters.updatedAtOrder
     ? `d.updated_at ${filters.updatedAtOrder.toUpperCase()}, d.scope, COALESCE(d.subject, ''), d.position, d.title`
     : "d.scope, COALESCE(d.subject, ''), d.position, d.title"
-  return (
+  const rows = (
     db()
       .query(
         `SELECT d.id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
@@ -264,6 +292,18 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
       )
       .all(...values) as Array<DocMetadata & { featured: boolean | number }>
   ).map(docRow)
+  if (!projectedBodyMatch) return rows
+  const needle = filters.bodyMatch!.toLocaleLowerCase()
+  return rows.filter((row) => {
+    const doc = getDocForAudienceStore(
+      row.scope,
+      row.subject,
+      row.slug,
+      filters.audience as DocAudience,
+      filters.owner ?? null,
+    )
+    return doc?.body.toLocaleLowerCase().includes(needle)
+  })
 }
 
 function metadataFilters(filters: DocListFilters): { where: string[]; values: string[] } {

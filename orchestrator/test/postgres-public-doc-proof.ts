@@ -6,6 +6,7 @@ import {
   designatePublicDocProject,
   listPublicDocProjects,
 } from '../src/record/record-public-doc-designation.ts'
+import { getPublicRecordDoc, searchPublicRecordDocs } from '../src/record/record-public-docs.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -41,7 +42,7 @@ export function registerPublicDocProofs(input: {
         audiences, featured, project_id, created_at, updated_at, deleted_at
       ) VALUES
         ('${PUBLIC_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'public-guide', 'Public guide', 'public searchable body', 'demand', ARRAY['technical','customer'], true, '${publicProjectId}', now(), now(), NULL),
+         'public-guide', 'Public guide', E'public searchable body\n:::section{audience="internal"}\nhiddenmargin\n:::', 'demand', ARRAY['technical','internal','customer'], true, '${publicProjectId}', now(), now(), NULL),
         ('${TECHNICAL_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
          'technical-guide', 'Technical guide', 'hidden technical body', 'demand', ARRAY['technical'], false, '${publicProjectId}', now(), now(), NULL),
         ('${OWNED_DOC}', '${publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
@@ -153,6 +154,15 @@ export function registerPublicDocProofs(input: {
     const result = asPublic(`SELECT featured FROM doc WHERE id='${PUBLIC_DOC}'; COMMIT;`)
     expect(result.code, result.stderr).toBe(0)
     expect(result.stdout).toBe('t')
+  })
+
+  test('public reads and search never expose or match an internal section', async () => {
+    const doc = await getPublicRecordDoc({ url: actorUrl, id: PUBLIC_DOC })
+    expect(doc?.body).toBe('public searchable body\n')
+    expect(await searchPublicRecordDocs({ url: actorUrl, query: 'hiddenmargin' })).toEqual([])
+    const visible = await searchPublicRecordDocs({ url: actorUrl, query: 'searchable' })
+    expect(visible).toHaveLength(1)
+    expect(visible[0]?.snippet).not.toContain('hiddenmargin')
   })
 
   test('record service refuses attaching another project address to the public project', async () => {

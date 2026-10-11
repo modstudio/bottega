@@ -60,6 +60,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'orchestrator/src/record/record-docs.ts',
     [
       'bun',
+      '../../../shared/doc-sections.ts',
       '../../../shared/docs.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',

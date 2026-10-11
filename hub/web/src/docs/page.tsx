@@ -80,7 +80,7 @@ export function DocsPage() {
     setProject(chooserProject(null, subjects))
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
-  const reading = useDocsDocument(source, selected)
+  const reading = useDocsDocument(source, selected, selectedAudience(filters))
   const replacement = useMemo(
     () => resolveDocsReplacement(reading.document, catalog.items),
     [reading.document, catalog.items],

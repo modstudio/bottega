@@ -20,6 +20,7 @@ import {
   docsForRun,
   exportDocs,
   getDoc,
+  getDocForAudience,
   getDocRevision,
   listDocMetadata,
   listDocRevisions,
@@ -31,6 +32,41 @@ import {
 } from './docs.ts'
 
 describe('scoped operator docs', () => {
+  test('audience reads project sections while author reads retain marks', async () => {
+    const body = 'Everyone.\n:::section{audience="internal"}\nPrivate margin.\n:::\nAfter.'
+    const created = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'sectioned',
+      title: 'Sectioned',
+      body,
+      delivery: 'demand',
+      audiences: ['internal', 'customer'],
+      reason: 'exercise audience sections',
+    })
+    expect(getDoc('global', null, created.slug)?.body).toBe(body)
+    expect(getDocForAudience('global', null, created.slug, 'customer')?.body).toBe(
+      'Everyone.\nAfter.',
+    )
+    expect(getDocForAudience('global', null, created.slug, 'internal')?.body).toContain(
+      'Private margin.',
+    )
+    expect(listDocMetadata({ audience: 'customer', bodyMatch: 'Private margin' })).toEqual([])
+    expect(listDocMetadata({ audience: 'internal', bodyMatch: 'Private margin' })).toHaveLength(1)
+    await expect(
+      writeDoc({
+        scope: 'global',
+        subject: null,
+        slug: created.slug,
+        title: created.title,
+        body,
+        audiences: ['customer'],
+        reason: 'orphan the internal section',
+        expectedRevision: created.revision!,
+      }),
+    ).rejects.toThrow('document does not list')
+  })
+
   test('never-bound document lifecycle stays local and rejects a stale revision', async () => {
     const calls: string[] = []
     const client = createMemoryRecordApiClient()
