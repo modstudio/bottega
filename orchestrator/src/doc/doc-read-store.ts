@@ -134,20 +134,27 @@ const LATEST_REVISION_SQL =
 
 const articleFields = (
   database: Database,
-  row: { record_id?: string | null; article_subject_id?: string | null; source_files?: string },
+  row: {
+    kind?: string
+    record_id?: string | null
+    article_subject_id?: string | null
+    source_files?: string
+  },
 ) => {
   const own = row.article_subject_id
     ? (database
         .query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?')
         .get(row.article_subject_id) ?? null)
     : null
-  const related = row.record_id
-    ? database
-        .query<{ id: string; name: string }, [string]>(
-          `SELECT s.id,s.name FROM doc_related_subject r JOIN subject s ON s.id=r.subject_id WHERE r.doc_record_id=? ORDER BY s.position,s.id`,
-        )
-        .all(row.record_id)
-    : []
+  // Only an article can hold related subjects, so no other document reads the link table.
+  const related =
+    row.kind === 'article' && row.record_id
+      ? database
+          .query<{ id: string; name: string }, [string]>(
+            `SELECT s.id,s.name FROM doc_related_subject r JOIN subject s ON s.id=r.subject_id WHERE r.doc_record_id=? ORDER BY s.position,s.id`,
+          )
+          .all(row.record_id)
+      : []
   return {
     articleSubject: own,
     relatedSubjects: related,
