@@ -31,6 +31,7 @@ type OutboxEntry = {
   quarantine_reason: string | null
   routing_space_id: string | null
   routing_project: string | null
+  fields: string | null
 }
 
 export type HostedOutboxReport = {
@@ -68,16 +69,29 @@ export function queueHostedChange(
   rowId: string,
   operation: 'upsert' | 'delete',
   queuedAt = nowIso(),
+  fields: readonly string[] | null = null,
 ) {
   conn
     .query(
-      `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at)
-       VALUES (?,?,?,?,?) ON CONFLICT(table_name,row_id) DO UPDATE SET
+      `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at,fields)
+       VALUES (?,?,?,?,?,?) ON CONFLICT(table_name,row_id) DO UPDATE SET
        operation=excluded.operation,queued_at=excluded.queued_at,
+       fields=CASE WHEN excluded.operation='delete' THEN NULL
+         WHEN hosted_outbox.operation='delete' THEN excluded.fields
+         WHEN hosted_outbox.fields IS NULL OR excluded.fields IS NULL THEN NULL
+         ELSE (SELECT json_group_array(value) FROM
+           (SELECT value FROM json_each(hosted_outbox.fields) UNION SELECT value FROM json_each(excluded.fields))) END,
        generation=hosted_outbox.generation+1,attempts=0,last_error=NULL,
        quarantined_at=NULL,quarantine_reason=NULL`,
     )
-    .run(newRecordId(), table, rowId, operation, queuedAt)
+    .run(
+      newRecordId(),
+      table,
+      rowId,
+      operation,
+      queuedAt,
+      fields === null ? null : JSON.stringify(fields),
+    )
 }
 
 export function listHostedOutbox(): OutboxEntry[] {
@@ -183,7 +197,14 @@ function prepareOutboxRows(entries: OutboxEntry[]): {
     rows.push({
       entry,
       project_name: loaded.projectName,
-      change: loaded.change,
+      change:
+        loaded.change.op === 'upsert' &&
+        entry.fields !== null &&
+        (loaded.change.table === HOSTED_TASK_TABLE ||
+          loaded.change.table === 'hub_task_comment' ||
+          loaded.change.table === 'hub_task_document')
+          ? { ...loaded.change, fields: JSON.parse(entry.fields) as string[] }
+          : loaded.change,
       acknowledgedSpaceId: loaded.acknowledgedSpaceId ?? null,
       destinationSpaceId: null,
     })

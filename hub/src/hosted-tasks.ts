@@ -605,7 +605,7 @@ export async function mirrorTaskRow(
   return null
 }
 
-async function mirrorCommentRow(
+export async function mirrorCommentRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedComment,
@@ -632,7 +632,7 @@ async function mirrorCommentRow(
     VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
-async function mirrorDocumentRow(
+export async function mirrorDocumentRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedDocument,

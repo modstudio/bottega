@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite'
 import {
   HOSTED_DAY_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -17,6 +19,7 @@ type OutboxPointer = {
   operation: 'upsert' | 'delete'
   routing_space_id?: string | null
   routing_project?: string | null
+  fields?: string | null
 }
 
 export type LoadedOutboxChange = {
@@ -67,6 +70,34 @@ function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
     : null
 }
 
+function currentComment(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<Record<string, unknown>, [string]>(
+      `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,c.body,c.created_at,c.created_at updated_at,NULL deleted_at FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
+    )
+    .get(id)
+  return row
+    ? {
+        projectName: row.project_name as string,
+        change: { table: HOSTED_COMMENT_TABLE, id, op: 'upsert', row: row as never },
+      }
+    : null
+}
+
+function currentDocument(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<Record<string, unknown>, [string]>(
+      `SELECT d.record_id id,d.number,d.task_key,d.task_record_id task_id,t.project project_name,d.role,d.title,d.body,d.version,d.created_at,d.updated_at,NULL deleted_at FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE d.record_id=?`,
+    )
+    .get(id)
+  return row
+    ? {
+        projectName: row.project_name as string,
+        change: { table: HOSTED_DOCUMENT_TABLE, id, op: 'upsert', row: row as never },
+      }
+    : null
+}
+
 function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<
@@ -111,12 +142,15 @@ export function loadOutboxChange(
         table: pointer.table_name as
           | typeof HOSTED_TASK_TABLE
           | typeof HOSTED_STATUS_EVENT_TABLE
-          | typeof HOSTED_INTERVAL_TABLE,
+          | typeof HOSTED_INTERVAL_TABLE
+          | typeof HOSTED_DOCUMENT_TABLE,
         id: pointer.row_id,
         op: 'delete',
       },
     }
   if (pointer.table_name === HOSTED_TASK_TABLE) return currentTask(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_COMMENT_TABLE) return currentComment(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_DOCUMENT_TABLE) return currentDocument(conn, pointer.row_id)
   if (pointer.table_name === HOSTED_STATUS_EVENT_TABLE)
     return currentStatusEvent(conn, pointer.row_id)
   if (pointer.table_name === HOSTED_INTERVAL_TABLE) return currentInterval(conn, pointer.row_id)

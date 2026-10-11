@@ -108,6 +108,16 @@ function applyOneChange(
   counts: SpaceCounts,
 ) {
   if (!family.accepts(change.table)) return
+  const pending = conn
+    .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
+      `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,
+    )
+    .get(change.table, change.id)
+  if (pending && (pending.operation === 'delete' || pending.fields === null)) {
+    if (change.op === 'delete') counts.deletesSkipped += 1
+    else counts.upsertsNoop += 1
+    return
+  }
   if (change.op === 'delete') {
     const decision = classifyHostedChangeDelete(
       family.rowSpace(conn, change.table, change.id),
@@ -142,7 +152,11 @@ function applyOneChange(
     return
   }
   const before = family.machineRow(conn, change.table, change.id)
+  const protectedValues = pending?.fields
+    ? pendingFieldValues(change.table, before, pending.fields)
+    : null
   family.apply(conn, change.table, change.row)
+  if (protectedValues) restorePendingFields(conn, change.table, change.id, protectedValues)
   const after = family.machineRow(conn, change.table, change.id)
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
@@ -157,6 +171,44 @@ function applyOneChange(
       differingColumns: decision.differingColumns,
     })
   }
+}
+
+const pullMachineTables: Record<string, string> = {
+  hub_task: 'task',
+  hub_task_comment: 'task_comment',
+  hub_task_document: 'task_document',
+}
+
+function pendingFieldValues(table: string, row: Record<string, unknown> | null, encoded: string) {
+  if (!row || !pullMachineTables[table]) return null
+  const requested = JSON.parse(encoded) as string[]
+  const fields = new Set(requested)
+  fields.add('updated_at')
+  if (table === 'hub_task') {
+    fields.add('last_seen')
+    if (fields.has('status') || fields.has('status_category')) fields.add('closed_at')
+  }
+  return Object.fromEntries(
+    [...fields].filter((field) => field in row).map((field) => [field, row[field]]),
+  )
+}
+
+function restorePendingFields(
+  conn: Database,
+  table: string,
+  id: string,
+  values: Record<string, unknown>,
+) {
+  const columns = Object.keys(values)
+  if (!columns.length) return
+  const bindings = columns.map((column) => values[column]) as Array<
+    string | number | bigint | boolean | Uint8Array | null
+  >
+  conn
+    .query(
+      `UPDATE ${pullMachineTables[table]} SET ${columns.map((column) => `${column}=?`).join(',')} WHERE record_id=?`,
+    )
+    .run(...bindings, id)
 }
 
 function applyPage(
