@@ -24,9 +24,11 @@ fly certs add app.bottega.run -a bottega-hub
 fly certs add next.bottega.run -a bottega-hub
 ```
 
-The deploy script preserves the hosted web build arguments. It reads
-`ORCH_RECORD_MIGRATE_URL` from the environment, migrates the record, and confirms that applied
-migrations equal those shipped in the image before invoking Fly. The image's release command
+The deploy script preserves the hosted web build arguments. It takes
+`ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one variable from the operator's
+env file when the environment lacks it, and gives the value to the migration only, never to
+Fly. It then migrates the record and confirms that applied migrations equal those shipped in
+the image before invoking Fly. The image's release command
 uses its low-privilege `HUB_RECORD_DATABASE_URL` and refuses a release with pending migrations,
 so a bare `fly deploy` cannot run ahead of the record schema.
 
