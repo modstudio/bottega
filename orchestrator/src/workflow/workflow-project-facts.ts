@@ -62,7 +62,8 @@ function shipToFact(
     )
   const decision = decideShipToReach(
     autonomy.shipTo.value,
-    project.settings.release?.rungs.map(({ name }) => name) ?? [],
+    project.settings.release?.rungs.filter(({ onDemand }) => !onDemand).map(({ name }) => name) ??
+      [],
     args.depth,
   )
   if (!decision.allowed) throw new Error(decision.refusal)

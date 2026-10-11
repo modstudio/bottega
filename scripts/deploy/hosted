@@ -21,8 +21,14 @@ if (( $# != 1 )); then
 fi
 
 if [[ -z "${ORCH_RECORD_MIGRATE_URL:-}" ]]; then
-  echo "REFUSE: ORCH_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
-  exit 1
+  if ! ORCH_RECORD_MIGRATE_URL="$(
+    env -u ORCH_RECORD_MIGRATE_URL \
+      bun --no-env-file "$PROJECT_ROOT/scripts/read-hosted-migrate-url.ts" 2>/dev/null
+  )"; then
+    echo "REFUSE: ORCH_RECORD_MIGRATE_URL is unset; its owner is ~/.claude/.env" >&2
+    exit 1
+  fi
+  export ORCH_RECORD_MIGRATE_URL
 fi
 
 if ! command -v fly >/dev/null 2>&1; then

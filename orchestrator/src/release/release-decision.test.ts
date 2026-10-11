@@ -8,6 +8,7 @@ import {
   releaseLockDecision,
   releaseTagVersionDecision,
   rollbackReasonDecision,
+  selectReleaseRung,
 } from './release-decision.ts'
 
 const level = {
@@ -115,4 +116,14 @@ test('post-deploy live check warns on mismatch', () => {
     matches: false,
     warning: expect.stringContaining('does not equal candidate'),
   })
+})
+
+test('selects an on-demand rung by name without changing default selection', () => {
+  const rungs = [
+    { name: 'production', deploy: 'deploy production' },
+    { name: 'hosted', deploy: 'deploy hosted', onDemand: true },
+  ]
+
+  expect(selectReleaseRung(rungs, 'hosted')).toEqual(rungs[1])
+  expect(selectReleaseRung(rungs)).toMatchObject({ refusal: expect.stringContaining('--rung') })
 })
