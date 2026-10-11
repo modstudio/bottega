@@ -12,8 +12,8 @@ import {
   type DocKind,
   type DocScope,
   type DocStatus,
+  normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
-import { normalizeDocSourceFiles } from '../../../shared/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
   type CanonLintInputCollector,
@@ -25,8 +25,8 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { resolveSubject } from '../subject/subjects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
@@ -397,7 +397,9 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     if (!projectName) throw new Error('article fields may be set only on project documents')
     const row = resolveSubject(projectName, reference)
     if (row.retiredAt && !existing.has(row.id) && !restoring) {
-      throw new Error(`subject "${reference}" is retired; cleared by: orch subject list ${projectName}`)
+      throw new Error(
+        `subject "${reference}" is retired; cleared by: orch subject list ${projectName}`,
+      )
     }
     return { id: row.id, name: row.name }
   }
@@ -405,23 +407,37 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     ...(prior?.articleSubject ? [prior.articleSubject.id] : []),
     ...(prior?.relatedSubjects.map(({ id }) => id) ?? []),
   ])
-  const articleSubject = input.articleSubject === undefined
-    ? prior?.articleSubject ?? null
-    : input.articleSubject === null ? null : resolveAttachment(input.articleSubject, existingIds)
-  const relatedSubjects = input.relatedSubjects === undefined
-    ? prior?.relatedSubjects ?? []
-    : input.relatedSubjects.map((reference) => resolveAttachment(reference, existingIds))
+  const articleSubject =
+    input.articleSubject === undefined
+      ? (prior?.articleSubject ?? null)
+      : input.articleSubject === null
+        ? null
+        : resolveAttachment(input.articleSubject, existingIds)
+  const relatedSubjects =
+    input.relatedSubjects === undefined
+      ? (prior?.relatedSubjects ?? [])
+      : input.relatedSubjects.map((reference) => resolveAttachment(reference, existingIds))
   if (new Set(relatedSubjects.map(({ id }) => id)).size !== relatedSubjects.length) {
     throw new Error('related subjects must not contain duplicates')
   }
   if (articleSubject && relatedSubjects.some(({ id }) => id === articleSubject.id)) {
     throw new Error('the article subject must not also be a related subject')
   }
-  const form = input.form === undefined ? prior?.form ?? null : input.form
-  const sourceFiles = input.sourceFiles === undefined ? prior?.sourceFiles ?? [] : normalizeDocSourceFiles(input.sourceFiles)
-  const setArticleFields = [form ? 'form' : null, articleSubject ? 'articleSubject' : null, relatedSubjects.length ? 'relatedSubjects' : null, sourceFiles.length ? 'sourceFiles' : null].filter(Boolean)
+  const form = input.form === undefined ? (prior?.form ?? null) : input.form
+  const sourceFiles =
+    input.sourceFiles === undefined
+      ? (prior?.sourceFiles ?? [])
+      : normalizeDocSourceFiles(input.sourceFiles)
+  const setArticleFields = [
+    form ? 'form' : null,
+    articleSubject ? 'articleSubject' : null,
+    relatedSubjects.length ? 'relatedSubjects' : null,
+    sourceFiles.length ? 'sourceFiles' : null,
+  ].filter(Boolean)
   if (setArticleFields.length && (input.scope !== 'project' || kind !== 'article')) {
-    throw new Error(`article fields may be set only when kind is article and scope is project; clear first: ${setArticleFields.join(', ')}`)
+    throw new Error(
+      `article fields may be set only when kind is article and scope is project; clear first: ${setArticleFields.join(', ')}`,
+    )
   }
   if (!prior && kind === 'article' && input.audiences === undefined) {
     throw new Error(
@@ -486,8 +502,15 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
       })
-      if ([input.form, input.articleSubject, input.relatedSubjects, input.sourceFiles].some((value) => value !== undefined) && !['form','articleSubject','relatedSubjects','sourceFiles'].every((key) => key in hosted)) {
-        throw new Error('the document\'s other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API')
+      if (
+        [input.form, input.articleSubject, input.relatedSubjects, input.sourceFiles].some(
+          (value) => value !== undefined,
+        ) &&
+        !['form', 'articleSubject', 'relatedSubjects', 'sourceFiles'].every((key) => key in hosted)
+      ) {
+        throw new Error(
+          "the document's other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API",
+        )
       }
       return commitDocSet({
         ...input,

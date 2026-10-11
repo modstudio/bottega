@@ -33,4 +33,10 @@ test('document row timestamps keep milliseconds when the driver returns Dates', 
     updatedAt: '2026-10-09T12:34:56.789Z',
     deletedAt: '2026-10-09T12:34:56.789Z',
   })
+  expect({
+    form: mapped.form,
+    articleSubject: mapped.articleSubject,
+    relatedSubjects: mapped.relatedSubjects,
+    sourceFiles: mapped.sourceFiles,
+  }).toEqual({ form: null, articleSubject: null, relatedSubjects: [], sourceFiles: [] })
 })

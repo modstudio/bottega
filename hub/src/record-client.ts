@@ -21,6 +21,7 @@ import {
   BoardThreadResultSchema,
 } from './board-contract.ts'
 import {
+  ArticleDocFieldsSchema,
   DocSchema,
   DocSearchMatchSchema,
   DocTreeItemSchema,
@@ -257,7 +258,7 @@ const docSchema = DocSchema.extend({
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
   deletedAt: z.string().datetime({ offset: true }).nullable(),
-})
+}).extend(ArticleDocFieldsSchema.shape)
 
 const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
 
@@ -275,28 +276,30 @@ const publicDocsSchema = z
   .object({ items: z.array(publicDocTreeItemSchema) })
   .transform((value) => DocTreeSchema.parse(value))
 
-const docRevisionSchema = z.object({
-  id: z.string().uuid(),
-  docId: z.string().uuid(),
-  scope: z.string(),
-  subject: z.string().nullable(),
-  owner: z.string().uuid().nullable(),
-  slug: z.string(),
-  op: z.enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill']),
-  title: z.string(),
-  body: z.string(),
-  delivery: z.enum(['inject', 'demand']),
-  audiences: hostedDocAudiencesSchema,
-  parentId: z.string().uuid().nullable().default(null),
-  position: z.number().int().default(0),
-  status: z.enum(DOC_STATUSES).default('current'),
-  kind: z.enum(DOC_KINDS).default('working'),
-  replacementSlug: z.string().nullable().default(null),
-  author: z.string(),
-  reason: z.string(),
-  sessionId: z.string().nullable(),
-  at: z.string().datetime({ offset: true }),
-})
+const docRevisionSchema = z
+  .object({
+    id: z.string().uuid(),
+    docId: z.string().uuid(),
+    scope: z.string(),
+    subject: z.string().nullable(),
+    owner: z.string().uuid().nullable(),
+    slug: z.string(),
+    op: z.enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill']),
+    title: z.string(),
+    body: z.string(),
+    delivery: z.enum(['inject', 'demand']),
+    audiences: hostedDocAudiencesSchema,
+    parentId: z.string().uuid().nullable().default(null),
+    position: z.number().int().default(0),
+    status: z.enum(DOC_STATUSES).default('current'),
+    kind: z.enum(DOC_KINDS).default('working'),
+    replacementSlug: z.string().nullable().default(null),
+    author: z.string(),
+    reason: z.string(),
+    sessionId: z.string().nullable(),
+    at: z.string().datetime({ offset: true }),
+  })
+  .extend(ArticleDocFieldsSchema.shape)
 
 const docRevisionsSchema = z.object({ items: z.array(docRevisionSchema) })
 

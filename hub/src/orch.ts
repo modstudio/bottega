@@ -24,8 +24,10 @@ import {
   DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
+  type DocArticleSubject,
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocScope,
   type DocStatus,
@@ -576,6 +578,10 @@ export type DocRow = {
   featured?: boolean
   status?: DocStatus
   kind?: DocKind
+  form?: DocForm | null
+  articleSubject?: DocArticleSubject | null
+  relatedSubjects?: DocArticleSubject[]
+  sourceFiles?: string[]
   replacement_slug?: string | null
   revision: string | null
   created_at: string

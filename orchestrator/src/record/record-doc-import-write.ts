@@ -1,7 +1,7 @@
 /** Writes one normalized hosted document import. Must not know validation or transaction ownership. */
 import type { SQL } from 'bun'
-import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import type { NormalizedRecordDocImport } from './record-doc-mapping.ts'
 
 export async function writeImportedRecordDoc(
@@ -26,7 +26,8 @@ export async function writeImportedRecordDoc(
           deleted_at=${doc.deletedAt}::timestamptz
       WHERE id=${id}::uuid AND space_id=${spaceId}::uuid
     `
-  } else await tx`
+  } else
+    await tx`
     INSERT INTO doc (
       id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id,
       created_at, updated_at, deleted_at
@@ -37,5 +38,6 @@ export async function writeImportedRecordDoc(
     )
   `
   await tx`DELETE FROM doc_related_subject WHERE space_id=${spaceId}::uuid AND doc_id=${id}::uuid`
-  for (const subjectId of doc.relatedSubjectIds ?? []) await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${id}::uuid,${subjectId}::uuid)`
+  for (const subjectId of doc.relatedSubjectIds ?? [])
+    await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${id}::uuid,${subjectId}::uuid)`
 }

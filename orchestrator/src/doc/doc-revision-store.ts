@@ -134,10 +134,17 @@ export function listStoredDocRevisions(
               length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC`,
     )
-    .all(scope, subject, owner, slug) as Array<Omit<DocRevisionMetadata, 'articleSubject' | 'relatedSubjects' | 'sourceFiles'>>
+    .all(scope, subject, owner, slug) as Array<
+    Omit<DocRevisionMetadata, 'articleSubject' | 'relatedSubjects' | 'sourceFiles'>
+  >
   return rows.map((row) => {
     const revision = getStoredDocRevision(row.id, owner)!
-    return { ...row, articleSubject: revision.articleSubject, relatedSubjects: revision.relatedSubjects, sourceFiles: revision.sourceFiles }
+    return {
+      ...row,
+      articleSubject: revision.articleSubject,
+      relatedSubjects: revision.relatedSubjects,
+      sourceFiles: revision.sourceFiles,
+    }
   })
 }
 
@@ -150,9 +157,29 @@ export function getStoredDocRevision(id: number, owner: string | null = null): D
         ...row,
         featured: Boolean(row.featured),
         audiences: decodeStoredDocAudiences(row.audiences),
-        articleSubject: row.article_subject_id ? db().query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?').get(row.article_subject_id) ?? null : null,
-        relatedSubjects: (JSON.parse((row as unknown as { related_subject_ids: string }).related_subject_ids) as string[]).map((subjectId) => db().query<{ id: string; name: string }, [string]>('SELECT id,name FROM subject WHERE id=?').get(subjectId)).filter((subject): subject is { id: string; name: string } => Boolean(subject)),
-        sourceFiles: JSON.parse((row as unknown as { source_files: string }).source_files) as string[],
+        articleSubject: row.article_subject_id
+          ? (db()
+              .query<{ id: string; name: string }, [string]>(
+                'SELECT id,name FROM subject WHERE id=?',
+              )
+              .get(row.article_subject_id) ?? null)
+          : null,
+        relatedSubjects: (
+          JSON.parse(
+            (row as unknown as { related_subject_ids: string }).related_subject_ids,
+          ) as string[]
+        )
+          .map((subjectId) =>
+            db()
+              .query<{ id: string; name: string }, [string]>(
+                'SELECT id,name FROM subject WHERE id=?',
+              )
+              .get(subjectId),
+          )
+          .filter((subject): subject is { id: string; name: string } => Boolean(subject)),
+        sourceFiles: JSON.parse(
+          (row as unknown as { source_files: string }).source_files,
+        ) as string[],
       }
     : null
 }
@@ -165,6 +192,10 @@ export function diffStoredDocRevisions(a: number, b: number, owner: string | nul
   const x = [
     `status: ${left.status}`,
     `kind: ${left.kind}`,
+    `form: ${left.form ?? '-'}`,
+    `article subject: ${left.articleSubject?.id ?? '-'}`,
+    `related subjects: ${left.relatedSubjects.map(({ id }) => id).join(',')}`,
+    `source files: ${left.sourceFiles.join(',')}`,
     `replacement: ${left.replacement_slug ?? '-'}`,
     '',
     ...left.body.split('\n'),
@@ -172,6 +203,10 @@ export function diffStoredDocRevisions(a: number, b: number, owner: string | nul
   const y = [
     `status: ${right.status}`,
     `kind: ${right.kind}`,
+    `form: ${right.form ?? '-'}`,
+    `article subject: ${right.articleSubject?.id ?? '-'}`,
+    `related subjects: ${right.relatedSubjects.map(({ id }) => id).join(',')}`,
+    `source files: ${right.sourceFiles.join(',')}`,
     `replacement: ${right.replacement_slug ?? '-'}`,
     '',
     ...right.body.split('\n'),

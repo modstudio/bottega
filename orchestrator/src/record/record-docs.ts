@@ -1,7 +1,13 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import type { DocAudience, DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocAudience,
+  DocAudiences,
+  DocForm,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -196,7 +202,7 @@ export async function listRecordDocRevisions(
     if (!docs.length) return null
     const rows = await tx`
       SELECT r.*, own.name AS article_subject_name,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(r.related_subject_ids) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(r.related_subject_ids)='array' THEN r.related_subject_ids ELSE '[]'::jsonb END) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
       FROM doc_revision r LEFT JOIN subject own ON own.id=r.article_subject_id
       WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
@@ -236,7 +242,14 @@ export async function upsertRecordDoc(
     revisionId?: string
     expectedRevision?: string
   },
-): Promise<{ id: string; revisionId: string; form?: DocForm | null; articleSubject?: { id: string; name: string } | null; relatedSubjects?: Array<{ id: string; name: string }>; sourceFiles?: string[] }> {
+): Promise<{
+  id: string
+  revisionId: string
+  form?: DocForm | null
+  articleSubject?: { id: string; name: string } | null
+  relatedSubjects?: Array<{ id: string; name: string }>
+  sourceFiles?: string[]
+}> {
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
     refuseSettingsAddress(input.scope, input.subject, input.owner)
@@ -307,22 +320,69 @@ export async function upsertRecordDoc(
       input.spaceId,
       input.projectName ?? docWriteProjectName(input.scope, input.subject),
     )
-    const form = input.form === undefined ? (existing[0]?.form == null ? null : String(existing[0].form) as DocForm) : input.form
-    const articleSubjectId = input.articleSubjectId === undefined ? (existing[0]?.article_subject_id == null ? null : String(existing[0].article_subject_id)) : input.articleSubjectId
-    const existingRelated = existing[0] ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing[0].id)}::uuid` : []
-    const relatedSubjectIds = input.relatedSubjectIds ?? existingRelated.map((row: Record<string, unknown>) => String(row.subject_id))
-    const sourceFiles = input.sourceFiles ?? (Array.isArray(existing[0]?.source_files) ? existing[0]!.source_files as string[] : [])
-    const fieldNames = [form ? 'form' : null, articleSubjectId ? 'articleSubject' : null, relatedSubjectIds.length ? 'relatedSubjects' : null, sourceFiles.length ? 'sourceFiles' : null].filter(Boolean)
-    if (fieldNames.length && (input.scope !== 'project' || kind !== 'article')) throw new RecordDocError(`article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`)
-    if (articleSubjectId && relatedSubjectIds.includes(articleSubjectId)) throw new RecordDocError('the article subject must not also be a related subject')
-    if (new Set(relatedSubjectIds).size !== relatedSubjectIds.length) throw new RecordDocError('related subjects must not contain duplicates')
-    const attached = new Set([existing[0]?.article_subject_id, ...existingRelated.map((row: Record<string, unknown>) => row.subject_id)].filter(Boolean).map(String))
-    const subjectIds = [...new Set([articleSubjectId, ...relatedSubjectIds].filter((id): id is string => Boolean(id)))]
-    const subjectRows = subjectIds.length ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id = ANY(${subjectIds}::uuid[])` : []
+    const form =
+      input.form === undefined
+        ? existing[0]?.form == null
+          ? null
+          : (String(existing[0].form) as DocForm)
+        : input.form
+    const articleSubjectId =
+      input.articleSubjectId === undefined
+        ? existing[0]?.article_subject_id == null
+          ? null
+          : String(existing[0].article_subject_id)
+        : input.articleSubjectId
+    const existingRelated = existing[0]
+      ? await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${String(existing[0].id)}::uuid`
+      : []
+    const relatedSubjectIds =
+      input.relatedSubjectIds ??
+      existingRelated.map((row: Record<string, unknown>) => String(row.subject_id))
+    const sourceFiles =
+      input.sourceFiles ??
+      (Array.isArray(existing[0]?.source_files) ? (existing[0]!.source_files as string[]) : [])
+    const fieldNames = [
+      form ? 'form' : null,
+      articleSubjectId ? 'articleSubject' : null,
+      relatedSubjectIds.length ? 'relatedSubjects' : null,
+      sourceFiles.length ? 'sourceFiles' : null,
+    ].filter(Boolean)
+    if (fieldNames.length && (input.scope !== 'project' || kind !== 'article'))
+      throw new RecordDocError(
+        `article fields may be set only when kind is article and scope is project; clear first: ${fieldNames.join(', ')}`,
+      )
+    if (articleSubjectId && relatedSubjectIds.includes(articleSubjectId))
+      throw new RecordDocError('the article subject must not also be a related subject')
+    if (new Set(relatedSubjectIds).size !== relatedSubjectIds.length)
+      throw new RecordDocError('related subjects must not contain duplicates')
+    const attached = new Set(
+      [
+        existing[0]?.article_subject_id,
+        ...existingRelated.map((row: Record<string, unknown>) => row.subject_id),
+      ]
+        .filter(Boolean)
+        .map(String),
+    )
+    const subjectIds = [
+      ...new Set(
+        [articleSubjectId, ...relatedSubjectIds].filter((id): id is string => Boolean(id)),
+      ),
+    ]
+    const subjectRows = subjectIds.length
+      ? await tx`SELECT id,name,retired_at FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id = ANY(${subjectIds}::uuid[])`
+      : []
     for (const id of subjectIds) {
-      const row = subjectRows.find((candidate: Record<string, unknown>) => String(candidate.id) === id)
-      if (!row) throw new RecordDocError(`subject ${id} is not in the document project; cleared by: orch subject list ${input.subject}`)
-      if (row.retired_at != null && !attached.has(id)) throw new RecordDocError(`subject ${id} is retired; cleared by: orch subject list ${input.subject}`)
+      const row = subjectRows.find(
+        (candidate: Record<string, unknown>) => String(candidate.id) === id,
+      )
+      if (!row)
+        throw new RecordDocError(
+          `subject ${id} is not in the document project; cleared by: orch subject list ${input.subject}`,
+        )
+      if (row.retired_at != null && !attached.has(id))
+        throw new RecordDocError(
+          `subject ${id} is retired; cleared by: orch subject list ${input.subject}`,
+        )
     }
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
@@ -369,7 +429,8 @@ export async function upsertRecordDoc(
       `
     }
     await tx`DELETE FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${docId}::uuid`
-    for (const subjectId of relatedSubjectIds) await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${docId}::uuid,${subjectId}::uuid)`
+    for (const subjectId of relatedSubjectIds)
+      await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${docId}::uuid,${subjectId}::uuid)`
     const revisionId = await insertRecordDocRevision(tx, {
       id: input.revisionId,
       spaceId: input.spaceId,
@@ -399,7 +460,28 @@ export async function upsertRecordDoc(
       sessionId: input.sessionId ?? null,
       at: now,
     })
-    return { id: docId, revisionId, form, articleSubject: articleSubjectId ? { id: articleSubjectId, name: String(subjectRows.find((row: Record<string, unknown>) => String(row.id) === articleSubjectId)!.name) } : null, relatedSubjects: relatedSubjectIds.map((id: string) => { const row = subjectRows.find((subject: Record<string, unknown>) => String(subject.id) === id)!; return { id, name: String(row.name) } }), sourceFiles }
+    return {
+      id: docId,
+      revisionId,
+      form,
+      articleSubject: articleSubjectId
+        ? {
+            id: articleSubjectId,
+            name: String(
+              subjectRows.find(
+                (row: Record<string, unknown>) => String(row.id) === articleSubjectId,
+              )!.name,
+            ),
+          }
+        : null,
+      relatedSubjects: relatedSubjectIds.map((id: string) => {
+        const row = subjectRows.find(
+          (subject: Record<string, unknown>) => String(subject.id) === id,
+        )!
+        return { id, name: String(row.name) }
+      }),
+      sourceFiles,
+    }
   })
 }
 
@@ -674,6 +756,9 @@ export async function deleteRecordDoc(
       }),
     )
     const now = new Date().toISOString()
+    const relatedSubjectIds = (
+      await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
+    ).map((row: Record<string, unknown>) => String(row.subject_id))
     await tx`
       UPDATE doc SET deleted_at=${now}::timestamptz, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid AND deleted_at IS NULL
@@ -695,6 +780,10 @@ export async function deleteRecordDoc(
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
+      form: doc.form == null ? null : (String(doc.form) as DocForm),
+      articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
+      relatedSubjectIds,
+      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -729,6 +818,9 @@ export async function consumeRecordDoc(
       scope: String(doc.scope),
     })
     const now = new Date().toISOString()
+    const relatedSubjectIds = (
+      await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
+    ).map((row: Record<string, unknown>) => String(row.subject_id))
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
     await tx`
@@ -752,6 +844,10 @@ export async function consumeRecordDoc(
       position: Number(doc.position),
       status: (doc.status == null ? 'current' : String(doc.status)) as DocStatus,
       kind: (doc.kind == null ? 'working' : String(doc.kind)) as DocKind,
+      form: doc.form == null ? null : (String(doc.form) as DocForm),
+      articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
+      relatedSubjectIds,
+      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -824,6 +920,15 @@ export async function restoreRecordDoc(
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
+    const form = revision.form == null ? null : (String(revision.form) as DocForm)
+    const articleSubjectId =
+      revision.article_subject_id == null ? null : String(revision.article_subject_id)
+    const relatedSubjectIds = Array.isArray(revision.related_subject_ids)
+      ? revision.related_subject_ids.map(String)
+      : []
+    const sourceFiles = Array.isArray(revision.source_files)
+      ? revision.source_files.map(String)
+      : []
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -856,11 +961,14 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
+    await tx`DELETE FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
+    for (const subjectId of relatedSubjectIds)
+      await tx`INSERT INTO doc_related_subject (id,space_id,doc_id,subject_id) VALUES (${newRecordId()}::uuid,${input.spaceId}::uuid,${input.id}::uuid,${subjectId}::uuid)`
     const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
@@ -879,6 +987,10 @@ export async function restoreRecordDoc(
       featured,
       status,
       kind,
+      form,
+      articleSubjectId,
+      relatedSubjectIds,
+      sourceFiles,
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -935,9 +1047,14 @@ export async function countRecordDocs(input: Tenant): Promise<{ docs: number; re
   })
 }
 
-export async function importRecordDoc(
-  input: Tenant & RecordDocImportInput,
-): Promise<{ id: string; revisionIds: string[] }> {
+export async function importRecordDoc(input: Tenant & RecordDocImportInput): Promise<{
+  id: string
+  revisionIds: string[]
+  form?: DocForm | null
+  articleSubject?: { id: string; name: string } | null
+  relatedSubjects?: Array<{ id: string; name: string }>
+  sourceFiles?: string[]
+}> {
   const { doc, revisions } = normalizeRecordDocImport(input, newRecordId())
   const ownedAddress =
     refuseOwnedDocAddress(doc.scope, doc.subject, doc.owner) ??
@@ -983,6 +1100,42 @@ export async function importRecordDoc(
       input.spaceId,
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
     )
+    const importedFields = [
+      doc.form ? 'form' : null,
+      doc.articleSubjectId ? 'articleSubject' : null,
+      doc.relatedSubjectIds.length ? 'relatedSubjects' : null,
+      doc.sourceFiles.length ? 'sourceFiles' : null,
+    ].filter(Boolean)
+    if (importedFields.length && (doc.scope !== 'project' || doc.kind !== 'article'))
+      throw new RecordDocError(
+        `article fields may be set only when kind is article and scope is project; clear first: ${importedFields.join(', ')}`,
+      )
+    if (doc.articleSubjectId && doc.relatedSubjectIds.includes(doc.articleSubjectId))
+      throw new RecordDocError('the article subject must not also be a related subject')
+    if (new Set(doc.relatedSubjectIds).size !== doc.relatedSubjectIds.length)
+      throw new RecordDocError('related subjects must not contain duplicates')
+    const importedSubjectIds = [
+      ...new Set(
+        [
+          doc.articleSubjectId,
+          ...doc.relatedSubjectIds,
+          ...revisions.flatMap((revision) => [
+            revision.articleSubjectId,
+            ...revision.relatedSubjectIds,
+          ]),
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    ]
+    const importedSubjectNames = new Map<string, string>()
+    if (importedSubjectIds.length) {
+      const rows =
+        await tx`SELECT id,name FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${resolvedProject}::uuid AND id=ANY(${importedSubjectIds}::uuid[])`
+      if (rows.length !== importedSubjectIds.length)
+        throw new RecordDocError(
+          `an article subject is not in the document project; cleared by: orch subject list ${doc.subject}`,
+        )
+      for (const row of rows) importedSubjectNames.set(String(row.id), String(row.name))
+    }
     const id = existing ? String(existing.id) : doc.id
     await validateImportedDocumentLifecycles(tx, { ...doc, spaceId: input.spaceId }, [
       { status: doc.status, replacementSlug: doc.replacementSlug },
@@ -1030,6 +1183,10 @@ export async function importRecordDoc(
           featured: revision.featured,
           status: revision.status,
           kind: revision.kind,
+          form: revision.form,
+          articleSubjectId: revision.articleSubjectId,
+          relatedSubjectIds: revision.relatedSubjectIds,
+          sourceFiles: revision.sourceFiles,
           replacementSlug: revision.replacementSlug,
           author: revision.author,
           reason: revision.reason,
@@ -1038,6 +1195,18 @@ export async function importRecordDoc(
         }),
       )
     }
-    return { id, revisionIds }
+    return {
+      id,
+      revisionIds,
+      form: doc.form,
+      articleSubject: doc.articleSubjectId
+        ? { id: doc.articleSubjectId, name: importedSubjectNames.get(doc.articleSubjectId)! }
+        : null,
+      relatedSubjects: doc.relatedSubjectIds.map((subjectId) => ({
+        id: subjectId,
+        name: importedSubjectNames.get(subjectId)!,
+      })),
+      sourceFiles: doc.sourceFiles,
+    }
   })
 }

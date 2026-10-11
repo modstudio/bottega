@@ -1,7 +1,7 @@
 // concern: record-push-docs
 /** One-time upload of the local doc store and a verdict count report. Must not know HTTP internals. */
 
-import type { DocKind, DocStatus } from '../../../shared/docs.ts'
+import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db, writableDb } from '../database/db.ts'
 import { decodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
@@ -34,6 +34,9 @@ type LocalDoc = {
   featured: boolean
   status: DocStatus
   kind: DocKind
+  form: DocForm | null
+  article_subject_id: string | null
+  source_files: string
   replacement_slug: string | null
   project_id: number | null
   created_at: string
@@ -58,6 +61,10 @@ type LocalRevision = {
   featured: boolean
   status: DocStatus
   kind: DocKind
+  form: DocForm | null
+  article_subject_id: string | null
+  related_subject_ids: string
+  source_files: string
   replacement_slug: string | null
   author: string
   reason: string
@@ -121,6 +128,10 @@ function asRevision(
     featured: Boolean(row.featured),
     status: row.status,
     kind: row.kind,
+    form: row.form,
+    articleSubjectId: row.article_subject_id,
+    relatedSubjectIds: JSON.parse(row.related_subject_ids),
+    sourceFiles: JSON.parse(row.source_files),
     replacementSlug: row.replacement_slug,
     author: row.author,
     reason: row.reason,
@@ -134,6 +145,7 @@ function groupFromLive(
   revisions: LocalRevision[],
   names: Map<number, string>,
   recordIds: Map<number, string>,
+  relatedIds: string[],
 ): ImportGroup {
   return {
     localDocId: doc.id,
@@ -158,6 +170,10 @@ function groupFromLive(
         featured: Boolean(doc.featured),
         status: doc.status,
         kind: doc.kind,
+        form: doc.form,
+        articleSubjectId: doc.article_subject_id,
+        relatedSubjectIds: relatedIds,
+        sourceFiles: JSON.parse(doc.source_files),
         replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
@@ -199,6 +215,10 @@ function groupFromDeleted(
         body: last.body,
         delivery: last.delivery,
         audiences: decodeStoredDocAudiences(last.audiences),
+        form: last.form,
+        articleSubjectId: last.article_subject_id,
+        relatedSubjectIds: JSON.parse(last.related_subject_ids),
+        sourceFiles: JSON.parse(last.source_files),
         featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,
@@ -216,13 +236,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, replacement_slug, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )
@@ -234,6 +254,14 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
     byDoc.set(revision.doc_id, list)
   }
   const groups: ImportGroup[] = []
+  const relatedByDoc = new Map<number, string[]>()
+  for (const row of local
+    .query<{ doc_id: number; subject_id: string }, []>(
+      'SELECT d.id AS doc_id,r.subject_id FROM doc d JOIN doc_related_subject r ON r.doc_record_id=d.record_id ORDER BY d.id',
+    )
+    .all()) {
+    relatedByDoc.set(row.doc_id, [...(relatedByDoc.get(row.doc_id) ?? []), row.subject_id])
+  }
   const recordIds = new Map<number, string>()
   for (const doc of docs) recordIds.set(doc.id, doc.record_id ?? newRecordId())
   for (const revision of revisions) {
@@ -242,7 +270,9 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const seen = new Set<number>()
   for (const doc of docs) {
     seen.add(doc.id)
-    groups.push(groupFromLive(doc, byDoc.get(doc.id) ?? [], names, recordIds))
+    groups.push(
+      groupFromLive(doc, byDoc.get(doc.id) ?? [], names, recordIds, relatedByDoc.get(doc.id) ?? []),
+    )
   }
   for (const [docId, list] of byDoc) {
     if (seen.has(docId) || list.length === 0) continue
@@ -424,10 +454,23 @@ export async function pushDocsCommand(
   for (const group of groups) importedIds.set(group.sourceDocId, group.payload.doc.id!)
   for (const group of groups) {
     const destination = await destinationFor(group.payload.doc.projectName ?? null)
-    const hosted = await client.importDoc(
-      payloadWithImportedParentIds(group, importedIds),
-      destination,
+    const payload = payloadWithImportedParentIds(group, importedIds)
+    const hosted = await client.importDoc(payload, destination)
+    const sentArticleFields = [payload.doc, ...payload.revisions].some(
+      (row) =>
+        row.form != null ||
+        row.articleSubjectId != null ||
+        (row.relatedSubjectIds?.length ?? 0) > 0 ||
+        (row.sourceFiles?.length ?? 0) > 0,
     )
+    if (
+      sentArticleFields &&
+      !['form', 'articleSubject', 'relatedSubjects', 'sourceFiles'].every((key) => key in hosted)
+    ) {
+      throw new Error(
+        "the document's other changes were stored on the hosted record, but its article fields were not because the hosted API predates them; cleared by: deploy the hosted API",
+      )
+    }
     importedIds.set(group.sourceDocId, hosted.id)
     recordReturnedIds(local, group, hosted)
   }

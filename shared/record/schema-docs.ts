@@ -17,7 +17,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../docs.ts'
+import { DOC_AUDIENCES, DOC_FORMS, DOC_KINDS, DOC_STATUSES } from '../docs.ts'
 import {
   project,
   RECORD_PUBLIC_ROLE,
@@ -27,7 +27,6 @@ import {
   user,
 } from './schema.ts'
 import { subject as articleSubject } from './schema-subjects.ts'
-import { DOC_FORMS } from '../docs.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull()
@@ -126,8 +125,15 @@ export const doc = pgTable.withRLS(
       'doc_kind_check',
       sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
-    check('doc_form_check', sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`),
-    foreignKey({ columns: [table.spaceId, table.projectId, table.articleSubjectId], foreignColumns: [articleSubject.spaceId, articleSubject.projectId, articleSubject.id], name: 'doc_article_subject_same_project_fk' }),
+    check(
+      'doc_form_check',
+      sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`,
+    ),
+    foreignKey({
+      columns: [table.spaceId, table.projectId, table.articleSubjectId],
+      foreignColumns: [articleSubject.spaceId, articleSubject.projectId, articleSubject.id],
+      name: 'doc_article_subject_same_project_fk',
+    }),
     check(
       'doc_replacement_check',
       sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
@@ -238,7 +244,10 @@ export const docRevision = pgTable.withRLS(
       'doc_revision_kind_check',
       sql`${table.kind} IN (${sql.raw(DOC_KINDS.map((value) => `'${value}'`).join(','))})`,
     ),
-    check('doc_revision_form_check', sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`),
+    check(
+      'doc_revision_form_check',
+      sql`${table.form} IS NULL OR ${table.form} IN (${sql.raw(DOC_FORMS.map((value) => `'${value}'`).join(','))})`,
+    ),
     check(
       'doc_revision_replacement_check',
       sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
@@ -269,8 +278,12 @@ export const docRelatedSubject = pgTable.withRLS(
   {
     id: recordIdentity(),
     spaceId: spaceIdentity(),
-    docId: uuid('doc_id').notNull().references(() => doc.id, { onDelete: 'cascade' }),
-    subjectId: uuid('subject_id').notNull().references(() => articleSubject.id),
+    docId: uuid('doc_id')
+      .notNull()
+      .references(() => doc.id, { onDelete: 'cascade' }),
+    subjectId: uuid('subject_id')
+      .notNull()
+      .references(() => articleSubject.id),
   },
   (table) => [
     uniqueIndex('doc_related_subject_pair').on(table.spaceId, table.docId, table.subjectId),

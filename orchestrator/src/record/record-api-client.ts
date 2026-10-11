@@ -1,7 +1,13 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import type { DocAudience, DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocAudience,
+  DocAudiences,
+  DocForm,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
@@ -70,7 +76,12 @@ export type RecordDocUpsertInput = {
   revisionId?: string
   expectedRevision?: string
 }
-export type RecordDocWriteResult = { id: string; revisionId: string } & Partial<Record<'form' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles', unknown>>
+export type RecordDocWriteResult = { id: string; revisionId: string } & Partial<
+  Record<'form' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles', unknown>
+>
+export type RecordDocImportResult = { id: string; revisionIds: string[] } & Partial<
+  Record<'form' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles', unknown>
+>
 
 export type RecordDocImportInput = {
   expectedRevision?: string
@@ -208,7 +219,7 @@ export type RecordApiClient = {
   importDoc(
     input: RecordDocImportInput,
     destination?: RecordRequestDestination,
-  ): Promise<{ id: string; revisionIds: string[] }>
+  ): Promise<RecordDocImportResult>
   importCanon(
     input: RecordCanonImportInput,
     destination?: RecordRequestDestination,
@@ -436,10 +447,18 @@ function ids(body: unknown): RecordDocWriteResult {
   if (typeof record.id !== 'string' || typeof record.revisionId !== 'string') {
     throw recordApiUnreachable(new Error('record API returned an invalid body'))
   }
-  return { id: record.id, revisionId: record.revisionId, ...Object.fromEntries(['form','articleSubject','relatedSubjects','sourceFiles'].filter((key) => key in record).map((key) => [key, record[key]])) }
+  return {
+    id: record.id,
+    revisionId: record.revisionId,
+    ...Object.fromEntries(
+      ['form', 'articleSubject', 'relatedSubjects', 'sourceFiles']
+        .filter((key) => key in record)
+        .map((key) => [key, record[key]]),
+    ),
+  }
 }
 
-function importIds(body: unknown): { id: string; revisionIds: string[] } {
+function importIds(body: unknown): RecordDocImportResult {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
   if (
     typeof record.id !== 'string' ||
@@ -448,7 +467,15 @@ function importIds(body: unknown): { id: string; revisionIds: string[] } {
   ) {
     throw recordApiUnreachable(new Error('record API returned an invalid body'))
   }
-  return { id: record.id, revisionIds: record.revisionIds as string[] }
+  return {
+    id: record.id,
+    revisionIds: record.revisionIds as string[],
+    ...Object.fromEntries(
+      ['form', 'articleSubject', 'relatedSubjects', 'sourceFiles']
+        .filter((key) => key in record)
+        .map((key) => [key, record[key]]),
+    ),
+  }
 }
 
 export function recordApiClient(): RecordApiClient {

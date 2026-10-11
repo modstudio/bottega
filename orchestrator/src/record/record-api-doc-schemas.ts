@@ -3,13 +3,13 @@
 import { z } from 'zod'
 import {
   DOC_AUDIENCES,
-  DOC_KINDS,
   DOC_FORMS,
+  DOC_KINDS,
   DOC_STATUSES,
   normalizeDocAudiences,
+  normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
-import { normalizeDocSourceFiles } from '../../../shared/docs.ts'
 
 const isoSchema = z.string().datetime({ offset: true })
 const deliverySchema = z.enum(['inject', 'demand'])

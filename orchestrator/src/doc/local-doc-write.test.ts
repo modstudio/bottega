@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { setDoc } from './docs.ts'
+import { addSubject, retireSubject } from '../subject/subjects.ts'
+import { getDocRevision, listDocRevisions, listDocs, restoreDoc, setDoc } from './docs.ts'
 import { commitDocRestore, commitDocSet } from './local-doc-write.ts'
 
 test('kind selects lint and an omitted kind keeps the current value', async () => {
@@ -158,4 +159,200 @@ test('set and restore repair the project id on an existing document', () => {
   expect(db().query('SELECT project_id FROM doc WHERE id=?').get(created.id)).toEqual({
     project_id: project.id,
   })
+})
+
+test('article fields validate, keep omitted values, clear explicitly, and restore snapshots', async () => {
+  upsertProject({ name: 'articles', path: '/w/articles' })
+  upsertProject({ name: 'foreign', path: '/w/foreign' })
+  const own = await addSubject({ project: 'articles', name: 'Own', definition: 'Own.' })
+  const related = await addSubject({ project: 'articles', name: 'Related', definition: 'Related.' })
+  const retired = await addSubject({ project: 'articles', name: 'Retired', definition: 'Retired.' })
+  const other = await addSubject({ project: 'foreign', name: 'Other', definition: 'Other.' })
+  await retireSubject('articles', retired.id)
+
+  for (const sourceFiles of [[''], ['/absolute'], ['a/../b'], ['a', 'a']]) {
+    await expect(
+      setDoc({
+        scope: 'project',
+        subject: 'articles',
+        slug: `bad-${sourceFiles.length}-${sourceFiles[0]?.length}`,
+        title: 'Bad',
+        body: 'Body.',
+        delivery: 'demand',
+        kind: 'article',
+        audiences: ['technical'],
+        sourceFiles,
+        reason: 'prove path refusal',
+      }),
+    ).rejects.toThrow(/source file/)
+  }
+  await expect(
+    setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'wrong-scope',
+      title: 'Wrong',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      form: 'rule',
+      reason: 'prove scope refusal',
+    }),
+  ).rejects.toThrow('scope is project')
+  await expect(
+    setDoc({
+      scope: 'project',
+      subject: 'articles',
+      slug: 'wrong-kind',
+      title: 'Wrong',
+      body: 'Body.',
+      delivery: 'demand',
+      form: 'rule',
+      reason: 'prove kind refusal',
+    }),
+  ).rejects.toThrow('kind is article')
+  await expect(
+    setDoc({
+      scope: 'project',
+      subject: 'articles',
+      slug: 'foreign-subject',
+      title: 'Wrong',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      articleSubject: other.id,
+      reason: 'prove project refusal',
+    }),
+  ).rejects.toThrow('orch subject list articles')
+  await expect(
+    setDoc({
+      scope: 'project',
+      subject: 'articles',
+      slug: 'retired-subject',
+      title: 'Wrong',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      articleSubject: retired.id,
+      reason: 'prove retired refusal',
+    }),
+  ).rejects.toThrow('is retired')
+  await expect(
+    setDoc({
+      scope: 'project',
+      subject: 'articles',
+      slug: 'retired-related',
+      title: 'Wrong',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      relatedSubjects: [retired.id],
+      reason: 'prove retired related refusal',
+    }),
+  ).rejects.toThrow('is retired')
+
+  const created = await setDoc({
+    scope: 'project',
+    subject: 'articles',
+    slug: 'fields',
+    title: 'Fields',
+    body: 'One.',
+    delivery: 'demand',
+    kind: 'article',
+    audiences: ['technical'],
+    form: 'feature',
+    articleSubject: own.id,
+    relatedSubjects: [related.id],
+    sourceFiles: ['src/one.ts'],
+    reason: 'create fields',
+  })
+  await retireSubject('articles', related.id)
+  const kept = await setDoc({
+    scope: 'project',
+    subject: 'articles',
+    slug: 'fields',
+    title: 'Fields',
+    body: 'Two.',
+    reason: 'keep fields',
+    expectedRevision: created.revision!,
+  })
+  expect(kept).toMatchObject({
+    form: 'feature',
+    articleSubject: { id: own.id },
+    relatedSubjects: [{ id: related.id }],
+    sourceFiles: ['src/one.ts'],
+  })
+  const cleared = await setDoc({
+    scope: 'project',
+    subject: 'articles',
+    slug: 'fields',
+    title: 'Fields',
+    body: 'Three.',
+    form: null,
+    articleSubject: null,
+    relatedSubjects: [],
+    sourceFiles: [],
+    reason: 'clear fields',
+    expectedRevision: kept.revision!,
+  })
+  expect(cleared).toMatchObject({
+    form: null,
+    articleSubject: null,
+    relatedSubjects: [],
+    sourceFiles: [],
+  })
+  const firstRevision = listDocRevisions('project', 'articles', 'fields').at(-1)!
+  const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.id, {
+    reason: 'restore fields',
+    expectedRevision: cleared.revision!,
+  })
+  expect(restored).toMatchObject({
+    form: 'feature',
+    articleSubject: { id: own.id },
+    relatedSubjects: [{ id: related.id }],
+    sourceFiles: ['src/one.ts'],
+  })
+  expect(getDocRevision(firstRevision.id)?.sourceFiles).toEqual(['src/one.ts'])
+})
+
+test('subject filtering lists own-subject documents before related documents', async () => {
+  upsertProject({ name: 'filter-articles', path: '/w/filter-articles' })
+  const subject = await addSubject({
+    project: 'filter-articles',
+    name: 'Topic',
+    definition: 'Topic.',
+  })
+  await setDoc({
+    scope: 'project',
+    subject: 'filter-articles',
+    slug: 'related-first-title',
+    title: 'A related',
+    body: 'Body.',
+    delivery: 'demand',
+    kind: 'article',
+    audiences: ['technical'],
+    relatedSubjects: [subject.id],
+    reason: 'create related',
+  })
+  await setDoc({
+    scope: 'project',
+    subject: 'filter-articles',
+    slug: 'own-last-title',
+    title: 'Z own',
+    body: 'Body.',
+    delivery: 'demand',
+    kind: 'article',
+    audiences: ['technical'],
+    articleSubject: subject.id,
+    reason: 'create own',
+  })
+  expect(
+    listDocs({ scope: 'project', subject: 'filter-articles', articleSubject: subject.id }).map(
+      ({ slug }) => slug,
+    ),
+  ).toEqual(['own-last-title', 'related-first-title'])
 })

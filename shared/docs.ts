@@ -59,7 +59,9 @@ export function normalizeDocSourceFiles(input: readonly string[]): string[] {
   const seen = new Set<string>()
   for (const path of input) {
     if (!path || path.startsWith('/') || path.split('/').includes('..')) {
-      throw new Error(`invalid source file "${path}": use a non-empty repository-relative path with no .. segment`)
+      throw new Error(
+        `invalid source file "${path}": use a non-empty repository-relative path with no .. segment`,
+      )
     }
     if (seen.has(path)) throw new Error(`duplicate source file "${path}"`)
     seen.add(path)

@@ -227,7 +227,10 @@ test('document audience vocabulary migration converts local docs and revisions w
                  '["user","technical"]','test','prove backfill','2026-10-09')`,
       )
       .run(doc.id)
-    expect(applyMigrations(database)).toEqual(['0094_doc_audience_vocabulary'])
+    expect(applyMigrations(database)).toEqual([
+      '0094_doc_audience_vocabulary',
+      '0095_doc_article_fields',
+    ])
     expect(database.query('SELECT audiences FROM doc').get()).toEqual({
       audiences: '["technical","internal"]',
     })

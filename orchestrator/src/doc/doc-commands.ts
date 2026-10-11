@@ -6,20 +6,20 @@
 import { readFileSync } from 'node:fs'
 import {
   DOC_AUDIENCES,
-  DOC_KINDS,
   DOC_FORMS,
+  DOC_KINDS,
   DOC_STATUSES,
   type DocAudiences,
-  type DocKind,
   type DocForm,
+  type DocKind,
   type DocStatus,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import { resolveSubject } from '../subject/subjects.ts'
 import { searchDocs } from './doc-search.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
-import { resolveSubject } from '../subject/subjects.ts'
 import {
   collectDocReferenceProjects,
   consumeDoc,
@@ -47,7 +47,11 @@ const DOC_KEYWORD_LIST_LIMIT = 50
 const compareStoreText = (left: string, right: string) =>
   Buffer.compare(Buffer.from(left), Buffer.from(right))
 
-type DocFlags = { has(name: string): boolean; flag(name: string): string | undefined; values?(name: string): string[] }
+type DocFlags = {
+  has(name: string): boolean
+  flag(name: string): string | undefined
+  values?(name: string): string[]
+}
 type DocPresentation = {
   log(...values: unknown[]): void
   error(...values: unknown[]): void
@@ -260,7 +264,9 @@ function handledReadDocCommand(
       audience: flags.flag('audience'),
       status: flags.flag('status'),
       kind: flags.flag('kind'),
-      articleSubject: articleSubject ? resolveSubject(address.subject!, articleSubject).id : undefined,
+      articleSubject: articleSubject
+        ? resolveSubject(address.subject!, articleSubject).id
+        : undefined,
     }
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
@@ -268,12 +274,12 @@ function handledReadDocCommand(
     if (has('json')) presentation.log(JSON.stringify(rows))
     else if (rows.length) {
       presentation.log(
-        'scope    subject          slug                     title                    kind     status      delivery  bytes  updated',
+        'scope    subject          slug                     title                    kind     form       article-subject  related  sources  status      delivery  bytes  updated',
       )
       for (const d of rows) {
         presentation.log(
           `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-            `${d.title.padEnd(24)} ${d.kind.padEnd(8)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+            `${d.title.padEnd(24)} ${d.kind.padEnd(8)} ${(d.form ?? '-').padEnd(10)} ${(d.articleSubject?.name ?? '-').padEnd(16)} ${String(d.relatedSubjects.length).padStart(7)} ${String(d.sourceFiles.length).padStart(7)} ${d.status.padEnd(11)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
         )
       }
     }
@@ -319,10 +325,14 @@ function setTreeOptions(flags: DocFlags): {
     throw new Error('--replacement requires a slug')
   if (has('form') && has('no-form')) throw new Error('use --form or --no-form, not both')
   const rawForm = flag('form')
-  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm)) throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
-  if (has('article-subject') && has('no-article-subject')) throw new Error('use --article-subject or --no-article-subject, not both')
-  if (has('related-subject') && has('no-related-subjects')) throw new Error('use --related-subject or --no-related-subjects, not both')
-  if (has('source-file') && has('no-source-files')) throw new Error('use --source-file or --no-source-files, not both')
+  if (rawForm !== undefined && !DOC_FORMS.includes(rawForm as DocForm))
+    throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
+  if (has('article-subject') && has('no-article-subject'))
+    throw new Error('use --article-subject or --no-article-subject, not both')
+  if (has('related-subject') && has('no-related-subjects'))
+    throw new Error('use --related-subject or --no-related-subjects, not both')
+  if (has('source-file') && has('no-source-files'))
+    throw new Error('use --source-file or --no-source-files, not both')
   return {
     audiences,
     parentSlug,
@@ -331,10 +341,18 @@ function setTreeOptions(flags: DocFlags): {
     status: docStatus(flag('status')),
     kind: docKind(flag('kind')),
     replacementSlug,
-    form: has('no-form') ? null : rawForm as DocForm | undefined,
+    form: has('no-form') ? null : (rawForm as DocForm | undefined),
     articleSubject: has('no-article-subject') ? null : flag('article-subject'),
-    relatedSubjects: has('no-related-subjects') ? [] : has('related-subject') ? flags.values?.('related-subject') ?? [] : undefined,
-    sourceFiles: has('no-source-files') ? [] : has('source-file') ? flags.values?.('source-file') ?? [] : undefined,
+    relatedSubjects: has('no-related-subjects')
+      ? []
+      : has('related-subject')
+        ? (flags.values?.('related-subject') ?? [])
+        : undefined,
+    sourceFiles: has('no-source-files')
+      ? []
+      : has('source-file')
+        ? (flags.values?.('source-file') ?? [])
+        : undefined,
   }
 }
 
@@ -547,7 +565,7 @@ export async function docCommand(
       else
         for (const revision of revisions) {
           presentation.log(
-            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
+            `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
       return

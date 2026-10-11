@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_FORMS, DOC_KINDS, DOC_STATUSES } from '../../shared/docs.ts'
+
+export const ArticleDocFieldsSchema = z.object({
+  form: z.enum(DOC_FORMS).nullable().optional(),
+  articleSubject: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
+  relatedSubjects: z.array(z.object({ id: z.string().uuid(), name: z.string() })).optional(),
+  sourceFiles: z.array(z.string()).optional(),
+})
 
 export const DocTreeItemSchema = z.object({
   id: z.string(),

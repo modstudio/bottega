@@ -1,10 +1,10 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
 import {
-  type DocAudiences,
-  type DocKind,
-  type DocForm,
   type DocArticleSubject,
+  type DocAudiences,
+  type DocForm,
+  type DocKind,
   type DocStatus,
   docSummary,
 } from '../../../shared/docs.ts'
@@ -132,6 +132,10 @@ export type NormalizedRecordDocImport = {
     | 'featured'
     | 'status'
     | 'kind'
+    | 'form'
+    | 'articleSubjectId'
+    | 'relatedSubjectIds'
+    | 'sourceFiles'
     | 'replacementSlug'
   > & {
     id: string
@@ -141,12 +145,26 @@ export type NormalizedRecordDocImport = {
     featured: boolean
     status: DocStatus
     kind: DocKind
+    form: DocForm | null
+    articleSubjectId: string | null
+    relatedSubjectIds: string[]
+    sourceFiles: string[]
     replacementSlug: string | null
   }
   revisions: Array<
     Omit<
       RecordDocImportInput['revisions'][number],
-      'audiences' | 'parentId' | 'position' | 'featured' | 'status' | 'kind' | 'replacementSlug'
+      | 'audiences'
+      | 'parentId'
+      | 'position'
+      | 'featured'
+      | 'status'
+      | 'kind'
+      | 'form'
+      | 'articleSubjectId'
+      | 'relatedSubjectIds'
+      | 'sourceFiles'
+      | 'replacementSlug'
     > & {
       audiences: DocAudiences
       parentId: string | null
@@ -154,6 +172,10 @@ export type NormalizedRecordDocImport = {
       featured: boolean
       status: DocStatus
       kind: DocKind
+      form: DocForm | null
+      articleSubjectId: string | null
+      relatedSubjectIds: string[]
+      sourceFiles: string[]
       replacementSlug: string | null
     }
   >
@@ -253,9 +275,15 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
-    form: row.form == null ? null : String(row.form) as DocForm,
-    articleSubject: row.article_subject_id == null ? null : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
-    relatedSubjects: relatedSubjects.map((subject) => ({ id: String((subject as Record<string, unknown>).id), name: String((subject as Record<string, unknown>).name) })),
+    form: row.form == null ? null : (String(row.form) as DocForm),
+    articleSubject:
+      row.article_subject_id == null
+        ? null
+        : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
+    relatedSubjects: relatedSubjects.map((subject) => ({
+      id: String((subject as Record<string, unknown>).id),
+      name: String((subject as Record<string, unknown>).name),
+    })),
     sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
@@ -285,9 +313,15 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     featured: row.featured == null ? false : Boolean(row.featured),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     kind: (row.kind == null ? 'working' : String(row.kind)) as DocKind,
-    form: row.form == null ? null : String(row.form) as DocForm,
-    articleSubject: row.article_subject_id == null ? null : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
-    relatedSubjects: relatedSubjects.map((subject) => ({ id: String((subject as Record<string, unknown>).id), name: String((subject as Record<string, unknown>).name) })),
+    form: row.form == null ? null : (String(row.form) as DocForm),
+    articleSubject:
+      row.article_subject_id == null
+        ? null
+        : { id: String(row.article_subject_id), name: String(row.article_subject_name) },
+    relatedSubjects: relatedSubjects.map((subject) => ({
+      id: String((subject as Record<string, unknown>).id),
+      name: String((subject as Record<string, unknown>).name),
+    })),
     sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
