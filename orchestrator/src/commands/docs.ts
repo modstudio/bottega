@@ -13,20 +13,10 @@ import { log, optionFlags, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
 
-class NoParentOption extends Option {
-  override attributeName(): string {
-    return 'noParent'
-  }
-}
-
-class NamedNegativeOption extends Option {
-  private readonly attribute: string
-  constructor(flags: string, attribute: string) {
+class PresenceOption extends Option {
+  constructor(flags: string) {
     super(flags)
-    this.attribute = attribute
-  }
-  override attributeName(): string {
-    return this.attribute
+    this.negate = false
   }
 }
 
@@ -64,15 +54,15 @@ export function register(program: Command): void {
     .option('--match <value>')
     .option('--body-match <value>')
     .option('--parent <slug>')
-    .addOption(new NoParentOption('--no-parent'))
+    .addOption(new PresenceOption('--no-parent'))
     .option('--form <value>')
-    .addOption(new NamedNegativeOption('--no-form', 'noForm'))
+    .addOption(new PresenceOption('--no-form'))
     .option('--article-subject <value>')
-    .addOption(new NamedNegativeOption('--no-article-subject', 'noArticleSubject'))
+    .addOption(new PresenceOption('--no-article-subject'))
     .option('--related-subject <value>', 'related subject name or id', collectDocValue)
-    .addOption(new NamedNegativeOption('--no-related-subjects', 'noRelatedSubjects'))
+    .addOption(new PresenceOption('--no-related-subjects'))
     .option('--source-file <value>', 'repository-relative source path', collectDocValue)
-    .addOption(new NamedNegativeOption('--no-source-files', 'noSourceFiles'))
+    .addOption(new PresenceOption('--no-source-files'))
     .option('--position <value>')
     .option('--featured')
     .option('--no-featured')
