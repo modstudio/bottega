@@ -64,7 +64,7 @@ function sectionsFromTree(body: string, tree: Node): DocSection[] {
     if (marked && node.position) {
       const start = node.position.start.offset ?? 0
       const end = node.position.end.offset ?? body.length
-      const closed = /^\s*:{3,}\s*$/.test(sourceLine(body, node.position.end.line))
+      const closed = /^(?:\s*>)*\s*:{3,}\s*$/.test(sourceLine(body, node.position.end.line))
       const openingEnd = lineEnd(body, start)
       const closingStart = closed ? lineStart(body, end) : end
       sections.push({
