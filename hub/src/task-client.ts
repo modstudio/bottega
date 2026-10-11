@@ -2,6 +2,7 @@ import { diagnosticUrl, jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
@@ -289,6 +290,7 @@ export type HostedSpaceChange = {
     | import('./hosted-tasks.ts').HostedStatusEvent
     | HostedNote
     | HostedAcknowledgement
+    | HostedSend
 }
 
 export type HostedSpaceChangePage = {

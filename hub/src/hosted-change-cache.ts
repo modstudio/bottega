@@ -8,6 +8,7 @@ import {
   type HostedChangeRequestOptions,
 } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { createHostedSendChangeFamily } from './hosted-send-change-family.ts'
 import { createHostedTaskChangeFamily } from './hosted-task-change-family.ts'
 import {
   applyHostedAcknowledgement,
@@ -328,3 +329,5 @@ async function pullChanges(
 export const pullHostedTaskChanges = (options: PullOptions = {}) =>
   pullChanges(createHostedTaskChangeFamily, options)
 export const pullHostedNoteChanges = (options: PullOptions = {}) => pullChanges(noteFamily, options)
+export const pullHostedSendChanges = (options: PullOptions = {}) =>
+  pullChanges(createHostedSendChangeFamily, options)

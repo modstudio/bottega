@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedChangeFamilyName } from './hosted-change-family.ts'
+import { HOSTED_CHANGE_FAMILIES } from './hosted-change-family.ts'
 
 export const KEEP_HOSTED_CHANGE_EVIDENCE_DAYS = 30
 
@@ -53,6 +54,10 @@ export function recordHostedChangeEvidence(
   conn: Database,
   event: Omit<HostedChangeEvidenceEvent, 'observedAt'> & { observedAt?: string },
 ) {
+  if (!(HOSTED_CHANGE_FAMILIES as readonly string[]).includes(event.family))
+    throw new Error(
+      `hosted change evidence family must be one of ${HOSTED_CHANGE_FAMILIES.join(', ')}`,
+    )
   conn
     .query(
       `INSERT INTO hosted_change_evidence

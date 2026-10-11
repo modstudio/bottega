@@ -526,6 +526,7 @@ test('one change family failing leaves the other family result intact', async ()
       ],
     }),
     reports: async () => {},
+    sendChanges: async () => null,
   })
   expect(results.find((result) => result.source === 'hosted task changes')?.ok).toBeFalse()
   expect(results.find((result) => result.source === 'hosted note changes')).toMatchObject({
