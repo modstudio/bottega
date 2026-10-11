@@ -8,6 +8,7 @@ import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_STATUSES,
+  type DocAudience,
   type DocAudiences,
   type DocKind,
   type DocStatus,
@@ -24,6 +25,7 @@ import {
   docSubjects,
   exportDocs,
   getDoc,
+  getDocForAudience,
   importDocs,
   lintStoredDoc,
   listDocMetadata,
@@ -112,6 +114,14 @@ function docAudiences(value: string | undefined): DocAudiences | undefined {
       `--audience must be a comma-separated set of ${DOC_AUDIENCES.join(' or ')}: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+function docReadAudience(value: string | undefined): DocAudience | undefined {
+  if (value === undefined) return undefined
+  if (DOC_AUDIENCES.includes(value as DocAudience)) {
+    return value as DocAudience
+  }
+  throw new Error(`--audience must be one of ${DOC_AUDIENCES.join(', ')}`)
 }
 
 function docStatus(value: string | undefined): DocStatus | undefined {
@@ -224,7 +234,17 @@ function keywordListDocs(
         compareStoreText(left.title, right.title),
     )
     .slice(0, DOC_KEYWORD_LIST_LIMIT)
-    .map((doc) => getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null))
+    .map((doc) =>
+      filters.audience
+        ? getDocForAudience(
+            doc.scope,
+            doc.subject,
+            doc.slug,
+            filters.audience as (typeof DOC_AUDIENCES)[number],
+            filters.owner ?? null,
+          )
+        : getDoc(doc.scope, doc.subject, doc.slug, filters.owner ?? null),
+    )
     .filter((doc) => doc !== null)
 }
 
@@ -235,6 +255,16 @@ function listedDocs(
 ) {
   if (match === undefined && bodyMatch === undefined) return listDocs(filters)
   return keywordListDocs(filters, match, bodyMatch)
+}
+
+function readDoc(
+  address: { scope: string; subject: string | null; owner: string | null },
+  slug: string,
+  audience: DocAudience | undefined,
+) {
+  return audience
+    ? getDocForAudience(address.scope, address.subject, slug, audience, address.owner)
+    : getDoc(address.scope, address.subject, slug, address.owner)
 }
 
 function handledReadDocCommand(
@@ -274,7 +304,11 @@ function handledReadDocCommand(
   if (sub !== 'show' && sub !== 'get') return false
   const slug = argv[2]
   if (!slug || !address.scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
-  const doc = getDoc(address.scope, address.subject, slug, address.owner)
+  const doc = readDoc(
+    { scope: address.scope, subject: address.subject, owner: address.owner },
+    slug,
+    docReadAudience(flags.flag('audience')),
+  )
   if (!doc)
     throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
   if (has('json')) presentation.log(JSON.stringify(doc))

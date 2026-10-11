@@ -1,4 +1,4 @@
-import { docSummary } from '../../shared/docs.ts'
+import { type DocAudience, docSummary } from '../../shared/docs.ts'
 import { DocSchema, DocTreeItemSchema } from './doc-contract.ts'
 import { type DocRow, docGet, docList } from './orch.ts'
 
@@ -37,6 +37,11 @@ export async function localDocsTree(filters: LocalDocFilters = {}) {
   return { items: (await docList(filters)).map((row) => localDocContract(row, false)) }
 }
 
-export async function localDocRead(scope: string, subject: string | null, slug: string) {
-  return localDocContract(await docGet(scope, subject, slug), true)
+export async function localDocRead(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  audience?: DocAudience,
+) {
+  return localDocContract(await docGet(scope, subject, slug, audience), true)
 }

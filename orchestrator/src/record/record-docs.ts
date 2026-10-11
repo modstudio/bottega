@@ -1,7 +1,8 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import type { DocAudience, DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { assertDocSections } from '../../../shared/doc-sections.ts'
+import type { DocAudiences, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -21,7 +22,6 @@ import {
   refuseSettingsAddress,
 } from '../doc/doc-write-allowed.ts'
 import { canonFacts, recordCanonImportSurroundings } from './record-canon-facts.ts'
-import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
@@ -33,12 +33,10 @@ import {
 import {
   newerHostedImportRefusal,
   normalizeRecordDocImport,
-  type RecordDoc,
   type RecordDocImportInput,
   type RecordDocRevision,
   recordDocRevisionIdentityRefusal,
   recordDocRevisionRow,
-  recordDocRow,
 } from './record-doc-mapping.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
@@ -49,6 +47,11 @@ import {
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
+export {
+  getRecordDoc,
+  listRecordDocs,
+  type RecordDocListInput,
+} from './record-doc-read.ts'
 
 export type RecordCanonImportInput = {
   address: { kind: 'user' } | { kind: 'project'; subject: string }
@@ -90,19 +93,6 @@ function storedDocParentId(
   return existing?.parent_id == null ? null : String(existing.parent_id)
 }
 
-export type RecordDocListInput = {
-  scope?: string
-  subject?: string | null
-  audience?: DocAudience
-  status?: DocStatus
-  kind?: DocKind
-  updatedSince?: string
-  limit: number
-  cursor: RecordCursor | null
-  includeDeleted: boolean
-  acrossReadableSpaces: boolean
-}
-
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
   try {
@@ -129,58 +119,6 @@ async function projectId(
     )
   }
   return String(rows[0]!.id)
-}
-
-export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
-  return tenant(input, async (tx) => {
-    const spaceIds = input.spaceIds?.length ? input.spaceIds : [input.spaceId]
-    const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
-    const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name,
-        to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-      FROM doc d
-      JOIN space s ON s.id=d.space_id
-      LEFT JOIN project p ON p.id=d.project_id
-      WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
-        AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
-        AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
-        AND (${input.status ?? null}::text IS NULL OR d.status=${input.status ?? null})
-        AND (${input.kind ?? null}::text IS NULL OR d.kind=${input.kind ?? null})
-        AND (
-          ${input.subject === undefined}::boolean
-          OR (${input.subject === null}::boolean AND d.subject IS NULL)
-          OR d.subject=${input.subject ?? null}
-        )
-        AND (${input.includeDeleted}::boolean OR d.deleted_at IS NULL)
-        AND (
-          ${input.updatedSince ?? null}::timestamptz IS NULL
-          OR d.updated_at > ${input.updatedSince ?? null}::timestamptz
-        )
-        AND (
-          ${input.cursor?.at ?? null}::timestamptz IS NULL
-          OR (d.updated_at, d.id) > (${input.cursor?.at ?? null}::timestamptz, ${input.cursor?.id ?? null}::uuid)
-        )
-      ORDER BY d.updated_at, d.id
-      LIMIT ${input.limit + 1}
-    `
-    return rows.map((row: Record<string, unknown>) => ({
-      ...recordDocRow(row),
-      [recordCursorAt]: String(row.cursor_at),
-    }))
-  })
-}
-
-export async function getRecordDoc(input: Tenant & { id: string }): Promise<RecordDoc | null> {
-  return tenant(input, async (tx) => {
-    const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name
-      FROM doc d
-      JOIN space s ON s.id=d.space_id
-      LEFT JOIN project p ON p.id=d.project_id
-      WHERE d.id=${input.id}::uuid
-    `
-    return rows[0] ? recordDocRow(rows[0] as Record<string, unknown>) : null
-  })
 }
 
 export async function listRecordDocRevisions(
@@ -299,6 +237,7 @@ export async function upsertRecordDoc(
     const now = input.at ?? new Date().toISOString()
     const docId = existing[0] ? String(existing[0].id) : (input.id ?? newRecordId())
     const audiences = storedDocAudiences(input, existing[0])
+    assertDocSections(input.body, audiences)
     const parentId = storedDocParentId(input, existing[0])
     assertWrite(
       await recordTreeWriteRefusal(tx, {
@@ -523,6 +462,7 @@ async function deleteMissingCanonRows(
 export async function importRecordCanon(
   input: Tenant & RecordCanonImportInput,
 ): Promise<RecordCanonImportResult> {
+  for (const row of input.rows) assertDocSections(row.body, ['technical'])
   return tenant(input, async (tx) => {
     const address =
       input.address.kind === 'user'
@@ -697,6 +637,7 @@ export async function consumeRecordDoc(
     const now = new Date().toISOString()
     const consumed = consumeDocBody(String(doc.body), now, input.sessionId ?? input.author)
     if (consumed.alreadyConsumed) return { id: input.id, revisionId: '', alreadyConsumed: true }
+    assertDocSections(consumed.body, recordDocAudiences(doc.audiences))
     await tx`
       UPDATE doc SET body=${consumed.body}, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -785,6 +726,7 @@ export async function restoreRecordDoc(
     const body = String(revision.body)
     const delivery = String(revision.delivery) as DocDelivery
     const audiences = recordDocAudiences(revision.audiences)
+    assertDocSections(body, audiences)
     const parentId = revision.parent_id == null ? null : String(revision.parent_id)
     const position = Number(revision.position)
     const featured = revision.featured == null ? false : Boolean(revision.featured)
@@ -912,7 +854,9 @@ export async function importRecordDoc(
   assertWrite(refuseMismatchedDocProject(doc.scope, doc.subject, doc.projectName))
   for (const revision of revisions) {
     assertWrite(recordDocRevisionIdentityRefusal(doc, revision, 'import'))
+    assertDocSections(revision.body, recordDocAudiences(revision.audiences))
   }
+  assertDocSections(doc.body, recordDocAudiences(doc.audiences))
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, doc)
     assertRevisionWrite({

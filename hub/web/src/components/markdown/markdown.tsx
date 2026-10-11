@@ -1,8 +1,11 @@
 import { isValidElement, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkDirective from 'remark-directive'
 import remarkGfm from 'remark-gfm'
+import { DOC_AUDIENCE_LABELS } from '@/docs/filters'
 import { secondLevelHeadings } from '@/docs/headings'
 import { Callout } from '@/ui/callout/callout'
+import { docSectionAudiences } from '../../../../../shared/doc-sections.ts'
 import { githubAlertPlugin, isTone } from './markdown-alerts'
 import { fenceUse } from './markdown-fences'
 import { DocOverflow } from './markdown-overflow'
@@ -86,9 +89,23 @@ function DocCallout({
   node?: unknown
   'data-callout'?: unknown
   'data-tone'?: unknown
+  'data-doc-section-audiences'?: unknown
 }) {
   const title = props['data-callout']
   const tone = props['data-tone']
+  const sectionAudiences = props['data-doc-section-audiences']
+  if (typeof sectionAudiences === 'string') {
+    const labels = sectionAudiences
+      .split(',')
+      .map((audience) => DOC_AUDIENCE_LABELS[audience as keyof typeof DOC_AUDIENCE_LABELS])
+      .filter(Boolean)
+    return (
+      <div {...props}>
+        <span className="font-mono text-text-muted text-xs">{labels.join(', ')}</span>
+        {children}
+      </div>
+    )
+  }
   if (typeof title === 'string' && isTone(tone)) {
     return (
       <Callout tone={tone} title={title}>
@@ -97,6 +114,31 @@ function DocCallout({
     )
   }
   return <div {...props}>{children}</div>
+}
+
+function docSectionDirective() {
+  return (tree: { children?: unknown[] }) => {
+    const visit = (node: unknown) => {
+      if (!node || typeof node !== 'object') return
+      const item = node as {
+        type?: string
+        name?: string
+        attributes?: Record<string, string | null>
+        children?: unknown[]
+        data?: Record<string, unknown>
+      }
+      if (item.type === 'containerDirective' && item.name === 'section') {
+        const audiences = docSectionAudiences(item.attributes)
+        item.data = {
+          ...item.data,
+          hName: 'div',
+          hProperties: { 'data-doc-section-audiences': audiences.join(',') },
+        }
+      }
+      for (const child of item.children ?? []) visit(child)
+    }
+    visit(tree)
+  }
 }
 
 function useHighlight(needed: boolean) {
@@ -128,7 +170,7 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkDirective, docSectionDirective]}
         rehypePlugins={[
           githubAlertPlugin,
           ...(highlight

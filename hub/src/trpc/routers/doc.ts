@@ -57,8 +57,12 @@ export const docRouter = t.router({
     )
     .query(({ input }) => fromOrch(() => localDocsTree(input ?? {}))),
   read: t.procedure
-    .input(z.object({ scope, subject, slug: z.string() }))
-    .query(({ input }) => fromOrch(() => localDocRead(input.scope, input.subject, input.slug))),
+    .input(
+      z.object({ scope, subject, slug: z.string(), audience: z.enum(DOC_AUDIENCES).optional() }),
+    )
+    .query(({ input }) =>
+      fromOrch(() => localDocRead(input.scope, input.subject, input.slug, input.audience)),
+    ),
   search: t.procedure
     .input(
       z.object({

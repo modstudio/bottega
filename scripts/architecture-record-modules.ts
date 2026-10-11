@@ -55,6 +55,15 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-doc-audience-sql.ts', ['bun', '../../../shared/docs.ts']),
   module('orchestrator/src/record/record-doc-audiences.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/record/record-doc-read.ts', [
+    'bun',
+    '../../../shared/doc-sections.ts',
+    '../../../shared/docs.ts',
+    '../../../shared/record/tenant.ts',
+    './record-cursor.ts',
+    './record-doc-errors.ts',
+    './record-doc-mapping.ts',
+  ]),
   module('orchestrator/src/record/record-doc-import-write.ts', [
     'bun',
     './record-doc-audience-sql.ts',
@@ -179,6 +188,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-public-docs.ts', [
     'bun',
+    '../../../shared/doc-sections.ts',
     '../../../shared/docs.ts',
     '../../../shared/record/tenant.ts',
     './record-doc-audiences.ts',
