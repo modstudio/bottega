@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
@@ -12,9 +12,9 @@ import { applyMigrations } from './migrations.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
-  parseHostedPushItem,
   type PushedStatusEvent,
   type PushedTask,
+  parseHostedPushItem,
 } from './push-contract.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'

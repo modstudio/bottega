@@ -7,8 +7,8 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
-import { formatTaskDocumentLabel } from './task-document-label.ts'
 import type { StatusCategory } from './projects.ts'
+import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = {

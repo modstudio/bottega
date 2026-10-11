@@ -11,8 +11,8 @@ import {
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
-import { resolveTask, taskKeyPrefix } from './task-identity.ts'
 import { hostedTaskFromTaskRow, type PushableTaskRow } from './task-hosted-row.ts'
+import { resolveTask, taskKeyPrefix } from './task-identity.ts'
 import {
   issueForDestination,
   type PushCollections,

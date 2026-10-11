@@ -1,11 +1,11 @@
 import type { Database } from 'bun:sqlite'
-import type { TaskRow } from './task.ts'
-import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
 import {
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
 } from './push-contract.ts'
+import type { TaskRow } from './task.ts'
+import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
 
 type OutboxPointer = {
   table_name: string
