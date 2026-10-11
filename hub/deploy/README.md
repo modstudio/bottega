@@ -31,6 +31,8 @@ Fly. It then migrates the record and confirms that applied migrations equal thos
 the image before invoking Fly. The image's release command
 uses its low-privilege `HUB_RECORD_DATABASE_URL` and refuses a release with pending migrations,
 so a bare `fly deploy` cannot run ahead of the record schema.
+The app serves `GET /version` with the commit it was built from; the deploy script supplies that
+commit as a build argument.
 
 On the record API app, allow the hub origin and share the parent cookie domain:
 

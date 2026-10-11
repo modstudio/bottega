@@ -1,5 +1,6 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
+import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { recordApi } from './record-api.ts'
 import {
@@ -140,6 +141,7 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
         return { ok: false, migrations }
       }
     },
+    readCommit: readBuiltCommit,
     readRuns: listRecordRuns,
     readRunsWindow: viewRecordRuns,
     readRun: getRecordRun,

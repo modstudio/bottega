@@ -24,5 +24,8 @@ ENV VITE_APP_ORIGIN=$VITE_APP_ORIGIN
 # so the build asserts the bundle exists.
 RUN bun run --cwd hub/web build && test -f hub/web/dist/index.html
 
+ARG GIT_SHA
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 3000
 CMD ["bun", "hub/src/hosted.ts"]

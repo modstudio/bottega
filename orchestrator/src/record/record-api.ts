@@ -86,6 +86,7 @@ type Deps = RecordSubjectRouteDeps & {
   auth: { handler(request: Request): Response | Promise<Response> }
   readSession(headers: Headers): Promise<RecordIdentity | null>
   readHealth(): Promise<{ ok: boolean; migrations: number }>
+  readCommit(): string | undefined
   setActiveSpace(headers: Headers, spaceId: string): Promise<void>
   readRuns(
     input: Tenant & {

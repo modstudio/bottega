@@ -1,10 +1,12 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
+import { readBuiltCommit } from '../../shared/built-commit.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { evidenceApi } from './evidence-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
+import { hostedVersionResponse } from './hosted-version.ts'
 import { noteApi } from './note-api.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import { reportApi } from './report-api.ts'
@@ -36,6 +38,8 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
       const url = new URL(req.url)
       const health = hostedHealthResponse(req)
       if (health) return health
+      const version = hostedVersionResponse(req, readBuiltCommit())
+      if (version) return version
       const evidence = await evidenceApi(req, config)
       if (evidence) return evidence
       const changes = await changeApi(req, config)

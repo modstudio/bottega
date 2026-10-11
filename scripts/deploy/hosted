@@ -42,17 +42,25 @@ fi
 
 cd "$PROJECT_ROOT"
 
+commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=no)" ]]; then
+  echo "REFUSE: tracked files differ from the commit being deployed; commit or stash them, then release with orch release" >&2
+  exit 1
+fi
+
 if ! ORCH_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/orch" record migrate; then
   echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
   exit 1
 fi
 
 if [[ "$APP" == "api" ]]; then
-  exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
+  exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
+    --build-arg GIT_SHA="$commit"
 fi
 
 exec env -u ORCH_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
   --build-arg VITE_HUB_MODE=hosted \
   --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
   --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
-  --build-arg VITE_APP_ORIGIN=https://app.bottega.run
+  --build-arg VITE_APP_ORIGIN=https://app.bottega.run \
+  --build-arg GIT_SHA="$commit"
