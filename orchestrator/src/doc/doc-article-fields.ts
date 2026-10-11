@@ -9,7 +9,7 @@ import {
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
 import { resolveSubject } from '../subject/subjects.ts'
-import type { Doc, DocListFilters, DocRevision } from './doc-read-store.ts'
+import type { Doc, DocRevision } from './doc-read-store.ts'
 import { articleFieldRefusal, type CanonWriteTree } from './doc-write-allowed.ts'
 
 export type DocWriteContext = {
@@ -104,17 +104,6 @@ export function resolveLocalDocArticleFields(
     )
   }
   return { form, articleSubject, relatedSubjects, sourceFiles }
-}
-
-export function resolveLocalDocListFilters(filters: DocListFilters = {}): DocListFilters {
-  if (filters.articleSubject === undefined) return filters
-  if (filters.scope !== 'project' || !filters.subject) {
-    throw new Error('article subject filter requires project scope and subject')
-  }
-  return {
-    ...filters,
-    articleSubject: resolveSubject(filters.subject, filters.articleSubject).id,
-  }
 }
 
 export function hostedArticleWriteFields(
