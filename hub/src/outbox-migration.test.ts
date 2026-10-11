@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeOutbox() {
@@ -80,9 +81,9 @@ test('the additive outbox migration brings each queued status event task once', 
   database
     .query(
       `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-       VALUES (?,'DEV-10','bottega','mcp','2026-10-10T00:00:00.000Z','2026-10-11T00:00:00.000Z')`,
+       VALUES (?,'DEV-10',?,'mcp','2026-10-10T00:00:00.000Z','2026-10-11T00:00:00.000Z')`,
     )
-    .run(taskId)
+    .run(taskId, PLATFORM_SLUG)
   const insertEvent = database.query(
     `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,from_status,to_status)
      VALUES (?,'DEV-10',?,?,'open','active')`,

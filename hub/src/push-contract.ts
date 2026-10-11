@@ -17,8 +17,8 @@ export type PushedStatusEvent = {
   deleted_at: string | null
 }
 
-export const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
-export type TaskStatusCategory = (typeof TASK_STATUS_CATEGORIES)[number]
+const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
+type TaskStatusCategory = (typeof TASK_STATUS_CATEGORIES)[number]
 
 export type PushedTask = {
   id: string

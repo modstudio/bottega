@@ -7,16 +7,11 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
-import {
-  HOSTED_TASK_UPDATE_COLUMNS,
-  type PushedStatusEvent,
-  type PushedTask,
-} from './push-contract.ts'
+import { type PushedStatusEvent, type PushedTask } from './push-contract.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
-export { HOSTED_TASK_UPDATE_COLUMNS }
 export type HostedComment = {
   id: string
   task_key: string
