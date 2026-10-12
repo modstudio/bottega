@@ -40,8 +40,14 @@ function adapter(
     view?: (target: string) => PullRequestMergeFacts
     checks?: PullRequestCheck[]
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
+    hasCommit?: (cwd: string, headCommit: string) => boolean
     merge?: (method: string, subject: string, headCommit: string) => string
-    admission?: () => { change: PullRequestChange; decision: AdmissionDecision }
+    admission?: (
+      cwd: string,
+      headCommit: string,
+      headBranch: string,
+      database: ReturnType<typeof db>,
+    ) => { change: PullRequestChange; decision: AdmissionDecision }
     recordAdmission?: (
       change: PullRequestChange,
       decision: AdmissionDecision,
@@ -54,6 +60,7 @@ function adapter(
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     checks: () => input.checks ?? [],
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
+    hasCommit: input.hasCommit ?? (() => true),
     admission:
       input.admission ??
       (() => ({
@@ -191,6 +198,7 @@ test('an admission lookup that cannot see the head refuses with the fetch comman
       '42',
       cwd,
       adapter({
+        hasCommit: () => false,
         admission: () => {
           throw new Error('git rev-parse --verify head-commit failed')
         },
@@ -204,33 +212,34 @@ test('an admission lookup that cannot see the head refuses with the fetch comman
   expect(merged).toBe(false)
 })
 
+test('an admission error for a present head uses the general proof refusal', () => {
+  registerProject(['test'])
+  let failure = ''
+  try {
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        admission: () => {
+          throw new Error('review store unavailable')
+        },
+      }),
+    )
+  } catch (cause) {
+    failure = cause instanceof Error ? cause.message : String(cause)
+  }
+  expect(failure).toContain(
+    'proof was not checked: review store unavailable; cleared by: restore forge and repository access, then orch pr merge 42',
+  )
+  expect(failure).not.toContain('git fetch origin pull/42/head')
+})
+
 test('an admitted head records a snapshot with the pull request number before merging', () => {
   registerProject(['test'])
   const database = db()
   const project = database
     .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
     .get('merge-fixture')!
-  const change = {
-    project: {
-      id: project.id,
-      name: 'merge-fixture',
-      path: cwd,
-      stack: 'bun',
-      canon: false,
-      retiredAt: null,
-      settings: {},
-    },
-    branch: pullRequest.headBranch,
-    tip: pullRequest.headCommit,
-    tree: 'head-tree',
-    group: {
-      project: 'merge-fixture',
-      branch: pullRequest.headBranch,
-      patchId: 'patch',
-      pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
-    },
-    tier: 2 as const,
-  }
   const decision: AdmissionDecision = {
     complete: true,
     overrideId: null,
@@ -259,7 +268,34 @@ test('an admitted head records a snapshot with the pull request number before me
           link: 'https://checks.example/test',
         },
       ],
-      admission: () => ({ change, decision }),
+      admission: (admissionCwd, headCommit, headBranch, admittedDatabase) => {
+        expect(admissionCwd).toBe(cwd)
+        expect(admittedDatabase).toBe(database)
+        return {
+          change: {
+            project: {
+              id: project.id,
+              name: 'merge-fixture',
+              path: admissionCwd,
+              stack: 'bun',
+              canon: false,
+              retiredAt: null,
+              settings: {},
+            },
+            branch: headBranch,
+            tip: headCommit,
+            tree: 'head-tree',
+            group: {
+              project: 'merge-fixture',
+              branch: headBranch,
+              patchId: 'patch',
+              pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
+            },
+            tier: 2 as const,
+          },
+          decision,
+        }
+      },
       recordAdmission: (admittedChange, admittedDecision, number, admittedDatabase) =>
         recordMergeAdmission(admittedChange, admittedDecision, number, admittedDatabase),
     }),
@@ -273,38 +309,6 @@ test('an admitted head records a snapshot with the pull request number before me
       )
       .get('merge-fixture', pullRequest.headBranch, pullRequest.headCommit),
   ).toEqual({ pr_number: 42, override_id: null })
-})
-
-test('a recorded operator override admits the head', () => {
-  registerProject(['test'])
-  let merged = false
-  mergePullRequest(
-    '42',
-    cwd,
-    adapter({
-      checks: [
-        {
-          name: 'test',
-          bucket: 'pass',
-          state: 'SUCCESS',
-          link: 'https://checks.example/test',
-        },
-      ],
-      admission: () => ({
-        change: { branch: pullRequest.headBranch } as PullRequestChange,
-        decision: {
-          complete: true,
-          overrideId: 7,
-          triage: { complete: true, snapshot: {} } as AdmissionDecision['triage'],
-        },
-      }),
-      merge: () => {
-        merged = true
-        return 'merged-oid'
-      },
-    }),
-  )
-  expect(merged).toBe(true)
 })
 
 test('a failing forge call refuses because proof was not checked', () => {

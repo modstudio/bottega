@@ -5,7 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
+import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
@@ -43,6 +43,7 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     landingBranch: string,
   ): { remoteLandingTip: string; mergeBase: string }
+  hasCommit(cwd: string, headCommit: string): boolean
   admission(
     cwd: string,
     headCommit: string,
@@ -189,6 +190,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       ),
     }
   },
+  hasCommit(cwd, headCommit) {
+    return run(cwd, ['git', 'cat-file', '-e', `${headCommit}^{commit}`]).exitCode === 0
+  },
   admission(cwd, headCommit, headBranch, database) {
     const change = resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
     return { change, decision: admissionDecision(change, database) }
@@ -282,20 +286,18 @@ function collectMergeAdmission(
   adapter: PullRequestMergeAdapter,
   database: Database,
 ): { decision: MergeDecision; checked: CheckedMergeAdmission | null } {
-  let checked: CheckedMergeAdmission
-  try {
-    checked = adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
-  } catch (cause) {
+  if (!adapter.hasCommit(cwd, pullRequest.headCommit)) {
     return {
       checked: null,
       decision: decideMergeAdmission({
         checked: false,
         number: pullRequest.number,
         headCommit: pullRequest.headCommit,
-        problem: cause instanceof Error ? cause.message : String(cause),
+        problem: `commit ${pullRequest.headCommit} is absent from the checkout`,
       }),
     }
   }
+  const checked = adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
   if (checked.decision.complete) {
     return {
       checked,
@@ -323,7 +325,7 @@ export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
-  database: Database = db(),
+  database: Database = writableDb(),
 ): string {
   const project = projectAt(cwd, database)
   if (!project) {
@@ -354,12 +356,6 @@ export function mergePullRequest(
     if (!admission.decision.admitted) {
       throw new Error(`refusing merge: ${admission.decision.refusal}`)
     }
-    adapter.recordAdmission(
-      admission.checked!.change,
-      admission.checked!.decision,
-      pullRequest.number,
-      database,
-    )
     const input = collectMergeProof(
       pullRequest,
       landingBranch,
@@ -370,6 +366,12 @@ export function mergePullRequest(
     )
     const decision = decideMergeProof(input)
     if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
+    adapter.recordAdmission(
+      admission.checked!.change,
+      admission.checked!.decision,
+      pullRequest.number,
+      database,
+    )
     const subject = `${pullRequest.title} (#${pullRequest.number})`
     return adapter.merge(
       cwd,
