@@ -8,6 +8,7 @@ import { classes } from '@/ui/text/classes'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
+import { savedVersionAuthor } from './reading.tsx'
 import type { DocsDoc, DocsSource } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
@@ -41,7 +42,15 @@ function Contents({ headings }: { headings: readonly DocHeading[] }) {
   )
 }
 
-function DocHistory({ doc }: { doc: DocsDoc }) {
+function DocHistory({
+  doc,
+  revisionId,
+  onRevision,
+}: {
+  doc: DocsDoc
+  revisionId?: string
+  onRevision: (id: number) => void
+}) {
   const [open, setOpen] = useState(false)
   const history = useQuery(
     trpc.doc.history.queryOptions({
@@ -83,13 +92,16 @@ function DocHistory({ doc }: { doc: DocsDoc }) {
       {open ? (
         <div className="mt-1">
           {revisions.map((revision) => (
-            <div
+            <button
+              type="button"
               key={revision.id}
               title={`${exactTime(revision.at)} — ${revision.reason}`}
-              className="border-border-default border-t py-2 text-sm text-text-muted"
+              aria-current={revisionId === String(revision.id) ? 'true' : undefined}
+              onClick={() => onRevision(revision.id)}
+              className="block w-full border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
             >
-              {relativeTime(revision.at)} · {revision.author}
-            </div>
+              {relativeTime(revision.at)} · {savedVersionAuthor(revision.author)}
+            </button>
           ))}
         </div>
       ) : null}
@@ -101,10 +113,14 @@ function Details({
   doc,
   signedIn,
   showHistory,
+  revisionId,
+  onRevision,
 }: {
   doc: DocsDoc | null
   signedIn: boolean
   showHistory: boolean
+  revisionId?: string
+  onRevision: (id: number) => void
 }) {
   if (!doc) return null
   return (
@@ -146,7 +162,9 @@ function Details({
           ) : null}
         </dl>
       </section>
-      {showHistory ? <DocHistory key={doc.id} doc={doc} /> : null}
+      {showHistory ? (
+        <DocHistory key={doc.id} doc={doc} revisionId={revisionId} onRevision={onRevision} />
+      ) : null}
     </>
   )
 }
@@ -156,11 +174,15 @@ export function DocsFacts({
   headings,
   signedIn,
   source,
+  revisionId,
+  onRevision = () => {},
 }: {
   doc: DocsDoc | null
   headings: readonly DocHeading[]
   signedIn: boolean
   source: DocsSource
+  revisionId?: string
+  onRevision?: (id: number) => void
 }) {
   const panel = useRef<HTMLElement>(null)
   useHeldPanel(panel)
@@ -188,7 +210,13 @@ export function DocsFacts({
         {tab === 'contents' ? (
           <Contents headings={headings} />
         ) : (
-          <Details doc={doc} signedIn={signedIn} showHistory={signedIn && source === 'local'} />
+          <Details
+            doc={doc}
+            signedIn={signedIn}
+            showHistory={signedIn && source === 'local'}
+            revisionId={revisionId}
+            onRevision={onRevision}
+          />
         )}
       </div>
     </aside>

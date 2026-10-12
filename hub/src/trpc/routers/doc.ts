@@ -8,7 +8,7 @@ import {
   normalizeDocAudiences,
 } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
-import { localDocRead, localDocsTree } from '../../local-docs.ts'
+import { localDocRead, localDocRevisionRead, localDocsTree } from '../../local-docs.ts'
 import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
 import type { Context } from '../context.ts'
 import { fromOrch } from '../orch-error.ts'
@@ -114,5 +114,26 @@ export const docRouter = t.router({
   history: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))
     .query(({ input }) => fromOrch(() => docHistory(input.scope, input.subject, input.slug))),
+  revision: t.procedure
+    .input(
+      z.object({
+        scope,
+        subject,
+        slug: z.string(),
+        revisionId: z.number().int().positive(),
+        audience: z.enum(DOC_AUDIENCES).optional(),
+      }),
+    )
+    .query(({ input }) =>
+      fromOrch(() =>
+        localDocRevisionRead(
+          input.scope,
+          input.subject,
+          input.slug,
+          input.revisionId,
+          input.audience,
+        ),
+      ),
+    ),
   subjects: t.procedure.query(() => fromOrch(() => docSubjects())),
 })

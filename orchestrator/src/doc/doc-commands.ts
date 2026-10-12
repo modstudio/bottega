@@ -34,6 +34,7 @@ import {
   listDocRevisions,
   listDocs,
   listOpenResumes,
+  readDocRevision,
   removeDoc,
   restoreDoc,
   setDoc,
@@ -492,6 +493,49 @@ async function handleStatusDocCommand(
   return true
 }
 
+function handledRevisionDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  owner: string | null,
+): boolean {
+  if (sub !== 'revision') return false
+  const scope = argv[2]
+  const rawSubject = argv[3]
+  const slug = argv[4]
+  const revisionId = Number(argv[5])
+  if (!scope || rawSubject === undefined || !slug || !revisionId)
+    throw new Error('orch doc revision <scope> <subject|-> <slug> <rev> --json')
+  const subject = rawSubject === '-' ? null : rawSubject
+  if (flags.has('user') && (scope !== 'canon' || subject !== null)) {
+    throw new Error('--user history address must be canon -')
+  }
+  const revision = readDocRevision(
+    scope,
+    subject,
+    slug,
+    revisionId,
+    owner,
+    docReadAudience(flags.flag('audience')),
+  )
+  presentation.log(flags.has('json') ? JSON.stringify(revision) : revision.body)
+  return true
+}
+
+function handledReadOrRevisionDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): boolean {
+  return (
+    handledReadDocCommand(sub, argv, flags, presentation, address) ||
+    handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
+  )
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -505,7 +549,8 @@ export async function docCommand(
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
+  if (handledReadOrRevisionDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
+    return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
     return
   if (sub === 'consume') {
@@ -660,6 +705,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }

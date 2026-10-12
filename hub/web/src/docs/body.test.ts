@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { leadingHeading, paneTitle, readingBody } from './body.ts'
+import { leadingHeading, paneTitle, readingBody, viewedPaneTitle } from './body.ts'
 
 test('the pane shows the body heading as the title and the stored title beneath it', () => {
   expect(paneTitle('Product philosophy: what it is for', '# Product philosophy\n\nText.')).toEqual({
@@ -11,6 +11,15 @@ test('the pane shows the body heading as the title and the stored title beneath 
 test('the pane shows the stored title alone when the body has no heading or repeats it', () => {
   expect(paneTitle('Install', 'Run the installer.')).toEqual({ title: 'Install', lede: null })
   expect(paneTitle('Install', '# Install\n\nRun it.')).toEqual({ title: 'Install', lede: null })
+})
+
+test('the pane takes its title and lede from the viewed revision', () => {
+  expect(
+    viewedPaneTitle(
+      { title: 'Current title', body: '# Current heading\n\nCurrent.' },
+      { title: 'Earlier title', body: '# Earlier heading\n\nEarlier.' },
+    ),
+  ).toEqual({ title: 'Earlier heading', lede: 'Earlier title' })
 })
 
 test('a leading level-one heading is dropped so the pane title is the only one', () => {

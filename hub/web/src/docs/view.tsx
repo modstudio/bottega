@@ -20,26 +20,14 @@ import { DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
-import type {
-  DocsAudience,
-  DocsDoc,
-  DocsSearchMatch,
-  DocsSource,
-  DocsTreeGroup,
-  DocsTreeItem,
-  TreeNode,
-} from './types.ts'
+import type * as Docs from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
-
-const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 export type DocsViewProps = {
   sourceLabel: string
-  source: DocsSource
-  /** The complete catalogue, including documents omitted from navigation. */
-  items: readonly DocsTreeItem[]
+  source: Docs.DocsSource
+  items: readonly Docs.DocsTreeItem[]
   selectedId: string | null
-  /** The chosen filters; the page owns them because search reads the audience. */
   filters: FilterSelection
   onFilters: (filters: FilterSelection) => void
   project: string | 'all'
@@ -49,22 +37,24 @@ export type DocsViewProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
-  doc: DocsDoc | null
-  replacement: DocsTreeItem | null
-  locationFor: (item: DocsTreeItem) => DocsLocation
-  onSelect: (item: DocsTreeItem) => void
-  /** Opens a document the reader did not pick, replacing the current history entry. */
-  onOpenFirst: (item: DocsTreeItem) => void
-  /** True once the tree and the project chooser have settled. */
+  doc: Docs.DocsDoc | null
+  replacement: Docs.DocsTreeItem | null
+  locationFor: (item: Docs.DocsTreeItem) => DocsLocation
+  onSelect: (item: Docs.DocsTreeItem) => void
+  onOpenFirst: (item: Docs.DocsTreeItem) => void
   ready: boolean
   searchQuery: string
   onSearchQuery: (query: string) => void
-  searchResults: readonly DocsSearchMatch[]
+  searchResults: readonly Docs.DocsSearchMatch[]
   framed: boolean
   headerAction?: ReactNode
   createAction?: ReactNode
   loading?: boolean
   error?: string | null
+  revisionId?: string
+  onRevision?: (id: number) => void
+  bodyView?: ReactNode
+  viewedRevision?: { title: string; body: string } | null
 }
 
 function DocsChrome({
@@ -120,7 +110,9 @@ function DocsChrome({
           ) : null}
           {showProjectChooser ? (
             <div className="flex items-center gap-2">
-              <span className={eyebrow}>Project</span>
+              <span className="font-mono text-text-muted text-xs tracking-[0.14em] uppercase">
+                Project
+              </span>
               <Select
                 label="Project"
                 size="sm"
@@ -169,12 +161,12 @@ function DocsRail({
   loading,
   emptyMessage,
 }: {
-  tree: readonly TreeNode[]
-  groups: readonly DocsTreeGroup[] | null
+  tree: readonly Docs.TreeNode[]
+  groups: readonly Docs.DocsTreeGroup[] | null
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
-  onSelect: (item: DocsTreeItem) => void
+  onSelect: (item: Docs.DocsTreeItem) => void
   onSearch: () => void
   loading?: boolean
   emptyMessage: string
@@ -238,7 +230,7 @@ function useSearchHotkey(open: () => void) {
   }, [open])
 }
 
-function filtersHiding(item: DocsTreeItem, chosen: FilterSelection): FilterSelection {
+function filtersHiding(item: Docs.DocsTreeItem, chosen: FilterSelection): FilterSelection {
   const next = { ...chosen }
   if (next.scope && next.scope !== item.scope) next.scope = null
   if (next.delivery && next.delivery !== item.delivery) next.delivery = null
@@ -253,7 +245,10 @@ function sameFilters(left: FilterSelection, right: FilterSelection): boolean {
   )
 }
 
-function searchScopeLabel(signedIn: boolean, audience: DocsAudience | null): string {
+function searchScopeLabel(
+  signedIn: boolean,
+  audience: ReturnType<typeof selectedAudience>,
+): string {
   if (!signedIn) return 'Searching the User guide docs'
   return audience ? `Searching ${DOC_AUDIENCE_LABELS[audience]} docs` : 'Searching all docs'
 }
@@ -286,6 +281,10 @@ export function DocsView({
   createAction,
   loading,
   error,
+  revisionId,
+  onRevision = () => {},
+  bodyView,
+  viewedRevision,
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -328,7 +327,6 @@ export function DocsView({
   const visible = doc
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
-  // With nothing open, the page shows the first document in view instead of an empty pane.
   const firstId = model.first?.id ?? null
   useEffect(() => {
     if (!ready || selectedId) return
@@ -339,7 +337,6 @@ export function DocsView({
     <div
       className={classes(
         'flex flex-col',
-        // The public page sits on the site's ground; inside the app every surface is the page's own.
         framed
           ? 'site-docs-chrome min-h-dvh bg-surface-sunken [--docs-top:var(--site-nav-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))]'
           : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
@@ -360,8 +357,6 @@ export function DocsView({
         project={project}
         onProject={(next) => {
           onProject(next)
-          // The open document stays when the new project still holds it; otherwise the
-          // reader lands on that project's first document.
           if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
           const first = docsViewModel(navigationItems, next, chosen, null, doc, signedIn).first
           if (first) onOpenFirst(first)
@@ -419,6 +414,8 @@ export function DocsView({
           locationFor={locationFor}
           headerAction={headerAction}
           error={error}
+          bodyView={bodyView}
+          viewedRevision={viewedRevision}
         />
         {wide ? null : (
           <DocsFacts
@@ -426,6 +423,8 @@ export function DocsView({
             headings={visible ? model.headings : []}
             signedIn={signedIn}
             source={source}
+            revisionId={revisionId}
+            onRevision={onRevision}
           />
         )}
       </div>
