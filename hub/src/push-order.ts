@@ -2,6 +2,8 @@ import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -34,6 +36,8 @@ export function orderHostedPushChanges(changes: readonly HostedPushChange[]): Ho
       const rank = (change: HostedPushChange) => {
         if (change.table === HOSTED_INTERVAL_TABLE) return change.op === 'delete' ? -1 : 0
         if (change.table === HOSTED_STATUS_EVENT_TABLE) return Number.MAX_SAFE_INTEGER
+        if (change.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE) return Number.MAX_SAFE_INTEGER
+        if (change.table === HOSTED_NOTE_TABLE) return change.op === 'delete' ? 2 : 1
         if (change.table === HOSTED_COMMENT_TABLE || change.table === HOSTED_DOCUMENT_TABLE)
           return Number.MAX_SAFE_INTEGER - 1
         if (change.op === 'delete') return 0

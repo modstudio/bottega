@@ -41,8 +41,16 @@ const hosted = {
         userId: 'user-1',
         activeSpaceId: 'space-a',
         memberships: [],
-        capabilities: { projectNoteCounters: true },
+        capabilities: {
+          projectNoteCounters: true,
+          spacePush: true,
+          spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
+        },
       })
+    if (url.pathname === '/v1/changes') {
+      const changes = body as Array<{ id: string }>
+      return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
+    }
     const shape = (note: ReturnType<typeof getNote>) => ({
       id: note.record_id,
       number: note.number,
@@ -219,9 +227,18 @@ describe('suggestion notes', () => {
             userId: 'user-1',
             activeSpaceId: 'space-a',
             memberships: [{ spaceId: 'space-gamma', slug: 'declared-gamma-space' }],
-            capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+            capabilities: {
+              projectNoteCounters: true,
+              targetSpaceNotes: true,
+              spacePush: true,
+              spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
+            },
           })
         spaces.push(new Headers(init?.headers).get('x-record-space'))
+        if (url.pathname === '/v1/changes') {
+          const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+          return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
+        }
         const current = getNote(id)
         const note = {
           id,

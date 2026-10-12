@@ -10,6 +10,7 @@ import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -251,6 +252,15 @@ function recordOutcome(
             id: outcome.adoptedId,
           },
         ])
+      if (
+        removed > 0 &&
+        outcome.status !== 'rejected' &&
+        outcome.adoptedId &&
+        item.change.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
+      )
+        conn
+          .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
+          .run(outcome.adoptedId, item.change.id)
       return removed
     } else if (decision.action === 'retry') {
       const updated = conn

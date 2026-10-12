@@ -444,7 +444,7 @@ test('a deleted note upsert skips its live acknowledgement without fetching in b
   )
   expect(followerParentFetches).toBe(0)
   expect(cursor()).toBe('14')
-  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 2 })
+  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 1, deletesSkipped: 1 })
   expect({
     note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
     acknowledgement:

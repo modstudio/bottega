@@ -67,26 +67,11 @@ export const hostedCreateNote = async (body: unknown, options?: Options) => {
   await assertNoteCapabilities(options)
   return request<HostedNote>('/v1/notes', 'POST', body, options)
 }
-export const hostedAcknowledgeNote = (recordId: string, session: string, options?: Options) =>
-  request<{
-    note: HostedNote
-    acknowledgement: HostedAcknowledgement
-    alreadyAcknowledged: boolean
-  }>(`/v1/notes/${recordId}/acknowledgements`, 'POST', { session }, options)
 export const hostedPromoteNote = (recordId: string, task: string | undefined, options?: Options) =>
   request<{ note: HostedNote; task: HostedTask | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',
     task ? { task } : {},
-    options,
-  )
-export const hostedDropNote = (recordId: string, reason: string, options?: Options) =>
-  request<HostedNote>(`/v1/notes/${recordId}/drop`, 'POST', { reason }, options)
-export const hostedMergeNotes = (target: string, source: string, options?: Options) =>
-  request<{ note: HostedNote; deleted: string }>(
-    '/v1/notes/merge',
-    'POST',
-    { target, source },
     options,
   )
 export const hostedReapNotes = (body: unknown, options?: Options) =>

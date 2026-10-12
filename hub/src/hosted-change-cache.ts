@@ -159,6 +159,14 @@ function applyOneChange(
   counts: SpaceCounts,
 ) {
   if (!family.accepts(change.table)) return
+  if (
+    change.op === 'upsert' &&
+    Object.hasOwn(HOSTED_MACHINE_TABLES, change.table) &&
+    (change.row as { deleted_at?: string | null } | undefined)?.deleted_at
+  ) {
+    applyDeleteChange(conn, { ...change, op: 'delete' }, spaceId, family, counts)
+    return
+  }
   const pending = pendingHostedEdit(conn, change.table, change.id)
   if (change.op !== 'delete' && pendingEditSkipsPull(pending)) {
     counts.upsertsNoop += 1

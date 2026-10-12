@@ -8,15 +8,11 @@ import {
   recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
 import {
-  acknowledgeHostedNote,
   createHostedNote,
-  dropHostedNote,
   getHostedNote,
   hostedNoteCounts,
   listHostedNotes,
-  mergeHostedNotes,
   mirrorHostedNotes,
-  patchHostedNote,
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
@@ -103,25 +99,7 @@ async function noteWriteRoute(context: RouteContext): Promise<Response | null> {
     )
     return value ? json(value, 201) : json({ error: 'note not found' }, 404)
   }
-  const match = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
-  if (request.method === 'PATCH' && match) {
-    const value = await call(dependencies.patch, patchHostedNote)(
-      config.recordDatabaseUrl,
-      who,
-      match[1]!,
-      body as never,
-    )
-    return value ? json(value) : json({ error: 'note not found' }, 404)
-  }
-  const ack = /^\/v1\/notes\/([0-9a-f-]{36})\/acknowledgements$/i.exec(url.pathname)
-  if (request.method !== 'POST' || !ack) return null
-  const value = await call(dependencies.acknowledge, acknowledgeHostedNote)(
-    config.recordDatabaseUrl,
-    who,
-    ack[1]!,
-    String(body?.session ?? ''),
-  )
-  return value ? json(value, 201) : json({ error: 'note not found' }, 404)
+  return null
 }
 
 async function noteActionRoute(context: RouteContext): Promise<Response | null> {
@@ -137,24 +115,7 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
   }
-  const drop = /^\/v1\/notes\/([0-9a-f-]{36})\/drop$/i.exec(url.pathname)
-  if (drop) {
-    const value = await call(dependencies.drop, dropHostedNote)(
-      config.recordDatabaseUrl,
-      who,
-      drop[1]!,
-      String(body?.reason ?? ''),
-    )
-    return value ? json(value) : json({ error: 'note not found' }, 404)
-  }
-  if (url.pathname !== '/v1/notes/merge') return null
-  const value = await call(dependencies.merge, mergeHostedNotes)(
-    config.recordDatabaseUrl,
-    who,
-    String(body?.target),
-    String(body?.source),
-  )
-  return value ? json(value) : json({ error: 'note not found' }, 404)
+  return null
 }
 
 async function batchRoute(context: RouteContext): Promise<Response | null> {

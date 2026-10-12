@@ -4,6 +4,8 @@ export const HOSTED_COMMENT_TABLE = 'hub_task_comment'
 export const HOSTED_DOCUMENT_TABLE = 'hub_task_document'
 export const HOSTED_INTERVAL_TABLE = 'hub_interval'
 export const HOSTED_DAY_TABLE = 'hub_day'
+export const HOSTED_NOTE_TABLE = 'hub_note'
+export const HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE = 'hub_note_acknowledgement'
 export const PUSHABLE_HUB_CHANGE_TABLES = [
   HOSTED_TASK_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
@@ -11,6 +13,8 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_DAY_TABLE,
+  HOSTED_NOTE_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
 ] as const
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
@@ -65,6 +69,39 @@ export type PushedDay = {
   lines_generated: number
   collected_at: string
 }
+
+export type PushedNote = {
+  id: string
+  number: number
+  project: string
+  project_name: string
+  text: string
+  area: string | null
+  anchors: string
+  sightings: number
+  created_at: string
+  last_seen_at: string
+  stale_at: string | null
+  stale_reason: string | null
+  promoted_task: string | null
+  promoted_task_id: string | null
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type PushedNoteAcknowledgement = {
+  id: string
+  project_name: string
+  note_id: string
+  session_id: string
+  acknowledged_at: string
+  sightings: number
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+const HOSTED_NOTE_UPDATE_COLUMNS = ['anchors', 'last_seen_at', 'stale_at', 'stale_reason'] as const
 
 const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
 type TaskStatusCategory = (typeof TASK_STATUS_CATEGORIES)[number]
@@ -167,6 +204,20 @@ export type HostedPushChange =
   | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
   | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
   | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
+  | {
+      table: typeof HOSTED_NOTE_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedNote
+      fields: string[]
+    }
+  | { table: typeof HOSTED_NOTE_TABLE; id: string; op: 'delete' }
+  | {
+      table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedNoteAcknowledgement
+    }
 
 export type HostedPushOutcome =
   | {
@@ -458,11 +509,88 @@ function parseEvidenceUpsert(
   return rejected(id, `${table} is not evidence`)
 }
 
+function parseNoteRow(value: unknown, id: string): PushedNote | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_NOTE_TABLE} upsert requires a row`
+  if (row.id !== id)
+    return `${HOSTED_NOTE_TABLE} upsert requires a row whose id matches the pointer`
+  const fieldError = noteFieldError(row)
+  if (fieldError) return fieldError
+  const anchorError = noteAnchorError(row.anchors)
+  if (anchorError) return anchorError
+  return row as PushedNote
+}
+
+function noteFieldError(row: Record<string, unknown>): string | null {
+  for (const field of ['project', 'project_name', 'text', 'anchors'] as const)
+    if (typeof row[field] !== 'string') return `${HOSTED_NOTE_TABLE} row.${field} must be a string`
+  for (const field of [
+    'area',
+    'stale_reason',
+    'promoted_task',
+    'promoted_task_id',
+    'deleted_at',
+  ] as const)
+    if (!nullableString(row[field]))
+      return `${HOSTED_NOTE_TABLE} row.${field} must be a string or null`
+  if (!Number.isSafeInteger(row.number) || Number(row.number) < 1)
+    return `${HOSTED_NOTE_TABLE} row.number must be a positive safe integer`
+  if (!Number.isSafeInteger(row.sightings) || Number(row.sightings) < 0)
+    return `${HOSTED_NOTE_TABLE} row.sightings must be a non-negative safe integer`
+  for (const field of ['created_at', 'last_seen_at', 'updated_at'] as const)
+    if (!isTimestamp(row[field]))
+      return `${HOSTED_NOTE_TABLE} row.${field} must be an ISO timestamp`
+  if (row.stale_at !== null && !isTimestamp(row.stale_at))
+    return `${HOSTED_NOTE_TABLE} row.stale_at must be an ISO timestamp or null`
+  return null
+}
+
+function noteAnchorError(value: unknown): string | null {
+  try {
+    const anchors = JSON.parse(value as string)
+    if (!Array.isArray(anchors)) throw new Error()
+    for (const anchor of anchors) {
+      const value = object(anchor)
+      if (!value) throw new Error()
+      if (value.id !== undefined && (typeof value.id !== 'string' || !UUID.test(value.id)))
+        return `${HOSTED_NOTE_TABLE} row.anchors contains an invalid id`
+    }
+  } catch {
+    return `${HOSTED_NOTE_TABLE} row.anchors must be a JSON array`
+  }
+  return null
+}
+
+function parseAcknowledgementRow(value: unknown, id: string): PushedNoteAcknowledgement | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} upsert requires a row`
+  if (row.id !== id)
+    return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} upsert requires a row whose id matches the pointer`
+  for (const field of ['project_name', 'note_id', 'session_id'] as const)
+    if (typeof row[field] !== 'string')
+      return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} row.${field} must be a string`
+  if (!UUID.test(row.note_id as string))
+    return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} row.note_id must be a UUID`
+  for (const field of ['acknowledged_at', 'created_at', 'updated_at'] as const)
+    if (!isTimestamp(row[field]))
+      return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} row.${field} must be an ISO timestamp`
+  if (!Number.isSafeInteger(row.sightings) || Number(row.sightings) < 0)
+    return `${HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE} row.sightings must be a non-negative safe integer`
+  return row as PushedNoteAcknowledgement
+}
+
 function parseHostedUpsert(
   input: Record<string, unknown> & { id: string },
   table: PushableHubChangeTable,
 ): ParsedHostedPushItem {
   if (table === HOSTED_TASK_TABLE) return parseTaskUpsert(input)
+  if (table === HOSTED_NOTE_TABLE) return parseNoteUpsert(input)
+  if (table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE) {
+    const row = parseAcknowledgementRow(input.row, input.id)
+    return typeof row === 'string'
+      ? rejected(input.id, row)
+      : { input: { table, id: input.id, op: 'upsert', row } }
+  }
   if (table === HOSTED_COMMENT_TABLE || table === HOSTED_DOCUMENT_TABLE)
     return parseTaskChildUpsert(input, table)
   if (table === HOSTED_INTERVAL_TABLE || table === HOSTED_DAY_TABLE)
@@ -470,6 +598,20 @@ function parseHostedUpsert(
   const row = parseStatusEventRow(input.row, input.id, table)
   if (typeof row === 'string') return rejected(input.id, row)
   return { input: { table, id: input.id, op: 'upsert', row } }
+}
+
+function parseNoteUpsert(input: Record<string, unknown> & { id: string }): ParsedHostedPushItem {
+  const row = parseNoteRow(input.row, input.id)
+  if (typeof row === 'string') return rejected(input.id, row)
+  if (input.fields === undefined || input.fields === null)
+    return rejected(input.id, `${HOSTED_NOTE_TABLE} upsert requires fields`)
+  const fields = parseFields(input.fields, HOSTED_NOTE_UPDATE_COLUMNS, HOSTED_NOTE_TABLE)
+  if (typeof fields === 'string' || fields === null)
+    return rejected(
+      input.id,
+      typeof fields === 'string' ? fields : `${HOSTED_NOTE_TABLE} upsert requires fields`,
+    )
+  return { input: { table: HOSTED_NOTE_TABLE, id: input.id, op: 'upsert', row, fields } }
 }
 
 function parseFields(
@@ -502,6 +644,7 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
   const table = input.table as PushableHubChangeTable
   if (input.op === 'upsert')
     return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
-  if (table === HOSTED_DAY_TABLE) return rejected(id, `${HOSTED_DAY_TABLE} does not accept delete`)
+  if (table === HOSTED_DAY_TABLE || table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
+    return rejected(id, `${table} does not accept delete`)
   return { input: { table, id: input.id, op: 'delete' } as HostedPushChange }
 }

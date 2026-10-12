@@ -8,7 +8,9 @@ import {
 
 test('parseIdentitySetTable accepts every pushable table and refuses others', () => {
   expect(parseIdentitySetTable('hub_interval')).toBe('hub_interval')
-  expect(() => parseIdentitySetTable('hub_note')).toThrow(/table must name one of/)
+  expect(parseIdentitySetTable('hub_note')).toBe('hub_note')
+  expect(parseIdentitySetTable('hub_note_acknowledgement')).toBe('hub_note_acknowledgement')
+  expect(() => parseIdentitySetTable('hub_send')).toThrow(/table must name one of/)
   expect(() =>
     parseIdentitySetRequest(
       new URL('https://hub.example.test/v1/changes/ids?table=hub_task&after=nope'),
