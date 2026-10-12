@@ -167,21 +167,46 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
 
+  const changeHead = async () => {
+    const rows = await admin<{ head: string }[]>`
+      SELECT COALESCE((SELECT sequence::text FROM hub_change_head
+        WHERE space_id=${SPACE_A}::uuid),'0') AS head`
+    const head = rows[0]?.head
+    if (head === undefined) throw new Error('space change-log head query returned no row')
+    return head
+  }
+
   const insertedInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
     interval,
   ])
+  if (insertedInterval[0]?.status !== 'applied')
+    throw new Error(`interval applied outcome was ${JSON.stringify(insertedInterval[0] ?? null)}`)
+  const intervalHead = await changeHead()
   const duplicateInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
     interval,
   ])
+  if (duplicateInterval[0]?.status !== 'duplicate')
+    throw new Error(
+      `interval duplicate outcome was ${JSON.stringify(duplicateInterval[0] ?? null)}`,
+    )
+  const intervalDuplicateHead = await changeHead()
+  if (intervalDuplicateHead !== intervalHead)
+    throw new Error(
+      `interval duplicate advanced the space change-log head from ${intervalHead} to ${intervalDuplicateHead}`,
+    )
+
   const insertedDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
+  if (insertedDay[0]?.status !== 'applied')
+    throw new Error(`day applied outcome was ${JSON.stringify(insertedDay[0] ?? null)}`)
+  const dayHead = await changeHead()
   const duplicateDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
-  if (
-    insertedInterval[0]?.status !== 'applied' ||
-    duplicateInterval[0]?.status !== 'duplicate' ||
-    insertedDay[0]?.status !== 'applied' ||
-    duplicateDay[0]?.status !== 'duplicate'
-  )
-    throw new Error('unchanged interval and day pushes did not answer duplicate')
+  if (duplicateDay[0]?.status !== 'duplicate')
+    throw new Error(`day duplicate outcome was ${JSON.stringify(duplicateDay[0] ?? null)}`)
+  const dayDuplicateHead = await changeHead()
+  if (dayDuplicateHead !== dayHead)
+    throw new Error(
+      `day duplicate advanced the space change-log head from ${dayHead} to ${dayDuplicateHead}`,
+    )
 
   const client = new SQL(actorUrl)
   try {
