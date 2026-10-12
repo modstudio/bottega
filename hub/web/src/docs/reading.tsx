@@ -228,12 +228,14 @@ export function DocsReading({
   onWide,
   signedIn,
   audience,
+  bodyView,
 }: {
   doc: DocsDoc | null
   wide: boolean
   onWide: (wide: boolean) => void
   signedIn: boolean
   audience: DocsAudience | null
+  bodyView?: ReactNode
   /** A document is chosen and on its way, so the pane stays quiet rather than saying there is none. */
   pending: boolean
   crumbs: readonly BreadcrumbPart[]
@@ -283,9 +285,11 @@ export function DocsReading({
           {shown.lede ? (
             <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
           ) : null}
-          <div className="mt-6">
-            <Markdown content={readingBody(doc.body)} />
-          </div>
+          {bodyView ?? (
+            <div className="mt-6">
+              <Markdown content={readingBody(doc.body)} />
+            </div>
+          )}
           {showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
             <section className="markdown mt-8">
               <h2>In the code</h2>

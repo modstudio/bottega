@@ -28,6 +28,7 @@ import {
   exportDocs,
   getDoc,
   getDocForAudience,
+  getDocRevision,
   importDocs,
   lintStoredDoc,
   listDocMetadata,
@@ -582,13 +583,13 @@ export async function docCommand(
     presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
     return
   }
-  if (sub === 'history' || sub === 'diff' || sub === 'restore') {
+  if (sub === 'history' || sub === 'revision' || sub === 'diff' || sub === 'restore') {
     const addressScope = argv[2]
     const rawAddressSubject = argv[3]
     const slug = argv[4]
     if (!addressScope || rawAddressSubject === undefined || !slug) {
       throw new Error(
-        `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
+        `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'revision' || sub === 'restore' ? ' <rev>' : ''}${sub === 'restore' ? ' --reason TEXT' : ''}`,
       )
     }
     const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
@@ -604,6 +605,23 @@ export async function docCommand(
             `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
+      return
+    }
+    if (sub === 'revision') {
+      const revisionId = Number(argv[5])
+      if (!revisionId) throw new Error('orch doc revision <scope> <subject|-> <slug> <rev> --json')
+      const revision = getDocRevision(revisionId, owner)
+      if (
+        !revision ||
+        revision.scope !== addressScope ||
+        revision.subject !== addressSubject ||
+        revision.slug !== slug
+      ) {
+        throw new Error(
+          `revision ${revisionId} does not belong to ${addressScope}/${addressSubject ?? '_'}/${slug}; run orch doc history ${addressScope} ${addressSubject ?? '-'} ${slug}`,
+        )
+      }
+      presentation.log(has('json') ? JSON.stringify(revision) : revision.body)
       return
     }
     if (sub === 'diff') {
@@ -660,6 +678,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }

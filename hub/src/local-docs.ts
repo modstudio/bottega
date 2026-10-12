@@ -1,6 +1,7 @@
+import { docAudienceRefusal, docBodyForAudience } from '../../shared/doc-sections.ts'
 import { type DocAudience, docSummary } from '../../shared/docs.ts'
 import { ArticleDocFieldsSchema, DocSchema, DocTreeItemSchema } from './doc-contract.ts'
-import { type DocRow, docGet, docList } from './orch.ts'
+import { type DocRow, docGet, docList, docRevision } from './orch.ts'
 
 const LocalTreeSchema = DocTreeItemSchema.extend(ArticleDocFieldsSchema.shape)
 const LocalDocSchema = DocSchema.extend(ArticleDocFieldsSchema.shape)
@@ -50,4 +51,22 @@ export async function localDocRead(
   audience?: DocAudience,
 ) {
   return localDocContract(await docGet(scope, subject, slug, audience), true)
+}
+
+export async function localDocRevisionRead(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  revisionId: number,
+  audience?: DocAudience,
+) {
+  const revision = await docRevision(scope, subject, slug, revisionId)
+  if (!audience) return revision
+  const refusal = docAudienceRefusal(
+    `${scope}/${subject ?? '_'}/${slug} revision ${revisionId}`,
+    revision.audiences,
+    audience,
+  )
+  if (refusal) throw new Error(refusal)
+  return { ...revision, body: docBodyForAudience(revision.body, audience) }
 }

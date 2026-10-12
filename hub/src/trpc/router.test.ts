@@ -28,6 +28,9 @@ const docRemove = mock(
 const docHistory = mock(
   async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[],
 )
+const docRevision = mock(
+  async (_scope: string, _subject: string | null, _slug: string, _id: number) => ({}) as unknown,
+)
 const docSubjects = mock(async () => ({
   project: [] as string[],
   agent: [] as string[],
@@ -152,6 +155,7 @@ mock.module('../orch.ts', () => ({
   docSet,
   docRemove,
   docHistory,
+  docRevision,
   docSubjects,
   jobs,
   agents,
@@ -645,6 +649,36 @@ describe('doc router', () => {
       revisions,
     )
     expect(docHistory).toHaveBeenCalledWith('global', null, 'hello')
+  })
+
+  test('revision forwards its addressed id through the local revision reader', async () => {
+    const revision = {
+      id: 7,
+      doc_id: 1,
+      scope: 'global' as const,
+      subject: null,
+      slug: 'hello',
+      title: 'Hello',
+      body: 'Earlier body',
+      delivery: 'demand' as const,
+      audiences: ['technical'] as ['technical'],
+      op: 'set' as const,
+      author: 'tester',
+      reason: 'earlier',
+      at: '2026-09-03T00:00:00.000Z',
+      bytes: 12,
+    }
+    docRevision.mockResolvedValueOnce(revision)
+
+    expect(
+      await caller.doc.revision({
+        scope: 'global',
+        subject: null,
+        slug: 'hello',
+        revisionId: 7,
+      }),
+    ).toEqual(revision)
+    expect(docRevision).toHaveBeenCalledWith('global', null, 'hello', 7)
   })
 
   test('subjects returns what docSubjects returns', async () => {

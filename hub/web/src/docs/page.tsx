@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMatch, useNavigate } from '@tanstack/react-router'
+import { useLocation, useMatch, useNavigate } from '@tanstack/react-router'
 import { Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
@@ -18,6 +18,7 @@ import {
 import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
 import { docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
+import { type RevisionMode, RevisionViewer, useRevisionView } from './revision-viewer.tsx'
 import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
@@ -27,6 +28,7 @@ export function DocsPage() {
   const hosted = isHostedMode()
   const origin = hostedOrigin()
   const navigate = useNavigate()
+  const atDocsRoot = useLocation({ select: (location) => location.pathname === '/docs' })
   const whoami = useQuery({
     ...trpc.record.whoami.queryOptions(),
     enabled: hosted && origin.kind !== 'public',
@@ -49,6 +51,7 @@ export function DocsPage() {
   const [creating, setCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showDrafts, setShowDrafts] = useState(false)
+  const [revisionMode, setRevisionMode] = useState<RevisionMode>('version')
   const catalog = useDocsTree(source)
   const includeDrafts = source !== 'public' && showDrafts
   const navigationItems = useMemo(
@@ -75,12 +78,18 @@ export function DocsPage() {
     setProject(selectedProject ?? 'all')
     setEmptyChooserSet(true)
   }, [selectedId, selectedProject])
+  useEffect(() => setRevisionMode('version'), [selectedId])
   useEffect(() => {
     if (selectedId || emptyChooserSet || catalog.isPending) return
     setProject(chooserProject(null, subjects))
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected, selectedAudience(filters))
+  const revisionId = source === 'local' ? search?.revision : undefined
+  useEffect(() => {
+    if (!revisionId) setRevisionMode('version')
+  }, [revisionId])
+  const revision = useRevisionView(reading.document, revisionId, selectedAudience(filters))
   const replacement = useMemo(
     () => resolveDocsReplacement(reading.document, catalog.items),
     [reading.document, catalog.items],
@@ -104,6 +113,17 @@ export function DocsPage() {
   )
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
   const locationFor = useCallback((item: DocsTreeItem) => docsLocation(item, source), [source])
+  const openRevision = useCallback(
+    (id: number) => {
+      if (!selected) return
+      void navigate({ ...docsLocation(selected, source), search: { revision: String(id) } })
+    },
+    [navigate, selected, source],
+  )
+  const backToCurrent = useCallback(() => {
+    if (!selected) return
+    void navigate({ ...docsLocation(selected, source), replace: true })
+  }, [navigate, selected, source])
 
   if (source === 'public' && identityResolved && !selected) {
     return (
@@ -141,13 +161,37 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
-        ready={!catalog.isPending && emptyChooserSet && identityResolved}
+        ready={
+          !catalog.isPending &&
+          emptyChooserSet &&
+          identityResolved &&
+          (atDocsRoot || Boolean(selected))
+        }
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}
         searchResults={results.items}
         framed={hosted && !signedIn}
         loading={catalog.isPending}
-        error={catalog.error?.message ?? reading.error?.message ?? results.error?.message ?? null}
+        error={
+          catalog.error?.message ??
+          reading.error?.message ??
+          results.error?.message ??
+          revision.error ??
+          null
+        }
+        revisionId={revisionId}
+        onRevision={openRevision}
+        bodyView={
+          revision.revision ? (
+            <RevisionViewer
+              revision={revision.revision}
+              replacementBody={revision.replacementBody}
+              onCurrent={backToCurrent}
+              mode={revisionMode}
+              onMode={setRevisionMode}
+            />
+          ) : undefined
+        }
         createAction={
           source === 'local' ? (
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>

@@ -27,6 +27,7 @@ import {
   type DocAudience,
   type DocAudiences,
   type DocKind,
+  type DocScope,
   type DocStatus,
   type FilingDocScope,
 } from '../../shared/docs.ts'
@@ -892,6 +893,17 @@ export type DocRevisionMetadata = {
   replacement_slug?: string | null
 }
 
+export type DocRevision = DocRevisionMetadata & {
+  doc_id: number
+  scope: DocScope
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+  delivery: 'inject' | 'demand'
+  audiences: DocAudiences
+}
+
 export type DocArgvInput = {
   scope?: string
   subject?: string | null
@@ -911,9 +923,10 @@ export type DocArgvInput = {
   position?: number
   expectedRevision?: string
   user?: boolean
+  revisionId?: number
 }
 
-export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
+export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'revision' | 'subjects'
 
 function subjectFlags(subject: string | null | undefined): string[] {
   return subject ? ['--subject', subject] : []
@@ -996,6 +1009,16 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
       ]
     case 'history':
       return ['doc', 'history', input.scope!, input.subject ?? '-', input.slug!, '--json']
+    case 'revision':
+      return [
+        'doc',
+        'revision',
+        input.scope!,
+        input.subject ?? '-',
+        input.slug!,
+        String(input.revisionId),
+        '--json',
+      ]
     case 'subjects':
       return ['doc', 'subjects', '--json']
   }
@@ -1027,6 +1050,13 @@ export const docRemove = (
 
 export const docHistory = (scope: string, subject: string | null, slug: string) =>
   jsonDocument<DocRevisionMetadata[]>(docArgv('history', { scope, subject, slug }))
+
+export const docRevision = (
+  scope: string,
+  subject: string | null,
+  slug: string,
+  revisionId: number,
+) => jsonDocument<DocRevision>(docArgv('revision', { scope, subject, slug, revisionId }))
 
 export const docSubjects = () => jsonDocument<DocSubjects>(docArgv('subjects'))
 

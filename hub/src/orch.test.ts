@@ -626,6 +626,12 @@ describe('docArgv', () => {
     ])
   })
 
+  test('revision addresses one stored document version', () => {
+    expect(
+      docArgv('revision', { scope: 'project', subject: 'alpha', slug: 'hello', revisionId: 42 }),
+    ).toEqual(['doc', 'revision', 'project', 'alpha', 'hello', '42', '--json'])
+  })
+
   test('set without subject does not put the body in argv', () => {
     const body = "quote' backtick` newline\n"
     const argv = docArgv('set', {
