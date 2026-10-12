@@ -20,7 +20,7 @@ const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-export const HOSTED_REQUEST_DEADLINE_MS = 30_000
+const HOSTED_REQUEST_DEADLINE_MS = 30_000
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 type HostedRequestOptions = {
