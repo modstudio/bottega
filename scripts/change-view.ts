@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { inspectionGitEnv } from '../shared/git'
 import type { ChangeFacts, LineRange } from '../shared/ratchet'
 
@@ -11,7 +13,7 @@ type ChangeEntry = {
 
 type ContentResult = { status: 'present'; text: string } | { status: 'absent' }
 
-type ChangeViewMode = 'commit' | 'staged'
+type ChangeViewMode = 'worktree' | 'staged'
 
 function parseStatus(value: string): ChangeStatus {
   const status = value[0]
@@ -46,6 +48,19 @@ export function parseNameStatus(text: string): ChangeEntry[] {
   }
 
   return entries
+}
+
+export function untrackedChanges(text: string, lineCounts: Map<string, number>) {
+  const paths = text ? text.split('\0') : []
+  if (paths.at(-1) === '') paths.pop()
+  const entries: ChangeEntry[] = []
+  const addedLines = new Map<string, LineRange[]>()
+  for (const path of paths) {
+    entries.push({ status: 'A', path })
+    const lines = lineCounts.get(path) ?? 0
+    if (lines > 0) addedLines.set(path, [{ start: 1, end: lines }])
+  }
+  return { entries, addedLines }
 }
 
 const ESCAPED_BYTES: Record<string, number> = {
@@ -160,7 +175,7 @@ function git(cwd: string, args: string[]) {
 }
 
 function diffArgs(base: string, mode: ChangeViewMode, format: string[]): string[] {
-  const comparison = mode === 'staged' ? ['--cached', base] : [base, 'HEAD']
+  const comparison = mode === 'staged' ? ['--cached', base] : [base]
   return ['diff', ...format, '--diff-filter=ACMRD', '-M', ...comparison]
 }
 
@@ -177,6 +192,22 @@ function indexedContent(cwd: string, path: string): ContentResult {
   return { status: 'present', text: git(cwd, ['show', `:${path}`]) }
 }
 
+function workingTreeContent(cwd: string, path: string): ContentResult {
+  try {
+    return { status: 'present', text: readFileSync(resolve(cwd, path), 'utf8') }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return { status: 'absent' }
+    }
+    throw error
+  }
+}
+
+function textLineCount(text: string) {
+  if (!text) return 0
+  return text.split('\n').length - Number(text.endsWith('\n'))
+}
+
 export function openChangeView({
   cwd,
   base,
@@ -186,15 +217,26 @@ export function openChangeView({
   base: string
   mode: ChangeViewMode
 }) {
-  const entries = parseNameStatus(git(cwd, diffArgs(base, mode, ['--name-status', '-z'])))
-  const facts = changeFacts(
-    entries,
-    parseAddedLines(git(cwd, diffArgs(base, mode, ['--unified=0']))),
-  )
+  const trackedEntries = parseNameStatus(git(cwd, diffArgs(base, mode, ['--name-status', '-z'])))
+  const trackedAddedLines = parseAddedLines(git(cwd, diffArgs(base, mode, ['--unified=0'])))
+  const untracked =
+    mode === 'worktree'
+      ? (() => {
+          const paths = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
+          const lineCounts = new Map<string, number>()
+          for (const path of paths.split('\0').filter(Boolean)) {
+            const content = workingTreeContent(cwd, path)
+            lineCounts.set(path, content.status === 'present' ? textLineCount(content.text) : 0)
+          }
+          return untrackedChanges(paths, lineCounts)
+        })()
+      : { entries: [], addedLines: new Map<string, LineRange[]>() }
+  const entries = [...trackedEntries, ...untracked.entries]
+  const facts = changeFacts(entries, new Map([...trackedAddedLines, ...untracked.addedLines]))
 
   const baseContent = (path: string) => committedContent(cwd, base, facts.renames.get(path) ?? path)
   const headContent = (path: string) =>
-    mode === 'commit' ? committedContent(cwd, 'HEAD', path) : indexedContent(cwd, path)
+    mode === 'worktree' ? workingTreeContent(cwd, path) : indexedContent(cwd, path)
 
   return {
     entries,

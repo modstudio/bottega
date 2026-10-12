@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { changeFacts, parseAddedLines, parseNameStatus } from './change-view'
+import { changeFacts, parseAddedLines, parseNameStatus, untrackedChanges } from './change-view'
 
 describe('parseNameStatus', () => {
   test('parses zero-delimited statuses without changing unusual paths', () => {
@@ -26,6 +26,31 @@ describe('parseNameStatus', () => {
       { status: 'R', sourcePath: 'old-λ.ts', path: 'new-λ.ts' },
       { status: 'C', sourcePath: 'source.ts', path: 'copy.ts' },
     ])
+  })
+})
+
+describe('untrackedChanges', () => {
+  test('turns zero-delimited paths and supplied line counts into additions', () => {
+    expect(
+      untrackedChanges(
+        ['new source.ts', 'empty.ts', 'nested/other.ts', ''].join('\0'),
+        new Map([
+          ['new source.ts', 4],
+          ['empty.ts', 0],
+          ['nested/other.ts', 2],
+        ]),
+      ),
+    ).toEqual({
+      entries: [
+        { status: 'A', path: 'new source.ts' },
+        { status: 'A', path: 'empty.ts' },
+        { status: 'A', path: 'nested/other.ts' },
+      ],
+      addedLines: new Map([
+        ['new source.ts', [{ start: 1, end: 4 }]],
+        ['nested/other.ts', [{ start: 1, end: 2 }]],
+      ]),
+    })
   })
 })
 

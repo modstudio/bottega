@@ -130,7 +130,7 @@ function isMeasuredSourcePath(path: string) {
 
 function changedFileMeasurements() {
   const base = resolveLandingBase(ROOT, 'check-file-ceiling').commit
-  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+  const view = openChangeView({ cwd: ROOT, base, mode: 'worktree' })
   const before: FileMeasurement[] = []
   const after: FileMeasurement[] = []
   for (const entry of view.entries) {

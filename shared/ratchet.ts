@@ -138,6 +138,16 @@ function isAddedLine(finding: Finding, addedLines: Map<string, LineRange[]>): bo
   )
 }
 
+function unanalysedRefusals(head: Finding[], change: ChangeFacts, unanalysedBase: Set<string>) {
+  const refused = new Map<number, RefusedFinding>()
+  for (const [index, finding] of head.entries()) {
+    if (unanalysedBase.has(finding.file) && isAddedLine(finding, change.addedLines)) {
+      refused.set(index, { ...finding, reason: 'added-line' })
+    }
+  }
+  return refused
+}
+
 export function ratchetDecision({
   base,
   head,
@@ -154,7 +164,7 @@ export function ratchetDecision({
   const comparableHead = head
     .map((finding, index) => ({ finding, index }))
     .filter(({ finding }) => !unanalysedBase.has(finding.file))
-  const refused = new Map<number, RefusedFinding>()
+  const refused = unanalysedRefusals(head, change, unanalysedBase)
   for (const [index, finding] of measuredRefusals(
     comparableBase,
     comparableHead.map(({ finding }) => finding),
@@ -170,12 +180,7 @@ export function ratchetDecision({
   }
 
   for (const [index, finding] of head.entries()) {
-    if (unanalysedBase.has(finding.file)) {
-      if (isAddedLine(finding, change.addedLines)) {
-        refused.set(index, { ...finding, reason: 'added-line' })
-      }
-      continue
-    }
+    if (unanalysedBase.has(finding.file)) continue
     if (finding.measure !== undefined) continue
     if (isAddedLine(finding, change.addedLines)) {
       refused.set(index, { ...finding, reason: 'added-line' })

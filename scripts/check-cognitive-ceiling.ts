@@ -214,7 +214,7 @@ async function checkCognitiveCeiling(base: string, reporter: Reporter = console)
   const eslint = new ESLint({ cwd: ROOT })
   const wholeTree = await wholeTreeMeasurements(eslint)
   reporter.log(`cognitive complexity: ${wholeTree.remaining} functions over ${CEILING} remain`)
-  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+  const view = openChangeView({ cwd: ROOT, base, mode: 'worktree' })
   const measuredPaths = new Set(measuredSourceFiles().map((file) => file.path))
   const violations = [
     ...wholeTree.violations,

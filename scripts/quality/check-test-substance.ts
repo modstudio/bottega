@@ -292,7 +292,7 @@ async function main() {
   const view = openChangeView({
     cwd: process.cwd(),
     base: mode.kind === 'staged' ? 'HEAD' : mode.ref,
-    mode: mode.kind === 'staged' ? 'staged' : 'commit',
+    mode: mode.kind === 'staged' ? 'staged' : 'worktree',
   })
   const files = view.entries
     .filter((entry) => entry.status !== 'D')
