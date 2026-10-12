@@ -2,8 +2,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openChangeView } from '../shared/change-view/change-view'
 import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
+import { openChangeView } from './change-view'
 import { resolveLandingBase } from './landing-base'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')

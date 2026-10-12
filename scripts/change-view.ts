@@ -1,13 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../brand'
-import { inspectionGitEnv } from '../git'
-import type { ChangeFacts, LineRange } from '../ratchet'
+import { inspectionGitEnv } from '../shared/git'
+import type { ChangeFacts, LineRange } from '../shared/ratchet'
 
 type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
 
-export type ChangeEntry = {
+type ChangeEntry = {
   status: ChangeStatus
   path: string
   sourcePath?: string
@@ -181,15 +177,6 @@ function indexedContent(cwd: string, path: string): ContentResult {
   return { status: 'present', text: git(cwd, ['show', `:${path}`]) }
 }
 
-function materializedPath(directory: string, path: string): string {
-  if (isAbsolute(path)) throw new Error(`cannot materialize absolute git path: ${path}`)
-  const target = resolve(directory, path)
-  if (relative(directory, target).startsWith('..')) {
-    throw new Error(`cannot materialize git path outside the temporary directory: ${path}`)
-  }
-  return target
-}
-
 export function openChangeView({
   cwd,
   base,
@@ -214,35 +201,5 @@ export function openChangeView({
     facts,
     baseContent,
     headContent,
-    materializeBase(paths: string[]) {
-      const directory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-change-base-`))
-      const absent: string[] = []
-      const location = relative(resolve(cwd), directory)
-      if (!location.startsWith('..') && !isAbsolute(location)) {
-        rmSync(directory, { recursive: true, force: true })
-        throw new Error('temporary directory for base content resolved inside the checkout')
-      }
-      try {
-        for (const headPath of paths) {
-          const basePath = facts.renames.get(headPath) ?? headPath
-          const content = baseContent(headPath)
-          if (content.status === 'absent') {
-            absent.push(headPath)
-            continue
-          }
-          const target = materializedPath(directory, basePath)
-          mkdirSync(dirname(target), { recursive: true })
-          writeFileSync(target, content.text)
-        }
-      } catch (error) {
-        rmSync(directory, { recursive: true, force: true })
-        throw error
-      }
-      return {
-        directory,
-        absent,
-        dispose: () => rmSync(directory, { recursive: true, force: true }),
-      }
-    },
   }
 }

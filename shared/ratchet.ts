@@ -14,7 +14,7 @@ export type ChangeFacts = {
   addedLines: Map<string, LineRange[]>
 }
 
-export type RefusedFinding = Finding &
+type RefusedFinding = Finding &
   (
     | { reason: 'added-line' | 'count' | 'new-measured' }
     | { reason: 'grew'; previousMeasure: number }
