@@ -176,11 +176,26 @@ const pull = (
 
 type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
-test('no capability leaves the log idle', async () => {
+test('no change-log capability fails the follower leg with the release remedy', async () => {
   const calls: FetchCalls = []
   const { fetch } = routeFetch({ capabilities: {}, calls })
-  const report = await pull(fetch)
-  expect(report).toBeNull()
+  const request = {
+    ...optionsBase,
+    fetch,
+    registeredProjects: [{ name: 'one', settings: { space: 'one' } }],
+  }
+  const results = await hostedCollectLegs(undefined, {
+    correctIntervals: () => {},
+    changes: () => pullHostedTaskChanges(request),
+    noteChanges: async () => null,
+    sendChanges: async () => null,
+  })
+  expect(results.find((result) => result.source === 'hosted task changes')).toEqual({
+    source: 'hosted task changes',
+    ok: false,
+    error:
+      'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
+  })
   expect(calls.filter((call) => call.path === '/v1/changes')).toEqual([])
   expect(cursor('space-one')).toBeNull()
 })

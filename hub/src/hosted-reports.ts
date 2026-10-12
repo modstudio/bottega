@@ -22,6 +22,8 @@ export type HostedSend = {
   recipient_details?: HostedSendRecipient[]
 }
 
+export const HOSTED_SEND_PAGE_SIZE = 1000
+
 type HostedSendRecipient = {
   user_id: string | null
   name: string
@@ -338,27 +340,60 @@ export async function listHostedSends(
   identity: TaskIdentity,
   filters: { limit?: number; updatedSince?: string; cursor?: string },
 ) {
-  return tenant(url, identity, async (tx) => {
-    const since = filters.updatedSince ?? filters.cursor ?? '1970-01-01T00:00:00.000Z'
-    const limit = Math.max(1, Math.min(filters.limit ?? 500, 1000))
-    const sends = rows<HostedSend & { recipient_details_json: string }>(
-      await tx`SELECT id,at,"window",recipients,projects,items,status,error,test,
-      created_at,machine,subscription_id,period_start,period_end,
+  return tenant(url, identity, (tx) => readHostedSendsInTransaction(tx, identity, filters))
+}
+
+type SendCursor = { createdAt: string; id: string }
+const encodeSendCursor = (cursor: SendCursor) =>
+  Buffer.from(JSON.stringify([cursor.createdAt, cursor.id])).toString('base64url')
+function decodeSendCursor(value: string): SendCursor {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString()) as unknown
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 2 ||
+      typeof parsed[0] !== 'string' ||
+      typeof parsed[1] !== 'string'
+    )
+      throw new Error('shape')
+    return { createdAt: parsed[0], id: parsed[1] }
+  } catch {
+    throw new Error('hosted send cursor is malformed')
+  }
+}
+
+export async function readHostedSendsInTransaction(
+  tx: SQL,
+  identity: TaskIdentity,
+  filters: { limit?: number; updatedSince?: string; cursor?: string },
+) {
+  const limit = Math.max(1, Math.min(filters.limit ?? HOSTED_SEND_PAGE_SIZE, HOSTED_SEND_PAGE_SIZE))
+  const cursor = !filters.updatedSince && filters.cursor ? decodeSendCursor(filters.cursor) : null
+  const selected = `SELECT id,at,"window",recipients,projects,items,status,error,test,
+      created_at::text created_at,machine,subscription_id,period_start,period_end,
       COALESCE((SELECT json_agg(json_build_object('user_id',r.user_id,'name',r.name,'email',r.email)
         ORDER BY r.created_at,r.id) FROM hub_send_recipient r WHERE r.send_id=hub_send.id),'[]')::text
         AS recipient_details_json
-      FROM hub_send WHERE space_id=${identity.spaceId}::uuid
-      AND created_at > ${since}::timestamptz ORDER BY created_at,id LIMIT ${limit}`,
-    )
-    const cursor = sends.reduce(
-      (latest, row) => (new Date(row.created_at).toISOString() > latest ? row.created_at : latest),
-      since,
-    )
-    return {
-      sends: sends.map(serializeHostedSend),
-      cursor,
-    }
-  })
+      FROM hub_send WHERE space_id=`
+  const candidates = rows<HostedSend & { recipient_details_json: string }>(
+    filters.updatedSince
+      ? await tx`${tx.unsafe(selected)}${identity.spaceId}::uuid
+          AND created_at > ${filters.updatedSince}::timestamptz
+          ORDER BY created_at,id LIMIT ${limit + 1}`
+      : cursor
+        ? await tx`${tx.unsafe(selected)}${identity.spaceId}::uuid
+            AND (created_at,id) > (${cursor.createdAt}::timestamptz,${cursor.id}::uuid)
+            ORDER BY created_at,id LIMIT ${limit + 1}`
+        : await tx`${tx.unsafe(selected)}${identity.spaceId}::uuid
+            ORDER BY created_at,id LIMIT ${limit + 1}`,
+  )
+  const sends = candidates.slice(0, limit)
+  const last = sends.at(-1)
+  return {
+    sends: sends.map(serializeHostedSend),
+    cursor: last ? encodeSendCursor({ createdAt: last.created_at, id: last.id }) : null,
+    more: candidates.length > limit,
+  }
 }
 
 export async function appendHostedSend(

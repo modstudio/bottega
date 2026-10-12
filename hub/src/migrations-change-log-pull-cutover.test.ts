@@ -55,15 +55,17 @@ test('change-log cutover drops comparison evidence and timestamp cursors on a po
 })
 
 test('the retired timestamp cursors still establish an existing install binding during migration', () => {
-  const unbound = migratedThrough(13)
-  unbound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-    VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01')`)
+  const unbound = migratedThrough(30)
+  unbound.exec('DELETE FROM install_binding')
   applyMigrations(unbound)
   expect(unbound.query('SELECT 1 FROM install_binding WHERE id=1').get()).toBeNull()
   unbound.close()
 
-  const bound = migratedThrough(13)
-  bound.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
+  const bound = migratedThrough(30)
+  bound.exec('DELETE FROM install_binding')
+  bound.exec(
+    `INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor.space-one','cursor-1')`,
+  )
   applyMigrations(bound)
   expect(bound.query('SELECT bound FROM install_binding WHERE id=1').get()).toEqual({ bound: 1 })
   bound.close()

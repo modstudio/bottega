@@ -5,27 +5,13 @@ import type { RegisteredTaskSpace, TaskDestinationIdentity } from './task-projec
 export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>
   machineSpace === logSpace ? 'apply' : 'skip'
 
-export type HostedChangeUpsertDecision =
-  | { kind: 'no-op'; differingColumns: [] }
-  | { kind: 'changed'; differingColumns: string[] }
+export type HostedChangeUpsertDecision = { kind: 'no-op' } | { kind: 'changed' }
 
 export const classifyHostedChangeUpsert = (
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
 ): HostedChangeUpsertDecision => {
-  if (JSON.stringify(before) === JSON.stringify(after))
-    return { kind: 'no-op', differingColumns: [] }
-  const beforeRow = before ?? {}
-  const afterRow = after ?? {}
-  const differingColumns = [...new Set([...Object.keys(beforeRow), ...Object.keys(afterRow)])]
-    .filter(
-      (column) =>
-        !(column in beforeRow) ||
-        !(column in afterRow) ||
-        JSON.stringify(beforeRow[column]) !== JSON.stringify(afterRow[column]),
-    )
-    .sort()
-  return { kind: 'changed', differingColumns }
+  return JSON.stringify(before) === JSON.stringify(after) ? { kind: 'no-op' } : { kind: 'changed' }
 }
 
 export type HostedChangeRequestOptions = {

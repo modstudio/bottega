@@ -363,7 +363,10 @@ async function pullChanges(
 ) {
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(shared)
-  if (identity.capabilities?.spaceChanges !== true) return null
+  if (identity.capabilities?.spaceChanges !== true)
+    throw new Error(
+      'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
+    )
   const registered = options.registeredProjects ?? projects()
   return pullFamily(makeFamily(registered, identity), options, identity, registered)
 }

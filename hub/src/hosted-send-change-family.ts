@@ -21,7 +21,9 @@ export function createHostedSendChangeFamily(
       for (;;) {
         const page = await hostedSendChanges(cursor, options)
         sends.push(...page.sends)
-        if (page.sends.length < 1000) break
+        if (!page.more) break
+        if (page.cursor === null)
+          throw new Error('hosted send full read did not advance; the hosted route cannot page')
         if (page.cursor === cursor)
           throw new Error('hosted send full read did not advance; the hosted route cannot page')
         cursor = page.cursor

@@ -5,6 +5,7 @@ import type {
   HostedSend,
   ReportSubscriptionWriteInput,
 } from './hosted-reports.ts'
+import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
 
 const TEST_REFUSAL =
   'hub report client refuses a real hosted URL unless a stub is injected in tests'
@@ -58,9 +59,9 @@ async function request<T>(
 }
 
 export async function hostedSendChanges(cursor: string | null, options?: ReportClientOptions) {
-  const query = new URLSearchParams({ limit: '1000' })
+  const query = new URLSearchParams({ limit: String(HOSTED_SEND_PAGE_SIZE) })
   if (cursor) query.set('cursor', cursor)
-  return request<{ sends: HostedSend[]; cursor: string }>(
+  return request<{ sends: HostedSend[]; cursor: string | null; more: boolean }>(
     `/v1/sends?${query}`,
     'GET',
     undefined,
