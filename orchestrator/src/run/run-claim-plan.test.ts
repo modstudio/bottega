@@ -4,9 +4,42 @@ import {
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
+  retryRootTreeValidation,
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
+
+describe('retry-root tree validation', () => {
+  test('returns the writing branch and tip from a retry-root tree plan', () => {
+    expect(
+      retryRootTreeValidation({
+        kind: 'retry-root',
+        treePlan: { branch: 'DEV-1261-writer', tip: 'writer-tip' },
+        readOnlyBase: null,
+      }),
+    ).toEqual({ branch: 'DEV-1261-writer', tip: 'writer-tip' })
+  })
+
+  test('returns no validation for a read-only retry-root without a tree plan', () => {
+    expect(
+      retryRootTreeValidation({
+        kind: 'retry-root',
+        treePlan: null,
+        readOnlyBase: 'reader-base',
+      }),
+    ).toBeNull()
+  })
+
+  test('returns no validation for a non-retry resume', () => {
+    expect(
+      retryRootTreeValidation({
+        kind: 'continue',
+        treePlan: { branch: 'DEV-1261-writer', tip: 'writer-tip' },
+        readOnlyBase: null,
+      }),
+    ).toBeNull()
+  })
+})
 
 test('claim branch selection records implicit, explicit, and ordinary worktree branches', () => {
   expect(claimedRunBranch(null, 'DEV-1147-implicit', 'DEV-1147-root', null)).toBe(
