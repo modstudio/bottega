@@ -8,7 +8,7 @@ import {
 } from './hosted-tasks.ts'
 import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
-import { applyHostedTaskChanges } from './task-cache.ts'
+import { applyHostedTaskRows } from './task-cache.ts'
 import {
   hostedCreateDocument,
   hostedCreateTask,
@@ -17,6 +17,9 @@ import {
   hostedTaskPresence,
 } from './task-client.ts'
 import { closeThenPrune } from './task-close.ts'
+
+const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
+  writeTransaction((conn) => applyHostedTaskRows(conn, changes))
 
 beforeAll(resetFixtureStore)
 

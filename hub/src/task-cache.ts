@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite'
-import { writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
 import type { hostedTaskChanges } from './task-client.ts'
@@ -182,10 +181,6 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   changes.statusEvents.forEach((row) => {
     applySnapshotRow(conn, 'hub_task_status_event', row.id, row, applyStatusEvent)
   })
-}
-
-export function applyHostedTaskChanges(changes: HostedChanges) {
-  writeTransaction((conn) => applyHostedTaskRows(conn, changes))
 }
 
 function applySnapshotRow(

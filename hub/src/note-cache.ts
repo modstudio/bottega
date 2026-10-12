@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { db, writeTransaction } from './db.ts'
+import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
@@ -82,9 +82,6 @@ export function applyHostedNoteRows(
   })
 }
 
-export function applyHostedNoteChanges(changes: Awaited<ReturnType<typeof hostedNoteChanges>>) {
-  writeTransaction((conn) => applyHostedNoteRows(conn, changes))
-}
 type NoteParentChange = { id: string; deleted: boolean }
 type NoteParentBatchState = 'live' | 'deleted'
 

@@ -5,9 +5,12 @@ import { noteMirrorCollision } from './hosted-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
-import { applyHostedNoteChanges } from './note-cache.ts'
+import { applyHostedNoteRows } from './note-cache.ts'
 import { hostedDropNote, hostedNoteChanges } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
+
+const applyHostedNoteChanges = (changes: Awaited<ReturnType<typeof hostedNoteChanges>>) =>
+  writeTransaction((conn) => applyHostedNoteRows(conn, changes))
 
 beforeAll(resetFixtureStore)
 const unreachable = {
