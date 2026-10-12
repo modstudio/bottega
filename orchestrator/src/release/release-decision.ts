@@ -5,6 +5,35 @@ import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-ta
 
 export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
 
+const RELEASE_ENVIRONMENT_NAMES = [
+  'ORCH_RELEASE_PROJECT',
+  'ORCH_RELEASE_RUNG',
+  'ORCH_RELEASE_COMMIT',
+] as const
+
+/** Keep release identity out of every child process except the registered deploy command. */
+export function releaseProcessEnvironment(
+  base: Record<string, string | undefined>,
+  release?: Record<string, string>,
+): Record<string, string | undefined> {
+  const environment = { ...base }
+  for (const name of RELEASE_ENVIRONMENT_NAMES) delete environment[name]
+  return { ...environment, ...release }
+}
+
+/** Identify the release and checked candidate to the registered deploy command. */
+export function releaseCommandEnvironment(
+  project: string,
+  rung: string,
+  candidate: string,
+): Record<string, string> {
+  return {
+    [RELEASE_ENVIRONMENT_NAMES[0]]: project,
+    [RELEASE_ENVIRONMENT_NAMES[1]]: rung,
+    [RELEASE_ENVIRONMENT_NAMES[2]]: candidate,
+  }
+}
+
 /** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
 export function releaseCapturedText(text: string, secretShaped: boolean): string {
   return secretShaped ? RELEASE_OUTPUT_WITHHELD : text

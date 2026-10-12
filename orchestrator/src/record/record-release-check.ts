@@ -1,6 +1,7 @@
 // concern: record-release-check
 /** Refuses a hosted release when its image expects migrations the record has not applied. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { decideRecordRelease } from './record-release-decision.ts'
 
@@ -18,6 +19,10 @@ function appRecordUrl(app: HostedApp): { name: string; value: string } {
   return { name, value }
 }
 
+function releaseRemedy(app: HostedApp): string {
+  return `orch release ${PLATFORM_SLUG} --rung hosted-${app}`
+}
+
 export async function recordReleaseCheck(app: HostedApp): Promise<void> {
   const recordUrl = appRecordUrl(app)
   let applied: number
@@ -25,13 +30,13 @@ export async function recordReleaseCheck(app: HostedApp): Promise<void> {
     applied = await appliedRecordMigrationCount(recordUrl.value)
   } catch {
     throw new Error(
-      `release check could not read drizzle.__drizzle_migrations with ${recordUrl.name}; run \`scripts/deploy/hosted ${app}\` or \`orch record migrate\`, then retry`,
+      `release check could not read drizzle.__drizzle_migrations with ${recordUrl.name}; run \`${releaseRemedy(app)}\` or \`orch record migrate\`, then retry`,
     )
   }
   const decision = decideRecordRelease(applied, recordMigrationCount())
   if (decision.status === 'refuse') {
     throw new Error(
-      `release refused: applied migrations ${decision.applied}; shipped migrations ${decision.shipped}; run \`scripts/deploy/hosted ${app}\` or \`orch record migrate\`, then retry`,
+      `release refused: applied migrations ${decision.applied}; shipped migrations ${decision.shipped}; run \`${releaseRemedy(app)}\` or \`orch record migrate\`, then retry`,
     )
   }
   if (decision.status === 'warn') {

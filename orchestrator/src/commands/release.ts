@@ -11,6 +11,9 @@ import { log } from './support.ts'
 export function register(program: Command): void {
   const release = program
     .command('release [project]')
+    .description(
+      'run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set',
+    )
     .option('--rung <name>')
     .option('--rollback <reason>')
     .option('--json')

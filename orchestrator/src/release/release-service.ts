@@ -21,7 +21,9 @@ import {
   forwardReleaseDecision,
   postDeployLiveDecision,
   releaseCapturedText,
+  releaseCommandEnvironment,
   releaseLockDecision,
+  releaseProcessEnvironment,
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
@@ -74,10 +76,14 @@ export type ReleaseLedgerRow = {
   warning: string | null
 }
 
-function run(argv: string[], cwd: string): CommandResult {
+function run(
+  argv: string[],
+  cwd: string,
+  extraEnvironment?: Record<string, string>,
+): CommandResult {
   const result = Bun.spawnSync(argv, {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -96,8 +102,12 @@ function git(args: string[], cwd: string): string {
   return result.output.trim()
 }
 
-function shell(command: string, cwd: string): CommandResult {
-  return run(['/bin/sh', '-lc', command], cwd)
+function shell(
+  command: string,
+  cwd: string,
+  extraEnvironment?: Record<string, string>,
+): CommandResult {
+  return run(['/bin/sh', '-lc', command], cwd, extraEnvironment)
 }
 
 function capturedReleaseText(text: string): string {
@@ -267,7 +277,11 @@ export function releaseProject(
         rollback: forward.rollback,
         reason: forward.reason,
       })
-      const deployed = shell(deploy, project.path)
+      const deployed = shell(
+        deploy,
+        project.path,
+        releaseCommandEnvironment(projectName, selected.name, checkout.head),
+      )
       let after: string | null = null
       let matches: boolean | null = null
       let warning: string | null = null

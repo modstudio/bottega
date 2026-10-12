@@ -17,14 +17,15 @@ fly secrets set -a bottega-hub \
   SES_FROM_ADDRESS='<display name and verified sender address>' \
   SES_ACCESS_KEY_ID='<access-key-id>' \
   SES_SECRET_ACCESS_KEY='<secret-access-key>'
-scripts/deploy/hosted hub
+orch release bottega --rung hosted-hub
 fly ips allocate-v4 --shared -a bottega-hub
 fly ips allocate-v6 -a bottega-hub
 fly certs add app.bottega.run -a bottega-hub
 fly certs add next.bottega.run -a bottega-hub
 ```
 
-The deploy script preserves the hosted web build arguments. It takes
+The app is deployed with `orch release bottega --rung hosted-hub`; the deploy script refuses a
+direct call. The deploy script preserves the hosted web build arguments. It takes
 `ORCH_RECORD_MIGRATE_URL` from the environment, or reads that one variable from the operator's
 env file when the environment lacks it, and gives the value to the migration only, never to
 Fly. It then migrates the record and confirms that applied migrations equal those shipped in
