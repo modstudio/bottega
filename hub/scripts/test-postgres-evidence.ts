@@ -439,7 +439,12 @@ try {
       throw new Error('status patch did not append exactly one event')
     await admin`UPDATE hub_task SET next_document_number=9 WHERE id=${created.id}::uuid`
     await pushEvidence(actorUrl, identity, [
-      { table: 'hub_task', id: closed.id, op: 'upsert', row: { ...closed, next_document_number: 2 } },
+      {
+        table: 'hub_task',
+        id: closed.id,
+        op: 'upsert',
+        row: { ...closed, next_document_number: 2 },
+      },
     ])
     const preservedDocumentCounter = (
       await admin<{ next_document_number: number }[]>`

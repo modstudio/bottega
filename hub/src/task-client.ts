@@ -1,10 +1,10 @@
 import { diagnosticUrl, jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
+import { HUB_IDENTITY_SET_PAGE_SIZE } from './hosted-identity-set.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
-import { HUB_IDENTITY_SET_PAGE_SIZE } from './hosted-identity-set.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
@@ -71,8 +71,7 @@ export type HostedTaskIdentity = {
   }
 }
 
-const SPACE_IDENTITY_SET_REMEDY =
-  'deploy the hub server at or after the space identity set change'
+const SPACE_IDENTITY_SET_REMEDY = 'deploy the hub server at or after the space identity set change'
 
 export function assertSpaceIdentitySet(identity: HostedTaskIdentity) {
   if (identity.capabilities?.spaceIdentitySet !== true)

@@ -20,16 +20,16 @@ import {
   type TaskFetch,
 } from './task-client.ts'
 import {
-  compareIdentitySets,
-  identitySetAgrees,
-  type IdentitySetComparison,
-} from './task-push-plan.ts'
-import {
   partitionProjectRows,
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
   taskPullSpaces,
 } from './task-project-space.ts'
+import {
+  compareIdentitySets,
+  type IdentitySetComparison,
+  identitySetAgrees,
+} from './task-push-plan.ts'
 
 type Options = {
   repair?: boolean
@@ -177,14 +177,7 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
   const unroutable: UnroutableRows[] = []
   const missingByTable = new Map<PushableHubChangeTable, string[]>()
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
-    const result = await auditTable(
-      table,
-      spaces,
-      registered,
-      identity,
-      listIds,
-      requestOptions,
-    )
+    const result = await auditTable(table, spaces, registered, identity, listIds, requestOptions)
     unroutable.push(...result.unroutable)
     missingByTable.set(table, result.missing)
     for (const { spaceId, audit } of result.audits) bySpace.get(spaceId)!.push(audit)

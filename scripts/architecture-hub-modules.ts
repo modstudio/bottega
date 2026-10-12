@@ -16,12 +16,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/hosted-identity-set.ts',
-    allowed: [
-      'bun',
-      '../../shared/record/tenant.ts',
-      './hosted-tasks.ts',
-      './push-contract.ts',
-    ],
+    allowed: ['bun', '../../shared/record/tenant.ts', './hosted-tasks.ts', './push-contract.ts'],
   },
   { file: 'hub/src/push-contract.ts', allowed: [] },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },

@@ -5,19 +5,18 @@ import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db, writeTransaction } from './db.ts'
-import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
+import { writeTransaction } from './db.ts'
 import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
+import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_TASK_TABLE,
-  PUSHABLE_HUB_CHANGE_TABLES,
   type HostedPushChange,
-  type PushableHubChangeTable,
+  PUSHABLE_HUB_CHANGE_TABLES,
 } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
-import { compareIdentitySets } from './task-push-plan.ts'
 import { formatTaskPushReport, pushTasks } from './task-push.ts'
+import { compareIdentitySets } from './task-push-plan.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000008501'
 const spaceB = '01990000-0000-7000-8000-000000008502'
@@ -63,19 +62,23 @@ const applyOn = (spaceId: string, inputs: HostedPushChange[]) =>
     return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, inputs)
   })
 
-const listIds = async (
-  table: PushableHubChangeTable,
-  options: { recordSpace?: string | null; after?: string | null },
+const listIds: typeof import('./task-client.ts').hostedIdentitySet = async (
+  table,
+  options = {},
 ) => {
   const spaceId = options.recordSpace ?? spaceA
   return database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
     await bindTenant(sql, { userId, spaceId })
-    return readHostedIdentitySetInTransaction(sql, { userId, spaceId }, {
-      table,
-      after: options.after ?? null,
-      limit: 50,
-    })
+    return readHostedIdentitySetInTransaction(
+      sql,
+      { userId, spaceId },
+      {
+        table,
+        after: options.after ?? null,
+        limit: 50,
+      },
+    )
   })
 }
 
@@ -157,16 +160,13 @@ const runPush = (repair = false) =>
         ...dependencies,
         identity: async () => identity,
         registered: () => registered,
-        push: async (changes, options) =>
-          applyOn(options.recordSpace ?? spaceA, changes),
+        push: async (changes, options) => applyOn(options.recordSpace ?? spaceA, changes),
       })
     },
   })
 
 test('compareIdentitySets counts in-flight separately from missing', () => {
-  expect(
-    compareIdentitySets(['a', 'b', 'c'], ['a', 'd'], new Set(['c'])),
-  ).toEqual({
+  expect(compareIdentitySets(['a', 'b', 'c'], ['a', 'd'], new Set(['c']))).toEqual({
     both: 1,
     machineOnly: ['b'],
     hostedOnly: ['d'],
@@ -177,12 +177,17 @@ test('compareIdentitySets counts in-flight separately from missing', () => {
 test('task push reports nothing missing when the sides agree', async () => {
   insertMachineTask(taskA, 'DEV-1', 'workshop')
   await applyOn(spaceA, [
-    { table: HOSTED_TASK_TABLE, id: taskA, op: 'upsert', row: hostedTaskRow(taskA, 'DEV-1', 'workshop') },
+    {
+      table: HOSTED_TASK_TABLE,
+      id: taskA,
+      op: 'upsert',
+      row: hostedTaskRow(taskA, 'DEV-1', 'workshop'),
+    },
   ])
   const report = await runPush()
-  const tasks = report.spaces.find((space) => space.spaceId === spaceA)?.tables.find(
-    (table) => table.table === HOSTED_TASK_TABLE,
-  )
+  const tasks = report.spaces
+    .find((space) => space.spaceId === spaceA)
+    ?.tables.find((table) => table.table === HOSTED_TASK_TABLE)
   expect(tasks).toMatchObject({ both: 1, machineOnly: [], hostedOnly: [], inFlight: [] })
   expect(report.ok).toBeTrue()
   expect(report.drain).toBeNull()
@@ -252,7 +257,7 @@ test('task push follows more than one identity-set page', async () => {
   const report = await pushTasks({
     identity: async () => identity,
     registered: () => registered,
-    listIds: async (table, options) => {
+    listIds: async (table, options = {}) => {
       if (table !== HOSTED_TASK_TABLE || options.recordSpace !== spaceA)
         return { ids: [], more: false }
       calls.push(options.after)
@@ -271,10 +276,20 @@ test("a second space's rows are not counted against the first", async () => {
   insertMachineTask(taskA, 'DEV-1', 'workshop')
   insertMachineTask(taskB, 'OTH-1', 'other')
   await applyOn(spaceA, [
-    { table: HOSTED_TASK_TABLE, id: taskA, op: 'upsert', row: hostedTaskRow(taskA, 'DEV-1', 'workshop') },
+    {
+      table: HOSTED_TASK_TABLE,
+      id: taskA,
+      op: 'upsert',
+      row: hostedTaskRow(taskA, 'DEV-1', 'workshop'),
+    },
   ])
   await applyOn(spaceB, [
-    { table: HOSTED_TASK_TABLE, id: taskB, op: 'upsert', row: hostedTaskRow(taskB, 'OTH-1', 'other') },
+    {
+      table: HOSTED_TASK_TABLE,
+      id: taskB,
+      op: 'upsert',
+      row: hostedTaskRow(taskB, 'OTH-1', 'other'),
+    },
   ])
   const report = await runPush()
   const first = report.spaces

@@ -1,10 +1,7 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import type { TaskIdentity } from './hosted-tasks.ts'
-import {
-  PUSHABLE_HUB_CHANGE_TABLES,
-  type PushableHubChangeTable,
-} from './push-contract.ts'
+import { PUSHABLE_HUB_CHANGE_TABLES, type PushableHubChangeTable } from './push-contract.ts'
 
 export const HUB_IDENTITY_SET_PAGE_SIZE = 5000
 

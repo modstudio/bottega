@@ -111,11 +111,7 @@ async function pushResponse(
   }
 }
 
-async function identityWho(
-  request: Request,
-  config: Config,
-  dependencies: Dependencies,
-) {
+async function identityWho(request: Request, config: Config, dependencies: Dependencies) {
   return taskSpaceIdentity(
     request,
     config.recordApiUrl,
@@ -124,10 +120,16 @@ async function identityWho(
   )
 }
 
-function refusedSpaceResponse(who: { refusedSpace: string }) {
+function refusedSpace(
+  who: Awaited<ReturnType<typeof taskSpaceIdentity>>,
+): who is { refusedSpace: string } {
+  return Boolean(who && 'refusedSpace' in who && who.refusedSpace)
+}
+
+function refusedSpaceResponse(space: string) {
   return json(
     {
-      error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
+      error: `record space '${space}' is not among the caller's memberships`,
       remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
     },
     403,
@@ -143,7 +145,7 @@ async function identitySetResponse(
   if (request.method !== 'GET') return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
-  if ('refusedSpace' in who) return refusedSpaceResponse(who)
+  if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   let input: ReturnType<typeof identitySetRequestInput>
   try {
     input = identitySetRequestInput(url)
@@ -169,7 +171,7 @@ async function changeLogResponse(
     return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
-  if ('refusedSpace' in who) return refusedSpaceResponse(who)
+  if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
   let input: ReturnType<typeof requestInput>
   try {

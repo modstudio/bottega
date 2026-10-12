@@ -67,9 +67,11 @@ afterAll(async () => {
 test('parseIdentitySetTable accepts every pushable table and refuses others', () => {
   expect(parseIdentitySetTable('hub_interval')).toBe('hub_interval')
   expect(() => parseIdentitySetTable('hub_note')).toThrow(/table must name one of/)
-  expect(() => identitySetRequestInput(new URL('https://hub.example.test/v1/changes/ids?table=hub_task&after=nope'))).toThrow(
-    'after must be a UUID',
-  )
+  expect(() =>
+    identitySetRequestInput(
+      new URL('https://hub.example.test/v1/changes/ids?table=hub_task&after=nope'),
+    ),
+  ).toThrow('after must be a UUID')
 })
 
 async function read(
