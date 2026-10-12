@@ -9,7 +9,7 @@ type HostedOutboxProgress = {
   dropped: number
 }
 
-export type LastHostedOutboxDrain = {
+type LastHostedOutboxDrain = {
   at: string
   madeProgress: boolean
 }
@@ -20,7 +20,7 @@ export function shouldDrainHostedOutboxFast(
 ): boolean {
   if (pending.pendingCount === 0) return false
   if (!lastDrain || lastDrain.madeProgress) return true
-  return pending.newestQueuedAt !== null && pending.newestQueuedAt > lastDrain.at
+  return pending.newestQueuedAt !== null && pending.newestQueuedAt >= lastDrain.at
 }
 
 function drainMadeProgress(report: HostedOutboxProgress): boolean {

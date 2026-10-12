@@ -6,11 +6,35 @@
  */
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
+import type { HostedOutboxReport } from './outbox.ts'
+import { hostedCreateTask } from './task-client.ts'
 
-const { COLLECT_LEASE_MS, acquireLease, releaseLease, leaseHolder, watch, withLease } =
-  await import('./collect.ts')
+const {
+  COLLECT_LEASE_MS,
+  acquireLease,
+  collectFastHostedOutbox,
+  releaseLease,
+  leaseHolder,
+  watch,
+  withLease,
+} = await import('./collect.ts')
 
 beforeAll(resetFixtureStore)
+
+const waitingOutboxReport = (): HostedOutboxReport => ({
+  queued: 1,
+  sent: 0,
+  rejected: 0,
+  quarantined: 0,
+  dropped: 0,
+  waitingOnRouting: { unregistered: 1 },
+  skippedCapability: false,
+})
+
+async function waitFor(check: () => boolean) {
+  for (let attempt = 0; attempt < 100 && !check(); attempt++) await Bun.sleep(1)
+  expect(check()).toBeTrue()
+}
 
 describe('collect lease', () => {
   test('only one holder at a time', () => {
@@ -183,6 +207,127 @@ describe('collect lease', () => {
     } finally {
       releaseLease('takeover')
       await stop()
+    }
+  })
+
+  test('watch shares hosted outbox state between its slow and fast cycles', async () => {
+    const previousHostedUrl = process.env.HUB_HOSTED_URL
+    process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+    const callbacks: Array<() => void> = []
+    const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
+      callback: () => void,
+    ) => {
+      callbacks.push(callback)
+      return callbacks.length as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof setInterval)
+    let initialized!: () => void
+    const ready = new Promise<void>((resolve) => (initialized = resolve))
+    let drains = 0
+    let now = '2026-10-12T12:00:02.000Z'
+    let newestQueuedAt = '2026-10-12T12:00:01.000Z'
+    const stop = watch('shared-outbox-watch', undefined, {
+      initial: async () => initialized(),
+      outbox: async () => {
+        drains++
+        return waitingOutboxReport()
+      },
+      outboxClock: () => now,
+      slow: async (_guard, schedule) => schedule!.slow(),
+      fast: async (_guard, schedule) => {
+        await schedule!.fast({ pendingCount: 1, newestQueuedAt })
+      },
+    })
+    try {
+      await ready
+      await Bun.sleep(0)
+      const fastCycle = callbacks[1]!
+      const slowCycle = callbacks[2]!
+      slowCycle()
+      await waitFor(() => drains === 1)
+      await waitFor(() => leaseHolder() === null)
+      fastCycle()
+      await waitFor(() => leaseHolder() === null)
+      expect(drains).toBe(1)
+
+      newestQueuedAt = '2026-10-12T12:00:02.000Z'
+      now = '2026-10-12T12:00:03.000Z'
+      fastCycle()
+      await waitFor(() => drains === 2)
+      await waitFor(() => leaseHolder() === null)
+      fastCycle()
+      await waitFor(() => leaseHolder() === null)
+      expect(drains).toBe(2)
+    } finally {
+      await stop()
+      interval.mockRestore()
+      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = previousHostedUrl
+    }
+  })
+
+  test('a timed-out hosted drain releases watch for the next local cycle', async () => {
+    const previousHostedUrl = process.env.HUB_HOSTED_URL
+    process.env.HUB_HOSTED_URL = 'https://hub.example.test'
+    const callbacks: Array<() => void> = []
+    const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
+      callback: () => void,
+    ) => {
+      callbacks.push(callback)
+      return callbacks.length as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof setInterval)
+    let initialized!: () => void
+    const ready = new Promise<void>((resolve) => (initialized = resolve))
+    let localCycles = 0
+    let completedCycles = 0
+    const errors: Error[] = []
+    const stop = watch('deadline-outbox-watch', (error) => errors.push(error), {
+      initial: async () => initialized(),
+      outbox: async () => {
+        await hostedCreateTask(
+          {},
+          {
+            baseUrl: 'https://hub.example.test',
+            token: 'test',
+            fetch: async () => await new Promise<Response>(() => {}),
+            requestDeadlineMs: 5,
+          },
+        )
+        return waitingOutboxReport()
+      },
+      outboxClock: () => '2026-10-12T12:00:02.000Z',
+      fast: async (guard, schedule) => {
+        localCycles++
+        await collectFastHostedOutbox(
+          schedule!,
+          {
+            pending: () => ({
+              pendingCount: 1,
+              newestQueuedAt: '2026-10-12T12:00:01.000Z',
+            }),
+          },
+          guard,
+        )
+        completedCycles++
+      },
+      slow: async () => {},
+    })
+    try {
+      await ready
+      await Bun.sleep(0)
+      const fastCycle = callbacks[1]!
+      fastCycle()
+      await waitFor(() => completedCycles === 1)
+      await waitFor(() => leaseHolder() === null)
+      fastCycle()
+      await waitFor(() => completedCycles === 2)
+      await waitFor(() => leaseHolder() === null)
+      expect(localCycles).toBe(2)
+      expect(errors).toEqual([])
+    } finally {
+      await stop()
+      interval.mockRestore()
+      if (previousHostedUrl === undefined) delete process.env.HUB_HOSTED_URL
+      else process.env.HUB_HOSTED_URL = previousHostedUrl
     }
   })
 })

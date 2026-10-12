@@ -591,36 +591,58 @@ export function watch(
   holder: string,
   onError = (e: Error) => console.error(`hub: ${e.message}`),
   dependencies: {
-    initial?: (guard: LeaseGuard) => Promise<unknown>
-    fast?: (guard: LeaseGuard) => Promise<unknown>
-    slow?: (guard: LeaseGuard) => Promise<unknown>
+    initial?: (
+      guard: LeaseGuard,
+      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+    ) => Promise<unknown>
+    fast?: (
+      guard: LeaseGuard,
+      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+    ) => Promise<unknown>
+    slow?: (
+      guard: LeaseGuard,
+      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+    ) => Promise<unknown>
+    outbox?: () => Promise<HostedOutboxReport>
+    pendingOutbox?: () => PendingHostedOutbox
+    outboxClock?: () => string
     renewEveryMs?: number
   } = {},
 ) {
   const outboxSchedule = process.env.HUB_HOSTED_URL
-    ? new HostedOutboxDrainSchedule(drainHostedOutbox, nowIso)
+    ? new HostedOutboxDrainSchedule(
+        dependencies.outbox ?? drainHostedOutbox,
+        dependencies.outboxClock ?? nowIso,
+      )
     : null
   let busy = false
   let stopping = false
-  const runCycle = (work: (guard: LeaseGuard) => Promise<unknown>) => async () => {
-    if (stopping || busy || !acquireLease(holder)) return
-    busy = true
-    // A failed collect must not stop the loop or take the server down: the
-    // stored data is still the last good reading, which is the point of having
-    // stored it.
-    try {
-      const result = await holdAndRenewLease(
-        holder,
-        work,
-        dependencies.renewEveryMs ?? LEASE_RENEW_MS,
-      )
-      if (!result.ran) onError(result.error)
-    } catch (e) {
-      onError(e as Error)
-    } finally {
-      busy = false
+  const runCycle =
+    (
+      work: (
+        guard: LeaseGuard,
+        outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+      ) => Promise<unknown>,
+    ) =>
+    async () => {
+      if (stopping || busy || !acquireLease(holder)) return
+      busy = true
+      // A failed collect must not stop the loop or take the server down: the
+      // stored data is still the last good reading, which is the point of having
+      // stored it.
+      try {
+        const result = await holdAndRenewLease(
+          holder,
+          (guard) => work(guard, outboxSchedule),
+          dependencies.renewEveryMs ?? LEASE_RENEW_MS,
+        )
+        if (!result.ran) onError(result.error)
+      } catch (e) {
+        onError(e as Error)
+      } finally {
+        busy = false
+      }
     }
-  }
 
   const fast = runCycle(
     dependencies.fast ??
@@ -632,7 +654,11 @@ export function watch(
         leaseGuard.assertHeld('operator waiting emails')
         await collectFast({}, leaseGuard)
         if (outboxSchedule) {
-          const result = await collectFastHostedOutbox(outboxSchedule, {}, leaseGuard)
+          const result = await collectFastHostedOutbox(
+            outboxSchedule,
+            { pending: dependencies.pendingOutbox },
+            leaseGuard,
+          )
           if (result) console.log(formatCollectLeg(result))
         }
       }),

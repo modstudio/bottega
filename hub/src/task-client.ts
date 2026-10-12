@@ -20,7 +20,41 @@ const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+export const HOSTED_REQUEST_DEADLINE_MS = 30_000
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
+
+type HostedRequestOptions = {
+  baseUrl?: string
+  token?: string | null
+  fetch?: TaskFetch
+  recordSpace?: string | null
+  requestDeadlineMs?: number
+}
+
+async function hostedFetch(
+  input: string,
+  init: RequestInit,
+  options: HostedRequestOptions,
+): Promise<Response> {
+  const controller = new AbortController()
+  const deadlineMs = options.requestDeadlineMs ?? HOSTED_REQUEST_DEADLINE_MS
+  const timeout = setTimeout(() => controller.abort(), deadlineMs)
+  const expired = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener(
+      'abort',
+      () => reject(new Error(`request timed out after ${deadlineMs}ms`)),
+      { once: true },
+    )
+  })
+  try {
+    return await Promise.race([
+      (options.fetch ?? fetch)(input, { ...init, signal: controller.signal }),
+      expired,
+    ])
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 export type HostedTaskIdentity = {
   userId: string
@@ -75,12 +109,7 @@ async function responseObject(
   path: string,
   method: string,
   body?: unknown,
-  options: {
-    baseUrl?: string
-    token?: string | null
-    fetch?: TaskFetch
-    recordSpace?: string | null
-  } = {},
+  options: HostedRequestOptions = {},
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -91,15 +120,19 @@ async function responseObject(
     )
   let response: Response
   try {
-    response = await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+    response = await hostedFetch(
+      `${baseUrl.replace(/\/$/, '')}${path}`,
+      {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
+      options,
+    )
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
@@ -117,12 +150,7 @@ async function request<T>(
   path: string,
   method: string,
   body?: unknown,
-  options: {
-    baseUrl?: string
-    token?: string | null
-    fetch?: TaskFetch
-    recordSpace?: string | null
-  } = {},
+  options: HostedRequestOptions = {},
 ): Promise<T> {
   const { response, value } = await responseObject(path, method, body, options)
   if (!response.ok)
@@ -376,15 +404,19 @@ export async function hostedPushChanges(
   const url = `${baseUrl.replace(/\/$/, '')}/v1/changes`
   let response: Response
   try {
-    response = await (options.fetch ?? fetch)(url, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+    response = await hostedFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    })
+      options,
+    )
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
@@ -443,13 +475,17 @@ async function taskIdentityResponse(
   const url = `${baseUrl.replace(/\/$/, '')}/v1/tasks/identity`
   let response: Response
   try {
-    response = await (options.fetch ?? fetch)(url, {
-      method: 'GET',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
+    response = await hostedFetch(
+      url,
+      {
+        method: 'GET',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
       },
-    })
+      options,
+    )
   } catch (error) {
     throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
   }
