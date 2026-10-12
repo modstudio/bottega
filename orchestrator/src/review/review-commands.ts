@@ -11,6 +11,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
+import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
@@ -375,7 +376,7 @@ export async function reviewCommand(
   if (sub === 'tier') {
     const value = argv[2]
     if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
-    printReviewTier(reviewTierOutput(value, flag('cwd') ?? process.cwd()), has('json'), log)
+    printReviewTier(reviewTierOutput(value, resolveReviewCommandCwd(flag('cwd'))), has('json'), log)
     return
   }
   if (sub === 'coverage-audit') {

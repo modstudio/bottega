@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -127,6 +127,26 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     expect(output).toContain('current change is already a counted round; no new round consumed')
     expect(output).not.toContain('current change would start a new round')
     expect(output).not.toContain('a new round would exceed the ceiling; stop and ask the operator')
+
+    const branchOutput: string[] = []
+    await reviewCommand(
+      'tier',
+      ['review', 'tier', 'DEV-992-fixture'],
+      {
+        has: () => false,
+        flag: (name) => (name === 'cwd' ? relative(process.cwd(), repo) : undefined),
+      },
+      {
+        log: (...values) => branchOutput.push(values.join(' ')),
+        usage: () => {
+          throw new Error('unexpected usage')
+        },
+      },
+    )
+
+    expect(branchOutput).toContain('tier 0')
+    expect(branchOutput).toContain('risk 0')
+    expect(branchOutput).toContain('size 0')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

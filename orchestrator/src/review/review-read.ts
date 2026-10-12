@@ -7,6 +7,7 @@ import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
+import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './review-group.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
 
@@ -136,7 +137,7 @@ export function recordArchitectReadCommand(
 ): void {
   if (argv.length !== 2) throw new Error('orch review read [--sha <tip>] --note <text>')
   const id = recordArchitectRead({
-    cwd: flags.flag('cwd') ?? process.cwd(),
+    cwd: resolveReviewCommandCwd(flags.flag('cwd')),
     sha: flags.flag('sha'),
     note: flags.flag('note') ?? '',
   })

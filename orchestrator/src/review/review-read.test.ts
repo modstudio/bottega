@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { db } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -119,10 +119,12 @@ test('the read command records the branch and tip from --cwd', () => {
       )
       .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
 
+    const relativeCwd = relative(process.cwd(), cwd)
     recordArchitectReadCommand(
       ['review', 'read'],
       {
-        flag: (name) => (name === 'cwd' ? cwd : name === 'note' ? 'read the final fix' : undefined),
+        flag: (name) =>
+          name === 'cwd' ? relativeCwd : name === 'note' ? 'read the final fix' : undefined,
       },
       { log: () => undefined },
     )
@@ -134,6 +136,18 @@ test('the read command records the branch and tip from --cwd', () => {
         )
         .get(),
     ).toEqual({ branch: 'DEV-1262-review-read-fixture', tip })
+
+    const missing = join(cwd, 'does-not-exist')
+    expect(() =>
+      recordArchitectReadCommand(
+        ['review', 'read'],
+        {
+          flag: (name) =>
+            name === 'cwd' ? missing : name === 'note' ? 'read the final fix' : undefined,
+        },
+        { log: () => undefined },
+      ),
+    ).toThrow(`${missing} does not exist; pass a live worktree (orch tree open <run> opens one)`)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
