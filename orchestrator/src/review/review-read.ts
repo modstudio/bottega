@@ -27,11 +27,7 @@ const git: Git = (cwd, args) => {
   return result.stdout.toString().trim()
 }
 
-export function latestArchitectRead(
-  database: Database,
-  project: string,
-  branch: string,
-) {
+export function latestArchitectRead(database: Database, project: string, branch: string) {
   const row = database
     .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
       `SELECT tip,note,recorded_at FROM review_read

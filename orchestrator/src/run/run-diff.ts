@@ -74,10 +74,7 @@ export function chooseSinceReadBound(input: {
   return { kind: 'bound', read: input.read }
 }
 
-export function unchangedSinceReadMessage(
-  read: ArchitectRead | null,
-  diff: string,
-): string | null {
+export function unchangedSinceReadMessage(read: ArchitectRead | null, diff: string): string | null {
   return read && !diff
     ? `nothing changed since architect read ${read.tip} recorded ${read.recordedAt}`
     : null
