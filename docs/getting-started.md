@@ -71,7 +71,8 @@ not touched. `orch do` prints a run id and returns.
 
     orch wait 1        # until it finishes or asks
     orch result 1      # what the agent says it did
-    orch diff 1        # what it actually changed
+    orch diff 1                  # what it actually changed
+    orch diff 1 --since-read     # only changes after the latest recorded architect read
 
 The worker's change is on the run's own branch and may include uncommitted work.
 Nothing is pushed. Close-out preserves uncommitted changes in the run artifacts.

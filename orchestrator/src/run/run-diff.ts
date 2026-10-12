@@ -5,6 +5,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 
 type RunDiffFlags = { has(name: string): boolean }
+type ArchitectRead = { tip: string; note: string; recordedAt: string }
 type Changes = {
   diff: string
   files: string[]
@@ -26,10 +27,80 @@ type RunDiffPresentation = {
   observedChangesIn(
     spec: { path: string; branch: string; base: string; repoRoot: string },
     sinceBase: boolean,
+    lowerBound?: string,
   ): Changes
+  latestArchitectRead(project: string, branch: string): ArchitectRead | null
   exists(path: string): boolean
   withWorktreeLease<T>(repoRoot: string, worktreePath: string, action: () => T): T
   writesRepo(job: string): boolean
+}
+
+export type SinceReadDecision =
+  | { kind: 'bound'; read: ArchitectRead }
+  | { kind: 'refusal'; message: string }
+
+export function validateRunDiffBounds(flags: RunDiffFlags): void {
+  if (flags.has('since-read') && flags.has('since-base')) {
+    throw new Error('--since-read and --since-base choose different lower bounds; use only one')
+  }
+}
+
+export function chooseSinceReadBound(input: {
+  runId: number
+  branch: string
+  read: ArchitectRead | null
+  comparisonTip: string
+  readIsAncestor: boolean
+}): SinceReadDecision {
+  if (!input.read) {
+    return {
+      kind: 'refusal',
+      message:
+        `no architect read is recorded for branch ${input.branch}\n` +
+        `cleared by: record one with orch review read --note <note>, or run orch diff ${input.runId} for the whole change`,
+    }
+  }
+  if (!input.readIsAncestor) {
+    return {
+      kind: 'refusal',
+      message:
+        `architect read tip ${input.read.tip} is not an ancestor of comparison tip ${input.comparisonTip} for branch ${input.branch}\n` +
+        `cleared by: run orch diff ${input.runId} for the whole change`,
+    }
+  }
+  return { kind: 'bound', read: input.read }
+}
+
+export function unchangedSinceReadMessage(
+  read: ArchitectRead | null,
+  comparisonTip: string,
+  diff: string,
+): string | null {
+  return read && read.tip === comparisonTip && !diff
+    ? `nothing changed since architect read ${read.tip} recorded ${read.recordedAt}`
+    : null
+}
+
+function commitAt(cwd: string, ref: string): string {
+  const result = Bun.spawnSync(['git', 'rev-parse', '--verify', `${ref}^{commit}`], {
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim())
+  return result.stdout.toString().trim()
+}
+
+function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {
+  return (
+    Bun.spawnSync(['git', 'merge-base', '--is-ancestor', ancestor, descendant], {
+      cwd,
+      env: targetGitEnvironment(cwd),
+      stdout: 'ignore',
+      stderr: 'ignore',
+    }).exitCode === 0
+  )
 }
 
 export function readRunDiffSource<T>(input: {
@@ -61,11 +132,13 @@ export async function runDiffCommand(
     usage,
     cleanupRepoRoot,
     observedChangesIn,
+    latestArchitectRead,
     exists,
     withWorktreeLease,
     writesRepo,
   } = presentation
   if (!id) usage()
+  validateRunDiffBounds(flags)
   const row = db()
     .query(
       `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
@@ -93,6 +166,23 @@ export async function runDiffCommand(
   const repoRoot = cleanupRepoRoot(row)
   if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
   const evidenceBranch = row.branch_kept ?? row.branch
+  const project = row.repo ? projectByName(row.repo) : null
+  if (has('since-read') && !project) {
+    throw new Error(`run ${id}'s registered project was not found`)
+  }
+  const sinceReadFor = (branch: string, comparisonTip: string, cwd: string) => {
+    if (!has('since-read')) return null
+    const read = latestArchitectRead(project!.name, branch)
+    const decision = chooseSinceReadBound({
+      runId: id,
+      branch,
+      read,
+      comparisonTip,
+      readIsAncestor: Boolean(read && isAncestor(cwd, read.tip, comparisonTip)),
+    })
+    if (decision.kind === 'refusal') throw new Error(decision.message)
+    return decision.read
+  }
   const result = readRunDiffSource({
     repoRoot,
     worktree: row.worktree,
@@ -114,12 +204,13 @@ export async function runDiffCommand(
       if (!branchPresent || !evidenceBranch) {
         throw new Error(`run ${id}'s worktree and evidence branch are gone`)
       }
-      const project = row.repo ? projectByName(row.repo) : null
       const configuredTrunk = project?.settings.trunk?.trim()
       const trunk = configuredTrunk || 'main'
-      let since = baseCommit
+      const comparisonTip = commitAt(repoRoot, evidenceBranch)
+      const read = sinceReadFor(evidenceBranch, comparisonTip, repoRoot)
+      let since = read?.tip ?? baseCommit
       let usedRecordedFallback = has('since-base')
-      if (!has('since-base')) {
+      if (!has('since-base') && !read) {
         const mergeBase = Bun.spawnSync(['git', 'merge-base', evidenceBranch, trunk], {
           cwd: repoRoot,
           env: targetGitEnvironment(repoRoot),
@@ -186,18 +277,24 @@ export async function runDiffCommand(
       const commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
       const sinceNote = usedRecordedFallback
         ? `${has('since-base') ? 'recorded; --since-base' : 'recorded fallback'}; worktree discarded`
-        : `trunk ${trunk}; worktree discarded`
-      return { c, commits, sinceNote }
+        : read
+          ? 'architect read; worktree discarded'
+          : `trunk ${trunk}; worktree discarded`
+      return { c, commits, sinceNote, read, comparisonTip }
     },
     readLive: (worktreePath) => {
+      const branch = row.branch ?? `orch/${id}`
+      const comparisonTip = commitAt(worktreePath, 'HEAD')
+      const read = sinceReadFor(branch, comparisonTip, worktreePath)
       const c = observedChangesIn(
         {
           path: worktreePath,
-          branch: row.branch ?? `orch/${id}`,
+          branch,
           base: baseCommit,
           repoRoot,
         },
         has('since-base'),
+        read?.tip,
       )
       const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
         cwd: worktreePath,
@@ -209,11 +306,13 @@ export async function runDiffCommand(
       const commits = logged.stdout.toString()
       const sinceNote = has('since-base')
         ? 'recorded; --since-base'
-        : `trunk ${c.trunk}${c.trunkConfigured ? '' : '; register fallback'}`
-      return { c, commits, sinceNote }
+        : read
+          ? 'architect read'
+          : `trunk ${c.trunk}${c.trunkConfigured ? '' : '; register fallback'}`
+      return { c, commits, sinceNote, read, comparisonTip }
     },
   })
-  const { c, commits, sinceNote } = result
+  const { c, commits, sinceNote, read, comparisonTip } = result
   const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
   if (!writesRepo(runKind.job)) {
     error(
@@ -225,8 +324,15 @@ export async function runDiffCommand(
   // stdout artifact even under --quiet or when stderr is not captured.
   write(`base: ${row.base_commit} (recorded)\n`)
   write(`since: ${c.since} (${sinceNote})\n`)
+  if (read) {
+    write(`read commit: ${read.tip}\n`)
+    write(`read recorded: ${read.recordedAt}\n`)
+    write(`read note: ${read.note}\n`)
+  }
   write('commits:\n')
   write(commits || '(none)\n')
+  const unchanged = unchangedSinceReadMessage(read, comparisonTip, c.diff)
+  if (unchanged) write(`${unchanged}\n`)
   if (
     row.carry_happened !== null &&
     row.carry_base_commit &&
