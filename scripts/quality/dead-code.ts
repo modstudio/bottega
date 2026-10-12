@@ -1,4 +1,5 @@
-import { type Finding, fingerprint, introducedFindings } from '../../shared/ratchet'
+import { createHash } from 'node:crypto'
+import type { ChangeFacts, Finding } from '../../shared/ratchet'
 
 const KNIP_ISSUE_TYPES = [
   'files',
@@ -91,13 +92,61 @@ export function stableFinding(finding: DeadCodeFinding): DeadCodeFinding {
   return stable
 }
 
+function isDeadCodeFinding(value: unknown): value is DeadCodeFinding {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const finding = value as Record<string, unknown>
+  return (
+    Object.keys(finding).every((key) =>
+      ['workspace', 'file', 'issueType', 'symbol'].includes(key),
+    ) &&
+    typeof finding.workspace === 'string' &&
+    typeof finding.file === 'string' &&
+    DEAD_CODE_ISSUE_TYPES.includes(finding.issueType as DeadCodeIssueType) &&
+    typeof finding.symbol === 'string'
+  )
+}
+
+function parseCachedFindings(text: string | undefined): DeadCodeFinding[] | null {
+  if (text === undefined) return null
+  try {
+    const value: unknown = JSON.parse(text)
+    return Array.isArray(value) && value.every(isDeadCodeFinding) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function readCachedFindings(read: () => string): DeadCodeFinding[] | null {
+  try {
+    return parseCachedFindings(read())
+  } catch {
+    return null
+  }
+}
+
+export function cacheConfigurationHash(configs: Array<{ name: string; content: string }>) {
+  const hash = createHash('sha256')
+  for (const config of configs) {
+    hash.update(config.name).update('\0').update(config.content).update('\0')
+  }
+  return hash.digest('hex')
+}
+
+export function deadCodeCacheKey(input: {
+  commit: string
+  knipVersion: string
+  configurationHash: string
+}) {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex')
+}
+
 export function productionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   return !findings.some(
     (finding) => finding.issueType === 'dependencies' && finding.symbol === 'commander',
   )
 }
 
-function ratchetFinding(finding: DeadCodeFinding): Finding {
+export function deadCodeRatchetFinding(finding: DeadCodeFinding): Finding {
   return {
     file: `${finding.workspace}\0${finding.file}`,
     line: finding.line ?? 0,
@@ -106,17 +155,14 @@ function ratchetFinding(finding: DeadCodeFinding): Finding {
   }
 }
 
-function findingsByFingerprint(findings: DeadCodeFinding[]) {
-  return new Map(findings.map((finding) => [fingerprint(ratchetFinding(finding)), finding]))
-}
-
-export function compareDeadCodeFindings(baseline: DeadCodeFinding[], current: DeadCodeFinding[]) {
-  const introduced = introducedFindings(baseline.map(ratchetFinding), current.map(ratchetFinding))
-  const vanished = introducedFindings(current.map(ratchetFinding), baseline.map(ratchetFinding))
-  const currentByFingerprint = findingsByFingerprint(current)
-  const baselineByFingerprint = findingsByFingerprint(baseline)
+export function deadCodeChangeFacts(renames: Map<string, string>): ChangeFacts {
   return {
-    introduced: introduced.map((finding) => currentByFingerprint.get(fingerprint(finding))!),
-    vanished: vanished.map((finding) => baselineByFingerprint.get(fingerprint(finding))!),
+    renames: new Map(
+      [...renames].map(([head, base]) => [
+        `${workspaceFor(head)}\0${head}`,
+        `${workspaceFor(base)}\0${base}`,
+      ]),
+    ),
+    addedLines: new Map(),
   }
 }

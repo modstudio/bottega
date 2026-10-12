@@ -1,49 +1,80 @@
 import { describe, expect, test } from 'bun:test'
+import { ratchetDecision } from '../../shared/ratchet'
 import {
-  compareDeadCodeFindings,
+  cacheConfigurationHash,
   type DeadCodeFinding,
+  deadCodeCacheKey,
+  deadCodeChangeFacts,
+  deadCodeRatchetFinding,
   normalizeKnipReport,
   productionSourcesAnalyzed,
+  readCachedFindings,
   unneededExportFindings,
 } from './dead-code'
 
-const baseline: DeadCodeFinding = {
+const existing: DeadCodeFinding = {
   workspace: 'orchestrator',
   file: 'orchestrator/src/example.ts',
   issueType: 'exports',
   symbol: 'unusedExport',
 }
 
+function decide(
+  base: DeadCodeFinding[],
+  head: DeadCodeFinding[],
+  renames = new Map<string, string>(),
+) {
+  return ratchetDecision({
+    base: base.map(deadCodeRatchetFinding),
+    head: head.map(deadCodeRatchetFinding),
+    change: deadCodeChangeFacts(renames),
+  })
+}
+
 describe('dead-code ratchet', () => {
-  test('an introduced finding fails comparison', () => {
-    expect(compareDeadCodeFindings([], [baseline])).toEqual({
-      introduced: [baseline],
-      vanished: [],
-    })
+  test('an introduced finding is refused and an existing finding is tolerated', () => {
+    expect(decide([], [existing])).toHaveLength(1)
+    expect(decide([existing], [existing])).toEqual([])
   })
 
-  test('a vanished finding requires a tighter baseline', () => {
-    expect(compareDeadCodeFindings([baseline], [])).toEqual({
-      introduced: [],
-      vanished: [baseline],
-    })
+  test('a finding in a renamed file is tolerated', () => {
+    const moved = { ...existing, file: 'orchestrator/src/moved.ts' }
+    expect(decide([existing], [moved], new Map([[moved.file, existing.file]]))).toEqual([])
   })
 
-  test('normalizing excludes line numbers from the stable comparison', () => {
+  test('normalizing excludes line numbers from stable identity', () => {
     const reportAt = (line: number) =>
       normalizeKnipReport({
-        issues: [
-          {
-            file: baseline.file,
-            exports: [{ name: baseline.symbol, line }],
-          },
-        ],
+        issues: [{ file: existing.file, exports: [{ name: existing.symbol, line }] }],
       })
+    expect(decide(reportAt(4), reportAt(40))).toEqual([])
+  })
 
-    expect(compareDeadCodeFindings(reportAt(4), reportAt(40))).toEqual({
-      introduced: [],
-      vanished: [],
-    })
+  test('cache key changes with commit, Knip version, or configuration hash', () => {
+    const key = deadCodeCacheKey({ commit: 'a', knipVersion: '1', configurationHash: 'x' })
+    expect(deadCodeCacheKey({ commit: 'b', knipVersion: '1', configurationHash: 'x' })).not.toBe(
+      key,
+    )
+    expect(deadCodeCacheKey({ commit: 'a', knipVersion: '2', configurationHash: 'x' })).not.toBe(
+      key,
+    )
+    expect(deadCodeCacheKey({ commit: 'a', knipVersion: '1', configurationHash: 'y' })).not.toBe(
+      key,
+    )
+    expect(cacheConfigurationHash([{ name: 'knip.jsonc', content: 'a' }])).not.toBe(
+      cacheConfigurationHash([{ name: 'knip.jsonc', content: 'b' }]),
+    )
+  })
+
+  test('an unreadable or malformed cache entry is absent', () => {
+    expect(
+      readCachedFindings(() => {
+        throw new Error('unreadable')
+      }),
+    ).toBeNull()
+    expect(readCachedFindings(() => '{')).toBeNull()
+    expect(readCachedFindings(() => '[{"workspace":".","file":"x"}]')).toBeNull()
+    expect(readCachedFindings(() => JSON.stringify([existing]))).toEqual([existing])
   })
 
   test('an unused known-live dependency means production analyzed no sources', () => {
@@ -61,8 +92,8 @@ describe('dead-code ratchet', () => {
   })
 
   test('production dead code wins over an unneeded export finding', () => {
-    const unneeded = { ...baseline, line: 12 }
-    expect(unneededExportFindings([baseline], [unneeded])).toEqual([])
+    const unneeded = { ...existing, line: 12 }
+    expect(unneededExportFindings([existing], [unneeded])).toEqual([])
     expect(
       unneededExportFindings([], [unneeded, { ...unneeded, issueType: 'types', symbol: 'Shape' }]),
     ).toEqual([

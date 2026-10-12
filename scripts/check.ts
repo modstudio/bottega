@@ -327,7 +327,7 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-test-fixtures.ts'),
   staticCheck('scripts/check-test-placement.ts'),
   staticCheck('scripts/check-test-spawns.ts'),
-  staticCheck('scripts/check-dead-code.ts'),
+  staticCheck('scripts/check-dead-code.ts', [qualityMode]),
   staticCheck('scripts/check-brand.ts'),
   staticCheck('scripts/check-harness-mirror.ts'),
   staticCheck('scripts/check-canon-drift.ts'),
