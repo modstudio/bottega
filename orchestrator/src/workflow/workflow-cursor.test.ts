@@ -444,23 +444,6 @@ describe('workflow cursor adapter', () => {
     expect(rows[1]).toMatchObject({ instance_id: '', state: 'running', closed: '[]' })
   })
 
-  test('first step fetch retires a terminal cursor and starts a fresh run', () => {
-    const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
-
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
-
-    expect(
-      d.query("SELECT count(*) count FROM workflow_cursor WHERE state='running'").get(),
-    ).toEqual({
-      count: 1,
-    })
-    expect(
-      d.query("SELECT count(*) count FROM workflow_cursor WHERE state='abandoned'").get(),
-    ).toEqual({ count: 1 })
-  })
-
   test('step fetch on a terminal cursor directs the caller to compose again', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)

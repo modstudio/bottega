@@ -9,7 +9,7 @@ import {
   type WorkflowFactSource,
 } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
-import type { AutonomyResolution } from './autonomy.ts'
+import type { WorkflowAutonomyResolution } from './autonomy.ts'
 import { decideShipToReach } from './ship-to-reach.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
@@ -52,10 +52,17 @@ function shipToFact(
   needs: readonly WorkflowFactSource[],
   needsCloseState: boolean,
   args: Record<string, string>,
-  autonomy: AutonomyResolution,
+  autonomy: WorkflowAutonomyResolution,
   projectFacts: Record<string, unknown>,
 ) {
   if (!needs.includes('ship-to')) return {}
+  if (!autonomy.shipTo) {
+    const cursor = 'cursor' in autonomy ? autonomy.cursor : undefined
+    if (!cursor) throw new Error('resolved autonomy has no ship-to level')
+    throw new Error(
+      `workflow cursor ${cursor.id}'s stored autonomy has no ship-to level; clear it with: orch workflow abandon --cursor ${cursor.id} --reason "<why>"; then start a new run with: ${cursor.composeCommand}`,
+    )
+  }
   if (autonomy.shipTo.complete === false)
     throw new Error(
       `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>`,
@@ -101,7 +108,7 @@ export function resolveWorkflowProjectFacts(
   needs: readonly WorkflowFactSource[],
   needsCloseState: boolean,
   args: Record<string, string>,
-  autonomy: AutonomyResolution,
+  autonomy: WorkflowAutonomyResolution,
   extras: readonly InjectionSource[] = [],
 ) {
   const { resolved, facts: projectFacts } = resolveDeclaredFacts(
