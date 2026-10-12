@@ -30,6 +30,9 @@ type RunDiffPresentation = {
     lowerBound?: string,
   ): Changes
   latestArchitectRead(project: string, branch: string): ArchitectRead | null
+  commitAt(cwd: string, ref: string): string
+  isAncestor(cwd: string, ancestor: string, descendant: string): boolean
+  commitsBetween(cwd: string, since: string, tip: string): string
   exists(path: string): boolean
   withWorktreeLease<T>(repoRoot: string, worktreePath: string, action: () => T): T
   writesRepo(job: string): boolean
@@ -73,15 +76,14 @@ export function chooseSinceReadBound(input: {
 
 export function unchangedSinceReadMessage(
   read: ArchitectRead | null,
-  comparisonTip: string,
   diff: string,
 ): string | null {
-  return read && read.tip === comparisonTip && !diff
+  return read && !diff
     ? `nothing changed since architect read ${read.tip} recorded ${read.recordedAt}`
     : null
 }
 
-function commitAt(cwd: string, ref: string): string {
+export function commitAt(cwd: string, ref: string): string {
   const result = Bun.spawnSync(['git', 'rev-parse', '--verify', `${ref}^{commit}`], {
     cwd,
     env: targetGitEnvironment(cwd),
@@ -92,7 +94,7 @@ function commitAt(cwd: string, ref: string): string {
   return result.stdout.toString().trim()
 }
 
-function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {
+export function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {
   return (
     Bun.spawnSync(['git', 'merge-base', '--is-ancestor', ancestor, descendant], {
       cwd,
@@ -101,6 +103,17 @@ function isAncestor(cwd: string, ancestor: string, descendant: string): boolean 
       stderr: 'ignore',
     }).exitCode === 0
   )
+}
+
+export function commitsBetween(cwd: string, since: string, tip: string): string {
+  const result = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${tip}`], {
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim())
+  return result.stdout.toString()
 }
 
 function evidenceLowerBound(input: {
@@ -159,6 +172,9 @@ export async function runDiffCommand(
     cleanupRepoRoot,
     observedChangesIn,
     latestArchitectRead,
+    commitAt,
+    isAncestor,
+    commitsBetween,
     exists,
     withWorktreeLease,
     writesRepo,
@@ -297,7 +313,7 @@ export async function runDiffCommand(
         : read
           ? 'architect read; worktree discarded'
           : `trunk ${trunk}; worktree discarded`
-      return { c, commits, sinceNote, read, comparisonTip }
+      return { c, commits, sinceNote, read }
     },
     readLive: (worktreePath) => {
       const branch = row.branch ?? `orch/${id}`
@@ -313,23 +329,16 @@ export async function runDiffCommand(
         has('since-base'),
         read?.tip,
       )
-      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
-        cwd: worktreePath,
-        env: targetGitEnvironment(worktreePath),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (logged.exitCode !== 0) throw new Error(logged.stderr.toString().trim())
-      const commits = logged.stdout.toString()
+      const commits = commitsBetween(worktreePath, c.since, 'HEAD')
       const sinceNote = has('since-base')
         ? 'recorded; --since-base'
         : read
           ? 'architect read'
           : `trunk ${c.trunk}${c.trunkConfigured ? '' : '; register fallback'}`
-      return { c, commits, sinceNote, read, comparisonTip }
+      return { c, commits, sinceNote, read }
     },
   })
-  const { c, commits, sinceNote, read, comparisonTip } = result
+  const { c, commits, sinceNote, read } = result
   const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
   if (!writesRepo(runKind.job)) {
     error(
@@ -348,7 +357,7 @@ export async function runDiffCommand(
   }
   write('commits:\n')
   write(commits || '(none)\n')
-  const unchanged = unchangedSinceReadMessage(read, comparisonTip, c.diff)
+  const unchanged = unchangedSinceReadMessage(read, c.diff)
   if (unchanged) write(`${unchanged}\n`)
   if (
     row.carry_happened !== null &&

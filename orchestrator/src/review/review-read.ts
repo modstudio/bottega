@@ -14,12 +14,6 @@ type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
 type Git = (cwd: string, args: string[]) => string
 
-export type ArchitectRead = {
-  tip: string
-  note: string
-  recordedAt: string
-}
-
 const git: Git = (cwd, args) => {
   const result = Bun.spawnSync(['git', ...args], {
     cwd,
@@ -37,7 +31,7 @@ export function latestArchitectRead(
   database: Database,
   project: string,
   branch: string,
-): ArchitectRead | null {
+) {
   const row = database
     .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
       `SELECT tip,note,recorded_at FROM review_read

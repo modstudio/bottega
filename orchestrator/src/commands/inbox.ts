@@ -7,7 +7,7 @@ import { db, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { withWorktreeLease } from '../project/project-lock.ts'
 import { latestArchitectRead } from '../review/review-read.ts'
-import { runDiffCommand } from '../run/run-diff.ts'
+import { commitAt, commitsBetween, isAncestor, runDiffCommand } from '../run/run-diff.ts'
 import { runInboxCommand } from '../run/run-inbox.ts'
 import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
@@ -64,6 +64,9 @@ export function register(program: Command): void {
         cleanupRepoRoot,
         observedChangesIn,
         latestArchitectRead: (project, branch) => latestArchitectRead(db(), project, branch),
+        commitAt,
+        isAncestor,
+        commitsBetween,
         exists: existsSync,
         withWorktreeLease: (repoRoot, worktreePath, action) =>
           withWorktreeLease(
