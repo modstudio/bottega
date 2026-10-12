@@ -1,6 +1,11 @@
 import {
   HOSTED_COMMENT_TABLE,
+  HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
+  HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type PushableHubChangeTable,
 } from './push-contract.ts'
@@ -34,6 +39,13 @@ export type RepairCandidate = {
   fields: string[] | null
 }
 
+export type UnrepairableRow = {
+  table: PushableHubChangeTable
+  id: string
+  reason: string
+  remedy: string
+}
+
 export type RoutedMachineRow =
   | { table: PushableHubChangeTable; id: string; destinationSpaceId: string }
   | { table: PushableHubChangeTable; id: string; project: string; reason: string }
@@ -65,6 +77,7 @@ export type TaskPushPlan = {
   unroutable: UnroutableRows[]
   stuck: StuckRow[]
   repair: RepairCandidate[]
+  unrepairable: UnrepairableRow[]
 }
 
 /** Classify one table's machine, hosted, pending, and stuck ids. Pending is in flight; stuck is not missing. */
@@ -92,14 +105,34 @@ export function compareIdentitySets(
   }
 }
 
-export function repairFieldsFor(table: PushableHubChangeTable): string[] | null {
-  if (
-    table === HOSTED_TASK_TABLE ||
-    table === HOSTED_COMMENT_TABLE ||
-    table === HOSTED_DOCUMENT_TABLE
-  )
-    return []
-  return null
+type RepairDecision =
+  | { repairable: true; fields: string[] | null }
+  | { repairable: false; reason: string }
+
+export function repairDecisionFor(table: PushableHubChangeTable): RepairDecision {
+  switch (table) {
+    case HOSTED_TASK_TABLE:
+    case HOSTED_COMMENT_TABLE:
+    case HOSTED_DOCUMENT_TABLE:
+      return { repairable: true, fields: [] }
+    case HOSTED_STATUS_EVENT_TABLE:
+    case HOSTED_INTERVAL_TABLE:
+    case HOSTED_DAY_TABLE:
+    case HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE:
+      return { repairable: true, fields: null }
+    case HOSTED_NOTE_TABLE:
+      return {
+        repairable: false,
+        reason:
+          'the hosted record assigns note numbers, so a missing note cannot be created by push',
+      }
+    default:
+      return assertNever(table)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled pushable hub table: ${value}`)
 }
 
 export function drainFailsAudit(drain: DrainAudit): boolean {
@@ -111,7 +144,8 @@ export function drainFailsAudit(drain: DrainAudit): boolean {
 }
 
 export function taskPushVerdict(plan: TaskPushPlan, drain: DrainAudit | null): boolean {
-  if (plan.unroutable.length > 0 || plan.stuck.length > 0) return false
+  if (plan.unroutable.length > 0 || plan.stuck.length > 0 || plan.unrepairable.length > 0)
+    return false
   if (plan.spaces.some((space) => space.tables.some((table) => pulledHostedOnly(table))))
     return false
   if (drain) return !drainFailsAudit(drain)
@@ -195,9 +229,28 @@ function repairCandidates(spaces: readonly SpaceAudit[]): RepairCandidate[] {
   const repair: RepairCandidate[] = []
   for (const space of spaces)
     for (const table of space.tables)
-      for (const id of table.machineOnly)
-        repair.push({ table: table.table, id, fields: repairFieldsFor(table.table) })
+      for (const id of table.machineOnly) {
+        const decision = repairDecisionFor(table.table)
+        if (decision.repairable) repair.push({ table: table.table, id, fields: decision.fields })
+      }
   return repair
+}
+
+function unrepairableRows(spaces: readonly SpaceAudit[]): UnrepairableRow[] {
+  const rows: UnrepairableRow[] = []
+  for (const space of spaces)
+    for (const table of space.tables) {
+      const decision = repairDecisionFor(table.table)
+      if (!decision.repairable)
+        for (const id of table.machineOnly)
+          rows.push({
+            table: table.table,
+            id,
+            reason: decision.reason,
+            remedy: `inspect with \`hub note list --json\` and find record_id ${id}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+          })
+    }
+  return rows
 }
 
 export function planTaskPushAudit(input: {
@@ -226,5 +279,6 @@ export function planTaskPushAudit(input: {
     unroutable: unroutableRows(input.machine),
     stuck: stuckRows(input.outbox, new Set(input.tables)),
     repair: repairCandidates(spaces),
+    unrepairable: unrepairableRows(spaces),
   }
 }

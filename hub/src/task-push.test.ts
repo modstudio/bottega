@@ -11,6 +11,8 @@ import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   PUSHABLE_HUB_CHANGE_TABLES,
@@ -27,6 +29,8 @@ const taskB = '01990000-0000-7000-8000-000000008512'
 const missingHosted = '01990000-0000-7000-8000-000000008513'
 const hostedOnly = '01990000-0000-7000-8000-000000008514'
 const inFlightId = '01990000-0000-7000-8000-000000008515'
+const noteId = '01990000-0000-7000-8000-000000008517'
+const acknowledgementId = '01990000-0000-7000-8000-000000008518'
 const pageIds = [
   '01990000-0000-7000-8000-000000008521',
   '01990000-0000-7000-8000-000000008522',
@@ -143,10 +147,13 @@ beforeEach(async () => {
       DELETE FROM hub_task_comment;
       DELETE FROM hub_task_document;
       DELETE FROM hub_task_status_event;
+      DELETE FROM hub_note_acknowledgement;
+      DELETE FROM hub_note;
       DELETE FROM hub_interval;
       DELETE FROM hub_day;
     `)
   }
+
   await database.exec(`
     RESET ROLE;
     SET ROLE ${RECORD_ACTOR_ROLE};
@@ -155,6 +162,49 @@ beforeEach(async () => {
     SELECT set_config('app.space_ids','${spaceA}',false);
   `)
 })
+
+function insertMachineNote(id: string) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO note
+          (record_id,number,project,text,anchors,sightings,created_at,last_seen_at)
+         VALUES (?,1,'workshop','note','[]',1,?,?)`,
+      )
+      .run(id, at, at)
+  })
+}
+
+function insertMachineAcknowledgement(id: string, selectedNoteId = noteId) {
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO note_acknowledgement
+          (record_id,note_record_id,session_id,acknowledged_at,sightings)
+         VALUES (?,?,'session',?,1)`,
+      )
+      .run(id, selectedNoteId, at)
+  })
+}
+
+async function insertHostedNote(id: string) {
+  await database.query(
+    `INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,
+       updated_at)
+     VALUES ($1,$2,'workshop',1,'workshop','note','[]',1,$3,$3,$3)`,
+    [id, spaceA, at],
+  )
+}
+
+async function insertHostedAcknowledgement(id: string, selectedNoteId = noteId) {
+  await database.query(
+    `INSERT INTO hub_note_acknowledgement
+      (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
+     VALUES ($1,$2,'workshop',$3,'session',$4,1,$4,$4)`,
+    [id, spaceA, selectedNoteId, at],
+  )
+}
 
 afterAll(async () => {
   if (database) await database.close()
@@ -194,6 +244,58 @@ test('task push reports nothing missing when the sides agree', async () => {
   expect(tasks).toMatchObject({ both: 1, machineOnly: [], hostedOnly: [], inFlight: [] })
   expect(report.ok).toBeTrue()
   expect(report.drain).toBeNull()
+})
+
+test('note and acknowledgement rows that agree are counted under both', async () => {
+  insertMachineNote(noteId)
+  insertMachineAcknowledgement(acknowledgementId)
+  await insertHostedNote(noteId)
+  await insertHostedAcknowledgement(acknowledgementId)
+  const report = await runPush()
+  const tables = report.spaces.find((space) => space.spaceId === spaceA)?.tables
+  expect(tables?.find((table) => table.table === HOSTED_NOTE_TABLE)).toMatchObject({
+    both: 1,
+    machineOnly: [],
+    hostedOnly: [],
+  })
+  expect(tables?.find((table) => table.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)).toMatchObject({
+    both: 1,
+    machineOnly: [],
+    hostedOnly: [],
+  })
+  expect(report.ok).toBeTrue()
+})
+
+test('a machine-only note is reported as unrepairable and repair queues nothing for it', async () => {
+  insertMachineNote(noteId)
+  const report = await runPush(true)
+  expect(report.unrepairable).toEqual([
+    {
+      table: HOSTED_NOTE_TABLE,
+      id: noteId,
+      reason: 'the hosted record assigns note numbers, so a missing note cannot be created by push',
+      remedy: `inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+    },
+  ])
+  expect(report.drain?.queued).toBe(0)
+  expect(listHostedOutbox()).toEqual([])
+  expect(formatTaskPushReport(report)).toContain(
+    `unrepairable ${HOSTED_NOTE_TABLE} ${noteId} the hosted record assigns note numbers, so a missing note cannot be created by push\n` +
+      `  remedy: inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+  )
+  expect(report.ok).toBeFalse()
+})
+
+test('a machine-only acknowledgement is queued and restored by repair', async () => {
+  insertMachineNote(noteId)
+  insertMachineAcknowledgement(acknowledgementId)
+  await insertHostedNote(noteId)
+  const report = await runPush(true)
+  expect(report.drain?.sent).toBe(1)
+  expect(report.unrepairable).toEqual([])
+  expect(listHostedOutbox()).toEqual([])
+  expect((await listIds(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)).ids).toContain(acknowledgementId)
+  expect(report.ok).toBeTrue()
 })
 
 test('a hosted delete is only-on-machine and --repair restores it through the outbox', async () => {

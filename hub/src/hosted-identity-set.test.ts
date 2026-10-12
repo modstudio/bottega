@@ -15,6 +15,8 @@ const pageOne = '01990000-0000-7000-8000-000000008421'
 const pageTwo = '01990000-0000-7000-8000-000000008422'
 const pageThree = '01990000-0000-7000-8000-000000008423'
 const intervalId = '01990000-0000-7000-8000-000000008431'
+const deletedNote = '01990000-0000-7000-8000-000000008432'
+const deletedAcknowledgement = '01990000-0000-7000-8000-000000008433'
 const identityA = { userId, spaceId: spaceA }
 const identityB = { userId, spaceId: spaceB }
 
@@ -45,6 +47,12 @@ beforeAll(async () => {
       ('${deletedA}','${spaceA}','workshop','DEV-del','workshop','gone','local',now(),now(),now(),now(),now());
     INSERT INTO hub_interval (id,space_id,source,start_at,end_at,ref,updated_at)
     VALUES ('${intervalId}','${spaceA}','orch',now(),now(),'orch:841',now());
+    INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at,deleted_at)
+    VALUES ('${deletedNote}','${spaceA}','workshop',1,'workshop','gone','[]',1,now(),now(),now(),now());
+    INSERT INTO hub_note_acknowledgement
+      (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
+    VALUES ('${deletedAcknowledgement}','${spaceA}','workshop','${deletedNote}','session',now(),1,now(),now(),now());
     SELECT set_config('app.space_id','${spaceB}',false);
     SELECT set_config('app.space_ids','${spaceB}',false);
     INSERT INTO hub_task
@@ -108,4 +116,13 @@ test('identity set lists live ids ordered, pages, and stays in the requested spa
     limit: 50,
   })
   expect(intervals.ids).toEqual([intervalId])
+
+  const notes = await read(identityA, { table: 'hub_note', after: null, limit: 50 })
+  expect(notes.ids).not.toContain(deletedNote)
+  const acknowledgements = await read(identityA, {
+    table: 'hub_note_acknowledgement',
+    after: null,
+    limit: 50,
+  })
+  expect(acknowledgements.ids).not.toContain(deletedAcknowledgement)
 })

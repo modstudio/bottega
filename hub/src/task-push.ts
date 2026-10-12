@@ -4,14 +4,16 @@ import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from '.
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
+  HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
 } from './push-contract.ts'
-import { isHostedTaskChangeTable } from './task-cache.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -35,6 +37,7 @@ import {
   type SpaceAudit,
   type StuckRow,
   taskPushVerdict,
+  type UnrepairableRow,
   type UnroutableRows,
 } from './task-push-plan.ts'
 
@@ -56,49 +59,89 @@ export type TaskPushReport = {
   spaces: SpaceAudit[]
   unroutable: UnroutableRows[]
   stuck: StuckRow[]
+  unrepairable: UnrepairableRow[]
   drain: HostedOutboxReport | null
   ok: boolean
 }
 
 function machineRowsFor(table: PushableHubChangeTable): MachineRow[] {
-  if (table === HOSTED_TASK_TABLE)
-    return db()
-      .query<MachineRow, []>(
-        `SELECT record_id id, project project_name FROM task WHERE record_id IS NOT NULL`,
-      )
-      .all()
-  if (table === HOSTED_COMMENT_TABLE)
-    return db()
-      .query<MachineRow, []>(
-        `SELECT c.record_id id, t.project project_name FROM task_comment c
+  switch (table) {
+    case HOSTED_TASK_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT record_id id, project project_name FROM task WHERE record_id IS NOT NULL`,
+        )
+        .all()
+    case HOSTED_COMMENT_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT c.record_id id, t.project project_name FROM task_comment c
          JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id IS NOT NULL`,
-      )
-      .all()
-  if (table === HOSTED_DOCUMENT_TABLE)
-    return db()
-      .query<MachineRow, []>(
-        `SELECT d.record_id id, t.project project_name FROM task_document d
+        )
+        .all()
+    case HOSTED_DOCUMENT_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT d.record_id id, t.project project_name FROM task_document d
          JOIN task t ON t.record_id=d.task_record_id WHERE d.record_id IS NOT NULL`,
-      )
-      .all()
-  if (table === HOSTED_STATUS_EVENT_TABLE)
-    return db()
-      .query<MachineRow, []>(
-        `SELECT e.record_id id, t.project project_name FROM task_status_event e
+        )
+        .all()
+    case HOSTED_STATUS_EVENT_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT e.record_id id, t.project project_name FROM task_status_event e
          JOIN task t ON t.record_id=e.task_record_id WHERE e.record_id IS NOT NULL`,
-      )
-      .all()
-  if (table === HOSTED_INTERVAL_TABLE)
-    return db()
-      .query<MachineRow, []>(
-        `SELECT record_id id, project project_name FROM interval WHERE record_id IS NOT NULL`,
-      )
-      .all()
-  return db()
-    .query<MachineRow, []>(
-      `SELECT record_id id, NULL project_name FROM day WHERE record_id IS NOT NULL`,
-    )
-    .all()
+        )
+        .all()
+    case HOSTED_INTERVAL_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT record_id id, project project_name FROM interval WHERE record_id IS NOT NULL`,
+        )
+        .all()
+    case HOSTED_DAY_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT record_id id, NULL project_name FROM day WHERE record_id IS NOT NULL`,
+        )
+        .all()
+    case HOSTED_NOTE_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT record_id id, project project_name FROM note WHERE record_id IS NOT NULL`,
+        )
+        .all()
+    case HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE:
+      return db()
+        .query<MachineRow, []>(
+          `SELECT a.record_id id, n.project project_name FROM note_acknowledgement a
+           JOIN note n ON n.record_id=a.note_record_id WHERE a.record_id IS NOT NULL`,
+        )
+        .all()
+    default:
+      return assertNever(table)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled pushable hub table: ${value}`)
+}
+
+function machinePullsTable(table: PushableHubChangeTable): boolean {
+  switch (table) {
+    case HOSTED_TASK_TABLE:
+    case HOSTED_COMMENT_TABLE:
+    case HOSTED_DOCUMENT_TABLE:
+    case HOSTED_STATUS_EVENT_TABLE:
+    case HOSTED_NOTE_TABLE:
+    case HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE:
+      return true
+    case HOSTED_INTERVAL_TABLE:
+    case HOSTED_DAY_TABLE:
+      return false
+    default:
+      return assertNever(table)
+  }
 }
 
 function outboxEntries(): AuditOutboxEntry[] {
@@ -206,13 +249,14 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
     machine,
     hosted: await hostedTableIds(spaces, options.listIds ?? hostedIdentitySet, requestOptions),
     outbox: outboxEntries(),
-    pulledTables: new Set(PUSHABLE_HUB_CHANGE_TABLES.filter(isHostedTaskChangeTable)),
+    pulledTables: new Set(PUSHABLE_HUB_CHANGE_TABLES.filter(machinePullsTable)),
   })
   if (!options.repair)
     return {
       spaces: plan.spaces,
       unroutable: plan.unroutable,
       stuck: plan.stuck,
+      unrepairable: plan.unrepairable,
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
@@ -227,6 +271,7 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
     spaces: plan.spaces,
     unroutable: plan.unroutable,
     stuck: plan.stuck,
+    unrepairable: plan.unrepairable,
     drain,
     ok: taskPushVerdict(plan, drainAudit(drain)),
   }
@@ -260,6 +305,13 @@ function drainFailureLines(drain: HostedOutboxReport): string[] {
     .join(',')
   if (hosted) lines.push(`repair drain left rows waiting: table not accepted ${hosted}`)
   return lines
+}
+
+function unrepairableLines(rows: readonly UnrepairableRow[]): string[] {
+  return rows.flatMap((row) => [
+    `unrepairable ${row.table} ${row.id} ${row.reason}`,
+    `  remedy: ${row.remedy}`,
+  ])
 }
 
 export function formatTaskPushReport(report: TaskPushReport): string {
@@ -314,6 +366,7 @@ export function formatTaskPushReport(report: TaskPushReport): string {
     lines.push(`unroutable ${row.project} ${row.reason} ${row.table}`)
     for (const id of row.ids) lines.push(`  ${id}`)
   }
+  lines.push(...unrepairableLines(report.unrepairable))
   if (report.drain) {
     lines.push(
       `drain queued=${report.drain.queued} sent=${report.drain.sent} rejected=${report.drain.rejected} quarantined=${report.drain.quarantined}`,
