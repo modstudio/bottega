@@ -601,6 +601,12 @@ test('comment and document pushes apply their route effects and deduplicate dele
   expect(
     (await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows,
   ).toEqual([{ body: 'offline' }])
+  const taskAfterComment = (
+    await database.query<{ updated_at: Date }>(`SELECT updated_at FROM hub_task WHERE id=$1`, [
+      taskId,
+    ])
+  ).rows[0]!
+  expect(taskAfterComment.updated_at.toISOString()).toBe(at)
 
   const documentId = '01990000-0000-7000-8000-000000001302'
   const document: HostedPushChange = {
