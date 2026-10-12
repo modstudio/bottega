@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../shared/brand'
 import { inspectionGitEnv } from '../shared/git'
 import { ratchetDecision } from '../shared/ratchet'
 import { concernStateDirectory } from '../shared/state-directory'
@@ -34,7 +35,7 @@ const BASE_CONFIG_NAMES = ['knip.jsonc', 'knip.production.jsonc'] as const
 const CACHE_DIRECTORY = join(
   concernStateDirectory('orchestrator', process.env),
   'quality-reports',
-  'bottega',
+  PLATFORM_SLUG,
   'dead-code',
 )
 const KNIP_TIMEOUT_MS = 120_000
@@ -206,7 +207,7 @@ function writeCache(path: string, findings: DeadCodeFinding[]) {
 }
 
 function copyBase(commit: string) {
-  const directory = mkdtempSync(join(tmpdir(), 'bottega-dead-code-'))
+  const directory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-dead-code-`))
   const archive = join(directory, 'base.tar')
   const tree = join(directory, 'tree')
   mkdirSync(tree)
