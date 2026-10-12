@@ -27,12 +27,23 @@ const hosted = {
     const key = decodeURIComponent(url.pathname.split('/')[3] ?? '')
     if (url.pathname === '/v1/tasks/identity')
       return Response.json({
-        userId: 'user-1', activeSpaceId: 'declared-gamma-space',
+        userId: 'user-1',
+        activeSpaceId: 'declared-gamma-space',
         memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
-        capabilities: { spacePush: true, spacePushTables: ['hub_task', 'hub_task_comment', 'hub_task_document', 'hub_task_status_event'] },
+        capabilities: {
+          spacePush: true,
+          spacePushTables: [
+            'hub_task',
+            'hub_task_comment',
+            'hub_task_document',
+            'hub_task_status_event',
+          ],
+        },
       })
     if (url.pathname === '/v1/changes')
-      return Response.json((body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })))
+      return Response.json(
+        (body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })),
+      )
     if (url.pathname === '/v1/tasks') {
       const project = body.project as string
       const prefixes: Record<string, string> = {
@@ -389,7 +400,6 @@ describe('declared project space task writes', () => {
     const fetch = async (input: string, init?: RequestInit) => {
       const url = new URL(input)
       const method = init?.method ?? 'GET'
-      const body = init?.body ? JSON.parse(String(init.body)) : {}
       requests.push({
         method,
         pathname: url.pathname,

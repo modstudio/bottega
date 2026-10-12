@@ -123,7 +123,8 @@ describe('task documents', () => {
             requests.push({ method: init?.method, pathname: url.pathname })
             if (url.pathname === '/v1/tasks/identity')
               return Response.json({
-                userId: 'user-1', activeSpaceId: 'space-a',
+                userId: 'user-1',
+                activeSpaceId: 'space-a',
                 memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
                 capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
               })
@@ -173,12 +174,15 @@ describe('task documents', () => {
       })
       if (url.pathname === '/v1/tasks/identity')
         return Response.json({
-          userId: 'user-1', activeSpaceId: 'declared-gamma-space',
+          userId: 'user-1',
+          activeSpaceId: 'declared-gamma-space',
           memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
           capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
         })
       if (url.pathname === '/v1/changes')
-        return Response.json((body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })))
+        return Response.json(
+          (body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })),
+        )
       if (method === 'POST') {
         const at = new Date().toISOString()
         return Response.json({

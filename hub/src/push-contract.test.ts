@@ -47,3 +47,13 @@ test('task push validation accepts the mirror row and rejects every non-string e
     expect('outcome' in parsed ? parsed.outcome.reason : null).toContain(`row.${field}`)
   }
 })
+
+test('field lists accept only the update vocabulary for their table', () => {
+  expect(parseHostedPushItem({ ...task, fields: ['title', 'status', 'title'] })).toEqual({
+    input: { ...task, fields: ['title', 'status'] },
+  })
+  for (const fields of [['created_at'], ['unknown'], 'title']) {
+    const parsed = parseHostedPushItem({ ...task, fields })
+    expect('outcome' in parsed ? parsed.outcome.reason : null).toContain('fields')
+  }
+})

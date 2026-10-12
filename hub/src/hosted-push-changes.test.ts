@@ -373,43 +373,80 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
     last_seen: '2026-10-11T14:00:00.000Z',
   }
   const change: HostedPushChange = {
-    table: 'hub_task', id: taskId, op: 'upsert', row: offlineStatus,
+    table: 'hub_task',
+    id: taskId,
+    op: 'upsert',
+    row: offlineStatus,
     fields: ['status', 'status_category'],
   }
   expect(await apply([change])).toEqual([{ id: taskId, status: 'applied' }])
   expect(await apply([change])).toEqual([{ id: taskId, status: 'duplicate' }])
-  expect((await database.query(`SELECT title,status FROM hub_task WHERE id=$1`, [taskId])).rows).toEqual([
-    { title: 'Other writer title', status: 'done' },
-  ])
+  expect(
+    (await database.query(`SELECT title,status FROM hub_task WHERE id=$1`, [taskId])).rows,
+  ).toEqual([{ title: 'Other writer title', status: 'done' }])
 
   const absentId = '01990000-0000-7000-8000-000000001299'
   const absent = { ...taskRow(absentId, 'DEV-99', 'local'), title: 'Whole insert', body: 'kept' }
-  expect(await apply([{ table: 'hub_task', id: absentId, op: 'upsert', row: absent, fields: ['title'] }])).toEqual([
-    { id: absentId, status: 'applied' },
-  ])
-  expect((await database.query(`SELECT title,body FROM hub_task WHERE id=$1`, [absentId])).rows).toEqual([
-    { title: 'Whole insert', body: 'kept' },
-  ])
+  expect(
+    await apply([
+      { table: 'hub_task', id: absentId, op: 'upsert', row: absent, fields: ['title'] },
+    ]),
+  ).toEqual([{ id: absentId, status: 'applied' }])
+  expect(
+    (await database.query(`SELECT title,body FROM hub_task WHERE id=$1`, [absentId])).rows,
+  ).toEqual([{ title: 'Whole insert', body: 'kept' }])
 })
 
 test('comment and document pushes apply their route effects and deduplicate deletes', async () => {
   const commentId = '01990000-0000-7000-8000-000000001301'
   const at = '2026-10-11T15:00:00.000Z'
   const comment: HostedPushChange = {
-    table: 'hub_task_comment', id: commentId, op: 'upsert',
-    row: { id: commentId, task_key: 'DEV-1', task_id: taskId, project_name: 'workshop', body: 'offline', created_at: at, updated_at: at, deleted_at: null },
+    table: 'hub_task_comment',
+    id: commentId,
+    op: 'upsert',
+    row: {
+      id: commentId,
+      task_key: 'DEV-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      body: 'offline',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
   }
   expect(await apply([comment])).toEqual([{ id: commentId, status: 'applied' }])
   expect(await apply([comment])).toEqual([{ id: commentId, status: 'duplicate' }])
-  expect((await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows).toEqual([{ body: 'offline' }])
+  expect(
+    (await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows,
+  ).toEqual([{ body: 'offline' }])
 
   const documentId = '01990000-0000-7000-8000-000000001302'
   const document: HostedPushChange = {
-    table: 'hub_task_document', id: documentId, op: 'upsert',
-    row: { id: documentId, task_key: 'DEV-1', task_id: taskId, project_name: 'workshop', number: 1, role: null, title: 'offline', body: 'body', version: 'v1', created_at: at, updated_at: at, deleted_at: null },
+    table: 'hub_task_document',
+    id: documentId,
+    op: 'upsert',
+    row: {
+      id: documentId,
+      task_key: 'DEV-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      number: 1,
+      role: null,
+      title: 'offline',
+      body: 'body',
+      version: 'v1',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
   }
   expect(await apply([document])).toEqual([{ id: documentId, status: 'applied' }])
   expect(await apply([document])).toEqual([{ id: documentId, status: 'duplicate' }])
-  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([{ id: documentId, status: 'applied' }])
-  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([{ id: documentId, status: 'duplicate' }])
+  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
+    { id: documentId, status: 'applied' },
+  ])
+  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
+    { id: documentId, status: 'duplicate' },
+  ])
 })
