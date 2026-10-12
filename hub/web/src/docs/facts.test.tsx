@@ -23,13 +23,14 @@ function renderFacts(signedIn: boolean, source: DocsSource) {
   const queryClient = new QueryClient()
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <DocsFacts doc={doc} headings={[]} signedIn={signedIn} source={source} />
+      <DocsFacts doc={doc} headings={[]} signedIn={signedIn} source={source} audience={null} />
     </QueryClientProvider>,
   )
 }
 
-test('history is available only to signed-in readers of local docs', () => {
+test('history is available only to signed-in readers of private docs', () => {
   expect(renderFacts(true, 'local')).toContain('History')
   expect(renderFacts(false, 'local')).not.toContain('History')
-  expect(renderFacts(true, 'hosted')).not.toContain('History')
+  expect(renderFacts(true, 'hosted')).toContain('History')
+  expect(renderFacts(false, 'hosted')).not.toContain('History')
 })

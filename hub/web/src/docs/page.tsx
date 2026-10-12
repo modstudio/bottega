@@ -7,6 +7,7 @@ import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
+import { canEditHostedDoc } from './edit-permission.ts'
 import {
   chooserProject,
   EMPTY_FILTERS,
@@ -85,11 +86,11 @@ export function DocsPage() {
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected, selectedAudience(filters))
   const revisionId =
-    source === 'local' && search?.revision !== undefined ? String(search.revision) : undefined
+    source !== 'public' && search?.revision !== undefined ? String(search.revision) : undefined
   useEffect(() => {
     if (!revisionId) setRevisionMode('version')
   }, [revisionId])
-  const revision = useRevisionView(reading.document, revisionId, selectedAudience(filters))
+  const revision = useRevisionView(source, reading.document, revisionId, selectedAudience(filters))
   const replacement = useMemo(
     () => resolveDocsReplacement(reading.document, catalog.items),
     [reading.document, catalog.items],
@@ -114,9 +115,10 @@ export function DocsPage() {
   const openFirst = useCallback((item: DocsTreeItem) => open(item, true), [open])
   const locationFor = useCallback((item: DocsTreeItem) => docsLocation(item, source), [source])
   const openRevision = useCallback(
-    (id: number) => {
+    (id: number | string) => {
       if (!selected) return
-      void navigate({ ...docsLocation(selected, source), search: { revision: id } })
+      const location = docsLocation(selected, source)
+      void navigate({ ...location, search: { ...location.search, revision: id } })
     },
     [navigate, selected, source],
   )
@@ -202,7 +204,10 @@ export function DocsPage() {
           ) : null
         }
         headerAction={
-          source === 'local' && selected ? (
+          selected &&
+          (source === 'local' ||
+            (source === 'hosted' &&
+              canEditHostedDoc(whoami.data?.memberships, selected.spaceId))) ? (
             <Button
               size="sm"
               variant="secondary"
@@ -214,7 +219,10 @@ export function DocsPage() {
                     subject: selected.subject ?? '_',
                     slug: selected.slug,
                   },
-                  search: { edit: true },
+                  search: {
+                    edit: true,
+                    ...(source === 'hosted' ? { id: selected.id } : {}),
+                  },
                 })
               }
             >

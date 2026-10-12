@@ -6,7 +6,7 @@ import { type DocAudience, type DocKind, type DocStatus, docSummary } from '../.
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { RecordDocError } from './record-doc-errors.ts'
-import { type RecordDoc, recordDocRow } from './record-doc-mapping.ts'
+import { type RecordDoc, type RecordDocRevision, recordDocRow } from './record-doc-mapping.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -104,4 +104,16 @@ export async function getRecordDoc(
     if (refusal) throw new RecordDocError(refusal)
     return { ...doc, body: docBodyForAudience(doc.body, input.audience) }
   })
+}
+
+/** Apply the current-document audience contract to a saved revision. */
+export function recordDocRevisionForAudience(
+  revision: RecordDocRevision,
+  audience?: DocAudience,
+): RecordDocRevision {
+  if (!audience) return revision
+  const address = `${revision.scope}/${revision.subject ?? '_'}/${revision.slug}`
+  const refusal = docAudienceRefusal(address, revision.audiences, audience)
+  if (refusal) throw new RecordDocError(refusal)
+  return { ...revision, body: docBodyForAudience(revision.body, audience) }
 }

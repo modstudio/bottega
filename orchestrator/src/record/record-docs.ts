@@ -2,7 +2,13 @@
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
-import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocAudience,
+  DocAudiences,
+  DocForm,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -48,6 +54,7 @@ import {
   recordDocRevisionIdentityRefusal,
   recordDocRevisionRow,
 } from './record-doc-mapping.ts'
+import { recordDocRevisionForAudience } from './record-doc-read.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   existingDocAtAddress,
@@ -116,7 +123,7 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
 }
 
 export async function listRecordDocRevisions(
-  input: Tenant & { id: string },
+  input: Tenant & { id: string; audience?: DocAudience },
 ): Promise<RecordDocRevision[] | null> {
   return tenant(input, async (tx) => {
     const docs = await tx`SELECT id,space_id FROM doc WHERE id=${input.id}::uuid`
@@ -128,7 +135,9 @@ export async function listRecordDocRevisions(
       WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
     `
-    return rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row))
+    return rows.map((row: Record<string, unknown>) =>
+      recordDocRevisionForAudience(recordDocRevisionRow(row), input.audience),
+    )
   })
 }
 

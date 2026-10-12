@@ -9,14 +9,14 @@ import type { DocScope } from '../../../../shared/docs.ts'
 import { readingBody } from './body.ts'
 import { savedVersionAuthor } from './reading.tsx'
 import { revisionComparison, shapeRevisionDiff } from './revision-diff.ts'
-import type { DocsAudience, DocsDoc } from './types.ts'
+import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
 
 export type RevisionMode = 'diff' | 'version'
 
 export function revisionViewError(input: {
   param: string | undefined
-  id: number | null
-  historyIds: readonly number[] | undefined
+  id: number | string | null
+  historyIds: readonly (number | string)[] | undefined
   readFailed: boolean
 }): string | null {
   if (!input.param) return null
@@ -29,6 +29,22 @@ export function revisionViewError(input: {
   return null
 }
 
+export function revisionIdForSource(
+  source: DocsSource,
+  revisionParam: string | undefined,
+): number | string | null {
+  if (!revisionParam) return null
+  if (source === 'local') return /^\d+$/.test(revisionParam) ? Number(revisionParam) : null
+  if (source === 'hosted') {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      revisionParam,
+    )
+      ? revisionParam
+      : null
+  }
+  return null
+}
+
 function savedAt(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -36,56 +52,87 @@ function savedAt(value: string): string {
 }
 
 export function useRevisionView(
+  source: DocsSource,
   doc: DocsDoc | null,
   revisionParam: string | undefined,
   audience: DocsAudience | null,
 ) {
-  const revisionId = revisionParam && /^\d+$/.test(revisionParam) ? Number(revisionParam) : null
+  const revisionId = revisionIdForSource(source, revisionParam)
   const address = {
     scope: (doc?.scope ?? 'global') as DocScope,
     subject: doc?.subject ?? null,
     slug: doc?.slug ?? '',
   }
-  const history = useQuery({
+  const localHistory = useQuery({
     ...trpc.doc.history.queryOptions(address),
-    enabled: Boolean(doc && revisionParam),
+    enabled: source === 'local' && Boolean(doc && revisionParam),
+  })
+  const hostedHistory = useQuery({
+    ...trpc.record.docRevisions.queryOptions({
+      id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
+      audience: audience ?? undefined,
+    }),
+    enabled: source === 'hosted' && Boolean(doc && revisionParam),
   })
   const selected = useQuery({
     ...trpc.doc.revision.queryOptions({
       ...address,
-      revisionId: revisionId ?? 1,
+      revisionId: typeof revisionId === 'number' ? revisionId : 1,
       audience: audience ?? undefined,
     }),
-    enabled: Boolean(doc && revisionId),
+    enabled: source === 'local' && Boolean(doc && revisionId),
   })
-  const comparison = revisionId
-    ? revisionComparison(
-        (history.data ?? []).map(({ id }) => id),
-        revisionId,
-      )
-    : null
+  const comparison =
+    typeof revisionId === 'number'
+      ? revisionComparison(
+          (localHistory.data ?? []).map(({ id }) => id),
+          revisionId,
+        )
+      : null
   const newer = useQuery({
     ...trpc.doc.revision.queryOptions({
       ...address,
       revisionId: comparison?.kind === 'revision' ? comparison.id : 1,
       audience: audience ?? undefined,
     }),
-    enabled: Boolean(doc && revisionParam && comparison?.kind === 'revision'),
+    enabled: source === 'local' && Boolean(doc && revisionParam && comparison?.kind === 'revision'),
   })
+  const hostedRevisions = hostedHistory.data?.items
+  const hostedIndex =
+    typeof revisionId === 'string'
+      ? (hostedRevisions?.findIndex(({ id }) => id === revisionId) ?? -1)
+      : -1
+  const hostedSelected = hostedIndex >= 0 ? hostedRevisions?.[hostedIndex] : undefined
+  const hostedReplacementBody =
+    hostedIndex === 0
+      ? (doc?.body ?? null)
+      : hostedIndex > 0
+        ? (hostedRevisions?.[hostedIndex - 1]?.body ?? null)
+        : null
+  const historyIds =
+    source === 'hosted'
+      ? hostedRevisions?.map(({ id }) => id)
+      : localHistory.data?.map(({ id }) => id)
   const error = revisionViewError({
     param: revisionParam,
     id: revisionId,
-    historyIds: history.data?.map(({ id }) => id),
-    readFailed: Boolean(selected.error || history.error || newer.error),
+    historyIds,
+    readFailed: Boolean(
+      source === 'hosted'
+        ? hostedHistory.error
+        : selected.error || localHistory.error || newer.error,
+    ),
   })
   return {
-    revision: selected.data ?? null,
+    revision: source === 'hosted' ? (hostedSelected ?? null) : (selected.data ?? null),
     replacementBody:
-      comparison?.kind === 'current'
-        ? (doc?.body ?? null)
-        : comparison?.kind === 'revision'
-          ? (newer.data?.body ?? null)
-          : null,
+      source === 'hosted'
+        ? hostedReplacementBody
+        : comparison?.kind === 'current'
+          ? (doc?.body ?? null)
+          : comparison?.kind === 'revision'
+            ? (newer.data?.body ?? null)
+            : null,
     error,
   }
 }

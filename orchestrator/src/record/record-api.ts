@@ -118,7 +118,9 @@ type RecordApiDeps = {
   searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
   searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
   readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
-  listDocRevisions(input: Tenant & { id: string }): Promise<RecordDocRevision[] | null>
+  listDocRevisions(
+    input: Tenant & { id: string; audience?: DocAudience },
+  ): Promise<RecordDocRevision[] | null>
   upsertDoc(
     input: Tenant & {
       scope: string
@@ -796,8 +798,18 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
-    const items = await deps.listDocRevisions({ ...tenant, id: id.data })
-    return items ? context.json({ items }) : context.json({ error: 'doc not found' }, 404)
+    const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
+    if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
+    try {
+      const items = await deps.listDocRevisions({
+        ...tenant,
+        id: id.data,
+        audience: audience.data,
+      })
+      return items ? context.json({ items }) : context.json({ error: 'doc not found' }, 404)
+    } catch (error) {
+      return writeError(context, error)
+    }
   })
   app.put('/v1/docs', async (context) => {
     const tenant = scope(context)

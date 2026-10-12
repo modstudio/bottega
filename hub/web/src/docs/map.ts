@@ -56,6 +56,7 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
   const subject = row.subject == null ? null : String(row.subject)
   return {
     id: String(row.id),
+    ...(typeof row.spaceId === 'string' ? { spaceId: row.spaceId } : {}),
     slug: String(row.slug ?? ''),
     title: String(row.title ?? ''),
     parentId: row.parentId == null ? null : String(row.parentId),

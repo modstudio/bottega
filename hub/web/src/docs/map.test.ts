@@ -38,6 +38,7 @@ test('the mapping carries article fields', () => {
 test('record-shaped docs map onto the shared tree item and keep delivery', () => {
   const mapped = mapTreeItem({
     id: '00000000-0000-4000-8000-000000000001',
+    spaceId: '00000000-0000-4000-8000-000000000002',
     slug: 'first-run',
     title: 'Your first run',
     parentId: null,
@@ -54,6 +55,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
   })
   expect(mapped).toEqual({
     id: '00000000-0000-4000-8000-000000000001',
+    spaceId: '00000000-0000-4000-8000-000000000002',
     slug: 'first-run',
     title: 'Your first run',
     parentId: null,

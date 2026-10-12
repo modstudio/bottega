@@ -52,7 +52,7 @@ export type DocsViewProps = {
   loading?: boolean
   error?: string | null
   revisionId?: string
-  onRevision?: (id: number) => void
+  onRevision?: (id: number | string) => void
   bodyView?: ReactNode
   viewedRevision?: { title: string; body: string } | null
 }
@@ -423,6 +423,7 @@ export function DocsView({
             headings={visible ? model.headings : []}
             signedIn={signedIn}
             source={source}
+            audience={selectedAudience(model.stale)}
             revisionId={revisionId}
             onRevision={onRevision}
           />
