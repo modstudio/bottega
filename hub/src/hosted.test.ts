@@ -63,6 +63,7 @@ describe('hostedRouter', () => {
       'record.measurePeople',
       'record.measures',
       'record.notes',
+      'record.projectReleases',
       'record.projects',
       'record.ratio',
       'record.removeReportSubscription',

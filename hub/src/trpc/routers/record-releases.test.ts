@@ -47,14 +47,14 @@ describe('hosted project releases procedure', () => {
       }
       return Response.json({ items: [release], nextCursor: 'next-page' })
     })
-    expect(await api.projectReleases({ project: 'bottega', limit: 10 })).toEqual({
+    expect(await api.projectReleases({ project: 'project-one', limit: 10 })).toEqual({
       history: { items: [release], nextCursor: 'next-page' },
       latest: { items: [{ rung: 'production', lastGood: release, latestAttempt: null }] },
     })
     expect(urls.sort()).toEqual(
       [
-        'https://record.example.test/v1/releases?project=bottega&limit=10',
-        'https://record.example.test/v1/releases/latest?project=bottega',
+        'https://record.example.test/v1/releases?project=project-one&limit=10',
+        'https://record.example.test/v1/releases/latest?project=project-one',
       ].sort(),
     )
   })
@@ -66,7 +66,7 @@ describe('hosted project releases procedure', () => {
         { status: 401 },
       ),
     )
-    await expect(api.projectReleases({ project: 'bottega' })).rejects.toMatchObject({
+    await expect(api.projectReleases({ project: 'project-one' })).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
       message: 'run `orch record login`',
     })

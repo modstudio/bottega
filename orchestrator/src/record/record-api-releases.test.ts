@@ -52,18 +52,18 @@ describe('record release API', () => {
         return input.before ? [second] : [first, second]
       },
     })
-    const page = await app.request('/v1/releases?project=bottega&limit=1')
+    const page = await app.request('/v1/releases?project=project-one&limit=1')
     expect(page.status).toBe(200)
     const body = (await page.json()) as { items: unknown[]; nextCursor: string }
     expect(body.items).toEqual([first])
     expect(body.nextCursor).toBeString()
     const next = await app.request(
-      `/v1/releases?project=bottega&limit=1&before=${encodeURIComponent(body.nextCursor)}`,
+      `/v1/releases?project=project-one&limit=1&before=${encodeURIComponent(body.nextCursor)}`,
     )
     expect(await next.json()).toEqual({ items: [second], nextCursor: null })
     expect(calls).toEqual([
-      { project: 'bottega', before: null },
-      { project: 'bottega', before: { at: first.startedAt, id: first.id } },
+      { project: 'project-one', before: null },
+      { project: 'project-one', before: { at: first.startedAt, id: first.id } },
     ])
   })
 
@@ -77,10 +77,10 @@ describe('record release API', () => {
   test('returns the latest release reading and refuses a missing session', async () => {
     const latest = [{ rung: 'production', lastGood: first, latestAttempt: null }]
     const app = appWith(identity, { readLatestReleases: async () => latest })
-    expect(await (await app.request('/v1/releases/latest?project=bottega')).json()).toEqual({
+    expect(await (await app.request('/v1/releases/latest?project=project-one')).json()).toEqual({
       items: latest,
     })
-    const refused = await appWith(null).request('/v1/releases?project=bottega')
+    const refused = await appWith(null).request('/v1/releases?project=project-one')
     expect(refused.status).toBe(401)
     expect(await refused.json()).toMatchObject({ error: 'record authentication required' })
   })
