@@ -119,7 +119,7 @@ export function renderContinuationFindings(
   })
   return (
     `REVIEW FINDINGS\n\n${items.join('\n\n')}\n\n` +
-    `ARCHITECT MESSAGE\n\n${architectMessage ?? ''}\n\n` +
+    (architectMessage === undefined ? '' : `ARCHITECT MESSAGE\n\n${architectMessage}\n\n`) +
     'Apply each item and nothing else, and in the summary answer each item by its number as ' +
     'applied, or not applied and why.'
   )

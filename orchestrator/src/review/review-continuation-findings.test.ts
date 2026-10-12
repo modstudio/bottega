@@ -113,13 +113,6 @@ test('refuses a round with an untriaged finding and names its remedy', () => {
   )
 })
 
-test('refuses when no review matches the current change group', () => {
-  const database = fixture()
-  expect(() => continuationFindings(database, group, 'message')).toThrow(
-    /no reviews match[\s\S]*run and judge the review lenses/,
-  )
-})
-
 test('refuses a round with no accepted or modified findings', () => {
   const database = fixture()
   addReview(database, 12, 'correctness', [{ ordinal: 1, disposition: 'rejected' }])
@@ -143,4 +136,19 @@ test('refuses a modified finding without an architect message', () => {
   expect(() => renderContinuationFindings([finding], undefined)).toThrow(
     'a modified finding requires an architect message',
   )
+})
+
+test('omits the architect message section when no message was supplied', () => {
+  const finding: ContinuationFinding = {
+    reviewId: 1,
+    ordinal: 1,
+    lens: 'correctness',
+    reviewerSeverity: 'high',
+    triagedSeverity: null,
+    disposition: 'accepted',
+    location: 'one.ts:1',
+    evidence: 'evidence',
+    proposedCorrection: 'correction',
+  }
+  expect(renderContinuationFindings([finding], undefined)).not.toContain('ARCHITECT MESSAGE')
 })

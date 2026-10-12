@@ -27,15 +27,12 @@ import { continueRun, type RunControlPresentation, reportContinuedRun } from './
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: number): void }
-
-export function continuationCommandMessage(
-  runId: number,
-  message: string | undefined,
-  includeFindings: boolean,
-  renderFindings: (runId: number, message: string | undefined) => string,
-): string | undefined {
-  return includeFindings ? renderFindings(runId, message) : message
+export type ContinueCommandDependencies = {
+  continueRun: typeof continueRun
+  reportContinuedRun: typeof reportContinuedRun
 }
+
+const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
 
 const duration = (ms: number | null | undefined): string => {
   if (ms == null) return '—'
@@ -174,6 +171,7 @@ export async function continueCommand(
   flags: Flags,
   presentation: Presentation,
   renderFindings: (runId: number, message: string | undefined) => string,
+  dependencies: ContinueCommandDependencies = continueCommandDependencies,
 ): Promise<void> {
   const chain = db().query('SELECT id, agent, parent_run_id FROM run WHERE id = ?').get(id) as {
     id: number
@@ -182,8 +180,14 @@ export async function continueCommand(
   } | null
   const sources = parseWorkerMessageArgs(argv, {
     booleans: ['--follow', '--detach', '--quiet', '--findings'],
-    usage: 'orch continue <id> ["<what next>"] [--file PATH] [--findings] [--follow]',
+    usage: 'orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
   })
+  if (includeFindings && sources.positionals.includes('--findings')) {
+    throw new Error(
+      '--findings must appear before the message\n' +
+        'working form: orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
+    )
+  }
   const message = await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',
     exclusive: 'pass the message either positionally or with --file, not both',
@@ -197,12 +201,16 @@ export async function continueCommand(
       CONTINUE_WORKING_FORMS,
       chain ? argvResumeLimit(chain.agent) : undefined,
     )
-  const continuationMessage = continuationCommandMessage(
+  const resumed = await dependencies.continueRun(
     id,
     message,
-    includeFindings,
-    renderFindings,
+    argvResumeLimit,
+    includeFindings ? () => renderFindings(id, message) : undefined,
   )
-  const resumed = await continueRun(id, continuationMessage, argvResumeLimit)
-  await reportContinuedRun(resumed.childId, resumed.job, flags, controlPresentation(presentation))
+  await dependencies.reportContinuedRun(
+    resumed.childId,
+    resumed.job,
+    flags,
+    controlPresentation(presentation),
+  )
 }

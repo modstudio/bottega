@@ -80,7 +80,12 @@ const runFlags = (options: OptionValues) => ({
   quiet: Boolean(options.quiet),
 })
 
-export function register(program: Command): void {
+type LogicDependencies = {
+  continuationFindingsForRun?: typeof continuationFindingsForRun
+  continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
+}
+
+export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('check [kind]')
     .option('--enabled')
@@ -377,7 +382,13 @@ export function register(program: Command): void {
         Boolean(options.findings),
         runFlags(options),
         presentation,
-        (runId, message) => continuationFindingsForRun(db(), runId, message),
+        (runId, message) =>
+          (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
+            db(),
+            runId,
+            message,
+          ),
+        dependencies.continueCommandDependencies,
       ),
     )
   const doVerb = program.command('do <job> [prompt...]')
