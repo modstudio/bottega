@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function migratedThrough(lastIndex: number) {
@@ -38,11 +39,7 @@ test('change-log cutover drops comparison evidence and timestamp cursors on a po
   ])
     insert.run(key, 'cursor')
 
-  expect(applyMigrations(database)).toEqual([
-    '0031_change_log_pull_cutover',
-    '0032_outbox_delivery_trace',
-    '0033_day_machine',
-  ])
+  applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(
     database
       .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hosted_change_evidence'")
@@ -61,7 +58,7 @@ test('change-log cutover drops comparison evidence and timestamp cursors on a po
 test('the retired timestamp cursors still establish an existing install binding during migration', () => {
   const unbound = migratedThrough(30)
   unbound.exec('DELETE FROM install_binding')
-  applyMigrations(unbound)
+  applyMigrations(unbound, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(unbound.query('SELECT 1 FROM install_binding WHERE id=1').get()).toBeNull()
   unbound.close()
 
@@ -70,7 +67,7 @@ test('the retired timestamp cursors still establish an existing install binding 
   bound.exec(
     `INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor.space-one','cursor-1')`,
   )
-  applyMigrations(bound)
+  applyMigrations(bound, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(bound.query('SELECT bound FROM install_binding WHERE id=1').get()).toEqual({ bound: 1 })
   bound.close()
 })

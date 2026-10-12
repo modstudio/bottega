@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 const REVIEW_RECORD_PAYLOAD_COLUMNS = [
@@ -121,15 +122,6 @@ export type ReviewRecordBackfillResult = {
 }
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
-const machineId = (database: Database): string => {
-  const row = database
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
-    .get()
-  if (row) return row.value
-  const id = newRecordId()
-  database.query("INSERT INTO schema_meta (key, value) VALUES ('machine_id', ?)").run(id)
-  return id
-}
 const enqueue = (
   database: Database,
   kind: OutboxSanitizeKind,
@@ -144,7 +136,7 @@ const enqueue = (
 
 export function enqueueReview(database: Database, reviewId: number): void {
   const at = nowIso()
-  const machine = machineId(database)
+  const machine = machineId()
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT review.*, project.name AS project_name FROM review
@@ -194,7 +186,7 @@ export function enqueueReviewLens(
   database: Database,
   lensId: number,
   at = nowIso(),
-  machine = machineId(database),
+  machine = machineId(),
 ): void {
   const row = database
     .query<Record<string, unknown>, [number]>(
@@ -249,7 +241,7 @@ export function enqueueReviewFinding(
   database: Database,
   findingId: number,
   at = nowIso(),
-  machine = machineId(database),
+  machine = machineId(),
 ): void {
   const row = database
     .query<Record<string, unknown>, [number]>(
@@ -312,7 +304,7 @@ export function enqueueReviewRead(database: Database, readId: number): void {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
       projectName: row.project_name,
-      machineId: machineId(database),
+      machineId: machineId(),
       localId: row.id,
       branch: row.branch,
       tip: row.tip,

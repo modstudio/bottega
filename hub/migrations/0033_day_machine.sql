@@ -22,6 +22,7 @@ BEGIN
 END;
 --> statement-breakpoint
 -- BACKFILL
+UPDATE day SET machine_id=$machine_id WHERE machine_id IS NULL;
 INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at)
 SELECT record_id,'hub_day',record_id,'upsert',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM day
 WHERE machine_id IS NOT NULL

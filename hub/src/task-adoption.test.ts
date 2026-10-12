@@ -1,13 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations } from './migrations.ts'
 import { persistTaskAdoptionsOn, taskAdoptionCollisionCount } from './task-adoption.ts'
 
 test('task adoption re-keys a local task and cascades to its children', () => {
   const conn = new Database(':memory:')
   conn.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(conn)
+  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
     VALUES ('old-id','DEV-895','${PLATFORM_SLUG}','mcp','2026-09-24','2026-09-24');
@@ -32,7 +33,7 @@ test('task adoption re-keys a local task and cascades to its children', () => {
 
 test('task adoption records and skips a local id collision', () => {
   const conn = new Database(':memory:')
-  applyMigrations(conn)
+  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
       ('incoming-id','DEV-895','${PLATFORM_SLUG}','mcp','2026-09-24','2026-09-24'),

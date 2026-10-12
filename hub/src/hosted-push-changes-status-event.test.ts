@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedTaskChanges } from './hosted-change-cache.ts'
@@ -224,7 +225,7 @@ test('two machines mint the same transition and the second adopts the hosted id'
   const secondId = '01990000-0000-7000-8000-000000001403'
   const at = '2026-10-12T10:00:00.000Z'
   const first = new Database(':memory:')
-  applyMigrations(first)
+  applyMigrations(first, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   const firstChange = mintOn(first, firstId, at)
   expect(await apply([firstChange])).toEqual([{ id: firstId, status: 'applied' }])
   first.close()
@@ -240,7 +241,7 @@ test('two machines whose task ids and event ids both differ share one hosted eve
   const secondEventId = '01990000-0000-7000-8000-000000001413'
   const at = '2026-10-12T14:00:00.000Z'
   const first = new Database(':memory:')
-  applyMigrations(first)
+  applyMigrations(first, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(await apply([mintOn(first, firstEventId, at)])).toEqual([
     { id: firstEventId, status: 'applied' },
   ])

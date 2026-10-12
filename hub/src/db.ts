@@ -263,7 +263,7 @@ export function migrateDatabase(): {
       throw new Error(
         'refusing to migrate hub before carrying over the machine identity; run orch migrate, then hub migrate',
       )
-    const versions = applyMigrations(d, undefined, identity)
+    const versions = applyMigrations(d, undefined, { machine_id: identity })
     const repairs = [...repairCounts()]
       .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
       .filter((row) => row.count > 0)

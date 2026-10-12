@@ -429,10 +429,22 @@ export function stripSqlComments(source: string): string {
   return result
 }
 
-function executeStatements(d: Database, source: string): void {
+type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
+
+function executeStatements(d: Database, source: string, values: BackfillValues = {}): void {
   for (const statement of source.split('--> statement-breakpoint')) {
     const executable = stripSqlComments(statement).trim()
-    if (executable) d.exec(executable)
+    if (!executable) continue
+    const names = [...executable.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map(
+      (match) => match[1]!,
+    )
+    for (const name of names) {
+      if (!(name in values)) throw new Error(`missing migration backfill value: ${name}`)
+    }
+    if (names.length) {
+      const bindings = Object.fromEntries(names.map((name) => [`$${name}`, values[name]!]))
+      d.query(executable).run(bindings)
+    } else d.exec(executable)
   }
 }
 
@@ -440,10 +452,10 @@ function executeMigrationSource(d: Database, source: string): void {
   executeStatements(d, splitMigrationSource(source).ddl)
 }
 
-function applyBackfills(d: Database, folder: string): void {
+function applyBackfills(d: Database, folder: string, values: BackfillValues): void {
   for (const entry of migrationJournal(folder)) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
-    if (backfill.trim()) executeStatements(d, backfill)
+    if (backfill.trim()) executeStatements(d, backfill, values)
   }
 }
 
@@ -584,7 +596,7 @@ function adoptBaseline(d: Database, folder: string): string[] {
 export function applyMigrations(
   d: Database,
   folder = MIGRATIONS_FOLDER,
-  machineId?: string,
+  backfillValues: BackfillValues = {},
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   d.exec('BEGIN IMMEDIATE')
@@ -605,9 +617,7 @@ export function applyMigrations(
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
-    if (machineId && tableExists(d, 'day'))
-      d.query('UPDATE day SET machine_id=? WHERE machine_id IS NULL').run(machineId)
-    applyBackfills(d, folder)
+    applyBackfills(d, folder, backfillValues)
     stampUserVersion(d, migrationJournal(folder).length)
     d.exec('COMMIT')
     return versions

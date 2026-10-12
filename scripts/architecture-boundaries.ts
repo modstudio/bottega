@@ -521,7 +521,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'landing-outbox-boundary',
     'orchestrator/src/record/landing-outbox.ts',
-    ['../../../shared/record/schema.ts', './outbox-sanitize.ts', 'bun:sqlite'],
+    [
+      '../../../shared/record/schema.ts',
+      './machine-identity.ts',
+      './outbox-sanitize.ts',
+      'bun:sqlite',
+    ],
     'Enforce the landing-outbox concern boundary.',
   ),
   boundary(
@@ -530,8 +535,6 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:os',
       '../../../shared/machine-config.ts',
-      '../database/db.ts',
-      '../database/machine-identity-store.ts',
     ],
     'Enforce the machine-identity concern boundary.',
   ),

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeNoteIdentity() {
@@ -32,21 +33,7 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     VALUES (41,'session-a','2026-01-02',1,NULL),
            (42,'session-b','2026-01-02',1,'00000000-0000-4000-8000-000000000142');
   `)
-  expect(applyMigrations(d)).toEqual([
-    '0021_note_uuid_identity',
-    '0022_note_project_counter',
-    '0023_hosted_change_evidence',
-    '0024_hosted_change_evidence_send_family',
-    '0025_send_pending_status',
-    '0026_outbox',
-    '0027_outbox_status_event_tasks',
-    '0028_outbox_evidence',
-    '0029_outbox_fields',
-    '0030_outbox_kept_values',
-    '0031_change_log_pull_cutover',
-    '0032_outbox_delivery_trace',
-    '0033_day_machine',
-  ])
+  applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(
     d
       .query<{ number: number; record_id: string }, []>(

@@ -184,7 +184,7 @@ export async function applyDayChangeInTransaction(
   }
   const matches = await tx`SELECT 1 FROM hub_day
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid AND day=${row.day}
-      AND (machine_id IS NULL OR machine_id=${row.machine_id}::uuid)
+      AND machine_id=${row.machine_id}::uuid
       AND claude_tokens=${row.claude_tokens} AND cache_read=${row.cache_read}
       AND messages=${row.messages} AND tasks=${row.tasks} AND canon_tokens=${row.canon_tokens}
       AND other_tokens=${row.other_tokens} AND commits=${row.commits} AND files=${row.files}

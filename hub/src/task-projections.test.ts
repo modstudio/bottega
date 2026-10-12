@@ -37,8 +37,33 @@ test('machine day contributions sum local work and take greatest git figures', (
         files: 5,
         collected_at: '2026-10-11T11:00:00.000Z',
       },
+      {
+        ...base,
+        day: '2026-10-10',
+        claude_tokens: 50,
+        tasks: 2,
+        collected_at: '2026-10-10T11:00:00.000Z',
+      },
+      {
+        ...base,
+        day: '2026-10-10',
+        claude_tokens: 25,
+        tasks: 1,
+        collected_at: '2026-10-10T10:00:00.000Z',
+      },
     ]),
   ).toEqual([
+    {
+      ...base,
+      day: '2026-10-10',
+      claude_tokens: 75,
+      cache_read: 4,
+      messages: 6,
+      canon_tokens: 8,
+      other_tokens: 10,
+      tasks: 2,
+      collected_at: '2026-10-10T11:00:00.000Z',
+    },
     {
       ...base,
       claude_tokens: 300,

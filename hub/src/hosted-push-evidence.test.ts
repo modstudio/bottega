@@ -143,6 +143,18 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   expect((await database.query(`SELECT id FROM hub_day WHERE day='2026-10-20'`)).rows).toHaveLength(
     2,
   )
+  const wrongOwner = { ...first, machine_id: secondMachineId }
+  expect(
+    (await apply([{ table: 'hub_day', id: first.id, op: 'upsert', row: wrongOwner }]))[0],
+  ).toMatchObject({ status: 'rejected' })
+  expect(
+    (
+      await database.query<{ machine_id: string }>(
+        `SELECT machine_id::text machine_id FROM hub_day WHERE id=$1`,
+        [first.id],
+      )
+    ).rows[0]!.machine_id,
+  ).toBe(HOSTED_FIXTURE_MACHINE_ID)
   const secondNewest = {
     ...second,
     id: '01990000-0000-7000-8000-000000008334',
@@ -167,8 +179,11 @@ test('day identity is per machine and legacy rows are claimed', async () => {
 
   const legacyId = '01990000-0000-7000-8000-000000008333'
   await database.exec(`RESET ROLE; INSERT INTO hub_day
-    (id,space_id,day,collected_at,updated_at) VALUES
-    ('${legacyId}','${spaceId}','2026-10-22','2026-10-22T10:00:00Z',now());
+    (id,space_id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
+     commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,
+     collected_at,updated_at) VALUES
+    ('${legacyId}','${spaceId}','2026-10-22',10,0,1,1,0,0,1,1,1,0,0,0,0,
+     '2026-10-11T23:00:00.000Z',now());
     SET ROLE record_actor;
     SELECT set_config('app.user_id','${userId}',false);
     SELECT set_config('app.space_id','${spaceId}',false);
@@ -185,6 +200,15 @@ test('day identity is per machine and legacy rows are claimed', async () => {
       )
     ).rows[0]!.machine_id,
   ).toBe(HOSTED_FIXTURE_MACHINE_ID)
+  expect(
+    (
+      await database.query<{ count: number }>(
+        `SELECT count(*)::int count FROM hub_day
+         WHERE machine_id=$1::uuid AND day='2026-10-22'`,
+        [HOSTED_FIXTURE_MACHINE_ID],
+      )
+    ).rows[0]!.count,
+  ).toBe(1)
   expect(
     await apply([
       {

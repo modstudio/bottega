@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
@@ -59,16 +60,6 @@ type QuestionRow = Record<string, unknown> & {
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 
-function localMachineId(database: Database): string {
-  const existing = database
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
-    .get()
-  if (existing) return existing.value
-  const id = newRecordId()
-  database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id',?)").run(id)
-  return id
-}
-
 function loadQuestion(database: Database, questionId: number): QuestionRow {
   const row = database
     .query<QuestionRow, [number]>(
@@ -114,7 +105,7 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     workflowKey: row.workflow_key,
     workflowCursorId: row.workflow_cursor_id,
     projectName: row.project_name,
-    machineId: localMachineId(database),
+    machineId: machineId(),
     localId: row.id,
     revision: row.revision,
     askedAt: row.asked_at,

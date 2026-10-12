@@ -1,6 +1,8 @@
 import {
   chmodSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   statSync,
@@ -589,6 +591,8 @@ export function readMachineValue<Key extends MachineConfigKey>(
 }
 
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const MACHINE_ID_LOCK_WAIT_MS = 10_000
+const MACHINE_ID_LOCK_POLL_MS = 10
 
 /** Read the durable machine identity without creating configuration. */
 export function storedMachineId(env: ConfigEnvironment = process.env): string | null {
@@ -603,18 +607,35 @@ export function machineId(
   existing: string | null = null,
   env: ConfigEnvironment = process.env,
 ): string {
-  const stored = storedMachineId(env)
-  if (stored) {
-    if (existing && stored !== existing)
-      throw new Error(`refusing to replace machine identity ${existing} with ${stored}`)
-    return stored
+  const directory = resolveConfigRoot(env)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const lock = join(directory, '.machine-id.lock')
+  const deadline = Date.now() + MACHINE_ID_LOCK_WAIT_MS
+  let descriptor: number
+  for (;;) {
+    try {
+      descriptor = openSync(lock, 'wx', 0o600)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (Date.now() >= deadline)
+        throw new Error(`timed out waiting for machine identity lock ${lock}`)
+      Bun.sleepSync(MACHINE_ID_LOCK_POLL_MS)
+    }
   }
-  const id = existing ?? Bun.randomUUIDv7()
-  if (!MACHINE_ID.test(id)) throw new Error(`refusing legacy machine identity: expected a UUID`)
-  atomicPatch((root) => {
-    root.machine = { ...((root.machine as Record<string, unknown> | undefined) ?? {}), id }
-  }, env)
-  return id
+  try {
+    const stored = storedMachineId(env)
+    if (stored) return stored
+    const id = existing ?? Bun.randomUUIDv7()
+    if (!MACHINE_ID.test(id)) throw new Error(`refusing legacy machine identity: expected a UUID`)
+    atomicPatch((root) => {
+      root.machine = { ...((root.machine as Record<string, unknown> | undefined) ?? {}), id }
+    }, env)
+    return id
+  } finally {
+    closeSync(descriptor)
+    unlinkSync(lock)
+  }
 }
 
 if (import.meta.main) {

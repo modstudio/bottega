@@ -473,7 +473,6 @@ export const modules: ArchitectureModule[] = [
     'bun:sqlite',
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
-    '../../../shared/record/schema.ts',
   ]),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
