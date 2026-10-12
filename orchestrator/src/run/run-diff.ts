@@ -103,6 +103,32 @@ function isAncestor(cwd: string, ancestor: string, descendant: string): boolean 
   )
 }
 
+function evidenceLowerBound(input: {
+  repoRoot: string
+  evidenceBranch: string
+  trunk: string
+  configuredTrunk: string | undefined
+  baseCommit: string
+  sinceBase: boolean
+  read: ArchitectRead | null
+}): { since: string; usedRecordedFallback: boolean } {
+  if (input.read) return { since: input.read.tip, usedRecordedFallback: false }
+  if (input.sinceBase) return { since: input.baseCommit, usedRecordedFallback: true }
+  const mergeBase = Bun.spawnSync(['git', 'merge-base', input.evidenceBranch, input.trunk], {
+    cwd: input.repoRoot,
+    env: targetGitEnvironment(input.repoRoot),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (mergeBase.exitCode === 0) {
+    return { since: mergeBase.stdout.toString().trim(), usedRecordedFallback: false }
+  }
+  if (input.configuredTrunk) {
+    throw new Error(`cannot find merge-base between the run tip and trunk ${input.trunk}`)
+  }
+  return { since: input.baseCommit, usedRecordedFallback: true }
+}
+
 export function readRunDiffSource<T>(input: {
   repoRoot: string
   worktree: string | null
@@ -208,24 +234,15 @@ export async function runDiffCommand(
       const trunk = configuredTrunk || 'main'
       const comparisonTip = commitAt(repoRoot, evidenceBranch)
       const read = sinceReadFor(evidenceBranch, comparisonTip, repoRoot)
-      let since = read?.tip ?? baseCommit
-      let usedRecordedFallback = has('since-base')
-      if (!has('since-base') && !read) {
-        const mergeBase = Bun.spawnSync(['git', 'merge-base', evidenceBranch, trunk], {
-          cwd: repoRoot,
-          env: targetGitEnvironment(repoRoot),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        })
-        if (mergeBase.exitCode === 0) {
-          since = mergeBase.stdout.toString().trim()
-          usedRecordedFallback = false
-        } else if (configuredTrunk) {
-          throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
-        } else {
-          usedRecordedFallback = true
-        }
-      }
+      const { since, usedRecordedFallback } = evidenceLowerBound({
+        repoRoot,
+        evidenceBranch,
+        trunk,
+        configuredTrunk,
+        baseCommit,
+        sinceBase: has('since-base'),
+        read,
+      })
       const diff = Bun.spawnSync(
         ['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch],
         {
