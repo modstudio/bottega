@@ -83,7 +83,7 @@ function ReadingTop({
   return (
     <div
       className={classes(
-        '-mx-6 md:-mx-11 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-11',
+        '-mx-6 md:-mx-15 z-10 flex lg:sticky lg:top-(--docs-stick) items-center justify-between gap-4 border-b bg-surface-page px-6 py-2.5 md:px-15',
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
@@ -219,7 +219,7 @@ export function DocsReading({
   const titleGone = useScrolledPast(heading, doc?.id)
   return (
     <main
-      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-11 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
+      className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-15 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
       data-doc-wide={wide ? '' : undefined}
     >
       {error ? (
