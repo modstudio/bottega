@@ -144,7 +144,7 @@ function parseRequestProtocolVersion(argv: string[]): string {
     throw new Error('usage: mcp-dialect-evidence.ts [--request-version YYYY-MM-DD]')
   }
   const version = argv[1]
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(version)) {
+  if (!version || !/^\d{4}-\d{2}-\d{2}$/.test(version)) {
     throw new Error('--request-version must be a date-shaped version string (YYYY-MM-DD)')
   }
   return version
