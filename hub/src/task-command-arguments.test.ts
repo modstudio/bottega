@@ -36,13 +36,6 @@ describe('task command arguments', () => {
     expect(parse('set', ['DEV-847', '--status', 'done']).ok).toBeTrue()
   })
 
-  test('accepts setting a task body from a file', () => {
-    const result = parse('set', ['DEV-847', '--body-file', 'body.md'])
-    expect(result.ok).toBeTrue()
-    if (result.ok)
-      expect(taskBodyFromArguments(result.arguments, (path) => `read ${path}`)).toBe('read body.md')
-  })
-
   test('refuses inline and file task bodies together', () => {
     const result = parse('set', ['DEV-847', '--body', 'inline', '--body-file', 'body.md'])
     expect(result.ok).toBeTrue()

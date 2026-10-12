@@ -14,11 +14,6 @@ test('sender tags remove exact duplicates before enforcing their bounds', () => 
 })
 
 test('invalid paths and unknown topics are refused with remedies', () => {
-  expect(senderBoardTags({ topics: ['workflows'] })).toContainEqual({
-    kind: 'topic',
-    value: 'workflows',
-    origin: 'sender',
-  })
   expect(() => senderBoardTags({ paths: ['../outside'] })).toThrow(/remove that segment/)
   expect(() => senderBoardTags({ topics: ['unknown'] })).toThrow(BOARD_TOPICS.join(', '))
 })

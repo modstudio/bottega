@@ -183,6 +183,15 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
   expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
 })
 
+test('self-ruling refuses a non-ruling step without changing the cursor or questions', () => {
+  const d = database()
+  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, resolution(d))
+  const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
+  expect(() => selfRule(d)).toThrow(/has no ruling floor.*evidence its floor names/)
+  expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+})
+
 test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition

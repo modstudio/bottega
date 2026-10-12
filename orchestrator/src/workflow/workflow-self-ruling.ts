@@ -11,6 +11,8 @@ export function selfRulingRefusal(
   resolvedAutonomy: AutonomyValue,
   floors: Pick<Floor, 'kind' | 'operatorRuling'>[],
 ): string | null {
+  if (!floors.some((floor) => floor.kind === 'ruling'))
+    return 'self-ruling is refused because this step has no ruling floor; this step is closed with the evidence its floor names'
   if (resolvedAutonomy !== 'auto' && resolvedAutonomy !== 'review')
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))
