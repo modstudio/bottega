@@ -99,7 +99,7 @@ export function repairFieldsFor(table: PushableHubChangeTable): string[] | null 
     table === HOSTED_DOCUMENT_TABLE
   )
     return []
-  return []
+  return null
 }
 
 export function drainFailsAudit(drain: DrainAudit): boolean {
