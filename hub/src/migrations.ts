@@ -435,9 +435,7 @@ function executeStatements(d: Database, source: string, values: BackfillValues =
   for (const statement of source.split('--> statement-breakpoint')) {
     const executable = stripSqlComments(statement).trim()
     if (!executable) continue
-    const names = [...executable.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map(
-      (match) => match[1]!,
-    )
+    const names = [...executable.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]!)
     for (const name of names) {
       if (!(name in values)) throw new Error(`missing migration backfill value: ${name}`)
     }

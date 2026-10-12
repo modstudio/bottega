@@ -64,10 +64,14 @@ describe('machine config resolution', () => {
           return stdout.trim()
         }),
       )
-      expect(new Set(ids)).toEqual(new Set([storedMachineId({
-        HOME: root,
-        [CONFIG_HOME_ENV]: config,
-      })!]))
+      expect(new Set(ids)).toEqual(
+        new Set([
+          storedMachineId({
+            HOME: root,
+            [CONFIG_HOME_ENV]: config,
+          })!,
+        ]),
+      )
       expect(ids).toHaveLength(24)
     } finally {
       rmSync(root, { recursive: true, force: true })

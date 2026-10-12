@@ -2,10 +2,7 @@
 /** Stores the install's machine identity. Must not know callers, runs, or hosted records. */
 import type { Database } from 'bun:sqlite'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import {
-  machineId as sharedMachineId,
-  storedMachineId,
-} from '../../../shared/machine-config.ts'
+import { machineId as sharedMachineId, storedMachineId } from '../../../shared/machine-config.ts'
 
 const MACHINE_ID_KEY = 'machine_id'
 

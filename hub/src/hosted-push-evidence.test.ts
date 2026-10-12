@@ -143,15 +143,23 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   expect((await database.query(`SELECT id FROM hub_day WHERE day='2026-10-20'`)).rows).toHaveLength(
     2,
   )
-  const wrongOwner = { ...first, machine_id: secondMachineId }
+  const firstOnly = {
+    ...first,
+    id: '01990000-0000-7000-8000-000000008335',
+    day: '2026-10-19',
+  }
   expect(
-    (await apply([{ table: 'hub_day', id: first.id, op: 'upsert', row: wrongOwner }]))[0],
+    await apply([{ table: 'hub_day', id: firstOnly.id, op: 'upsert', row: firstOnly }]),
+  ).toEqual([{ id: firstOnly.id, status: 'applied' }])
+  const wrongOwner = { ...firstOnly, machine_id: secondMachineId }
+  expect(
+    (await apply([{ table: 'hub_day', id: firstOnly.id, op: 'upsert', row: wrongOwner }]))[0],
   ).toMatchObject({ status: 'rejected' })
   expect(
     (
       await database.query<{ machine_id: string }>(
         `SELECT machine_id::text machine_id FROM hub_day WHERE id=$1`,
-        [first.id],
+        [firstOnly.id],
       )
     ).rows[0]!.machine_id,
   ).toBe(HOSTED_FIXTURE_MACHINE_ID)

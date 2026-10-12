@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
+import { startReleaseLedgerEntry } from '../release/release-ledger.ts'
+import { enqueueReview } from '../review/review-outbox.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { carryMachineIdentity, machineIdStored } from './machine-identity-store.ts'
+import { applyMigrations } from './migrations.ts'
 
 test('an orchestrator identity is carried to shared configuration once', () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-carry-'))
@@ -49,5 +54,55 @@ test('a stale orchestrator identity is removed in favor of shared configuration'
   } finally {
     database.close()
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('all evidence enqueue paths use the shared id without recreating its legacy key', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  try {
+    const shared = storedMachineId()!
+    expect(shared).toMatch(/^[0-9a-f-]{36}$/)
+    database.exec(`
+      INSERT INTO run
+        (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      VALUES
+        (1,'01990000-0000-7000-8000-000000001251','2026-10-12T10:00:00Z',
+         'codex','implementation','sha',1,'prompt','asking');
+      INSERT INTO question (run_id,asked_at,question)
+      VALUES (1,'2026-10-12T10:01:00Z','Which?');
+      INSERT INTO review (id,record_id,recorded_at)
+      VALUES (1,'01990000-0000-7000-8000-000000001252','2026-10-12T10:02:00Z');
+      INSERT INTO landing (id,record_id,project,branch,status,started_at)
+      VALUES (1,'01990000-0000-7000-8000-000000001253','fixture','DEV-1240','landed',
+              '2026-10-12T10:03:00Z');
+    `)
+    startReleaseLedgerEntry(database, {
+      project: 'fixture',
+      rung: 'production',
+      candidate: 'candidate',
+      live: 'before',
+      rollback: false,
+      reason: null,
+    })
+    enqueueQuestionRecord(database, 1)
+    enqueueReview(database, 1)
+    backfillLandingEvidenceRecords(database)
+
+    const payloads = database
+      .query<{ kind: string; payload: string }, []>(
+        "SELECT kind,payload FROM outbox WHERE kind IN ('release','question','review','landing') ORDER BY kind",
+      )
+      .all()
+    expect(payloads.map((row) => row.kind)).toEqual(['landing', 'question', 'release', 'review'])
+    expect(payloads.map((row) => JSON.parse(row.payload).machineId)).toEqual([
+      shared,
+      shared,
+      shared,
+      shared,
+    ])
+    expect(machineIdStored(database)).toBeNull()
+  } finally {
+    database.close()
   }
 })

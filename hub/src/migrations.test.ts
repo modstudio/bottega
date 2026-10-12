@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore, runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
@@ -42,7 +43,7 @@ beforeAll(resetFixtureStore)
 const fresh = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(d)
+  applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   return d
 }
 
@@ -203,7 +204,7 @@ describe('hub migration journal', () => {
 
   test('a matching pre-journal store adopts 0000 and reaches the current schema', () => {
     const d = baselineFresh()
-    expect(applyMigrations(d)).toEqual([
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
       '0000_hub_baseline',
       '0001_note',
       '0002_note_acknowledgement',
@@ -320,7 +321,9 @@ describe('hub migration journal', () => {
     d.close()
 
     const legacy = baselineFresh()
-    expect(applyMigrations(legacy)).toEqual(migrationJournal().map((entry) => entry.tag))
+    expect(applyMigrations(legacy, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual(
+      migrationJournal().map((entry) => entry.tag),
+    )
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
     rmSync(folder, { recursive: true, force: true })
@@ -334,9 +337,11 @@ describe('hub migration journal', () => {
         next INTEGER NOT NULL,
         CHECK (next > 0)
       )`)
-    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
+      'refusing to adopt migration baseline',
+    )
     try {
-      applyMigrations(d)
+      applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     } catch (error) {
       const message = String(error)
       expect(message).toContain('unexpected checks: check seq next>0')
@@ -359,9 +364,11 @@ describe('hub migration journal', () => {
         created_at TEXT NOT NULL
       );
       CREATE INDEX task_comment_task ON task_comment(task_key, created_at);`)
-    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
+      'refusing to adopt migration baseline',
+    )
     try {
-      applyMigrations(d)
+      applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     } catch (error) {
       const message = String(error)
       expect(message).toContain(`missing foreign-keys: ${missing}`)
@@ -418,7 +425,7 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(readUserVersion(d)).toBe(migrationJournal().length)
     expect(schemaVersionLabel(d)).toBe(String(migrationJournal().length))
-    expect(applyMigrations(d)).toEqual([])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([])
     expect(readUserVersion(d)).toBe(migrationJournal().length)
     d.close()
   })
@@ -436,7 +443,7 @@ describe('hub migration journal', () => {
     ).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
-    applyMigrations(reset)
+    applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })
 
@@ -445,7 +452,7 @@ describe('hub migration journal', () => {
     const path = join(dir, 'store.db')
     const run = () => {
       const d = new Database(path)
-      const versions = applyMigrations(d)
+      const versions = applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
       d.close()
       return versions
     }
@@ -516,12 +523,41 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  test('a named backfill value must be supplied by the migration caller', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-backfill-value-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (value TEXT);\n')
+    writeFileSync(
+      join(dir, '0001_fill.sql'),
+      '-- BACKFILL\nINSERT INTO item(value) VALUES ($identity);\n-- /BACKFILL\n',
+    )
+    writeFileSync(
+      join(dir, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries: [
+          { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
+          { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+        ],
+      }),
+    )
+    const d = new Database(':memory:')
+    expect(() => applyMigrations(d, dir)).toThrow('missing migration backfill value: identity')
+    expect(applyMigrations(d, dir, { identity: 'machine' })).toEqual(['0000_base', '0001_fill'])
+    expect(d.query('SELECT value FROM item').get()).toEqual({ value: 'machine' })
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('every migration backfill is idempotent when the current journal is applied again', () => {
     const d = migratedThrough(13)
     d.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
-    expect(applyMigrations(d)).toEqual([...LATEST_MIGRATIONS])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+      ...LATEST_MIGRATIONS,
+    ])
     const migrated = d.serialize()
-    expect(applyMigrations(d)).toEqual([])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([])
     expect(d.serialize()).toEqual(migrated)
     d.close()
   })
@@ -541,7 +577,7 @@ describe('hub migration journal', () => {
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
     )
-    expect(applyMigrations(d)).toEqual([
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
       '0010_question_delivery',
       '0011_operator_waiting_email',
       '0012_question_overturn',
@@ -553,7 +589,7 @@ describe('hub migration journal', () => {
         .value,
     ) as string
     expect(rewound < askedAt).toBe(true)
-    expect(applyMigrations(d)).toEqual([])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([])
     expect(
       JSON.parse(
         d
@@ -657,7 +693,10 @@ describe('hub migration journal', () => {
        VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
-    expect(applyMigrations(d)).toEqual(['0013_workflow_questions', ...LATEST_MIGRATIONS])
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+      '0013_workflow_questions',
+      ...LATEST_MIGRATIONS,
+    ])
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
         question_id: 40,
@@ -699,7 +738,7 @@ describe('hub migration journal', () => {
       VALUES (30,'DEV-2','dangling-event','2026-01-02','active');
       UPDATE note SET project='workshop',promoted_task='DEV-2' WHERE id=(SELECT MIN(id) FROM note);
     `)
-    expect(applyMigrations(d)).toEqual([
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
@@ -815,7 +854,7 @@ describe('hub migration journal', () => {
       VALUES ('MINT-1','workshop','local','2026-01-01','2026-01-01')
     `)
     const before = Date.now()
-    expect(applyMigrations(d)).toEqual([
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
@@ -886,7 +925,7 @@ describe('hub migration journal', () => {
       VALUES ('OPS-21','2026-01-01','active');
     `)
 
-    expect(applyMigrations(d)).toEqual([
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
       '0009_task_record_identity',
       '0010_question_delivery',
       '0011_operator_waiting_email',
@@ -956,7 +995,7 @@ describe('hub migration journal', () => {
       (1,'MISSING-42',NULL,'2026-01-01','open'),
       (2,'MISSING-43','dangling-record','2026-01-01','open')`)
     d.exec('PRAGMA foreign_keys = ON')
-    expect(() => applyMigrations(d)).toThrow(
+    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
       'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
     )
     expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
@@ -978,7 +1017,7 @@ describe('hub migration journal', () => {
     expect(seen).toEqual([next])
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
-    applyMigrations(reset)
+    applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })
 
@@ -998,7 +1037,7 @@ describe('hub migration journal', () => {
     })
     closeDatabaseForFixture()
     const reset = new Database(process.env.HUB_DB!)
-    applyMigrations(reset)
+    applyMigrations(reset, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     reset.close()
   })
 
