@@ -98,7 +98,7 @@ function DocHistory({
               title={`${exactTime(revision.at)} — ${revision.reason}`}
               aria-current={revisionId === String(revision.id) ? 'true' : undefined}
               onClick={() => onRevision(revision.id)}
-              className="block w-full border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
+              className="block w-full cursor-pointer border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
             >
               {relativeTime(revision.at)} · {savedVersionAuthor(revision.author)}
             </button>
