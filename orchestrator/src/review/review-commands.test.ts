@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from './review-commands.ts'
+import { serializePathSet } from './review-group.ts'
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -74,6 +75,13 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     const staleBase = git(repo, 'rev-parse', 'HEAD')
 
     upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
+    const writerHead = git(repo, 'rev-parse', 'DEV-992-fixture')
+    // Deterministic fast-import identity for the fixture's trunk-to-writer range.
+    // The command measures the live range, so this assertion fails if they diverge.
+    const currentIdentity = {
+      patchId: '344d5a66fb0f57fb36bc50cb2108a9046933150d',
+      paths: ['notes.md'],
+    }
     const run = db()
       .query<{ id: number }, [string, string, string]>(
         `INSERT INTO run
@@ -83,13 +91,27 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
                  'sha',1,'head','ok')
          RETURNING id`,
       )
-      .get(staleBase, staleBase, git(repo, 'rev-parse', 'DEV-992-fixture'))!
+      .get(staleBase, staleBase, writerHead)!
     const output: string[] = []
+
+    const review = db()
+      .query<{ id: number }, [string, string]>(
+        `INSERT INTO review (recorded_at,tier,patch_id,path_set)
+         VALUES ('2026-09-28',0,?,?) RETURNING id`,
+      )
+      .get(currentIdentity.patchId, serializePathSet(currentIdentity.paths))!
+    db()
+      .query(
+        `INSERT INTO review_lens
+         (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+      )
+      .run(review.id, run.id)
 
     await reviewCommand(
       'tier',
-      ['review', 'tier', String(run.id), '--json'],
-      { has: (name) => name === 'json', flag: () => undefined },
+      ['review', 'tier', String(run.id)],
+      { has: () => false, flag: () => undefined },
       {
         log: (...values) => output.push(values.join(' ')),
         usage: () => {
@@ -98,7 +120,13 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       },
     )
 
-    expect(JSON.parse(output.join('\n'))).toMatchObject({ tier: 0, risk: 0, size: 0 })
+    expect(output).toContain('tier 0')
+    expect(output).toContain('risk 0')
+    expect(output).toContain('size 0')
+    expect(output).toContain('rounds 1/0')
+    expect(output).toContain('current change is already a counted round; no new round consumed')
+    expect(output).not.toContain('current change would start a new round')
+    expect(output).not.toContain('a new round would exceed the ceiling; stop and ask the operator')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -154,6 +182,8 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain('rounds 0/3')
+    expect(output).toContain('current change would start a new round')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

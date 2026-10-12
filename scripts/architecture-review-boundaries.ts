@@ -49,6 +49,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-finding-restore.ts',
       './review-read.ts',
       './review-record-command.ts',
+      './review-round-budget.ts',
       './review-triage-restore.ts',
     ],
     reason:
@@ -96,7 +97,9 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-applicability.ts',
       './review-coverage.ts',
       './review-evidence-sql.ts',
+      './review-group.ts',
       './review-pins.ts',
+      './review-round-budget.ts',
       './review-target.ts',
       './review-tier.ts',
       './review-tier-service.ts',
@@ -106,6 +109,12 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     ],
     reason:
       'Keep review commands independent of runs, transports, routing by value, the CLI, and worktrees by value.',
+  },
+  {
+    name: 'review-round-budget-boundary',
+    file: 'orchestrator/src/review/review-round-budget.ts',
+    allowed: ['bun:sqlite', '../database/db.ts', './review-evidence-sql.ts', './review-yield.ts'],
+    reason: 'Keep review budget policy and reporting inside eligible review evidence.',
   },
   {
     name: 'review-finding-restore-boundary',

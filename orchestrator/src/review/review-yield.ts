@@ -62,11 +62,12 @@ export type ReviewYieldReport = {
   notRecorded: { metric: string; needed: string; count?: number }[]
 }
 
-type LensRow = {
+export type ReviewRoundEvidenceRow = {
   lens_id: number
   review_id: number
   recorded_at: string
   completed_at: string | null
+  tier: 0 | 1 | 2 | 3 | null
   patch_id: string | null
   path_set: string | null
   project: string | null
@@ -90,7 +91,7 @@ type FindingRow = {
   disposition: string | null
 }
 
-type ComputedLens = LensRow & {
+type ComputedLens = ReviewRoundEvidenceRow & {
   task: string | null
   round: number | null
   findings: FindingRow[]
@@ -103,19 +104,29 @@ const normalized = (value: string | null | undefined) => value?.trim().toLowerCa
  * A round is one canonical patch for one attributed task. Classification runs
  * before view filters, so every grouping and filtered view shares its ordinal.
  */
+export function reviewRoundIdentity(
+  row: Pick<ReviewRoundEvidenceRow, 'launch_key' | 'branch' | 'patch_id' | 'path_set'>,
+): { task: string | null; identity: string | null } {
+  const task = attributedTaskKey(row.launch_key, row.branch)
+  return {
+    task,
+    identity:
+      task && row.patch_id ? `${normalized(task)}\0${row.patch_id}\0${row.path_set ?? ''}` : null,
+  }
+}
+
 function classifyRounds(
-  rows: LensRow[],
+  rows: ReviewRoundEvidenceRow[],
 ): Map<number, { task: string | null; round: number | null }> {
   const result = new Map<number, { task: string | null; round: number | null }>()
   const ordinal = new Map<string, number>()
   const seen = new Map<string, number>()
   for (const row of rows) {
-    const task = attributedTaskKey(row.launch_key, row.branch)
-    if (!task || !row.patch_id) {
+    const { task, identity } = reviewRoundIdentity(row)
+    if (!identity) {
       result.set(row.lens_id, { task, round: null })
       continue
     }
-    const identity = `${normalized(task)}\0${row.patch_id}\0${row.path_set ?? ''}`
     let round = ordinal.get(identity)
     if (round === undefined) {
       round = (seen.get(normalized(task)!) ?? 0) + 1
@@ -133,7 +144,7 @@ export function reviewYield(
 ): ReviewYieldReport {
   const lensRows = database
     .query(
-      `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.completed_at, r.patch_id, r.path_set, p.name AS project,
+      `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.completed_at, r.tier, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.input_tree, run.head_commit, rl.overlap
        FROM review_lens rl
@@ -143,7 +154,7 @@ export function reviewYield(
       WHERE ${reviewRunEvidenceSql('run', 'rl')}
       ORDER BY r.recorded_at,r.id,rl.id`,
     )
-    .all() as LensRow[]
+    .all() as ReviewRoundEvidenceRow[]
   const findingRows = database
     .query(
       `SELECT review_id,review_lens_id,severity,triaged_severity,disposition

@@ -1,10 +1,12 @@
 // concern: review-commands
 /** Routes exceptional review maintenance verbs, otherwise preserving the frozen review command. */
+
 import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
 import { recordArchitectReadCommand } from './review-read.ts'
 import { recordProjectReviewCommand } from './review-record-command.ts'
+import { reviewBudgetCommand } from './review-round-budget.ts'
 import { restoreReviewTriageCommand } from './review-triage-restore.ts'
 
 type ReviewFlags = {
@@ -12,6 +14,21 @@ type ReviewFlags = {
   flag(name: string): string | undefined
 }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
+
+function dispatchReadOnlyReviewCommand(
+  sub: string | undefined,
+  argv: string[],
+  flags: ReviewFlags,
+  presentation: ReviewPresentation,
+): boolean {
+  if (sub === 'read') {
+    recordArchitectReadCommand(argv, flags, presentation)
+    return true
+  }
+  if (sub !== 'budget') return false
+  reviewBudgetCommand(argv, flags, presentation)
+  return true
+}
 
 export async function dispatchReviewCommand(
   sub: string | undefined,
@@ -22,10 +39,7 @@ export async function dispatchReviewCommand(
   if (flags.has('dry-run') && sub !== 'restore-triage') {
     throw new Error('--dry-run is only valid for orch review restore-triage')
   }
-  if (sub === 'read') {
-    recordArchitectReadCommand(argv, flags, presentation)
-    return
-  }
+  if (dispatchReadOnlyReviewCommand(sub, argv, flags, presentation)) return
   if (sub === 'project-record') {
     if (argv.length !== 3) {
       throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
