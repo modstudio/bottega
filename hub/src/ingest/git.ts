@@ -1,5 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { machineId } from '../../../shared/machine-config.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
@@ -148,10 +149,10 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
   const at = nowIso()
   writeTransaction((conn) => {
     const dayStmt = conn.query(
-      `INSERT INTO day (record_id, day, tasks, commits, files,
+      `INSERT INTO day (record_id, machine_id, day, tasks, commits, files,
                       lines_product, lines_test, lines_docs, lines_config, lines_generated,
                       collected_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
        -- Git columns always overwrite: history is still there, so a later pass
        -- measures them at least as well as the first did. The token columns are
@@ -168,9 +169,11 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
     )
 
     for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
+    const machine = machineId()
     for (const [day, a] of days) {
       dayStmt.run(
         newRecordId(),
+        machine,
         day,
         a.tasks.size,
         a.commits,

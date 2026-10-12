@@ -97,6 +97,7 @@ const LATEST_MIGRATIONS = [
   '0030_outbox_kept_values',
   '0031_change_log_pull_cutover',
   '0032_outbox_delivery_trace',
+  '0033_day_machine',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>

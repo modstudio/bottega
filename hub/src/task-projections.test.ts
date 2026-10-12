@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  combineMachineDays,
   projectBoardCards,
   projectFlightDone,
   projectRatioSummary,
@@ -8,6 +9,53 @@ import {
   projectTasksInWindow,
   type WindowIntervalRow,
 } from './task-projections.ts'
+
+test('machine day contributions sum local work and take greatest git figures', () => {
+  const base = {
+    day: '2026-10-11',
+    cache_read: 2,
+    messages: 3,
+    canon_tokens: 4,
+    other_tokens: 5,
+    commits: 6,
+    files: 7,
+    lines_product: 8,
+    lines_test: 9,
+    lines_docs: 10,
+    lines_config: 11,
+    lines_generated: 12,
+  }
+  expect(
+    combineMachineDays([
+      { ...base, claude_tokens: 100, tasks: 5, collected_at: '2026-10-11T10:00:00.000Z' },
+      {
+        ...base,
+        claude_tokens: 200,
+        cache_read: 20,
+        tasks: 4,
+        commits: 4,
+        files: 5,
+        collected_at: '2026-10-11T11:00:00.000Z',
+      },
+    ]),
+  ).toEqual([
+    {
+      ...base,
+      claude_tokens: 300,
+      cache_read: 22,
+      messages: 6,
+      canon_tokens: 8,
+      other_tokens: 10,
+      tasks: 5,
+      collected_at: '2026-10-11T11:00:00.000Z',
+    },
+  ])
+  expect(
+    combineMachineDays([
+      { ...base, claude_tokens: 100, tasks: 5, collected_at: '2026-10-11T10:00:00.000Z' },
+    ]),
+  ).toHaveLength(1)
+})
 
 const now = Date.parse('2026-09-17T12:00:00.000Z')
 const project = [{ name: 'workshop', settings: { keyPrefixes: ['DEV'] } }]

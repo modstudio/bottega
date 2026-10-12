@@ -41,6 +41,7 @@ test('change-log cutover drops comparison evidence and timestamp cursors on a po
   expect(applyMigrations(database)).toEqual([
     '0031_change_log_pull_cutover',
     '0032_outbox_delivery_trace',
+    '0033_day_machine',
   ])
   expect(
     database

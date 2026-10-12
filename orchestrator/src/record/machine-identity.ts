@@ -1,11 +1,10 @@
 // concern: machine-identity
 /** Knows the durable identity and display name of this machine. Must not know runs or hosted records. */
 import { hostname } from 'node:os'
-import { db, writeTransaction } from '../database/db.ts'
-import { machineIdFromStore } from '../database/machine-identity-store.ts'
+import { machineId as sharedMachineId } from '../../../shared/machine-config.ts'
 
 export function machineId(): string {
-  return machineIdFromStore(db(), writeTransaction)
+  return sharedMachineId()
 }
 
 export function machineName(): string {

@@ -6,11 +6,13 @@ import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   editMachinePermission,
   editMachinePermissionTable,
+  machineId,
   MACHINE_CONFIG,
   readMachinePermissions,
   readMachineValue,
   resolveMachineValue,
   setMachineAutonomy,
+  storedMachineId,
 } from './machine-config.ts'
 
 const path = '/config/platform/machine.toml'
@@ -18,6 +20,22 @@ const silent = () => {}
 const freshWarnings = () => new Set<string>()
 
 describe('machine config resolution', () => {
+  test('machine identity lookup does not create config and carry-over is stable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-id-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      expect(storedMachineId(env)).toBeNull()
+      expect(() => readFileSync(join(config, 'machine.toml'), 'utf8')).toThrow()
+      const legacy = '01990000-0000-7000-8000-000000001240'
+      expect(machineId(legacy, env)).toBe(legacy)
+      expect(machineId(null, env)).toBe(legacy)
+      expect(storedMachineId(env)).toBe(legacy)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('resolves canonical environment over legacy, file, and default', () => {
     expect(
       resolveMachineValue(

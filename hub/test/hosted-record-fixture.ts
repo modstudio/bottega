@@ -5,6 +5,8 @@ import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 
+export const HOSTED_FIXTURE_MACHINE_ID = '01990000-0000-7000-8000-000000001249'
+
 const migrationsFolder = join(
   fileURLToPath(new URL('../../shared/record/migrations', import.meta.url)),
 )
@@ -49,6 +51,8 @@ export async function createHostedRecordFixture(options: {
     VALUES ('${options.userId}','mirror@example.test','Mirror user',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
     VALUES ('01990000-0000-7000-8000-000000001248','${options.spaceId}','${options.userId}','member','write',now());
+    INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+    VALUES ('${HOSTED_FIXTURE_MACHINE_ID}','${options.userId}','fixture',now(),now());
     SET ROLE ${RECORD_ACTOR_ROLE};
     SELECT set_config('app.user_id','${options.userId}',false);
     SELECT set_config('app.space_id','${options.spaceId}',false);

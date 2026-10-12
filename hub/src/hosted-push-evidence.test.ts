@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
-import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import {
+  createHostedRecordFixture,
+  HOSTED_FIXTURE_MACHINE_ID,
+  pgliteSql,
+} from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
@@ -41,6 +45,7 @@ const interval: PushedInterval = {
 }
 const day: PushedDay = {
   id: dayId,
+  machine_id: HOSTED_FIXTURE_MACHINE_ID,
   day: '2026-10-11',
   claude_tokens: 10,
   cache_read: 0,

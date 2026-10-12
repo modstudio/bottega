@@ -20,7 +20,8 @@ import {
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
 } from './database-location.ts'
-import { machineIdFromStore, machineIdStored } from './machine-identity-store.ts'
+import { machineId as sharedMachineId, storedMachineId } from '../../../shared/machine-config.ts'
+import { machineIdStored, removeStoredMachineId } from './machine-identity-store.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -280,7 +281,9 @@ export function writeTransaction<T>(fn: () => T, database: Database = db(true)):
 
 /** Mint the install identity only on a database lifecycle path already authorized to write. */
 export function ensureMachineIdentity(database: Database): void {
-  machineIdFromStore(database, (fn) => writeTransaction(fn, database))
+  const legacy = machineIdStored(database)
+  sharedMachineId(legacy)
+  if (legacy) writeTransaction(() => removeStoredMachineId(database), database)
 }
 
 /** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */
@@ -477,7 +480,7 @@ export const callerIdentity = (database?: Database): CallerIdentityResolution =>
   // An absent store has no identity to read. A store that exists and refuses to open must say
   // so: swallowing that refusal would let a command report emptiness for data it never saw.
   if (!database && !existsSync(DB_PATH)) return resolveCallerIdentity(caller, null)
-  return resolveCallerIdentity(caller, machineIdStored(database ?? db()))
+  return resolveCallerIdentity(caller, storedMachineId())
 }
 
 /** Identity of the architect or local operator making this call. */

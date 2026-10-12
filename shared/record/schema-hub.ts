@@ -20,7 +20,15 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { project, RECORD_OWNER_ROLE, space, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import {
+  machine,
+  project,
+  RECORD_OWNER_ROLE,
+  space,
+  spaceIdentity,
+  tenantPolicies,
+  user,
+} from './schema.ts'
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
@@ -561,6 +569,7 @@ export const hubDay = pgTable.withRLS(
   {
     id: identity(),
     spaceId: spaceIdentity(),
+    machineId: uuid('machine_id').references(() => machine.id),
     day: text().notNull(),
     claudeTokens: bigint('claude_tokens', { mode: 'number' }).notNull().default(0),
     cacheRead: bigint('cache_read', { mode: 'number' }).notNull().default(0),
@@ -579,7 +588,7 @@ export const hubDay = pgTable.withRLS(
     updatedAt: updatedAt(),
   },
   (table) => [
-    unique('hub_day_natural_key').on(table.spaceId, table.day),
+    unique('hub_day_natural_key').on(table.spaceId, table.machineId, table.day),
     ...tenantPolicies('hub_day', table.spaceId),
   ],
 )

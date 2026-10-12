@@ -1,12 +1,14 @@
 import { engagedMs } from '../../shared/interval.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { machineId } from '../../shared/machine-config.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 import {
   type DayIntervalRow,
-  type DayRow,
+  type MachineDayRow,
+  combineMachineDays,
   intervalEndMs,
   projectBoard,
   projectRatioSummary,
@@ -190,8 +192,8 @@ export function rollUpDays(): number {
 
   writeTransaction((conn) => {
     const stmt = conn.query(
-      `INSERT INTO day (record_id, day, claude_tokens, messages, collected_at)
-     VALUES (?,?,?,?,?)
+      `INSERT INTO day (record_id, machine_id, day, claude_tokens, messages, collected_at)
+     VALUES (?,?,?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
        -- Only a pass that FOUND tokens may overwrite them. Transcripts are
        -- pruned and work done on another machine never had any here, so a later
@@ -205,7 +207,8 @@ export function rollUpDays(): number {
        collected_at  = excluded.collected_at`,
     )
     const collectedAt = new Date().toISOString()
-    for (const r of rows) stmt.run(newRecordId(), r.day, r.claude, r.msgs, collectedAt)
+    const machine = machineId()
+    for (const r of rows) stmt.run(newRecordId(), machine, r.day, r.claude, r.msgs, collectedAt)
   })
   return rows.length
 }
@@ -231,8 +234,9 @@ export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSumma
   const now = Date.now()
   const since = new Date(now - windowDays * 86400_000).toISOString().slice(0, 10)
   const rows = db()
-    .query<DayRow, [string]>(
-      `SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated
+    .query<MachineDayRow, [string]>(
+      `SELECT day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,commits,files,
+        lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at
      FROM day WHERE day >= ? ORDER BY day`,
     )
     .all(since)
@@ -243,7 +247,7 @@ export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSumma
         )
         .all(`${since}T00:00:00.000Z`)
     : []
-  return projectRatioSummary(rows, intervals, now, includeEngaged)
+  return projectRatioSummary(combineMachineDays(rows), intervals, now, includeEngaged)
 }
 
 /**

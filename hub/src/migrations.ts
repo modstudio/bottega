@@ -581,7 +581,11 @@ function adoptBaseline(d: Database, folder: string): string[] {
 }
 
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
-export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+export function applyMigrations(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+  machineId?: string,
+): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   d.exec('BEGIN IMMEDIATE')
   try {
@@ -601,6 +605,8 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
+    if (machineId && tableExists(d, 'day'))
+      d.query('UPDATE day SET machine_id=? WHERE machine_id IS NULL').run(machineId)
     applyBackfills(d, folder)
     stampUserVersion(d, migrationJournal(folder).length)
     d.exec('COMMIT')

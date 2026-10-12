@@ -9,7 +9,8 @@ import {
   type BoardSourceRow,
   type CompletedRow,
   type DayIntervalRow,
-  type DayRow,
+  type MachineDayRow,
+  combineMachineDays,
   type IntervalRow,
   type ProjectionProject,
   projectBoard,
@@ -80,13 +81,17 @@ const windowInterval = (row: RawWindow): WindowIntervalRow => ({
 })
 
 const rows = <T>(value: unknown) => value as T[]
-export function hostedDayRow(row: Record<string, unknown>): DayRow {
+export function hostedDayRow(row: Record<string, unknown>): MachineDayRow {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
       key,
-      key === 'day' ? value : number(value as string | number | bigint),
+      key === 'day' || key === 'collected_at'
+        ? key === 'collected_at'
+          ? iso(value as SqlTime)!
+          : value
+        : number(value as string | number | bigint),
     ]),
-  ) as DayRow
+  ) as MachineDayRow
 }
 
 const bounds = (hours: 24 | 48 | 168 | 720, now: number) => ({
@@ -124,22 +129,23 @@ async function windowFacts(databaseUrl: string, identity: TaskIdentity, from: st
         AND e.at >= ${from}::timestamptz AND e.at < ${to}::timestamptz AND e.to_status='done'
       ORDER BY e.at DESC`,
     )
-    const collected = rows<{ collected_at: SqlTime }>(
-      await tx`
-      SELECT collected_at FROM hub_day
-      ORDER BY collected_at DESC LIMIT 1`,
-    )[0]
+    const dayRows = combineMachineDays(
+      rows<Record<string, unknown>>(
+        await tx`
+      SELECT day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,commits,files,
+        lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at FROM hub_day`,
+      ).map(hostedDayRow),
+    )
     const since = new Date(new Date(to).getTime() - 14 * 86_400_000).toISOString().slice(0, 10)
-    const shipped = rows<{ total: string | number }>(
-      await tx`
-      SELECT COALESCE(SUM(tasks),0) total FROM hub_day
-      WHERE day >= ${since}`,
-    )[0]
+    const windowDays = dayRows.filter((row) => row.day >= since)
     return {
       intervals: windowRows.map(windowInterval),
       completed: completed.map((row): CompletedRow => ({ ...row, at: iso(row.at)! })),
-      collectedAt: iso(collected?.collected_at ?? null),
-      tasksShipped: number(shipped?.total),
+      collectedAt: dayRows.reduce<string | null>(
+        (latest, row) => (!latest || row.collected_at > latest ? row.collected_at : latest),
+        null,
+      ),
+      tasksShipped: windowDays.reduce((total, row) => total + row.tasks, 0),
     }
   })
 }
@@ -494,8 +500,9 @@ async function hostedCostFacts(
   const since = new Date(now - windowDays * 86_400_000).toISOString().slice(0, 10)
   return withHostedTenant(databaseUrl, identity, async (tx) => {
     const dayRows = rows<Record<string, unknown>>(
-      await tx`SELECT day,claude_tokens,tasks,commits,files,lines_product,lines_test,lines_docs,
-        lines_config,lines_generated FROM hub_day WHERE space_id=${identity.spaceId}::uuid
+      await tx`SELECT day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,commits,
+        files,lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at
+        FROM hub_day WHERE space_id=${identity.spaceId}::uuid
         AND day >= ${since} ORDER BY day`,
     ).map(hostedDayRow)
     const intervals = rows<{ start_at: SqlTime; end_at: SqlTime; open: string | number }>(
@@ -508,7 +515,7 @@ async function hostedCostFacts(
         open: number(row.open),
       }),
     )
-    return { now, since, dayRows, intervals }
+    return { now, since, dayRows: combineMachineDays(dayRows), intervals }
   })
 }
 

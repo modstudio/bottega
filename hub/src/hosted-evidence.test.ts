@@ -5,6 +5,7 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import { HOSTED_FIXTURE_MACHINE_ID } from '../test/hosted-record-fixture.ts'
 import { hubChangeReadability } from './hosted-changes.ts'
 import {
   applyDayChangeInTransaction,
@@ -123,6 +124,8 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
     VALUES ('${userId}','tokens@example.test','Token reader',now());
     INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
     VALUES ('01990000-0000-7000-8000-000000001404','${spaceId}','${userId}','member','write',now());
+    INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+    VALUES ('${HOSTED_FIXTURE_MACHINE_ID}','${userId}','fixture',now(),now());
     SET ROLE ${RECORD_ACTOR_ROLE};
     SELECT set_config('app.user_id','${userId}',false);
     SELECT set_config('app.space_id','${spaceId}',false);
@@ -157,6 +160,7 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
   })
   await applyDayChangeInTransaction(sql, identity, {
     id: dayId,
+    machine_id: HOSTED_FIXTURE_MACHINE_ID,
     day: '2026-10-05',
     claude_tokens: DAY_TOKENS,
     cache_read: DAY_TOKENS,

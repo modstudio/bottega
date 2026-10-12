@@ -44,6 +44,7 @@ export const MACHINE_CONFIG = {
     default: '$HOME/.claude/projects',
   },
   'hub.port': { environment: 'HUB_PORT', type: 'integer', default: 7778 },
+  'machine.id': { type: 'string', default: '' },
   'model_host.url': {
     environment: 'ORCH_MODEL_HOST_URL',
     legacyEnvironment: 'ORCH_LOCAL_BASE_URL',
@@ -585,6 +586,35 @@ export function readMachineValue<Key extends MachineConfigKey>(
     (message) => process.stderr.write(`${message}\n`),
     warnedLegacyVariables,
   )
+}
+
+const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** Read the durable machine identity without creating configuration. */
+export function storedMachineId(env: ConfigEnvironment = process.env): string | null {
+  const id = readMachineValue('machine.id', env)
+  if (!id) return null
+  if (!MACHINE_ID.test(id)) throw new Error(`refusing machine config: machine.id must be a UUID`)
+  return id
+}
+
+/** Carry over an existing identity or mint and persist this machine's identity once. */
+export function machineId(
+  existing: string | null = null,
+  env: ConfigEnvironment = process.env,
+): string {
+  const stored = storedMachineId(env)
+  if (stored) {
+    if (existing && stored !== existing)
+      throw new Error(`refusing to replace machine identity ${existing} with ${stored}`)
+    return stored
+  }
+  const id = existing ?? Bun.randomUUIDv7()
+  if (!MACHINE_ID.test(id)) throw new Error(`refusing legacy machine identity: expected a UUID`)
+  atomicPatch((root) => {
+    root.machine = { ...((root.machine as Record<string, unknown> | undefined) ?? {}), id }
+  }, env)
+  return id
 }
 
 if (import.meta.main) {

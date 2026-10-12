@@ -53,6 +53,7 @@ export type PushedInterval = {
 
 export type PushedDay = {
   id: string
+  machine_id: string
   day: string
   claude_tokens: number
   cache_read: number
@@ -340,7 +341,7 @@ function parseDayRow(value: unknown, id: string): PushedDay | string {
   const error = evidenceFieldError(
     row,
     HOSTED_DAY_TABLE,
-    ['day', 'collected_at'],
+    ['machine_id', 'day', 'collected_at'],
     [],
     [
       'claude_tokens',
@@ -361,6 +362,8 @@ function parseDayRow(value: unknown, id: string): PushedDay | string {
   if (error) return error
   if (!/^\d{4}-\d{2}-\d{2}$/.test(row.day as string))
     return `${HOSTED_DAY_TABLE} row.day must be a date`
+  if (!UUID.test(row.machine_id as string))
+    return `${HOSTED_DAY_TABLE} row.machine_id must be a UUID`
   if (!isTimestamp(row.collected_at))
     return `${HOSTED_DAY_TABLE} row.collected_at must be an ISO timestamp`
   return row as PushedDay
