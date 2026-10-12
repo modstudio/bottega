@@ -17,7 +17,6 @@ import {
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
-import { pullHostedNotes } from './note-cache.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
 import {
@@ -28,8 +27,6 @@ import {
 } from './outbox.ts'
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { rollUpDays } from './query.ts'
-import { pullHostedReports } from './report-cache.ts'
-import { pullHostedTasks } from './task-cache.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -127,12 +124,9 @@ async function settleLeg(source: string, work: () => Promise<unknown>): Promise<
 type HostedCollectDependencies = {
   outbox?: () => Promise<HostedOutboxReport>
   correctIntervals?: () => void
-  tasks?: () => Promise<unknown>
   changes?: () => Promise<HostedChangeLegReport | null | undefined>
   noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
   sendChanges?: () => Promise<HostedChangeLegReport | null | undefined>
-  notes?: () => Promise<unknown>
-  reports?: () => Promise<unknown>
 }
 
 export async function hostedCollectLegs(
@@ -143,33 +137,21 @@ export async function hostedCollectLegs(
   const legs = [
     { name: 'hosted outbox', work: dependencies.outbox ?? drainHostedOutbox },
     {
-      name: 'hosted tasks',
-      work: dependencies.tasks ?? pullHostedTasks,
-      change: {
-        name: 'hosted task changes',
-        work: dependencies.changes ?? pullHostedTaskChanges,
-      },
+      name: 'hosted task changes',
+      work: dependencies.changes ?? pullHostedTaskChanges,
     },
     {
-      name: 'hosted notes',
-      work: dependencies.notes ?? pullHostedNotes,
-      change: {
-        name: 'hosted note changes',
-        work: dependencies.noteChanges ?? pullHostedNoteChanges,
-      },
+      name: 'hosted note changes',
+      work: dependencies.noteChanges ?? pullHostedNoteChanges,
     },
     {
-      name: 'hosted reports',
-      work: dependencies.reports ?? pullHostedReports,
-      change: {
-        name: 'hosted send changes',
-        work: dependencies.sendChanges ?? pullHostedSendChanges,
-      },
+      name: 'hosted send changes',
+      work: dependencies.sendChanges ?? pullHostedSendChanges,
     },
   ] as const
   const results: CollectLegResult[] = []
   let previous: string | undefined
-  for (const { name: source, work, ...leg } of legs) {
+  for (const { name: source, work } of legs) {
     guard?.assertHeld(previous)
     if (source === 'hosted outbox') {
       try {
@@ -179,16 +161,12 @@ export async function hostedCollectLegs(
         console.error(`hub: ${source} collect failed: ${message}`)
         results.push({ source, ok: false, error: message })
       }
-    } else results.push(await settleLeg(source, work))
+    } else {
+      const changeResult = await settleChangeLeg(source, work)
+      if (changeResult) results.push(changeResult)
+    }
     previous = source
     guard?.assertHeld(source)
-    const changeWork = 'change' in leg ? leg.change : null
-    if (!changeWork) continue
-    const changeResult = await settleChangeLeg(changeWork.name, changeWork.work)
-    if (!changeResult) continue
-    results.push(changeResult)
-    previous = changeResult.source
-    guard?.assertHeld(previous)
   }
   return results
 }

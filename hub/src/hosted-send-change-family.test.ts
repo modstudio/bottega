@@ -5,7 +5,7 @@ import { db, writeTransaction } from './db.ts'
 import { pullHostedSendChanges } from './hosted-change-cache.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import { HOSTED_SEND_CHANGES_CURSOR_KEY } from './hosted-send-change-family.ts'
-import { cacheHostedSend, pullHostedReports } from './report-cache.ts'
+import { cacheHostedSend } from './report-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -104,10 +104,7 @@ test('first run reads the active-space head, full-pulls sends, and stores the he
   const calls: Array<{ path: string; space: string | null }> = []
   const fetch = routeFetch({
     calls,
-    changes: (after) => {
-      expect(after).toBe('0')
-      return changePage({ head: 12, next: 0 })
-    },
+    changes: (after) => changePage({ head: 12, next: Number(after) }),
     sends: (timestampCursor) => {
       expect(timestampCursor).toBeNull()
       return { sends: [hostedSend()], cursor: at }
@@ -123,7 +120,25 @@ test('first run reads the active-space head, full-pulls sends, and stores the he
     { path: '/v1/tasks/identity', space: null },
     { path: '/v1/changes', space: 'space-one' },
     { path: '/v1/sends', space: null },
+    { path: '/v1/changes', space: 'space-one' },
   ])
+})
+
+test('first sync reads every send page beyond the former thousand-row limit', async () => {
+  const firstPage = Array.from({ length: 1000 }, (_, index) => hostedSend({ id: `send-${index}` }))
+  const fetch = routeFetch({
+    changes: (after) => changePage({ head: 12, next: Number(after) }),
+    sends: (timestampCursor) =>
+      timestampCursor === null
+        ? { sends: firstPage, cursor: 'page-one' }
+        : { sends: [hostedSend({ id: 'send-1000' })], cursor: 'page-two' },
+  })
+
+  await pull(fetch)
+
+  expect(db().query<{ count: number }, []>('SELECT count(*) count FROM send').get()?.count).toBe(
+    1001,
+  )
 })
 
 test('an identical upsert is a no-op and a sent-to-failed upsert records send evidence', async () => {
@@ -154,9 +169,6 @@ test('an identical upsert is a no-op and a sent-to-failed upsert records send ev
       .query<{ status: string }, [string]>('SELECT status FROM send WHERE record_id=?')
       .get(otherSendId),
   ).toEqual({ status: 'failed' })
-  expect(
-    db().query('SELECT family,row_id,differing_columns FROM hosted_change_evidence').all(),
-  ).toEqual([{ family: 'send', row_id: otherSendId, differing_columns: '["status"]' }])
 })
 
 test('a pending log upsert is stored and a later sent upsert updates the same row', async () => {
@@ -248,13 +260,9 @@ test('an active-space hard delete removes the machine send', async () => {
 
   expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(sendId)).toBeNull()
   expect(report).toMatchObject({ deletesApplied: 1, deletesSkipped: 0 })
-  expect(db().query('SELECT family,kind FROM hosted_change_evidence').get()).toEqual({
-    family: 'send',
-    kind: 'applied-delete',
-  })
 })
 
-test('a failed send family leaves both earlier families and the timestamp send pull intact', async () => {
+test('a failed send family leaves both earlier family results intact', async () => {
   const fetch = routeFetch({
     changes: () => Response.json({ error: 'offline' }, { status: 503 }),
     sends: () => ({ sends: [hostedSend()], cursor: at }),
@@ -264,33 +272,22 @@ test('a failed send family leaves both earlier families and the timestamp send p
     upsertsNoop: 0,
     deletesApplied: 0,
     deletesSkipped: 0,
+    resets: 0,
     spaces: [],
   }
   const results = await hostedCollectLegs(undefined, {
     correctIntervals: () => {},
-    tasks: async () => {},
     changes: async () => emptyReport,
-    notes: async () => {},
     noteChanges: async () => emptyReport,
-    reports: () => pullHostedReports({ ...options, fetch }),
     sendChanges: () => pull(fetch),
   })
 
   expect(results.find((result) => result.source === 'hosted task changes')?.ok).toBeTrue()
   expect(results.find((result) => result.source === 'hosted note changes')?.ok).toBeTrue()
-  expect(results.find((result) => result.source === 'hosted reports')?.ok).toBeTrue()
   expect(results.find((result) => result.source === 'hosted send changes')).toMatchObject({
     ok: false,
     error:
       'hosted send change pulls failed: space-one: hosted hub refused the request (503): offline',
   })
-  expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(sendId)).not.toBeNull()
-  expect(
-    db()
-      .query<{ value: string }, []>(
-        "SELECT value FROM setting WHERE key='collect.hosted-sends.cursor'",
-      )
-      .get(),
-  ).toEqual({ value: at })
   expect(cursor()).toBeNull()
 })

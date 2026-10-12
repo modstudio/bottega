@@ -6,7 +6,7 @@ import { MAX_HOSTED_CHANGE_PAGES_PER_PASS, pullHostedTaskChanges } from './hoste
 import { HOSTED_CHANGES_CURSOR_KEY } from './hosted-task-change-family.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { queueHostedChange } from './outbox.ts'
-import { applyHostedTask, pullHostedTasks } from './task-cache.ts'
+import { applyHostedTask } from './task-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -82,11 +82,6 @@ const cursor = (spaceId: string) =>
   db()
     .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
     .get(`${HOSTED_CHANGES_CURSOR_KEY}.${spaceId}`)?.value ?? null
-
-const taskCursor = (spaceId: string) =>
-  db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(`collect.hosted-tasks.cursor.${spaceId}`)?.value ?? null
 
 const storeChangeCursor = (spaceId: string, value: string) => {
   writeTransaction((conn) => {
@@ -181,25 +176,12 @@ const pull = (
 
 type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
 
-test('no capability leaves the log idle and the timestamp pull unchanged', async () => {
+test('no capability leaves the log idle', async () => {
   const calls: FetchCalls = []
-  const { fetch } = routeFetch({ capabilities: {}, calls, tasks: () => emptyTasks('stamp-after') })
-  const timestamp = await pullHostedTasks({
-    ...optionsBase,
-    fetch,
-    registeredProjects: [{ name: 'one', settings: { space: 'one' } }],
-  })
+  const { fetch } = routeFetch({ capabilities: {}, calls })
   const report = await pull(fetch)
   expect(report).toBeNull()
   expect(calls.filter((call) => call.path === '/v1/changes')).toEqual([])
-  expect(timestamp).toEqual({
-    tasks: 0,
-    comments: 0,
-    documents: 0,
-    statusEvents: 0,
-    cursor: 'stamp-after',
-  })
-  expect(taskCursor('space-one')).toBe('stamp-after')
   expect(cursor('space-one')).toBeNull()
 })
 
@@ -207,29 +189,55 @@ test('first run reads head, full-pulls, and stores that head', async () => {
   const calls: FetchCalls = []
   const { fetch } = routeFetch({
     calls,
-    changes: (_space, after) => {
-      expect(after).toBe('0')
-      return changePage({ head: 12, next: 0, changes: [] })
-    },
+    changes: (_space, after) =>
+      after === '0'
+        ? changePage({ head: 12, next: 0, changes: [] })
+        : changePage({
+            head: 13,
+            next: 13,
+            changes: [
+              {
+                sequence: 13,
+                table: 'hub_task_comment',
+                id: commentId,
+                op: 'upsert',
+                row: {
+                  id: commentId,
+                  task_key: 'DEV-1240',
+                  project_name: 'one',
+                  body: 'written during snapshot',
+                  created_at: at,
+                  updated_at: at,
+                  deleted_at: null,
+                },
+              },
+            ],
+          }),
     tasks: (_space, taskCursorValue) => {
       expect(taskCursorValue).toBeNull()
       return { ...emptyTasks('full'), tasks: [hostedTask()] }
     },
   })
   const report = await pull(fetch)
-  expect(cursor('space-one')).toBe('12')
-  expect(taskCursor('space-one')).toBeNull()
+  expect(cursor('space-one')).toBe('13')
   expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()
+  expect(db().query(`SELECT 1 FROM task_comment WHERE record_id=?`).get(commentId)).not.toBeNull()
   expect(report?.spaces).toEqual([
     {
       spaceId: 'space-one',
-      upsertsChanged: 0,
+      upsertsChanged: 1,
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      resets: 1,
     },
   ])
-  expect(calls.map((call) => call.path)).toEqual(['/v1/tasks/identity', '/v1/changes', '/v1/tasks'])
+  expect(calls.map((call) => call.path)).toEqual([
+    '/v1/tasks/identity',
+    '/v1/changes',
+    '/v1/tasks',
+    '/v1/changes',
+  ])
 })
 
 test('a later page applies upserts and advances the cursor in one transaction', async () => {
@@ -340,7 +348,7 @@ test('a throwing apply leaves the change cursor unmoved', async () => {
   expect(db().query(`SELECT 1 FROM task_document WHERE record_id=?`).get(documentId)).toBeNull()
 })
 
-test('an upsert the timestamp pull already delivered is a no-op; a new one is changed', async () => {
+test('an identical log upsert is a no-op; a new one is changed', async () => {
   storeChangeCursor('space-one', '12')
   writeTransaction((conn) => {
     applyHostedTask(conn, hostedTask())
@@ -368,13 +376,43 @@ test('an upsert the timestamp pull already delivered is a no-op; a new one is ch
   const report = await pull(fetch)
   expect(report?.upsertsNoop).toBe(1)
   expect(report?.upsertsChanged).toBe(1)
-  expect(
-    db()
-      .query<{ family: string; row_id: string }, []>(
-        'SELECT family,row_id FROM hosted_change_evidence',
-      )
-      .all(),
-  ).toEqual([{ family: 'task', row_id: '01990000-0000-7000-8000-000000001249' }])
+})
+
+test('a pulled git task keeps equal plain dates byte-for-byte and queues nothing', async () => {
+  storeChangeCursor('space-one', '12')
+  const plainDate = '2026-10-09'
+  writeTransaction((conn) => {
+    applyHostedTask(
+      conn,
+      hostedTask({ source: 'git', opened_at: plainDate, updated_at: plainDate }),
+    )
+  })
+  const before = db().query('SELECT * FROM task WHERE record_id=?').get(taskId)
+  const { fetch } = routeFetch({
+    changes: () =>
+      changePage({
+        next: 13,
+        changes: [
+          {
+            sequence: 13,
+            table: 'hub_task',
+            id: taskId,
+            op: 'upsert',
+            row: hostedTask({
+              source: 'git',
+              opened_at: `${plainDate}T00:00:00.000Z`,
+              updated_at: `${plainDate}T00:00:00.000Z`,
+            }),
+          },
+        ],
+      }),
+  })
+
+  const report = await pull(fetch)
+
+  expect(db().query('SELECT * FROM task WHERE record_id=?').get(taskId)).toEqual(before)
+  expect(db().query('SELECT 1 FROM hosted_outbox').all()).toEqual([])
+  expect(report?.upsertsNoop).toBe(1)
 })
 
 test('a delete from the row own space removes the row and its children', async () => {
@@ -522,6 +560,11 @@ test('upsert then delete across two spaces leaves the row in the new space', asy
 
 test('resetRequired runs the start path again', async () => {
   storeChangeCursor('space-one', '5')
+  seedTask()
+  writeTransaction((conn) => {
+    conn.query("UPDATE task SET title='pending title' WHERE record_id=?").run(taskId)
+    queueHostedChange(conn, 'hub_task', taskId, 'upsert', at, ['title'])
+  })
   const calls: FetchCalls = []
   const { fetch } = routeFetch({
     calls,
@@ -539,13 +582,12 @@ test('resetRequired runs the start path again', async () => {
   expect(
     db().query<{ title: string }, [string]>(`SELECT title FROM task WHERE record_id=?`).get(taskId)
       ?.title,
-  ).toBe('reset')
+  ).toBe('pending title')
   expect(calls.filter((call) => call.path === '/v1/tasks')).toHaveLength(1)
 })
 
-test('a failing log leg leaves timestamp rows and cursor in place and is its own collect leg', async () => {
+test('a failing log leg is reported independently', async () => {
   const { fetch } = routeFetch({
-    tasks: () => ({ ...emptyTasks('stamp-after'), tasks: [hostedTask()] }),
     changes: () => Response.json({ error: 'offline' }, { status: 503 }),
   })
   const request = {
@@ -555,15 +597,10 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
   }
   const results = await hostedCollectLegs(undefined, {
     correctIntervals: () => {},
-    tasks: () => pullHostedTasks(request),
     changes: () => pullHostedTaskChanges(request),
     noteChanges: async () => null,
-    notes: async () => {},
-    reports: async () => {},
     sendChanges: async () => null,
   })
-  expect(taskCursor('space-one')).toBe('stamp-after')
-  expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).not.toBeNull()
   expect(cursor('space-one')).toBeNull()
   expect(results).toEqual([
     {
@@ -580,19 +617,16 @@ test('a failing log leg leaves timestamp rows and cursor in place and is its own
         skippedCapability: false,
       },
     },
-    { source: 'hosted tasks', ok: true },
     {
       source: 'hosted task changes',
       ok: false,
       error:
         'hosted task change pulls failed: space-one: hosted hub refused the request (503): offline',
     },
-    { source: 'hosted notes', ok: true },
-    { source: 'hosted reports', ok: true },
   ])
 })
 
-test('the collect line prints the four change counts per space', () => {
+test('the collect line prints the change counts and resets per space', () => {
   expect(
     formatCollectLeg({
       source: 'hosted task changes',
@@ -602,6 +636,7 @@ test('the collect line prints the four change counts per space', () => {
         upsertsNoop: 10,
         deletesApplied: 1,
         deletesSkipped: 0,
+        resets: 1,
         spaces: [
           {
             spaceId: 'space-one',
@@ -609,11 +644,12 @@ test('the collect line prints the four change counts per space', () => {
             upsertsNoop: 10,
             deletesApplied: 1,
             deletesSkipped: 0,
+            resets: 1,
           },
         ],
       },
     }),
-  ).toBe('hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped')
+  ).toBe('hosted task changes space-one 3 changed, 10 no-op, 1 deleted, 0 skipped, 1 reset')
 })
 
 test('the page bound stops a pass and the next pass continues from the stored cursor', async () => {

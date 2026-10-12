@@ -19,10 +19,6 @@ import {
 } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
-import {
-  HOSTED_CHANGE_EVIDENCE_USAGE,
-  runHostedChangeEvidenceCommand,
-} from './hosted-change-evidence-cli.ts'
 import { LocalHubAuth } from './local-auth.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { NOTE_USAGE, noteHelpRequested, runNoteCommand } from './note-cli.ts'
@@ -159,8 +155,6 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub doctor                  report the live structural schema hash and user_version
   hub outbox [--json]         list queued and quarantined hosted writes\n  hub outbox show <ID>        show an entry and any values kept after a hosted delete
   hub outbox retry <ID>       clear quarantine and queue an entry for retry\n  hub outbox discard <ID>     discard a quarantined entry
-  ${HOSTED_CHANGE_EVIDENCE_USAGE}
-                              inspect timestamp-pull misses recorded by the change-log follower
   hub tasks [--hours N]       what has been worked on, newest window first
   hub login [--port 7778]     print a one-time local dashboard login URL
   hub serve [--port 7778]     the dashboard
@@ -641,7 +635,6 @@ try {
     cmd === 'rulings' ||
     cmd === 'doctor' ||
     cmd === 'outbox' ||
-    cmd === 'changes' ||
     cmd === 'note'
   if (usesDatabase) requireDatabase()
 
@@ -659,9 +652,6 @@ try {
     }
     case 'doctor':
       for (const line of await hubDoctorLines()) console.log(line)
-      break
-    case 'changes':
-      for (const line of runHostedChangeEvidenceCommand(argv)) console.log(line)
       break
     case 'outbox':
       for (const line of runHostedOutboxCommand(argv)) console.log(line)

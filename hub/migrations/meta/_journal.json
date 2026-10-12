@@ -218,6 +218,13 @@
       "when": 1792188536000,
       "tag": "0030_outbox_kept_values",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792274936000,
+      "tag": "0031_change_log_pull_cutover",
+      "breakpoints": true
     }
   ]
 }

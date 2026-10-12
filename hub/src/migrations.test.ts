@@ -95,6 +95,7 @@ const LATEST_MIGRATIONS = [
   '0028_outbox_evidence',
   '0029_outbox_fields',
   '0030_outbox_kept_values',
+  '0031_change_log_pull_cutover',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
@@ -244,6 +245,38 @@ describe('hub migration journal', () => {
       bound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
     ).toEqual({ bound: 1 })
     bound.close()
+  })
+
+  test('change-log cutover drops comparison evidence and timestamp cursors on a populated store', () => {
+    const d = migratedThrough(30)
+    d.exec(`INSERT INTO hosted_change_evidence
+      (record_id,family,space_id,hosted_table,row_id,kind,differing_columns,observed_at)
+      VALUES ('evidence','task','space','hub_task','task','changed-upsert','[]','2026-10-12')`)
+    const insert = d.query('INSERT INTO setting(key,value) VALUES (?,?)')
+    for (const key of [
+      'collect.hosted-tasks.cursor',
+      'collect.hosted-tasks.cursor.space',
+      'collect.hosted-notes.cursor',
+      'collect.hosted-notes.cursor.space',
+      'collect.hosted-sends.cursor',
+      'collect.hosted-changes.cursor.space',
+    ])
+      insert.run(key, 'cursor')
+
+    expect(applyMigrations(d)).toEqual(['0031_change_log_pull_cutover'])
+    expect(
+      d
+        .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hosted_change_evidence'")
+        .get(),
+    ).toBeNull()
+    expect(
+      d
+        .query<{ key: string }, []>(
+          "SELECT key FROM setting WHERE key LIKE 'collect.hosted-%cursor%'",
+        )
+        .all(),
+    ).toEqual([{ key: 'collect.hosted-changes.cursor.space' }])
+    d.close()
   })
 
   test('the adoption strip handles populated foreign-key cycles and restores enforcement', () => {

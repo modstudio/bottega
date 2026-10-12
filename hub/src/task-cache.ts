@@ -1,14 +1,11 @@
 import type { Database } from 'bun:sqlite'
-import { db, writeTransaction } from './db.ts'
+import { writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
-import { projects } from './projects.ts'
-import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
+import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
-import { type RegisteredTaskSpace, taskPullSpaces } from './task-project-space.ts'
 
-const CURSOR_KEY = 'collect.hosted-tasks.cursor'
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
 type HostedChangeRow =
   | HostedChanges['tasks'][number]
@@ -43,6 +40,18 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     return
   }
   const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+  const current = conn
+    .query<{ source: string; opened_at: string | null; updated_at: string }, [string]>(
+      'SELECT source,opened_at,updated_at FROM task WHERE record_id=?',
+    )
+    .get(row.id)
+  const preserveGitDate = (incoming: string | null, stored: string | null) =>
+    current?.source === 'git' &&
+    incoming !== null &&
+    stored !== null &&
+    new Date(incoming).getTime() === new Date(stored).getTime()
+      ? stored
+      : incoming
   conn
     .query(`INSERT INTO task
       (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
@@ -66,9 +75,9 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       parentRecordId,
       row.body,
       row.assignee,
-      row.opened_at,
+      preserveGitDate(row.opened_at, current?.opened_at ?? null),
       row.closed_at,
-      row.updated_at,
+      preserveGitDate(row.updated_at, current?.updated_at ?? null),
       row.source,
       row.first_seen,
       row.last_seen,
@@ -171,8 +180,12 @@ export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
     applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
   })
   changes.statusEvents.forEach((row) => {
-    applyStatusEvent(conn, row)
+    applySnapshotRow(conn, 'hub_task_status_event', row.id, row, applyStatusEvent)
   })
+}
+
+export function applyHostedTaskChanges(changes: HostedChanges) {
+  writeTransaction((conn) => applyHostedTaskRows(conn, changes))
 }
 
 function applySnapshotRow(
@@ -264,70 +277,4 @@ export function hostedChangeRowProject(
       .query<{ project: string }, [string]>(`SELECT project FROM task WHERE record_id=?`)
       .get(child.task_record_id)?.project ?? null
   )
-}
-
-export function applyHostedTaskChanges(
-  changes: HostedChanges,
-  cursorKey = CURSOR_KEY,
-  clearLegacyCursor = false,
-) {
-  writeTransaction((conn) => {
-    applyHostedTaskRows(conn, changes)
-    conn
-      .query(
-        `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      )
-      .run(cursorKey, changes.cursor)
-    if (clearLegacyCursor) conn.query(`DELETE FROM setting WHERE key=?`).run(CURSOR_KEY)
-  })
-}
-
-const cursorKeyFor = (spaceId: string) => `${CURSOR_KEY}.${spaceId}`
-
-function pullCursor(spaceId: string, activeSpaceId: string) {
-  const cursor = db()
-    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
-    .get(cursorKeyFor(spaceId))?.value
-  if (cursor !== undefined) return { cursor, fromLegacy: false }
-  if (spaceId !== activeSpaceId) return { cursor: null, fromLegacy: false }
-  const legacy = db()
-    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
-    .get(CURSOR_KEY)?.value
-  return { cursor: legacy ?? null, fromLegacy: legacy !== undefined }
-}
-
-export async function pullHostedTasks(
-  options: {
-    baseUrl?: string
-    token?: string | null
-    fetch?: TaskFetch
-    registeredProjects?: readonly RegisteredTaskSpace[]
-  } = {},
-) {
-  const requestOptions = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
-  const identity = await hostedTaskIdentity(requestOptions)
-  const spaces = taskPullSpaces(options.registeredProjects ?? projects(), identity)
-  const totals = { tasks: 0, comments: 0, documents: 0, statusEvents: 0 }
-  let activeCursor = ''
-  const failures: string[] = []
-  for (const spaceId of spaces) {
-    const cursorKey = cursorKeyFor(spaceId)
-    const { cursor, fromLegacy } = pullCursor(spaceId, identity.activeSpaceId)
-    try {
-      const changes = await hostedTaskChanges(cursor, { ...requestOptions, recordSpace: spaceId })
-      applyHostedTaskChanges(changes, cursorKey, fromLegacy)
-      totals.tasks += changes.tasks.length
-      totals.comments += changes.comments.length
-      totals.documents += changes.documents.length
-      totals.statusEvents += changes.statusEvents.length
-      if (spaceId === identity.activeSpaceId) activeCursor = changes.cursor
-    } catch (cause) {
-      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
-  }
-  if (failures.length) throw new Error(`hosted task pulls failed: ${failures.join('; ')}`)
-  return {
-    ...totals,
-    cursor: activeCursor,
-  }
 }
