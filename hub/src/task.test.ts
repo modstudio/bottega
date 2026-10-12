@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
@@ -148,16 +148,27 @@ describe('hosted-authoritative existing-row edits', () => {
 
   test('set, comment, and close save locally and queue while offline', async () => {
     const id = seed('GAM-70', 'gamma')
-    await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
-    await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
-    await closeTask(
-      'GAM-70',
-      { recordId: id },
-      {
-        hosted: unreachable,
-        classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
-      },
-    )
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
+      await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
+      await closeTask(
+        'GAM-70',
+        { recordId: id },
+        {
+          hosted: unreachable,
+          classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
+        },
+      )
+    } finally {
+      log.mockRestore()
+    }
+    expect(messages).toEqual([
+      expect.stringContaining('hosted change saved and queued'),
+      expect.stringContaining('hosted change saved and queued'),
+      expect.stringContaining('hosted change saved and queued'),
+    ])
     expect(db().query(`SELECT title,status_category FROM task WHERE record_id=?`).get(id)).toEqual({
       title: 'Offline title',
       status_category: 'done',
@@ -170,6 +181,56 @@ describe('hosted-authoritative existing-row edits', () => {
         .all()
         .map((row) => row.table_name),
     ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
+  })
+
+  test('an applied or rejected after-write drain reports its outcome and keeps rejections', async () => {
+    const sentId = seed('GAM-71', 'gamma')
+    const rejectedId = seed('GAM-72', 'gamma')
+    let reject = false
+    const fetch = async (input: string, init?: RequestInit) => {
+      const url = new URL(input)
+      if (url.pathname === '/v1/tasks/identity')
+        return Response.json({
+          userId: 'user-1',
+          activeSpaceId: 'declared-gamma-space',
+          memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
+          capabilities: { spacePush: true, spacePushTables: ['hub_task'] },
+        })
+      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+      return Response.json(
+        changes.map(({ id }) =>
+          reject ? { id, status: 'rejected', reason: 'policy says no' } : { id, status: 'applied' },
+        ),
+      )
+    }
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
+      await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, { hosted })
+      reject = true
+      await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, { hosted })
+    } finally {
+      log.mockRestore()
+    }
+    expect(messages).toEqual([
+      'hosted change sent',
+      'hosted change rejected: policy says no; inspect it with `hub outbox`',
+    ])
+    expect(
+      db().query(`SELECT last_error FROM hosted_outbox WHERE row_id=?`).get(rejectedId),
+    ).toEqual({
+      last_error: 'policy says no',
+    })
+  })
+
+  test('new still needs hosting and local-authoritative edits queue nothing', async () => {
+    await expect(
+      createTask({ project: 'gamma', title: 'Cannot create offline' }, { hosted: unreachable }),
+    ).rejects.toThrow('hosted hub unavailable')
+    const id = seed('BET-70', 'beta')
+    await setTask('BET-70', { recordId: id }, { title: 'Local only' }, { hosted: { baseUrl: '' } })
+    expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   })
 })
 

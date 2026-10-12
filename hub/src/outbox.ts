@@ -143,11 +143,7 @@ function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 
     : 'not-quarantined'
 }
 
-export function retryHostedOutboxEntry(id: string): boolean {
-  return retryHostedOutboxEntryOutcome(id) === 'retried'
-}
-
-export function discardHostedOutboxEntry(id: string): boolean {
+function discardHostedOutboxEntry(id: string): boolean {
   return (
     writeTransaction((conn) =>
       conn.query(`DELETE FROM hosted_outbox WHERE id=? AND quarantined_at IS NOT NULL`).run(id),
@@ -413,7 +409,6 @@ export async function drainHostedOutbox(
     waitingOnRouting: {},
     waitingOnHostedHub: {},
     skippedCapability: false,
-    hostedReachable: true,
   }
   if (!entries.length) return report
   const prepared = prepareOutboxRows(entries)
@@ -445,9 +440,14 @@ export async function drainHostedOutbox(
   if (!rows.length) return report
   const partitioned = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
   recordRoutingWaits(partitioned.refusals, report)
-  if (await removeMovedIntervals(partitioned.destinations, dependencies, report))
-    report.hostedReachable = await drainDestinations(partitioned.destinations, dependencies, report)
-  else report.hostedReachable = false
+  const hostedReachable = (await removeMovedIntervals(
+    partitioned.destinations,
+    dependencies,
+    report,
+  ))
+    ? await drainDestinations(partitioned.destinations, dependencies, report)
+    : false
+  Object.defineProperty(report, 'hostedReachable', { value: hostedReachable })
   return report
 }
 
@@ -510,38 +510,41 @@ export async function hostedOutboxDoctorLines(
   return lines
 }
 
+function showHostedOutboxEntry(id: string | undefined): string[] {
+  if (!id) throw new Error('usage: hub outbox show <ID>')
+  const row = listHostedOutbox().find((entry) => entry.id === id)
+  if (!row) throw new Error(`no outbox entry ${id}`)
+  return [
+    JSON.stringify(
+      { ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null },
+      null,
+      2,
+    ),
+  ]
+}
+
+function discardHostedOutboxCommand(id: string | undefined): string[] {
+  if (!id) throw new Error('usage: hub outbox discard <ID>')
+  if (!discardHostedOutboxEntry(id))
+    throw new Error(`outbox entry ${id} is not quarantined; use \`hub outbox retry ${id}\``)
+  return [`outbox entry ${id} discarded`]
+}
+
+function retryHostedOutboxCommand(id: string | undefined): string[] {
+  if (!id) throw new Error('usage: hub outbox retry <ID>')
+  const outcome = retryHostedOutboxEntryOutcome(id)
+  if (outcome === 'missing-row')
+    throw new Error(
+      `outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``,
+    )
+  if (outcome !== 'retried') throw new Error(`outbox entry ${id} is not quarantined and unsent`)
+  return [`outbox entry ${id} queued for retry`]
+}
+
 export function runHostedOutboxCommand(argv: string[]): string[] {
-  if (argv[1] === 'show') {
-    const id = argv[2]
-    if (!id) throw new Error('usage: hub outbox show <ID>')
-    const row = listHostedOutbox().find((entry) => entry.id === id)
-    if (!row) throw new Error(`no outbox entry ${id}`)
-    return [
-      JSON.stringify(
-        { ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null },
-        null,
-        2,
-      ),
-    ]
-  }
-  if (argv[1] === 'discard') {
-    const id = argv[2]
-    if (!id) throw new Error('usage: hub outbox discard <ID>')
-    if (!discardHostedOutboxEntry(id))
-      throw new Error(`outbox entry ${id} is not quarantined; use \`hub outbox retry ${id}\``)
-    return [`outbox entry ${id} discarded`]
-  }
-  if (argv[1] === 'retry') {
-    const id = argv[2]
-    if (!id) throw new Error('usage: hub outbox retry <ID>')
-    const outcome = retryHostedOutboxEntryOutcome(id)
-    if (outcome === 'missing-row')
-      throw new Error(
-        `outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``,
-      )
-    if (outcome !== 'retried') throw new Error(`outbox entry ${id} is not quarantined and unsent`)
-    return [`outbox entry ${id} queued for retry`]
-  }
+  if (argv[1] === 'show') return showHostedOutboxEntry(argv[2])
+  if (argv[1] === 'discard') return discardHostedOutboxCommand(argv[2])
+  if (argv[1] === 'retry') return retryHostedOutboxCommand(argv[2])
   if (argv[1] && argv[1] !== '--json') throw new Error('usage: hub outbox [--json]')
   const rows = listHostedOutbox()
   if (argv.includes('--json')) return [JSON.stringify(rows)]

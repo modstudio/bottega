@@ -1,4 +1,4 @@
-import { DELETED_ON_HOSTED_RECORD_REASON } from './pending-hosted-edit.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import type { PushedDocument, PushedTask } from './push-contract.ts'
 
 type Decision<Row> =

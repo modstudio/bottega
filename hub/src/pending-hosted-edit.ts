@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite'
-
-export const DELETED_ON_HOSTED_RECORD_REASON = 'row was deleted on the hosted record'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 
 export const HOSTED_MACHINE_TABLES = {
   hub_task: 'task',
@@ -35,7 +34,7 @@ export function pendingEditSkipsPull(pending: PendingHostedEdit | null): boolean
   return Boolean(pending && (pending.operation === 'delete' || pending.fields === null))
 }
 
-export function capturePendingFields(
+function capturePendingFields(
   table: string,
   row: Record<string, unknown> | null,
   pending: PendingHostedEdit | null,
@@ -58,7 +57,7 @@ export function capturePendingFields(
   )
 }
 
-export function restorePendingFields(
+function restorePendingFields(
   conn: Database,
   table: string,
   id: string,

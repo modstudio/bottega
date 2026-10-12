@@ -117,14 +117,14 @@ export type PushedDocument = {
   deleted_at: string | null
 }
 
-export const HOSTED_COMMENT_UPDATE_COLUMNS = [
+const HOSTED_COMMENT_UPDATE_COLUMNS = [
   'task_key',
   'task_id',
   'body',
   'updated_at',
   'deleted_at',
 ] as const
-export const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
+const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
 
 export const HOSTED_TASK_UPDATE_COLUMNS = [
   'title',

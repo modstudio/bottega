@@ -8,7 +8,6 @@ import {
   listHostedOutbox,
   mergeQueuedHostedChange,
   queueHostedChange,
-  retryHostedOutboxEntry,
   runHostedOutboxCommand,
 } from './outbox.ts'
 import {
@@ -265,7 +264,9 @@ describe('hosted outbox', () => {
       })
     expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantine_reason: 'invalid' })
     const entryId = listHostedOutbox()[0]!.id
-    expect(retryHostedOutboxEntry(entryId)).toBeTrue()
+    expect(runHostedOutboxCommand(['outbox', 'retry', entryId])).toEqual([
+      `outbox entry ${entryId} queued for retry`,
+    ])
     expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantined_at: null })
   })
 

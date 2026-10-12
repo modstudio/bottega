@@ -56,6 +56,7 @@ test('send-family migration preserves evidence and admits send rows', () => {
     '0027_outbox_status_event_tasks',
     '0028_outbox_evidence',
     '0029_outbox_fields',
+    '0030_outbox_kept_values',
   ])
   expect(d.query('SELECT * FROM hosted_change_evidence ORDER BY record_id').all()).toEqual(before)
   insert.run(

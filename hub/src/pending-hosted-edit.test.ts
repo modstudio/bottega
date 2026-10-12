@@ -1,8 +1,9 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { queueHostedChange } from './outbox.ts'
-import { DELETED_ON_HOSTED_RECORD_REASON, reconcilePulledRow } from './pending-hosted-edit.ts'
+import { reconcilePulledRow } from './pending-hosted-edit.ts'
 
 beforeEach(resetFixtureStore)
 

@@ -1,5 +1,6 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
@@ -10,7 +11,6 @@ import {
   mirrorTaskRow,
   type TaskIdentity,
 } from './hosted-tasks.ts'
-import { DELETED_ON_HOSTED_RECORD_REASON } from './pending-hosted-edit.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,

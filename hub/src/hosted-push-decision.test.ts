@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
-import { DELETED_ON_HOSTED_RECORD_REASON } from './pending-hosted-edit.ts'
 import type { PushedDocument, PushedTask } from './push-contract.ts'
 
 const at = '2026-10-11T12:00:00.000Z'
@@ -8,8 +9,8 @@ const later = '2026-10-11T13:00:00.000Z'
 const task: PushedTask = {
   id: Bun.randomUUIDv7(),
   key: 'DEV-1',
-  project: 'bottega',
-  project_name: 'bottega',
+  project: PLATFORM_SLUG,
+  project_name: PLATFORM_SLUG,
   title: 'stored',
   status: 'open',
   status_category: 'open',

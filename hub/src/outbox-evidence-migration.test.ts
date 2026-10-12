@@ -40,7 +40,11 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
   ledger.run('interval', interval, 'hash', '2026-10-11T12:00:00.000Z', 'space-old')
   ledger.run('interval', vanished, 'hash', '2026-10-11T12:01:00.000Z', 'space-gone')
 
-  expect(applyMigrations(database)).toEqual(['0028_outbox_evidence', '0029_outbox_fields'])
+  expect(applyMigrations(database)).toEqual([
+    '0028_outbox_evidence',
+    '0029_outbox_fields',
+    '0030_outbox_kept_values',
+  ])
   expect(
     database.query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(interval),
   ).toEqual({

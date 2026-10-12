@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { createTask, showTask } from './task.ts'
@@ -174,9 +174,38 @@ describe('task documents', () => {
         throw new Error('hosted hub unavailable')
       },
     }
-    await updateTaskDocument(documentId, { title: 'After' }, { hosted })
-    expect(await deleteTaskDocument(documentId, { hosted })).toMatchObject({ title: 'After' })
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      await updateTaskDocument(documentId, { title: 'After' }, { hosted })
+      expect(await deleteTaskDocument(documentId, { hosted })).toMatchObject({ title: 'After' })
+    } finally {
+      log.mockRestore()
+    }
+    expect(messages).toEqual([
+      expect.stringContaining('hosted change saved and queued'),
+      expect.stringContaining('hosted change saved and queued'),
+    ])
     expect(() => getTaskDocument(documentId)).toThrow(`no task document ${documentId}`)
+  })
+
+  test('document creation still needs the hosted record while offline', async () => {
+    const id = seed('GAM-71', 'gamma')
+    await expect(
+      createTaskDocument(
+        { task: 'GAM-71', title: 'Cannot create offline' },
+        { recordId: id },
+        {
+          hosted: {
+            baseUrl: 'https://unreachable.example.test',
+            token: 'test',
+            fetch: async () => {
+              throw new Error('hosted hub unavailable')
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow('hosted hub unavailable')
   })
 
   test('hosted document writes use the project declared space', async () => {
