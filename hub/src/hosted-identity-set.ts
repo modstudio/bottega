@@ -6,14 +6,38 @@ import {
   type IdentitySetPage,
   type IdentitySetRequest,
 } from './identity-set-contract.ts'
-import type { PushableHubChangeTable } from './push-contract.ts'
+import {
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DAY_TABLE,
+  HOSTED_DOCUMENT_TABLE,
+  HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
+  HOSTED_STATUS_EVENT_TABLE,
+  HOSTED_TASK_TABLE,
+  type PushableHubChangeTable,
+} from './push-contract.ts'
 
-const SOFT_DELETED = new Set<string>([
-  'hub_task',
-  'hub_task_comment',
-  'hub_task_document',
-  'hub_task_status_event',
-])
+function hasSoftDelete(table: PushableHubChangeTable): boolean {
+  switch (table) {
+    case HOSTED_TASK_TABLE:
+    case HOSTED_COMMENT_TABLE:
+    case HOSTED_DOCUMENT_TABLE:
+    case HOSTED_STATUS_EVENT_TABLE:
+    case HOSTED_NOTE_TABLE:
+    case HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE:
+      return true
+    case HOSTED_INTERVAL_TABLE:
+    case HOSTED_DAY_TABLE:
+      return false
+    default:
+      return assertNever(table)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled pushable hub table: ${value}`)
+}
 
 const rows = <T>(value: unknown) => value as T[]
 
@@ -22,7 +46,7 @@ export async function readHostedIdentitySetInTransaction(
   identity: TaskIdentity,
   input: { table: PushableHubChangeTable; after: string | null; limit: number },
 ): Promise<IdentitySetPage> {
-  const live = SOFT_DELETED.has(input.table) ? 'AND deleted_at IS NULL' : ''
+  const live = hasSoftDelete(input.table) ? 'AND deleted_at IS NULL' : ''
   const selected = rows<{ id: string }>(
     await tx`SELECT id::text AS id FROM ${tx.unsafe(input.table)}
       WHERE space_id=${identity.spaceId}::uuid ${tx.unsafe(live)}

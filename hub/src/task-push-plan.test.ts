@@ -3,7 +3,7 @@ import {
   compareIdentitySets,
   drainFailsAudit,
   planTaskPushAudit,
-  repairFieldsFor,
+  repairDecisionFor,
   taskPushVerdict,
 } from './task-push-plan.ts'
 
@@ -11,11 +11,14 @@ const spaceA = 'space-a'
 const spaceB = 'space-b'
 const task = 'hub_task' as const
 const interval = 'hub_interval' as const
+const note = 'hub_note' as const
 const pulled = new Set<string>([
   'hub_task',
   'hub_task_comment',
   'hub_task_document',
   'hub_task_status_event',
+  'hub_note',
+  'hub_note_acknowledgement',
 ])
 
 test('compareIdentitySets counts pending as in-flight and skips stuck from missing', () => {
@@ -89,9 +92,29 @@ test('planTaskPushAudit reports agreement, unroutable, stuck, and insert-if-abse
     { table: task, id: 'missing', fields: [] },
     { table: interval, id: 'local-interval', fields: null },
   ])
-  expect(repairFieldsFor('hub_task_comment')).toEqual([])
-  expect(repairFieldsFor('hub_task_status_event')).toBeNull()
+  expect(repairDecisionFor('hub_task_comment')).toEqual({ repairable: true, fields: [] })
+  expect(repairDecisionFor('hub_task_status_event')).toEqual({ repairable: true, fields: null })
   expect(taskPushVerdict(plan, null)).toBeFalse()
+})
+
+test('a machine-only note is unrepairable because its number must be assigned by the host', () => {
+  const plan = planTaskPushAudit({
+    spaces: [spaceA],
+    tables: [note],
+    machine: [{ table: note, id: 'local-note', destinationSpaceId: spaceA }],
+    hosted: [{ table: note, spaceId: spaceA, ids: [] }],
+    outbox: [],
+    pulledTables: pulled,
+  })
+  expect(plan.repair).toEqual([])
+  expect(plan.unrepairable).toEqual([
+    {
+      table: note,
+      id: 'local-note',
+      reason: 'the hosted record assigns note numbers, so a missing note cannot be created by push',
+    },
+  ])
+  expect(taskPushVerdict(plan, { rejected: 0, quarantined: 0, waitingOnRouting: {} })).toBeFalse()
 })
 
 test('hosted-only evidence does not fail and pulled hosted-only does', () => {
