@@ -307,6 +307,10 @@ function drainFailureLines(drain: HostedOutboxReport): string[] {
   return lines
 }
 
+function unrepairableLines(rows: readonly UnrepairableRow[]): string[] {
+  return rows.map((row) => `unrepairable ${row.table} ${row.id} ${row.reason}`)
+}
+
 export function formatTaskPushReport(report: TaskPushReport): string {
   const lines: string[] = []
   for (const space of report.spaces) {
@@ -359,8 +363,7 @@ export function formatTaskPushReport(report: TaskPushReport): string {
     lines.push(`unroutable ${row.project} ${row.reason} ${row.table}`)
     for (const id of row.ids) lines.push(`  ${id}`)
   }
-  for (const row of report.unrepairable)
-    lines.push(`unrepairable ${row.table} ${row.id} ${row.reason}`)
+  lines.push(...unrepairableLines(report.unrepairable))
   if (report.drain) {
     lines.push(
       `drain queued=${report.drain.queued} sent=${report.drain.sent} rejected=${report.drain.rejected} quarantined=${report.drain.quarantined}`,
