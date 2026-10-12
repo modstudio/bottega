@@ -107,6 +107,15 @@ test('an unadopted install keeps a post local and renders its id as a string', a
   ).toBe(1)
 })
 
+test('shared-space reach refuses a machine-local post with the hosted-board remedy', async () => {
+  await expect(
+    boardPost(
+      { audience: 'spaces', title: 'Shared', body: 'body' },
+      { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL } },
+    ),
+  ).rejects.toThrow(/requires the hosted board.*adopt.*--audience spaces/)
+})
+
 test('hosted post and reply expose unavailable posting counts as null', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const root = hostedMessage()
@@ -167,6 +176,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       title: 'Local question',
       body: 'Question body',
       audience: 'operator',
+      audienceDescription: 'operator',
       origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
@@ -182,6 +192,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
       claimId: null,
       authorUserId: null,
       authorSession: null,
@@ -282,6 +293,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       title: 'Local status',
       body: 'Status body',
       audience: 'operator',
+      audienceDescription: 'operator',
       origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
@@ -297,6 +309,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
       claimId: null,
       authorUserId: null,
       authorSession: null,

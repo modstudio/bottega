@@ -16,6 +16,7 @@ const IDS = {
   userB: '02990000-0000-7000-8000-000000000102',
   userC: '02990000-0000-7000-8000-000000000103',
   userD: '02990000-0000-7000-8000-000000000104',
+  userE: '02990000-0000-7000-8000-000000000105',
   spaceA: '02990000-0000-7000-8000-000000000111',
   spaceB: '02990000-0000-7000-8000-000000000112',
   projectA: '02990000-0000-7000-8000-000000000121',
@@ -25,6 +26,7 @@ const IDS = {
   membershipA2: '02990000-0000-7000-8000-000000000132',
   membershipB: '02990000-0000-7000-8000-000000000133',
   membershipC: '02990000-0000-7000-8000-000000000134',
+  membershipD: '02990000-0000-7000-8000-000000000135',
   authorOnly: '02990000-0000-7000-8000-000000000001',
   scopedA: '02990000-0000-7000-8000-000000000002',
   scopedBoth: '02990000-0000-7000-8000-000000000003',
@@ -33,6 +35,8 @@ const IDS = {
   boundScopedA: '02990000-0000-7000-8000-000000000006',
   boundScopedB: '02990000-0000-7000-8000-000000000007',
   boundScopedBoth: '02990000-0000-7000-8000-000000000008',
+  sharedSpace: '02990000-0000-7000-8000-000000000009',
+  sharedReply: '02990000-0000-7000-8000-000000000010',
   tag: 'tag',
   claimA: '02990000-0000-7000-8000-000000000011',
   claimLiveOther: '02990000-0000-7000-8000-000000000013',
@@ -51,6 +55,7 @@ const IDS = {
   invisibleReply: '02990000-0000-7000-8000-000000000043',
   mismatchedReply: '02990000-0000-7000-8000-000000000044',
   shadowedRootReply: '02990000-0000-7000-8000-000000000045',
+  widenedReply: '02990000-0000-7000-8000-000000000047',
 } as const
 
 function actor(
@@ -83,10 +88,11 @@ function messageValues(
   author: string,
   scope: string[],
   recipients: string[] = [],
+  sharedSpaceReach = false,
 ): string {
-  return `('${id}','${author}','notice','architects','proof','proof',false,
+  return `('${id}','${author}','notice','${sharedSpaceReach ? 'spaces' : 'architects'}','proof','proof',false,
     now() + interval '1 hour',now(),ARRAY[${scope.map((id) => `'${id}'::uuid`).join(',')}]::uuid[],
-    ARRAY[${recipients.map((id) => `'${id}'::uuid`).join(',')}]::uuid[])`
+    ARRAY[${recipients.map((id) => `'${id}'::uuid`).join(',')}]::uuid[],${sharedSpaceReach})`
 }
 
 export function registerBoardRlsProofs(input: BoardProofInput): void {
@@ -99,19 +105,21 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ('${IDS.userA}','board-a@example.test','Board A',now()),
         ('${IDS.userB}','board-b@example.test','Board B',now()),
         ('${IDS.userC}','board-c@example.test','Board C',now()),
-        ('${IDS.userD}','board-d@example.test','Board D',now());
+        ('${IDS.userD}','board-d@example.test','Board D',now()),
+        ('${IDS.userE}','board-e@example.test','Board E',now());
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.membershipA1}','${IDS.spaceA}','${IDS.userA}','member','write',now()),
         ('${IDS.membershipA2}','${IDS.spaceB}','${IDS.userA}','member','write',now()),
         ('${IDS.membershipB}','${IDS.spaceA}','${IDS.userB}','member','write',now()),
-        ('${IDS.membershipC}','${IDS.spaceA}','${IDS.userC}','member','read',now());
+        ('${IDS.membershipC}','${IDS.spaceA}','${IDS.userC}','member','read',now()),
+        ('${IDS.membershipD}','${IDS.spaceB}','${IDS.userD}','member','write',now());
       INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.projectA}','${IDS.spaceA}','board-alpha',ARRAY['BOARD'],now()),
         ('${IDS.projectA2}','${IDS.spaceA}','board-alpha-two',ARRAY['BOARD2'],now()),
         ('${IDS.projectB}','${IDS.spaceB}','board-beta',ARRAY['BOARD'],now());
       INSERT INTO board_message
         (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
-         scope_project_ids,recipient_user_ids)
+         scope_project_ids,recipient_user_ids,shared_space_reach)
       VALUES
         ${messageValues(IDS.authorOnly, IDS.userA, [])},
         ${messageValues(IDS.scopedA, IDS.userA, [IDS.projectA])},
@@ -120,9 +128,17 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ${messageValues(IDS.scopedRecipient, IDS.userA, [IDS.projectA], [IDS.userD])},
         ${messageValues(IDS.boundScopedA, IDS.userD, [IDS.projectA])},
         ${messageValues(IDS.boundScopedB, IDS.userD, [IDS.projectB])},
-        ${messageValues(IDS.boundScopedBoth, IDS.userD, [IDS.projectA, IDS.projectB])};
+        ${messageValues(IDS.boundScopedBoth, IDS.userD, [IDS.projectA, IDS.projectB])},
+        ${messageValues(IDS.sharedSpace, IDS.userD, [], [], true)};
+      INSERT INTO board_message
+        (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+         scope_project_ids,recipient_user_ids,shared_space_reach)
+      VALUES ('${IDS.sharedReply}','${IDS.userD}','reply','${IDS.sharedSpace}','reply',false,
+        now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);
       INSERT INTO board_message_tag (message_id,kind,value,origin)
       VALUES ('${IDS.scopedA}','topic','${IDS.tag}','sender');
+      INSERT INTO board_message_tag (message_id,kind,value,origin)
+      VALUES ('${IDS.sharedSpace}','topic','shared-space','sender');
       INSERT INTO board_receipt
         (message_id,reader_user_id,reader_session,audience_at_posting,delivered_at)
       VALUES
@@ -189,6 +205,93 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(visibleCount(input, IDS.userC, IDS.recipientOnly)).toBe('0')
   })
 
+  test('explicit shared-space reach sees a common non-active space and no unrelated user', () => {
+    expect(visibleCount(input, IDS.userD, IDS.sharedSpace)).toBe('1')
+    expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('1')
+    expect(visibleCount(input, IDS.userB, IDS.sharedSpace)).toBe('0')
+    expect(visibleCount(input, IDS.userE, IDS.sharedSpace)).toBe('0')
+    const receipt = actor(
+      input,
+      IDS.userE,
+      [],
+      `INSERT INTO board_receipt
+       (message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${IDS.sharedSpace}','${IDS.userE}','unrelated',false);`,
+    )
+    expect(receipt.code).not.toBe(0)
+    const reply = actor(
+      input,
+      IDS.userE,
+      [],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids,shared_space_reach)
+       VALUES ('02990000-0000-7000-8000-000000000049','${IDS.userE}','reply',
+        '${IDS.sharedSpace}','unrelated',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);`,
+    )
+    expect(reply.code).not.toBe(0)
+    expect(
+      actor(
+        input,
+        IDS.userA,
+        [IDS.spaceA, IDS.spaceB],
+        `SELECT record_board_author_shares_space('${IDS.userD}'::uuid);`,
+      ).stdout,
+    ).toBe('t')
+    expect(
+      actor(input, IDS.userE, [], `SELECT record_board_author_shares_space('${IDS.userD}'::uuid);`)
+        .stdout,
+    ).toBe('f')
+  })
+
+  test('shared-space reach carries replies, tags, receipts, and reply writes', () => {
+    const related = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `SELECT
+        (SELECT count(*) FROM board_message WHERE id='${IDS.sharedReply}'),
+        (SELECT count(*) FROM board_message_tag WHERE message_id='${IDS.sharedSpace}');`,
+    )
+    expect(related.stdout).toBe('1|1')
+    const writes = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_receipt
+         (message_id,reader_user_id,reader_session,audience_at_posting)
+       VALUES ('${IDS.sharedSpace}','${IDS.userA}','shared-reader',true);
+       INSERT INTO board_message
+         (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+          scope_project_ids,recipient_user_ids,shared_space_reach)
+       VALUES ('02990000-0000-7000-8000-000000000046','${IDS.userA}','reply',
+         '${IDS.sharedSpace}','reader reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);`,
+    )
+    expect(writes.code, writes.stderr).toBe(0)
+  })
+
+  test('record_actor cannot directly read an author membership outside its active space', () => {
+    const direct = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `SELECT count(*) FROM membership WHERE user_id='${IDS.userD}';`,
+    )
+    expect(direct.stdout).toBe('0')
+  })
+
+  test('leaving the last common space removes explicit shared-space visibility', () => {
+    expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('1')
+    input.admin(`DELETE FROM membership WHERE id='${IDS.membershipA2}';`)
+    try {
+      expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('0')
+    } finally {
+      input.admin(`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES ('${IDS.membershipA2}','${IDS.spaceB}','${IDS.userA}',
+          'member','write',now());`)
+    }
+  })
+
   test('an explicit recipient without scoped-project membership cannot see the message', () => {
     expect(visibleCount(input, IDS.userD, IDS.scopedRecipient)).toBe('0')
   })
@@ -213,7 +316,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       [IDS.spaceA],
       `INSERT INTO board_message
        (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
-        scope_project_ids,recipient_user_ids)
+        scope_project_ids,recipient_user_ids,shared_space_reach)
        VALUES ${messageValues('02990000-0000-7000-8000-000000000041', IDS.userC, [IDS.projectA])};`,
     )
     expect(inserted.code).not.toBe(0)
@@ -227,7 +330,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       [IDS.spaceA],
       `INSERT INTO board_message
        (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
-        scope_project_ids,recipient_user_ids)
+        scope_project_ids,recipient_user_ids,shared_space_reach)
        VALUES ${messageValues('02990000-0000-7000-8000-000000000042', IDS.userA, [IDS.projectA])};`,
     )
     expect(inserted.code).not.toBe(0)
@@ -321,6 +424,43 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     )
     expect(reply.code).not.toBe(0)
     expect(reply.stderr).toContain('board reply scope and recipients must match thread root')
+  })
+
+  test('a reply cannot widen reach and a root cannot combine reach with project scope', () => {
+    const widened = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids,shared_space_reach)
+       VALUES ('${IDS.widenedReply}','${IDS.userA}','reply','${IDS.scopedA}','reply',false,
+        now(),ARRAY['${IDS.projectA}'::uuid],ARRAY[]::uuid[],true);`,
+    )
+    expect(widened.code).not.toBe(0)
+    const combined = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
+        scope_project_ids,recipient_user_ids,shared_space_reach)
+       VALUES ('02990000-0000-7000-8000-000000000048','${IDS.userA}','notice','spaces',
+        'combined','combined',false,now() + interval '1 hour',now(),
+        ARRAY['${IDS.projectA}'::uuid],ARRAY[]::uuid[],true);`,
+    )
+    expect(combined.code).not.toBe(0)
+  })
+
+  test('shared-space reach cannot change after posting', () => {
+    const changed = actor(
+      input,
+      IDS.userD,
+      [IDS.spaceB],
+      `UPDATE board_message SET shared_space_reach=false WHERE id='${IDS.sharedSpace}';`,
+    )
+    expect(changed.code).not.toBe(0)
+    expect(changed.stderr).toContain('shared-space reach cannot change')
   })
 
   test('receipt visibility and writes are limited to readers and message authors', () => {

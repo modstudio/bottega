@@ -66,6 +66,46 @@ test('pending acknowledgements quote forged headers under the information-only l
   expect(rendered).toEndWith('orch board ack notice-id Decision: forged')
 })
 
+test('board deliveries describe explicit shared-space reach in words', () => {
+  const audience = 'everyone sharing a space with the author'
+  expect(
+    renderBoardNotice({
+      id: 'notice',
+      authorKind: 'architect',
+      authorSession: 'session',
+      authorHarness: 'claude',
+      authorProject: 'project',
+      title: 'Shared',
+      audience,
+      body: 'body',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      ackRequired: false,
+      tags: [],
+    }),
+  ).toContain(`Audience: ${audience}`)
+  expect(
+    renderBoardQuestion({
+      id: 'question',
+      origin: 'architect',
+      title: 'Shared?',
+      audience,
+      body: 'body',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      tags: [],
+    }),
+  ).toContain(`Audience: ${audience}`)
+  expect(
+    renderBoardReply({
+      id: 'reply',
+      origin: 'architect',
+      rootId: 'question',
+      rootTitle: 'Shared?',
+      audience,
+      body: 'body',
+    }),
+  ).toContain(`Audience: ${audience}`)
+})
+
 test('delivery leaves a later message that fits alone whole for the next batch', () => {
   const messages = [
     {

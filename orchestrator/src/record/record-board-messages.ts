@@ -6,6 +6,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
   acknowledgementRefusal,
+  audienceDescription,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
@@ -51,6 +52,7 @@ import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-boar
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
   recipientUserIds: string[]
+  sharedSpaceReach?: boolean
   claimId?: string | null
 }
 
@@ -102,6 +104,10 @@ export function hostedBoardMessageView(
     title: row.title == null ? null : String(row.title),
     body: String(row.body),
     audience: row.audience == null ? null : String(row.audience),
+    audienceDescription: audienceDescription(
+      row.audience == null ? null : String(row.audience),
+      Boolean(row.shared_space_reach),
+    ),
     origin: hostedBoardOrigin(row),
     senderTags: tags
       .filter((tag) => tag.origin === 'sender')
@@ -118,6 +124,7 @@ export function hostedBoardMessageView(
     revision: String(row.revision),
     scopeProjectIds: hostedUuidList(row.scope_project_ids),
     recipientUserIds: hostedUuidList(row.recipient_user_ids),
+    sharedSpaceReach: Boolean(row.shared_space_reach),
     claimId: row.claim_id == null ? null : String(row.claim_id),
     authorUserId: String(row.author_user_id),
     authorSession: row.author_session == null ? null : String(row.author_session),
@@ -147,6 +154,7 @@ function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBo
     threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),
     scopeProjectIds: hostedUuidList(row.scope_project_ids),
     recipientUserIds: hostedUuidList(row.recipient_user_ids),
+    sharedSpaceReach: Boolean(row.shared_space_reach),
     claimId: row.claim_id == null ? null : String(row.claim_id),
     senderTags: tags
       .filter((tag) => tag.origin === 'sender')
@@ -323,6 +331,12 @@ async function insertRoot(
   const derived = hostedBoardScope(audience, projectId)
   const scopeProjectIds = forcedScope?.scopeProjectIds ?? derived.scopeProjectIds
   const recipients = forcedScope?.recipientUserIds ?? derived.recipientUserIds
+  const sharedSpaceReach = forcedScope?.sharedSpaceReach ?? derived.sharedSpaceReach
+  if (sharedSpaceReach && (scopeProjectIds.length > 0 || recipients.length > 0))
+    throw new RecordBoardError(
+      'spaces audience cannot be combined with a project or recipient scope; use spaces alone or choose the narrower audience',
+      400,
+    )
   const claimId = forcedScope?.claimId ?? null
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
@@ -336,7 +350,7 @@ async function insertRoot(
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
       kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
-      created_at, claim_id, scope_project_ids, recipient_user_ids
+      created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     ) VALUES (
       ${input.id}::uuid, ${userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
@@ -344,7 +358,7 @@ async function insertRoot(
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
       ${createdAt}::timestamptz, ${claimId}::uuid,
       COALESCE(${boardUuidArray(tx, scopeProjectIds)}, ARRAY[]::uuid[]),
-      COALESCE(${boardUuidArray(tx, recipients)}, ARRAY[]::uuid[])
+      COALESCE(${boardUuidArray(tx, recipients)}, ARRAY[]::uuid[]), ${sharedSpaceReach}
     )
   `
   await insertTags(tx, input.id, tags)
@@ -419,6 +433,7 @@ export async function postHostedBoardMessage(
     threadRootId: null,
     scopeProjectIds: [],
     recipientUserIds: [],
+    sharedSpaceReach: false,
     claimId: null,
     senderTags: senderTags.map(({ kind, value }) => ({ kind, value })),
   }
@@ -428,6 +443,7 @@ export async function postHostedBoardMessage(
     const derived = hostedBoardScope(audience, projectId)
     requested.scopeProjectIds = derived.scopeProjectIds
     requested.recipientUserIds = derived.recipientUserIds
+    requested.sharedSpaceReach = derived.sharedSpaceReach
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const duplicateId = await duplicateRootId(
@@ -547,13 +563,14 @@ async function insertReplyCopyingRoot(
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
       kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
-      created_at, claim_id, scope_project_ids, recipient_user_ids
+      created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     )
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
       'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
-      ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids
+      ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
+      root.shared_space_reach
     FROM board_message AS root
     WHERE root.id = ${rootId}::uuid
     RETURNING id
@@ -581,6 +598,7 @@ export async function replyHostedBoardMessage(
     threadRootId: input.rootId,
     scopeProjectIds: [],
     recipientUserIds: [],
+    sharedSpaceReach: false,
     claimId: null,
     senderTags: [],
   }
@@ -590,6 +608,7 @@ export async function replyHostedBoardMessage(
     requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
     requested.threadRootId = String(rootRow.row.id)
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
+    requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const audienceKind = rootRow.row.audience

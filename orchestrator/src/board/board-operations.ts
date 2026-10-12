@@ -77,6 +77,7 @@ type BoardMessageResult = {
   title: string | null
   body: string | null
   audience: string | null
+  audienceDescription?: string
   origin: BoardOrigin | null
   senderTags: { kind: 'task' | 'path' | 'topic'; value: string }[] | null
   createdAt: string | null
@@ -92,6 +93,7 @@ type BoardMessageResult = {
   revision: string | null
   scopeProjectIds: string[] | null
   recipientUserIds: string[] | null
+  sharedSpaceReach?: boolean | null
   claimId: string | null
   authorUserId: string | null
   authorSession: string | null
@@ -193,6 +195,8 @@ function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
+      audienceDescription: value.root.audience ?? undefined,
       claimId: null,
       authorUserId: null,
       authorSession: value.root.origin.session,
@@ -250,6 +254,8 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
+      audienceDescription: row.audience ?? undefined,
       claimId: null,
       authorUserId: null,
       authorSession: row.author_session,
@@ -357,8 +363,13 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
   })
   if (refusal) throw new Error(refusal)
-  if (boardMode(locality(input.audience), c.env) === 'local')
+  if (boardMode(locality(input.audience), c.env) === 'local') {
+    if (parseAudience(input.audience).kind === 'spaces')
+      throw new Error(
+        'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces',
+      )
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
+  }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }
@@ -368,8 +379,13 @@ export async function boardAsk(
   inputContext?: Context,
 ) {
   const c = context(inputContext)
-  if (boardMode(locality(input.audience), c.env) === 'local')
+  if (boardMode(locality(input.audience), c.env) === 'local') {
+    if (parseAudience(input.audience).kind === 'spaces')
+      throw new Error(
+        'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces',
+      )
     return localPostResult(askQuestion(input, c.env, c.clock, c.cwd))
+  }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('question', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }

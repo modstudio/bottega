@@ -151,6 +151,11 @@ export const membership = pgTable.withRLS(
         for: 'select',
         using: sql`${table.spaceId} = ${currentSpace} OR ${table.userId} = ${currentUser}`,
       }),
+      pgPolicy('membership_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
       pgPolicy('membership_space_insert', {
         for: 'insert',
         withCheck: sql`${table.spaceId} = ${currentSpace} AND ${table.userId} = ${currentUser}`,
