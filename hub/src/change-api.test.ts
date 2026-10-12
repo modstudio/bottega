@@ -91,7 +91,7 @@ test('push route authorizes the requested space and refuses unaccepted tables', 
     body: [change],
   })
 
-  const refused = await changeApi(pushRequest([{ ...change, table: 'hub_note' }]), config, {
+  const refused = await changeApi(pushRequest([{ ...change, table: 'hub_send' }]), config, {
     fetch: whoami,
     push: async () => [],
   })
@@ -101,7 +101,7 @@ test('push route authorizes the requested space and refuses unaccepted tables', 
       id: change.id,
       status: 'rejected',
       reason:
-        'table hub_note is not accepted; accepted tables: hub_task, hub_task_status_event, hub_task_comment, hub_task_document, hub_interval, hub_day',
+        'table hub_send is not accepted; accepted tables: hub_task, hub_task_status_event, hub_task_comment, hub_task_document, hub_interval, hub_day, hub_note, hub_note_acknowledgement',
     },
   ])
 })
@@ -299,7 +299,7 @@ test('identity-set route binds the requested space and refuses a non-member befo
     )?.status,
   ).toBe(403)
   expect(reads).toBe(0)
-  const invalid = await changeApi(idsRequest('table=hub_note'), config, {
+  const invalid = await changeApi(idsRequest('table=hub_send'), config, {
     fetch: whoami,
     ids: async () => {
       reads++
