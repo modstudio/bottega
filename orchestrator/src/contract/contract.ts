@@ -927,7 +927,6 @@ export type JsonSchema = {
   properties?: { readonly [key: string]: JsonSchema }
   required?: readonly string[]
   items?: JsonSchema
-  minItems?: number
   enum?: readonly unknown[]
   anyOf?: readonly JsonSchema[]
   additionalProperties?: boolean
@@ -950,7 +949,6 @@ export function validatesSchema(value: unknown, schema: JsonSchema): boolean {
   }
 
   if (Array.isArray(value) && schema.items) {
-    if (schema.minItems !== undefined && value.length < schema.minItems) return false
     return value.every((item) => validatesSchema(item, schema.items!))
   }
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
