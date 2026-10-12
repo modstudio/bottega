@@ -9,7 +9,6 @@ import {
   createHostedDocument,
   createHostedTask,
   getHostedTask,
-  hostedTaskCounts,
   listHostedTasks,
 } from './hosted-tasks.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
@@ -26,7 +25,6 @@ type Dependencies = {
   createDocument?: typeof createHostedDocument
   presence?: typeof hostedTaskPresence
   deleteTasks?: typeof softDeleteHostedTasks
-  counts?: typeof hostedTaskCounts
 }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status })
@@ -40,7 +38,6 @@ const call = <T>(stub: T | undefined, real: T): T => {
 
 function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
   if (method === 'GET' && pathname === '/v1/tasks') return true
-  if (method === 'GET' && pathname === '/v1/tasks/counts') return true
   if (method === 'POST' && pathname === '/v1/tasks') return true
   if (method === 'GET')
     return /^\/v1\/tasks\/[^/]+$/.test(pathname) && pathname !== '/v1/tasks/identity'
@@ -76,9 +73,6 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
       }),
     )
-  if (request.method === 'GET' && url.pathname === '/v1/tasks/counts') {
-    return json(await call(dependencies.counts, hostedTaskCounts)(config.recordDatabaseUrl, who))
-  }
   if (request.method !== 'GET' || !keyMatch) return null
   const value = await call(dependencies.get, getHostedTask)(
     config.recordDatabaseUrl,

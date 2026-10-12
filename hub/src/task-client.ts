@@ -1,12 +1,12 @@
 import { diagnosticUrl, jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
-import { HUB_IDENTITY_SET_PAGE_SIZE } from './hosted-identity-set.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { parseIdentitySetPage } from './identity-set-contract.ts'
 import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
@@ -398,23 +398,9 @@ export async function hostedIdentitySet(
 ): Promise<{ ids: string[]; more: boolean }> {
   const query = new URLSearchParams({ table })
   if (options.after) query.set('after', options.after)
-  const page = await request<Record<string, unknown>>(
-    `/v1/changes/ids?${query}`,
-    'GET',
-    undefined,
-    options,
+  return parseIdentitySetPage(
+    await request<Record<string, unknown>>(`/v1/changes/ids?${query}`, 'GET', undefined, options),
   )
-  if (!Array.isArray(page.ids) || page.ids.some((id) => typeof id !== 'string' || !UUID.test(id)))
-    throw new Error('hosted hub returned a malformed identity set: ids must be UUIDs')
-  if (typeof page.more !== 'boolean')
-    throw new Error('hosted hub returned a malformed identity set: more must be a boolean')
-  if (page.more && page.ids.length === 0)
-    throw new Error('hosted hub returned a malformed identity set: more is true with no ids')
-  if (page.more && page.ids.length < HUB_IDENTITY_SET_PAGE_SIZE)
-    throw new Error(
-      `hosted hub returned a malformed identity set: more is true below page size ${HUB_IDENTITY_SET_PAGE_SIZE}`,
-    )
-  return { ids: page.ids, more: page.more }
 }
 
 export async function hostedPushChanges(

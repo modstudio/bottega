@@ -5,9 +5,10 @@ import {
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
 } from './hosted-changes.ts'
-import { identitySetRequestInput, listHostedIdentitySet } from './hosted-identity-set.ts'
+import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
   type HostedPushChange,
   type HostedPushOutcome,
@@ -146,9 +147,9 @@ async function identitySetResponse(
   const who = await identityWho(request, config, dependencies)
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
-  let input: ReturnType<typeof identitySetRequestInput>
+  let input: ReturnType<typeof parseIdentitySetRequest>
   try {
-    input = identitySetRequestInput(url)
+    input = parseIdentitySetRequest(url)
   } catch (error) {
     return json({ error: (error as Error).message }, 400)
   }

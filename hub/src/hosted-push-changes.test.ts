@@ -421,6 +421,21 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
   expect(
     (await database.query(`SELECT title,body FROM hub_task WHERE id=$1`, [absentId])).rows,
   ).toEqual([{ title: 'Whole insert', body: 'kept' }])
+
+  expect(
+    await apply([
+      {
+        table: 'hub_task',
+        id: taskId,
+        op: 'upsert',
+        row: { ...hostedEdit, title: 'Machine title' },
+        fields: [],
+      },
+    ]),
+  ).toEqual([{ id: taskId, status: 'duplicate' }])
+  expect((await database.query(`SELECT title FROM hub_task WHERE id=$1`, [taskId])).rows).toEqual([
+    { title: 'Later arriving title' },
+  ])
 })
 
 test('offline commands later drain through the real outbox into hosted task rows', async () => {
@@ -594,6 +609,9 @@ test('comment and document pushes apply their route effects and deduplicate dele
   }
   expect(await apply([comment])).toEqual([{ id: commentId, status: 'applied' }])
   expect(await apply([comment])).toEqual([{ id: commentId, status: 'duplicate' }])
+  expect(
+    await apply([{ ...comment, row: { ...comment.row, body: 'machine' }, fields: [] }]),
+  ).toEqual([{ id: commentId, status: 'duplicate' }])
   expect(
     (await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows,
   ).toEqual([{ body: 'offline' }])

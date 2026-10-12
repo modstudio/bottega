@@ -574,20 +574,3 @@ export async function mirrorStatusEventRow(
     (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
-
-export async function hostedTaskCounts(url: string, identity: TaskIdentity) {
-  return withHostedTenant(url, identity, async (tx) => ({
-    task: rows<{ source: string; count: number }>(
-      await tx`SELECT source,count(*)::int count FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND deleted_at IS NULL GROUP BY source ORDER BY source`,
-    ),
-    task_comment: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_comment c JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_comment', 'c')} WHERE c.space_id=${identity.spaceId}::uuid AND c.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
-    ),
-    task_document: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_document d JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_document', 'd')} WHERE d.space_id=${identity.spaceId}::uuid AND d.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
-    ),
-    task_status_event: rows<{ source: string; count: number }>(
-      await tx`SELECT t.source,count(*)::int count FROM hub_task_status_event e JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')} WHERE e.space_id=${identity.spaceId}::uuid AND e.deleted_at IS NULL GROUP BY t.source ORDER BY t.source`,
-    ),
-  }))
-}

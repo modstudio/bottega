@@ -52,6 +52,8 @@ test('task field decisions ignore incoming time for duplicates and never move ti
     kind: 'reject',
     reason: DELETED_ON_HOSTED_RECORD_REASON,
   })
+  expect(decideTaskUpsert(null, task, [])).toEqual({ kind: 'insert', row: task })
+  expect(decideTaskUpsert(task, { ...task, title: 'other' }, [])).toEqual({ kind: 'duplicate' })
 })
 
 test('document field decisions are duplicate by listed fields and reject tombstones', () => {
@@ -75,5 +77,8 @@ test('document field decisions are duplicate by listed fields and reject tombsto
   expect(decideDocumentUpsert({ ...document, deleted_at: later }, document, ['body'])).toEqual({
     kind: 'reject',
     reason: DELETED_ON_HOSTED_RECORD_REASON,
+  })
+  expect(decideDocumentUpsert(document, { ...document, title: 'other' }, [])).toEqual({
+    kind: 'duplicate',
   })
 })

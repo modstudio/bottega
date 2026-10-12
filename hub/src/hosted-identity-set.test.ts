@@ -3,11 +3,7 @@ import type { PGlite } from '@electric-sql/pglite'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import {
-  identitySetRequestInput,
-  parseIdentitySetTable,
-  readHostedIdentitySetInTransaction,
-} from './hosted-identity-set.ts'
+import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000008401'
 const spaceB = '01990000-0000-7000-8000-000000008402'
@@ -62,16 +58,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (database) await database.close()
-})
-
-test('parseIdentitySetTable accepts every pushable table and refuses others', () => {
-  expect(parseIdentitySetTable('hub_interval')).toBe('hub_interval')
-  expect(() => parseIdentitySetTable('hub_note')).toThrow(/table must name one of/)
-  expect(() =>
-    identitySetRequestInput(
-      new URL('https://hub.example.test/v1/changes/ids?table=hub_task&after=nope'),
-    ),
-  ).toThrow('after must be a UUID')
 })
 
 async function read(

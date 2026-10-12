@@ -10,13 +10,14 @@ import { readHostedIdentitySetInTransaction } from './hosted-identity-set.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { listHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
+  HOSTED_INTERVAL_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   PUSHABLE_HUB_CHANGE_TABLES,
+  type PushedInterval,
 } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
 import { formatTaskPushReport, pushTasks } from './task-push.ts'
-import { compareIdentitySets } from './task-push-plan.ts'
 
 const spaceA = '01990000-0000-7000-8000-000000008501'
 const spaceB = '01990000-0000-7000-8000-000000008502'
@@ -131,16 +132,27 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   resetFixtureStore()
+  for (const spaceId of [spaceA, spaceB]) {
+    await database.exec(`
+      RESET ROLE;
+      SET ROLE record_owner;
+      SELECT set_config('app.user_id','${userId}',false);
+      SELECT set_config('app.space_id','${spaceId}',false);
+      SELECT set_config('app.space_ids','${spaceId}',false);
+      DELETE FROM hub_task;
+      DELETE FROM hub_task_comment;
+      DELETE FROM hub_task_document;
+      DELETE FROM hub_task_status_event;
+      DELETE FROM hub_interval;
+      DELETE FROM hub_day;
+    `)
+  }
   await database.exec(`
     RESET ROLE;
-    SET ROLE record_owner;
-    DELETE FROM hub_task;
-    DELETE FROM hub_task_comment;
-    DELETE FROM hub_task_document;
-    DELETE FROM hub_task_status_event;
-    DELETE FROM hub_interval;
-    DELETE FROM hub_day;
     SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceA}',false);
+    SELECT set_config('app.space_ids','${spaceA}',false);
   `)
 })
 
@@ -164,15 +176,6 @@ const runPush = (repair = false) =>
       })
     },
   })
-
-test('compareIdentitySets counts in-flight separately from missing', () => {
-  expect(compareIdentitySets(['a', 'b', 'c'], ['a', 'd'], new Set(['c']))).toEqual({
-    both: 1,
-    machineOnly: ['b'],
-    hostedOnly: ['d'],
-    inFlight: ['c'],
-  })
-})
 
 test('task push reports nothing missing when the sides agree', async () => {
   insertMachineTask(taskA, 'DEV-1', 'workshop')
@@ -321,4 +324,138 @@ test('task push refuses a hub that does not advertise spaceIdentitySet', async (
       registered: () => registered,
     }),
   ).rejects.toThrow('hosted hub does not advertise space identity set support')
+})
+
+const intervalRow = (id: string): PushedInterval => ({
+  id,
+  task_key: null,
+  project_name: 'workshop',
+  source: 'orch',
+  agent: null,
+  job: null,
+  start_at: at,
+  end_at: at,
+  claude_tokens: 0,
+  vendor_tokens: 0,
+  vendor_cost_usd: null,
+  ref: 'orch:8514',
+  via: null,
+  open: 0,
+  session_id: null,
+  user_id: null,
+})
+
+test('hosted-only interval rows are a count, not a failure, and are not listed by id', async () => {
+  await applyOn(spaceA, [
+    { table: HOSTED_INTERVAL_TABLE, id: hostedOnly, op: 'upsert', row: intervalRow(hostedOnly) },
+  ])
+  const report = await runPush()
+  const intervals = report.spaces
+    .find((space) => space.spaceId === spaceA)
+    ?.tables.find((table) => table.table === HOSTED_INTERVAL_TABLE)
+  expect(intervals).toMatchObject({ pulled: false, hostedOnly: [hostedOnly], machineOnly: [] })
+  expect(report.ok).toBeTrue()
+  const text = formatTaskPushReport(report)
+  expect(text).toContain('written by another machine or no longer held here')
+  expect(text).not.toContain(`    ${hostedOnly}`)
+})
+
+test('repair insert-if-absent keeps a hosted title written after the audit', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+  const outcomes: Array<{ id: string; status: string }> = []
+  const repaired = await pushTasks({
+    repair: true,
+    identity: async () => identity,
+    listIds,
+    registered: () => registered,
+    drain: async (dependencies) => {
+      await applyOn(spaceA, [
+        {
+          table: HOSTED_TASK_TABLE,
+          id: missingHosted,
+          op: 'upsert',
+          row: { ...hostedTaskRow(missingHosted, 'DEV-miss', 'workshop'), title: 'Hosted title' },
+        },
+      ])
+      const { drainHostedOutbox } = await import('./outbox.ts')
+      return drainHostedOutbox({
+        ...dependencies,
+        identity: async () => identity,
+        registered: () => registered,
+        push: async (changes, options) => {
+          const result = await applyOn(options.recordSpace ?? spaceA, changes)
+          outcomes.push(...result)
+          return result
+        },
+      })
+    },
+  })
+  expect(outcomes).toEqual([{ id: missingHosted, status: 'duplicate' }])
+  expect(repaired.ok).toBeTrue()
+  expect(
+    (
+      await database.query<{ title: string }>(`SELECT title FROM hub_task WHERE id=$1`, [
+        missingHosted,
+      ])
+    ).rows[0]!.title,
+  ).toBe('Hosted title')
+})
+
+test('a quarantined outbox entry is stuck, not in flight, and fails', async () => {
+  insertMachineTask(inFlightId, 'DEV-fly', 'workshop')
+  writeTransaction((conn) => {
+    queueHostedChange(conn, HOSTED_TASK_TABLE, inFlightId, 'upsert')
+    conn
+      .query(`UPDATE hosted_outbox SET quarantined_at=?, quarantine_reason=? WHERE row_id=?`)
+      .run(at, 'conflict', inFlightId)
+  })
+  const report = await runPush()
+  const tasks = report.spaces
+    .find((space) => space.spaceId === spaceA)
+    ?.tables.find((table) => table.table === HOSTED_TASK_TABLE)
+  expect(tasks?.inFlight).toEqual([])
+  expect(tasks?.machineOnly).toEqual([])
+  expect(report.stuck).toEqual([{ table: HOSTED_TASK_TABLE, id: inFlightId, reason: 'conflict' }])
+  expect(report.ok).toBeFalse()
+  expect(formatTaskPushReport(report)).toContain('hub outbox')
+})
+
+test('repair fails when the drain rejects a queued row', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+  const report = await pushTasks({
+    repair: true,
+    identity: async () => identity,
+    listIds,
+    registered: () => registered,
+    drain: async () => ({
+      queued: 1,
+      sent: 0,
+      rejected: 1,
+      quarantined: 0,
+      dropped: 0,
+      waitingOnRouting: {},
+      skippedCapability: false,
+    }),
+  })
+  expect(report.ok).toBeFalse()
+  expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
+})
+
+test('--repair with an unroutable project reports the refusal and queues nothing', async () => {
+  const ghost = '01990000-0000-7000-8000-000000008516'
+  insertMachineTask(ghost, 'GHO-1', 'ghost')
+  const report = await runPush(true)
+  expect(report.unroutable).toEqual([
+    {
+      project: 'ghost',
+      reason: 'unregistered-project',
+      table: HOSTED_TASK_TABLE,
+      ids: [ghost],
+    },
+  ])
+  expect(report.ok).toBeFalse()
+  expect(listHostedOutbox()).toEqual([])
+  const hosted = await listIds(HOSTED_TASK_TABLE, { recordSpace: spaceA })
+  expect(hosted.ids).not.toContain(ghost)
+  expect(formatTaskPushReport(report)).toContain(ghost)
 })

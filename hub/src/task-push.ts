@@ -4,7 +4,6 @@ import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from '.
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
-  HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
@@ -12,6 +11,7 @@ import {
   PUSHABLE_HUB_CHANGE_TABLES,
   type PushableHubChangeTable,
 } from './push-contract.ts'
+import { isHostedTaskChangeTable } from './task-cache.ts'
 import {
   assertSpaceIdentitySet,
   hostedIdentitySet,
@@ -26,9 +26,16 @@ import {
   taskPullSpaces,
 } from './task-project-space.ts'
 import {
-  compareIdentitySets,
-  type IdentitySetComparison,
-  identitySetAgrees,
+  type AuditOutboxEntry,
+  type DrainAudit,
+  type HostedTableIds,
+  planTaskPushAudit,
+  type RepairCandidate,
+  type RoutedMachineRow,
+  type SpaceAudit,
+  type StuckRow,
+  taskPushVerdict,
+  type UnroutableRows,
 } from './task-push-plan.ts'
 
 type Options = {
@@ -45,22 +52,13 @@ type Options = {
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
-type TableAudit = IdentitySetComparison & { table: PushableHubChangeTable }
-type SpaceAudit = { spaceId: string; tables: TableAudit[] }
-type UnroutableRows = {
-  project: string
-  reason: string
-  table: PushableHubChangeTable
-  ids: string[]
-}
 export type TaskPushReport = {
   spaces: SpaceAudit[]
   unroutable: UnroutableRows[]
+  stuck: StuckRow[]
   drain: HostedOutboxReport | null
   ok: boolean
 }
-
-const EVIDENCE_TABLES = new Set<string>([HOSTED_INTERVAL_TABLE, HOSTED_DAY_TABLE])
 
 function machineRowsFor(table: PushableHubChangeTable): MachineRow[] {
   if (table === HOSTED_TASK_TABLE)
@@ -103,13 +101,39 @@ function machineRowsFor(table: PushableHubChangeTable): MachineRow[] {
     .all()
 }
 
-function inFlightIds(table: PushableHubChangeTable): Set<string> {
-  return new Set(
-    db()
-      .query<{ row_id: string }, [string]>(`SELECT row_id FROM hosted_outbox WHERE table_name=?`)
-      .all(table)
-      .map((row) => row.row_id),
-  )
+function outboxEntries(): AuditOutboxEntry[] {
+  return db()
+    .query<
+      {
+        table_name: string
+        row_id: string
+        quarantined_at: string | null
+        quarantine_reason: string | null
+      },
+      []
+    >(`SELECT table_name, row_id, quarantined_at, quarantine_reason FROM hosted_outbox`)
+    .all()
+    .map((row) => ({
+      table: row.table_name,
+      rowId: row.row_id,
+      quarantinedAt: row.quarantined_at,
+      quarantineReason: row.quarantine_reason,
+    }))
+}
+
+function routedMachineRows(
+  table: PushableHubChangeTable,
+  registered: readonly RegisteredTaskSpace[],
+  identity: TaskDestinationIdentity,
+): RoutedMachineRow[] {
+  const partitioned = partitionProjectRows(machineRowsFor(table), registered, identity)
+  const routed: RoutedMachineRow[] = []
+  for (const [spaceId, rows] of partitioned.destinations)
+    for (const row of rows) routed.push({ table, id: row.id, destinationSpaceId: spaceId })
+  for (const [project, refusal] of partitioned.refusals)
+    for (const row of refusal.rows)
+      routed.push({ table, id: row.id, project, reason: refusal.reason })
+  return routed
 }
 
 async function hostedIdsFor(
@@ -128,41 +152,42 @@ async function hostedIdsFor(
   }
 }
 
-function queueMachineOnly(table: PushableHubChangeTable, ids: readonly string[]) {
-  if (!ids.length) return
-  writeTransaction((conn) => {
-    for (const id of ids) queueHostedChange(conn, table, id, 'upsert')
-  })
-}
-
-async function auditTable(
-  table: PushableHubChangeTable,
+async function hostedTableIds(
   spaces: readonly string[],
-  registered: readonly RegisteredTaskSpace[],
-  identity: TaskDestinationIdentity,
   listIds: typeof hostedIdentitySet,
   requestOptions: RequestOptions,
-) {
-  const partitioned = partitionProjectRows(machineRowsFor(table), registered, identity)
-  const unroutable: UnroutableRows[] = [...partitioned.refusals].map(([project, refusal]) => ({
-    project,
-    reason: refusal.reason,
-    table,
-    ids: refusal.rows.map((row) => row.id).sort(),
-  }))
-  const audits: Array<{ spaceId: string; audit: TableAudit }> = []
-  const missing: string[] = []
-  for (const spaceId of spaces) {
-    const machineIds = (partitioned.destinations.get(spaceId) ?? []).map((row) => row.id)
-    const hostedIds = await hostedIdsFor(table, spaceId, listIds, requestOptions)
-    const audit = {
-      table,
-      ...compareIdentitySets(machineIds, hostedIds, inFlightIds(table)),
-    }
-    audits.push({ spaceId, audit })
-    missing.push(...audit.machineOnly)
+): Promise<HostedTableIds[]> {
+  const hosted: HostedTableIds[] = []
+  for (const table of PUSHABLE_HUB_CHANGE_TABLES)
+    for (const spaceId of spaces)
+      hosted.push({
+        table,
+        spaceId,
+        ids: await hostedIdsFor(table, spaceId, listIds, requestOptions),
+      })
+  return hosted
+}
+
+function queueRepairs(candidates: readonly RepairCandidate[]) {
+  for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
+    const rows = candidates.filter((candidate) => candidate.table === table)
+    if (!rows.length) continue
+    writeTransaction((conn) => {
+      for (const row of rows)
+        queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
+    })
   }
-  return { unroutable, audits, missing }
+}
+
+function drainAudit(drain: HostedOutboxReport): DrainAudit {
+  return {
+    rejected: drain.rejected,
+    quarantined: drain.quarantined,
+    waitingOnRouting: drain.waitingOnRouting,
+    waitingOnHostedHub: drain.waitingOnHostedHub,
+    hostedReachable: drain.hostedReachable,
+    skippedCapability: drain.skippedCapability,
+  }
 }
 
 export async function pushTasks(options: Options = {}): Promise<TaskPushReport> {
@@ -171,31 +196,40 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
   assertSpaceIdentitySet(identity)
   rememberHostedInstall(identity.activeSpaceId)
   const registered = (options.registered ?? projects)()
-  const listIds = options.listIds ?? hostedIdentitySet
   const spaces = taskPullSpaces(registered, identity)
-  const bySpace = new Map<string, TableAudit[]>(spaces.map((spaceId) => [spaceId, []]))
-  const unroutable: UnroutableRows[] = []
-  const missingByTable = new Map<PushableHubChangeTable, string[]>()
-  for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
-    const result = await auditTable(table, spaces, registered, identity, listIds, requestOptions)
-    unroutable.push(...result.unroutable)
-    missingByTable.set(table, result.missing)
-    for (const { spaceId, audit } of result.audits) bySpace.get(spaceId)!.push(audit)
-  }
-  const reportSpaces: SpaceAudit[] = [...bySpace].map(([spaceId, tables]) => ({ spaceId, tables }))
-  const ok =
-    unroutable.length === 0 &&
-    reportSpaces.every((space) => space.tables.every((table) => identitySetAgrees(table)))
-  if (!options.repair) return { spaces: reportSpaces, unroutable, drain: null, ok }
-  for (const table of PUSHABLE_HUB_CHANGE_TABLES)
-    queueMachineOnly(table, missingByTable.get(table) ?? [])
+  const machine = PUSHABLE_HUB_CHANGE_TABLES.flatMap((table) =>
+    routedMachineRows(table, registered, identity),
+  )
+  const plan = planTaskPushAudit({
+    spaces,
+    tables: PUSHABLE_HUB_CHANGE_TABLES,
+    machine,
+    hosted: await hostedTableIds(spaces, options.listIds ?? hostedIdentitySet, requestOptions),
+    outbox: outboxEntries(),
+    pulledTables: new Set(PUSHABLE_HUB_CHANGE_TABLES.filter(isHostedTaskChangeTable)),
+  })
+  if (!options.repair)
+    return {
+      spaces: plan.spaces,
+      unroutable: plan.unroutable,
+      stuck: plan.stuck,
+      drain: null,
+      ok: taskPushVerdict(plan, null),
+    }
+  queueRepairs(plan.repair)
   const drain = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,
     push: (changes, pushOptions) =>
       hostedPushChanges(changes, { ...requestOptions, ...pushOptions }),
   })
-  return { spaces: reportSpaces, unroutable, drain, ok }
+  return {
+    spaces: plan.spaces,
+    unroutable: plan.unroutable,
+    stuck: plan.stuck,
+    drain,
+    ok: taskPushVerdict(plan, drainAudit(drain)),
+  }
 }
 
 function idLines(heading: string, rows: Array<{ spaceId: string; table: string; ids: string[] }>) {
@@ -206,6 +240,25 @@ function idLines(heading: string, rows: Array<{ spaceId: string; table: string; 
     lines.push(`  ${row.spaceId} ${row.table}`)
     for (const id of row.ids) lines.push(`    ${id}`)
   }
+  return lines
+}
+
+function drainFailureLines(drain: HostedOutboxReport): string[] {
+  const lines: string[] = []
+  if (drain.rejected > 0) lines.push('repair drain rejected rows')
+  if (drain.quarantined > 0) lines.push('repair drain quarantined rows')
+  if (drain.skippedCapability) lines.push('repair drain left rows waiting: table not accepted')
+  if (drain.hostedReachable === false) lines.push('repair drain left rows waiting: hub unreachable')
+  const routing = Object.entries(drain.waitingOnRouting)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(',')
+  if (routing) lines.push(`repair drain left rows waiting: routing ${routing}`)
+  const hosted = Object.entries(drain.waitingOnHostedHub ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([table, count]) => `${table}=${count}`)
+    .join(',')
+  if (hosted) lines.push(`repair drain left rows waiting: table not accepted ${hosted}`)
   return lines
 }
 
@@ -230,34 +283,42 @@ export function formatTaskPushReport(report: TaskPushReport): string {
       ),
     ),
   )
-  const hostedTaskFamily = report.spaces.flatMap((space) =>
+  const hostedPulled = report.spaces.flatMap((space) =>
     space.tables
-      .filter((table) => !EVIDENCE_TABLES.has(table.table))
+      .filter((table) => table.pulled)
       .map((table) => ({ spaceId: space.spaceId, table: table.table, ids: table.hostedOnly })),
   )
-  const hostedEvidence = report.spaces.flatMap((space) =>
-    space.tables
-      .filter((table) => EVIDENCE_TABLES.has(table.table))
-      .map((table) => ({ spaceId: space.spaceId, table: table.table, ids: table.hostedOnly })),
-  )
-  const familyLines = idLines('Only on the hosted record', hostedTaskFamily)
+  const familyLines = idLines('Only on the hosted record', hostedPulled)
   if (familyLines.length) {
     lines.push(...familyLines)
     lines.push('The machine has no command to fetch them yet.')
   }
-  const evidenceLines = idLines('Only on the hosted record', hostedEvidence)
-  if (evidenceLines.length) {
-    lines.push(...evidenceLines)
-    lines.push(
-      'These are rows the machine no longer holds, since the machine is their only writer.',
-    )
-    lines.push('The machine has no command to fetch them yet.')
+  const evidenceCounts = report.spaces.flatMap((space) =>
+    space.tables
+      .filter((table) => !table.pulled && table.hostedOnly.length)
+      .map((table) => ({
+        spaceId: space.spaceId,
+        table: table.table,
+        count: table.hostedOnly.length,
+      })),
+  )
+  if (evidenceCounts.length) {
+    lines.push('Only on the hosted record, written by another machine or no longer held here')
+    for (const row of evidenceCounts) lines.push(`  ${row.spaceId} ${row.table} ${row.count}`)
   }
-  for (const row of report.unroutable)
-    lines.push(`unroutable ${row.project} ${row.reason} ${row.table} ${row.ids.length}`)
-  if (report.drain)
+  for (const row of report.stuck) {
+    lines.push(`stuck ${row.table} ${row.id}${row.reason ? ` ${row.reason}` : ''}`)
+  }
+  if (report.stuck.length) lines.push('hub outbox')
+  for (const row of report.unroutable) {
+    lines.push(`unroutable ${row.project} ${row.reason} ${row.table}`)
+    for (const id of row.ids) lines.push(`  ${id}`)
+  }
+  if (report.drain) {
     lines.push(
       `drain queued=${report.drain.queued} sent=${report.drain.sent} rejected=${report.drain.rejected} quarantined=${report.drain.quarantined}`,
     )
+    lines.push(...drainFailureLines(report.drain))
+  }
   return lines.join('\n')
 }
