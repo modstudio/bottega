@@ -286,6 +286,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'Keep the project settings shape independent of stores, SQL, and HTTP.',
     [
       '../../../shared/trackers.ts',
+      '../enforcement/mechanical-check-declaration.ts',
       '../recipe/recipe.ts',
       '../workflow/autonomy.ts',
       '../worktree/worktree-provision.ts',

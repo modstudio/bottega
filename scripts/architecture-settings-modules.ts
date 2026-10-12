@@ -16,6 +16,7 @@ export const settingsModules: SettingsModule[] = [
     'zod',
     '../../../shared/trackers.ts',
     '../../../shared/test-substance/test-substance.ts',
+    '../enforcement/mechanical-check-declaration.ts',
     './review-record-template.ts',
   ]),
   module('orchestrator/src/project/review-record-template.ts', []),

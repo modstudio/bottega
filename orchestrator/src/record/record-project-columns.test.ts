@@ -35,6 +35,11 @@ const samples = {
     column: 'testSubstance',
     value: '{"phpPolicyRules":["createMock"]}',
   },
+  mechanicalChecks: {
+    setting: { naming: { tool: 'custom names' } },
+    column: 'mechanicalChecks',
+    value: '{"naming":{"tool":"custom names"}}',
+  },
   states: { setting: { todo: 'open' }, column: 'states', value: '{"todo":"open"}' },
   tracker: { setting: { kind: 'hub' }, column: 'tracker', value: '{"kind":"hub"}' },
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },

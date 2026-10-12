@@ -2,6 +2,7 @@
 /** Owns the project settings shape. Must not know stores, SQL, or HTTP. */
 
 import type { TrackerSettings } from '../../../shared/trackers.ts'
+import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
 import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
@@ -166,6 +167,8 @@ export type ProjectSettings = {
   review?: ReviewSettings
   /** PHP policy rules enforced in addition to the universal test-substance rules. */
   testSubstance?: TestSubstanceSettings
+  /** Mechanical checks this project overrides or explicitly opts out of. */
+  mechanicalChecks?: Record<string, MechanicalCheckEntry>
   /**
    * Whether dispatch refuses tracked modifications in this project's main
    * checkout. Default ON: absent and true both enforce it. A project opts out

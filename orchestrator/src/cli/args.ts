@@ -334,6 +334,7 @@ export const CLI_COMMANDS = new Set([
   'doc',
   'doctor',
   'epic',
+  'enforcement',
   'guide',
   'health',
   'inbox',

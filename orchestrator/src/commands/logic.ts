@@ -16,6 +16,7 @@ import { contractCommand } from '../contract/contract-command.ts'
 import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
 import { db } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
+import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
 import { formatPassingGate, passingGateForCommit } from '../gate/gate-passed.ts'
@@ -86,6 +87,22 @@ type LogicDependencies = {
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
+  program
+    .command('enforcement')
+    .option('--project <name>')
+    .option('--all')
+    .option('--json')
+    .allowExcessArguments(false)
+    .action((options) =>
+      enforcementCommand(options, {
+        log,
+        error: (...values) => console.error(...values),
+        setExitCode: (code) => {
+          process.exitCode = code
+        },
+        cwd: process.cwd,
+      }),
+    )
   program
     .command('check [kind]')
     .option('--enabled')

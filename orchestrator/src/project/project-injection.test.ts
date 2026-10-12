@@ -129,6 +129,19 @@ describe('project workflow injection', () => {
     expect(validateProjectSettings({ testSubstance: { phpPolicyRules: [] } })).toEqual([])
   })
 
+  test('applies mechanical-check declaration refusals with the register remedy', () => {
+    const problems = validateProjectSettings({
+      mechanicalChecks: {
+        mystery: { tool: 'probe' },
+      },
+    } as unknown as Project['settings'])
+
+    expect(problems).toEqual([
+      expect.stringContaining('mechanicalChecks.mystery: unknown category'),
+    ])
+    expect(problems.every((problem) => problem.includes('orch project set <project>'))).toBe(true)
+  })
+
   test('validates a rung live command as a non-empty string', () => {
     expect(
       validateProjectSettings({

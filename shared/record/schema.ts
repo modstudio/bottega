@@ -210,6 +210,7 @@ export const project = pgTable.withRLS(
     signals: jsonb(),
     review: jsonb(),
     testSubstance: jsonb('test_substance'),
+    mechanicalChecks: jsonb('mechanical_checks'),
     release: jsonb(),
     states: jsonb(),
     tracker: jsonb(),

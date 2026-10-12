@@ -16,6 +16,7 @@ import {
   type TrackerSettings,
   trackerSettingsShape,
 } from '../../../shared/trackers.ts'
+import { mechanicalCheckEntryIssues } from '../enforcement/mechanical-check-declaration.ts'
 import {
   REVIEW_RECORD_PLACEHOLDERS,
   reviewRecordTemplateProblem,
@@ -112,6 +113,20 @@ const testSubstanceSchema = strictObject({
         seen.add(rule)
       }
     }),
+})
+
+const mechanicalChecksRemedy = `set with: orch project set <project> --settings '{"mechanicalChecks":{"<category>":{"tool":"<command>"}}}'`
+
+const mechanicalChecksSchema = z.record(z.string(), z.unknown()).superRefine((entries, context) => {
+  for (const [identifier, raw] of Object.entries(entries)) {
+    for (const issue of mechanicalCheckEntryIssues(identifier, raw)) {
+      context.addIssue({
+        code: 'custom',
+        path: issue.path,
+        message: `${issue.message}; ${mechanicalChecksRemedy}`,
+      })
+    }
+  }
 })
 
 const gateSchema = z.string().trim().min(1)
@@ -265,6 +280,7 @@ type InjectionSettings = {
   signals?: SignalsSettings
   review?: ReviewSettings
   testSubstance?: TestSubstanceSettings
+  mechanicalChecks?: unknown
   mainStack?: { consumers: string[]; requiredServices?: string[] }
 }
 
@@ -413,7 +429,15 @@ export function resolveDeclaredFacts<Project extends InjectableProject>(
 
 type ValidatedInjectionSettings = Pick<
   InjectionSettings,
-  'tracker' | 'trunk' | 'release' | 'docs' | 'signals' | 'gate' | 'review' | 'testSubstance'
+  | 'tracker'
+  | 'trunk'
+  | 'release'
+  | 'docs'
+  | 'signals'
+  | 'gate'
+  | 'review'
+  | 'testSubstance'
+  | 'mechanicalChecks'
 >
 
 /** Validate the workflow-specific portion of a project settings blob at the register edge. */
@@ -426,6 +450,7 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     ['signals', signalsSchema],
     ['review', reviewSchema],
     ['testSubstance', testSubstanceSchema],
+    ['mechanicalChecks', mechanicalChecksSchema],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
   ] as const) {
