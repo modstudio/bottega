@@ -232,6 +232,41 @@ describe('hosted-authoritative existing-row edits', () => {
     })
   })
 
+  test('an after-write drain held by the collector reports saved and queued without sending', async () => {
+    const id = seed('GAM-73', 'gamma')
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
+        .run(JSON.stringify({ holder: 'outbox:collector', until: Date.now() + 60_000 })),
+    )
+    let sends = 0
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      await setTask(
+        'GAM-73',
+        { recordId: id },
+        { title: 'Queued behind collector' },
+        {
+          hosted: {
+            ...hosted,
+            fetch: async (...args) => {
+              sends++
+              return hosted.fetch(...args)
+            },
+          },
+        },
+      )
+    } finally {
+      log.mockRestore()
+    }
+    expect(sends).toBe(0)
+    expect(messages).toEqual([
+      'hosted change saved and queued: another process is draining; the collector fast cycle will send it; inspect it with `hub outbox`',
+    ])
+    expect(db().query(`SELECT 1 FROM hosted_outbox WHERE row_id=?`).get(id)).not.toBeNull()
+  })
+
   test('new still needs hosting and local-authoritative edits queue nothing', async () => {
     await expect(
       createTask({ project: 'gamma', title: 'Cannot create offline' }, { hosted: unreachable }),

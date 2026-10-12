@@ -29,9 +29,12 @@ export async function drainHostedEditOutbox(
       : remaining.length || !report.hostedReachable || report.skippedCapability
         ? {
             kind: 'queued',
-            reason: report.skippedCapability
-              ? 'the hosted session is absent or cannot push these rows'
-              : 'the hosted hub could not be reached',
+            reason:
+              report.lockAcquired === false
+                ? 'another process is draining; the collector fast cycle will send it'
+                : report.skippedCapability
+                  ? 'the hosted session is absent or cannot push these rows'
+                  : 'the hosted hub could not be reached',
           }
         : { kind: 'sent' }
     reportHostedEditDelivery(result)

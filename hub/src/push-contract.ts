@@ -169,7 +169,12 @@ export type HostedPushChange =
   | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
 
 export type HostedPushOutcome =
-  | { id: string; status: 'applied' | 'duplicate'; adoptedId?: string }
+  | {
+      id: string
+      status: 'applied' | 'duplicate'
+      adoptedId?: string
+      replacedId?: string
+    }
   | { id: string; status: 'rejected'; reason: string }
 
 type ParsedHostedPushItem =

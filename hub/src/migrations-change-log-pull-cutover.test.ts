@@ -38,7 +38,10 @@ test('change-log cutover drops comparison evidence and timestamp cursors on a po
   ])
     insert.run(key, 'cursor')
 
-  expect(applyMigrations(database)).toEqual(['0031_change_log_pull_cutover'])
+  expect(applyMigrations(database)).toEqual([
+    '0031_change_log_pull_cutover',
+    '0032_outbox_delivery_trace',
+  ])
   expect(
     database
       .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hosted_change_evidence'")

@@ -299,6 +299,58 @@ describe('hosted outbox', () => {
     expect(listHostedOutbox()[0]?.attempts).toBe(0)
   })
 
+  test('two drains do not overlap and an expired outbox lease is taken over', async () => {
+    const eventId = queueTransition('FIX-LOCK', '2026-10-11T12:00:00.000Z')
+    let releaseFirst!: () => void
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let firstStarted!: () => void
+    const firstDidStart = new Promise<void>((resolve) => {
+      firstStarted = resolve
+    })
+    const first = drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      processKind: 'collector',
+      push: async () => {
+        firstStarted()
+        await firstCanFinish
+        return [{ id: eventId, status: 'applied' }]
+      },
+    })
+    await firstDidStart
+    let secondSends = 0
+    const second = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      processKind: 'command',
+      push: async () => {
+        secondSends++
+        return [{ id: eventId, status: 'applied' }]
+      },
+    })
+    expect(second).toMatchObject({ lockAcquired: false, queued: 1, sent: 0 })
+    expect(secondSends).toBe(0)
+    expect(listHostedOutbox()).toHaveLength(1)
+    releaseFirst()
+    await first
+
+    const takeoverId = queueTransition('FIX-TAKEOVER', '2026-10-11T12:01:00.000Z')
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT OR REPLACE INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
+        .run(JSON.stringify({ holder: 'crashed', until: 0 })),
+    )
+    const takeover = await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push: async () => [{ id: takeoverId, status: 'applied' }],
+    })
+    expect(takeover).toMatchObject({ sent: 1 })
+    expect(takeover.lockAcquired).not.toBe(false)
+  })
+
   test('an older hosted hub sends supported task rows and waits on evidence tables', async () => {
     const eventId = queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const intervalId = '01990000-0000-7000-8000-000000009001'

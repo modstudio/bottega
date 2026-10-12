@@ -4,12 +4,6 @@ import type { PushedDay, PushedInterval } from './push-contract.ts'
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
 export type DayEvidence = PushedDay
-function intervalIdentityConflict(row: IntervalEvidence, existingId: string): Error {
-  return new Error(
-    `interval identity conflict: tuple (${row.source}, ${row.ref}, ${row.start_at}) belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
-  )
-}
-
 function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
   return new Error(
     `day identity conflict: date ${row.day} belongs to UUID ${existingId}, not incoming UUID ${row.id}`,
@@ -17,12 +11,12 @@ function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
 }
 
 export function hostedIntervalWrite(
-  row: IntervalEvidence,
+  _row: IntervalEvidence,
   existingId: string | null,
   existingTupleId: string | null,
-): 'update' | 'insert' {
+): 'update' | 'insert' | 'replace' {
   if (existingId) return 'update'
-  if (existingTupleId) throw intervalIdentityConflict(row, existingTupleId)
+  if (existingTupleId) return 'replace'
   return 'insert'
 }
 
@@ -100,7 +94,7 @@ async function upsertOneInterval(
   tx: SQL,
   identity: EvidenceIdentity,
   row: IntervalEvidence,
-): Promise<'applied' | 'duplicate'> {
+): Promise<{ status: 'applied' | 'duplicate'; replacedId?: string }> {
   const byId = await tx<{ id: string }[]>`
     SELECT id::text AS id FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
@@ -121,23 +115,29 @@ async function upsertOneInterval(
         AND via IS NOT DISTINCT FROM ${row.via} AND open=${row.open}
         AND session_id IS NOT DISTINCT FROM ${row.session_id}
         AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid`
-    if (matches.length) return 'duplicate'
+    if (matches.length) return { status: 'duplicate' }
     await updateHostedInterval(tx, identity, row.id, row)
-    return 'applied'
+    return { status: 'applied' }
   }
+  if (write === 'replace')
+    await tx`DELETE FROM hub_interval
+      WHERE space_id=${identity.spaceId}::uuid AND id=${byTuple[0]!.id}::uuid`
   await insertHostedInterval(tx, identity, row.id, row)
-  return 'applied'
+  return {
+    status: 'applied',
+    ...(write === 'replace' ? { replacedId: byTuple[0]!.id } : {}),
+  }
 }
 
 export async function applyIntervalChangeInTransaction(
   tx: SQL,
   identity: EvidenceIdentity,
   change: { id: string; op: 'delete' } | { id: string; op: 'upsert'; row: IntervalEvidence },
-): Promise<'applied' | 'duplicate'> {
+): Promise<{ status: 'applied' | 'duplicate'; replacedId?: string }> {
   if (change.op === 'upsert') return upsertOneInterval(tx, identity, change.row)
   const deleted = await tx`DELETE FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND id=${change.id}::uuid RETURNING id`
-  return deleted.length ? 'applied' : 'duplicate'
+  return { status: deleted.length ? 'applied' : 'duplicate' }
 }
 
 export async function applyDayChangeInTransaction(

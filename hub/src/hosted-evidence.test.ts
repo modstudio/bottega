@@ -24,10 +24,8 @@ const interval = {
 
 const day = { id: 'client-id', day: '2026-10-08' } as DayEvidence
 
-test('an unknown interval id with an existing tuple names both ids and the tuple', () => {
-  expect(() => hostedIntervalWrite(interval, null, 'hosted-id')).toThrow(
-    'interval identity conflict: tuple (orch, orch:1, 2026-10-08T00:00:00.000Z) belongs to UUID hosted-id, not incoming UUID client-id',
-  )
+test('an unknown interval id with an existing tuple replaces it', () => {
+  expect(hostedIntervalWrite(interval, null, 'hosted-id')).toBe('replace')
 })
 
 test('an unknown day id with an existing date names both ids and the date', () => {

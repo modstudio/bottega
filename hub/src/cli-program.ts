@@ -153,7 +153,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
                               database means only one process collects.
   hub migrate                 apply pending checksummed schema migrations
   hub doctor                  report the live structural schema hash and user_version
-  hub outbox [--json]         list queued and quarantined hosted writes\n  hub outbox show <ID>        show an entry and any values kept after a hosted delete
+  hub outbox [--json]         list queued and quarantined hosted writes\n  hub outbox trace [--row ID] [--json]\n                              list non-trivial delivery outcomes, newest first\n  hub outbox show <ID>        show an entry and any values kept after a hosted delete
   hub outbox retry <ID>       clear quarantine and queue an entry for retry\n  hub outbox discard <ID>     discard a quarantined entry
   hub tasks [--hours N]       what has been worked on, newest window first
   hub login [--port 7778]     print a one-time local dashboard login URL

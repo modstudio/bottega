@@ -222,8 +222,12 @@ function applyOrchReplace(
   conn: Database,
   existing: ExistingIntervalRow[],
   recomputed: readonly OrchIntervalRow[],
+  preservedRefs: ReadonlySet<string> = new Set(),
 ) {
-  const decision = decideCollectorReplace(existing, recomputed)
+  const decision = decideCollectorReplace(
+    existing.filter((row) => !preservedRefs.has(row.ref)),
+    recomputed,
+  )
   const update = conn.query(
     `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?,
        project=?, job=?, via=?, open=?, session_id=?, user_id=?
@@ -289,8 +293,17 @@ function orchIntervalWriter(conn: Database) {
     close(ref: string) {
       close.run(ref)
     },
-    replaceChain(rootId: number, rows: readonly OrchIntervalRow[]) {
-      applyOrchReplace(conn, selectChain.all(`orch:${rootId}`, `orch:${rootId}:turn:%`), rows)
+    replaceChain(
+      rootId: number,
+      rows: readonly OrchIntervalRow[],
+      preservedRefs: ReadonlySet<string>,
+    ) {
+      applyOrchReplace(
+        conn,
+        selectChain.all(`orch:${rootId}`, `orch:${rootId}:turn:%`),
+        rows,
+        preservedRefs,
+      )
     },
     replaceRef(ref: string, rows: readonly OrchIntervalRow[]) {
       applyOrchReplace(conn, selectRef.all(ref), rows)
@@ -307,16 +320,18 @@ function ingestOneRun(
   const turns = run.turns ?? [run]
   if (run.turns) {
     const recomputed: OrchIntervalRow[] = []
+    const preservedRefs = new Set<string>()
     let skipped = 0
     for (const turn of turns) {
       const built = orchIntervalRow(run, turn, attribution, now)
       if (built.status === 'skip') {
+        preservedRefs.add(`orch:${run.id}:turn:${turn.id}`)
         skipped++
         continue
       }
       recomputed.push(built.value)
     }
-    writer.replaceChain(run.id, recomputed)
+    writer.replaceChain(run.id, recomputed, preservedRefs)
     return { rows: recomputed.length, skipped }
   }
   const built = orchIntervalRow(run, turns[0]!, attribution, now)

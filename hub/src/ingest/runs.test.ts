@@ -214,6 +214,39 @@ describe('run ingest', () => {
     expect(prior.open).toBe(0)
   })
 
+  test('a listed terminal turn with unreadable latency keeps its existing interval', async () => {
+    const readable = {
+      id: 9110,
+      started_at: '2026-09-03T00:00:00.000Z',
+      latency_ms: null,
+      vendor_tokens: null,
+      vendor_cost_usd: null,
+      status: 'running',
+      turn: 1,
+    }
+    await ingestRunFixtures(runFixture({ id: 9110, turns: [readable] }))
+    const before = db()
+      .query<{ record_id: string }, []>(
+        `SELECT record_id FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`,
+      )
+      .get()!
+
+    const unreadable = { ...readable, status: 'done' }
+    await ingestRunFixtures(runFixture({ id: 9110, turns: [unreadable] }))
+    expect(
+      db()
+        .query<{ record_id: string }, []>(
+          `SELECT record_id FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`,
+        )
+        .get(),
+    ).toEqual(before)
+
+    await ingestRunFixtures(runFixture({ id: 9110, turns: [] }))
+    expect(
+      db().query(`SELECT 1 FROM interval WHERE source='orch' AND ref='orch:9110:turn:9110'`).get(),
+    ).toBeNull()
+  })
+
   test('a resumed chain ingests each execution interval and conserves its tokens', async () => {
     const starts = [
       '2026-09-01T12:00:00.000Z',

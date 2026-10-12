@@ -26,7 +26,9 @@ import {
   pendingHostedOutboxSummary,
 } from './outbox.ts'
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
+import { pruneOutboxTrace } from './outbox-trace.ts'
 import { rollUpDays } from './query.ts'
+import { acquireStoredLease, releaseStoredLease, storedLeaseHolder } from './store-lease.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -135,7 +137,10 @@ export async function hostedCollectLegs(
 ): Promise<CollectLegResult[]> {
   ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
   const legs = [
-    { name: 'hosted outbox', work: dependencies.outbox ?? drainHostedOutbox },
+    {
+      name: 'hosted outbox',
+      work: dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
+    },
     {
       name: 'hosted task changes',
       work: dependencies.changes ?? pullHostedTaskChanges,
@@ -189,6 +194,7 @@ async function settleChangeLeg(
 /** Long enough to outlast a slow pass, short enough that a dead holder frees it. */
 export const COLLECT_LEASE_MS = 60_000
 const LEASE_RENEW_MS = 20_000
+const COLLECT_LEASE_KEY = 'collect.lease'
 
 export type LeaseGuard = {
   /** Refuse further work after another holder has taken this lease. */
@@ -262,25 +268,7 @@ async function holdAndRenewLease<T>(
  * A holder that dies renews nothing and the lease expires on its own.
  */
 export function acquireLease(holder: string): boolean {
-  const now = Date.now()
-  const row = writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO setting (key, value) VALUES ('collect.lease', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-          WHERE COALESCE(json_extract(setting.value, '$.until'), 0) <= ?
-             OR json_extract(setting.value, '$.holder') = ?`,
-      )
-      .run(JSON.stringify({ holder, until: now + COLLECT_LEASE_MS }), now, holder)
-    return conn
-      .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
-      .get()
-  })
-  try {
-    return (JSON.parse(row!.value) as { holder: string }).holder === holder
-  } catch {
-    return false
-  }
+  return acquireStoredLease(COLLECT_LEASE_KEY, holder, COLLECT_LEASE_MS)
 }
 
 /**
@@ -292,14 +280,7 @@ export function acquireLease(holder: string): boolean {
  * relies on expiry, which is why the timeout exists at all.
  */
 export function releaseLease(holder: string) {
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `DELETE FROM setting WHERE key = 'collect.lease'
-       AND json_extract(value, '$.holder') = ?`,
-      )
-      .run(holder),
-  )
+  releaseStoredLease(COLLECT_LEASE_KEY, holder)
 }
 
 /**
@@ -336,16 +317,7 @@ export async function withLease<T>(
 }
 
 export function leaseHolder(): string | null {
-  const row = db()
-    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.lease'`)
-    .get()
-  if (!row) return null
-  try {
-    const l = JSON.parse(row.value) as { holder: string; until: number }
-    return l.until > Date.now() ? l.holder : null
-  } catch {
-    return null
-  }
+  return storedLeaseHolder(COLLECT_LEASE_KEY)
 }
 
 const stamp = (key: string) =>
@@ -481,6 +453,7 @@ async function collectSlow(
   )
   guard?.assertHeld('tasks')
   stamp('collect.slow.at')
+  pruneOutboxTrace()
   if (process.env.HUB_HOSTED_URL) {
     guard?.assertHeld('tasks')
     const hostedResults = await hostedCollectLegs(
@@ -589,7 +562,7 @@ export function watch(
 ) {
   const outboxSchedule = process.env.HUB_HOSTED_URL
     ? new HostedOutboxDrainSchedule(
-        dependencies.outbox ?? drainHostedOutbox,
+        dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
         dependencies.outboxClock ?? nowIso,
       )
     : null
