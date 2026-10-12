@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { decideCeiling } from './quality/ceiling-decision'
+import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
+import { openChangeView } from './change-view'
+import { resolveLandingBase } from './landing-base'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const STATE_FILE = `${ROOT}/scripts/quality/file-ceiling.json`
-const STATE_LABEL = 'scripts/quality/file-ceiling.json'
 const CEILING = 1000
 const SOURCE_ROOTS = [
   'orchestrator/src',
@@ -68,20 +68,9 @@ type FileMeasurement = { path: string; lines: number; ignoresFormat?: boolean }
 type Reporter = Pick<Console, 'error' | 'log'>
 
 type FileCeilingOptions = {
-  exists?: (path: string) => boolean
-  measure?: () => FileMeasurement[]
+  change?: { base: FileMeasurement[]; head: FileMeasurement[]; facts: ChangeFacts }
+  measureSuppressions?: () => FileMeasurement[]
   reporter?: Reporter
-  stateFile?: string
-}
-
-function readState(stateFile: string): Record<string, number> {
-  if (!existsSync(stateFile)) return {}
-  return JSON.parse(readFileSync(stateFile, 'utf8')) as Record<string, number>
-}
-
-function writeState(stateFile: string, state: Record<string, number>) {
-  const ordered = Object.fromEntries(Object.entries(state).sort(([a], [b]) => a.localeCompare(b)))
-  writeFileSync(stateFile, `${JSON.stringify(ordered, null, 2)}\n`)
 }
 
 function measureFiles(): FileMeasurement[] {
@@ -103,57 +92,93 @@ function formatSuppressionViolations(path: string, ignoresFormat: boolean | unde
   ]
 }
 
-export function checkFileCeiling(options: FileCeilingOptions = {}) {
-  const stateFile = options.stateFile ?? STATE_FILE
-  const reporter = options.reporter ?? console
-  const measured = (options.measure ?? measureFiles)()
-  const pathExists = options.exists ?? ((path: string) => existsSync(resolve(ROOT, path)))
-  const frozen = readState(stateFile)
-  const next = { ...frozen }
-  const violations: string[] = []
-  const tightenings: string[] = []
-  for (const { path, lines, ignoresFormat } of measured) {
-    violations.push(...formatSuppressionViolations(path, ignoresFormat))
-    const decision = decideCeiling({
-      key: path,
-      value: lines,
-      frozen: frozen[path],
-      ceiling: CEILING,
-    })
-    if (decision === 'lower') {
-      next[path] = lines
-      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> ${lines}`)
-    }
-    if (decision === 'remove') {
-      delete next[path]
-      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> ${lines}`)
-    }
-    if (decision === 'fail') {
-      violations.push(
-        `${path}: ${lines} code lines, frozen at ${frozen[path] ?? CEILING}; ` +
-          'split a concern out (canon 10-code: Respect the file ceiling)',
+function fileLengthFinding(measurement: FileMeasurement): Finding | null {
+  if (measurement.lines <= CEILING) return null
+  return {
+    file: measurement.path,
+    line: 1,
+    rule: 'file-length',
+    message: `file has ${measurement.lines} code lines; limit ${CEILING}`,
+    symbol: measurement.path,
+    measure: measurement.lines,
+  }
+}
+
+export function fileLengthDecision({
+  base,
+  head,
+  facts,
+}: {
+  base: FileMeasurement[]
+  head: FileMeasurement[]
+  facts: ChangeFacts
+}) {
+  return ratchetDecision({
+    base: base.flatMap((measurement) => fileLengthFinding(measurement) ?? []),
+    head: head.flatMap((measurement) => fileLengthFinding(measurement) ?? []),
+    change: facts,
+  })
+}
+
+function isMeasuredSourcePath(path: string) {
+  return (
+    /\.tsx?$/.test(path) &&
+    SOURCE_ROOTS.some((root) => path.startsWith(`${root}/`)) &&
+    !GENERATED_EXCLUSIONS.some((pattern) => pattern.test(path))
+  )
+}
+
+function changedFileMeasurements() {
+  const base = resolveLandingBase(ROOT, 'check-file-ceiling').commit
+  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+  const before: FileMeasurement[] = []
+  const after: FileMeasurement[] = []
+  for (const entry of view.entries) {
+    if (entry.status === 'D' || !isMeasuredSourcePath(entry.path)) continue
+    const headContent = view.headContent(entry.path)
+    if (headContent.status === 'absent') {
+      throw new Error(
+        `check-file-ceiling could not read HEAD:${entry.path}; restore the blob and retry`,
       )
     }
+    after.push({ path: entry.path, lines: codeLines(headContent.text) })
+    const baseContent = view.baseContent(entry.path)
+    if (baseContent.status === 'absent') continue
+    before.push({
+      path: view.facts.renames.get(entry.path) ?? entry.path,
+      lines: codeLines(baseContent.text),
+    })
   }
-  for (const path of Object.keys(next)) {
-    if (!pathExists(path)) {
-      delete next[path]
-      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> removed`)
-    }
-  }
-  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(stateFile, next)
-  for (const tightening of tightenings) reporter.error(tightening)
+  return { base: before, head: after, facts: view.facts }
+}
+
+function fileLengthViolation(finding: ReturnType<typeof fileLengthDecision>[number]) {
+  const previous = finding.reason === 'grew' ? `, previous count ${finding.previousMeasure}` : ''
+  return (
+    `${finding.file}: ${finding.measure} code lines, limit ${CEILING}${previous}; ` +
+    'split a concern out (canon 10-code: Respect the file ceiling)'
+  )
+}
+
+export function checkFileCeiling(options: FileCeilingOptions = {}) {
+  const reporter = options.reporter ?? console
+  const measured = (options.measureSuppressions ?? measureFiles)()
+  const violations = measured.flatMap(({ path, ignoresFormat }) =>
+    formatSuppressionViolations(path, ignoresFormat),
+  )
+  const change = options.change ?? changedFileMeasurements()
+  violations.push(...fileLengthDecision(change).map(fileLengthViolation))
   for (const violation of violations) reporter.error(violation)
-  if (tightenings.length) {
-    reporter.error(
-      `baseline tightened; commit ${STATE_LABEL} and re-run (canon 10-code: Respect the file ceiling)`,
-    )
-  }
-  if (violations.length || tightenings.length) {
-    return false
-  }
+  if (violations.length) return false
   reporter.log(`check-file-ceiling: ok (${measured.length} files)`)
   return true
 }
 
-if (import.meta.main && !checkFileCeiling()) process.exit(1)
+if (import.meta.main) {
+  try {
+    if (!checkFileCeiling()) process.exit(1)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+}

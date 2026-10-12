@@ -255,6 +255,7 @@ if (
     './scripts/check-outbox-payload-contracts.test.ts',
     './scripts/postgres-migration-rls.test.ts',
     './scripts/check-test-placement.test.ts',
+    './scripts/change-view.test.ts',
     './scripts/check-file-ceiling.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
     './scripts/check-harness-mirror.test.ts',
