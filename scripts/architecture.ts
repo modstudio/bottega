@@ -369,6 +369,7 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     'node:os',
     'node:path',
+    '../brand.ts',
     '../git.ts',
     '../ratchet.ts',
   ]),

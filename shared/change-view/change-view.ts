@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../brand'
 import { inspectionGitEnv } from '../git'
 import type { ChangeFacts, LineRange } from '../ratchet'
 
-export type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
+type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
 
 export type ChangeEntry = {
   status: ChangeStatus
@@ -12,9 +13,9 @@ export type ChangeEntry = {
   sourcePath?: string
 }
 
-export type ContentResult = { status: 'present'; text: string } | { status: 'absent' }
+type ContentResult = { status: 'present'; text: string } | { status: 'absent' }
 
-export type ChangeViewMode = 'commit' | 'staged'
+type ChangeViewMode = 'commit' | 'staged'
 
 function parseStatus(value: string): ChangeStatus {
   const status = value[0]
@@ -51,21 +52,32 @@ export function parseNameStatus(text: string): ChangeEntry[] {
   return entries
 }
 
+const ESCAPED_BYTES: Record<string, number> = {
+  a: 7,
+  b: 8,
+  t: 9,
+  n: 10,
+  v: 11,
+  f: 12,
+  r: 13,
+  '"': 34,
+  '\\': 92,
+}
+
+function decodedEscape(value: string, index: number) {
+  const escaped = value[index]
+  if (escaped === undefined) throw new Error('incomplete quoted git path')
+  if (escaped in ESCAPED_BYTES) return { bytes: [ESCAPED_BYTES[escaped]!], index }
+  if (!/[0-7]/.test(escaped)) return { bytes: [...new TextEncoder().encode(escaped)], index }
+  let octal = escaped
+  while (octal.length < 3 && /[0-7]/.test(value[index + 1] ?? '')) octal += value[++index]
+  return { bytes: [Number.parseInt(octal, 8)], index }
+}
+
 function decodeQuotedPath(value: string): string {
   if (!value.startsWith('"') || !value.endsWith('"')) return value
   const bytes: number[] = []
   const encoder = new TextEncoder()
-  const escapes: Record<string, number> = {
-    a: 7,
-    b: 8,
-    t: 9,
-    n: 10,
-    v: 11,
-    f: 12,
-    r: 13,
-    '"': 34,
-    '\\': 92,
-  }
   for (let index = 1; index < value.length - 1; index++) {
     const character = value[index]!
     if (character !== '\\') {
@@ -75,19 +87,9 @@ function decodeQuotedPath(value: string): string {
       if (literal.length === 2) index++
       continue
     }
-    const escaped = value[++index]
-    if (escaped === undefined) throw new Error('incomplete quoted git path')
-    if (escaped in escapes) {
-      bytes.push(escapes[escaped]!)
-      continue
-    }
-    if (/[0-7]/.test(escaped)) {
-      let octal = escaped
-      while (octal.length < 3 && /[0-7]/.test(value[index + 1] ?? '')) octal += value[++index]
-      bytes.push(Number.parseInt(octal, 8))
-      continue
-    }
-    bytes.push(...encoder.encode(escaped))
+    const decoded = decodedEscape(value, index + 1)
+    bytes.push(...decoded.bytes)
+    index = decoded.index
   }
   return new TextDecoder().decode(new Uint8Array(bytes))
 }
@@ -96,6 +98,15 @@ function patchPath(header: string): string | null {
   const value = decodeQuotedPath(header.slice(4))
   if (value === '/dev/null') return null
   return value.startsWith('b/') ? value.slice(2) : value
+}
+
+function addedRange(line: string, path: string | null | undefined): LineRange | null {
+  const match = /\+(\d+)(?:,(\d+))?/.exec(line)
+  if (!match) throw new Error(`invalid git hunk header: ${line}`)
+  if (path === undefined) throw new Error('git hunk appeared before its head path')
+  const start = Number(match[1])
+  const count = match[2] === undefined ? 1 : Number(match[2])
+  return path === null || count === 0 ? null : { start, end: start + count - 1 }
 }
 
 export function parseAddedLines(text: string): Map<string, LineRange[]> {
@@ -116,14 +127,10 @@ export function parseAddedLines(text: string): Map<string, LineRange[]> {
     }
     if (!line.startsWith('@@ ')) continue
     readingHeader = false
-    const match = /\+(\d+)(?:,(\d+))?/.exec(line)
-    if (!match) throw new Error(`invalid git hunk header: ${line}`)
-    const start = Number(match[1])
-    const count = match[2] === undefined ? 1 : Number(match[2])
-    if (path === undefined) throw new Error('git hunk appeared before its head path')
-    if (path === null || count === 0) continue
+    const range = addedRange(line, path)
+    if (!range || path === null || path === undefined) continue
     const ranges = addedLines.get(path) ?? []
-    ranges.push({ start, end: start + count - 1 })
+    ranges.push(range)
     addedLines.set(path, ranges)
   }
 
@@ -208,7 +215,7 @@ export function openChangeView({
     baseContent,
     headContent,
     materializeBase(paths: string[]) {
-      const directory = mkdtempSync(join(tmpdir(), 'bottega-change-base-'))
+      const directory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-change-base-`))
       const absent: string[] = []
       const location = relative(resolve(cwd), directory)
       if (!location.startsWith('..') && !isAbsolute(location)) {

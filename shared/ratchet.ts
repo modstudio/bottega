@@ -57,72 +57,78 @@ function remapBaseFinding(finding: Finding, renames: Map<string, string>): Findi
   return finding
 }
 
+function measuredGroups(findings: Finding[]): Map<string, IndexedFinding[]> {
+  const groups = new Map<string, IndexedFinding[]>()
+  for (const [index, finding] of findings.entries()) {
+    if (finding.measure === undefined) continue
+    const key = groupKey(finding)
+    const group = groups.get(key) ?? []
+    group.push({ finding, index })
+    groups.set(key, group)
+  }
+  return groups
+}
+
+type MeasuredPair = { base: IndexedFinding; head: IndexedFinding }
+
+function symbolPairs(base: IndexedFinding[], head: IndexedFinding[]) {
+  const pairedBase = new Set<number>()
+  const pairedHead = new Set<number>()
+  const pairs: MeasuredPair[] = []
+  for (const headFinding of head) {
+    if (headFinding.finding.symbol === undefined) continue
+    const baseFinding = base.find(
+      (candidate) =>
+        !pairedBase.has(candidate.index) &&
+        candidate.finding.symbol !== undefined &&
+        candidate.finding.symbol === headFinding.finding.symbol,
+    )
+    if (!baseFinding) continue
+    pairedBase.add(baseFinding.index)
+    pairedHead.add(headFinding.index)
+    pairs.push({ base: baseFinding, head: headFinding })
+  }
+  return { pairs, pairedBase, pairedHead }
+}
+
+function byDescendingMeasure(left: IndexedFinding, right: IndexedFinding) {
+  return right.finding.measure! - left.finding.measure!
+}
+
+function measuredGroupRefusals(base: IndexedFinding[], head: IndexedFinding[]) {
+  const refused = new Map<number, RefusedFinding>()
+  const symbol = symbolPairs(base, head)
+  const remainingBase = base
+    .filter((candidate) => !symbol.pairedBase.has(candidate.index))
+    .sort(byDescendingMeasure)
+  const remainingHead = head
+    .filter((candidate) => !symbol.pairedHead.has(candidate.index))
+    .sort(byDescendingMeasure)
+  const pairs = [...symbol.pairs]
+  for (const [position, headFinding] of remainingHead.entries()) {
+    const baseFinding = remainingBase[position]
+    if (baseFinding) pairs.push({ base: baseFinding, head: headFinding })
+    else refused.set(headFinding.index, { ...headFinding.finding, reason: 'new-measured' })
+  }
+  for (const pair of pairs) {
+    if (pair.head.finding.measure! <= pair.base.finding.measure!) continue
+    refused.set(pair.head.index, {
+      ...pair.head.finding,
+      reason: 'grew',
+      previousMeasure: pair.base.finding.measure!,
+    })
+  }
+  return refused
+}
+
 function measuredRefusals(base: Finding[], head: Finding[]): Map<number, RefusedFinding> {
   const refused = new Map<number, RefusedFinding>()
-  const baseGroups = new Map<string, IndexedFinding[]>()
-  const headGroups = new Map<string, IndexedFinding[]>()
-
-  for (const [index, finding] of base.entries()) {
-    if (finding.measure === undefined) continue
-    const key = groupKey(finding)
-    const group = baseGroups.get(key) ?? []
-    group.push({ finding, index })
-    baseGroups.set(key, group)
-  }
-  for (const [index, finding] of head.entries()) {
-    if (finding.measure === undefined) continue
-    const key = groupKey(finding)
-    const group = headGroups.get(key) ?? []
-    group.push({ finding, index })
-    headGroups.set(key, group)
-  }
-
-  for (const [key, headGroup] of headGroups) {
-    const baseGroup = baseGroups.get(key) ?? []
-    const pairedBase = new Set<number>()
-    const pairedHead = new Set<number>()
-    const pairs: Array<{ base: IndexedFinding; head: IndexedFinding }> = []
-
-    for (const headFinding of headGroup) {
-      if (headFinding.finding.symbol === undefined) continue
-      const baseFinding = baseGroup.find(
-        (candidate) =>
-          !pairedBase.has(candidate.index) &&
-          candidate.finding.symbol !== undefined &&
-          candidate.finding.symbol === headFinding.finding.symbol,
-      )
-      if (!baseFinding) continue
-      pairedBase.add(baseFinding.index)
-      pairedHead.add(headFinding.index)
-      pairs.push({ base: baseFinding, head: headFinding })
-    }
-
-    const remainingBase = baseGroup
-      .filter((candidate) => !pairedBase.has(candidate.index))
-      .sort((left, right) => right.finding.measure! - left.finding.measure!)
-    const remainingHead = headGroup
-      .filter((candidate) => !pairedHead.has(candidate.index))
-      .sort((left, right) => right.finding.measure! - left.finding.measure!)
-
-    for (const [position, headFinding] of remainingHead.entries()) {
-      const baseFinding = remainingBase[position]
-      if (baseFinding) pairs.push({ base: baseFinding, head: headFinding })
-      else {
-        refused.set(headFinding.index, { ...headFinding.finding, reason: 'new-measured' })
-      }
-    }
-
-    for (const pair of pairs) {
-      if (pair.head.finding.measure! > pair.base.finding.measure!) {
-        refused.set(pair.head.index, {
-          ...pair.head.finding,
-          reason: 'grew',
-          previousMeasure: pair.base.finding.measure!,
-        })
-      }
+  const baseGroups = measuredGroups(base)
+  for (const [key, headGroup] of measuredGroups(head)) {
+    for (const [index, finding] of measuredGroupRefusals(baseGroups.get(key) ?? [], headGroup)) {
+      refused.set(index, finding)
     }
   }
-
   return refused
 }
 
