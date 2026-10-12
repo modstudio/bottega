@@ -400,26 +400,40 @@ async function drainDestinations(
       )
       for (let index = 0; index < ordered.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
         const batch = ordered.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
-        try {
-          dependencies.assertLock?.()
-          const outcomes = await (dependencies.push ?? hostedPushChanges)(
-            batch.map((item) => item.change),
-            { recordSpace: spaceId },
-          )
-          try {
-            dependencies.assertLock?.()
-          } catch (error) {
-            if (error instanceof StoredLeaseLostError)
-              traceLeaseLostOutcomes(batch, outcomes, clock, processKind)
-            return false
-          }
-          recordBatchOutcomes(batch, outcomes, report, clock, processKind)
-        } catch {
+        if (!(await deliverOutboxBatch(batch, spaceId, dependencies, report, clock, processKind)))
           return false
-        }
       }
     }
   }
+  return true
+}
+
+async function deliverOutboxBatch(
+  batch: PreparedOutboxRow[],
+  spaceId: string,
+  dependencies: DrainDependencies,
+  report: HostedOutboxReport,
+  clock: () => string,
+  processKind: OutboxProcessKind,
+): Promise<boolean> {
+  let outcomes: HostedPushOutcome[]
+  try {
+    dependencies.assertLock?.()
+    outcomes = await (dependencies.push ?? hostedPushChanges)(
+      batch.map((item) => item.change),
+      { recordSpace: spaceId },
+    )
+  } catch {
+    return false
+  }
+  try {
+    dependencies.assertLock?.()
+  } catch (error) {
+    if (error instanceof StoredLeaseLostError)
+      traceLeaseLostOutcomes(batch, outcomes, clock, processKind)
+    return false
+  }
+  recordBatchOutcomes(batch, outcomes, report, clock, processKind)
   return true
 }
 
