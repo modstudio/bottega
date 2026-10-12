@@ -12,7 +12,7 @@ export type IdentitySetComparison = {
   inFlight: string[]
 }
 
-export type TableAudit = IdentitySetComparison & {
+type TableAudit = IdentitySetComparison & {
   table: PushableHubChangeTable
   pulled: boolean
 }
