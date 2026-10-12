@@ -594,11 +594,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
-          if (opts.resume?.kind === 'retry-root') {
+          if (opts.resume?.kind === 'retry-root' && resumePlan) {
             assertRetryRootWorkspace({
               worktree: created,
-              expectedBranch: resumePlan!.branch,
-              validatedTip: resumePlan!.tip,
+              expectedBranch: resumePlan.branch,
+              validatedTip: resumePlan.tip,
               conversationRootId: claim.id,
               projectId: runProjectId,
               projectName: runProjectName,
@@ -783,7 +783,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             }
           }
         }
-        if (opts.resume?.kind === 'retry-root') {
+        if (opts.resume?.kind === 'retry-root' && writesJob) {
           assertRetryRootWorkspace({
             worktree: inheritedWorktree,
             expectedBranch: inheritedWorktree.branch,
