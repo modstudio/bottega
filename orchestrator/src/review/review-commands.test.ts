@@ -7,7 +7,6 @@ import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from './review-commands.ts'
 import { serializePathSet } from './review-group.ts'
-import { measureChangeIdentity } from './review-pins.ts'
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -76,9 +75,13 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     const staleBase = git(repo, 'rev-parse', 'HEAD')
 
     upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
-    const currentBase = git(repo, 'rev-parse', 'refs/remotes/origin/main')
     const writerHead = git(repo, 'rev-parse', 'DEV-992-fixture')
-    const currentIdentity = measureChangeIdentity(repo, currentBase, writerHead)!
+    // Deterministic fast-import fixture identity for origin/main..DEV-992-fixture.
+    // The command measures the live range, so this assertion fails if they diverge.
+    const currentIdentity = {
+      patchId: '344d5a66fb0f57fb36bc50cb2108a9046933150d',
+      paths: ['notes.md'],
+    }
     const run = db()
       .query<{ id: number }, [string, string, string]>(
         `INSERT INTO run
