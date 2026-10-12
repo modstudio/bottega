@@ -104,7 +104,7 @@ export async function upsertHostedProjectRow(
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, docs, signals, review, test_substance, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, docs, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
@@ -116,6 +116,7 @@ export async function upsertHostedProjectRow(
       (${columns.signals}::jsonb #>> '{}')::jsonb,
       (${columns.review}::jsonb #>> '{}')::jsonb,
       (${columns.testSubstance}::jsonb #>> '{}')::jsonb,
+      (${columns.mechanicalChecks}::jsonb #>> '{}')::jsonb,
       (${columns.release}::jsonb #>> '{}')::jsonb,
       (${columns.states}::jsonb #>> '{}')::jsonb,
       (${columns.tracker}::jsonb #>> '{}')::jsonb,
@@ -144,6 +145,7 @@ export async function upsertHostedProjectRow(
       signals = EXCLUDED.signals,
       review = EXCLUDED.review,
       test_substance = EXCLUDED.test_substance,
+      mechanical_checks = EXCLUDED.mechanical_checks,
       release = EXCLUDED.release,
       states = EXCLUDED.states,
       tracker = EXCLUDED.tracker,

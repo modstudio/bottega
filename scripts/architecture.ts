@@ -7,6 +7,7 @@ import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
+import { enforcementModules } from './architecture-enforcement-modules.ts'
 import { gateModules } from './architecture-gate-modules.ts'
 import { hubModuleSpecs } from './architecture-hub-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
@@ -70,6 +71,7 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
