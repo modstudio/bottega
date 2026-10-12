@@ -20,7 +20,13 @@ import { correctStoredIntervalProjects } from './interval-project-correction.ts'
 import { pullHostedNotes } from './note-cache.ts'
 import { deliverOperatorWaitingEmails } from './operator-waiting-email.ts'
 import { claimWaitingNotifications } from './orch.ts'
-import { drainHostedOutbox, type HostedOutboxReport, hostedOutboxLine } from './outbox.ts'
+import {
+  drainHostedOutbox,
+  type HostedOutboxReport,
+  hostedOutboxLine,
+  pendingHostedOutboxSummary,
+} from './outbox.ts'
+import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { rollUpDays } from './query.ts'
 import { pullHostedReports } from './report-cache.ts'
 import { pullHostedTasks } from './task-cache.ts'
@@ -427,6 +433,26 @@ export async function collectFast(
   return results
 }
 
+export async function collectFastHostedOutbox(
+  schedule: HostedOutboxDrainSchedule<HostedOutboxReport>,
+  dependencies: { pending?: () => PendingHostedOutbox } = {},
+  guard?: LeaseGuard,
+): Promise<CollectLegResult | null> {
+  const source = 'hosted outbox'
+  guard?.assertHeld()
+  let result: CollectLegResult | null
+  try {
+    const report = await schedule.fast((dependencies.pending ?? pendingHostedOutboxSummary)())
+    result = report ? { source, ok: true, hostedOutbox: report } : null
+  } catch (error) {
+    const message = (error as Error).message
+    console.error(`hub: ${source} collect failed: ${message}`)
+    result = { source, ok: false, error: message }
+  }
+  guard?.assertHeld(result ? source : undefined)
+  return result
+}
+
 /** Claim and deliver each waiting episode without allowing notification failure to stop collection. */
 export async function deliverOperatorNotifications(
   dependencies: {
@@ -455,7 +481,11 @@ export async function deliverOperatorNotifications(
 }
 
 /** The remote and commit-shaped legs. */
-async function collectSlow(scheduled = false, guard?: LeaseGuard) {
+async function collectSlow(
+  scheduled = false,
+  guard?: LeaseGuard,
+  outboxSchedule?: HostedOutboxDrainSchedule<HostedOutboxReport>,
+) {
   const results = [] as CollectLegResult[]
   let lastCompleted = 'tasks'
   guard?.assertHeld()
@@ -475,7 +505,10 @@ async function collectSlow(scheduled = false, guard?: LeaseGuard) {
   stamp('collect.slow.at')
   if (process.env.HUB_HOSTED_URL) {
     guard?.assertHeld('tasks')
-    const hostedResults = await hostedCollectLegs(guard)
+    const hostedResults = await hostedCollectLegs(
+      guard,
+      outboxSchedule ? { outbox: () => outboxSchedule.slow() } : {},
+    )
     results.push(...hostedResults)
     lastCompleted = hostedResults.at(-1)?.source ?? lastCompleted
     guard?.assertHeld('hosted')
@@ -564,6 +597,9 @@ export function watch(
     renewEveryMs?: number
   } = {},
 ) {
+  const outboxSchedule = process.env.HUB_HOSTED_URL
+    ? new HostedOutboxDrainSchedule(drainHostedOutbox, nowIso)
+    : null
   let busy = false
   let stopping = false
   const runCycle = (work: (guard: LeaseGuard) => Promise<unknown>) => async () => {
@@ -595,9 +631,16 @@ export function watch(
         await deliverOperatorWaitingEmails()
         leaseGuard.assertHeld('operator waiting emails')
         await collectFast({}, leaseGuard)
+        if (outboxSchedule) {
+          const result = await collectFastHostedOutbox(outboxSchedule, {}, leaseGuard)
+          if (result) console.log(formatCollectLeg(result))
+        }
       }),
   )
-  const slow = runCycle(dependencies.slow ?? ((leaseGuard) => collectSlow(true, leaseGuard)))
+  const slow = runCycle(
+    dependencies.slow ??
+      ((leaseGuard) => collectSlow(true, leaseGuard, outboxSchedule ?? undefined)),
+  )
   // The old pair of fire-and-forget calls made `slow` observe `busy` from
   // `fast` and skip the initial tracker pass. Keep both initial legs under the
   // same guard so scheduling starts with a real observation.
@@ -610,7 +653,7 @@ export function watch(
       await deliverOperatorWaitingEmails()
       leaseGuard.assertHeld('operator waiting emails')
       await collectFast({}, leaseGuard)
-      await collectSlow(true, leaseGuard)
+      await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
     })
   void runCycle(initial)()
   const a = setInterval(() => void fast(), FAST_MS)

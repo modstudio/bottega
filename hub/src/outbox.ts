@@ -127,6 +127,19 @@ export function listHostedOutbox(): OutboxEntry[] {
     .all()
 }
 
+export function pendingHostedOutboxSummary(): {
+  pendingCount: number
+  newestQueuedAt: string | null
+} {
+  const row = db()
+    .query<{ pending_count: number; newest_queued_at: string | null }, []>(
+      `SELECT count(*) AS pending_count,max(queued_at) AS newest_queued_at
+       FROM hosted_outbox WHERE quarantined_at IS NULL`,
+    )
+    .get()!
+  return { pendingCount: row.pending_count, newestQueuedAt: row.newest_queued_at }
+}
+
 function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 'not-quarantined' {
   const entry = db().query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE id=?`).get(id)
   if (!entry?.quarantined_at) return 'not-quarantined'
