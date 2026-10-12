@@ -43,6 +43,7 @@ test('note UUID migration preserves notes and acknowledgements', () => {
     '0028_outbox_evidence',
     '0029_outbox_fields',
     '0030_outbox_kept_values',
+    '0031_change_log_pull_cutover',
   ])
   expect(
     d

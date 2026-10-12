@@ -95,6 +95,7 @@ const LATEST_MIGRATIONS = [
   '0028_outbox_evidence',
   '0029_outbox_fields',
   '0030_outbox_kept_values',
+  '0031_change_log_pull_cutover',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>
@@ -222,28 +223,6 @@ describe('hub migration journal', () => {
       d.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE name='note'").get()?.sql,
     ).not.toMatch(/AUTOINCREMENT/i)
     d.close()
-  })
-
-  test('install_binding binds only from hosted collect cursors, never record_id', () => {
-    const unbound = migratedThrough(13)
-    unbound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-      VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01'),
-             ('mcp-id','MCP-1','workshop','mcp','2026-01-01','2026-01-01')`)
-    expect(applyMigrations(unbound)).toEqual([...LATEST_MIGRATIONS])
-    expect(
-      unbound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
-    ).toBeNull()
-    unbound.close()
-
-    const bound = migratedThrough(13)
-    bound.exec(`INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-      VALUES ('git-id','GIT-1','workshop','git','2026-01-01','2026-01-01')`)
-    bound.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)
-    expect(applyMigrations(bound)).toEqual([...LATEST_MIGRATIONS])
-    expect(
-      bound.query<{ bound: number }, []>('SELECT bound FROM install_binding WHERE id=1').get(),
-    ).toEqual({ bound: 1 })
-    bound.close()
   })
 
   test('the adoption strip handles populated foreign-key cycles and restores enforcement', () => {

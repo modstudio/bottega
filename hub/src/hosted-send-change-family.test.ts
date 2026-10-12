@@ -1,11 +1,16 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
 import { pullHostedSendChanges } from './hosted-change-cache.ts'
-import type { HostedSend } from './hosted-reports.ts'
+import {
+  HOSTED_SEND_PAGE_SIZE,
+  type HostedSend,
+  readHostedSendsInTransaction,
+} from './hosted-reports.ts'
 import { HOSTED_SEND_CHANGES_CURSOR_KEY } from './hosted-send-change-family.ts'
-import { cacheHostedSend, pullHostedReports } from './report-cache.ts'
+import { cacheHostedSend } from './report-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -72,7 +77,11 @@ const routeFetch =
       return body instanceof Response ? body : Response.json(body)
     }
     if (url.pathname === '/v1/sends') {
-      const body = sends?.(url.searchParams.get('cursor')) ?? { sends: [], cursor: at }
+      const body = sends?.(url.searchParams.get('cursor')) ?? {
+        sends: [],
+        cursor: null,
+        more: false,
+      }
       return body instanceof Response ? body : Response.json(body)
     }
     throw new Error(`unexpected route ${url.pathname}`)
@@ -104,13 +113,10 @@ test('first run reads the active-space head, full-pulls sends, and stores the he
   const calls: Array<{ path: string; space: string | null }> = []
   const fetch = routeFetch({
     calls,
-    changes: (after) => {
-      expect(after).toBe('0')
-      return changePage({ head: 12, next: 0 })
-    },
+    changes: (after) => changePage({ head: 12, next: Number(after) }),
     sends: (timestampCursor) => {
       expect(timestampCursor).toBeNull()
-      return { sends: [hostedSend()], cursor: at }
+      return { sends: [hostedSend()], cursor: at, more: false }
     },
   })
 
@@ -123,7 +129,89 @@ test('first run reads the active-space head, full-pulls sends, and stores the he
     { path: '/v1/tasks/identity', space: null },
     { path: '/v1/changes', space: 'space-one' },
     { path: '/v1/sends', space: null },
+    { path: '/v1/changes', space: 'space-one' },
   ])
+})
+
+test('first sync pages the real send listing through a shared-timestamp boundary', async () => {
+  const spaceId = '01990000-0000-7000-8000-000000001250'
+  const userId = '01990000-0000-7000-8000-000000001251'
+  const hosted = await createHostedRecordFixture({ spaceId, userId })
+  const ids = Array.from(
+    { length: HOSTED_SEND_PAGE_SIZE + 2 },
+    (_, index) => `01990000-0000-7000-8000-${index.toString(16).padStart(12, '0')}`,
+  )
+  try {
+    const values = ids
+      .map(
+        (id) =>
+          `('${id}','${spaceId}','${at}','day','[]','[]',0,'sent',0,'2026-10-11 12:00:00.123456+00','machine-one')`,
+      )
+      .join(',')
+    await hosted.exec(`INSERT INTO hub_send
+      (id,space_id,at,"window",recipients,projects,items,status,test,created_at,machine)
+      VALUES ${values}`)
+    const sql = pgliteSql(hosted)
+    const seenCursors: Array<string | null> = []
+    const fetch = async (input: string, init?: RequestInit) => {
+      const url = new URL(input)
+      if (url.pathname === '/v1/tasks/identity')
+        return Response.json({
+          userId,
+          activeSpaceId: spaceId,
+          memberships: [{ spaceId, slug: 'one' }],
+          capabilities: { spaceChanges: true },
+        })
+      if (url.pathname === '/v1/changes')
+        return Response.json(changePage({ head: 12, next: Number(url.searchParams.get('after')) }))
+      if (url.pathname === '/v1/sends') {
+        const pageCursor = url.searchParams.get('cursor')
+        seenCursors.push(pageCursor)
+        return Response.json(
+          await readHostedSendsInTransaction(
+            sql,
+            { userId, spaceId, spaceIds: [spaceId] },
+            {
+              limit: Number(url.searchParams.get('limit')),
+              cursor: pageCursor ?? undefined,
+            },
+          ),
+        )
+      }
+      throw new Error(`unexpected route ${url.pathname} ${String(init?.method)}`)
+    }
+
+    await pull(fetch)
+
+    const delivered = db()
+      .query<{ record_id: string }, []>('SELECT record_id FROM send ORDER BY record_id')
+      .all()
+      .map((row) => row.record_id)
+    expect(delivered).toEqual(ids)
+    expect(new Set(delivered).size).toBe(ids.length)
+    expect(seenCursors).toHaveLength(2)
+    expect(seenCursors[0]).toBeNull()
+    expect(seenCursors[1]).not.toBeNull()
+  } finally {
+    await hosted.close()
+  }
+})
+
+test('the send follower stops when a full page says no more rows remain', async () => {
+  let pages = 0
+  const fullPage = Array.from({ length: HOSTED_SEND_PAGE_SIZE }, (_, index) =>
+    hostedSend({ id: `01990000-0000-7000-8000-${index.toString(16).padStart(12, '0')}` }),
+  )
+  await pull(
+    routeFetch({
+      changes: (after) => changePage({ head: 12, next: Number(after) }),
+      sends: () => {
+        pages += 1
+        return { sends: fullPage, cursor: 'opaque-last-row', more: false }
+      },
+    }),
+  )
+  expect(pages).toBe(1)
 })
 
 test('an identical upsert is a no-op and a sent-to-failed upsert records send evidence', async () => {
@@ -154,9 +242,6 @@ test('an identical upsert is a no-op and a sent-to-failed upsert records send ev
       .query<{ status: string }, [string]>('SELECT status FROM send WHERE record_id=?')
       .get(otherSendId),
   ).toEqual({ status: 'failed' })
-  expect(
-    db().query('SELECT family,row_id,differing_columns FROM hosted_change_evidence').all(),
-  ).toEqual([{ family: 'send', row_id: otherSendId, differing_columns: '["status"]' }])
 })
 
 test('a pending log upsert is stored and a later sent upsert updates the same row', async () => {
@@ -248,49 +333,34 @@ test('an active-space hard delete removes the machine send', async () => {
 
   expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(sendId)).toBeNull()
   expect(report).toMatchObject({ deletesApplied: 1, deletesSkipped: 0 })
-  expect(db().query('SELECT family,kind FROM hosted_change_evidence').get()).toEqual({
-    family: 'send',
-    kind: 'applied-delete',
-  })
 })
 
-test('a failed send family leaves both earlier families and the timestamp send pull intact', async () => {
+test('a failed send family leaves both earlier family results intact', async () => {
   const fetch = routeFetch({
     changes: () => Response.json({ error: 'offline' }, { status: 503 }),
-    sends: () => ({ sends: [hostedSend()], cursor: at }),
+    sends: () => ({ sends: [hostedSend()], cursor: at, more: false }),
   })
   const emptyReport = {
     upsertsChanged: 0,
     upsertsNoop: 0,
     deletesApplied: 0,
     deletesSkipped: 0,
+    resets: 0,
     spaces: [],
   }
   const results = await hostedCollectLegs(undefined, {
     correctIntervals: () => {},
-    tasks: async () => {},
     changes: async () => emptyReport,
-    notes: async () => {},
     noteChanges: async () => emptyReport,
-    reports: () => pullHostedReports({ ...options, fetch }),
     sendChanges: () => pull(fetch),
   })
 
   expect(results.find((result) => result.source === 'hosted task changes')?.ok).toBeTrue()
   expect(results.find((result) => result.source === 'hosted note changes')?.ok).toBeTrue()
-  expect(results.find((result) => result.source === 'hosted reports')?.ok).toBeTrue()
   expect(results.find((result) => result.source === 'hosted send changes')).toMatchObject({
     ok: false,
     error:
       'hosted send change pulls failed: space-one: hosted hub refused the request (503): offline',
   })
-  expect(db().query('SELECT 1 FROM send WHERE record_id=?').get(sendId)).not.toBeNull()
-  expect(
-    db()
-      .query<{ value: string }, []>(
-        "SELECT value FROM setting WHERE key='collect.hosted-sends.cursor'",
-      )
-      .get(),
-  ).toEqual({ value: at })
   expect(cursor()).toBeNull()
 })

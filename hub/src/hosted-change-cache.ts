@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
-import { pruneHostedChangeEvidence, recordHostedChangeEvidence } from './hosted-change-evidence.ts'
 import {
   classifyHostedChangeDelete,
   classifyHostedChangeUpsert,
@@ -48,6 +47,7 @@ type SpaceCounts = {
   upsertsNoop: number
   deletesApplied: number
   deletesSkipped: number
+  resets: number
 }
 export type HostedChangeLegReport = Omit<SpaceCounts, 'spaceId'> & { spaces: SpaceCounts[] }
 type PullOptions = {
@@ -63,6 +63,7 @@ const emptyCounts = (spaceId: string): SpaceCounts => ({
   upsertsNoop: 0,
   deletesApplied: 0,
   deletesSkipped: 0,
+  resets: 0,
 })
 const addCounts = (left: SpaceCounts, right: SpaceCounts): SpaceCounts => ({
   spaceId: left.spaceId,
@@ -70,6 +71,7 @@ const addCounts = (left: SpaceCounts, right: SpaceCounts): SpaceCounts => ({
   upsertsNoop: left.upsertsNoop + right.upsertsNoop,
   deletesApplied: left.deletesApplied + right.deletesApplied,
   deletesSkipped: left.deletesSkipped + right.deletesSkipped,
+  resets: left.resets + right.resets,
 })
 function sumCounts(spaces: SpaceCounts[]): HostedChangeLegReport {
   return spaces.reduce<HostedChangeLegReport>(
@@ -78,16 +80,24 @@ function sumCounts(spaces: SpaceCounts[]): HostedChangeLegReport {
       upsertsNoop: totals.upsertsNoop + space.upsertsNoop,
       deletesApplied: totals.deletesApplied + space.deletesApplied,
       deletesSkipped: totals.deletesSkipped + space.deletesSkipped,
+      resets: totals.resets + space.resets,
       spaces,
     }),
-    { upsertsChanged: 0, upsertsNoop: 0, deletesApplied: 0, deletesSkipped: 0, spaces },
+    {
+      upsertsChanged: 0,
+      upsertsNoop: 0,
+      deletesApplied: 0,
+      deletesSkipped: 0,
+      resets: 0,
+      spaces,
+    },
   )
 }
 export function hostedChangeLegLine(report: HostedChangeLegReport): string {
   return report.spaces
     .map(
       (space) =>
-        `${space.spaceId} ${space.upsertsChanged} changed, ${space.upsertsNoop} no-op, ${space.deletesApplied} deleted, ${space.deletesSkipped} skipped`,
+        `${space.spaceId} ${space.upsertsChanged} changed, ${space.upsertsNoop} no-op, ${space.deletesApplied} deleted, ${space.deletesSkipped} skipped, ${space.resets} reset`,
     )
     .join('; ')
 }
@@ -134,27 +144,11 @@ function applyDeleteChange(
   )
   if (decision === 'skip') {
     counts.deletesSkipped += 1
-    recordHostedChangeEvidence(conn, {
-      family: family.evidenceFamily,
-      spaceId,
-      table: change.table,
-      rowId: change.id,
-      kind: 'skipped-delete',
-      differingColumns: [],
-    })
     return
   }
   const reconciled = applyDelete(conn, change, family)
   if (reconciled.kind === 'skipped') counts.deletesSkipped += 1
   else counts.deletesApplied += 1
-  recordHostedChangeEvidence(conn, {
-    family: family.evidenceFamily,
-    spaceId,
-    table: change.table,
-    rowId: change.id,
-    kind: 'applied-delete',
-    differingColumns: [],
-  })
 }
 
 function applyOneChange(
@@ -203,17 +197,7 @@ function applyOneChange(
   const { before, after } = reconciled
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
-  else {
-    counts.upsertsChanged += 1
-    recordHostedChangeEvidence(conn, {
-      family: family.evidenceFamily,
-      spaceId,
-      table: change.table,
-      rowId: change.id,
-      kind: 'changed-upsert',
-      differingColumns: decision.differingColumns,
-    })
-  }
+  else counts.upsertsChanged += 1
 }
 
 function applyPage(
@@ -244,21 +228,23 @@ async function startSpace(
   spaceId: string,
   options: HostedChangeRequestOptions,
   head?: number,
-) {
+): Promise<SpaceCounts> {
   const sequence = head ?? (await hostedSpaceChanges(0, { ...options, limit: 1 })).head
   const applySnapshot = await family.fullPull(options)
   writeTransaction((conn) => {
     applySnapshot(conn)
     storeCursor(conn, family, spaceId, sequence)
   })
-  return emptyCounts(spaceId)
+  const counts = emptyCounts(spaceId)
+  counts.resets = 1
+  return addCounts(counts, await followSpace(family, spaceId, sequence, options))
 }
 async function followSpace(
   family: HostedChangeFamily,
   spaceId: string,
   after: number,
   options: HostedChangeRequestOptions,
-) {
+): Promise<SpaceCounts> {
   let counts = emptyCounts(spaceId)
   let cursor = after
   for (let page = 0; page < MAX_HOSTED_CHANGE_PAGES_PER_PASS; page++) {
@@ -316,7 +302,6 @@ function noteFamily(
     return 'destinationSpaceId' in destination ? destination.destinationSpaceId : null
   }
   return {
-    evidenceFamily: 'note',
     cursorPrefix: HOSTED_NOTE_CHANGES_CURSOR_KEY,
     tables: NOTE_TABLES,
     spaces: notePullSpaces,
@@ -376,10 +361,12 @@ async function pullChanges(
   ) => HostedChangeFamily,
   options: PullOptions,
 ) {
-  pruneHostedChangeEvidence()
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(shared)
-  if (identity.capabilities?.spaceChanges !== true) return null
+  if (identity.capabilities?.spaceChanges !== true)
+    throw new Error(
+      'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
+    )
   const registered = options.registeredProjects ?? projects()
   return pullFamily(makeFamily(registered, identity), options, identity, registered)
 }

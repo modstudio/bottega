@@ -12,14 +12,24 @@ export function createHostedSendChangeFamily(
 ): HostedChangeFamily {
   const activeSpaceId = identity.activeSpaceId
   return {
-    evidenceFamily: 'send',
     cursorPrefix: HOSTED_SEND_CHANGES_CURSOR_KEY,
     tables: 'hub_send',
     spaces: () => [activeSpaceId],
     fullPull: async (options) => {
-      const snapshot = await hostedSendChanges(null, options)
+      const sends: HostedSend[] = []
+      let cursor: string | null = null
+      for (;;) {
+        const page = await hostedSendChanges(cursor, options)
+        sends.push(...page.sends)
+        if (!page.more) break
+        if (page.cursor === null)
+          throw new Error('hosted send full read did not advance; the hosted route cannot page')
+        if (page.cursor === cursor)
+          throw new Error('hosted send full read did not advance; the hosted route cannot page')
+        cursor = page.cursor
+      }
       return (conn) => {
-        for (const row of snapshot.sends) cacheHostedSend(conn, row)
+        for (const row of sends) cacheHostedSend(conn, row)
       }
     },
     tableOrder: () => 0,

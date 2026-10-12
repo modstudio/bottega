@@ -1,7 +1,10 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { applyHostedTaskChanges } from './task-cache.ts'
+import { applyHostedTaskRows } from './task-cache.ts'
+
+const applyHostedTaskChanges = (changes: Parameters<typeof applyHostedTaskRows>[1]) =>
+  writeTransaction((conn) => applyHostedTaskRows(conn, changes))
 
 const AT = '2026-10-08T12:00:00.000Z'
 const TASK_A = '01990000-0000-7000-8000-000000000001'

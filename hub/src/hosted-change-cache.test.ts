@@ -135,7 +135,7 @@ test('the note family starts and resets through the full note pull including cou
     changes: (_space, after) =>
       after === '5'
         ? page({ head: 22, next: 5, resetRequired: true })
-        : page({ head: 12, next: Number(after ?? 0) }),
+        : page({ head: Number(after) || 12, next: Number(after ?? 0) }),
     notes: () => {
       fullPulls += 1
       return fullNotes([note({ text: `snapshot-${fullPulls}` })])
@@ -179,14 +179,6 @@ test('note upserts distinguish a timestamp no-op from a changed row', async () =
   const report = await pull(fetch)
   expect(report?.upsertsNoop).toBe(1)
   expect(report?.upsertsChanged).toBe(1)
-  const evidence = db()
-    .query<{ differing_columns: string; row_id: string }, []>(
-      'SELECT differing_columns,row_id FROM hosted_change_evidence',
-    )
-    .all()
-  expect(evidence).toEqual([{ differing_columns: '["text"]', row_id: noteId }])
-  expect(JSON.stringify(evidence)).not.toContain('remember this')
-  expect(JSON.stringify(evidence)).not.toContain('new')
 })
 
 test('note deletes apply only in the row own space', async () => {
@@ -221,14 +213,6 @@ test('note deletes apply only in the row own space', async () => {
   )
   expect(applied?.spaces.find((row) => row.spaceId === 'space-one')?.deletesApplied).toBe(1)
   expect(db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId)).toBeNull()
-  expect(
-    db()
-      .query<{ kind: string }, []>(
-        'SELECT kind FROM hosted_change_evidence ORDER BY observed_at,record_id',
-      )
-      .all()
-      .map((row) => row.kind),
-  ).toEqual(['skipped-delete', 'applied-delete'])
 })
 
 test('acknowledgement deletes use their note space and skip an absent note', async () => {
@@ -491,7 +475,6 @@ test('a note collision refuses the page and leaves its cursor in place', async (
   })
   await expect(pull(fetch)).rejects.toThrow('belongs to UUID')
   expect(cursor()).toBe('12')
-  expect(db().query('SELECT 1 FROM hosted_change_evidence').all()).toEqual([])
   expect(
     db()
       .query<{ text: string }, [string]>('SELECT text FROM note WHERE record_id=?')
@@ -502,16 +485,15 @@ test('a note collision refuses the page and leaves its cursor in place', async (
 test('one change family failing leaves the other family result intact', async () => {
   const results = await hostedCollectLegs(undefined, {
     correctIntervals: () => {},
-    tasks: async () => {},
     changes: async () => {
       throw new Error('task log unavailable')
     },
-    notes: async () => {},
     noteChanges: async () => ({
       upsertsChanged: 1,
       upsertsNoop: 0,
       deletesApplied: 0,
       deletesSkipped: 0,
+      resets: 0,
       spaces: [
         {
           spaceId: 'space-one',
@@ -519,10 +501,10 @@ test('one change family failing leaves the other family result intact', async ()
           upsertsNoop: 0,
           deletesApplied: 0,
           deletesSkipped: 0,
+          resets: 0,
         },
       ],
     }),
-    reports: async () => {},
     sendChanges: async () => null,
   })
   expect(results.find((result) => result.source === 'hosted task changes')?.ok).toBeFalse()
@@ -532,6 +514,6 @@ test('one change family failing leaves the other family result intact', async ()
   const noteResult = results.find((result) => result.source === 'hosted note changes')
   if (!noteResult) throw new Error('missing hosted note changes result')
   expect(formatCollectLeg(noteResult)).toBe(
-    'hosted note changes space-one 1 changed, 0 no-op, 0 deleted, 0 skipped',
+    'hosted note changes space-one 1 changed, 0 no-op, 0 deleted, 0 skipped, 0 reset',
   )
 })
