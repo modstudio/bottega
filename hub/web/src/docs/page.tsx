@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMatch, useNavigate } from '@tanstack/react-router'
-import { History, Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { recordSpaces } from '@/lib/record-spaces'
@@ -124,6 +124,7 @@ export function DocsPage() {
     <>
       <DocsView
         sourceLabel={sourceLabel}
+        source={source}
         items={catalog.items}
         selectedId={selected?.id ?? null}
         filters={filters}
@@ -155,46 +156,26 @@ export function DocsPage() {
             </Button>
           ) : null
         }
-        localActions={
+        headerAction={
           source === 'local' && selected ? (
-            <div className="flex shrink-0 gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  void navigate({
-                    to: '/docs/$scope/$subject/$slug',
-                    params: {
-                      scope: selected.scope,
-                      subject: selected.subject ?? '_',
-                      slug: selected.slug,
-                    },
-                    search: { edit: true },
-                  })
-                }
-              >
-                <Pencil size={14} />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  void navigate({
-                    to: '/docs/$scope/$subject/$slug',
-                    params: {
-                      scope: selected.scope,
-                      subject: selected.subject ?? '_',
-                      slug: selected.slug,
-                    },
-                    search: { history: true },
-                  })
-                }
-              >
-                <History size={14} />
-                History
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                void navigate({
+                  to: '/docs/$scope/$subject/$slug',
+                  params: {
+                    scope: selected.scope,
+                    subject: selected.subject ?? '_',
+                    slug: selected.slug,
+                  },
+                  search: { edit: true },
+                })
+              }
+            >
+              <Pencil size={14} />
+              Edit
+            </Button>
           ) : null
         }
       />

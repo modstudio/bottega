@@ -50,12 +50,6 @@
     "score": 17
   },
   {
-    "file": "hub/web/src/routes/docs.$scope.$subject.$slug.tsx",
-    "function": "DocPage",
-    "line": 26,
-    "score": 20
-  },
-  {
     "file": "hub/web/src/routes/runs.$id.tsx",
     "function": "RunDetailPage",
     "line": 132,

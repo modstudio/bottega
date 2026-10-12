@@ -6,6 +6,7 @@ import { PageHeader } from '@/ui/page-header/page-header'
 import { Popover } from '@/ui/popover/popover'
 import { Switch } from '@/ui/switch/switch'
 import { classes } from '@/ui/text/classes'
+import { DocsFacts } from './facts.tsx'
 import { FilterPanel } from './filter-panel.tsx'
 import {
   DOC_AUDIENCE_LABELS,
@@ -15,7 +16,7 @@ import {
 } from './filters.ts'
 import type { DocsLocation } from './location.ts'
 import { docsViewModel, docsVisibleByStatus } from './model.ts'
-import { DocsFacts, DocsReading } from './reading.tsx'
+import { DocsReading } from './reading.tsx'
 import { SearchDialog } from './search.tsx'
 import { breadcrumb, treePath } from './tree.ts'
 import { GroupedTree, TreeList } from './tree-view.tsx'
@@ -23,6 +24,7 @@ import type {
   DocsAudience,
   DocsDoc,
   DocsSearchMatch,
+  DocsSource,
   DocsTreeGroup,
   DocsTreeItem,
   TreeNode,
@@ -33,6 +35,7 @@ const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
 export type DocsViewProps = {
   sourceLabel: string
+  source: DocsSource
   /** The complete catalogue, including documents omitted from navigation. */
   items: readonly DocsTreeItem[]
   selectedId: string | null
@@ -58,7 +61,7 @@ export type DocsViewProps = {
   onSearchQuery: (query: string) => void
   searchResults: readonly DocsSearchMatch[]
   framed: boolean
-  localActions?: ReactNode
+  headerAction?: ReactNode
   createAction?: ReactNode
   loading?: boolean
   error?: string | null
@@ -257,6 +260,7 @@ function searchScopeLabel(signedIn: boolean, audience: DocsAudience | null): str
 
 export function DocsView({
   sourceLabel,
+  source,
   items,
   selectedId,
   filters: chosen,
@@ -278,7 +282,7 @@ export function DocsView({
   onSearchQuery,
   searchResults,
   framed,
-  localActions,
+  headerAction,
   createAction,
   loading,
   error,
@@ -413,11 +417,16 @@ export function DocsView({
           onSelect={onSelect}
           replacement={replacement}
           locationFor={locationFor}
-          localActions={localActions}
+          headerAction={headerAction}
           error={error}
         />
         {wide ? null : (
-          <DocsFacts doc={visible} headings={visible ? model.headings : []} signedIn={signedIn} />
+          <DocsFacts
+            doc={visible}
+            headings={visible ? model.headings : []}
+            signedIn={signedIn}
+            source={source}
+          />
         )}
       </div>
       <SearchDialog
