@@ -812,6 +812,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-review-values.ts',
       './record-release-sync.ts',
       './record-session.ts',
+      './record-sync-principal.ts',
       './record-sync-types.ts',
       './record-project-destination.ts',
       '../review/review-outbox.ts',

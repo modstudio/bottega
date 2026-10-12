@@ -169,8 +169,15 @@ test('empty rename target makes no hosted call', async () => {
   expect(projectByName('empty-src')?.path).toBe('/w/empty-src')
 })
 
-test('rename writes the hosted project once then updates the local name', async () => {
+test('rename writes hosted once and updates the local name and release ledger', async () => {
   upsertProject({ name: 'once-src', path: '/w/once-src' })
+  writableDb()
+    .query(
+      `INSERT INTO release_ledger
+       (project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES ('once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
+    )
+    .run()
   const hosted: Array<{ name: string; previousName?: string }> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -189,24 +196,8 @@ test('rename writes the hosted project once then updates the local name', async 
   expect(readRecordInstallBinding().bound).toBe(true)
   expect(projectByName('once-src')).toBeNull()
   expect(projectByName('once-dst')?.path).toBe('/w/once-src')
-})
-
-test('rename updates release ledger rows carrying the old project name', async () => {
-  upsertProject({ name: 'released-src', path: '/w/released-src' })
-  writableDb()
-    .query(
-      `INSERT INTO release_ledger
-       (project,rung,candidate_commit,rollback,actor,started_at)
-       VALUES ('released-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
-    )
-    .run()
-
-  expect(await runProject(['project', 'set', 'released-src'], { name: 'released-dst' })).toBe(
-    'updated released-dst',
-  )
-
   expect(writableDb().query('SELECT project FROM release_ledger').get()).toEqual({
-    project: 'released-dst',
+    project: 'once-dst',
   })
 })
 

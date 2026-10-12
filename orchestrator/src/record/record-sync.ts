@@ -58,6 +58,7 @@ import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
+import { bindPrincipal } from './record-sync-principal.ts'
 import type {
   BlockedOutboxRow,
   OutboxRow,
@@ -161,11 +162,6 @@ function cachedProjectPrincipal(
  * is not a member of. That is one project's problem, so sync skips its rows and
  * carries on rather than stopping at the first of them.
  */
-async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
-  await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
-  await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
-}
-
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   let parsed: unknown
   try {
