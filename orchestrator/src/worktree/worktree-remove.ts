@@ -120,15 +120,17 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
   return changesInIndex(
     w,
     sinceBase,
+    undefined,
     (args) => git(args, w.path),
     (args) => gitOk(args, w.path),
     (args) => gitRaw(args, w.path),
   )
 }
 
-function changesInIndex(
+export function changesInIndex(
   w: Worktree,
   sinceBase: boolean,
+  lowerBound: string | undefined,
   run: (args: string[]) => string,
   runOk: (args: string[]) => string | null,
   runRaw: (args: string[]) => string,
@@ -136,7 +138,7 @@ function changesInIndex(
   run(['add', '-A'])
   const configuredTrunk = projectAt(w.repoRoot)?.settings.trunk?.trim()
   const trunk = configuredTrunk || 'main'
-  const mergeBase = sinceBase ? w.base : runOk(['merge-base', 'HEAD', trunk])
+  const mergeBase = lowerBound ?? (sinceBase ? w.base : runOk(['merge-base', 'HEAD', trunk]))
   if (!mergeBase && configuredTrunk) {
     throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
   }
@@ -171,9 +173,9 @@ function changesInIndex(
 }
 
 /** Read the complete visible change without changing the worktree's real index. */
-export function observedChangesIn(w: Worktree, sinceBase = false): Changes {
+export function observedChangesIn(w: Worktree, sinceBase = false, lowerBound?: string): Changes {
   return withTemporaryGitIndex(w.path, ({ git, gitOk, gitRaw }) =>
-    changesInIndex(w, sinceBase, git, gitOk, gitRaw),
+    changesInIndex(w, sinceBase, lowerBound, git, gitOk, gitRaw),
   )
 }
 

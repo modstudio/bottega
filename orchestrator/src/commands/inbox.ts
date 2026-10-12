@@ -6,7 +6,8 @@ import { cleanupRepoRoot } from '../cleanup/cleanup.ts'
 import { db, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { withWorktreeLease } from '../project/project-lock.ts'
-import { runDiffCommand } from '../run/run-diff.ts'
+import { latestArchitectRead } from '../review/review-read.ts'
+import { commitAt, commitsBetween, isAncestor, runDiffCommand } from '../run/run-diff.ts'
 import { runInboxCommand } from '../run/run-inbox.ts'
 import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
@@ -51,16 +52,21 @@ export function register(program: Command): void {
     .command('diff <id>')
     .option('--quiet')
     .option('--since-base')
+    .option('--since-read')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       await runDiffCommand(Number(id), optionFlags(options), {
         error: console.error,
         write,
         usage: (): never => {
-          throw new Error('orch diff <id> [--quiet] [--since-base]')
+          throw new Error('orch diff <id> [--quiet] [--since-base | --since-read]')
         },
         cleanupRepoRoot,
         observedChangesIn,
+        latestArchitectRead: (project, branch) => latestArchitectRead(db(), project, branch),
+        commitAt,
+        isAncestor,
+        commitsBetween,
         exists: existsSync,
         withWorktreeLease: (repoRoot, worktreePath, action) =>
           withWorktreeLease(

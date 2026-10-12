@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { applyMigrations } from '../database/migrations.ts'
-import { recordArchitectRead, requireBranchRunOwner } from './review-read.ts'
+import { latestArchitectRead, recordArchitectRead, requireBranchRunOwner } from './review-read.ts'
 
 let priorDepth: string | undefined
 let priorSession: string | undefined
@@ -36,6 +36,26 @@ test('only the root run session owns architect reads for its branch', () => {
   expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'foreign-session')).toThrow(
     'calling session does not own DEV-977-work',
   )
+})
+
+test('the latest architect read is selected for one project branch', () => {
+  const d = new Database(':memory:')
+  applyMigrations(d)
+  d.query(
+    `INSERT INTO review_read
+      (record_id,project,branch,tip,patch_id,path_set,tier,note,recorded_at)
+     VALUES
+      ('read-1','fixture','DEV-1257-work','older','patch-1','[]',1,'older note','2026-10-11T12:00:00.000Z'),
+      ('read-2','fixture','DEV-1257-work','newer','patch-2','[]',1,'newer note','2026-10-12T12:00:00.000Z'),
+      ('read-3','fixture','DEV-other','other','patch-3','[]',1,'other note','2026-10-13T12:00:00.000Z')`,
+  ).run()
+
+  expect(latestArchitectRead(d, 'fixture', 'DEV-1257-work')).toEqual({
+    tip: 'newer',
+    note: 'newer note',
+    recordedAt: '2026-10-12T12:00:00.000Z',
+  })
+  expect(latestArchitectRead(d, 'fixture', 'missing')).toBeNull()
 })
 
 test('a tip unreachable from the checked-out branch is refused without a review read', () => {

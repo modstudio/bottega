@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { upsertProject } from '../project/projects.ts'
-import { readOnlyRemovalRefusal, removeFor } from './worktree-remove.ts'
+import { changesInIndex, readOnlyRemovalRefusal, removeFor } from './worktree-remove.ts'
 
 const directories: string[] = []
 const originalPath = process.env.PATH
@@ -43,6 +43,72 @@ esac
 afterEach(() => {
   process.env.PATH = originalPath
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+
+test('an explicit observed-change lower bound bypasses base and merge-base selection', () => {
+  const calls: string[] = []
+  const result = changesInIndex(
+    {
+      path: '/tree',
+      branch: 'DEV-1257-work',
+      base: 'recorded-base',
+      repoRoot: '/repo',
+      source: 'git',
+      mintedBranch: 'DEV-1257-work',
+    },
+    false,
+    'architect-read',
+    (args) => {
+      calls.push(args.join(' '))
+      return ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      return ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      return args[0] === 'diff' ? 'read-bounded patch' : ''
+    },
+  )
+
+  expect(result.since).toBe('architect-read')
+  expect(result.diff).toBe('read-bounded patch')
+  expect(calls).not.toContain('merge-base HEAD main')
+  expect(calls).toContain('diff --cached architect-read')
+})
+
+test('observed changes without an explicit bound still use the trunk merge-base', () => {
+  const calls: string[] = []
+  const result = changesInIndex(
+    {
+      path: '/tree',
+      branch: 'DEV-1257-work',
+      base: 'recorded-base',
+      repoRoot: '/repo',
+      source: 'git',
+      mintedBranch: 'DEV-1257-work',
+    },
+    false,
+    undefined,
+    (args) => {
+      calls.push(args.join(' '))
+      return ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      return args[0] === 'merge-base' ? 'trunk-merge-base' : ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      return args[0] === 'diff' ? 'whole patch' : ''
+    },
+  )
+
+  expect(result.since).toBe('trunk-merge-base')
+  expect(result.diff).toBe('whole patch')
+  expect(calls).toContain('merge-base HEAD main')
+  expect(calls).toContain('diff --cached trunk-merge-base')
 })
 
 describe('worktree removal safety', () => {

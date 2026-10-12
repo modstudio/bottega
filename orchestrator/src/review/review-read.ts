@@ -27,6 +27,17 @@ const git: Git = (cwd, args) => {
   return result.stdout.toString().trim()
 }
 
+export function latestArchitectRead(database: Database, project: string, branch: string) {
+  const row = database
+    .query<{ tip: string; note: string; recorded_at: string }, [string, string]>(
+      `SELECT tip,note,recorded_at FROM review_read
+       WHERE project=? AND branch=?
+       ORDER BY recorded_at DESC,id DESC LIMIT 1`,
+    )
+    .get(project, branch)
+  return row ? { tip: row.tip, note: row.note, recordedAt: row.recorded_at } : null
+}
+
 export function requireBranchRunOwner(
   database: Database,
   project: string,

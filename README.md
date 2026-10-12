@@ -20,7 +20,7 @@ commit.
 2. Write the specification as the prompt or file for `orch do`.
 3. `orch do` dispatches the work into a disposable worktree.
 4. `orch inbox` shows a worker's question, and `orch answer` records the ruling.
-5. `orch diff` shows the worker's actual changes.
+5. `orch diff` shows the worker's actual changes; `--since-read` limits a fix round to changes after the latest recorded architect read.
 6. `orch do review-lens` dispatches a review when required.
 7. `orch score` records the result and its fidelity to the specification.
 8. `orch pr create` opens the reviewed change for admission.
