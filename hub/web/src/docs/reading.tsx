@@ -109,9 +109,7 @@ function ReadingTop({
         {titleGone ? (
           <>
             <span>/</span>
-            <span className="min-w-0 truncate font-sans text-md text-text-primary normal-case tracking-normal">
-              {title}
-            </span>
+            <span className="min-w-0 truncate text-text-primary">{title}</span>
           </>
         ) : null}
       </div>
