@@ -61,6 +61,7 @@ function selectedProjects(
 function textTable(rows: ResolvedMechanicalCheck[]): string[] {
   const headings = [
     'category',
+    'enforced',
     'title',
     'scope',
     'tool',
@@ -71,18 +72,24 @@ function textTable(rows: ResolvedMechanicalCheck[]): string[] {
     'note',
     'reason',
   ]
-  const values = rows.map((row) => [
-    row.category,
-    row.title,
-    row.scope,
-    row.tool ?? '—',
-    row.points.join(', '),
-    row.blocking ? 'yes' : 'no',
-    row.limit === null ? '—' : String(row.limit),
-    row.source,
-    row.note ?? '—',
-    row.reason ?? '—',
-  ])
+  const values = rows.map((row) => {
+    const standard = !row.enforced && (row.source === 'default' || row.source === 'stack')
+    const absent = ['uncovered', 'opted-out', 'not-applicable'].includes(row.source)
+    const field = (value: string) => (standard ? `[${value}]` : value)
+    return [
+      row.category,
+      row.enforced ? 'yes' : 'no',
+      row.title,
+      row.scope,
+      field(absent ? '—' : (row.tool ?? '—')),
+      field(absent ? '—' : row.points.join(', ')),
+      field(absent ? '—' : row.blocking ? 'yes' : 'no'),
+      field(absent ? '—' : row.limit === null ? '—' : String(row.limit)),
+      row.source,
+      row.note ?? '—',
+      row.reason ?? '—',
+    ]
+  })
   const widths = headings.map((heading, index) =>
     Math.max(heading.length, ...values.map((value) => value[index]!.length)),
   )
@@ -94,9 +101,20 @@ function textTable(rows: ResolvedMechanicalCheck[]): string[] {
   return [line(headings), line(widths.map((width) => '-'.repeat(width))), ...values.map(line)]
 }
 
+function summary(rows: ResolvedMechanicalCheck[]): string {
+  const enforced = rows.filter((row) => row.enforced).length
+  const standards = rows.filter(
+    (row) => !row.enforced && (row.source === 'default' || row.source === 'stack'),
+  ).length
+  const uncovered = rows.filter((row) => !row.enforced && row.source === 'uncovered').length
+  const optedOut = rows.filter((row) => row.source === 'opted-out').length
+  return `summary: ${enforced} enforced, ${standards} standard defaults not adopted, ${uncovered} uncovered, ${optedOut} opt-outs`
+}
+
 function printReport(value: EnforcementReport, presentation: EnforcementPresentation): void {
   presentation.log(value.project)
   for (const line of textTable(value.rows)) presentation.log(line)
+  presentation.log(summary(value.rows))
   presentation.log('remote required checks')
   if (!value.remoteRequiredChecks.length) presentation.log('(none)')
   for (const check of value.remoteRequiredChecks) presentation.log(`- ${check}`)

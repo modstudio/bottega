@@ -22,6 +22,7 @@ export type ResolvedMechanicalCheck = {
   category: string
   title: string
   scope: EnforcementScope
+  enforced: boolean
   tool: string | null
   points: EnforcementPoint[]
   blocking: boolean
@@ -102,6 +103,7 @@ function resolvedCategory(
       category: category.id,
       title: category.title,
       scope: category.scope,
+      enforced: false,
       tool: null,
       points: [],
       blocking: false,
@@ -126,6 +128,7 @@ function resolvedCategory(
       category: category.id,
       title: category.title,
       scope: category.scope,
+      enforced: false,
       tool: null,
       points: [],
       blocking: false,
@@ -145,8 +148,11 @@ function resolvedCategory(
       category: category.id,
       title: category.title,
       scope: category.scope,
+      enforced: false,
       tool: null,
-      ...values,
+      points: [],
+      blocking: false,
+      limit: null,
       source: 'uncovered',
       note,
       reason: null,
@@ -156,6 +162,7 @@ function resolvedCategory(
     category: category.id,
     title: category.title,
     scope: category.scope,
+    enforced: Boolean(override) || base?.platform === true,
     tool,
     ...values,
     source: override ? 'own' : selectedStackDefault ? 'stack' : 'default',

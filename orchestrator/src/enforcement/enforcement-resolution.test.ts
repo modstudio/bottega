@@ -25,15 +25,31 @@ describe('resolveMechanicalChecks', () => {
   test('resolves TypeScript stack, general, uncovered, and inapplicable categories', () => {
     const rows = resolved('node')
     expect(row(rows, 'function-length')).toMatchObject({
+      enforced: false,
       tool: 'biome complexity/noExcessiveLinesPerFunction',
       points: ['write', 'commit'],
       blocking: true,
       limit: 50,
       source: 'stack',
     })
-    expect(row(rows, 'test-substance')?.source).toBe('default')
-    expect(row(rows, 'file-placement')?.source).toBe('uncovered')
-    expect(row(rows, 'final-classes')?.source).toBe('not-applicable')
+    expect(row(rows, 'test-substance')).toMatchObject({ source: 'default', enforced: true })
+    expect(row(rows, 'attribution-markers')).toMatchObject({
+      source: 'default',
+      enforced: true,
+    })
+    expect(row(rows, 'secrets')).toMatchObject({ source: 'default', enforced: false })
+    expect(row(rows, 'file-placement')).toMatchObject({
+      source: 'uncovered',
+      enforced: false,
+      tool: null,
+      points: [],
+      blocking: false,
+      limit: null,
+    })
+    expect(row(rows, 'final-classes')).toMatchObject({
+      source: 'not-applicable',
+      enforced: false,
+    })
     expect(rows).toHaveLength(MECHANICAL_CHECK_CATALOGUE.length)
   })
 
@@ -45,6 +61,11 @@ describe('resolveMechanicalChecks', () => {
       points: ['schedule'],
       blocking: false,
       source: 'stack',
+    })
+    expect(row(rows, 'unreachable-code')).toMatchObject({
+      points: ['gate'],
+      source: 'stack',
+      enforced: false,
     })
   })
 
@@ -59,6 +80,7 @@ describe('resolveMechanicalChecks', () => {
       points: ['write', 'commit'],
       limit: 75,
       source: 'own',
+      enforced: true,
     })
   })
 
@@ -73,6 +95,7 @@ describe('resolveMechanicalChecks', () => {
     ).toMatchObject({
       tool: null,
       source: 'opted-out',
+      enforced: false,
       reason: 'generated names',
     })
   })
@@ -84,6 +107,25 @@ describe('resolveMechanicalChecks', () => {
       .map((entry) => entry.category)
     expect(covered).toEqual(['test-substance', 'attribution-markers', 'secrets'])
     expect(row(rows, 'function-length')?.source).toBe('uncovered')
+  })
+
+  test('an override that names no tool stays uncovered, is not enforced, and keeps its note', () => {
+    expect(
+      row(
+        resolved('node', {
+          mechanicalChecks: { 'file-placement': { note: 'placement reviewed in the hook' } },
+        }),
+        'file-placement',
+      ),
+    ).toMatchObject({
+      source: 'uncovered',
+      enforced: false,
+      tool: null,
+      points: [],
+      blocking: false,
+      limit: null,
+      note: 'placement reviewed in the hook',
+    })
   })
 
   test('shows retained check switches as own rows and combines notes', () => {

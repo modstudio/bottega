@@ -13,6 +13,7 @@ export type MechanicalCheckDefault = {
   points?: readonly EnforcementPoint[]
   blocking?: boolean
   limit?: number
+  platform?: true
 }
 
 export type MechanicalCheckCategory = {
@@ -88,7 +89,7 @@ export const MECHANICAL_CHECK_CATALOGUE = [
     title: 'Unreachable code',
     scope: 'file',
     typescript: { tool: 'biome correctness/noUnreachable' },
-    php: { tool: 'phpstan' },
+    php: { tool: 'phpstan', points: ['gate'] },
   }),
   category({
     id: 'formatting',
@@ -108,14 +109,14 @@ export const MECHANICAL_CHECK_CATALOGUE = [
     id: 'test-substance',
     title: 'Tests that assert nothing',
     scope: 'file',
-    general: { tool: `${PLATFORM_SLUG} test-substance` },
+    general: { tool: `${PLATFORM_SLUG} test-substance`, platform: true },
   }),
   category({ id: 'test-naming', title: 'Test naming and structure', scope: 'file' }),
   category({
     id: 'attribution-markers',
     title: 'No attribution markers',
     scope: 'file',
-    general: { tool: `${PLATFORM_SLUG} no-attribution` },
+    general: { tool: `${PLATFORM_SLUG} no-attribution`, platform: true },
   }),
   category({
     id: 'comment-hygiene',
