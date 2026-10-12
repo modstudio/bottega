@@ -506,6 +506,13 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     evidenceFromArgv(argv),
     productionFloorPorts() as FloorEvidencePorts,
     cursor,
+    flagValue(argv, 'self-ruling') === undefined
+      ? undefined
+      : {
+          ruling: flagValue(argv, 'self-ruling')!,
+          question: flagValue(argv, 'question'),
+          channel: 'cli',
+        },
   )
   print(result, result)
 }

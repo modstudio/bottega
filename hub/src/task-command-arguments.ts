@@ -12,6 +12,25 @@ export type ParsedTaskArguments = {
   booleans: ReadonlySet<string>
 }
 
+export function taskBodyFromArguments(
+  parsed: ParsedTaskArguments | undefined,
+  readFile: (path: string) => string,
+): string | undefined {
+  const body = parsed?.values.get('--body')
+  const bodyFile = parsed?.values.get('--body-file')
+  if (body !== undefined && bodyFile !== undefined)
+    throw new Error('--body and --body-file are mutually exclusive')
+  if (bodyFile !== undefined) {
+    if (!bodyFile.trim()) throw new Error('--body-file is required')
+    return readFile(bodyFile)
+  }
+  if (body !== undefined) {
+    if (!body.trim()) throw new Error('--body is required')
+    return body
+  }
+  return undefined
+}
+
 export type TaskArgumentResult =
   | { ok: true; arguments: ParsedTaskArguments }
   | { ok: false; refusal: string }
@@ -86,8 +105,17 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'set',
     shape(
       1,
-      'hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent] [--body "..."] [--assignee NAME] [--force] [--abandon "reason"]',
-      ['--project', '--title', '--status', '--parent', '--body', '--assignee', '--abandon'],
+      'hub task set <KEY> [--project X] [--title "..."] [--status Y] [--parent KEY|--no-parent] [--body "..."|--body-file PATH] [--assignee NAME] [--force] [--abandon "reason"]',
+      [
+        '--project',
+        '--title',
+        '--status',
+        '--parent',
+        '--body',
+        '--body-file',
+        '--assignee',
+        '--abandon',
+      ],
       ['--no-parent', '--force'],
     ),
   ],

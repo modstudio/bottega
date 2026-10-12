@@ -119,18 +119,29 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
 function autonomyInstruction(
   resolved: WorkflowStep['resolvedAutonomy']['value'],
   declared: WorkflowStep['autonomy'],
+  maySelfRule: boolean,
 ): string {
   if (resolved === 'ask')
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
   if (resolved === 'auto' && declared === 'ask')
-    return 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+    return maySelfRule
+      ? 'rule this step yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+      : 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
   if (resolved === 'review')
-    return 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-  return 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    return maySelfRule
+      ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+      : 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+  return maySelfRule
+    ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
-  const autonomy = autonomyInstruction(step.resolvedAutonomy.value, step.autonomy)
+  const autonomy = autonomyInstruction(
+    step.resolvedAutonomy.value,
+    step.autonomy,
+    step.floor.includes('ruling') && !step.operatorRuling,
+  )
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''

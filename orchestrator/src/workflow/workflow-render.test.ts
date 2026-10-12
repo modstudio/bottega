@@ -204,7 +204,7 @@ describe('workflow rendering', () => {
     )
 
     expect(rendered).toContain(
-      'Autonomy: auto (test) — rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).',
+      'Autonomy: auto (test) — rule this step yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).',
     )
   })
 })

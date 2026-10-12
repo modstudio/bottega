@@ -20,6 +20,7 @@ import {
   DEFAULT_EXPECTED_STATUS,
   type Floor,
   isFloorKind,
+  type OpenObligation,
   parseArtifactRef,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
@@ -57,6 +58,16 @@ export type CursorIdentity = {
   session: string | null
   createdAt: string
   stepActivatedAt: string
+}
+
+export function openWorkflowObligations(cursorId: number, d: Database): OpenObligation[] {
+  return d
+    .query<OpenObligation, [number]>(
+      `SELECT id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
+         FROM workflow_obligation
+        WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
+    )
+    .all(cursorId)
 }
 
 type CheckoutResolution = {
@@ -792,6 +803,16 @@ function gatheredCommandEvidence(
   }
 }
 
+function offeredArtifactRunEvidence(
+  parsed: ArtifactRef,
+  d: Database,
+): Pick<ValidatedEvidence, 'artifactRunOffered'> {
+  if (parsed.kind === 'run') return { artifactRunOffered: parsed.id }
+  if (parsed.kind === 'id' && d.query('SELECT id FROM run WHERE id=?').get(parsed.id))
+    return { artifactRunOffered: parsed.id }
+  return {}
+}
+
 export function gatherValidatedEvidence(input: {
   cursorId: number
   identity: CursorIdentity
@@ -833,7 +854,10 @@ export function gatherValidatedEvidence(input: {
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(review, input.identity, d)
   if (gate) gathered.gate = gatherGate(gate, input.identity, input.cursorId, resolveCheckout, d)
-  if (run) gathered.run = gatherRun(run, input.identity, input.cursorId, d)
+  if (run) {
+    gathered.runOffered = run
+    gathered.run = gatherRun(run, input.identity, input.cursorId, d)
+  }
   if (input.evidence.artifact?.trim()) {
     const parsed = parseArtifactRef(input.evidence.artifact)
     if ('error' in parsed) throw new Error(parsed.error)
@@ -850,6 +874,7 @@ export function gatherValidatedEvidence(input: {
       ports,
       resolveCheckout,
     )
+    Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
     if (parsed.kind === 'probe' || parsed.kind === 'exec') {
       const row = d
         .query<{ exit_code: number; session_id: string | null; created_at: string }, [number]>(

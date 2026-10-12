@@ -16,7 +16,7 @@ export type CommandEvidence = 'gate'
 
 export const floorGuidance = {
   ruling:
-    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`',
+    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`; where you rule the step yourself, `--self-ruling <text>` on the closing call does all three',
   'command-exit': 'run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`',
   'recorded-artifact':
     'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
@@ -63,6 +63,8 @@ type ValidatedSatisfy =
     }
 
 export type ValidatedEvidence = {
+  runOffered?: number
+  artifactRunOffered?: number
   ruling?: {
     id: number
     answered: boolean
@@ -321,14 +323,18 @@ function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
     const commit = evidence.tree?.commit ?? '<current tree commit>'
     return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`orch gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
   }
-  return (
+  const existing =
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
     (floor.kind === 'command-exit'
       ? ` with exit code ${floor.expectedExitCode}`
       : floor.kind === 'tracker-transition'
         ? trackerUnmetMessage(floor, evidence)
         : '')
-  )
+  if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)
+    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when it has a reply or a recorded artifact`
+  if (floor.kind === 'command-exit' && evidence.artifactRunOffered !== undefined)
+    return `${existing}; run ${evidence.artifactRunOffered} is accepted as --run ${evidence.artifactRunOffered} once terminal with exit code ${floor.expectedExitCode}`
+  return existing
 }
 
 function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {

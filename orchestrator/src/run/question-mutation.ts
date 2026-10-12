@@ -4,6 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
+import { questionOpenSql } from './question-open.ts'
+import { enqueueQuestionRecord } from './question-outbox.ts'
+import { rulingActor } from './question-vocabulary.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -82,4 +85,95 @@ export function auditQuestionMutation(
       input.at,
       joinMutationReason(input.reason, input.adoptionReason ?? null),
     )
+}
+
+export function upsertWorkflowQuestion(
+  input: {
+    cursorId: number
+    workflowKey: string
+    stepOrdinal: number
+    stepSlug: string
+    question: string
+    at: string
+  },
+  database: Database = db(),
+): number {
+  const open = database
+    .query<{ id: number }, [number]>(
+      `SELECT id FROM question
+       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+    )
+    .get(input.cursorId)
+  if (open) {
+    database
+      .query(
+        `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
+         revision=revision+1 WHERE id=?`,
+      )
+      .run(input.question, input.workflowKey || null, input.stepOrdinal, input.stepSlug, open.id)
+    enqueueQuestionRecord(database, open.id)
+    return open.id
+  }
+  const inserted = database
+    .query<{ id: number }, (string | number | null)[]>(
+      `INSERT INTO question
+        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+         workflow_step_ordinal,workflow_step_slug)
+       VALUES (?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
+    )
+    .get(
+      input.cursorId,
+      input.workflowKey || null,
+      input.at,
+      input.question,
+      input.at,
+      input.stepOrdinal,
+      input.stepSlug,
+    )
+  if (!inserted) throw new Error('workflow question was not recorded')
+  enqueueQuestionRecord(database, inserted.id)
+  return inserted.id
+}
+
+export function answerWorkflowQuestion(
+  input: {
+    questionId: number
+    cursorId: number
+    ruling: string
+    at: string
+    actor: string | null
+    fromOperator: boolean
+    channel: 'cli' | 'mcp'
+    adoptionReason?: string | null
+  },
+  database: Database = db(),
+): void {
+  const changed = database
+    .query(
+      `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
+        revision=revision+1
+       WHERE id=? AND workflow_cursor_id=? AND ${questionOpenSql('question')}`,
+    )
+    .run(
+      input.ruling,
+      input.at,
+      rulingActor(input.fromOperator, input.actor),
+      input.fromOperator ? 'operator' : 'agent',
+      input.channel,
+      input.questionId,
+      input.cursorId,
+    )
+  if (changed.changes !== 1) throw new Error(`question ${input.questionId} is not open`)
+  auditQuestionMutation(
+    {
+      questionId: input.questionId,
+      action: 'rule',
+      actor: input.actor,
+      at: input.at,
+      reason: input.ruling,
+      adoptionReason: input.adoptionReason,
+    },
+    database,
+  )
+  enqueueQuestionRecord(database, input.questionId)
 }
