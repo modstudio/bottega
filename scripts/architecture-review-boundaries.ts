@@ -8,6 +8,10 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review/review-command-cwd.ts',
+    allowed: ['node:fs', 'node:path'],
+  },
+  {
     file: 'orchestrator/src/review/review-record-command.ts',
     allowed: [
       'bun:sqlite',
@@ -94,6 +98,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       './review.ts',
       './review-calibration.ts',
+      './review-command-cwd.ts',
       './review-applicability.ts',
       './review-coverage.ts',
       './review-evidence-sql.ts',
@@ -176,6 +181,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
+      './review-command-cwd.ts',
       './review-group.ts',
       './review-outbox.ts',
     ],

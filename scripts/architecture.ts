@@ -532,6 +532,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
+    './review-command-cwd.ts',
     './review-group.ts',
     './review-outbox.ts',
   ]),

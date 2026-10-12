@@ -1,12 +1,16 @@
 import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from './review-commands.ts'
 import { serializePathSet } from './review-group.ts'
+
+// Deterministic identities produced by importRebasedHistory.
+const FIXTURE_BASE = '43942e40f9cf710824da11cd689c453b33cac3d2'
+const FIXTURE_WRITER_HEAD = 'afc52b0ea3040a2b0c4a2f75a17bb90821be29c0'
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -72,10 +76,8 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
   try {
     git(repo, 'init', '-b', 'main')
     importRebasedHistory(repo)
-    const staleBase = git(repo, 'rev-parse', 'HEAD')
 
     upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
-    const writerHead = git(repo, 'rev-parse', 'DEV-992-fixture')
     // Deterministic fast-import identity for the fixture's trunk-to-writer range.
     // The command measures the live range, so this assertion fails if they diverge.
     const currentIdentity = {
@@ -91,7 +93,7 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
                  'sha',1,'head','ok')
          RETURNING id`,
       )
-      .get(staleBase, staleBase, writerHead)!
+      .get(FIXTURE_BASE, FIXTURE_BASE, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
     const review = db()
@@ -110,8 +112,11 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
 
     await reviewCommand(
       'tier',
-      ['review', 'tier', String(run.id)],
-      { has: () => false, flag: () => undefined },
+      ['review', 'tier', 'DEV-992-fixture'],
+      {
+        has: () => false,
+        flag: (name) => (name === 'cwd' ? relative(process.cwd(), repo) : undefined),
+      },
       {
         log: (...values) => output.push(values.join(' ')),
         usage: () => {
@@ -154,8 +159,6 @@ test('review tier reports stack and generic profile sources resolved for its pro
       enabled: true,
       reason: 'review tier stack source fixture',
     })
-    const base = git(repo, 'rev-parse', 'main')
-    const reviewed = git(repo, 'rev-parse', 'DEV-992-fixture')
     const run = db()
       .query<{ id: number }, [string, string, string]>(
         `INSERT INTO run
@@ -165,7 +168,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
                  'sha',1,'head','ok')
          RETURNING id`,
       )
-      .get(base, reviewed, reviewed)!
+      .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
     await reviewCommand(
