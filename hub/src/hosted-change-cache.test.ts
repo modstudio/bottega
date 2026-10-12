@@ -5,18 +5,18 @@ import { db, writeTransaction } from './db.ts'
 import { HOSTED_NOTE_CHANGES_CURSOR_KEY, pullHostedNoteChanges } from './hosted-change-cache.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import {
+  applyHostedAcknowledgement,
+  applyHostedNote,
+  applyHostedNoteRows,
+  hostedNotePullRows,
+} from './note-cache.ts'
+import {
   drainHostedOutbox,
   listHostedOutbox,
   queueHostedChange,
   runHostedOutboxCommand,
 } from './outbox.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
-import {
-  applyHostedAcknowledgement,
-  applyHostedNote,
-  applyHostedNoteRows,
-  hostedNotePullRows,
-} from './note-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -401,17 +401,16 @@ test('a pulled acknowledgement adopts its id without stranding a queued keep', a
     }),
   )
   expect(
-    db()
-      .query(`SELECT record_id,acknowledged_at,sightings FROM note_acknowledgement`)
-      .get(),
+    db().query(`SELECT record_id,acknowledged_at,sightings FROM note_acknowledgement`).get(),
   ).toEqual({
     record_id: acknowledgementId,
     acknowledged_at: '2026-10-09T13:00:00.000Z',
     sightings: 2,
   })
-  expect(
-    db().query(`SELECT row_id,generation FROM hosted_outbox`).get(),
-  ).toEqual({ row_id: acknowledgementId, generation: 2 })
+  expect(db().query(`SELECT row_id,generation FROM hosted_outbox`).get()).toEqual({
+    row_id: acknowledgementId,
+    generation: 2,
+  })
   const sent: unknown[] = []
   const report = await drainHostedOutbox({
     identity: async () => ({
@@ -450,10 +449,7 @@ test('a pending sighting merges a pulled sighting and drains only its identified
         sightings: 2,
       }),
     )
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, [
-      'anchors',
-      'last_seen_at',
-    ])
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
   })
   await pull(
     routeFetch({
@@ -519,10 +515,7 @@ test('a pulled hosted deletion quarantines a pending sighting with its anchor re
       conn,
       note({ anchors: JSON.stringify([{ id: localAnchor, kind: 'run' }]), sightings: 1 }),
     )
-    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, [
-      'anchors',
-      'last_seen_at',
-    ])
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
   })
   await pull(
     routeFetch({

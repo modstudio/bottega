@@ -36,7 +36,7 @@ export function decideNoteUpsert(
   incoming: PushedNote,
   fields: readonly string[],
 ): Decision<PushedNote> {
-  if (false && stored.deleted_at) return { kind: 'reject', reason: DELETED_ON_HOSTED_RECORD_REASON }
+  if (stored.deleted_at) return { kind: 'reject', reason: DELETED_ON_HOSTED_RECORD_REASON }
   const selected = new Set(fields)
   const merged = selected.has('anchors')
     ? mergeNoteAnchors(
@@ -55,11 +55,7 @@ export function decideNoteUpsert(
       ? later(String(stored.last_seen_at), incoming.last_seen_at)
       : (instant(stored.last_seen_at) as string),
     stale_at:
-      merged.appended > 0
-        ? null
-        : selected.has('stale_at')
-          ? incoming.stale_at
-          : stored.stale_at,
+      merged.appended > 0 ? null : selected.has('stale_at') ? incoming.stale_at : stored.stale_at,
     stale_reason:
       merged.appended > 0
         ? null

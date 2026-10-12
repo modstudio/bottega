@@ -116,11 +116,9 @@ test('note decisions compare last-seen timestamps as instants and never move the
     kind: 'duplicate',
   })
   expect(
-    decideNoteUpsert(
-      { ...note, last_seen_at: new Date(later) as unknown as string },
-      note,
-      ['last_seen_at'],
-    ),
+    decideNoteUpsert({ ...note, last_seen_at: new Date(later) as unknown as string }, note, [
+      'last_seen_at',
+    ]),
   ).toEqual({ kind: 'duplicate' })
 })
 
