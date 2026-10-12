@@ -3,6 +3,12 @@ import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { projects } from './projects.ts'
 import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
+import {
+  capturePendingFields,
+  pendingEditSkipsPull,
+  pendingHostedEdit,
+  restorePendingFields,
+} from './pending-hosted-edit.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 import { type RegisteredTaskSpace, taskPullSpaces } from './task-project-space.ts'
@@ -160,18 +166,33 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 
 export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   changes.tasks.forEach((row) => {
-    applyHostedTask(conn, row)
+    applySnapshotRow(conn, 'hub_task', row.id, row, applyHostedTask)
   })
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
-    applyComment(conn, row)
+    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyComment)
   })
   changes.documents.forEach((row) => {
-    applyDocument(conn, row)
+    applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
   })
   changes.statusEvents.forEach((row) => {
     applyStatusEvent(conn, row)
   })
+}
+
+function applySnapshotRow(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  id: string,
+  row: HostedChangeRow,
+  apply: (conn: Database, row: never) => void,
+) {
+  const pending = pendingHostedEdit(conn, table, id)
+  if (pendingEditSkipsPull(pending)) return
+  const before = hostedChangeMachineRow(conn, table, id)
+  const protectedValues = capturePendingFields(table, before, pending)
+  apply(conn, row as never)
+  restorePendingFields(conn, table, id, protectedValues)
 }
 
 const hostedTaskChangeTables = {

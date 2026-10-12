@@ -25,6 +25,14 @@ const hosted = {
     const body = init?.body ? JSON.parse(String(init.body)) : {}
     const at = new Date().toISOString()
     const key = decodeURIComponent(url.pathname.split('/')[3] ?? '')
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1', activeSpaceId: 'declared-gamma-space',
+        memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
+        capabilities: { spacePush: true, spacePushTables: ['hub_task', 'hub_task_comment', 'hub_task_document', 'hub_task_status_event'] },
+      })
+    if (url.pathname === '/v1/changes')
+      return Response.json((body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })))
     if (url.pathname === '/v1/tasks') {
       const project = body.project as string
       const prefixes: Record<string, string> = {
@@ -65,16 +73,6 @@ const hosted = {
         next_document_number: 1,
       })
     }
-    if (url.pathname.endsWith('/comments'))
-      return Response.json({
-        id: Bun.randomUUIDv7(),
-        task_key: key,
-        project_name: 'workshop',
-        body: body.body,
-        created_at: at,
-        updated_at: at,
-        deleted_at: null,
-      })
     if (url.pathname.endsWith('/documents'))
       return Response.json({
         id: Bun.randomUUIDv7(),
@@ -398,60 +396,6 @@ describe('declared project space task writes', () => {
         space: new Headers(init?.headers).get('x-record-space'),
       })
 
-      const taskMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
-      if (method === 'PATCH' && taskMatch) {
-        const current = showTask(decodeURIComponent(taskMatch[1]!)).task
-        const at = new Date().toISOString()
-        return Response.json({
-          id: current.record_id,
-          key: current.key,
-          project: current.project,
-          project_name: current.project,
-          title: body.title ?? current.title,
-          status: body.status ?? current.status,
-          status_category: body.status_category ?? current.status_category,
-          parent_key: body.parent_key ?? current.parent_key,
-          body: body.body ?? current.body,
-          assignee: body.assignee ?? current.assignee,
-          opened_at: current.opened_at,
-          closed_at: current.closed_at,
-          source: current.source,
-          first_seen: current.first_seen,
-          last_seen: at,
-          created_at: current.first_seen,
-          updated_at: at,
-          deleted_at: null,
-          next_document_number: current.next_document_number,
-        })
-      }
-
-      const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
-      if (method === 'POST' && closeMatch) {
-        const current = showTask(decodeURIComponent(closeMatch[1]!)).task
-        const at = new Date().toISOString()
-        return Response.json({
-          id: current.record_id,
-          key: current.key,
-          project: current.project,
-          project_name: current.project,
-          title: current.title,
-          status: 'done',
-          status_category: 'done',
-          parent_key: current.parent_key,
-          body: current.body,
-          assignee: current.assignee,
-          opened_at: current.opened_at,
-          closed_at: at,
-          source: current.source,
-          first_seen: current.first_seen,
-          last_seen: at,
-          created_at: current.first_seen,
-          updated_at: at,
-          deleted_at: null,
-          next_document_number: current.next_document_number,
-        })
-      }
-
       return hosted.fetch(input, init)
     }
     const options = { hosted: { ...hosted, fetch } }
@@ -472,26 +416,10 @@ describe('declared project space task writes', () => {
     expect(requests).toEqual([
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
-      {
-        method: 'POST',
-        pathname: expect.stringMatching(/^\/v1\/tasks\/GAM-\d+\/comments$/),
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'PATCH',
-        pathname: `/v1/tasks/${created.key}`,
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'POST',
-        pathname: `/v1/tasks/${created.key}/close`,
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'POST',
-        pathname: `/v1/tasks/${created.key}/comments`,
-        space: 'declared-gamma-space',
-      },
+      ...Array.from({ length: 4 }, () => [
+        { method: 'GET', pathname: '/v1/tasks/identity', space: null },
+        { method: 'POST', pathname: '/v1/changes', space: 'declared-gamma-space' },
+      ]).flat(),
     ])
   })
 })

@@ -121,6 +121,16 @@ describe('task documents', () => {
           fetch: async (input, init) => {
             const url = new URL(input)
             requests.push({ method: init?.method, pathname: url.pathname })
+            if (url.pathname === '/v1/tasks/identity')
+              return Response.json({
+                userId: 'user-1', activeSpaceId: 'space-a',
+                memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
+                capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
+              })
+            if (url.pathname === '/v1/changes') {
+              const body = JSON.parse(String(init?.body)) as Array<{ id: string }>
+              return Response.json(body.map(({ id }) => ({ id, status: 'applied' })))
+            }
             return Response.json({
               id: recordId,
               task_key: 'DEV-884',
@@ -140,7 +150,8 @@ describe('task documents', () => {
     )
 
     expect(requests).toEqual([
-      { method: 'PATCH', pathname: `/v1/tasks/DEV-884/documents/${recordId}` },
+      { method: 'GET', pathname: '/v1/tasks/identity' },
+      { method: 'POST', pathname: '/v1/changes' },
     ])
   })
 
@@ -160,6 +171,14 @@ describe('task documents', () => {
         pathname: url.pathname,
         space: new Headers(init?.headers).get('x-record-space'),
       })
+      if (url.pathname === '/v1/tasks/identity')
+        return Response.json({
+          userId: 'user-1', activeSpaceId: 'declared-gamma-space',
+          memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
+          capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
+        })
+      if (url.pathname === '/v1/changes')
+        return Response.json((body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })))
       if (method === 'POST') {
         const at = new Date().toISOString()
         return Response.json({
@@ -213,15 +232,17 @@ describe('task documents', () => {
         space: 'declared-gamma-space',
       },
       {
-        method: 'PATCH',
-        pathname: `/v1/tasks/GAM-1214/documents/${document.id}`,
-        space: 'declared-gamma-space',
+        method: 'GET',
+        pathname: '/v1/tasks/identity',
+        space: null,
       },
       {
-        method: 'DELETE',
-        pathname: `/v1/tasks/GAM-1214/documents/${document.id}`,
+        method: 'POST',
+        pathname: '/v1/changes',
         space: 'declared-gamma-space',
       },
+      { method: 'GET', pathname: '/v1/tasks/identity', space: null },
+      { method: 'POST', pathname: '/v1/changes', space: 'declared-gamma-space' },
     ])
   })
 })

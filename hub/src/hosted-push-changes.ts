@@ -65,24 +65,39 @@ async function applyTaskFields(
     : null
   const changesStatus = fields.has('status') || fields.has('status_category')
   await tx`UPDATE hub_task SET
-    project_name=CASE WHEN ${fields.has('project_name')} THEN ${row.project_name} ELSE project_name END,
-    key=CASE WHEN ${fields.has('key')} THEN ${row.key} ELSE key END,
-    project=CASE WHEN ${fields.has('project')} THEN ${row.project} ELSE project END,
     title=CASE WHEN ${fields.has('title')} THEN ${row.title} ELSE title END,
     status=CASE WHEN ${fields.has('status')} THEN ${row.status} ELSE status END,
     status_category=CASE WHEN ${fields.has('status_category')} THEN ${row.status_category} ELSE status_category END,
     parent_key=CASE WHEN ${fields.has('parent_key')} THEN ${row.parent_key} ELSE parent_key END,
-    parent_id=CASE WHEN ${fields.has('parent_key') || fields.has('parent_id')} THEN ${parentId}::uuid ELSE parent_id END,
+    parent_id=CASE WHEN ${fields.has('parent_key')} THEN ${parentId}::uuid ELSE parent_id END,
     body=CASE WHEN ${fields.has('body')} THEN ${row.body} ELSE body END,
     assignee=CASE WHEN ${fields.has('assignee')} THEN ${row.assignee} ELSE assignee END,
-    opened_at=CASE WHEN ${fields.has('opened_at')} THEN ${row.opened_at}::timestamptz ELSE opened_at END,
-    source=CASE WHEN ${fields.has('source')} THEN ${row.source} ELSE source END,
-    deleted_at=CASE WHEN ${fields.has('deleted_at')} THEN ${row.deleted_at}::timestamptz ELSE deleted_at END,
-    next_document_number=CASE WHEN ${fields.has('next_document_number')} THEN GREATEST(next_document_number,${row.next_document_number}) ELSE next_document_number END,
     closed_at=CASE WHEN ${changesStatus} THEN CASE WHEN ${row.status_category}='done' THEN COALESCE(closed_at,${row.updated_at}::timestamptz) ELSE NULL END ELSE closed_at END,
     updated_at=${row.updated_at}::timestamptz,last_seen=${row.updated_at}::timestamptz
     WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return null
+}
+
+async function taskFieldsEqual(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: Extract<HostedPushChange, { table: typeof HOSTED_TASK_TABLE; op: 'upsert' }>,
+) {
+  if (input.fields == null) return taskEquals(tx, identity, input.row)
+  const fields = new Set(input.fields)
+  const row = input.row
+  const changesStatus = fields.has('status') || fields.has('status_category')
+  const found = await tx`SELECT 1 FROM hub_task WHERE id=${row.id}::uuid
+    AND space_id=${identity.spaceId}::uuid
+    AND (NOT ${fields.has('title')} OR title IS NOT DISTINCT FROM ${row.title})
+    AND (NOT ${fields.has('status')} OR status IS NOT DISTINCT FROM ${row.status})
+    AND (NOT ${fields.has('status_category')} OR status_category IS NOT DISTINCT FROM ${row.status_category})
+    AND (NOT ${fields.has('parent_key')} OR parent_key IS NOT DISTINCT FROM ${row.parent_key})
+    AND (NOT ${fields.has('body')} OR body IS NOT DISTINCT FROM ${row.body})
+    AND (NOT ${fields.has('assignee')} OR assignee IS NOT DISTINCT FROM ${row.assignee})
+    AND (NOT ${changesStatus} OR closed_at IS NOT DISTINCT FROM ${row.closed_at}::timestamptz)
+    AND updated_at=${row.updated_at}::timestamptz`
+  return (found as unknown[]).length > 0
 }
 
 async function commentEquals(
@@ -102,6 +117,24 @@ async function documentEquals(
 ) {
   const found =
     await tx`SELECT 1 FROM hub_task_document WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid AND task_key=${row.task_key} AND number IS NOT DISTINCT FROM ${row.number} AND role IS NOT DISTINCT FROM ${row.role} AND title=${row.title} AND body=${row.body} AND version=${row.version} AND updated_at=${row.updated_at}::timestamptz AND deleted_at IS NOT DISTINCT FROM ${row.deleted_at}::timestamptz`
+  return (found as unknown[]).length > 0
+}
+
+async function documentFieldsEqual(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: Extract<HostedPushChange, { table: typeof HOSTED_DOCUMENT_TABLE; op: 'upsert' }>,
+) {
+  if (input.fields == null) return documentEquals(tx, identity, input.row)
+  const fields = new Set(input.fields)
+  const row = input.row
+  const found = await tx`SELECT 1 FROM hub_task_document WHERE id=${row.id}::uuid
+    AND space_id=${identity.spaceId}::uuid
+    AND (NOT ${fields.has('role')} OR role IS NOT DISTINCT FROM ${row.role})
+    AND (NOT ${fields.has('title')} OR title=${row.title})
+    AND (NOT ${fields.has('body')} OR body=${row.body})
+    AND (NOT ${fields.has('version')} OR version=${row.version})
+    AND updated_at=${row.updated_at}::timestamptz`
   return (found as unknown[]).length > 0
 }
 
@@ -126,7 +159,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
       if (input.op === 'delete') throw new Error('hub_task does not accept delete yet')
-      if (await taskEquals(tx, identity, input.row)) return { id: input.id, status: 'duplicate' }
+      if (await taskFieldsEqual(tx, identity, input)) return { id: input.id, status: 'duplicate' }
       const adoption = await applyTaskFields(tx, identity, input)
       return {
         id: input.id,
@@ -141,7 +174,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
         throw new Error('hub_task_comment accepts upsert only')
       if (await commentEquals(tx, identity, input.row)) return { id: input.id, status: 'duplicate' }
       await mirrorCommentRow(tx, identity, input.row)
-      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${input.row.task_id ?? null}::uuid AND space_id=${identity.spaceId}::uuid`
+      const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
+      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
       return { id: input.id, status: 'applied' }
     },
   },
@@ -158,19 +192,16 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
         await tx`UPDATE hub_task_document SET deleted_at=now(),updated_at=now() WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
         return { id: input.id, status: 'applied' }
       }
-      if (await documentEquals(tx, identity, input.row))
+      if (await documentFieldsEqual(tx, identity, input))
         return { id: input.id, status: 'duplicate' }
       if (existing.length && input.fields != null) {
         const fields = new Set(input.fields)
         const row = input.row
         await tx`UPDATE hub_task_document SET
-          task_key=CASE WHEN ${fields.has('task_key')} THEN ${row.task_key} ELSE task_key END,
-          number=CASE WHEN ${fields.has('number')} THEN ${row.number} ELSE number END,
           role=CASE WHEN ${fields.has('role')} THEN ${row.role} ELSE role END,
           title=CASE WHEN ${fields.has('title')} THEN ${row.title} ELSE title END,
           body=CASE WHEN ${fields.has('body')} THEN ${row.body} ELSE body END,
           version=CASE WHEN ${fields.has('version')} THEN ${row.version} ELSE version END,
-          deleted_at=CASE WHEN ${fields.has('deleted_at')} THEN ${row.deleted_at}::timestamptz ELSE deleted_at END,
           updated_at=${row.updated_at}::timestamptz
           WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
       } else await mirrorDocumentRow(tx, identity, input.row)

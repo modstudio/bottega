@@ -216,73 +216,6 @@ export async function createHostedTaskInTransaction(
   return inserted[0]!
 }
 
-export async function patchHostedTask(
-  url: string,
-  identity: TaskIdentity,
-  key: string,
-  changes: Partial<
-    Pick<HostedTask, 'title' | 'status' | 'status_category' | 'parent_key' | 'body' | 'assignee'>
-  >,
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const current = rows<HostedTask>(
-      await tx`SELECT * FROM hub_task
-      WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL FOR UPDATE`,
-    )[0]
-    if (!current) return null
-    const at = new Date().toISOString()
-    const category = changes.status_category ?? changes.status ?? current.status_category
-    const parentKey = changes.parent_key === undefined ? current.parent_key : changes.parent_key
-    const parentId = await taskIdFor(tx, identity.spaceId, parentKey)
-    const updated = rows<HostedTask>(
-      await tx`UPDATE hub_task SET
-      title=${changes.title === undefined ? current.title : changes.title},
-      status=${changes.status === undefined ? current.status : changes.status},
-      status_category=${category},
-      parent_key=${parentKey},parent_id=${parentId}::uuid,
-      body=${changes.body === undefined ? current.body : changes.body},
-      assignee=${changes.assignee === undefined ? current.assignee : changes.assignee},
-      closed_at=CASE WHEN ${category}='done' THEN COALESCE(closed_at,${at}::timestamptz) ELSE NULL END,
-      updated_at=${at}::timestamptz,last_seen=${at}::timestamptz
-      WHERE space_id=${identity.spaceId}::uuid AND key=${key} RETURNING *`,
-    )
-    let statusEvent: HostedStatusEvent | undefined
-    if (category !== current.status_category && category) {
-      statusEvent = rows<HostedStatusEvent>(
-        await tx`INSERT INTO hub_task_status_event
-        (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at)
-        VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${current.project_name},${key},${current.id}::uuid,
-          ${at}::timestamptz,${current.status_category},${category},${at}::timestamptz,${at}::timestamptz)
-        ON CONFLICT (space_id,task_key,to_status,at) DO NOTHING RETURNING *`,
-      )[0]
-    }
-    return { ...updated[0]!, status_event: statusEvent }
-  })
-}
-
-export async function addHostedComment(
-  url: string,
-  identity: TaskIdentity,
-  key: string,
-  body: string,
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const project = rows<{ id: string; project_name: string }>(
-      await tx`SELECT id,project_name FROM hub_task
-      WHERE space_id=${identity.spaceId}::uuid AND key=${key} AND deleted_at IS NULL`,
-    )[0]
-    if (!project) return null
-    const comment = rows<HostedComment>(
-      await tx`INSERT INTO hub_task_comment
-      (id,space_id,project_name,task_key,task_id,body,created_at,updated_at)
-      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.project_name},${key},${project.id}::uuid,${body},now(),now()) RETURNING *`,
-    )[0]!
-    await tx`UPDATE hub_task SET updated_at=${comment.updated_at}::timestamptz,last_seen=${comment.updated_at}::timestamptz
-      WHERE space_id=${identity.spaceId}::uuid AND key=${key}`
-    return comment
-  })
-}
-
 export async function createHostedDocument(
   url: string,
   identity: TaskIdentity,
@@ -307,35 +240,6 @@ export async function createHostedDocument(
   })
 }
 
-export async function patchHostedDocument(
-  url: string,
-  identity: TaskIdentity,
-  id: string,
-  input: {
-    title?: string
-    body?: string
-    role?: string | null
-    expectedVersion?: string
-    version: string
-  },
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const current = rows<HostedDocument>(
-      await tx`SELECT * FROM hub_task_document WHERE
-      space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL FOR UPDATE`,
-    )[0]
-    if (!current) return null
-    if (input.body !== undefined && input.expectedVersion !== current.version)
-      throw new Error(`task document changed since version ${input.expectedVersion}`)
-    return rows<HostedDocument>(
-      await tx`UPDATE hub_task_document SET
-      title=${input.title ?? current.title},body=${input.body ?? current.body},
-      role=${input.role === undefined ? current.role : input.role},version=${input.version},updated_at=now()
-      WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid RETURNING *`,
-    )[0]!
-  })
-}
-
 export type ConfirmationPolicy = 'exact-always' | 'bulk-only'
 
 export function confirmCount(
@@ -345,25 +249,6 @@ export function confirmCount(
 ) {
   if ((policy === 'exact-always' || count > 1) && confirmation !== count)
     throw new Error(`refusing to delete ${count} rows without confirmation count ${count}`)
-}
-
-export async function softDeleteHostedDocuments(
-  url: string,
-  identity: TaskIdentity,
-  ids: string[],
-  confirmation?: number,
-) {
-  return withHostedTenant(url, identity, async (tx) => {
-    const found = rows<{ id: string }>(
-      await tx`SELECT id FROM hub_task_document WHERE
-      space_id=${identity.spaceId}::uuid AND id IN ${tx(ids)} AND deleted_at IS NULL FOR UPDATE`,
-    )
-    confirmCount(found.length, confirmation, 'bulk-only')
-    if (found.length)
-      await tx`UPDATE hub_task_document SET deleted_at=now(),updated_at=now()
-        WHERE space_id=${identity.spaceId}::uuid AND id IN ${tx(found.map((row) => row.id))}`
-    return { deleted: found.length }
-  })
 }
 
 type MirrorBody = {

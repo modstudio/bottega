@@ -102,35 +102,15 @@ export const HOSTED_COMMENT_UPDATE_COLUMNS = [
   'updated_at',
   'deleted_at',
 ] as const
-export const HOSTED_DOCUMENT_UPDATE_COLUMNS = [
-  'task_key',
-  'task_id',
-  'number',
-  'role',
-  'title',
-  'body',
-  'version',
-  'updated_at',
-  'deleted_at',
-] as const
+export const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
 
 export const HOSTED_TASK_UPDATE_COLUMNS = [
-  'project_name',
-  'key',
-  'project',
   'title',
   'status',
   'status_category',
   'parent_key',
-  'parent_id',
   'body',
   'assignee',
-  'opened_at',
-  'closed_at',
-  'source',
-  'updated_at',
-  'deleted_at',
-  'next_document_number',
 ] as const satisfies readonly (keyof PushedTask)[]
 
 export type HostedPushChange =

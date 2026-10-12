@@ -7,12 +7,7 @@ import { persistInstallBinding } from './install-binding.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { runRef } from './reconcile.ts'
-import {
-  hostedCommentTask,
-  hostedCreateTask,
-  hostedPushChanges,
-  hostedTaskIdentity,
-} from './task-client.ts'
+import { hostedCreateTask, hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -330,6 +325,26 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   persistInstallBinding(conn)
 }
 
+function writeLocalComment(
+  conn: Database,
+  task: Pick<TaskRow, 'key' | 'record_id'>,
+  body: string,
+  at: string,
+  queue: boolean,
+): TaskComment {
+  const recordId = newRecordId()
+  conn
+    .query(
+      `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
+    )
+    .run(recordId, task.key, task.record_id, body, at)
+  conn
+    .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
+    .run(at, at, task.record_id)
+  if (queue) queueHostedChange(conn, HOSTED_COMMENT_TABLE, recordId, 'upsert', at)
+  return { id: recordId, task_key: task.key, task_record_id: task.record_id, body, created_at: at }
+}
+
 export async function createTask(
   input: {
     project: string
@@ -391,21 +406,19 @@ export async function createTask(
     },
     hostedOptionsForProject(input.project, options.hosted),
   )
-  const comment = options.allowDuplicateReason
-    ? await hostedCommentTask(
-        hosted.key,
-        options.allowDuplicateReason,
-        hostedOptionsForProject(input.project, options.hosted),
-      )
-    : null
+  const commentAt = nowIso()
   writeTransaction((conn) => {
     cacheTask(conn, hosted)
-    if (comment)
-      conn
-        .query(`INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at)
-      VALUES (?,?,?,?,?)`)
-        .run(comment.id, comment.task_key, hosted.id, comment.body, comment.created_at)
+    if (options.allowDuplicateReason)
+      writeLocalComment(
+        conn,
+        { key: hosted.key, record_id: hosted.id },
+        options.allowDuplicateReason,
+        commentAt,
+        true,
+      )
   })
+  if (options.allowDuplicateReason) await drainAfterLocalWrite(true, options.hosted)
   return showTask(hosted.key, { recordId: hosted.id }).task
 }
 
@@ -731,29 +744,13 @@ export async function commentTask(
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()
-  const recordId = newRecordId()
   const result = writeTransaction((conn) => {
     const row = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
       .get(current.record_id)
     if (!row) throw new Error(`no task record ${current.record_id}`)
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-    conn
-      .query(
-        `INSERT INTO task_comment (record_id,task_key,task_record_id,body,created_at) VALUES (?,?,?,?,?)`,
-      )
-      .run(recordId, row.key, row.record_id, body, at)
-    conn
-      .query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE record_id = ?`)
-      .run(at, at, row.record_id)
-    if (hosted) queueHostedChange(conn, HOSTED_COMMENT_TABLE, recordId, 'upsert', at)
-    return {
-      id: recordId,
-      task_key: row.key,
-      task_record_id: row.record_id,
-      body,
-      created_at: at,
-    }
+    return writeLocalComment(conn, row, body, at, hosted)
   })
   await drainAfterLocalWrite(hosted, options.hosted)
   return result
