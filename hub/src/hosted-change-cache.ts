@@ -19,10 +19,11 @@ import {
 } from './note-cache.ts'
 import { notePullSpaces } from './note-project-space.ts'
 import {
-  capturePendingFields,
+  HOSTED_MACHINE_TABLES,
   pendingEditSkipsPull,
   pendingHostedEdit,
-  restorePendingFields,
+  reconcilePulledRow,
+  type ReconciledHostedTable,
 } from './pending-hosted-edit.ts'
 import { projects } from './projects.ts'
 import {
@@ -115,9 +116,8 @@ function applyOneChange(
 ) {
   if (!family.accepts(change.table)) return
   const pending = pendingHostedEdit(conn, change.table, change.id)
-  if (pendingEditSkipsPull(pending)) {
-    if (change.op === 'delete') counts.deletesSkipped += 1
-    else counts.upsertsNoop += 1
+  if (change.op !== 'delete' && pendingEditSkipsPull(pending)) {
+    counts.upsertsNoop += 1
     return
   }
   if (change.op === 'delete') {
@@ -136,8 +136,18 @@ function applyOneChange(
         differingColumns: [],
       })
     } else {
-      family.delete(conn, change.table, change.id)
-      counts.deletesApplied += 1
+      const reconciled = Object.hasOwn(HOSTED_MACHINE_TABLES, change.table)
+        ? reconcilePulledRow(conn, {
+            table: change.table as ReconciledHostedTable,
+            id: change.id,
+            operation: 'delete',
+            current: () => family.machineRow(conn, change.table, change.id),
+            apply: () => {},
+            remove: () => family.delete(conn, change.table, change.id),
+          })
+        : (family.delete(conn, change.table, change.id), { kind: 'deleted' as const })
+      if (reconciled.kind === 'skipped') counts.deletesSkipped += 1
+      else counts.deletesApplied += 1
       recordHostedChangeEvidence(conn, {
         family: family.evidenceFamily,
         spaceId,
@@ -153,11 +163,25 @@ function applyOneChange(
     counts.upsertsNoop += 1
     return
   }
-  const before = family.machineRow(conn, change.table, change.id)
-  const protectedValues = capturePendingFields(change.table, before, pending)
-  family.apply(conn, change.table, change.row)
-  if (protectedValues) restorePendingFields(conn, change.table, change.id, protectedValues)
-  const after = family.machineRow(conn, change.table, change.id)
+  const reconciled = Object.hasOwn(HOSTED_MACHINE_TABLES, change.table)
+    ? reconcilePulledRow(conn, {
+        table: change.table as ReconciledHostedTable,
+        id: change.id,
+        operation: 'upsert',
+        current: () => family.machineRow(conn, change.table, change.id),
+        apply: () => family.apply(conn, change.table, change.row!),
+        remove: () => family.delete(conn, change.table, change.id),
+      })
+    : (() => {
+        const before = family.machineRow(conn, change.table, change.id)
+        family.apply(conn, change.table, change.row!)
+        return { kind: 'upserted' as const, before, after: family.machineRow(conn, change.table, change.id) }
+      })()
+  if (reconciled.kind === 'skipped') {
+    counts.upsertsNoop += 1
+    return
+  }
+  const { before, after } = reconciled
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else {

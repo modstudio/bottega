@@ -8,6 +8,8 @@ import {
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type PushedDay,
+  type PushedComment,
+  type PushedDocument,
   type PushedInterval,
 } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
@@ -72,28 +74,28 @@ function currentTask(conn: Database, id: string): LoadedOutboxChange | null {
 
 function currentComment(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
-    .query<Record<string, unknown>, [string]>(
+    .query<PushedComment, [string]>(
       `SELECT c.record_id id,c.task_key,c.task_record_id task_id,t.project project_name,c.body,c.created_at,c.created_at updated_at,NULL deleted_at FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE c.record_id=?`,
     )
     .get(id)
   return row
     ? {
         projectName: row.project_name as string,
-        change: { table: HOSTED_COMMENT_TABLE, id, op: 'upsert', row: row as never },
+        change: { table: HOSTED_COMMENT_TABLE, id, op: 'upsert', row },
       }
     : null
 }
 
 function currentDocument(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
-    .query<Record<string, unknown>, [string]>(
+    .query<PushedDocument, [string]>(
       `SELECT d.record_id id,d.number,d.task_key,d.task_record_id task_id,t.project project_name,d.role,d.title,d.body,d.version,d.created_at,d.updated_at,NULL deleted_at FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE d.record_id=?`,
     )
     .get(id)
   return row
     ? {
         projectName: row.project_name as string,
-        change: { table: HOSTED_DOCUMENT_TABLE, id, op: 'upsert', row: row as never },
+        change: { table: HOSTED_DOCUMENT_TABLE, id, op: 'upsert', row },
       }
     : null
 }

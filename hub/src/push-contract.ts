@@ -92,7 +92,7 @@ export type PushedTask = {
   next_document_number: number
 }
 
-type PushedComment = {
+export type PushedComment = {
   id: string
   task_key: string
   task_id?: string | null
@@ -102,7 +102,7 @@ type PushedComment = {
   updated_at: string
   deleted_at: string | null
 }
-type PushedDocument = {
+export type PushedDocument = {
   id: string
   number: number | null
   task_key: string
@@ -117,14 +117,14 @@ type PushedDocument = {
   deleted_at: string | null
 }
 
-const HOSTED_COMMENT_UPDATE_COLUMNS = [
+export const HOSTED_COMMENT_UPDATE_COLUMNS = [
   'task_key',
   'task_id',
   'body',
   'updated_at',
   'deleted_at',
 ] as const
-const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
+export const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
 
 export const HOSTED_TASK_UPDATE_COLUMNS = [
   'title',
@@ -358,34 +358,63 @@ function parseTaskUpsert(input: Record<string, unknown> & { id: string }): Parse
   }
 }
 
+function childRowError(
+  row: Record<string, unknown>,
+  id: string,
+  table: typeof HOSTED_COMMENT_TABLE | typeof HOSTED_DOCUMENT_TABLE,
+): string | null {
+  if (row.id !== id) return `${table} upsert requires a row whose id matches the pointer`
+  for (const field of ['task_key', 'project_name', 'created_at', 'updated_at'] as const)
+    if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
+  if (row.task_id !== undefined && row.task_id !== null && typeof row.task_id !== 'string')
+    return `${table} row.task_id must be a UUID, null, or absent`
+  if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
+    return `${table} row.task_id must be a UUID, null, or absent`
+  for (const field of ['created_at', 'updated_at'] as const)
+    if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
+  if (row.deleted_at !== null && !isTimestamp(row.deleted_at))
+    return `${table} row.deleted_at must be an ISO timestamp or null`
+  return null
+}
+
+function parseCommentRow(value: unknown, id: string): PushedComment | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_COMMENT_TABLE} upsert requires a row`
+  const error = childRowError(row, id, HOSTED_COMMENT_TABLE)
+  if (error) return error
+  if (typeof row.body !== 'string') return `${HOSTED_COMMENT_TABLE} row.body must be a string`
+  return row as PushedComment
+}
+
+function parseDocumentRow(value: unknown, id: string): PushedDocument | string {
+  const row = object(value)
+  if (!row) return `${HOSTED_DOCUMENT_TABLE} upsert requires a row`
+  const error = childRowError(row, id, HOSTED_DOCUMENT_TABLE)
+  if (error) return error
+  if (row.number !== null && (!Number.isSafeInteger(row.number) || Number(row.number) < 1))
+    return `${HOSTED_DOCUMENT_TABLE} row.number must be a positive safe integer or null`
+  if (!nullableString(row.role)) return `${HOSTED_DOCUMENT_TABLE} row.role must be a string or null`
+  for (const field of ['title', 'body', 'version'] as const)
+    if (typeof row[field] !== 'string') return `${HOSTED_DOCUMENT_TABLE} row.${field} must be a string`
+  return row as PushedDocument
+}
+
 function parseTaskChildUpsert(
   input: Record<string, unknown> & { id: string },
   table: typeof HOSTED_COMMENT_TABLE | typeof HOSTED_DOCUMENT_TABLE,
 ): ParsedHostedPushItem {
-  const { id } = input
-  const row = object(input.row)
-  if (!row || row.id !== id)
-    return rejected(id, `${table} upsert requires a row whose id matches the pointer`)
-  const required =
-    table === HOSTED_COMMENT_TABLE
-      ? ['task_key', 'project_name', 'body', 'created_at', 'updated_at']
-      : ['task_key', 'project_name', 'title', 'body', 'version', 'created_at', 'updated_at']
-  for (const field of required)
-    if (typeof row[field] !== 'string')
-      return rejected(id, `${table} row.${field} must be a string`)
-  const allowed =
-    table === HOSTED_COMMENT_TABLE ? HOSTED_COMMENT_UPDATE_COLUMNS : HOSTED_DOCUMENT_UPDATE_COLUMNS
+  const row = table === HOSTED_COMMENT_TABLE
+    ? parseCommentRow(input.row, input.id)
+    : parseDocumentRow(input.row, input.id)
+  if (typeof row === 'string') return rejected(input.id, row)
+  const allowed = table === HOSTED_COMMENT_TABLE
+    ? HOSTED_COMMENT_UPDATE_COLUMNS
+    : HOSTED_DOCUMENT_UPDATE_COLUMNS
   const fields = parseFields(input.fields, allowed, table)
-  if (typeof fields === 'string') return rejected(id, fields)
-  return {
-    input: {
-      table,
-      id,
-      op: 'upsert',
-      row: row as never,
-      ...(fields === null ? {} : { fields }),
-    } as HostedPushChange,
-  }
+  if (typeof fields === 'string') return rejected(input.id, fields)
+  if (table === HOSTED_COMMENT_TABLE)
+    return { input: { table, id: input.id, op: 'upsert', row: row as PushedComment, ...(fields === null ? {} : { fields }) } }
+  return { input: { table, id: input.id, op: 'upsert', row: row as PushedDocument, ...(fields === null ? {} : { fields }) } }
 }
 
 function parseEvidenceUpsert(

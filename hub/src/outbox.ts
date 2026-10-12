@@ -18,7 +18,7 @@ import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-s
 
 const HOSTED_OUTBOX_BATCH_SIZE = 500
 
-type OutboxEntry = {
+export type OutboxEntry = {
   id: string
   table_name: string
   row_id: string
@@ -32,6 +32,18 @@ type OutboxEntry = {
   routing_space_id: string | null
   routing_project: string | null
   fields: string | null
+  kept_values: string | null
+}
+
+export function mergeQueuedHostedChange(
+  prior: { operation: 'upsert' | 'delete'; fields: readonly string[] | null } | null,
+  incoming: { operation: 'upsert' | 'delete'; fields: readonly string[] | null },
+): { operation: 'upsert' | 'delete'; fields: string[] | null } {
+  if (incoming.operation === 'delete') return { operation: 'delete', fields: null }
+  if (!prior || prior.operation === 'delete')
+    return { operation: 'upsert', fields: incoming.fields ? [...new Set(incoming.fields)] : null }
+  if (prior.fields === null || incoming.fields === null) return { operation: 'upsert', fields: null }
+  return { operation: 'upsert', fields: [...new Set([...prior.fields, ...incoming.fields])] }
 }
 
 export type HostedOutboxReport = {
@@ -43,6 +55,7 @@ export type HostedOutboxReport = {
   waitingOnRouting: Record<string, number>
   waitingOnHostedHub?: Record<string, number>
   skippedCapability: boolean
+  hostedReachable?: boolean
 }
 
 type DrainDependencies = {
@@ -71,26 +84,32 @@ export function queueHostedChange(
   queuedAt = nowIso(),
   fields: readonly string[] | null = null,
 ) {
+  const prior = conn
+    .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
+      `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,
+    )
+    .get(table, rowId)
+  const merged = mergeQueuedHostedChange(
+    prior
+      ? { operation: prior.operation, fields: prior.fields === null ? null : JSON.parse(prior.fields) }
+      : null,
+    { operation, fields },
+  )
   conn
     .query(
       `INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at,fields)
        VALUES (?,?,?,?,?,?) ON CONFLICT(table_name,row_id) DO UPDATE SET
-       operation=excluded.operation,queued_at=excluded.queued_at,
-       fields=CASE WHEN excluded.operation='delete' THEN NULL
-         WHEN hosted_outbox.operation='delete' THEN excluded.fields
-         WHEN hosted_outbox.fields IS NULL OR excluded.fields IS NULL THEN NULL
-         ELSE (SELECT json_group_array(value) FROM
-           (SELECT value FROM json_each(hosted_outbox.fields) UNION SELECT value FROM json_each(excluded.fields))) END,
+       operation=excluded.operation,queued_at=excluded.queued_at,fields=excluded.fields,
        generation=hosted_outbox.generation+1,attempts=0,last_error=NULL,
-       quarantined_at=NULL,quarantine_reason=NULL`,
+       quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL`,
     )
     .run(
       newRecordId(),
       table,
       rowId,
-      operation,
+      merged.operation,
       queuedAt,
-      fields === null ? null : JSON.stringify(fields),
+      merged.fields === null ? null : JSON.stringify(merged.fields),
     )
 }
 
@@ -102,7 +121,12 @@ export function listHostedOutbox(): OutboxEntry[] {
     .all()
 }
 
-export function retryHostedOutboxEntry(id: string): boolean {
+function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 'not-quarantined' {
+  const entry = db()
+    .query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE id=?`)
+    .get(id)
+  if (!entry?.quarantined_at) return 'not-quarantined'
+  if (entry.operation === 'upsert' && !loadOutboxChange(db(), entry)) return 'missing-row'
   return (
     writeTransaction((conn) =>
       conn
@@ -111,8 +135,18 @@ export function retryHostedOutboxEntry(id: string): boolean {
            WHERE id=? AND quarantined_at IS NOT NULL`,
         )
         .run(id),
-    ).changes > 0
+    ).changes > 0 ? 'retried' : 'not-quarantined'
   )
+}
+
+export function retryHostedOutboxEntry(id: string): boolean {
+  return retryHostedOutboxEntryOutcome(id) === 'retried'
+}
+
+export function discardHostedOutboxEntry(id: string): boolean {
+  return writeTransaction((conn) =>
+    conn.query(`DELETE FROM hosted_outbox WHERE id=? AND quarantined_at IS NOT NULL`).run(id),
+  ).changes > 0
 }
 
 function loadPendingOutboxRows(): OutboxEntry[] {
@@ -373,10 +407,12 @@ export async function drainHostedOutbox(
     waitingOnRouting: {},
     waitingOnHostedHub: {},
     skippedCapability: false,
+    hostedReachable: true,
   }
   if (!entries.length) return report
   const prepared = prepareOutboxRows(entries)
   for (const entry of prepared.missing) {
+    if (entry.quarantined_at) continue
     const removed = writeTransaction(
       (conn) =>
         conn
@@ -404,7 +440,8 @@ export async function drainHostedOutbox(
   const partitioned = routeOutboxRows(rows, (dependencies.registered ?? projects)(), identity)
   recordRoutingWaits(partitioned.refusals, report)
   if (await removeMovedIntervals(partitioned.destinations, dependencies, report))
-    await drainDestinations(partitioned.destinations, dependencies, report)
+    report.hostedReachable = await drainDestinations(partitioned.destinations, dependencies, report)
+  else report.hostedReachable = false
   return report
 }
 
@@ -468,10 +505,27 @@ export async function hostedOutboxDoctorLines(
 }
 
 export function runHostedOutboxCommand(argv: string[]): string[] {
+  if (argv[1] === 'show') {
+    const id = argv[2]
+    if (!id) throw new Error('usage: hub outbox show <ID>')
+    const row = listHostedOutbox().find((entry) => entry.id === id)
+    if (!row) throw new Error(`no outbox entry ${id}`)
+    return [JSON.stringify({ ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null }, null, 2)]
+  }
+  if (argv[1] === 'discard') {
+    const id = argv[2]
+    if (!id) throw new Error('usage: hub outbox discard <ID>')
+    if (!discardHostedOutboxEntry(id))
+      throw new Error(`outbox entry ${id} is not quarantined; use \`hub outbox retry ${id}\``)
+    return [`outbox entry ${id} discarded`]
+  }
   if (argv[1] === 'retry') {
     const id = argv[2]
     if (!id) throw new Error('usage: hub outbox retry <ID>')
-    if (!retryHostedOutboxEntry(id))
+    const outcome = retryHostedOutboxEntryOutcome(id)
+    if (outcome === 'missing-row')
+      throw new Error(`outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``)
+    if (outcome !== 'retried')
       throw new Error(`outbox entry ${id} is not quarantined and unsent`)
     return [`outbox entry ${id} queued for retry`]
   }

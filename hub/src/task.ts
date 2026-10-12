@@ -5,7 +5,8 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
-import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
+import { drainHostedEditOutbox } from './offline-task-edits.ts'
+import { queueHostedChange } from './outbox.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -13,7 +14,7 @@ import {
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
 import { runRef } from './reconcile.ts'
-import { hostedCreateTask, hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
+import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
@@ -184,19 +185,6 @@ function recordLocalStatusChange(
     )
     .run(id, task.key, task.record_id, at, task.status_category, next)
   return id
-}
-
-async function drainAfterLocalWrite(hosted: boolean, options?: HostedOptions): Promise<void> {
-  if (!hosted) return
-  try {
-    await drainHostedOutbox({
-      identity: () => hostedTaskIdentity(options),
-      push: (changes, destination) =>
-        hostedPushChanges(changes, { ...options, recordSpace: destination.recordSpace }),
-    })
-  } catch {
-    /* the durable queue is the offline result */
-  }
 }
 
 export function createLocalTaskInTransaction(
@@ -418,7 +406,7 @@ export async function createTask(
         true,
       )
   })
-  if (options.allowDuplicateReason) await drainAfterLocalWrite(true, options.hosted)
+  if (options.allowDuplicateReason) await drainHostedEditOutbox(commentAt, options.hosted)
   return showTask(hosted.key, { recordId: hosted.id }).task
 }
 
@@ -688,7 +676,7 @@ export async function setTask(
     }
     return row
   })
-  await drainAfterLocalWrite(hosted, options.hosted)
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }
 
@@ -728,7 +716,7 @@ export async function closeTask(
     }
     return closed
   })
-  await drainAfterLocalWrite(hosted, options.hosted)
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }
 
@@ -752,6 +740,6 @@ export async function commentTask(
     if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
     return writeLocalComment(conn, row, body, at, hosted)
   })
-  await drainAfterLocalWrite(hosted, options.hosted)
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }

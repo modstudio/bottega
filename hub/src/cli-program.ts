@@ -158,6 +158,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and sche
   hub doctor                  report the live structural schema hash and user_version
   hub outbox [--json]         list queued and quarantined hosted writes
   hub outbox retry <ID>       clear quarantine and queue an entry for retry
+  hub outbox show <ID>        show an entry and any values kept after a hosted delete
+  hub outbox discard <ID>     discard a quarantined entry
   ${HOSTED_CHANGE_EVIDENCE_USAGE}
                               inspect timestamp-pull misses recorded by the change-log follower
   hub tasks [--hours N]       what has been worked on, newest window first

@@ -249,7 +249,7 @@ export async function updateTaskDocument(
       .run(changes.title ?? row.title, nextRole, at, id)
     if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
   })
-  if (hosted) await drainHostedEditOutbox(options.hosted)
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return getTaskDocument(id)
 }
 
@@ -263,6 +263,7 @@ export async function deleteTaskDocument(
   if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
   const mode = taskWriteMode(task.project, options.hosted)
   const hosted = mode === 'hosted-configured'
+  const at = nowIso()
   const result = writeTransaction((conn) => {
     const row = conn
       .query<Omit<TaskDocument, 'label'>, [string]>(
@@ -271,10 +272,10 @@ export async function deleteTaskDocument(
       )
       .get(id)
     if (!row) throw new Error(`no task document ${id}`)
-    if (hosted) queueHostedDocumentDelete(conn, id, task.project)
+    if (hosted) queueHostedDocumentDelete(conn, id, task.project, at)
     conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id)
     return withDocumentLabel(row)
   })
-  if (hosted) await drainHostedEditOutbox(options.hosted)
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return result
 }

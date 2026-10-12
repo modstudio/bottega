@@ -7,35 +7,13 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
-import type { PushedStatusEvent, PushedTask } from './push-contract.ts'
+import type { PushedComment, PushedDocument, PushedStatusEvent, PushedTask } from './push-contract.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
-export type HostedComment = {
-  id: string
-  task_key: string
-  task_id?: string | null
-  project_name: string
-  body: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
-export type HostedDocument = {
-  id: string
-  number: number | null
-  task_key: string
-  task_id?: string | null
-  project_name: string
-  role: string | null
-  title: string
-  body: string
-  version: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
+export type HostedComment = PushedComment
+export type HostedDocument = PushedDocument
 export type HostedStatusEvent = PushedStatusEvent
 
 export const hostedTaskPullSerializers = {

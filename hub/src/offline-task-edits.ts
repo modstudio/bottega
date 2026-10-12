@@ -1,19 +1,48 @@
 import type { Database } from 'bun:sqlite'
-import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
+import { db } from './db.ts'
+import { drainHostedOutbox, queueHostedChange, type OutboxEntry } from './outbox.ts'
 import { HOSTED_DOCUMENT_TABLE } from './push-contract.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 
-export async function drainHostedEditOutbox(options?: HostedTaskWriteOptions) {
+export type HostedEditDelivery =
+  | { kind: 'sent' }
+  | { kind: 'queued'; reason: string }
+  | { kind: 'rejected'; reason: string }
+
+export async function drainHostedEditOutbox(
+  queuedAt: string,
+  options?: HostedTaskWriteOptions,
+): Promise<HostedEditDelivery> {
   try {
-    await drainHostedOutbox({
+    const report = await drainHostedOutbox({
       identity: () => hostedTaskIdentity(options),
       push: (changes, destination) =>
         hostedPushChanges(changes, { ...options, recordSpace: destination.recordSpace }),
     })
-  } catch {
-    /* the durable queue is the offline result */
+    const remaining = db()
+      .query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE queued_at=?`)
+      .all(queuedAt)
+    const refused = remaining.find((entry) => entry.last_error)
+    const result: HostedEditDelivery = refused
+      ? { kind: 'rejected', reason: refused.last_error! }
+      : remaining.length || !report.hostedReachable || report.skippedCapability
+        ? { kind: 'queued', reason: report.skippedCapability ? 'the hosted session is absent or cannot push these rows' : 'the hosted hub could not be reached' }
+        : { kind: 'sent' }
+    reportHostedEditDelivery(result)
+    return result
+  } catch (error) {
+    const result = { kind: 'queued' as const, reason: (error as Error).message || 'the hosted session is absent' }
+    reportHostedEditDelivery(result)
+    return result
   }
+}
+
+function reportHostedEditDelivery(result: HostedEditDelivery): void {
+  if (result.kind === 'sent') console.log('hosted change sent')
+  else if (result.kind === 'rejected')
+    console.log(`hosted change rejected: ${result.reason}; inspect it with \`hub outbox\``)
+  else console.log(`hosted change saved and queued: ${result.reason}; inspect it with \`hub outbox\``)
 }
 
 export function queueHostedDocumentUpsert(
@@ -25,8 +54,8 @@ export function queueHostedDocumentUpsert(
   queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'upsert', at, fields)
 }
 
-export function queueHostedDocumentDelete(conn: Database, id: string, project: string) {
-  queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete')
+export function queueHostedDocumentDelete(conn: Database, id: string, project: string, at: string) {
+  queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete', at)
   conn
     .query(`UPDATE hosted_outbox SET routing_project=? WHERE table_name=? AND row_id=?`)
     .run(project, HOSTED_DOCUMENT_TABLE, id)
