@@ -682,6 +682,20 @@ describe('hosted-only task safety', () => {
     )
   })
 
+  test('a hosted request deadline reports an unreachable hub', async () => {
+    await expect(
+      hostedCreateTask(
+        {},
+        {
+          baseUrl: 'https://hub.example.test',
+          token: 'test',
+          fetch: async () => await new Promise<Response>(() => {}),
+          requestDeadlineMs: 5,
+        },
+      ),
+    ).rejects.toThrow('hosted hub is unreachable: request timed out after 5ms')
+  })
+
   test('a missing hosted task identity route requires redeployment', async () => {
     await expect(
       hostedTaskIdentity({

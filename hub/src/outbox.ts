@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import { projects } from './projects.ts'
@@ -125,6 +126,16 @@ export function listHostedOutbox(): OutboxEntry[] {
       `SELECT * FROM hosted_outbox ORDER BY quarantined_at IS NOT NULL,queued_at,id`,
     )
     .all()
+}
+
+export function pendingHostedOutboxSummary(): PendingHostedOutbox {
+  const row = db()
+    .query<{ pending_count: number; newest_queued_at: string | null }, []>(
+      `SELECT count(*) AS pending_count,max(queued_at) AS newest_queued_at
+       FROM hosted_outbox WHERE quarantined_at IS NULL`,
+    )
+    .get()!
+  return { pendingCount: row.pending_count, newestQueuedAt: row.newest_queued_at }
 }
 
 function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 'not-quarantined' {
