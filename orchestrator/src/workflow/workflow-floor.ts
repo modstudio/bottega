@@ -16,7 +16,7 @@ export type CommandEvidence = 'gate'
 
 export const floorGuidance = {
   ruling:
-    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`',
+    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`; where you rule the step yourself, `--self-ruling <text>` on the closing call does all three',
   'command-exit': 'run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`',
   'recorded-artifact':
     'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
