@@ -73,3 +73,15 @@ test('a split updates the surviving start and inserts the new start', () => {
   expect(decision.inserts.map((row) => row.start_at)).toEqual(['2026-10-08T10:20:00.000Z'])
   expect(decision.deletes).toEqual([])
 })
+
+test('preserved refs stay out of the pure replacement decision deletes', () => {
+  const decision = decideCollectorReplace(
+    [
+      existing('keep-id', '2026-10-08T10:00:00.000Z', 'orch:1:turn:1'),
+      existing('delete-id', '2026-10-08T11:00:00.000Z', 'orch:1:turn:2'),
+    ],
+    [],
+    new Set(['orch:1:turn:1']),
+  )
+  expect(decision).toEqual({ updates: [], inserts: [], deletes: ['delete-id'] })
+})

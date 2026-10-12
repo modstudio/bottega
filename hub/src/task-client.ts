@@ -447,6 +447,7 @@ export async function hostedPushChanges(
       typeof row.id !== 'string' ||
       (row.status !== 'applied' && row.status !== 'duplicate' && row.status !== 'rejected') ||
       (row.status === 'rejected' && typeof row.reason !== 'string') ||
+      (row.status !== 'rejected' && row.reason !== undefined && typeof row.reason !== 'string') ||
       (row.status === 'rejected' &&
         (row.adoptedId !== undefined || row.replacedId !== undefined)) ||
       (row.status !== 'rejected' &&

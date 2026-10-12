@@ -28,7 +28,13 @@ import {
 import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { pruneOutboxTrace } from './outbox-trace.ts'
 import { rollUpDays } from './query.ts'
-import { acquireStoredLease, releaseStoredLease, storedLeaseHolder } from './store-lease.ts'
+import {
+  acquireStoredLease,
+  holdStoredLease,
+  releaseStoredLease,
+  type StoredLeaseGuard,
+  storedLeaseHolder,
+} from './store-lease.ts'
 import { hoursAgo } from './time.ts'
 
 /**
@@ -196,61 +202,25 @@ export const COLLECT_LEASE_MS = 60_000
 const LEASE_RENEW_MS = 20_000
 const COLLECT_LEASE_KEY = 'collect.lease'
 
-export type LeaseGuard = {
-  /** Refuse further work after another holder has taken this lease. */
-  assertHeld(afterLeg?: string): void
-}
-
-class LeaseLostError extends Error {
-  readonly heldBy: string | null
-
-  constructor(heldBy: string | null, afterLeg?: string) {
-    super(
-      `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
-        afterLeg ? ` after ${afterLeg}` : ''
-      }; a leg already running was allowed to finish`,
-    )
-    this.heldBy = heldBy
-  }
-}
-
-type HeldLeaseResult<T> =
-  | { ran: true; value: T }
-  | { ran: false; heldBy: string | null; error: LeaseLostError }
+export type LeaseGuard = StoredLeaseGuard
 
 /** Run work under one renewing lease that has already been acquired. */
 async function holdAndRenewLease<T>(
   holder: string,
   fn: (guard: LeaseGuard) => Promise<T>,
   renewEveryMs: number,
-): Promise<HeldLeaseResult<T>> {
-  let lostBy: string | null | undefined
-  const markLost = () => {
-    if (lostBy === undefined) lostBy = leaseHolder()
-  }
-  const guard: LeaseGuard = {
-    assertHeld(afterLeg) {
-      if (lostBy === undefined && leaseHolder() !== holder) markLost()
-      if (lostBy !== undefined) throw new LeaseLostError(lostBy, afterLeg)
-    },
-  }
-  const renewal = setInterval(() => {
-    if (lostBy === undefined && !acquireLease(holder)) markLost()
-  }, renewEveryMs)
-  try {
-    const value = await fn(guard)
-    guard.assertHeld()
-    return { ran: true, value }
-  } catch (error) {
-    if (lostBy !== undefined) {
-      const refusal = error instanceof LeaseLostError ? error : new LeaseLostError(lostBy)
-      return { ran: false, heldBy: lostBy, error: refusal }
-    }
-    throw error
-  } finally {
-    clearInterval(renewal)
-    releaseLease(holder)
-  }
+) {
+  return holdStoredLease({
+    key: COLLECT_LEASE_KEY,
+    holder,
+    durationMs: COLLECT_LEASE_MS,
+    renewEveryMs,
+    work: fn,
+    lostMessage: (heldBy, afterLeg) =>
+      `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
+        afterLeg ? ` after ${afterLeg}` : ''
+      }; a leg already running was allowed to finish`,
+  })
 }
 
 /**

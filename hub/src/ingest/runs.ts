@@ -224,10 +224,7 @@ function applyOrchReplace(
   recomputed: readonly OrchIntervalRow[],
   preservedRefs: ReadonlySet<string> = new Set(),
 ) {
-  const decision = decideCollectorReplace(
-    existing.filter((row) => !preservedRefs.has(row.ref)),
-    recomputed,
-  )
+  const decision = decideCollectorReplace(existing, recomputed, preservedRefs)
   const update = conn.query(
     `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?,
        project=?, job=?, via=?, open=?, session_id=?, user_id=?

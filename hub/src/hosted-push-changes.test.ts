@@ -64,6 +64,25 @@ const taskRow = (id: string, key: string, source: PushedTask['source'] = 'git'):
   next_document_number: 1,
 })
 
+const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedInterval => ({
+  id,
+  task_key: 'DEV-1240',
+  project_name: 'workshop',
+  source: 'orch',
+  agent: 'codex',
+  job: 'writing',
+  start_at: startAt,
+  end_at: '2026-10-12T16:55:15.905Z',
+  claude_tokens: 0,
+  vendor_tokens: 100,
+  vendor_cost_usd: null,
+  ref: 'orch:11154:turn:11154',
+  via: 'task-key',
+  open: 0,
+  session_id: null,
+  user_id: userId,
+})
+
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
@@ -113,24 +132,6 @@ test('an interval recreation replaces only the tuple holder in its space and log
   const newId = '01990000-0000-7000-8000-000000001253'
   const otherId = '01990000-0000-7000-8000-000000001254'
   const otherSpace = '01990000-0000-7000-8000-000000001255'
-  const intervalRow = (id: string): PushedInterval => ({
-    id,
-    task_key: 'DEV-1240',
-    project_name: 'workshop',
-    source: 'orch',
-    agent: 'codex',
-    job: 'writing',
-    start_at: '2026-10-12T16:54:46.612Z',
-    end_at: '2026-10-12T16:55:15.905Z',
-    claude_tokens: 0,
-    vendor_tokens: 100,
-    vendor_cost_usd: null,
-    ref: 'orch:11154:turn:11154',
-    via: 'task-key',
-    open: 0,
-    session_id: null,
-    user_id: userId,
-  })
   expect(
     await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
   ).toEqual([{ id: oldId, status: 'applied' }])
@@ -197,6 +198,79 @@ test('an interval recreation replaces only the tuple holder in its space and log
   expect(await apply([{ table: 'hub_interval', id: oldId, op: 'delete' }])).toEqual([
     { id: oldId, status: 'duplicate' },
   ])
+
+  const afterReplace = Number(
+    (
+      await database.query<{ sequence: string | number }>(
+        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+        [spaceId],
+      )
+    ).rows[0]!.sequence,
+  )
+  expect(
+    await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
+  ).toEqual([
+    {
+      id: oldId,
+      status: 'duplicate',
+      reason: `interval superseded by newer UUID ${newId}`,
+    },
+  ])
+  expect(
+    Number(
+      (
+        await database.query<{ sequence: string | number }>(
+          `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+          [spaceId],
+        )
+      ).rows[0]!.sequence,
+    ),
+  ).toBe(afterReplace)
+})
+
+test('an existing incoming interval moves onto a tuple held by an older id', async () => {
+  const holderId = '01990000-0000-7000-8000-000000001256'
+  const incomingId = '01990000-0000-7000-8000-000000001257'
+  const heldStart = '2026-10-12T18:00:00.000Z'
+  expect(
+    await apply([
+      {
+        table: 'hub_interval',
+        id: incomingId,
+        op: 'upsert',
+        row: intervalRow(incomingId, '2026-10-12T17:00:00.000Z'),
+      },
+      {
+        table: 'hub_interval',
+        id: holderId,
+        op: 'upsert',
+        row: intervalRow(holderId, heldStart),
+      },
+    ]),
+  ).toEqual([
+    { id: incomingId, status: 'applied' },
+    { id: holderId, status: 'applied' },
+  ])
+
+  expect(
+    await apply([
+      {
+        table: 'hub_interval',
+        id: incomingId,
+        op: 'upsert',
+        row: intervalRow(incomingId, heldStart),
+      },
+    ]),
+  ).toEqual([{ id: incomingId, status: 'applied', replacedId: holderId }])
+  expect(
+    (
+      await database.query<{ id: string; moved: boolean }>(
+        `SELECT id::text,start_at=$2::timestamptz AS moved
+         FROM hub_interval WHERE id=ANY($1::uuid[])`,
+        [[holderId, incomingId], heldStart],
+      )
+    ).rows,
+  ).toEqual([{ id: incomingId, moved: true }])
 })
 
 test('isolates one rejected status event while committing applied and duplicate rows', async () => {

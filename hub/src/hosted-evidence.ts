@@ -11,13 +11,12 @@ function dayIdentityConflict(row: DayEvidence, existingId: string): Error {
 }
 
 export function hostedIntervalWrite(
-  _row: IntervalEvidence,
-  existingId: string | null,
+  incomingId: string,
+  exists: boolean,
   existingTupleId: string | null,
-): 'update' | 'insert' | 'replace' {
-  if (existingId) return 'update'
-  if (existingTupleId) return 'replace'
-  return 'insert'
+): 'update' | 'insert' | 'replace' | 'superseded' {
+  if (!existingTupleId || existingTupleId === incomingId) return exists ? 'update' : 'insert'
+  return incomingId > existingTupleId ? 'replace' : 'superseded'
 }
 
 export function hostedDayWrite(
@@ -94,7 +93,7 @@ async function upsertOneInterval(
   tx: SQL,
   identity: EvidenceIdentity,
   row: IntervalEvidence,
-): Promise<{ status: 'applied' | 'duplicate'; replacedId?: string }> {
+): Promise<{ status: 'applied' | 'duplicate'; replacedId?: string; reason?: string }> {
   const byId = await tx<{ id: string }[]>`
     SELECT id::text AS id FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid`
@@ -102,7 +101,13 @@ async function upsertOneInterval(
     SELECT id::text AS id FROM hub_interval
     WHERE space_id=${identity.spaceId}::uuid AND source=${row.source} AND ref=${row.ref}
       AND start_at=${row.start_at}::timestamptz`
-  const write = hostedIntervalWrite(row, byId[0]?.id ?? null, byTuple[0]?.id ?? null)
+  const tupleHolder = byTuple[0]?.id ?? null
+  const write = hostedIntervalWrite(row.id, byId.length > 0, tupleHolder)
+  if (write === 'superseded')
+    return {
+      status: 'duplicate',
+      reason: `interval superseded by newer UUID ${tupleHolder}`,
+    }
   if (write === 'update') {
     const matches = await tx`SELECT 1 FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
@@ -119,13 +124,15 @@ async function upsertOneInterval(
     await updateHostedInterval(tx, identity, row.id, row)
     return { status: 'applied' }
   }
-  if (write === 'replace')
+  if (write === 'replace') {
     await tx`DELETE FROM hub_interval
-      WHERE space_id=${identity.spaceId}::uuid AND id=${byTuple[0]!.id}::uuid`
-  await insertHostedInterval(tx, identity, row.id, row)
+      WHERE space_id=${identity.spaceId}::uuid AND id=${tupleHolder!}::uuid`
+    if (byId.length) await updateHostedInterval(tx, identity, row.id, row)
+    else await insertHostedInterval(tx, identity, row.id, row)
+  } else await insertHostedInterval(tx, identity, row.id, row)
   return {
     status: 'applied',
-    ...(write === 'replace' ? { replacedId: byTuple[0]!.id } : {}),
+    ...(write === 'replace' ? { replacedId: tupleHolder! } : {}),
   }
 }
 

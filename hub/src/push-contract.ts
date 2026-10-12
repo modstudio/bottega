@@ -174,6 +174,7 @@ export type HostedPushOutcome =
       status: 'applied' | 'duplicate'
       adoptedId?: string
       replacedId?: string
+      reason?: string
     }
   | { id: string; status: 'rejected'; reason: string }
 

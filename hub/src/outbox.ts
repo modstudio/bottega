@@ -16,7 +16,7 @@ import {
   type HostedPushOutcome,
 } from './push-contract.ts'
 import { orderHostedPushChanges } from './push-order.ts'
-import { acquireStoredLease, releaseStoredLease, storedLeaseHolder } from './store-lease.ts'
+import { acquireStoredLease, holdStoredLease, StoredLeaseLostError } from './store-lease.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
@@ -201,7 +201,7 @@ function traceOutcome(
         ? outcome.reason
         : replacedId
           ? `replaced interval ${replacedId}`
-          : null,
+            : outcome.reason ?? null,
     generation: item.entry.generation,
     process_kind: processKind,
     created_at: at,
@@ -235,8 +235,7 @@ function recordOutcome(
       const removed = conn
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
         .run(entry.id, entry.generation).changes
-      if (removed > 0)
-        traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
       if (
         removed > 0 &&
         outcome.status !== 'rejected' &&
@@ -260,8 +259,7 @@ function recordOutcome(
            WHERE id=? AND generation=? AND quarantined_at IS NULL`,
         )
         .run(decision.attempts, decision.lastError, entry.id, entry.generation).changes
-      if (updated > 0)
-        traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
       return updated
     } else if (decision.action === 'quarantine') {
       const updated = conn
@@ -277,8 +275,7 @@ function recordOutcome(
           entry.id,
           entry.generation,
         ).changes
-      if (updated > 0)
-        traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
       return updated
     }
     return 0
@@ -345,6 +342,43 @@ function recordBatchOutcomes(
   }
 }
 
+function traceLeaseLostOutcomes(
+  batch: PreparedOutboxRow[],
+  outcomes: HostedPushOutcome[],
+  clock: () => string,
+  processKind: OutboxProcessKind,
+  operation?: 'upsert' | 'delete',
+  destination?: string,
+): void {
+  const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
+  writeTransaction((conn) => {
+    for (const item of batch) {
+      const outcome = byId.get(item.change.id)
+      if (!outcome) continue
+      const replacedId = outcome.status === 'rejected' ? undefined : outcome.replacedId
+      const outcomeReason =
+        outcome.status === 'rejected'
+          ? outcome.reason
+          : replacedId
+            ? `replaced interval ${replacedId}`
+            : outcome.reason
+      recordOutboxTrace(conn, {
+        table_name: item.entry.table_name,
+        row_id: item.entry.row_id,
+        operation: operation ?? item.change.op,
+        destination_space_id: destination ?? item.destinationSpaceId,
+        outcome: replacedId ? 'replaced' : outcome.status,
+        reason: [outcomeReason, 'hosted outbox lease was lost after delivery']
+          .filter(Boolean)
+          .join('; '),
+        generation: item.entry.generation,
+        process_kind: processKind,
+        created_at: clock(),
+      })
+    }
+  })
+}
+
 async function drainDestinations(
   destinations: Map<string, PreparedOutboxRow[]>,
   dependencies: DrainDependencies,
@@ -372,7 +406,13 @@ async function drainDestinations(
             batch.map((item) => item.change),
             { recordSpace: spaceId },
           )
-          dependencies.assertLock?.()
+          try {
+            dependencies.assertLock?.()
+          } catch (error) {
+            if (error instanceof StoredLeaseLostError)
+              traceLeaseLostOutcomes(batch, outcomes, clock, processKind)
+            return false
+          }
           recordBatchOutcomes(batch, outcomes, report, clock, processKind)
         } catch {
           return false
@@ -436,7 +476,20 @@ async function removeMovedInterval(
     outcomes = await push([{ table: HOSTED_INTERVAL_TABLE, id: item.change.id, op: 'delete' }], {
       recordSpace: item.acknowledgedSpaceId,
     })
-    assertLock?.()
+    try {
+      assertLock?.()
+    } catch (error) {
+      if (error instanceof StoredLeaseLostError)
+        traceLeaseLostOutcomes(
+          [item],
+          outcomes,
+          clock,
+          processKind,
+          'delete',
+          item.acknowledgedSpaceId,
+        )
+      return 'failed'
+    }
   } catch {
     return 'failed'
   }
@@ -444,11 +497,10 @@ async function removeMovedInterval(
   if (!outcome) return 'failed'
   if (outcome.status === 'applied' || outcome.status === 'duplicate') {
     writeTransaction((conn) => {
-      const updated = conn
+      conn
         .query(`UPDATE interval SET hosted_space_id=NULL WHERE record_id=? AND hosted_space_id=?`)
-        .run(item.change.id, item.acknowledgedSpaceId).changes
-      if (updated > 0)
-        traceOutcome(conn, item, outcome, clock(), processKind, 'delete', item.acknowledgedSpaceId)
+        .run(item.change.id, item.acknowledgedSpaceId)
+      traceOutcome(conn, item, outcome, clock(), processKind, 'delete', item.acknowledgedSpaceId)
     })
     item.acknowledgedSpaceId = null
     return 'ready'
@@ -508,18 +560,17 @@ async function drainHostedOutboxHeld(
       const changes = conn
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
         .run(entry.id, entry.generation).changes
-      if (changes > 0)
-        recordOutboxTrace(conn, {
-          table_name: entry.table_name,
-          row_id: entry.row_id,
-          operation: entry.operation,
-          destination_space_id: entry.routing_space_id,
-          outcome: 'dropped',
-          reason: 'machine row is gone',
-          generation: entry.generation,
-          process_kind: dependencies.processKind ?? 'command',
-          created_at: (dependencies.clock ?? nowIso)(),
-        })
+      recordOutboxTrace(conn, {
+        table_name: entry.table_name,
+        row_id: entry.row_id,
+        operation: entry.operation,
+        destination_space_id: entry.routing_space_id,
+        outcome: 'dropped',
+        reason: 'machine row is gone',
+        generation: entry.generation,
+        process_kind: dependencies.processKind ?? 'command',
+        created_at: (dependencies.clock ?? nowIso)(),
+      })
       return changes
     })
     if (removed > 0) report.dropped++
@@ -570,21 +621,25 @@ export async function drainHostedOutbox(
       lockAcquired: false,
     }
   }
-  const renewal = setInterval(
-    () => acquireStoredLease(HOSTED_OUTBOX_LEASE_KEY, holder, HOSTED_OUTBOX_LEASE_MS),
-    HOSTED_OUTBOX_LEASE_RENEW_MS,
-  )
-  try {
-    return await drainHostedOutboxHeld({
-      ...dependencies,
-      assertLock: () => {
-        if (storedLeaseHolder(HOSTED_OUTBOX_LEASE_KEY) !== holder)
-          throw new Error('hosted outbox lease was lost during the drain')
-      },
-    })
-  } finally {
-    clearInterval(renewal)
-    releaseStoredLease(HOSTED_OUTBOX_LEASE_KEY, holder)
+  const held = await holdStoredLease({
+    key: HOSTED_OUTBOX_LEASE_KEY,
+    holder,
+    durationMs: HOSTED_OUTBOX_LEASE_MS,
+    renewEveryMs: HOSTED_OUTBOX_LEASE_RENEW_MS,
+    lostMessage: () => 'hosted outbox lease was lost during the drain',
+    work: (guard) => drainHostedOutboxHeld({ ...dependencies, assertLock: guard.assertHeld }),
+  })
+  if (held.value) return held.value
+  return {
+    queued: loadPendingOutboxRows().length,
+    sent: 0,
+    rejected: 0,
+    quarantined: 0,
+    dropped: 0,
+    waitingOnRouting: {},
+    waitingOnHostedHub: {},
+    skippedCapability: false,
+    lockAcquired: false,
   }
 }
 

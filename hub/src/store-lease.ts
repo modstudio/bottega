@@ -40,3 +40,81 @@ export function storedLeaseHolder(key: string): string | null {
     return null
   }
 }
+
+export type StoredLeaseGuard = {
+  assertHeld(afterLeg?: string): void
+}
+
+export class StoredLeaseLostError extends Error {
+  readonly heldBy: string | null
+
+  constructor(
+    heldBy: string | null,
+    message: (heldBy: string | null, afterLeg?: string) => string,
+    afterLeg?: string,
+  ) {
+    super(message(heldBy, afterLeg))
+    this.heldBy = heldBy
+  }
+}
+
+type HeldStoredLeaseResult<T> =
+  | { ran: true; value: T }
+  | {
+      ran: false
+      heldBy: string | null
+      error: StoredLeaseLostError
+      value?: T
+    }
+
+/** Run work under an already-acquired stored lease, renewing and guarding it. */
+export async function holdStoredLease<T>(options: {
+  key: string
+  holder: string
+  durationMs: number
+  renewEveryMs: number
+  work: (guard: StoredLeaseGuard) => Promise<T>
+  lostMessage: (heldBy: string | null, afterLeg?: string) => string
+}): Promise<HeldStoredLeaseResult<T>> {
+  let lostBy: string | null | undefined
+  const markLost = () => {
+    if (lostBy === undefined) lostBy = storedLeaseHolder(options.key)
+  }
+  const guard: StoredLeaseGuard = {
+    assertHeld(afterLeg) {
+      if (lostBy === undefined && storedLeaseHolder(options.key) !== options.holder) markLost()
+      if (lostBy !== undefined)
+        throw new StoredLeaseLostError(lostBy, options.lostMessage, afterLeg)
+    },
+  }
+  const renewal = setInterval(() => {
+    if (
+      lostBy === undefined &&
+      !acquireStoredLease(options.key, options.holder, options.durationMs)
+    )
+      markLost()
+  }, options.renewEveryMs)
+  try {
+    const value = await options.work(guard)
+    try {
+      guard.assertHeld()
+      return { ran: true, value }
+    } catch (error) {
+      if (error instanceof StoredLeaseLostError)
+        return { ran: false, heldBy: error.heldBy, error, value }
+      throw error
+    }
+  } catch (error) {
+    if (lostBy !== undefined) {
+      const refusal =
+        error instanceof StoredLeaseLostError
+          ? error
+          : new StoredLeaseLostError(lostBy, options.lostMessage)
+      return { ran: false, heldBy: lostBy, error: refusal }
+    }
+    throw error
+  } finally {
+    clearInterval(renewal)
+    releaseStoredLease(options.key, options.holder)
+  }
+}

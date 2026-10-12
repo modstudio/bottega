@@ -71,6 +71,23 @@ test('traces duplicate deletes, replacements, and rejections but not plain appli
     ],
   })
 
+  const supersededId = '01990000-0000-7000-8000-000000001005'
+  const holderId = '01990000-0000-7000-8000-000000001006'
+  insertInterval(supersededId, 'orch:superseded')
+  await drainHostedOutbox({
+    identity: async () => identity,
+    registered: () => [project],
+    processKind: 'command',
+    clock: () => '2026-10-12T12:01:30.000Z',
+    push: async () => [
+      {
+        id: supersededId,
+        status: 'duplicate',
+        reason: `interval superseded by newer UUID ${holderId}`,
+      },
+    ],
+  })
+
   const rejectedId = '01990000-0000-7000-8000-000000001003'
   insertInterval(rejectedId, 'orch:rejected')
   await drainHostedOutbox({
@@ -105,6 +122,14 @@ test('traces duplicate deletes, replacements, and rejections but not plain appli
       operation: 'upsert',
       outcome: 'rejected',
       reason: 'bad interval',
+      process: 'command',
+    },
+    {
+      row: supersededId,
+      destination: 'space-one',
+      operation: 'upsert',
+      outcome: 'duplicate',
+      reason: `interval superseded by newer UUID ${holderId}`,
       process: 'command',
     },
     {
