@@ -36,6 +36,7 @@ import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
+  type Audience,
   acknowledgementRefusal,
   architectIdentity,
   OPERATOR_READER,
@@ -77,6 +78,7 @@ type BoardMessageResult = {
   title: string | null
   body: string | null
   audience: string | null
+  audienceDescription?: string
   origin: BoardOrigin | null
   senderTags: { kind: 'task' | 'path' | 'topic'; value: string }[] | null
   createdAt: string | null
@@ -92,6 +94,7 @@ type BoardMessageResult = {
   revision: string | null
   scopeProjectIds: string[] | null
   recipientUserIds: string[] | null
+  sharedSpaceReach?: boolean | null
   claimId: string | null
   authorUserId: string | null
   authorSession: string | null
@@ -162,6 +165,11 @@ function locality(audience: string) {
     : ('shared' as const)
 }
 
+export function localBoardAudienceRefusal(audience: Audience): string | null {
+  if (audience.kind !== 'spaces') return null
+  return 'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces'
+}
+
 const idForMode = (id: string, mode: 'local' | 'hosted'): number | string =>
   mode === 'local' ? Number(id) : id
 
@@ -193,6 +201,8 @@ function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
+      audienceDescription: value.root.audience ?? undefined,
       claimId: null,
       authorUserId: null,
       authorSession: value.root.origin.session,
@@ -250,6 +260,8 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
+      audienceDescription: row.audience ?? undefined,
       claimId: null,
       authorUserId: null,
       authorSession: row.author_session,
@@ -350,15 +362,19 @@ function hostedPostInput(
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
   const actor = boardActor(c.env)
+  const audience = parseAudience(input.audience)
   const refusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
-    audience: parseAudience(input.audience),
+    audience,
     authorKind: actor.kind,
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
   })
   if (refusal) throw new Error(refusal)
-  if (boardMode(locality(input.audience), c.env) === 'local')
+  if (boardMode(locality(input.audience), c.env) === 'local') {
+    const localRefusal = localBoardAudienceRefusal(audience)
+    if (localRefusal) throw new Error(localRefusal)
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
+  }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }
@@ -368,8 +384,12 @@ export async function boardAsk(
   inputContext?: Context,
 ) {
   const c = context(inputContext)
-  if (boardMode(locality(input.audience), c.env) === 'local')
+  const audience = parseAudience(input.audience)
+  if (boardMode(locality(input.audience), c.env) === 'local') {
+    const localRefusal = localBoardAudienceRefusal(audience)
+    if (localRefusal) throw new Error(localRefusal)
     return localPostResult(askQuestion(input, c.env, c.clock, c.cwd))
+  }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('question', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }

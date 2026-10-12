@@ -42,6 +42,7 @@ export type HostedBoardMessage = {
   title: string | null
   body: string
   audience: string | null
+  audienceDescription?: string
   origin: HostedBoardOrigin
   senderTags: HostedBoardSenderTag[]
   createdAt: string
@@ -56,6 +57,7 @@ export type HostedBoardMessage = {
   revision: string
   scopeProjectIds: string[]
   recipientUserIds: string[]
+  sharedSpaceReach?: boolean
   claimId: string | null
   authorUserId: string
   authorSession: string | null
@@ -106,6 +108,7 @@ type HostedBoardOverviewBase = {
   kind: 'notice' | 'question'
   title: string | null
   audience: string | null
+  audienceDescription?: string
   origin: HostedBoardOrigin
   senderTags: HostedBoardSenderTag[]
   createdAt: string
@@ -167,6 +170,7 @@ export type HostedBoardCreateContent = {
   threadRootId: string | null
   scopeProjectIds: string[]
   recipientUserIds: string[]
+  sharedSpaceReach: boolean
   claimId: string | null
   senderTags: HostedBoardSenderTag[]
 }

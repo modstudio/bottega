@@ -21,6 +21,7 @@ const brokenDocBackfill = '20260924180716_dev_906_doc_latest_revision'
 const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
 const audienceSetBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
 const audienceVocabularyBackfill = '20261009210001_dev_1238_doc_audience_vocabulary_backfill'
+const boardSharedSpacesMigration = '20261012210147_dev_1217_board_shared_spaces'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -30,6 +31,9 @@ const publicAudienceProjectId = '01990000-0000-7000-8000-000000000015'
 const internalAudienceProjectId = '01990000-0000-7000-8000-000000000016'
 const publicAudienceDocId = '01990000-0000-7000-8000-000000000017'
 const internalAudienceDocId = '01990000-0000-7000-8000-000000000018'
+const boardBackfillRootId = '01990000-0000-7000-8000-000000000021'
+const boardBackfillReplyId = '01990000-0000-7000-8000-000000000022'
+const boardBackfillReplyAuthorId = '01990000-0000-7000-8000-000000000023'
 
 class CheckFailure extends Error {}
 
@@ -232,6 +236,41 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
   }
 }
 
+async function seedBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    INSERT INTO "user" (id, email, name, created_at) VALUES
+      ('${boardBackfillReplyAuthorId}', 'board-backfill-reply@example.test',
+       'Board backfill reply author', now());
+    ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO board_message
+      (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
+    VALUES
+      ('${boardBackfillRootId}', '${platformOperatorId}', 'notice', 'operator',
+       'Board backfill root', 'root', false, now() + interval '1 day', now());
+    INSERT INTO board_message
+      (id, author_user_id, kind, thread_root_id, body, ack_required, created_at)
+    VALUES
+      ('${boardBackfillReplyId}', '${boardBackfillReplyAuthorId}', 'reply',
+       '${boardBackfillRootId}', 'reply', false, now());
+    ALTER TABLE board_message FORCE ROW LEVEL SECURITY;
+  `)
+}
+
+async function proofBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
+  const result = await transaction.query<{ invalid: number }>(`
+    SELECT count(*)::int AS invalid
+    FROM board_message AS reply
+    LEFT JOIN board_message AS root ON root.id = reply.thread_root_id
+    WHERE reply.kind = 'reply'
+      AND reply.thread_root_author_user_id IS DISTINCT FROM root.author_user_id
+  `)
+  await transaction.exec('ALTER TABLE board_message FORCE ROW LEVEL SECURITY;')
+  if (result.rows[0]?.invalid !== 0) {
+    throw new CheckFailure('DEV-1217 board reply anchors do not match their root authors')
+  }
+}
+
 function sqlTag(transaction: Transaction): SQL {
   const tag = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const statement = parts.reduce(
@@ -259,6 +298,32 @@ async function proofManagedCanonProjects(transaction: Transaction): Promise<void
   }
 }
 
+async function applyAndProveMigration(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
+  if (migration.name === audienceVocabularyBackfill)
+    await seedAudienceVocabularyBackfill(transaction)
+  if (migration.name === boardSharedSpacesMigration)
+    await seedBoardThreadAuthorBackfill(transaction)
+  await applyMigration(transaction, migration)
+  if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
+    throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
+  }
+  if (
+    migration.name === repairedDocBackfill &&
+    (await proofLatestRevision(transaction)) !== proofRevisionId
+  ) {
+    throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
+  }
+  if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
+  if (migration.name === audienceVocabularyBackfill)
+    await proofAudienceVocabularyBackfill(transaction)
+  if (migration.name === boardSharedSpacesMigration)
+    await proofBoardThreadAuthorBackfill(transaction)
+}
+
 async function main(): Promise<void> {
   let database: PGlite | undefined
   let failure: unknown
@@ -283,27 +348,7 @@ async function main(): Promise<void> {
     }
     try {
       await database.transaction(async (transaction) => {
-        for (const migration of migrations) {
-          if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
-          if (migration.name === audienceVocabularyBackfill)
-            await seedAudienceVocabularyBackfill(transaction)
-          await applyMigration(transaction, migration)
-          if (
-            migration.name === brokenDocBackfill &&
-            (await proofLatestRevision(transaction)) !== null
-          ) {
-            throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
-          }
-          if (
-            migration.name === repairedDocBackfill &&
-            (await proofLatestRevision(transaction)) !== proofRevisionId
-          ) {
-            throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
-          }
-          if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
-          if (migration.name === audienceVocabularyBackfill)
-            await proofAudienceVocabularyBackfill(transaction)
-        }
+        for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
       })
     } catch (error) {

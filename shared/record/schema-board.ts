@@ -46,6 +46,10 @@ function writesEveryScopedProject(scopeProjectIds: AnyPgColumn) {
   )`
 }
 
+function sharesAnyAuthorSpace(authorUserId: AnyPgColumn) {
+  return sql`record_board_author_shares_space(${authorUserId})`
+}
+
 export const boardMessageRevision = pgSequence('board_message_revision')
 
 export const boardClaim = pgTable.withRLS(
@@ -164,6 +168,10 @@ export const boardMessage = pgTable.withRLS(
     claimId: uuid('claim_id').references(() => boardClaim.id),
     scopeProjectIds: uuid('scope_project_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
     recipientUserIds: uuid('recipient_user_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
+    sharedSpaceReach: boolean('shared_space_reach').notNull().default(false),
+    threadRootAuthorUserId: uuid('thread_root_author_user_id')
+      .notNull()
+      .references(() => user.id),
     revision: bigint({ mode: 'bigint' })
       .notNull()
       .default(sql`nextval('public.board_message_revision'::regclass)`),
@@ -172,6 +180,7 @@ export const boardMessage = pgTable.withRLS(
     const readsScope = readsEveryScopedProject(table.scopeProjectIds)
     const writesScope = writesEveryScopedProject(table.scopeProjectIds)
     const visible = sql`${table.authorUserId} = ${currentUser} OR
+      (${table.sharedSpaceReach} AND ${sharesAnyAuthorSpace(table.threadRootAuthorUserId)}) OR
       (cardinality(${table.scopeProjectIds}) > 0 AND ${readsScope}) OR
       (${currentUser} = ANY(${table.recipientUserIds}) AND ${readsScope})`
     const writesRow = sql`${table.authorUserId} = ${currentUser} AND ${writesScope}`
@@ -199,6 +208,13 @@ export const boardMessage = pgTable.withRLS(
           (${table.kind} <> 'reply' AND ${table.threadRootId} IS NULL
           AND ${table.audience} IS NOT NULL AND ${table.title} IS NOT NULL
           AND ${table.expiresAt} IS NOT NULL)`,
+      ),
+      check(
+        'board_message_shared_space_reach_check',
+        sql`(${table.kind} = 'reply' OR ${table.sharedSpaceReach} = (${table.audience} = 'spaces'))
+          AND (NOT ${table.sharedSpaceReach} OR
+            (cardinality(${table.scopeProjectIds}) = 0
+              AND cardinality(${table.recipientUserIds}) = 0))`,
       ),
       check(
         'board_message_acceptance_check',

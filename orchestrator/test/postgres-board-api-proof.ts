@@ -13,6 +13,7 @@ import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
+import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -257,6 +258,14 @@ export function registerBoardApiProofs(input: {
       storeB.close()
     }
   })
+
+  registerBoardSharedSpaceApiProof(
+    () => origin,
+    () => tokenD,
+    () => tokenC,
+    PROJECT,
+    (id) => post(tokenA, notice(id, 'spaces', caseSession('spaces-feed'))),
+  )
 
   test('one machine cache changes owners and exposes only the new user view', async () => {
     const session = caseSession('cache-user-switch')

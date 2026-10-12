@@ -21,6 +21,7 @@ const empty: HostedBoardCreateContent = {
   threadRootId: null,
   scopeProjectIds: [],
   recipientUserIds: [],
+  sharedSpaceReach: false,
   claimId: null,
   senderTags: [],
 }
@@ -44,14 +45,17 @@ test('scope is the one project for project, workers, and task audiences', () => 
   expect(hostedBoardScope(parseAudience('project:alpha'), project)).toEqual({
     scopeProjectIds: [project],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedBoardScope(parseAudience('workers:alpha'), project)).toEqual({
     scopeProjectIds: [project],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedBoardScope(parseAudience('task:DEV-1'), project)).toEqual({
     scopeProjectIds: [project],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedProjectNameForAudience(parseAudience('task:DEV-1'), 'alpha')).toBe('alpha')
   expect(hostedProjectNameForAudience(parseAudience('task:DEV-1'), undefined)).toBeNull()
@@ -61,21 +65,34 @@ test('operator, architects, session, and run audiences have empty scope and reci
   expect(hostedBoardScope(parseAudience('operator'), null)).toEqual({
     scopeProjectIds: [],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedBoardScope(parseAudience('architects'), null)).toEqual({
     scopeProjectIds: [],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedBoardScope(parseAudience('session:abc'), null)).toEqual({
     scopeProjectIds: [],
     recipientUserIds: [],
+    sharedSpaceReach: false,
   })
   expect(hostedBoardScope(parseAudience('run:01990000-0000-7000-8000-0000000000aa'), null)).toEqual(
     {
       scopeProjectIds: [],
       recipientUserIds: [],
+      sharedSpaceReach: false,
     },
   )
+})
+
+test('spaces is the explicit shared-space reach and round-trips without project scope', () => {
+  expect(parseAudience('spaces')).toEqual({ kind: 'spaces' })
+  expect(hostedBoardScope(parseAudience('spaces'), null)).toEqual({
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    sharedSpaceReach: true,
+  })
 })
 
 test('idempotent create content ignores author identity and treats equal timestamps as the same', () => {
@@ -86,6 +103,7 @@ test('idempotent create content ignores author identity and treats equal timesta
     }),
   ).toBeTrue()
   expect(sameHostedBoardCreateContent(empty, { ...empty, body: 'Other' })).toBeFalse()
+  expect(sameHostedBoardCreateContent(empty, { ...empty, sharedSpaceReach: true })).toBeFalse()
   expect(
     sameHostedBoardCreateContent(empty, {
       ...empty,

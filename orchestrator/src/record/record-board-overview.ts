@@ -56,6 +56,7 @@ export function hostedBoardOverviewEntry(
     kind: message.kind,
     title: message.title,
     audience: message.audience,
+    audienceDescription: message.audienceDescription,
     origin: message.origin,
     senderTags: message.senderTags,
     createdAt: message.createdAt,

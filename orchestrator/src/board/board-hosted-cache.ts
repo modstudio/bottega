@@ -405,6 +405,7 @@ function renderCached(
       origin: originText(message.origin),
       rootId: message.threadRootId ?? 'unknown',
       rootTitle: root?.title ?? '',
+      audience: root?.audienceDescription,
       body: message.body,
     })
   }
@@ -413,6 +414,7 @@ function renderCached(
       id: message.id,
       origin: originText(message.origin),
       title: message.title ?? '',
+      audience: message.audienceDescription,
       body: message.body,
       expiresAt: message.expiresAt ?? '',
       tags: tags.filter((tag) => tag.origin === 'sender').map((tag) => `${tag.kind}:${tag.value}`),
@@ -426,6 +428,7 @@ function renderCached(
     authorProject: message.origin.project,
     authorRunId: message.origin.runId,
     title: message.title ?? '',
+    audience: message.audienceDescription,
     body: message.body,
     expiresAt: message.expiresAt ?? '',
     ackRequired: message.ackRequired,

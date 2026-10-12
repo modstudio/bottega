@@ -174,8 +174,21 @@ test('task-only facts contribute only to task audiences and every audience is di
 
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
-    'unsupported board audience everyone; use operator, architects, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
+    'unsupported board audience everyone; use operator, architects, spaces, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
   )
+})
+
+test('spaces audience parses and reaches every live local session after hosted visibility', () => {
+  const facts = [
+    { reader: 'architect', role: 'architect' as const, project: 'one', machine: 'a', live: true },
+    { reader: 'worker', role: 'worker' as const, project: 'two', machine: 'b', live: true },
+    { reader: 'stale', role: 'architect' as const, project: 'one', machine: 'a', live: false },
+  ]
+  expect(parseAudience('spaces')).toEqual({ kind: 'spaces' })
+  expect(resolveAudience(parseAudience('spaces'), facts, 1_000, 200)).toEqual([
+    'architect',
+    'worker',
+  ])
 })
 
 test('run audience accepts a positive integer or a uuid and refuses other values', () => {

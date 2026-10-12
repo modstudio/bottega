@@ -27,6 +27,7 @@ type BoardOverviewBase = {
   kind: BoardKind
   title: string | null
   audience: string | null
+  audienceDescription?: string
   origin: BoardOrigin
   senderTags: { kind: 'task' | 'path' | 'topic'; value: string }[]
   createdAt: string
@@ -92,6 +93,7 @@ function statusEntry(
     kind: message.kind,
     title: message.title as string,
     audience: message.audience,
+    audienceDescription: message.audienceDescription,
     origin: message.origin as BoardOrigin,
     senderTags: message.senderTags as BoardOverviewBase['senderTags'],
     createdAt: message.createdAt as string,

@@ -41,11 +41,15 @@ export function hostedProjectNameForAudience(
 export function hostedBoardScope(
   audience: Audience,
   projectId: string | null,
-): { scopeProjectIds: string[]; recipientUserIds: string[] } {
+): { scopeProjectIds: string[]; recipientUserIds: string[]; sharedSpaceReach: boolean } {
   if (audience.kind === 'project' || audience.kind === 'workers' || audience.kind === 'task') {
-    return { scopeProjectIds: projectId ? [projectId] : [], recipientUserIds: [] }
+    return {
+      scopeProjectIds: projectId ? [projectId] : [],
+      recipientUserIds: [],
+      sharedSpaceReach: false,
+    }
   }
-  return { scopeProjectIds: [], recipientUserIds: [] }
+  return { scopeProjectIds: [], recipientUserIds: [], sharedSpaceReach: audience.kind === 'spaces' }
 }
 
 function isoOrNull(value: string | null): string | null {
@@ -97,6 +101,7 @@ export function sameHostedBoardCreateContent(
     stored.claimId === requested.claimId &&
     sameIds(stored.scopeProjectIds, requested.scopeProjectIds) &&
     sameIds(stored.recipientUserIds, requested.recipientUserIds) &&
+    stored.sharedSpaceReach === requested.sharedSpaceReach &&
     senderTagKey(stored.senderTags) === senderTagKey(requested.senderTags)
   )
 }

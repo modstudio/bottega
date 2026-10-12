@@ -20,6 +20,7 @@ import {
   boardStatus,
   boardThread,
   boardWithdraw,
+  localBoardAudienceRefusal,
 } from './board-operations.ts'
 import { pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice } from './board-service.ts'
@@ -107,6 +108,13 @@ test('an unadopted install keeps a post local and renders its id as a string', a
   ).toBe(1)
 })
 
+test('local board audience decision refuses shared-space reach with the hosted-board remedy', () => {
+  expect(localBoardAudienceRefusal({ kind: 'spaces' })).toMatch(
+    /requires the hosted board.*adopt.*--audience spaces/,
+  )
+  expect(localBoardAudienceRefusal({ kind: 'operator' })).toBeNull()
+})
+
 test('hosted post and reply expose unavailable posting counts as null', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const root = hostedMessage()
@@ -167,6 +175,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       title: 'Local question',
       body: 'Question body',
       audience: 'operator',
+      audienceDescription: 'operator',
       origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
@@ -182,6 +191,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
       claimId: null,
       authorUserId: null,
       authorSession: null,
@@ -282,6 +292,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       title: 'Local status',
       body: 'Status body',
       audience: 'operator',
+      audienceDescription: 'operator',
       origin: { kind: 'operator', session: null, harness: null, project: null, runId: null },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
@@ -297,6 +308,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       revision: null,
       scopeProjectIds: null,
       recipientUserIds: null,
+      sharedSpaceReach: null,
       claimId: null,
       authorUserId: null,
       authorSession: null,
