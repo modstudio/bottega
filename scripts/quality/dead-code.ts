@@ -132,6 +132,36 @@ export function deadCodeCacheKey(input: {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex')
 }
 
+export type DeadCodeCacheEntry = { name: string; modifiedMs: number }
+
+export function deadCodeCacheEntriesToRemove(
+  entries: DeadCodeCacheEntry[],
+  justWritten: string,
+  keep: number,
+) {
+  const newestModifiedMs = Math.max(
+    ...entries.filter((entry) => !entry.name.endsWith('.tmp')).map((entry) => entry.modifiedMs),
+    Number.NEGATIVE_INFINITY,
+  )
+  const temporaryEntries = entries
+    .filter((entry) => entry.name.endsWith('.tmp') && entry.modifiedMs < newestModifiedMs)
+    .map((entry) => entry.name)
+  const retained = new Set(
+    entries
+      .filter((entry) => !entry.name.endsWith('.tmp') && entry.name !== justWritten)
+      .sort((a, b) => b.modifiedMs - a.modifiedMs || a.name.localeCompare(b.name))
+      .slice(0, Math.max(0, keep - 1))
+      .map((entry) => entry.name),
+  )
+  retained.add(justWritten)
+  return [
+    ...temporaryEntries,
+    ...entries
+      .filter((entry) => !entry.name.endsWith('.tmp') && !retained.has(entry.name))
+      .map((entry) => entry.name),
+  ]
+}
+
 export function productionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   return !findings.some(
     (finding) => finding.issueType === 'dependencies' && finding.symbol === 'commander',

@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { join } from 'node:path'
 import { ratchetDecision } from '../../shared/ratchet'
-import { readCache } from '../check-dead-code'
 import {
   cacheConfigurationHash,
   type DeadCodeFinding,
+  deadCodeCacheEntriesToRemove,
   deadCodeCacheKey,
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
@@ -74,12 +73,31 @@ describe('dead-code ratchet', () => {
     expect(parseCachedFindings(JSON.stringify([existing]))).toEqual([existing])
   })
 
-  test('an unreadable cache entry is absent at the filesystem adapter', () => {
-    expect(
-      readCache(join(import.meta.dir, 'dead-code.test.ts'), () => {
-        throw new Error('unreadable')
-      }),
-    ).toEqual({ status: 'unreadable' })
+  test('cache retention removes only old entries beyond its limit', () => {
+    const entries = [
+      { name: 'new.json', modifiedMs: 3 },
+      { name: 'middle.json', modifiedMs: 2 },
+      { name: 'old.json', modifiedMs: 1 },
+    ]
+    expect(deadCodeCacheEntriesToRemove(entries.slice(0, 2), 'new.json', 2)).toEqual([])
+    expect(deadCodeCacheEntriesToRemove(entries, 'new.json', 2)).toEqual(['old.json'])
+  })
+
+  test('cache retention always preserves the entry just written', () => {
+    const entries = [
+      { name: 'newest.json', modifiedMs: 3 },
+      { name: 'middle.json', modifiedMs: 2 },
+      { name: 'written.json', modifiedMs: 1 },
+    ]
+    expect(deadCodeCacheEntriesToRemove(entries, 'written.json', 2)).toEqual(['middle.json'])
+  })
+
+  test('cache retention removes an old interrupted-write temporary file', () => {
+    const entries = [
+      { name: 'newest.json', modifiedMs: 3 },
+      { name: 'leftover.tmp', modifiedMs: 1 },
+    ]
+    expect(deadCodeCacheEntriesToRemove(entries, 'newest.json', 2)).toEqual(['leftover.tmp'])
   })
 
   test('an unused known-live dependency means production analyzed no sources', () => {

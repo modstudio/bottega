@@ -3,9 +3,11 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -20,6 +22,7 @@ import { openChangeView } from './change-view'
 import {
   cacheConfigurationHash,
   type DeadCodeFinding,
+  deadCodeCacheEntriesToRemove,
   deadCodeCacheKey,
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
@@ -39,6 +42,7 @@ const CACHE_DIRECTORY = join(
   'dead-code',
 )
 const KNIP_TIMEOUT_MS = 120_000
+const MAX_CACHE_ENTRIES = 10
 
 const PRODUCTION_ISSUES = [
   'files',
@@ -181,19 +185,32 @@ function baseConfiguration(commit: string) {
   }))
 }
 
-export function readCache(
-  path: string,
-  read = (cachePath: string) => readFileSync(cachePath, 'utf8'),
-) {
+function readCache(path: string) {
   if (!existsSync(path)) return { status: 'missing' as const }
   let text: string
   try {
-    text = read(path)
+    text = readFileSync(path, 'utf8')
   } catch {
     return { status: 'unreadable' as const }
   }
   const findings = parseCachedFindings(text)
   return findings ? { status: 'hit' as const, findings } : { status: 'invalid' as const }
+}
+
+function pruneCache(justWritten: string) {
+  const entries = readdirSync(CACHE_DIRECTORY, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => ({
+      name: entry.name,
+      modifiedMs: statSync(join(CACHE_DIRECTORY, entry.name)).mtimeMs,
+    }))
+  for (const name of deadCodeCacheEntriesToRemove(entries, justWritten, MAX_CACHE_ENTRIES)) {
+    try {
+      rmSync(join(CACHE_DIRECTORY, name))
+    } catch (error) {
+      console.warn(`dead code base cache could not remove ${name}: ${String(error)}`)
+    }
+  }
 }
 
 function writeCache(path: string, findings: DeadCodeFinding[]) {
@@ -267,6 +284,7 @@ function cachedBaseFindings(commit: string, knipVersion: string, configurationHa
   console.log(`dead code base cache ${cached.status}; rebuilding: ${basename(path)}`)
   const findings = buildBaseFindings(commit)
   writeCache(path, findings)
+  pruneCache(basename(path))
   return findings
 }
 
