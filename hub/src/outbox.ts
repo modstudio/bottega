@@ -201,7 +201,7 @@ function traceOutcome(
         ? outcome.reason
         : replacedId
           ? `replaced interval ${replacedId}`
-            : outcome.reason ?? null,
+          : (outcome.reason ?? null),
     generation: item.entry.generation,
     process_kind: processKind,
     created_at: at,
