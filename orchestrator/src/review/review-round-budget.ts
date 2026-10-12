@@ -30,7 +30,7 @@ export function reviewRoundBudgetDecision(input: {
   }
 }
 
-export type ReviewBudgetBranch = {
+type ReviewBudgetBranch = {
   branch: string
   tier: ReviewTierNumber
   rounds: number

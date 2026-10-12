@@ -17,6 +17,30 @@ type ReviewFlags = {
 }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
 
+function dispatchReadOnlyReviewCommand(
+  sub: string | undefined,
+  argv: string[],
+  flags: ReviewFlags,
+  presentation: ReviewPresentation,
+): boolean {
+  if (sub === 'read') {
+    recordArchitectReadCommand(argv, flags, presentation)
+    return true
+  }
+  if (sub !== 'budget') return false
+  if (argv.length !== 2) throw new Error('orch review budget [--since <ISO date>] [--json]')
+  const since = flags.flag('since')
+  if (since && !Number.isFinite(Date.parse(since))) throw new Error('--since must be an ISO date')
+  const database = new Database(DB_PATH, { readonly: true })
+  try {
+    const report = reviewBudgetReport(database, since)
+    presentation.log(flags.has('json') ? JSON.stringify(report) : renderReviewBudgetHuman(report))
+  } finally {
+    database.close()
+  }
+  return true
+}
+
 export async function dispatchReviewCommand(
   sub: string | undefined,
   argv: string[],
@@ -26,25 +50,7 @@ export async function dispatchReviewCommand(
   if (flags.has('dry-run') && sub !== 'restore-triage') {
     throw new Error('--dry-run is only valid for orch review restore-triage')
   }
-  if (sub === 'read') {
-    recordArchitectReadCommand(argv, flags, presentation)
-    return
-  }
-  if (sub === 'budget') {
-    if (argv.length !== 2) throw new Error('orch review budget [--since <ISO date>] [--json]')
-    const since = flags.flag('since')
-    if (since && !Number.isFinite(Date.parse(since))) {
-      throw new Error('--since must be an ISO date')
-    }
-    const database = new Database(DB_PATH, { readonly: true })
-    try {
-      const report = reviewBudgetReport(database, since)
-      presentation.log(flags.has('json') ? JSON.stringify(report) : renderReviewBudgetHuman(report))
-    } finally {
-      database.close()
-    }
-    return
-  }
+  if (dispatchReadOnlyReviewCommand(sub, argv, flags, presentation)) return
   if (sub === 'project-record') {
     if (argv.length !== 3) {
       throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
