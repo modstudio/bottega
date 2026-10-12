@@ -58,6 +58,17 @@ export type AutonomyResolution = {
   warnings?: string[]
   session?: AutonomySettings
 }
+type LegacyReleaseResolution = Omit<AutonomyResolution['shipTo'], 'value'> & {
+  value: unknown
+}
+export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo'> & {
+  shipTo?: AutonomyResolution['shipTo']
+  release?: LegacyReleaseResolution
+}
+export type CursorAutonomyResolution = StoredAutonomyResolution & {
+  cursor: { id: number; composeCommand: string }
+}
+export type WorkflowAutonomyResolution = AutonomyResolution | CursorAutonomyResolution
 export type RulingsResolution = {
   value: 'agent' | 'user'
   scope: string

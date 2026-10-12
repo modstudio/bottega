@@ -15,6 +15,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-format.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [
+    '../../../shared/ship-to.ts',
+    './autonomy.ts',
+    './workflow-cursor-format.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-arguments.ts', [
     'bun:sqlite',
     '../database/db.ts',
@@ -108,6 +113,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-transition.ts',
     './workflow-cursor-trail.ts',
     './workflow-cursor-arguments.ts',
+    './workflow-cursor-autonomy.ts',
     './workflow-cursor-adoption.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',

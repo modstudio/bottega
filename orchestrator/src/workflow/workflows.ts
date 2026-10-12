@@ -3,11 +3,11 @@ import { db, writableDb } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import {
   type AutonomyPreset,
-  type AutonomyResolution,
   autonomyPresets,
   builtInAutonomyScope,
   catalogueStepsForAutonomy,
   resolveAutonomy,
+  type WorkflowAutonomyResolution,
 } from './autonomy.ts'
 import {
   compatibleCatalogueStep,
@@ -500,7 +500,7 @@ export function composeWorkflow(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
-  autonomy?: AutonomyResolution,
+  autonomy?: WorkflowAutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
@@ -621,7 +621,7 @@ export function getWorkflowStep(
   args: Record<string, string> = {},
   d: Database = db(),
   selection: WorkflowSelection = {},
-  autonomy?: AutonomyResolution,
+  autonomy?: WorkflowAutonomyResolution,
 ) {
   const row = selectedWorkflow(slug, selection.version, d),
     definition = row.definition,
