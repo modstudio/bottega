@@ -3,7 +3,7 @@ import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
-import { adoptPendingHostedAcknowledgement } from './outbox.ts'
+import { adoptPendingHostedRow } from './outbox.ts'
 import { taskRecordIdFor } from './task-identity.ts'
 export function applyHostedNote(conn: Database, row: HostedNote) {
   persistInstallBinding(conn)
@@ -75,7 +75,7 @@ export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledg
         `SELECT id FROM hosted_outbox WHERE table_name=? AND row_id=?`,
       )
       .get('hub_note_acknowledgement', local.record_id)
-    adoptPendingHostedAcknowledgement(conn, local.record_id, row.id)
+    adoptPendingHostedRow(conn, 'hub_note_acknowledgement', local.record_id, row.id)
     conn
       .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
       .run(row.id, local.record_id)
