@@ -54,7 +54,7 @@ import {
   projectRecordDestination,
   recordSpaceMembershipRefusal,
 } from './record-project-destination.ts'
-import { pushReleaseRecord, type RecordPrincipal } from './record-release-sync.ts'
+import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
@@ -62,6 +62,7 @@ import type {
   BlockedOutboxRow,
   OutboxRow,
   Payload,
+  RecordPrincipal,
   RecordSyncOptions,
   RecordSyncResult,
 } from './record-sync-types.ts'

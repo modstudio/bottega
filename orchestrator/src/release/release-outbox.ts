@@ -5,7 +5,7 @@ import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts
 import { nowIso } from '../database/db.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
-export const RELEASE_RECORD_PAYLOAD_COLUMNS = [
+const RELEASE_RECORD_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
   'projectName',

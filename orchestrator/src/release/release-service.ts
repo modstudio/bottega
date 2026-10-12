@@ -2,12 +2,10 @@
 /** Gathers release facts, executes a registered deploy under the project lock, and owns its ledger. */
 
 import { readFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectLockState, withReleaseLock } from '../project/project-lock.ts'
@@ -29,7 +27,7 @@ import {
   rollbackReasonDecision,
   selectReleaseRung,
 } from './release-decision.ts'
-import { enqueueReleaseRecord } from './release-outbox.ts'
+import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 
 type CommandResult = { exitCode: number; output: string }
 
@@ -169,69 +167,6 @@ function releaseLiveCommit(command: string, cwd: string, purpose: string, rung: 
   return reading.commit
 }
 
-export function insertStarted(
-  input: {
-    project: string
-    rung: string
-    candidate: string
-    live: string | null
-    rollback: boolean
-    reason: string | null
-  },
-  suppliedDatabase?: ReturnType<typeof writableDb>,
-): number {
-  const d = suppliedDatabase ?? writableDb()
-  return writeTransaction(() => {
-    const row = d
-      .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO release_ledger
-       (record_id,project,rung,candidate_commit,live_commit_before,rollback,rollback_reason,actor,session_id,started_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-      )
-      .get(
-        newRecordId(),
-        input.project,
-        input.rung,
-        input.candidate,
-        input.live,
-        input.rollback ? 1 : 0,
-        input.reason,
-        userInfo().username,
-        sessionId(),
-        nowIso(),
-      )
-    if (!row) throw new Error('release ledger entry was not inserted; run orch migrate, then retry')
-    enqueueReleaseRecord(d, row.id)
-    return row.id
-  }, d)
-}
-
-export function finishEntry(
-  id: number,
-  result: CommandResult,
-  outputTail: string,
-  after: string | null,
-  matches: boolean | null,
-  warning: string | null,
-  suppliedDatabase?: ReturnType<typeof writableDb>,
-): void {
-  const d = suppliedDatabase ?? writableDb()
-  writeTransaction(() => {
-    d.query(
-      `UPDATE release_ledger SET finished_at=?,exit_code=?,output_tail=?,live_commit_after=?,live_matches_candidate=?,warning=? WHERE id=?`,
-    ).run(
-      nowIso(),
-      result.exitCode,
-      outputTail,
-      after,
-      matches === null ? null : matches ? 1 : 0,
-      warning,
-      id,
-    )
-    enqueueReleaseRecord(d, id)
-  }, d)
-}
-
 export function releaseProject(
   projectName: string,
   requestedRung: string | undefined,
@@ -279,7 +214,7 @@ export function releaseProject(
         rollbackReason,
       })
       if (!forward.ok) throw new Error(forward.message)
-      const id = insertStarted({
+      const id = startReleaseLedgerEntry(writableDb(), {
         project: projectName,
         rung: selected.name,
         candidate: checkout.head,
@@ -309,7 +244,7 @@ export function releaseProject(
         capturedReleaseText(deployed.output),
         GATE_OUTPUT_TAIL_BYTES,
       )
-      finishEntry(id, deployed, outputTail, after, matches, warning)
+      finishReleaseLedgerEntry(writableDb(), id, deployed, outputTail, after, matches, warning)
       return {
         id,
         project: projectName,

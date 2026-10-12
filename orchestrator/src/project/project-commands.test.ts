@@ -6,6 +6,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { writableDb } from '../database/db.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
@@ -188,6 +189,25 @@ test('rename writes the hosted project once then updates the local name', async 
   expect(readRecordInstallBinding().bound).toBe(true)
   expect(projectByName('once-src')).toBeNull()
   expect(projectByName('once-dst')?.path).toBe('/w/once-src')
+})
+
+test('rename updates release ledger rows carrying the old project name', async () => {
+  upsertProject({ name: 'released-src', path: '/w/released-src' })
+  writableDb()
+    .query(
+      `INSERT INTO release_ledger
+       (project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES ('released-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
+    )
+    .run()
+
+  expect(await runProject(['project', 'set', 'released-src'], { name: 'released-dst' })).toBe(
+    'updated released-dst',
+  )
+
+  expect(writableDb().query('SELECT project FROM release_ledger').get()).toEqual({
+    project: 'released-dst',
+  })
 })
 
 test('project push writes every registered project to the hosted record', async () => {

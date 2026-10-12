@@ -3,12 +3,12 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
+import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 import {
   backfillReleaseRecords,
   enqueueReleaseRecord,
-  RELEASE_RECORD_PAYLOAD_COLUMNS,
+  RELEASE_RECORD_PAYLOAD_CONTRACT,
 } from './release-outbox.ts'
-import { finishEntry, insertStarted } from './release-service.ts'
 
 function fixture(): Database {
   const database = new Database(':memory:')
@@ -17,17 +17,14 @@ function fixture(): Database {
 }
 
 function started(database: Database): number {
-  return insertStarted(
-    {
-      project: PLATFORM_SLUG,
-      rung: 'production',
-      candidate: 'candidate-sha',
-      live: 'before-sha',
-      rollback: false,
-      reason: null,
-    },
-    database,
-  )
+  return startReleaseLedgerEntry(database, {
+    project: PLATFORM_SLUG,
+    rung: 'production',
+    candidate: 'candidate-sha',
+    live: 'before-sha',
+    rollback: false,
+    reason: null,
+  })
 }
 
 test('release writes and evolves one whole-row pending payload without deploy output', () => {
@@ -40,7 +37,9 @@ test('release writes and evolves one whole-row pending payload without deploy ou
     )
     .get()!
   const startedPayload = JSON.parse(initial.payload) as Record<string, unknown>
-  expect(Object.keys(startedPayload).sort()).toEqual([...RELEASE_RECORD_PAYLOAD_COLUMNS].sort())
+  expect(Object.keys(startedPayload).sort()).toEqual(
+    [...RELEASE_RECORD_PAYLOAD_CONTRACT.columns].sort(),
+  )
   expect(startedPayload).toMatchObject({
     id: initial.record_id,
     projectName: PLATFORM_SLUG,
@@ -54,14 +53,14 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   expect(startedPayload).not.toHaveProperty('outputTail')
   expect(startedPayload).not.toHaveProperty('output_tail')
 
-  finishEntry(
+  finishReleaseLedgerEntry(
+    database,
     id,
     { exitCode: 0, output: 'deploy secret' },
     'local output',
     'candidate-sha',
     true,
     null,
-    database,
   )
   const rows = database
     .query<{ record_id: string; payload: string }, []>(
@@ -86,7 +85,15 @@ test('finishing after the started payload was sent appends the same record ident
   const first = database.query<{ record_id: string }, []>('SELECT record_id FROM outbox').get()!
   database.query("UPDATE outbox SET synced_at='2026-10-12T00:00:00.000Z'").run()
 
-  finishEntry(id, { exitCode: 1, output: '' }, 'failed', null, null, 'warning', database)
+  finishReleaseLedgerEntry(
+    database,
+    id,
+    { exitCode: 1, output: '' },
+    'failed',
+    null,
+    null,
+    'warning',
+  )
 
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
     count: 2,
@@ -111,7 +118,15 @@ test('release ledger and outbox mutations roll back together', () => {
   finishDatabase.exec(`CREATE TRIGGER fail_release_update BEFORE UPDATE OF payload ON outbox
     WHEN OLD.kind='release' BEGIN SELECT RAISE(ABORT, 'update failed'); END`)
   expect(() =>
-    finishEntry(id, { exitCode: 0, output: '' }, 'tail', 'after', true, null, finishDatabase),
+    finishReleaseLedgerEntry(
+      finishDatabase,
+      id,
+      { exitCode: 0, output: '' },
+      'tail',
+      'after',
+      true,
+      null,
+    ),
   ).toThrow('update failed')
   expect(
     finishDatabase

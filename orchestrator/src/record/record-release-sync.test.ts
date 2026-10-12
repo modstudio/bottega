@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { finishEntry, insertStarted } from '../release/release-service.ts'
+import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from '../release/release-ledger.ts'
 import { syncRecord } from './record-sync.ts'
 
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -36,17 +36,14 @@ test('release sender upserts the finished state by record id in the project spac
   source
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
-  const releaseId = insertStarted(
-    {
-      project: PLATFORM_SLUG,
-      rung: 'production',
-      candidate: 'candidate-sha',
-      live: 'before-sha',
-      rollback: false,
-      reason: null,
-    },
-    source,
-  )
+  const releaseId = startReleaseLedgerEntry(source, {
+    project: PLATFORM_SLUG,
+    rung: 'production',
+    candidate: 'candidate-sha',
+    live: 'before-sha',
+    rollback: false,
+    reason: null,
+  })
   const started = source
     .query<LocalOutboxRow, []>('SELECT record_id,payload,created_at FROM outbox')
     .get()!
@@ -67,14 +64,14 @@ test('release sender upserts the finished state by record id in the project spac
 
   expect(await syncRecord(options)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   source.query("UPDATE outbox SET synced_at='2026-10-12T00:05:00.000Z'").run()
-  finishEntry(
+  finishReleaseLedgerEntry(
+    source,
     releaseId,
     { exitCode: 0, output: '' },
     'local deploy output',
     'candidate-sha',
     true,
     null,
-    source,
   )
   const finished = source
     .query<LocalOutboxRow, []>(
@@ -90,6 +87,9 @@ test('release sender upserts the finished state by record id in the project spac
     statement.toLowerCase().includes('insert into "release"'),
   )
   expect(writes).toHaveLength(2)
+  for (const statement of writes) {
+    expect(statement).toMatch(/on conflict \("id"\) do update set/i)
+  }
   expect(remote.parameters.flat().filter((value) => value === started.record_id)).toHaveLength(2)
   expect(remote.parameters.flat()).toContain('candidate-sha')
   expect(remote.parameters.flat()).not.toContain('local deploy output')

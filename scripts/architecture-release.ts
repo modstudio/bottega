@@ -18,6 +18,16 @@ export const releaseModules = [
       'shared/record/schema.ts',
       'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/live-reading.ts',
+      'orchestrator/src/release/release-ledger.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/release/release-ledger.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:os',
+      'shared/record/schema.ts',
+      'orchestrator/src/database/db.ts',
       'orchestrator/src/release/release-outbox.ts',
     ],
   },
