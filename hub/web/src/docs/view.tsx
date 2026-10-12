@@ -54,6 +54,7 @@ export type DocsViewProps = {
   revisionId?: string
   onRevision?: (id: number) => void
   bodyView?: ReactNode
+  viewedRevision?: { title: string; body: string } | null
 }
 
 function DocsChrome({
@@ -283,6 +284,7 @@ export function DocsView({
   revisionId,
   onRevision = () => {},
   bodyView,
+  viewedRevision,
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -413,6 +415,7 @@ export function DocsView({
           headerAction={headerAction}
           error={error}
           bodyView={bodyView}
+          viewedRevision={viewedRevision}
         />
         {wide ? null : (
           <DocsFacts

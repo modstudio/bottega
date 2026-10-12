@@ -8,6 +8,7 @@ import { classes } from '@/ui/text/classes'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
+import { savedVersionAuthor } from './reading.tsx'
 import type { DocsDoc, DocsSource } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
@@ -99,7 +100,7 @@ function DocHistory({
               onClick={() => onRevision(revision.id)}
               className="block w-full border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
             >
-              {relativeTime(revision.at)} · {revision.author || 'System'}
+              {relativeTime(revision.at)} · {savedVersionAuthor(revision.author)}
             </button>
           ))}
         </div>

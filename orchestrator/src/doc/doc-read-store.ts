@@ -287,7 +287,15 @@ export function getDocForAudienceStore(
 ): Doc | null {
   const doc = getDocStore(scope, subject, slug, owner, database)
   if (!doc) return null
-  const refusal = docAudienceRefusal(`${scope}/${subject ?? '_'}/${slug}`, doc.audiences, audience)
+  return docForAudience(doc, audience, `${scope}/${subject ?? '_'}/${slug}`)
+}
+
+export function docForAudience<T extends { audiences: DocAudiences; body: string }>(
+  doc: T,
+  audience: DocAudience,
+  address: string,
+): T {
+  const refusal = docAudienceRefusal(address, doc.audiences, audience)
   if (refusal) throw new Error(refusal)
   return { ...doc, body: docBodyForAudience(doc.body, audience) }
 }

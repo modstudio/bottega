@@ -9,10 +9,10 @@ import {
   DOC_SCOPE_ALLOWS_OWNER,
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
+  type DocAudience,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
 import {
   type CanonLintInputCollector,
   collectCanonLintInput as productionCanonLintInput,
@@ -42,10 +42,16 @@ import {
   type Doc,
   type DocRevision,
   type DocRevisionMetadata,
+  docForAudience,
   getDocForAudienceStore,
   getDocStore,
 } from './doc-read-store.ts'
-import { docSubjects, validateHistoricDocAddress, validDocSubjects } from './doc-subjects.ts'
+import {
+  docSubjects,
+  validateDocSubject,
+  validateHistoricDocAddress,
+  validDocSubjects,
+} from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
@@ -192,29 +198,7 @@ export function validateDocAddressFilter(filter: { scope?: string; subject?: str
   if (filter.scope === undefined) return
   validScope(filter.scope)
   if (filter.subject === undefined) return
-  validateSubject(filter.scope, filter.subject)
-}
-
-function validateSubject(scope: DocScope, subject: string): void {
-  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
-  if (subjectKind === null) throw new Error(`${scope} docs take no subject; remove --subject`)
-  if (subjectKind === 'project' && !projectByName(subject)) {
-    throw new Error(
-      `unknown project subject "${subject}"; valid values: ${validDocSubjects(scope)}`,
-    )
-  }
-  if (
-    subjectKind === 'stack' &&
-    !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
-  ) {
-    throw new Error(`unknown stack subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
-  }
-  if (subjectKind === 'agent' && !AGENTS[subject]) {
-    throw new Error(`unknown agent subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
-  }
-  if (subjectKind === 'job' && !JOBS[subject]) {
-    throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
-  }
+  validateDocSubject(filter.scope, filter.subject)
 }
 
 function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
@@ -227,7 +211,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   }
   if (!subject)
     throw new Error(`${scope} docs require --subject; valid values: ${validDocSubjects(scope)}`)
-  validateSubject(scope, subject)
+  validateDocSubject(scope, subject)
 }
 
 export { docSubjects, listDocMetadata, listDocs }
@@ -872,8 +856,29 @@ export function listDocRevisions(
   return listStoredDocRevisions(scope, subject, slug, owner)
 }
 
-export function getDocRevision(id: number, owner: string | null = null): DocRevision | null {
-  return getStoredDocRevision(id, owner)
+export const getDocRevision = getStoredDocRevision
+
+export function readDocRevision(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  id: number,
+  owner: string | null = null,
+  audience?: DocAudience,
+): DocRevision {
+  const revision = getDocRevision(id, owner)
+  if (
+    !revision ||
+    revision.scope !== scope ||
+    revision.subject !== subject ||
+    revision.slug !== slug
+  )
+    throw new Error(
+      `revision ${id} does not belong to ${scope}/${subject ?? '_'}/${slug}; run orch doc history ${scope} ${subject ?? '-'} ${slug}`,
+    )
+  return audience
+    ? docForAudience(revision, audience, `${scope}/${subject ?? '_'}/${slug} revision ${id}`)
+    : revision
 }
 
 export async function restoreDoc(

@@ -1,6 +1,6 @@
 import { structuredPatch } from 'diff'
 
-export type RevisionComparison = { kind: 'current' } | { kind: 'revision'; id: number }
+type RevisionComparison = { kind: 'current' } | { kind: 'revision'; id: number }
 
 /** The body that replaced a stored revision, given revision ids newest first. */
 export function revisionComparison(
@@ -13,14 +13,14 @@ export function revisionComparison(
   return newerId === undefined ? { kind: 'current' } : { kind: 'revision', id: newerId }
 }
 
-export type ShapedDiffLine = {
+type ShapedDiffLine = {
   kind: 'added' | 'removed' | 'context'
   mark: '+' | '-' | ' '
   number: number
   text: string
 }
 
-export type ShapedDiff = { identical: boolean; hunks: ShapedDiffLine[][] }
+type ShapedDiff = { identical: boolean; hunks: ShapedDiffLine[][] }
 
 /** Shape jsdiff's line hunks for the reader, retaining its context and line numbering. */
 export function shapeRevisionDiff(version: string, replacement: string): ShapedDiff {

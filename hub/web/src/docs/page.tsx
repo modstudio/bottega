@@ -192,6 +192,7 @@ export function DocsPage() {
             />
           ) : undefined
         }
+        viewedRevision={revision.revision}
         createAction={
           source === 'local' ? (
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>

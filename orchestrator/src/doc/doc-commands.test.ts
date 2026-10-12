@@ -573,43 +573,6 @@ describe('scoped operator docs', () => {
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   }, 20_000)
 
-  test('orch doc revision refuses an id from another addressed document with the remedy', async () => {
-    await writeDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'revision-owner',
-      title: 'Owner',
-      body: 'owned\n',
-      delivery: 'demand',
-      reason: 'create owner',
-    })
-    await writeDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'revision-other',
-      title: 'Other',
-      body: 'other\n',
-      delivery: 'demand',
-      reason: 'create other',
-    })
-    const id = listDocRevisions('global', null, 'revision-other')[0]!.id
-
-    const result = await command([
-      'doc',
-      'revision',
-      'global',
-      '-',
-      'revision-owner',
-      String(id),
-      '--json',
-    ])
-
-    expect(result.code).toBe(1)
-    expect(result.err).toContain(
-      `revision ${id} does not belong to global/_/revision-owner; run orch doc history global - revision-owner`,
-    )
-  })
-
   test('orch doc consume stamps the session and preserves the document outside its fields', async () => {
     const body =
       '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'

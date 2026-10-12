@@ -4,7 +4,7 @@ import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'rea
 import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
-import { paneTitle, readingBody } from './body.ts'
+import { readingBody, viewedPaneTitle } from './body.ts'
 import type { DocsLocation } from './location.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
@@ -12,6 +12,11 @@ import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
 const LONG_TITLE = 40
+
+export function savedVersionAuthor(author: string): string {
+  const label = author.trim()
+  return !label || label === 'unknown' ? 'System' : label
+}
 
 /** Whether source paths belong in this reading view. */
 export function showSourceFiles(
@@ -229,6 +234,7 @@ export function DocsReading({
   signedIn,
   audience,
   bodyView,
+  viewedRevision,
 }: {
   doc: DocsDoc | null
   wide: boolean
@@ -236,6 +242,7 @@ export function DocsReading({
   signedIn: boolean
   audience: DocsAudience | null
   bodyView?: ReactNode
+  viewedRevision?: { title: string; body: string } | null
   /** A document is chosen and on its way, so the pane stays quiet rather than saying there is none. */
   pending: boolean
   crumbs: readonly BreadcrumbPart[]
@@ -246,7 +253,7 @@ export function DocsReading({
   headerAction?: ReactNode
   error?: string | null
 }) {
-  const shown = doc ? paneTitle(doc.title, doc.body) : { title: '', lede: null }
+  const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
   const heading = useRef<HTMLHeadingElement>(null)
   const titleGone = useScrolledPast(heading, doc?.id)
   return (

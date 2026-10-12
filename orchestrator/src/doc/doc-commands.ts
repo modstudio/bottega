@@ -28,13 +28,13 @@ import {
   exportDocs,
   getDoc,
   getDocForAudience,
-  getDocRevision,
   importDocs,
   lintStoredDoc,
   listDocMetadata,
   listDocRevisions,
   listDocs,
   listOpenResumes,
+  readDocRevision,
   removeDoc,
   restoreDoc,
   setDoc,
@@ -493,6 +493,49 @@ async function handleStatusDocCommand(
   return true
 }
 
+function handledRevisionDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  owner: string | null,
+): boolean {
+  if (sub !== 'revision') return false
+  const scope = argv[2]
+  const rawSubject = argv[3]
+  const slug = argv[4]
+  const revisionId = Number(argv[5])
+  if (!scope || rawSubject === undefined || !slug || !revisionId)
+    throw new Error('orch doc revision <scope> <subject|-> <slug> <rev> --json')
+  const subject = rawSubject === '-' ? null : rawSubject
+  if (flags.has('user') && (scope !== 'canon' || subject !== null)) {
+    throw new Error('--user history address must be canon -')
+  }
+  const revision = readDocRevision(
+    scope,
+    subject,
+    slug,
+    revisionId,
+    owner,
+    docReadAudience(flags.flag('audience')),
+  )
+  presentation.log(flags.has('json') ? JSON.stringify(revision) : revision.body)
+  return true
+}
+
+function handledReadOrRevisionDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+): boolean {
+  return (
+    handledReadDocCommand(sub, argv, flags, presentation, address) ||
+    handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
+  )
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -506,7 +549,8 @@ export async function docCommand(
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (handledReadDocCommand(sub, argv, flags, presentation, { scope, subject, owner })) return
+  if (handledReadOrRevisionDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
+    return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
     return
   if (sub === 'consume') {
@@ -583,13 +627,13 @@ export async function docCommand(
     presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
     return
   }
-  if (sub === 'history' || sub === 'revision' || sub === 'diff' || sub === 'restore') {
+  if (sub === 'history' || sub === 'diff' || sub === 'restore') {
     const addressScope = argv[2]
     const rawAddressSubject = argv[3]
     const slug = argv[4]
     if (!addressScope || rawAddressSubject === undefined || !slug) {
       throw new Error(
-        `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'revision' || sub === 'restore' ? ' <rev>' : ''}${sub === 'restore' ? ' --reason TEXT' : ''}`,
+        `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
       )
     }
     const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
@@ -605,23 +649,6 @@ export async function docCommand(
             `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,
           )
         }
-      return
-    }
-    if (sub === 'revision') {
-      const revisionId = Number(argv[5])
-      if (!revisionId) throw new Error('orch doc revision <scope> <subject|-> <slug> <rev> --json')
-      const revision = getDocRevision(revisionId, owner)
-      if (
-        !revision ||
-        revision.scope !== addressScope ||
-        revision.subject !== addressSubject ||
-        revision.slug !== slug
-      ) {
-        throw new Error(
-          `revision ${revisionId} does not belong to ${addressScope}/${addressSubject ?? '_'}/${slug}; run orch doc history ${addressScope} ${addressSubject ?? '-'} ${slug}`,
-        )
-      }
-      presentation.log(has('json') ? JSON.stringify(revision) : revision.body)
       return
     }
     if (sub === 'diff') {

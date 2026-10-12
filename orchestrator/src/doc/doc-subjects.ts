@@ -37,6 +37,31 @@ export function validDocSubjects(scope: DocScope): string {
   return values.join(', ') || '(none)'
 }
 
+export function validateDocSubject(scope: DocScope, subject: string): void {
+  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
+  if (subjectKind === null) throw new Error(`${scope} docs take no subject; remove --subject`)
+  if (
+    subjectKind === 'project' &&
+    !db().query('SELECT 1 FROM project WHERE name=? AND retired_at IS NULL').get(subject)
+  ) {
+    throw new Error(
+      `unknown project subject "${subject}"; valid values: ${validDocSubjects(scope)}`,
+    )
+  }
+  if (
+    subjectKind === 'stack' &&
+    !db().query('SELECT 1 FROM project WHERE stack=? AND retired_at IS NULL LIMIT 1').get(subject)
+  ) {
+    throw new Error(`unknown stack subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
+  }
+  if (subjectKind === 'agent' && !AGENTS[subject]) {
+    throw new Error(`unknown agent subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
+  }
+  if (subjectKind === 'job' && !JOBS[subject]) {
+    throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
+  }
+}
+
 export function validateHistoricDocAddress(scope: string, slug: string): asserts scope is DocScope {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)

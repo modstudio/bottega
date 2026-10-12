@@ -19,6 +19,14 @@ export function paneTitle(title: string, body: string): { title: string; lede: s
   return { title: heading, lede: title }
 }
 
+export function viewedPaneTitle(
+  current: { title: string; body: string },
+  revision: { title: string; body: string } | null,
+): { title: string; lede: string | null } {
+  const shown = revision ?? current
+  return paneTitle(shown.title, shown.body)
+}
+
 export function readingBody(body: string): string {
   const lines = body.split('\n')
   let index = 0

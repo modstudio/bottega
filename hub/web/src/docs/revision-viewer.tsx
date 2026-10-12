@@ -7,10 +7,27 @@ import { Callout } from '@/ui/callout/callout'
 import { Segmented } from '@/ui/segmented/segmented'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { readingBody } from './body.ts'
+import { savedVersionAuthor } from './reading.tsx'
 import { revisionComparison, shapeRevisionDiff } from './revision-diff.ts'
 import type { DocsAudience, DocsDoc } from './types.ts'
 
 export type RevisionMode = 'diff' | 'version'
+
+export function revisionViewError(input: {
+  param: string | undefined
+  id: number | null
+  historyIds: readonly number[] | undefined
+  readFailed: boolean
+}): string | null {
+  if (!input.param) return null
+  if (
+    input.id === null ||
+    input.readFailed ||
+    (input.historyIds !== undefined && !input.historyIds.includes(input.id))
+  )
+    return `Revision ${input.param} could not be read.`
+  return null
+}
 
 function savedAt(value: string): string {
   const date = new Date(value)
@@ -55,15 +72,12 @@ export function useRevisionView(
     }),
     enabled: Boolean(doc && revisionParam && comparison?.kind === 'revision'),
   })
-  const error = revisionParam
-    ? revisionId === null
-      ? `Revision ${revisionParam} could not be read.`
-      : history.error || selected.error || (comparison?.kind === 'revision' && newer.error)
-        ? `Revision ${revisionParam} could not be read.`
-        : history.isSuccess && comparison === null
-          ? `Revision ${revisionParam} could not be read.`
-          : null
-    : null
+  const error = revisionViewError({
+    param: revisionParam,
+    id: revisionId,
+    historyIds: history.data?.map(({ id }) => id),
+    readFailed: Boolean(selected.error || history.error || newer.error),
+  })
   return {
     revision: selected.data ?? null,
     replacementBody:
@@ -72,7 +86,6 @@ export function useRevisionView(
         : comparison?.kind === 'revision'
           ? (newer.data?.body ?? null)
           : null,
-    pending: Boolean(revisionParam) && !error && (!selected.data || !history.data),
     error,
   }
 }
@@ -94,8 +107,7 @@ export function RevisionViewer({
     () => (replacementBody === null ? null : shapeRevisionDiff(revision.body, replacementBody)),
     [revision.body, replacementBody],
   )
-  const author =
-    revision.author.trim() && revision.author !== 'unknown' ? revision.author : 'System'
+  const author = savedVersionAuthor(revision.author)
   return (
     <div className="mt-6">
       <Callout
