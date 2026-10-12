@@ -2,7 +2,7 @@
 /** Owns the project settings shape. Must not know stores, SQL, or HTTP. */
 
 import type { TrackerSettings } from '../../../shared/trackers.ts'
-import type { EnforcementPoint } from '../enforcement/enforcement-catalogue.ts'
+import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
 import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
@@ -16,16 +16,6 @@ import type {
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
-
-export type MechanicalCheckOverride = {
-  tool?: string
-  points?: EnforcementPoint[]
-  blocking?: boolean
-  limit?: number
-  note?: string
-}
-
-export type MechanicalCheckEntry = MechanicalCheckOverride | { optOut: { reason: string } }
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {

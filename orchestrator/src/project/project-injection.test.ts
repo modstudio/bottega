@@ -129,62 +129,17 @@ describe('project workflow injection', () => {
     expect(validateProjectSettings({ testSubstance: { phpPolicyRules: [] } })).toEqual([])
   })
 
-  test('refuses malformed mechanical-check declarations with register remedies', () => {
+  test('applies mechanical-check declaration refusals with the register remedy', () => {
     const problems = validateProjectSettings({
       mechanicalChecks: {
         mystery: { tool: 'probe' },
-        naming: { optOut: { reason: ' ' } },
-        spelling: { optOut: { reason: 'not used' }, tool: 'probe' },
-        formatting: {},
-        'import-boundaries': { points: ['write'] },
-        'type-errors': { points: ['commit'] },
-        'file-placement': { limit: 10 },
-        secrets: { points: ['gate', 'gate'] },
       },
     } as unknown as Project['settings'])
 
-    expect(problems).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('mechanicalChecks.mystery: unknown category'),
-        expect.stringContaining(
-          'mechanicalChecks.naming.optOut: optOut must contain only a non-empty reason',
-        ),
-        expect.stringContaining(
-          'mechanicalChecks.spelling: optOut cannot be mixed with override fields: tool',
-        ),
-        expect.stringContaining('mechanicalChecks.formatting: empty override'),
-        expect.stringContaining(
-          'mechanicalChecks.import-boundaries.points: project-scope points cannot include write or commit',
-        ),
-        expect.stringContaining(
-          'mechanicalChecks.type-errors.points: project-scope points cannot include write or commit',
-        ),
-        expect.stringContaining(
-          'mechanicalChecks.file-placement.limit: file-placement has no limit',
-        ),
-        expect.stringContaining(
-          'mechanicalChecks.secrets.points: points must not contain duplicates',
-        ),
-      ]),
-    )
+    expect(problems).toEqual([
+      expect.stringContaining('mechanicalChecks.mystery: unknown category'),
+    ])
     expect(problems.every((problem) => problem.includes('orch project set <project>'))).toBe(true)
-  })
-
-  test('accepts every mechanical-check override field and commit-message commit point', () => {
-    expect(
-      validateProjectSettings({
-        mechanicalChecks: {
-          'function-length': {
-            tool: 'custom lint',
-            points: ['write', 'commit'],
-            blocking: false,
-            limit: 60,
-            note: 'generated files excluded',
-          },
-          'commit-message': { points: ['commit'] },
-        },
-      }),
-    ).toEqual([])
   })
 
   test('validates a rung live command as a non-empty string', () => {

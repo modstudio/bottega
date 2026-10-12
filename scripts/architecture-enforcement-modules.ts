@@ -7,8 +7,16 @@ export const enforcementModules = [
     allowed: ['../../../shared/brand.ts'],
   },
   {
+    file: 'orchestrator/src/enforcement/mechanical-check-declaration.ts',
+    allowed: ['./enforcement-catalogue.ts'],
+  },
+  {
     file: 'orchestrator/src/enforcement/enforcement-resolution.ts',
-    allowed: ['../project/project-settings.ts', './enforcement-catalogue.ts'],
+    allowed: [
+      '../project/project-settings.ts',
+      './enforcement-catalogue.ts',
+      './mechanical-check-declaration.ts',
+    ],
   },
   {
     file: 'orchestrator/src/enforcement/enforcement-commands.ts',

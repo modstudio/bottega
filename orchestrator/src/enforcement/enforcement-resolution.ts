@@ -1,11 +1,7 @@
 // concern: enforcement-resolution
 /** Resolves declarations and retained legacy settings against the enforcement catalogue. */
 
-import type {
-  MechanicalCheckEntry,
-  MechanicalCheckOverride,
-  ProjectSettings,
-} from '../project/project-settings.ts'
+import type { ProjectSettings } from '../project/project-settings.ts'
 import {
   type EnforcementPoint,
   type EnforcementScope,
@@ -15,6 +11,10 @@ import {
   type MechanicalCheckDefault,
   toolchainForStack,
 } from './enforcement-catalogue.ts'
+import type {
+  MechanicalCheckEntry,
+  MechanicalCheckOverride,
+} from './mechanical-check-declaration.ts'
 
 type EnforcementSource = 'default' | 'stack' | 'own' | 'opted-out' | 'uncovered' | 'not-applicable'
 
@@ -31,7 +31,7 @@ export type ResolvedMechanicalCheck = {
   reason: string | null
 }
 
-type EffectiveOverride = MechanicalCheckOverride & { own?: true }
+type EffectiveOverride = MechanicalCheckOverride
 type EnforcementProjectSettings = Pick<
   ProjectSettings,
   'mechanicalChecks' | 'checks' | 'testSubstance'
@@ -53,9 +53,9 @@ function legacyOverride(
   const commentTaskKeys = checks?.commentTaskKeys === true
   const commentHistory = Boolean(checks?.commentHistory)
   if (category === 'spelling' && checks?.spelling) {
-    return { tool: 'orch check spelling', own: true }
+    return { tool: 'orch check spelling' }
   }
-  if (category === 'attribution-markers' && checks?.attribution) return { own: true }
+  if (category === 'attribution-markers' && checks?.attribution) return {}
   if (category === 'comment-hygiene' && (commentTaskKeys || commentHistory)) {
     const enabled = [
       commentTaskKeys ? 'commentTaskKeys' : null,
@@ -64,7 +64,6 @@ function legacyOverride(
     return {
       tool: 'orch check comments',
       note: `settings.checks: ${enabled.join(', ')}`,
-      own: true,
     }
   }
   return undefined
@@ -82,7 +81,6 @@ function effectiveEntry(
     ...legacy,
     ...declared,
     note: joinedNote(legacy?.note, declared.note),
-    own: true,
   }
 }
 
