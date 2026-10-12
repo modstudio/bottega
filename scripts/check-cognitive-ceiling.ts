@@ -226,7 +226,7 @@ function violationLine(finding: ReturnType<typeof cognitiveComplexityDecision>[n
   )
 }
 
-export async function checkCognitiveCeiling(base: string, reporter: Reporter = console) {
+async function checkCognitiveCeiling(base: string, reporter: Reporter = console) {
   const eslint = new ESLint({ cwd: ROOT })
   const wholeTree = await wholeTreeMeasurements(eslint)
   reporter.log(`cognitive complexity: ${wholeTree.remaining} functions over ${CEILING} remain`)
