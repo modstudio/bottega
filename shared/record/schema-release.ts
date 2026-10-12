@@ -3,6 +3,7 @@
 import {
   bigint,
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -41,6 +42,12 @@ export const release = pgTable.withRLS(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    index('release_project_rung_started').on(
+      table.projectId,
+      table.rung,
+      table.startedAt.desc(),
+      table.id.desc(),
+    ),
     unique('release_machine_local_unique').on(table.machineId, table.localId),
     ...tenantPolicies('release', table.spaceId),
   ],
