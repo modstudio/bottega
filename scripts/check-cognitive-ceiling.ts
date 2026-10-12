@@ -131,7 +131,6 @@ export function cognitiveComplexityDecision({
   ]
 }
 
-
 function lintFailed(result: LintResult) {
   return Boolean(result.fatalErrorCount) || result.messages.some((message) => message.fatal)
 }
