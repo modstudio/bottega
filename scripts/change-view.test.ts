@@ -1,5 +1,31 @@
 import { describe, expect, test } from 'bun:test'
-import { changeFacts, parseAddedLines, parseNameStatus, untrackedChanges } from './change-view'
+import {
+  changeFacts,
+  changeViewPlan,
+  parseAddedLines,
+  parseNameStatus,
+  untrackedChanges,
+} from './change-view'
+
+describe('changeViewPlan', () => {
+  test('worktree mode compares the base with the files on disk and lists untracked files', () => {
+    const plan = changeViewPlan('abc123', 'worktree')
+    expect(plan.nameStatus.at(-1)).toBe('abc123')
+    expect(plan.patch.at(-1)).toBe('abc123')
+    expect([...plan.nameStatus, ...plan.patch]).not.toContain('HEAD')
+    expect([...plan.nameStatus, ...plan.patch]).not.toContain('--cached')
+    expect(plan.untracked).toEqual(['ls-files', '--others', '--exclude-standard', '-z'])
+    expect(plan.head).toBe('working-tree')
+  })
+
+  test('staged mode compares the base with the index and reads no untracked file', () => {
+    const plan = changeViewPlan('HEAD', 'staged')
+    expect(plan.nameStatus.slice(-2)).toEqual(['--cached', 'HEAD'])
+    expect(plan.patch.slice(-2)).toEqual(['--cached', 'HEAD'])
+    expect(plan.untracked).toBeNull()
+    expect(plan.head).toBe('index')
+  })
+})
 
 describe('parseNameStatus', () => {
   test('parses zero-delimited statuses without changing unusual paths', () => {

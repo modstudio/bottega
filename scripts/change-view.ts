@@ -174,9 +174,20 @@ function git(cwd: string, args: string[]) {
   return result.stdout.toString()
 }
 
-function diffArgs(base: string, mode: ChangeViewMode, format: string[]): string[] {
+/**
+ * What each mode compares and where its head content comes from. `worktree` names the
+ * base alone, so git compares it with the files on disk; naming `HEAD` as well would
+ * hide every uncommitted change from the checks that read this view.
+ */
+export function changeViewPlan(base: string, mode: ChangeViewMode) {
   const comparison = mode === 'staged' ? ['--cached', base] : [base]
-  return ['diff', ...format, '--diff-filter=ACMRD', '-M', ...comparison]
+  const diff = (format: string[]) => ['diff', ...format, '--diff-filter=ACMRD', '-M', ...comparison]
+  return {
+    nameStatus: diff(['--name-status', '-z']),
+    patch: diff(['--unified=0']),
+    untracked: mode === 'worktree' ? ['ls-files', '--others', '--exclude-standard', '-z'] : null,
+    head: mode === 'worktree' ? ('working-tree' as const) : ('index' as const),
+  }
 }
 
 function committedContent(cwd: string, commit: string, path: string): ContentResult {
@@ -217,26 +228,26 @@ export function openChangeView({
   base: string
   mode: ChangeViewMode
 }) {
-  const trackedEntries = parseNameStatus(git(cwd, diffArgs(base, mode, ['--name-status', '-z'])))
-  const trackedAddedLines = parseAddedLines(git(cwd, diffArgs(base, mode, ['--unified=0'])))
-  const untracked =
-    mode === 'worktree'
-      ? (() => {
-          const paths = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
-          const lineCounts = new Map<string, number>()
-          for (const path of paths.split('\0').filter(Boolean)) {
-            const content = workingTreeContent(cwd, path)
-            lineCounts.set(path, content.status === 'present' ? textLineCount(content.text) : 0)
-          }
-          return untrackedChanges(paths, lineCounts)
-        })()
-      : { entries: [], addedLines: new Map<string, LineRange[]>() }
+  const plan = changeViewPlan(base, mode)
+  const trackedEntries = parseNameStatus(git(cwd, plan.nameStatus))
+  const trackedAddedLines = parseAddedLines(git(cwd, plan.patch))
+  const untracked = plan.untracked
+    ? (() => {
+        const paths = git(cwd, plan.untracked)
+        const lineCounts = new Map<string, number>()
+        for (const path of paths.split('\0').filter(Boolean)) {
+          const content = workingTreeContent(cwd, path)
+          lineCounts.set(path, content.status === 'present' ? textLineCount(content.text) : 0)
+        }
+        return untrackedChanges(paths, lineCounts)
+      })()
+    : { entries: [], addedLines: new Map<string, LineRange[]>() }
   const entries = [...trackedEntries, ...untracked.entries]
   const facts = changeFacts(entries, new Map([...trackedAddedLines, ...untracked.addedLines]))
 
   const baseContent = (path: string) => committedContent(cwd, base, facts.renames.get(path) ?? path)
   const headContent = (path: string) =>
-    mode === 'worktree' ? workingTreeContent(cwd, path) : indexedContent(cwd, path)
+    plan.head === 'working-tree' ? workingTreeContent(cwd, path) : indexedContent(cwd, path)
 
   return {
     entries,
