@@ -169,6 +169,9 @@ export const boardMessage = pgTable.withRLS(
     scopeProjectIds: uuid('scope_project_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
     recipientUserIds: uuid('recipient_user_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
     sharedSpaceReach: boolean('shared_space_reach').notNull().default(false),
+    threadRootAuthorUserId: uuid('thread_root_author_user_id')
+      .notNull()
+      .references(() => user.id),
     revision: bigint({ mode: 'bigint' })
       .notNull()
       .default(sql`nextval('public.board_message_revision'::regclass)`),
@@ -177,7 +180,7 @@ export const boardMessage = pgTable.withRLS(
     const readsScope = readsEveryScopedProject(table.scopeProjectIds)
     const writesScope = writesEveryScopedProject(table.scopeProjectIds)
     const visible = sql`${table.authorUserId} = ${currentUser} OR
-      (${table.sharedSpaceReach} AND ${sharesAnyAuthorSpace(table.authorUserId)}) OR
+      (${table.sharedSpaceReach} AND ${sharesAnyAuthorSpace(table.threadRootAuthorUserId)}) OR
       (cardinality(${table.scopeProjectIds}) > 0 AND ${readsScope}) OR
       (${currentUser} = ANY(${table.recipientUserIds}) AND ${readsScope})`
     const writesRow = sql`${table.authorUserId} = ${currentUser} AND ${writesScope}`

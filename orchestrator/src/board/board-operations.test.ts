@@ -20,6 +20,7 @@ import {
   boardStatus,
   boardThread,
   boardWithdraw,
+  localBoardAudienceRefusal,
 } from './board-operations.ts'
 import { pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice } from './board-service.ts'
@@ -107,13 +108,11 @@ test('an unadopted install keeps a post local and renders its id as a string', a
   ).toBe(1)
 })
 
-test('shared-space reach refuses a machine-local post with the hosted-board remedy', async () => {
-  await expect(
-    boardPost(
-      { audience: 'spaces', title: 'Shared', body: 'body' },
-      { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL } },
-    ),
-  ).rejects.toThrow(/requires the hosted board.*adopt.*--audience spaces/)
+test('local board audience decision refuses shared-space reach with the hosted-board remedy', () => {
+  expect(localBoardAudienceRefusal({ kind: 'spaces' })).toMatch(
+    /requires the hosted board.*adopt.*--audience spaces/,
+  )
+  expect(localBoardAudienceRefusal({ kind: 'operator' })).toBeNull()
 })
 
 test('hosted post and reply expose unavailable posting counts as null', async () => {

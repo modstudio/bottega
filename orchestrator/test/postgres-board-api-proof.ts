@@ -263,6 +263,7 @@ export function registerBoardApiProofs(input: {
     input.actorUrl,
     () => origin,
     () => tokenD,
+    PROJECT,
     (id) => post(tokenA, notice(id, 'spaces', caseSession('spaces-feed'))),
   )
 

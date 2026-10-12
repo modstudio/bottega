@@ -17,8 +17,10 @@ const IDS = {
   userC: '02990000-0000-7000-8000-000000000103',
   userD: '02990000-0000-7000-8000-000000000104',
   userE: '02990000-0000-7000-8000-000000000105',
+  userF: '02990000-0000-7000-8000-000000000106',
   spaceA: '02990000-0000-7000-8000-000000000111',
   spaceB: '02990000-0000-7000-8000-000000000112',
+  spaceC: '02990000-0000-7000-8000-000000000113',
   projectA: '02990000-0000-7000-8000-000000000121',
   projectB: '02990000-0000-7000-8000-000000000122',
   projectA2: '02990000-0000-7000-8000-000000000123',
@@ -27,6 +29,8 @@ const IDS = {
   membershipB: '02990000-0000-7000-8000-000000000133',
   membershipC: '02990000-0000-7000-8000-000000000134',
   membershipD: '02990000-0000-7000-8000-000000000135',
+  membershipB2: '02990000-0000-7000-8000-000000000136',
+  membershipE: '02990000-0000-7000-8000-000000000137',
   authorOnly: '02990000-0000-7000-8000-000000000001',
   scopedA: '02990000-0000-7000-8000-000000000002',
   scopedBoth: '02990000-0000-7000-8000-000000000003',
@@ -100,19 +104,23 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     input.admin(`
       INSERT INTO space (id,name,slug,created_at) VALUES
         ('${IDS.spaceA}','board-space-a','board-space-a',now()),
-        ('${IDS.spaceB}','board-space-b','board-space-b',now());
+        ('${IDS.spaceB}','board-space-b','board-space-b',now()),
+        ('${IDS.spaceC}','board-space-c','board-space-c',now());
       INSERT INTO "user" (id,email,name,created_at) VALUES
         ('${IDS.userA}','board-a@example.test','Board A',now()),
         ('${IDS.userB}','board-b@example.test','Board B',now()),
         ('${IDS.userC}','board-c@example.test','Board C',now()),
         ('${IDS.userD}','board-d@example.test','Board D',now()),
-        ('${IDS.userE}','board-e@example.test','Board E',now());
+        ('${IDS.userE}','board-e@example.test','Board E',now()),
+        ('${IDS.userF}','board-f@example.test','Board F',now());
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.membershipA1}','${IDS.spaceA}','${IDS.userA}','member','write',now()),
         ('${IDS.membershipA2}','${IDS.spaceB}','${IDS.userA}','member','write',now()),
         ('${IDS.membershipB}','${IDS.spaceA}','${IDS.userB}','member','write',now()),
         ('${IDS.membershipC}','${IDS.spaceA}','${IDS.userC}','member','read',now()),
-        ('${IDS.membershipD}','${IDS.spaceB}','${IDS.userD}','member','write',now());
+        ('${IDS.membershipD}','${IDS.spaceB}','${IDS.userD}','member','write',now()),
+        ('${IDS.membershipB2}','${IDS.spaceC}','${IDS.userB}','member','write',now()),
+        ('${IDS.membershipE}','${IDS.spaceC}','${IDS.userE}','member','write',now());
       INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.projectA}','${IDS.spaceA}','board-alpha',ARRAY['BOARD'],now()),
         ('${IDS.projectA2}','${IDS.spaceA}','board-alpha-two',ARRAY['BOARD2'],now()),
@@ -129,11 +137,11 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ${messageValues(IDS.boundScopedA, IDS.userD, [IDS.projectA])},
         ${messageValues(IDS.boundScopedB, IDS.userD, [IDS.projectB])},
         ${messageValues(IDS.boundScopedBoth, IDS.userD, [IDS.projectA, IDS.projectB])},
-        ${messageValues(IDS.sharedSpace, IDS.userD, [], [], true)};
+        ${messageValues(IDS.sharedSpace, IDS.userA, [], [], true)};
       INSERT INTO board_message
         (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
          scope_project_ids,recipient_user_ids,shared_space_reach)
-      VALUES ('${IDS.sharedReply}','${IDS.userD}','reply','${IDS.sharedSpace}','reply',false,
+      VALUES ('${IDS.sharedReply}','${IDS.userB}','reply','${IDS.sharedSpace}','reply',false,
         now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);
       INSERT INTO board_message_tag (message_id,kind,value,origin)
       VALUES ('${IDS.scopedA}','topic','${IDS.tag}','sender');
@@ -208,25 +216,26 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
   test('explicit shared-space reach sees a common non-active space and no unrelated user', () => {
     expect(visibleCount(input, IDS.userD, IDS.sharedSpace)).toBe('1')
     expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('1')
-    expect(visibleCount(input, IDS.userB, IDS.sharedSpace)).toBe('0')
+    expect(visibleCount(input, IDS.userB, IDS.sharedSpace)).toBe('1')
     expect(visibleCount(input, IDS.userE, IDS.sharedSpace)).toBe('0')
+    expect(visibleCount(input, IDS.userF, IDS.sharedSpace)).toBe('0')
     const receipt = actor(
       input,
-      IDS.userE,
+      IDS.userF,
       [],
       `INSERT INTO board_receipt
        (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.sharedSpace}','${IDS.userE}','unrelated',false);`,
+       VALUES ('${IDS.sharedSpace}','${IDS.userF}','unrelated',false);`,
     )
     expect(receipt.code).not.toBe(0)
     const reply = actor(
       input,
-      IDS.userE,
+      IDS.userF,
       [],
       `INSERT INTO board_message
        (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
         scope_project_ids,recipient_user_ids,shared_space_reach)
-       VALUES ('02990000-0000-7000-8000-000000000049','${IDS.userE}','reply',
+       VALUES ('02990000-0000-7000-8000-000000000049','${IDS.userF}','reply',
         '${IDS.sharedSpace}','unrelated',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);`,
     )
     expect(reply.code).not.toBe(0)
@@ -235,36 +244,40 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         input,
         IDS.userA,
         [IDS.spaceA, IDS.spaceB],
-        `SELECT record_board_author_shares_space('${IDS.userD}'::uuid);`,
+        `SELECT record_board_author_shares_space('${IDS.userA}'::uuid);`,
       ).stdout,
     ).toBe('t')
     expect(
-      actor(input, IDS.userE, [], `SELECT record_board_author_shares_space('${IDS.userD}'::uuid);`)
+      actor(input, IDS.userF, [], `SELECT record_board_author_shares_space('${IDS.userA}'::uuid);`)
         .stdout,
     ).toBe('f')
   })
 
-  test('shared-space reach carries replies, tags, receipts, and reply writes', () => {
+  test("shared-space replies stay anchored to the root author's spaces", () => {
     const related = actor(
       input,
-      IDS.userA,
-      [IDS.spaceA, IDS.spaceB],
+      IDS.userD,
+      [IDS.spaceB],
       `SELECT
         (SELECT count(*) FROM board_message WHERE id='${IDS.sharedReply}'),
         (SELECT count(*) FROM board_message_tag WHERE message_id='${IDS.sharedSpace}');`,
     )
     expect(related.stdout).toBe('1|1')
+    expect(visibleCount(input, IDS.userE, IDS.sharedSpace)).toBe('0')
+    expect(visibleCount(input, IDS.userE, IDS.sharedReply)).toBe('0')
+    expect(visibleCount(input, IDS.userB, IDS.sharedSpace)).toBe('1')
+    expect(visibleCount(input, IDS.userB, IDS.sharedReply)).toBe('1')
     const writes = actor(
       input,
-      IDS.userA,
-      [IDS.spaceA, IDS.spaceB],
+      IDS.userB,
+      [IDS.spaceA, IDS.spaceC],
       `INSERT INTO board_receipt
          (message_id,reader_user_id,reader_session,audience_at_posting)
-       VALUES ('${IDS.sharedSpace}','${IDS.userA}','shared-reader',true);
+       VALUES ('${IDS.sharedSpace}','${IDS.userB}','shared-reader',true);
        INSERT INTO board_message
          (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
           scope_project_ids,recipient_user_ids,shared_space_reach)
-       VALUES ('02990000-0000-7000-8000-000000000046','${IDS.userA}','reply',
+       VALUES ('02990000-0000-7000-8000-000000000046','${IDS.userB}','reply',
          '${IDS.sharedSpace}','reader reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);`,
     )
     expect(writes.code, writes.stderr).toBe(0)
@@ -281,13 +294,15 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
   })
 
   test('leaving the last common space removes explicit shared-space visibility', () => {
-    expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('1')
-    input.admin(`DELETE FROM membership WHERE id='${IDS.membershipA2}';`)
+    expect(visibleCount(input, IDS.userD, IDS.sharedSpace)).toBe('1')
+    expect(visibleCount(input, IDS.userD, IDS.sharedReply)).toBe('1')
+    input.admin(`DELETE FROM membership WHERE id='${IDS.membershipD}';`)
     try {
-      expect(visibleCount(input, IDS.userA, IDS.sharedSpace)).toBe('0')
+      expect(visibleCount(input, IDS.userD, IDS.sharedSpace)).toBe('0')
+      expect(visibleCount(input, IDS.userD, IDS.sharedReply)).toBe('0')
     } finally {
       input.admin(`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-        VALUES ('${IDS.membershipA2}','${IDS.spaceB}','${IDS.userA}',
+        VALUES ('${IDS.membershipD}','${IDS.spaceB}','${IDS.userD}',
           'member','write',now());`)
     }
   })
@@ -452,11 +467,44 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     expect(combined.code).not.toBe(0)
   })
 
+  test('a reply cannot supply a different thread-root author anchor', () => {
+    const forged = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA, IDS.spaceC],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids,shared_space_reach,thread_root_author_user_id)
+       VALUES ('02990000-0000-7000-8000-000000000050','${IDS.userB}','reply',
+        '${IDS.sharedSpace}','forged anchor',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true,
+        '${IDS.userB}'::uuid);`,
+    )
+    expect(forged.code).not.toBe(0)
+    expect(forged.stderr).toContain('thread-root author is set by the database')
+    expect(
+      input.admin(
+        `SELECT thread_root_author_user_id FROM board_message WHERE id='${IDS.sharedReply}';`,
+      ),
+    ).toBe(IDS.userA)
+  })
+
+  test('a board message thread-root author anchor cannot change after posting', () => {
+    const changed = actor(
+      input,
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
+      `UPDATE board_message SET thread_root_author_user_id='${IDS.userB}'::uuid
+       WHERE id='${IDS.sharedSpace}';`,
+    )
+    expect(changed.code).not.toBe(0)
+    expect(changed.stderr).toContain('thread-root author cannot change')
+  })
+
   test('shared-space reach cannot change after posting', () => {
     const changed = actor(
       input,
-      IDS.userD,
-      [IDS.spaceB],
+      IDS.userA,
+      [IDS.spaceA, IDS.spaceB],
       `UPDATE board_message SET shared_space_reach=false WHERE id='${IDS.sharedSpace}';`,
     )
     expect(changed.code).not.toBe(0)

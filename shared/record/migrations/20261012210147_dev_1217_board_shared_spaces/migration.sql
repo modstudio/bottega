@@ -1,4 +1,10 @@
 ALTER TABLE "board_message" ADD COLUMN "shared_space_reach" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "board_message" ADD COLUMN "thread_root_author_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "board_message" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+UPDATE "board_message" SET "thread_root_author_user_id" = "author_user_id";--> statement-breakpoint
+ALTER TABLE "board_message" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "board_message" ALTER COLUMN "thread_root_author_user_id" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "board_message" ADD CONSTRAINT "board_message_thread_root_author_user_id_user_id_fkey" FOREIGN KEY ("thread_root_author_user_id") REFERENCES "user"("id");--> statement-breakpoint
 ALTER TABLE "board_message" ADD CONSTRAINT "board_message_shared_space_reach_check" CHECK (("kind" = 'reply' OR "shared_space_reach" = ("audience" = 'spaces'))
           AND (NOT "shared_space_reach" OR
             (cardinality("scope_project_ids") = 0
@@ -23,7 +29,7 @@ ALTER FUNCTION public.record_board_author_shares_space(uuid) OWNER TO record_own
 REVOKE ALL ON FUNCTION public.record_board_author_shares_space(uuid) FROM PUBLIC;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.record_board_author_shares_space(uuid) TO record_actor;--> statement-breakpoint
 ALTER POLICY "board_message_actor_select" ON "board_message" TO "record_actor" USING ("board_message"."author_user_id" = nullif(current_setting('app.user_id', true), '')::uuid OR
-      ("board_message"."shared_space_reach" AND record_board_author_shares_space("board_message"."author_user_id")) OR
+      ("board_message"."shared_space_reach" AND record_board_author_shares_space("board_message"."thread_root_author_user_id")) OR
       (cardinality("board_message"."scope_project_ids") > 0 AND NOT EXISTS (
     SELECT 1 FROM unnest("board_message"."scope_project_ids") AS scoped(project_id)
     WHERE NOT EXISTS (
@@ -49,14 +55,25 @@ DECLARE
   root_scope_project_ids uuid[];
   root_recipient_user_ids uuid[];
   root_shared_space_reach boolean;
+  root_author_user_id uuid;
 BEGIN
+  IF TG_OP = 'INSERT' AND NEW.thread_root_author_user_id IS NOT NULL THEN
+    RAISE EXCEPTION 'board message thread-root author is set by the database';
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND NEW.thread_root_author_user_id IS DISTINCT FROM OLD.thread_root_author_user_id THEN
+    RAISE EXCEPTION 'board message thread-root author cannot change after posting';
+  END IF;
+
   IF TG_OP = 'UPDATE' AND NEW.shared_space_reach IS DISTINCT FROM OLD.shared_space_reach THEN
     RAISE EXCEPTION 'board message shared-space reach cannot change after posting';
   END IF;
 
   IF NEW.kind = 'reply' THEN
-    SELECT scope_project_ids, recipient_user_ids, shared_space_reach
-      INTO root_scope_project_ids, root_recipient_user_ids, root_shared_space_reach
+    SELECT scope_project_ids, recipient_user_ids, shared_space_reach, thread_root_author_user_id
+      INTO root_scope_project_ids, root_recipient_user_ids, root_shared_space_reach,
+        root_author_user_id
       FROM public.board_message
       WHERE id = NEW.thread_root_id;
     IF NOT FOUND THEN
@@ -67,6 +84,9 @@ BEGIN
       OR root_shared_space_reach <> NEW.shared_space_reach THEN
       RAISE EXCEPTION 'board reply scope and recipients must match thread root, including shared-space reach';
     END IF;
+    NEW.thread_root_author_user_id := root_author_user_id;
+  ELSIF TG_OP = 'INSERT' THEN
+    NEW.thread_root_author_user_id := NEW.author_user_id;
   END IF;
   RETURN NEW;
 END

@@ -10366,6 +10366,19 @@
       "table": "board_message"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "thread_root_author_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "board_message"
+    },
+    {
       "type": "bigint",
       "typeSchema": null,
       "notNull": true,
@@ -13000,6 +13013,19 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "name": "board_message_author_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "board_message"
+    },
+    {
+      "nameExplicit": false,
+      "columns": ["thread_root_author_user_id"],
+      "schemaTo": "public",
+      "tableTo": "user",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "board_message_thread_root_author_user_id_user_id_fkey",
       "entityType": "fks",
       "schema": "public",
       "table": "board_message"
@@ -16745,7 +16771,7 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": ["record_actor"],
-      "using": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR\n      (\"board_message\".\"shared_space_reach\" AND record_board_author_shares_space(\"board_message\".\"author_user_id\")) OR\n      (cardinality(\"board_message\".\"scope_project_ids\") > 0 AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  )) OR\n      (nullif(current_setting('app.user_id', true), '')::uuid = ANY(\"board_message\".\"recipient_user_ids\") AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  ))",
+      "using": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR\n      (\"board_message\".\"shared_space_reach\" AND record_board_author_shares_space(\"board_message\".\"thread_root_author_user_id\")) OR\n      (cardinality(\"board_message\".\"scope_project_ids\") > 0 AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  )) OR\n      (nullif(current_setting('app.user_id', true), '')::uuid = ANY(\"board_message\".\"recipient_user_ids\") AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  ))",
       "withCheck": null,
       "name": "board_message_actor_select",
       "entityType": "policies",

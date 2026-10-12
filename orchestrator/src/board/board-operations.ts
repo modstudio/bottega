@@ -36,6 +36,7 @@ import { markBoardDeliveriesDelivered } from './board-delivery.ts'
 import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
+  type Audience,
   acknowledgementRefusal,
   architectIdentity,
   OPERATOR_READER,
@@ -162,6 +163,11 @@ function locality(audience: string) {
   return parseAudience(audience).kind === 'machine'
     ? ('machine-audience' as const)
     : ('shared' as const)
+}
+
+export function localBoardAudienceRefusal(audience: Audience): string | null {
+  if (audience.kind !== 'spaces') return null
+  return 'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces'
 }
 
 const idForMode = (id: string, mode: 'local' | 'hosted'): number | string =>
@@ -356,18 +362,17 @@ function hostedPostInput(
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
   const actor = boardActor(c.env)
+  const audience = parseAudience(input.audience)
   const refusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
-    audience: parseAudience(input.audience),
+    audience,
     authorKind: actor.kind,
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
   })
   if (refusal) throw new Error(refusal)
   if (boardMode(locality(input.audience), c.env) === 'local') {
-    if (parseAudience(input.audience).kind === 'spaces')
-      throw new Error(
-        'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces',
-      )
+    const localRefusal = localBoardAudienceRefusal(audience)
+    if (localRefusal) throw new Error(localRefusal)
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
   }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))
@@ -379,11 +384,10 @@ export async function boardAsk(
   inputContext?: Context,
 ) {
   const c = context(inputContext)
+  const audience = parseAudience(input.audience)
   if (boardMode(locality(input.audience), c.env) === 'local') {
-    if (parseAudience(input.audience).kind === 'spaces')
-      throw new Error(
-        'spaces audience requires the hosted board; adopt this installation, then retry with --audience spaces',
-      )
+    const localRefusal = localBoardAudienceRefusal(audience)
+    if (localRefusal) throw new Error(localRefusal)
     return localPostResult(askQuestion(input, c.env, c.clock, c.cwd))
   }
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('question', input, c))
