@@ -5,6 +5,7 @@ import {
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
 } from './hosted-changes.ts'
+import { identitySetRequestInput, listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import {
@@ -20,6 +21,7 @@ type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
   list?: typeof listHostedChanges
+  ids?: typeof listHostedIdentitySet
   push?: typeof applyHostedPushChanges
 }
 type ChangeIdentity = Exclude<
@@ -59,8 +61,13 @@ function requestInput(url: URL) {
   return { after, limit, tables: [...new Set(tables)] as ReadableHubChangeTable[] }
 }
 
-function hasTestDependencies(method: string, dependencies: Dependencies): boolean {
+function hasTestDependencies(
+  pathname: string,
+  method: string,
+  dependencies: Dependencies,
+): boolean {
   if (!dependencies.fetch) return false
+  if (pathname === '/v1/changes/ids') return Boolean(dependencies.ids)
   return method === 'GET' ? Boolean(dependencies.list) : Boolean(dependencies.push)
 }
 
@@ -104,32 +111,65 @@ async function pushResponse(
   }
 }
 
-export async function changeApi(
+async function identityWho(
   request: Request,
   config: Config,
-  dependencies: Dependencies = {},
-): Promise<Response | null> {
-  const url = new URL(request.url)
-  if (url.pathname !== '/v1/changes') return null
-  if (request.method !== 'GET' && request.method !== 'POST')
-    return new Response('not found', { status: 404 })
-  if (process.env.NODE_ENV === 'test' && !hasTestDependencies(request.method, dependencies))
-    throw new Error(TEST_REFUSAL)
-  const who = await taskSpaceIdentity(
+  dependencies: Dependencies,
+) {
+  return taskSpaceIdentity(
     request,
     config.recordApiUrl,
     (dependencies.fetch ?? fetch) as typeof fetch,
     true,
   )
+}
+
+function refusedSpaceResponse(who: { refusedSpace: string }) {
+  return json(
+    {
+      error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
+      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+    },
+    403,
+  )
+}
+
+async function identitySetResponse(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+): Promise<Response> {
+  if (request.method !== 'GET') return new Response('not found', { status: 404 })
+  const who = await identityWho(request, config, dependencies)
   if (!who) return json({ error: 'authorization and an active space are required' }, 401)
-  if ('refusedSpace' in who)
+  if ('refusedSpace' in who) return refusedSpaceResponse(who)
+  let input: ReturnType<typeof identitySetRequestInput>
+  try {
+    input = identitySetRequestInput(url)
+  } catch (error) {
+    return json({ error: (error as Error).message }, 400)
+  }
+  try {
     return json(
-      {
-        error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
-        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
-      },
-      403,
+      await (dependencies.ids ?? listHostedIdentitySet)(config.recordDatabaseUrl, who, input),
     )
+  } catch (error) {
+    return json({ error: (error as Error).message }, 409)
+  }
+}
+
+async function changeLogResponse(
+  request: Request,
+  url: URL,
+  config: Config,
+  dependencies: Dependencies,
+): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'POST')
+    return new Response('not found', { status: 404 })
+  const who = await identityWho(request, config, dependencies)
+  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if ('refusedSpace' in who) return refusedSpaceResponse(who)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
   let input: ReturnType<typeof requestInput>
   try {
@@ -144,4 +184,21 @@ export async function changeApi(
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }
+}
+
+export async function changeApi(
+  request: Request,
+  config: Config,
+  dependencies: Dependencies = {},
+): Promise<Response | null> {
+  const url = new URL(request.url)
+  if (url.pathname !== '/v1/changes' && url.pathname !== '/v1/changes/ids') return null
+  if (
+    process.env.NODE_ENV === 'test' &&
+    !hasTestDependencies(url.pathname, request.method, dependencies)
+  )
+    throw new Error(TEST_REFUSAL)
+  if (url.pathname === '/v1/changes/ids')
+    return identitySetResponse(request, url, config, dependencies)
+  return changeLogResponse(request, url, config, dependencies)
 }

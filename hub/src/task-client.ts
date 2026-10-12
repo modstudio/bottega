@@ -4,6 +4,7 @@ import type { RecordSpaceMembership } from '../../shared/record-space-membership
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
+import { HUB_IDENTITY_SET_PAGE_SIZE } from './hosted-identity-set.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
@@ -61,22 +62,22 @@ export type HostedTaskIdentity = {
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
   capabilities?: {
-    targetSpaceTaskMirror?: boolean
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
     spacePush?: boolean
     spacePushTables?: PushableHubChangeTable[]
+    spaceIdentitySet?: boolean
   }
 }
 
-const TARGET_SPACE_MIRROR_REMEDY =
-  'deploy the hub server at or after the target-space task mirror change'
+const SPACE_IDENTITY_SET_REMEDY =
+  'deploy the hub server at or after the space identity set change'
 
-export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
-  if (identity.capabilities?.targetSpaceTaskMirror !== true)
+export function assertSpaceIdentitySet(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.spaceIdentitySet !== true)
     throw new Error(
-      `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
+      `hosted hub does not advertise space identity set support; ${SPACE_IDENTITY_SET_REMEDY}`,
     )
 }
 
@@ -384,11 +385,38 @@ export async function hostedSpaceChanges(after: number, options: HostedSpaceChan
   return parseHostedSpaceChangePage(page, after, new Set(options.tables.split(',')))
 }
 
-export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
-  request<{
-    upserted: number
-    adoptions?: import('./hosted-tasks.ts').MirrorAdoption[]
-  }>('/v1/tasks/mirror', 'PUT', body, options)
+function capabilityFlag(capabilities: unknown, name: string): boolean {
+  return (
+    typeof capabilities === 'object' &&
+    capabilities !== null &&
+    (capabilities as Record<string, unknown>)[name] === true
+  )
+}
+
+export async function hostedIdentitySet(
+  table: PushableHubChangeTable,
+  options: Parameters<typeof request>[3] & { after?: string | null } = {},
+): Promise<{ ids: string[]; more: boolean }> {
+  const query = new URLSearchParams({ table })
+  if (options.after) query.set('after', options.after)
+  const page = await request<Record<string, unknown>>(
+    `/v1/changes/ids?${query}`,
+    'GET',
+    undefined,
+    options,
+  )
+  if (!Array.isArray(page.ids) || page.ids.some((id) => typeof id !== 'string' || !UUID.test(id)))
+    throw new Error('hosted hub returned a malformed identity set: ids must be UUIDs')
+  if (typeof page.more !== 'boolean')
+    throw new Error('hosted hub returned a malformed identity set: more must be a boolean')
+  if (page.more && page.ids.length === 0)
+    throw new Error('hosted hub returned a malformed identity set: more is true with no ids')
+  if (page.more && page.ids.length < HUB_IDENTITY_SET_PAGE_SIZE)
+    throw new Error(
+      `hosted hub returned a malformed identity set: more is true below page size ${HUB_IDENTITY_SET_PAGE_SIZE}`,
+    )
+  return { ids: page.ids, more: page.more }
+}
 
 export async function hostedPushChanges(
   body: HostedPushChange[],
@@ -536,26 +564,11 @@ export async function hostedTaskIdentity(
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
     capabilities: {
-      targetSpaceTaskMirror:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
-      projectNoteCounters:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).projectNoteCounters === true,
-      targetSpaceNotes:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).targetSpaceNotes === true,
-      spaceChanges:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).spaceChanges === true,
-      spacePush:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).spacePush === true,
+      projectNoteCounters: capabilityFlag(value.capabilities, 'projectNoteCounters'),
+      targetSpaceNotes: capabilityFlag(value.capabilities, 'targetSpaceNotes'),
+      spaceChanges: capabilityFlag(value.capabilities, 'spaceChanges'),
+      spacePush: capabilityFlag(value.capabilities, 'spacePush'),
+      spaceIdentitySet: capabilityFlag(value.capabilities, 'spaceIdentitySet'),
       spacePushTables:
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&

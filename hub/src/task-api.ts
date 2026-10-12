@@ -11,7 +11,6 @@ import {
   getHostedTask,
   hostedTaskCounts,
   listHostedTasks,
-  mirrorHostedTasks,
 } from './hosted-tasks.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
@@ -27,7 +26,6 @@ type Dependencies = {
   createDocument?: typeof createHostedDocument
   presence?: typeof hostedTaskPresence
   deleteTasks?: typeof softDeleteHostedTasks
-  mirror?: typeof mirrorHostedTasks
   counts?: typeof hostedTaskCounts
 }
 
@@ -42,7 +40,6 @@ const call = <T>(stub: T | undefined, real: T): T => {
 
 function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolean {
   if (method === 'GET' && pathname === '/v1/tasks') return true
-  if (method === 'PUT' && pathname === '/v1/tasks/mirror') return true
   if (method === 'GET' && pathname === '/v1/tasks/counts') return true
   if (method === 'POST' && pathname === '/v1/tasks') return true
   if (method === 'GET')
@@ -104,14 +101,7 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
       ),
       201,
     )
-  if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
-  return json(
-    await call(dependencies.mirror, mirrorHostedTasks)(
-      config.recordDatabaseUrl,
-      who,
-      body as Parameters<typeof mirrorHostedTasks>[2],
-    ),
-  )
+  return null
 }
 
 async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
@@ -194,12 +184,12 @@ export async function taskApi(
       activeSpaceId: who.spaceId,
       memberships: who.memberships,
       capabilities: {
-        targetSpaceTaskMirror: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,
         spacePush: true,
         spacePushTables: PUSHABLE_HUB_CHANGE_TABLES,
+        spaceIdentitySet: true,
       },
     })
   const body = request.method === 'GET' ? null : await bodyOf(request)

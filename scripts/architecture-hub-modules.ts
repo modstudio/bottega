@@ -8,8 +8,18 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/record-space-request.ts',
       './hosted-changes.ts',
+      './hosted-identity-set.ts',
       './hosted-push-changes.ts',
       './hosted-route-identity.ts',
+      './push-contract.ts',
+    ],
+  },
+  {
+    file: 'hub/src/hosted-identity-set.ts',
+    allowed: [
+      'bun',
+      '../../shared/record/tenant.ts',
+      './hosted-tasks.ts',
       './push-contract.ts',
     ],
   },
