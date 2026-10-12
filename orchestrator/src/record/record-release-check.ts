@@ -1,6 +1,7 @@
 // concern: record-release-check
 /** Refuses a hosted release when its image expects migrations the record has not applied. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { decideRecordRelease } from './record-release-decision.ts'
 
@@ -19,7 +20,7 @@ function appRecordUrl(app: HostedApp): { name: string; value: string } {
 }
 
 function releaseRemedy(app: HostedApp): string {
-  return `orch release bottega --rung hosted-${app}`
+  return `orch release ${PLATFORM_SLUG} --rung hosted-${app}`
 }
 
 export async function recordReleaseCheck(app: HostedApp): Promise<void> {

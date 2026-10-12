@@ -129,6 +129,7 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-release-check.ts', [
+    '../../../shared/brand.ts',
     '../postgres/postgres-migrate.ts',
     './record-release-decision.ts',
   ]),
