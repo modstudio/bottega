@@ -35,7 +35,17 @@ type LocalGateProofInput = {
 
 export type MergeProofInput = RequiredChecksProofInput | LocalGateProofInput
 
-type MergeDecision = { admitted: true } | { admitted: false; refusal: string }
+export type MergeAdmissionInput =
+  | { checked: true; number: number; complete: true }
+  | { checked: true; number: number; complete: false; triageRefusal: string }
+  | {
+      checked: false
+      number: number
+      headCommit: string
+      problem: string
+    }
+
+export type MergeDecision = { admitted: true } | { admitted: false; refusal: string }
 
 const rerun = (number: number) => `orch pr merge ${number}`
 
@@ -50,6 +60,24 @@ export function decidePullRequestIdentity(input: PullRequestIdentityInput): Merg
     return {
       admitted: false,
       refusal: `pull request #${input.number} targets ${input.baseBranch}, not the registered landing branch ${input.landingBranch}; cleared by: gh pr edit ${input.number} --base ${input.landingBranch}, then ${rerun(input.number)}`,
+    }
+  }
+  return { admitted: true }
+}
+
+export function decideMergeAdmission(input: MergeAdmissionInput): MergeDecision {
+  if (!input.checked) {
+    return {
+      admitted: false,
+      refusal:
+        `review admission for pull request #${input.number} head ${input.headCommit} was not checked: ${input.problem}; ` +
+        `cleared by: git fetch origin pull/${input.number}/head, then ${rerun(input.number)}`,
+    }
+  }
+  if (!input.complete) {
+    return {
+      admitted: false,
+      refusal: `${input.triageRefusal}\nthen ${rerun(input.number)}`,
     }
   }
   return { admitted: true }

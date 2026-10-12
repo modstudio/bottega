@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
+import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
+import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
   mergePullRequest,
   type PullRequestMergeAdapter,
@@ -27,6 +29,7 @@ function registerProject(requiredChecks: string[]): void {
 const pullRequest: PullRequestMergeFacts = {
   number: 42,
   headCommit: 'head-commit',
+  headBranch: 'DEV-1255-admission',
   baseBranch: 'main',
   title: 'Prove the pull request head',
   state: 'OPEN',
@@ -37,13 +40,39 @@ function adapter(
     view?: (target: string) => PullRequestMergeFacts
     checks?: PullRequestCheck[]
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
+    hasCommit?: (cwd: string, headCommit: string) => boolean
     merge?: (method: string, subject: string, headCommit: string) => string
+    admission?: (
+      cwd: string,
+      headCommit: string,
+      headBranch: string,
+      database: ReturnType<typeof db>,
+    ) => { change: PullRequestChange; decision: AdmissionDecision }
+    recordAdmission?: (
+      change: PullRequestChange,
+      decision: AdmissionDecision,
+      prNumber: number,
+      database: ReturnType<typeof db>,
+    ) => number | null
   } = {},
 ): PullRequestMergeAdapter {
   return {
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     checks: () => input.checks ?? [],
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
+    hasCommit: input.hasCommit ?? (() => true),
+    admission:
+      input.admission ??
+      (() => ({
+        change: { branch: pullRequest.headBranch } as PullRequestChange,
+        decision: {
+          complete: true,
+          overrideId: null,
+          triage: { complete: true, snapshot: {} } as AdmissionDecision['triage'],
+        },
+      })),
+    recordAdmission: (change, decision, prNumber, database) =>
+      input.recordAdmission?.(change, decision, prNumber, database) ?? null,
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
   }
@@ -108,6 +137,178 @@ test('an injected forge adapter exposes a pending required check without merging
     ),
   ).toThrow('test: IN_PROGRESS (https://checks.example/test)')
   expect(merged).toBe(false)
+})
+
+test('an incomplete admission refuses with its review remedy without merging', () => {
+  registerProject([])
+  recordPassingGate()
+  let merged = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        admission: () => ({
+          change: {
+            branch: pullRequest.headBranch,
+            tip: pullRequest.headCommit,
+            group: { patchId: 'patch' },
+            tier: 2,
+          } as PullRequestChange,
+          decision: {
+            complete: false,
+            overrideId: null,
+            triage: {
+              complete: false,
+              snapshot: {
+                reviewIds: [],
+                patchId: 'patch',
+                tier: 2,
+                lensRounds: 0,
+                findingCount: 0,
+                admissionPath: 'exact_review',
+                readId: null,
+              },
+              missingReview: true,
+              unfinishedReviewIds: [],
+              undisposedFindings: [],
+              missingLenses: [],
+              finalTierRaised: false,
+              architectReadRequired: false,
+              earlierReviewId: null,
+              earlierReviewTier: null,
+            },
+          },
+        }),
+        merge: () => {
+          merged = true
+          return 'unexpected'
+        },
+      }),
+    ),
+  ).toThrow('missing review for patch patch; cleared by: run and record the tier 2 review')
+  expect(merged).toBe(false)
+})
+
+test('an admission lookup that cannot see the head refuses with the fetch command', () => {
+  registerProject(['test'])
+  let merged = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        hasCommit: () => false,
+        admission: () => {
+          throw new Error('git rev-parse --verify head-commit failed')
+        },
+        merge: () => {
+          merged = true
+          return 'unexpected'
+        },
+      }),
+    ),
+  ).toThrow('git fetch origin pull/42/head, then orch pr merge 42')
+  expect(merged).toBe(false)
+})
+
+test('an admission error for a present head uses the general proof refusal', () => {
+  registerProject(['test'])
+  let failure = ''
+  try {
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        admission: () => {
+          throw new Error('review store unavailable')
+        },
+      }),
+    )
+  } catch (cause) {
+    failure = cause instanceof Error ? cause.message : String(cause)
+  }
+  expect(failure).toContain(
+    'proof was not checked: review store unavailable; cleared by: restore forge and repository access, then orch pr merge 42',
+  )
+  expect(failure).not.toContain('git fetch origin pull/42/head')
+})
+
+test('an admitted head records a snapshot with the pull request number before merging', () => {
+  registerProject(['test'])
+  const database = db()
+  const project = database
+    .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
+    .get('merge-fixture')!
+  const decision: AdmissionDecision = {
+    complete: true,
+    overrideId: null,
+    triage: {
+      complete: true,
+      snapshot: {
+        reviewIds: [],
+        patchId: 'patch',
+        tier: 2,
+        lensRounds: 0,
+        findingCount: 0,
+        admissionPath: 'exact_review',
+        readId: null,
+      },
+    },
+  }
+  mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      checks: [
+        {
+          name: 'test',
+          bucket: 'pass',
+          state: 'SUCCESS',
+          link: 'https://checks.example/test',
+        },
+      ],
+      admission: (admissionCwd, headCommit, headBranch, admittedDatabase) => {
+        expect(admissionCwd).toBe(cwd)
+        expect(admittedDatabase).toBe(database)
+        return {
+          change: {
+            project: {
+              id: project.id,
+              name: 'merge-fixture',
+              path: admissionCwd,
+              stack: 'bun',
+              canon: false,
+              retiredAt: null,
+              settings: {},
+            },
+            branch: headBranch,
+            tip: headCommit,
+            tree: 'head-tree',
+            group: {
+              project: 'merge-fixture',
+              branch: headBranch,
+              patchId: 'patch',
+              pathSet: ['orchestrator/src/pull-request/pr-merge.ts'],
+            },
+            tier: 2 as const,
+          },
+          decision,
+        }
+      },
+      recordAdmission: (admittedChange, admittedDecision, number, admittedDatabase) =>
+        recordMergeAdmission(admittedChange, admittedDecision, number, admittedDatabase),
+    }),
+    database,
+  )
+  expect(
+    database
+      .query(
+        `SELECT pr_number,override_id FROM landing_triage_snapshot
+          WHERE project=? AND branch=? AND tip=?`,
+      )
+      .get('merge-fixture', pullRequest.headBranch, pullRequest.headCommit),
+  ).toEqual({ pr_number: 42, override_id: null })
 })
 
 test('a failing forge call refuses because proof was not checked', () => {

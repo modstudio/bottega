@@ -4,6 +4,7 @@ import {
   createPullRequest,
   finalizeTriageIntent,
   type PullRequestChange,
+  recordMergeAdmission,
   recordTriageIntent,
   triageRefusal,
 } from './pr-admission.ts'
@@ -106,6 +107,59 @@ test('records the exact triage snapshot and outboxes it', () => {
     admissionPath: 'exact_review',
     readId: null,
   })
+})
+
+test('merge admission leaves an existing snapshot unchanged', () => {
+  const database = db()
+  const project = database
+    .query<{ id: number }, []>(
+      `INSERT INTO project (name,path,stack,canon,settings,retired_at)
+       VALUES ('existing-snapshot','/tmp/existing-snapshot',NULL,0,'{"trunk":"main"}',NULL)
+       RETURNING id`,
+    )
+    .get()!
+  const change: PullRequestChange = {
+    project: {
+      id: project.id,
+      name: 'existing-snapshot',
+      path: '/tmp/existing-snapshot',
+      stack: null,
+      canon: false,
+      retiredAt: null,
+      settings: { trunk: 'main' },
+    },
+    branch: 'DEV-1255-existing',
+    tip: 'tip',
+    tree: 'tree',
+    group: {
+      project: 'existing-snapshot',
+      branch: 'DEV-1255-existing',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    },
+    tier: 1,
+  }
+  const triage = {
+    complete: true as const,
+    snapshot: {
+      reviewIds: [10],
+      patchId: 'patch',
+      tier: 1 as const,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review' as const,
+      readId: null,
+    },
+  }
+  const id = recordTriageIntent(change, triage, null, database)
+  finalizeTriageIntent(change.project.name, change.branch, 40, database)
+
+  expect(
+    recordMergeAdmission(change, { complete: true, overrideId: null, triage }, 42, database),
+  ).toBeNull()
+  expect(
+    database.query('SELECT pr_number FROM landing_triage_snapshot WHERE id=?').get(id),
+  ).toEqual({ pr_number: 40 })
 })
 
 test('a missing applicable lens refusal names the lens and dispatch command', () => {
