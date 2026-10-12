@@ -9,10 +9,7 @@ function eventInstantMs(value: string | Date): number {
 }
 
 /** Same tracker transition: same task, same new status, same instant. */
-export function isSameStatusEvent(
-  left: StatusEventIdentity,
-  right: StatusEventIdentity,
-): boolean {
+export function isSameStatusEvent(left: StatusEventIdentity, right: StatusEventIdentity): boolean {
   return (
     left.taskKey === right.taskKey &&
     left.toStatus === right.toStatus &&

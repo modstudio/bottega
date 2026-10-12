@@ -69,9 +69,7 @@ const apply = (inputs: HostedPushChange[]) =>
     return applyHostedPushChangesInTransaction(sql, identity, inputs)
   })
 
-const registered = () => [
-  { name: 'workshop', settings: { keyPrefixes: ['DEV'], space: spaceId } },
-]
+const registered = () => [{ name: 'workshop', settings: { keyPrefixes: ['DEV'], space: spaceId } }]
 
 const pushIdentity = async (): Promise<HostedTaskIdentity> => ({
   userId,
@@ -120,10 +118,13 @@ function drainToHosted() {
   })
 }
 
-function hostedEventIds() {
-  return database.query<{ id: string }>(
-    `SELECT id::text FROM hub_task_status_event WHERE task_key='DEV-1' ORDER BY at,id`,
-  )
+async function hostedIds(ids: string[]) {
+  return (
+    await database.query<{ id: string }>(
+      `SELECT id::text FROM hub_task_status_event WHERE id=ANY($1::uuid[]) ORDER BY id`,
+      [ids],
+    )
+  ).rows
 }
 
 beforeAll(async () => {
@@ -147,7 +148,7 @@ test('two machines mint the same transition and the second adopts the hosted id'
   expect(await apply([firstChange])).toEqual([{ id: firstId, status: 'applied' }])
   writeTransaction((conn) => insertTaskAndEvent(conn, secondId, at))
   expect((await drainToHosted()).sent).toBe(1)
-  expect((await hostedEventIds()).rows).toEqual([{ id: firstId }])
+  expect(await hostedIds([firstId, secondId])).toEqual([{ id: firstId }])
   expect(
     first.query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get(),
   ).toEqual({ record_id: firstId })
@@ -178,7 +179,7 @@ test('pull adopts before drain, then drain answers duplicate', async () => {
     baseUrl: 'https://hub.example.test',
     token: 'session',
     registeredProjects: registered(),
-    fetch: async (input, init) => {
+    fetch: async (input) => {
       const url = new URL(input)
       if (url.pathname === '/v1/tasks/identity') return Response.json(await pushIdentity())
       return Response.json({
@@ -199,9 +200,9 @@ test('pull adopts before drain, then drain answers duplicate', async () => {
       })
     },
   })
-  expect(db().query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get()).toEqual(
-    { record_id: hostedId },
-  )
+  expect(
+    db().query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get(),
+  ).toEqual({ record_id: hostedId })
   expect(
     db()
       .query<{ row_id: string }, []>(
@@ -222,7 +223,7 @@ test('pull adopts before drain, then drain answers duplicate', async () => {
   expect(sent).toEqual([
     expect.objectContaining({ id: hostedId, table: HOSTED_STATUS_EVENT_TABLE }),
   ])
-  expect((await hostedEventIds()).rows.filter((row) => row.id === hostedId)).toHaveLength(1)
+  expect(await hostedIds([hostedId, machineId])).toEqual([{ id: hostedId }])
 })
 
 test('a transition one millisecond later is a second event', async () => {
@@ -237,12 +238,15 @@ test('a transition one millisecond later is a second event', async () => {
   ).toEqual([{ id: firstId, status: 'applied' }])
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: laterId, op: 'upsert', row: eventRow(laterId, later) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: laterId,
+        op: 'upsert',
+        row: eventRow(laterId, later),
+      },
     ]),
   ).toEqual([{ id: laterId, status: 'applied' }])
-  expect((await hostedEventIds()).rows).toEqual(
-    expect.arrayContaining([{ id: firstId }, { id: laterId }]),
-  )
+  expect(await hostedIds([firstId, laterId])).toEqual([{ id: firstId }, { id: laterId }])
 })
 
 test('a quarantined collision converges after retry', async () => {
@@ -264,17 +268,15 @@ test('a quarantined collision converges after retry', async () => {
       .run(at, 'already belongs', HOSTED_STATUS_EVENT_TABLE, machineId)
   })
   const entryId = db()
-    .query<{ id: string }, []>(`SELECT id FROM hosted_outbox WHERE row_id=?`)
+    .query<{ id: string }, [string]>(`SELECT id FROM hosted_outbox WHERE row_id=?`)
     .get(machineId)!.id
   expect(runHostedOutboxCommand(['outbox', 'retry', entryId])).toEqual([
     `outbox entry ${entryId} queued for retry`,
   ])
   expect((await drainToHosted()).sent).toBe(1)
-  expect(db().query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get()).toEqual(
-    { record_id: hostedId },
-  )
-  expect((await hostedEventIds()).rows.filter((row) => row.id === hostedId || row.id === machineId)).toEqual(
-    [{ id: hostedId }],
-  )
+  expect(
+    db().query<{ record_id: string }, []>(`SELECT record_id FROM task_status_event`).get(),
+  ).toEqual({ record_id: hostedId })
+  expect(await hostedIds([hostedId, machineId])).toEqual([{ id: hostedId }])
   expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
 })

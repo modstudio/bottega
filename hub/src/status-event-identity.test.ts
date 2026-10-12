@@ -10,9 +10,7 @@ test('the same task, new status, and instant are one event', () => {
       at: new Date('2026-10-12T10:00:00.000Z'),
     }),
   ).toBe(true)
-  expect(
-    isSameStatusEvent(base, { ...base, at: '2026-10-12T10:00:00+00:00' }),
-  ).toBe(true)
+  expect(isSameStatusEvent(base, { ...base, at: '2026-10-12T10:00:00+00:00' })).toBe(true)
 })
 
 test('a different task, new status, or instant is another event', () => {

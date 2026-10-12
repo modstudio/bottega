@@ -261,11 +261,7 @@ function traceOutcome(
   })
 }
 
-function persistAdoptedId(
-  conn: Database,
-  item: PreparedOutboxRow,
-  adoptedId: string,
-): void {
+function persistAdoptedId(conn: Database, item: PreparedOutboxRow, adoptedId: string): void {
   if (item.change.table === HOSTED_TASK_TABLE && item.change.op === 'upsert') {
     persistTaskAdoptionsOn(conn, [
       {

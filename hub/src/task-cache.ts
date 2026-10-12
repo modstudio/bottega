@@ -198,7 +198,9 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
     return
   }
   const existing = conn
-    .query<{ record_id: string }, [string]>(`SELECT record_id FROM task_status_event WHERE record_id=?`)
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM task_status_event WHERE record_id=?`,
+    )
     .get(row.id)
   if (!existing) {
     const match = matchingStatusEvent(conn, row, taskRecordId)
