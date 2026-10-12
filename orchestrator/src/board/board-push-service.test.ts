@@ -770,7 +770,7 @@ test('PostToolUse is silent for workers, malformed input, missing stores, and th
   }
 })
 
-test('PostToolUse injects pending text and fails open on command timeout or malformed output', () => {
+test('PostToolUse injects pending text', () => {
   const item = createHookFixture(hookOutput)
   addCandidate(item, 1)
   const result = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), item)
@@ -779,7 +779,9 @@ test('PostToolUse injects pending text and fails open on command timeout or malf
     hookEventName: 'PostToolUse',
     additionalContext: JSON.parse(hookOutput).delivery[0].text,
   })
+})
 
+test('PostToolUse fails open on command timeout', () => {
   const slow = createHookFixture(hookOutput, 'timeout')
   addCandidate(slow, 1)
   const timed = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), slow, {
@@ -787,7 +789,9 @@ test('PostToolUse injects pending text and fails open on command timeout or malf
   })
   expect(timed.exitCode).toBe(0)
   expect(timed.stdout.toString()).toBe('')
+})
 
+test('PostToolUse fails open on malformed command output', () => {
   const malformed = createHookFixture('{')
   addCandidate(malformed, 1)
   const broken = runHook(interruptHook, JSON.stringify({ session_id: 'reader' }), malformed)
