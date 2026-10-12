@@ -175,17 +175,21 @@ describe('task documents', () => {
       },
     }
     const messages: unknown[] = []
-    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    const stdout: unknown[] = []
+    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
+    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
     try {
       await updateTaskDocument(documentId, { title: 'After' }, { hosted })
       expect(await deleteTaskDocument(documentId, { hosted })).toMatchObject({ title: 'After' })
     } finally {
+      error.mockRestore()
       log.mockRestore()
     }
     expect(messages).toEqual([
       expect.stringContaining('hosted change saved and queued'),
       expect.stringContaining('hosted change saved and queued'),
     ])
+    expect(stdout).toEqual([])
     expect(() => getTaskDocument(documentId)).toThrow(`no task document ${documentId}`)
   })
 
