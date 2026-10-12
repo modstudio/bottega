@@ -44,9 +44,13 @@ describe('file ceiling check', () => {
     ])
   })
 
-  test('an unrelated over-limit file left untouched is not judged', () => {
+  test('an over-limit file edited without growing passes', () => {
     expect(
-      fileLengthDecision({ base: [{ path: 'old.ts', lines: 1200 }], head: [], facts }),
+      fileLengthDecision({
+        base: [{ path: 'large.ts', lines: 1200 }],
+        head: [{ path: 'large.ts', lines: 1200 }],
+        facts,
+      }),
     ).toEqual([])
   })
 
