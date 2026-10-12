@@ -57,6 +57,48 @@ test('a stale orchestrator identity is removed in favor of shared configuration'
   }
 })
 
+test('concurrent first use returns the one identity stored under the machine lock', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-id-processes-'))
+  try {
+    const config = join(root, 'config')
+    const legacy = '01990000-0000-7000-8000-000000001240'
+    const source = `
+      import { machineId } from './shared/machine-config.ts'
+      console.log(machineId(process.argv[1] || null))
+    `
+    const children = Array.from({ length: 16 }, (_, index) =>
+      Bun.spawn(['bun', '-e', source, index === 0 ? legacy : ''], {
+        cwd: join(import.meta.dir, '../../..'),
+        env: { ...process.env, [CONFIG_HOME_ENV]: config },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }),
+    )
+    const ids = await Promise.all(
+      children.map(async (child) => {
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ])
+        expect(exitCode, stderr).toBe(0)
+        return stdout.trim()
+      }),
+    )
+    expect(new Set(ids)).toEqual(
+      new Set([
+        storedMachineId({
+          HOME: root,
+          [CONFIG_HOME_ENV]: config,
+        })!,
+      ]),
+    )
+    expect(ids).toHaveLength(16)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('all evidence enqueue paths use the shared id without recreating its legacy key', () => {
   const database = new Database(':memory:')
   applyMigrations(database)

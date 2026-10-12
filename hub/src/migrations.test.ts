@@ -523,33 +523,6 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('a named backfill value must be supplied by the migration caller', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'hub-backfill-value-'))
-    mkdirSync(join(dir, 'meta'))
-    writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (value TEXT);\n')
-    writeFileSync(
-      join(dir, '0001_fill.sql'),
-      '-- BACKFILL\nINSERT INTO item(value) VALUES ($identity);\n-- /BACKFILL\n',
-    )
-    writeFileSync(
-      join(dir, 'meta', '_journal.json'),
-      JSON.stringify({
-        version: '7',
-        dialect: 'sqlite',
-        entries: [
-          { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
-          { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
-        ],
-      }),
-    )
-    const d = new Database(':memory:')
-    expect(() => applyMigrations(d, dir)).toThrow('missing migration backfill value: identity')
-    expect(applyMigrations(d, dir, { identity: 'machine' })).toEqual(['0000_base', '0001_fill'])
-    expect(d.query('SELECT value FROM item').get()).toEqual({ value: 'machine' })
-    d.close()
-    rmSync(dir, { recursive: true, force: true })
-  })
-
   test('every migration backfill is idempotent when the current journal is applied again', () => {
     const d = migratedThrough(13)
     d.exec(`INSERT INTO setting(key,value) VALUES ('collect.hosted-tasks.cursor','cursor-1')`)

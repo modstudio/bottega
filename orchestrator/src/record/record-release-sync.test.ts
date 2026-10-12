@@ -1,12 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { machineId } from '../../../shared/machine-config.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from '../release/release-ledger.ts'
 import { syncRecord } from './record-sync.ts'
 
-const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
+const MACHINE_ID = machineId()
 const SPACE_ID = '01990000-0000-7000-8000-000000000001'
 
 type LocalOutboxRow = { record_id: string; payload: string; created_at: string }
@@ -33,9 +34,6 @@ function senderStore(row: LocalOutboxRow): Database {
 test('release sender upserts the finished state by record id in the project space', async () => {
   const source = new Database(':memory:')
   applyMigrations(source)
-  source
-    .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
-    .run(MACHINE_ID)
   const releaseId = startReleaseLedgerEntry(source, {
     project: PLATFORM_SLUG,
     rung: 'production',

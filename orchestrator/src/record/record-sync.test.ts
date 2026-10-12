@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { machineId } from '../../../shared/machine-config.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
@@ -20,7 +21,7 @@ import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
-const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
+const MACHINE_ID = machineId()
 const STAMP = '2026-09-15T01:01:00.000Z'
 
 function localOutbox(
@@ -839,8 +840,7 @@ test('a payload from another machine is refused before a record write', async ()
     .get()!
   expect(failure).toEqual({
     attempts: 1,
-    last_error:
-      'run outbox machine 01990000-0000-7000-8000-000000000099 does not match invoking machine 01990000-0000-7000-8000-000000000077',
+    last_error: `run outbox machine ${MACHINE_ID} does not match invoking machine 01990000-0000-7000-8000-000000000077`,
   })
   expect(remote.statements.some((statement) => statement.includes('insert into "run"'))).toBe(false)
   local.close()
