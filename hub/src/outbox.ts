@@ -10,6 +10,7 @@ import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -126,6 +127,57 @@ export function queueHostedChange(
       queuedAt,
       merged.fields === null ? null : JSON.stringify(merged.fields),
     )
+}
+
+export function adoptPendingHostedAcknowledgement(
+  conn: Database,
+  localId: string,
+  hostedId: string,
+): void {
+  if (localId === hostedId) return
+  const local = conn
+    .query<OutboxEntry, [string, string]>(
+      `SELECT * FROM hosted_outbox WHERE table_name=? AND row_id=?`,
+    )
+    .get(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId)
+  if (!local) return
+  const hosted = conn
+    .query<OutboxEntry, [string, string]>(
+      `SELECT * FROM hosted_outbox WHERE table_name=? AND row_id=?`,
+    )
+    .get(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, hostedId)
+  if (!hosted) {
+    conn
+      .query(
+        `UPDATE hosted_outbox SET row_id=?,generation=generation+1
+         WHERE table_name=? AND row_id=?`,
+      )
+      .run(hostedId, HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId)
+    return
+  }
+  const merged = mergeQueuedHostedChange(
+    {
+      operation: hosted.operation,
+      fields: hosted.fields === null ? null : JSON.parse(hosted.fields),
+    },
+    {
+      operation: local.operation,
+      fields: local.fields === null ? null : JSON.parse(local.fields),
+    },
+  )
+  conn
+    .query(
+      `UPDATE hosted_outbox SET operation=?,queued_at=?,fields=?,generation=generation+1,
+       attempts=0,last_error=NULL,quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL
+       WHERE id=?`,
+    )
+    .run(
+      merged.operation,
+      local.queued_at < hosted.queued_at ? local.queued_at : hosted.queued_at,
+      merged.fields === null ? null : JSON.stringify(merged.fields),
+      hosted.id,
+    )
+  conn.query(`DELETE FROM hosted_outbox WHERE id=?`).run(local.id)
 }
 
 export function listHostedOutbox(): OutboxEntry[] {
@@ -251,6 +303,15 @@ function recordOutcome(
             id: outcome.adoptedId,
           },
         ])
+      if (
+        removed > 0 &&
+        outcome.status !== 'rejected' &&
+        outcome.adoptedId &&
+        item.change.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
+      )
+        conn
+          .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
+          .run(outcome.adoptedId, item.change.id)
       return removed
     } else if (decision.action === 'retry') {
       const updated = conn

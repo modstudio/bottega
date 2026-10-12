@@ -21,20 +21,21 @@ import {
   projectWriteDecisionFor,
 } from './hosted-write-mode.ts'
 import { readInstallBinding } from './install-binding.ts'
-import { applyHostedAcknowledgement, applyHostedNote } from './note-cache.ts'
+import { mergeNoteAnchors } from './note-anchor-merge.ts'
+import { applyHostedNote } from './note-cache.ts'
 import {
-  hostedAcknowledgeNote,
   hostedCreateNote,
-  hostedDropNote,
-  hostedMergeNotes,
   hostedPromoteNote,
   hostedReapNotes,
   type NoteClientOptions,
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
+import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
+import { queueHostedChange } from './outbox.ts'
 import { projects } from './projects.ts'
+import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
 import { applyHostedTask } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
@@ -42,6 +43,7 @@ import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = {
+  id?: string
   cwd: string
   project: string
   files: { path: string; line: number; content: string }[]
@@ -54,6 +56,7 @@ export type NoteAnchor = {
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
 const noteAnchorSchema: z.ZodType<NoteAnchor> = z.object({
+  id: z.string().uuid().optional(),
   cwd: z.string(),
   project: z.string(),
   files: z.array(
@@ -262,6 +265,7 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   const files = deriveNoteFileAnchors(text, projectPath)
   const run = Number(env.ORCH_RUN_ID ?? 0)
   return {
+    id: newRecordId(),
     cwd,
     project,
     files,
@@ -274,6 +278,10 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
 
 export function noteSessionId(env = process.env): string | null {
   return env.CLAUDE_CODE_SESSION_ID ?? env.CODEX_THREAD_ID ?? null
+}
+
+function identifiedAnchor(anchor: NoteAnchor): NoteAnchor {
+  return anchor.id ? anchor : { ...anchor, id: newRecordId() }
 }
 
 export function listNotes(
@@ -390,27 +398,33 @@ export async function acknowledgeNote(
     .get(note.record_id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   const mode = writeMode(note.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    writeTransaction((conn) => {
-      const row = decode(noteRow(conn, note.record_id))
-      conn
-        .query(
-          `INSERT INTO note_acknowledgement (record_id,note_record_id,session_id,acknowledged_at,sightings)
-           VALUES (?,?,?,?,?)
-           ON CONFLICT(note_record_id,session_id) DO UPDATE SET
-             acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
-        )
-        .run(newRecordId(), row.record_id, sessionId, nowIso(), row.sightings)
-    })
-    return { note: getNote(note.record_id), alreadyAcknowledged: false }
-  }
-  const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
-  const hosted = await hostedAcknowledgeNote(note.record_id, sessionId, hostedOptions)
+  const queuedAt = nowIso()
   writeTransaction((conn) => {
-    applyHostedNote(conn, hosted.note)
-    applyHostedAcknowledgement(conn, hosted.acknowledgement)
+    const row = decode(noteRow(conn, note.record_id))
+    conn
+      .query(
+        `INSERT INTO note_acknowledgement (record_id,note_record_id,session_id,acknowledged_at,sightings)
+         VALUES (?,?,?,?,?) ON CONFLICT(note_record_id,session_id) DO UPDATE SET
+         acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings`,
+      )
+      .run(newRecordId(), row.record_id, sessionId, queuedAt, row.sightings)
+    if (mode === 'hosted-configured') {
+      const acknowledgement = conn
+        .query<{ record_id: string }, [string, string]>(
+          'SELECT record_id FROM note_acknowledgement WHERE note_record_id=? AND session_id=?',
+        )
+        .get(row.record_id, sessionId)!
+      queueHostedChange(
+        conn,
+        HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+        acknowledgement.record_id,
+        'upsert',
+        queuedAt,
+      )
+    }
   })
-  return { note: getNote(note.record_id), alreadyAcknowledged: hosted.alreadyAcknowledged }
+  if (mode === 'hosted-configured') await drainHostedEditOutbox(queuedAt, options.hosted)
+  return { note: getNote(note.record_id), alreadyAcknowledged: false }
 }
 
 function noteCandidates(text: string, project?: string): NoteCandidate[] {
@@ -472,24 +486,35 @@ export async function mergeNote(
         throw new Error('notes from different projects cannot be merged')
       const lastSeen =
         current.last_seen_at > source.last_seen_at ? current.last_seen_at : source.last_seen_at
+      const merged = mergeNoteAnchors(current.anchors, source.anchors.map(identifiedAnchor))
       conn
         .query(`UPDATE note SET anchors=?, sightings=?, last_seen_at=? WHERE record_id=?`)
-        .run(
-          JSON.stringify([...current.anchors, ...source.anchors]),
-          current.sightings + source.sightings,
-          lastSeen,
-          current.record_id,
-        )
+        .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
       conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
     return getNote(targetRecordId)
   }
-  const hostedOptions = await noteDestinationOptions(target.project, options.hosted)
-  const result = await hostedMergeNotes(target.record_id, sourceNote.record_id, hostedOptions)
+  const queuedAt = nowIso()
   writeTransaction((conn) => {
-    applyHostedNote(conn, result.note)
+    const current = decode(noteRow(conn, targetRecordId))
+    const source = decode(noteRow(conn, sourceRecordId))
+    const merged = mergeNoteAnchors(current.anchors, source.anchors.map(identifiedAnchor))
+    const lastSeen =
+      current.last_seen_at > source.last_seen_at ? current.last_seen_at : source.last_seen_at
+    conn
+      .query(`UPDATE note SET anchors=?,sightings=?,last_seen_at=? WHERE record_id=?`)
+      .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, current.record_id, 'upsert', queuedAt, [
+      'anchors',
+      'last_seen_at',
+    ])
     conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, sourceRecordId, 'delete', queuedAt)
+    conn
+      .query(`UPDATE hosted_outbox SET routing_project=? WHERE table_name=? AND row_id=?`)
+      .run(target.project, HOSTED_NOTE_TABLE, sourceRecordId)
   })
+  await drainHostedEditOutbox(queuedAt, options.hosted)
   return getNote(targetRecordId)
 }
 
@@ -508,7 +533,7 @@ export async function createNote(
   const text = input.text.trim()
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
-  const anchor = input.anchor ?? deriveNoteAnchor(text, input.cwd)
+  const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
   const targetProject = input.project ?? anchor.project
   registeredProject(targetProject)
   const candidates = noteCandidates(text, targetProject)
@@ -531,18 +556,21 @@ export async function createNote(
       })
       return { note: getNote(existing.record_id), candidates }
     }
-    const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
-    const hosted = await hostedCreateNote(
-      {
-        project: targetProject,
-        text,
-        area: input.area?.trim() || null,
-        anchor: JSON.stringify(anchor),
-        sameAs: existing.record_id,
-      },
-      hostedOptions,
-    )
-    writeTransaction((conn) => applyHostedNote(conn, hosted))
+    const queuedAt = nowIso()
+    writeTransaction((conn) => {
+      const row = decode(noteRow(conn, existing.record_id))
+      const merged = mergeNoteAnchors(row.anchors, [anchor])
+      conn
+        .query(
+          `UPDATE note SET anchors=?,sightings=?,last_seen_at=?,stale_at=NULL,stale_reason=NULL WHERE record_id=?`,
+        )
+        .run(JSON.stringify(merged.anchors), merged.sightings, queuedAt, row.record_id)
+      queueHostedChange(conn, HOSTED_NOTE_TABLE, row.record_id, 'upsert', queuedAt, [
+        'anchors',
+        'last_seen_at',
+      ])
+    })
+    await drainHostedEditOutbox(queuedAt, options.hosted)
     return { note: getNote(existing.record_id), candidates }
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
@@ -684,9 +712,19 @@ export async function dropNote(
     })
     return getNote(recordId)
   }
-  const hostedOptions = await noteDestinationOptions(current.project, options.hosted)
-  const hosted = await hostedDropNote(current.record_id, reason.trim(), hostedOptions)
-  writeTransaction((conn) => applyHostedNote(conn, hosted))
+  const queuedAt = nowIso()
+  writeTransaction((conn) => {
+    noteRow(conn, recordId)
+    conn
+      .query(`UPDATE note SET stale_at=?,stale_reason=?,last_seen_at=? WHERE record_id=?`)
+      .run(queuedAt, `dropped: ${reason.trim()}`, queuedAt, recordId)
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, recordId, 'upsert', queuedAt, [
+      'stale_at',
+      'stale_reason',
+      'last_seen_at',
+    ])
+  })
+  await drainHostedEditOutbox(queuedAt, options.hosted)
   return getNote(recordId)
 }
 

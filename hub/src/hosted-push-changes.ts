@@ -2,7 +2,12 @@ import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
-import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
+import {
+  decideDocumentUpsert,
+  decideNoteAcknowledgementUpsert,
+  decideNoteUpsert,
+  decideTaskUpsert,
+} from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
   mirrorCommentRow,
@@ -16,6 +21,8 @@ import {
   HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -23,6 +30,8 @@ import {
   type PushableHubChangeTable,
   type PushedComment,
   type PushedDocument,
+  type PushedNote,
+  type PushedNoteAcknowledgement,
   type PushedStatusEvent,
   type PushedTask,
 } from './push-contract.ts'
@@ -102,6 +111,49 @@ async function statusEventEquals(tx: SQL, identity: TaskIdentity, row: PushedSta
     '?column?': 1
   }>
   return matches.length > 0
+}
+
+type NotePushChange = Extract<HostedPushChange, { table: typeof HOSTED_NOTE_TABLE }>
+
+async function deleteHostedNoteFromPush(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: Extract<NotePushChange, { op: 'delete' }>,
+  current: PushedNote | undefined,
+) {
+  if (!current || current.deleted_at) return { id: input.id, status: 'duplicate' as const }
+  await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now()
+    WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
+  await tx`UPDATE hub_note_acknowledgement SET deleted_at=now(),updated_at=now()
+    WHERE note_id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`
+  return { id: input.id, status: 'applied' as const }
+}
+
+async function upsertHostedNoteFromPush(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: Extract<NotePushChange, { op: 'upsert' }>,
+  current: PushedNote | undefined,
+) {
+  if (!current) throw new Error(`no live hosted note matches ${input.id}`)
+  const decision = decideNoteUpsert(current, input.row, input.fields)
+  if (decision.kind === 'reject') throw new Error(decision.reason)
+  if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' as const }
+  if (decision.kind !== 'patch') throw new Error('an existing note must produce a patch')
+  const values = decision.values
+  await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
+    last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
+    stale_reason=${values.stale_reason ?? null},updated_at=now()
+    WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
+  return { id: input.id, status: 'applied' as const }
+}
+
+async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NotePushChange) {
+  const existing = (await tx`SELECT *,number::int number FROM hub_note
+    WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedNote[]
+  return input.op === 'delete'
+    ? deleteHostedNoteFromPush(tx, identity, input, existing[0])
+    : upsertHostedNoteFromPush(tx, identity, input, existing[0])
 }
 
 const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
@@ -205,6 +257,44 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (input.op === 'delete') throw new Error('hub_day does not accept delete')
       const status = await applyDayChangeInTransaction(tx, identity, input.row)
       return { id: input.id, status }
+    },
+  },
+  [HOSTED_NOTE_TABLE]: {
+    async apply(tx, identity, input) {
+      if (input.table !== HOSTED_NOTE_TABLE) throw new Error('wrong note handler')
+      return applyHostedNotePush(tx, identity, input as NotePushChange)
+    },
+  },
+  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
+    async apply(tx, identity, input) {
+      if (input.table !== HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE || input.op === 'delete')
+        throw new Error('hub_note_acknowledgement accepts upsert only')
+      const row: PushedNoteAcknowledgement = input.row
+      const note = (await tx`SELECT id FROM hub_note WHERE id=${row.note_id}::uuid
+        AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`) as Array<{ id: string }>
+      if (!note.length) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
+      const existing = (await tx`SELECT * FROM hub_note_acknowledgement
+        WHERE space_id=${identity.spaceId}::uuid AND note_id=${row.note_id}::uuid
+        AND session_id=${row.session_id} FOR UPDATE`) as PushedNoteAcknowledgement[]
+      const old = existing[0]
+      const decision = decideNoteAcknowledgementUpsert(old ?? null, row)
+      if (decision.kind === 'duplicate')
+        return {
+          id: input.id,
+          status: 'duplicate',
+          ...(old!.id !== input.id ? { adoptedId: old!.id } : {}),
+        }
+      const adoptedId = old?.id ?? input.id
+      const values = decision.kind === 'patch' ? decision.values : row
+      await tx`INSERT INTO hub_note_acknowledgement
+        (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
+        VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.note_id}::uuid,
+        ${row.session_id},${values.acknowledged_at!}::timestamptz,${values.sightings!},
+        ${row.created_at}::timestamptz,${values.updated_at ?? row.updated_at}::timestamptz,NULL)
+        ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET
+        acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings,
+        updated_at=excluded.updated_at,deleted_at=NULL`
+      return { id: input.id, status: 'applied', ...(adoptedId !== input.id ? { adoptedId } : {}) }
     },
   },
 }

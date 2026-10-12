@@ -97,3 +97,56 @@ test('comment and document rows validate every wire field', () => {
     expect('outcome' in parsed ? parsed.outcome.reason : null).toContain(`row.${field}`)
   }
 })
+
+test('note edges require fields and reject unknown fields and malformed note-family rows', () => {
+  const note = {
+    table: 'hub_note',
+    id,
+    op: 'upsert',
+    row: {
+      id,
+      number: 1,
+      project: PLATFORM_SLUG,
+      project_name: PLATFORM_SLUG,
+      text: 'note',
+      area: null,
+      anchors: '[]',
+      sightings: 0,
+      created_at: at,
+      last_seen_at: at,
+      stale_at: null,
+      stale_reason: null,
+      promoted_task: null,
+      promoted_task_id: null,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  for (const value of [
+    note,
+    { ...note, fields: ['text'] },
+    { ...note, fields: ['unknown'] },
+    { ...note, fields: ['anchors'], row: { ...note.row, anchors: '{}' } },
+  ]) {
+    const parsed = parseHostedPushItem(value)
+    expect('outcome' in parsed ? parsed.outcome.status : 'accepted').toBe('rejected')
+  }
+  const acknowledgement = {
+    table: 'hub_note_acknowledgement',
+    id,
+    op: 'upsert',
+    row: {
+      id,
+      note_id: 'not-a-uuid',
+      project_name: PLATFORM_SLUG,
+      session_id: 'session',
+      acknowledged_at: at,
+      sightings: 1,
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  const parsed = parseHostedPushItem(acknowledgement)
+  expect('outcome' in parsed ? parsed.outcome.reason : '').toContain('row.note_id')
+})

@@ -10,6 +10,13 @@ import {
   applyHostedNoteRows,
   hostedNotePullRows,
 } from './note-cache.ts'
+import {
+  drainHostedOutbox,
+  listHostedOutbox,
+  queueHostedChange,
+  runHostedOutboxCommand,
+} from './outbox.ts'
+import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
@@ -365,6 +372,174 @@ test('an acknowledgement on a later page uses the note from an earlier page', as
   ).not.toBeNull()
 })
 
+test('a pulled acknowledgement adopts its id without stranding a queued keep', async () => {
+  const localId = '01990000-0000-7000-8000-000000001254'
+  storeCursor('12')
+  writeTransaction((conn) => {
+    applyHostedNote(conn, note())
+    conn
+      .query(`INSERT INTO note_acknowledgement
+        (record_id,note_record_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?,?)`)
+      .run(localId, noteId, 'session-1', '2026-10-09T13:00:00.000Z', 2)
+    queueHostedChange(conn, HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId, 'upsert', at)
+  })
+  await pull(
+    routeFetch({
+      changes: () =>
+        page({
+          next: 13,
+          changes: [
+            {
+              sequence: 13,
+              table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+              id: acknowledgementId,
+              op: 'upsert',
+              row: acknowledgement({ acknowledged_at: at, sightings: 1 }),
+            },
+          ],
+        }),
+    }),
+  )
+  expect(
+    db().query(`SELECT record_id,acknowledged_at,sightings FROM note_acknowledgement`).get(),
+  ).toEqual({
+    record_id: acknowledgementId,
+    acknowledged_at: '2026-10-09T13:00:00.000Z',
+    sightings: 2,
+  })
+  expect(db().query(`SELECT row_id,generation FROM hosted_outbox`).get()).toEqual({
+    row_id: acknowledgementId,
+    generation: 2,
+  })
+  const sent: unknown[] = []
+  const report = await drainHostedOutbox({
+    identity: async () => ({
+      userId: 'user-1',
+      activeSpaceId: 'space-one',
+      memberships: [{ spaceId: 'space-one', slug: 'one', permission: 'write' as const }],
+      capabilities: {
+        spacePush: true,
+        spacePushTables: [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE],
+      },
+    }),
+    registered: () => [{ name: 'one', settings: { space: 'space-one' } }],
+    push: async (changes) => {
+      sent.push(...changes)
+      return changes.map((change) => ({ id: change.id, status: 'applied' as const }))
+    },
+  })
+  expect(report.sent).toBe(1)
+  expect(sent).toEqual([
+    expect.objectContaining({
+      id: acknowledgementId,
+      row: expect.objectContaining({ acknowledged_at: '2026-10-09T13:00:00.000Z', sightings: 2 }),
+    }),
+  ])
+})
+
+test('a pending sighting merges a pulled sighting and drains only its identified anchor', async () => {
+  const localAnchor = '01990000-0000-7000-8000-000000001255'
+  const hostedAnchor = '01990000-0000-7000-8000-000000001256'
+  storeCursor('12')
+  writeTransaction((conn) => {
+    applyHostedNote(
+      conn,
+      note({
+        anchors: JSON.stringify([{ kind: 'run' }, { id: localAnchor, kind: 'run' }]),
+        sightings: 2,
+      }),
+    )
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
+  })
+  await pull(
+    routeFetch({
+      changes: () =>
+        page({
+          next: 13,
+          changes: [
+            {
+              sequence: 13,
+              table: HOSTED_NOTE_TABLE,
+              id: noteId,
+              op: 'upsert',
+              row: note({
+                anchors: JSON.stringify([{ kind: 'run' }, { id: hostedAnchor, kind: 'run' }]),
+                sightings: 2,
+              }),
+            },
+          ],
+        }),
+    }),
+  )
+  const local = db()
+    .query<{ anchors: string; sightings: number }, [string]>(
+      `SELECT anchors,sightings FROM note WHERE record_id=?`,
+    )
+    .get(noteId)!
+  expect(local.sightings).toBe(3)
+  expect(JSON.parse(local.anchors)).toEqual([
+    { kind: 'run' },
+    { id: hostedAnchor, kind: 'run' },
+    { id: localAnchor, kind: 'run' },
+  ])
+  const sent: Array<{ row?: { anchors?: string } }> = []
+  expect(
+    (
+      await drainHostedOutbox({
+        identity: async () => ({
+          userId: 'user-1',
+          activeSpaceId: 'space-one',
+          memberships: [{ spaceId: 'space-one', slug: 'one', permission: 'write' as const }],
+          capabilities: { spacePush: true, spacePushTables: [HOSTED_NOTE_TABLE] },
+        }),
+        registered: () => [{ name: 'one', settings: { space: 'space-one' } }],
+        push: async (changes) => {
+          sent.push(...(changes as Array<{ row?: { anchors?: string } }>))
+          return changes.map((change) => ({ id: change.id, status: 'applied' as const }))
+        },
+      })
+    ).sent,
+  ).toBe(1)
+  expect(JSON.parse(sent[0]!.row!.anchors!)).toEqual([
+    { kind: 'run' },
+    { id: hostedAnchor, kind: 'run' },
+    { id: localAnchor, kind: 'run' },
+  ])
+})
+
+test('a pulled hosted deletion quarantines a pending sighting with its anchor readable', async () => {
+  const localAnchor = '01990000-0000-7000-8000-000000001257'
+  storeCursor('12')
+  writeTransaction((conn) => {
+    applyHostedNote(
+      conn,
+      note({ anchors: JSON.stringify([{ id: localAnchor, kind: 'run' }]), sightings: 1 }),
+    )
+    queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
+  })
+  await pull(
+    routeFetch({
+      changes: () =>
+        page({
+          next: 13,
+          changes: [
+            {
+              sequence: 13,
+              table: HOSTED_NOTE_TABLE,
+              id: noteId,
+              op: 'upsert',
+              row: note({ deleted_at: at }),
+            },
+          ],
+        }),
+    }),
+  )
+  const entry = listHostedOutbox()[0]!
+  expect(entry.quarantined_at).not.toBeNull()
+  expect(runHostedOutboxCommand(['outbox', 'show', entry.id]).join('\n')).toContain(localAnchor)
+  expect(db().query(`SELECT 1 FROM note WHERE record_id=?`).get(noteId)).toBeNull()
+})
+
 test('a failed missing-parent fetch leaves the note page and cursor untouched', async () => {
   storeCursor('12')
   const fetch = routeFetch({
@@ -444,7 +619,7 @@ test('a deleted note upsert skips its live acknowledgement without fetching in b
   )
   expect(followerParentFetches).toBe(0)
   expect(cursor()).toBe('14')
-  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 2 })
+  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 1, deletesSkipped: 1 })
   expect({
     note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
     acknowledgement:

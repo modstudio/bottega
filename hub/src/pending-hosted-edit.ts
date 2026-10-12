@@ -1,11 +1,15 @@
 import type { Database } from 'bun:sqlite'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { mergeNoteAnchors } from './note-anchor-merge.ts'
+import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 
 export const HOSTED_MACHINE_TABLES = {
   hub_task: 'task',
   hub_task_comment: 'task_comment',
   hub_task_document: 'task_document',
   hub_task_status_event: 'task_status_event',
+  [HOSTED_NOTE_TABLE]: 'note',
+  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: 'note_acknowledgement',
 } as const
 
 export type ReconciledHostedTable = keyof typeof HOSTED_MACHINE_TABLES
@@ -64,6 +68,19 @@ function restorePendingFields(
   values: Record<string, unknown> | null,
 ): void {
   if (!values || !(table in HOSTED_MACHINE_TABLES)) return
+  if (table === 'hub_note' && typeof values.anchors === 'string') {
+    const hosted = conn
+      .query<{ anchors: string }, [string]>('SELECT anchors FROM note WHERE record_id=?')
+      .get(id)
+    if (hosted) {
+      const merged = mergeNoteAnchors(
+        JSON.parse(hosted.anchors) as Array<{ id?: string }>,
+        JSON.parse(values.anchors) as Array<{ id?: string }>,
+      )
+      values.anchors = JSON.stringify(merged.anchors)
+      values.sightings = merged.sightings
+    }
+  }
   const columns = Object.keys(values)
   if (!columns.length) return
   const bindings = columns.map((column) => values[column]) as Array<

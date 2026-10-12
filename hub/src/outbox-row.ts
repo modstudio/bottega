@@ -4,6 +4,8 @@ import {
   HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -11,6 +13,8 @@ import {
   type PushedDay,
   type PushedDocument,
   type PushedInterval,
+  type PushedNote,
+  type PushedNoteAcknowledgement,
 } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 import { hostedTaskFromTaskRow } from './task-hosted-row.ts'
@@ -132,6 +136,40 @@ function currentStatusEvent(conn: Database, id: string): LoadedOutboxChange | nu
     : null
 }
 
+function currentNote(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<PushedNote, [string]>(
+      `SELECT n.record_id id,n.number,n.project,n.project project_name,n.text,n.area,n.anchors,
+       n.sightings,n.created_at,n.last_seen_at,n.stale_at,n.stale_reason,n.promoted_task,
+       n.promoted_task_record_id promoted_task_id,n.last_seen_at updated_at,NULL deleted_at
+       FROM note n WHERE n.record_id=?`,
+    )
+    .get(id)
+  return row
+    ? {
+        projectName: row.project,
+        change: { table: HOSTED_NOTE_TABLE, id, op: 'upsert', row, fields: [] },
+      }
+    : null
+}
+
+function currentAcknowledgement(conn: Database, id: string): LoadedOutboxChange | null {
+  const row = conn
+    .query<PushedNoteAcknowledgement, [string]>(
+      `SELECT a.record_id id,n.project project_name,a.note_record_id note_id,a.session_id,
+       a.acknowledged_at,a.sightings,a.acknowledged_at created_at,a.acknowledged_at updated_at,
+       NULL deleted_at FROM note_acknowledgement a JOIN note n ON n.record_id=a.note_record_id
+       WHERE a.record_id=?`,
+    )
+    .get(id)
+  return row
+    ? {
+        projectName: row.project_name,
+        change: { table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, id, op: 'upsert', row },
+      }
+    : null
+}
+
 export function loadOutboxChange(
   conn: Database,
   pointer: OutboxPointer,
@@ -157,5 +195,13 @@ export function loadOutboxChange(
     return currentStatusEvent(conn, pointer.row_id)
   if (pointer.table_name === HOSTED_INTERVAL_TABLE) return currentInterval(conn, pointer.row_id)
   if (pointer.table_name === HOSTED_DAY_TABLE) return currentDay(conn, pointer.row_id)
+  if (pointer.table_name === HOSTED_NOTE_TABLE) {
+    const loaded = currentNote(conn, pointer.row_id)
+    if (loaded?.change.op === 'upsert' && loaded.change.table === HOSTED_NOTE_TABLE)
+      loaded.change.fields = pointer.fields ? JSON.parse(pointer.fields) : []
+    return loaded
+  }
+  if (pointer.table_name === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
+    return currentAcknowledgement(conn, pointer.row_id)
   return null
 }

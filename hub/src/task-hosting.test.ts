@@ -402,6 +402,8 @@ describe('hosted-only task safety', () => {
           'hub_task_document',
           'hub_interval',
           'hub_day',
+          'hub_note',
+          'hub_note_acknowledgement',
         ],
         spaceIdentitySet: true,
       },
