@@ -148,7 +148,7 @@ function resolvedCategory(
       category: category.id,
       title: category.title,
       scope: category.scope,
-      enforced: Boolean(override),
+      enforced: false,
       tool: null,
       points: [],
       blocking: false,

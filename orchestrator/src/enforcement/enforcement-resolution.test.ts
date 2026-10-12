@@ -109,7 +109,7 @@ describe('resolveMechanicalChecks', () => {
     expect(row(rows, 'function-length')?.source).toBe('uncovered')
   })
 
-  test('an override without a tool is enforced but remains uncovered and keeps its note', () => {
+  test('an override that names no tool stays uncovered, is not enforced, and keeps its note', () => {
     expect(
       row(
         resolved('node', {
@@ -119,7 +119,7 @@ describe('resolveMechanicalChecks', () => {
       ),
     ).toMatchObject({
       source: 'uncovered',
-      enforced: true,
+      enforced: false,
       tool: null,
       points: [],
       blocking: false,
