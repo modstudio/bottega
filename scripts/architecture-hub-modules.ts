@@ -75,6 +75,7 @@ export const hubModuleSpecs = [
       'node:crypto',
       '../../shared/record/schema.ts',
       './db.ts',
+      './offline-task-edits.ts',
       './task-client.ts',
       './task-document-label.ts',
       './task-identity.ts',

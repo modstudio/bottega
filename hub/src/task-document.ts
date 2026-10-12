@@ -1,7 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { hostedCreateDocument, hostedDeleteDocument, hostedPatchDocument } from './task-client.ts'
+import {
+  drainHostedEditOutbox,
+  queueHostedDocumentDelete,
+  queueHostedDocumentUpsert,
+} from './offline-task-edits.ts'
+import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
@@ -195,64 +200,56 @@ export async function updateTaskDocument(
   const id = current.id
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
-  const role = changes.role === undefined ? current.role : documentRole(changes.role)
   const expectedVersion = changes.expectedVersion
   if (changes.body !== undefined && !expectedVersion)
     throw new Error('a body update requires --version from `hub task doc show`')
   const mode = taskWriteMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    const at = nowIso()
-    writeTransaction((conn) => {
-      const row = conn
-        .query<Omit<TaskDocument, 'label'>, [string]>(
-          `SELECT record_id AS id, number, task_key, task_record_id, role, title, body, version, created_at, updated_at
+  const hosted = mode === 'hosted-configured'
+  const at = nowIso()
+  const fields = [
+    ...(changes.title !== undefined ? ['title'] : []),
+    ...(changes.role !== undefined ? ['role'] : []),
+    ...(changes.body !== undefined ? ['body', 'version'] : []),
+  ]
+  writeTransaction((conn) => {
+    const row = conn
+      .query<Omit<TaskDocument, 'label'>, [string]>(
+        `SELECT record_id AS id, number, task_key, task_record_id, role, title, body, version, created_at, updated_at
            FROM task_document WHERE record_id = ?`,
-        )
-        .get(id)
-      if (!row) throw new Error(`no task document ${id}`)
-      const nextRole = changes.role === undefined ? row.role : documentRole(changes.role)
-      if (changes.body !== undefined) {
-        const result = conn
-          .query(
-            `UPDATE task_document
+      )
+      .get(id)
+    if (!row) throw new Error(`no task document ${id}`)
+    const nextRole = changes.role === undefined ? row.role : documentRole(changes.role)
+    if (changes.body !== undefined) {
+      const result = conn
+        .query(
+          `UPDATE task_document
               SET title = ?, role = ?, body = ?, version = ?, updated_at = ?
             WHERE record_id = ? AND version = ?`,
-          )
-          .run(
-            changes.title ?? row.title,
-            nextRole,
-            changes.body,
-            documentVersion(),
-            at,
-            id,
-            expectedVersion ?? row.version,
-          )
-        if (result.changes !== 1) {
-          throw new Error(
-            `task document ${id} changed since version ${expectedVersion}; read it again`,
-          )
-        }
-        return
+        )
+        .run(
+          changes.title ?? row.title,
+          nextRole,
+          changes.body,
+          documentVersion(),
+          at,
+          id,
+          expectedVersion ?? row.version,
+        )
+      if (result.changes !== 1) {
+        throw new Error(
+          `task document ${id} changed since version ${expectedVersion}; read it again`,
+        )
       }
-      conn
-        .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE record_id = ?`)
-        .run(changes.title ?? row.title, nextRole, at, id)
-    })
-    return getTaskDocument(id)
-  }
-  const hosted = await hostedPatchDocument(
-    task.key,
-    current.id,
-    { ...changes, role, version: documentVersion() },
-    hostedTaskWriteOptions(task.project, options.hosted),
-  )
-  writeTransaction((conn) =>
+      if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
+      return
+    }
     conn
-      .query(
-        `UPDATE task_document SET role=?,title=?,body=?,version=?,updated_at=? WHERE record_id=?`,
-      )
-      .run(hosted.role, hosted.title, hosted.body, hosted.version, hosted.updated_at, id),
-  )
+      .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE record_id = ?`)
+      .run(changes.title ?? row.title, nextRole, at, id)
+    if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
+  })
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return getTaskDocument(id)
 }
 
@@ -265,24 +262,20 @@ export async function deleteTaskDocument(
   const task = taskByRecordId<DocumentTask>(removed.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
   const mode = taskWriteMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    return writeTransaction((conn) => {
-      const row = conn
-        .query<Omit<TaskDocument, 'label'>, [string]>(
-          `SELECT record_id AS id, number, task_key, task_record_id, role, title, body, version, created_at, updated_at
+  const hosted = mode === 'hosted-configured'
+  const at = nowIso()
+  const result = writeTransaction((conn) => {
+    const row = conn
+      .query<Omit<TaskDocument, 'label'>, [string]>(
+        `SELECT record_id AS id, number, task_key, task_record_id, role, title, body, version, created_at, updated_at
            FROM task_document WHERE record_id = ?`,
-        )
-        .get(id)
-      if (!row) throw new Error(`no task document ${id}`)
-      conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id)
-      return withDocumentLabel(row)
-    })
-  }
-  await hostedDeleteDocument(
-    task.key,
-    removed.id,
-    hostedTaskWriteOptions(task.project, options.hosted),
-  )
-  writeTransaction((conn) => conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id))
-  return removed
+      )
+      .get(id)
+    if (!row) throw new Error(`no task document ${id}`)
+    if (hosted) queueHostedDocumentDelete(conn, id, task.project, at)
+    conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id)
+    return withDocumentLabel(row)
+  })
+  if (hosted) await drainHostedEditOutbox(at, options.hosted)
+  return result
 }

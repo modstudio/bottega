@@ -6,15 +6,19 @@ import {
   drainHostedOutbox,
   hostedOutboxDoctorLines,
   listHostedOutbox,
+  mergeQueuedHostedChange,
   queueHostedChange,
-  retryHostedOutboxEntry,
+  runHostedOutboxCommand,
 } from './outbox.ts'
 import {
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
 } from './push-contract.ts'
+import type { HostedTaskIdentity } from './task-client.ts'
 
 const project = {
   name: 'fixture',
@@ -22,11 +26,19 @@ const project = {
   repository: true,
   settings: { keyPrefixes: ['FIX'] },
 }
-const identity = {
+const identity: HostedTaskIdentity = {
   userId: 'user-one',
   activeSpaceId: 'space-one',
   memberships: [{ spaceId: 'space-one', slug: 'one', permission: 'write' as const }],
-  capabilities: { spacePush: true },
+  capabilities: {
+    spacePush: true,
+    spacePushTables: [
+      HOSTED_TASK_TABLE,
+      HOSTED_COMMENT_TABLE,
+      HOSTED_DOCUMENT_TABLE,
+      HOSTED_STATUS_EVENT_TABLE,
+    ],
+  },
 }
 const trackerTask = (key: string, category: 'open' | 'active') => ({
   externalId: `tracker-${key}`,
@@ -51,6 +63,49 @@ function queueTransition(key: string, at: string) {
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('field-list merging preserves one-entry whole-row and delete semantics', () => {
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['title'] },
+        { operation: 'upsert', fields: ['status'] },
+      ),
+    ).toEqual({ operation: 'upsert', fields: ['title', 'status'] })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['title'] },
+        { operation: 'upsert', fields: null },
+      ),
+    ).toEqual({ operation: 'upsert', fields: null })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: null },
+        { operation: 'upsert', fields: ['body'] },
+      ),
+    ).toEqual({ operation: 'upsert', fields: null })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['body'] },
+        { operation: 'delete', fields: ['title'] },
+      ),
+    ).toEqual({ operation: 'delete', fields: null })
+  })
+
+  test('show exposes kept values and discard removes only quarantined entries', () => {
+    writeTransaction((conn) => {
+      queueHostedChange(conn, HOSTED_TASK_TABLE, 'row-kept', 'upsert', undefined, ['title'])
+      conn
+        .query(
+          `UPDATE hosted_outbox SET quarantined_at='2026-10-11T12:00:00.000Z',quarantine_reason='deleted',kept_values='{"title":"copy me"}' WHERE row_id='row-kept'`,
+        )
+        .run()
+    })
+    const id = listHostedOutbox()[0]!.id
+    expect(runHostedOutboxCommand(['outbox', 'show', id]).join('\n')).toContain('copy me')
+    expect(runHostedOutboxCommand(['outbox', 'discard', id])).toEqual([
+      `outbox entry ${id} discarded`,
+    ])
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
   test('a tracker task queues only when its machine row changes', () => {
     observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z')
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])
@@ -209,7 +264,9 @@ describe('hosted outbox', () => {
       })
     expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantine_reason: 'invalid' })
     const entryId = listHostedOutbox()[0]!.id
-    expect(retryHostedOutboxEntry(entryId)).toBeTrue()
+    expect(runHostedOutboxCommand(['outbox', 'retry', entryId])).toEqual([
+      `outbox entry ${entryId} queued for retry`,
+    ])
     expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantined_at: null })
   })
 
@@ -389,30 +446,49 @@ describe('hosted outbox', () => {
     expect(destinations).toEqual(['space-two'])
   })
 
-  test('orders a parent task before its child and status event', async () => {
+  test('orders a parent task before its task children and status event', async () => {
     observeTrackerTask(trackerTask('FIX-10', 'open'), '2026-10-11T12:00:00.000Z')
     observeTrackerTask(trackerTask('FIX-11', 'open'), '2026-10-11T12:01:00.000Z')
     const parentId = db()
       .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-10'`)
       .get()!.record_id
-    writeTransaction((conn) =>
+    writeTransaction((conn) => {
       conn
         .query(`UPDATE task SET parent_key='FIX-10',parent_record_id=? WHERE key='FIX-11'`)
-        .run(parentId),
-    )
+        .run(parentId)
+      const child = conn
+        .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='FIX-11'`)
+        .get()!
+      const commentId = Bun.randomUUIDv7()
+      const documentId = Bun.randomUUIDv7()
+      conn
+        .query(`INSERT INTO task_comment
+            (record_id,task_key,task_record_id,body,created_at)
+            VALUES (?,'FIX-11',?,'comment','2026-10-11T12:01:00.000Z')`)
+        .run(commentId, child.record_id)
+      conn
+        .query(`INSERT INTO task_document
+            (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+            VALUES (?,'FIX-11',?,1,'document','body','v1','2026-10-11T12:01:00.000Z','2026-10-11T12:01:00.000Z')`)
+        .run(documentId, child.record_id)
+      queueHostedChange(conn, 'hub_task_comment', commentId, 'upsert')
+      queueHostedChange(conn, 'hub_task_document', documentId, 'upsert')
+    })
     observeTrackerTask(trackerTask('FIX-11', 'active'), '2026-10-11T12:02:00.000Z')
-    let sent: HostedPushChange[] = []
+    const sent: HostedPushChange[] = []
     await drainHostedOutbox({
       identity: async () => identity,
       registered: () => [project],
       push: async (changes) => {
-        sent = changes
+        sent.push(...changes)
         return changes.map(({ id }) => ({ id, status: 'applied' as const }))
       },
     })
     expect(sent.map((change) => change.table)).toEqual([
       HOSTED_TASK_TABLE,
       HOSTED_TASK_TABLE,
+      HOSTED_COMMENT_TABLE,
+      HOSTED_DOCUMENT_TABLE,
       HOSTED_STATUS_EVENT_TABLE,
     ])
     expect(

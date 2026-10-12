@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
@@ -25,6 +25,25 @@ const hosted = {
     const body = init?.body ? JSON.parse(String(init.body)) : {}
     const at = new Date().toISOString()
     const key = decodeURIComponent(url.pathname.split('/')[3] ?? '')
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'declared-gamma-space',
+        memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
+        capabilities: {
+          spacePush: true,
+          spacePushTables: [
+            'hub_task',
+            'hub_task_comment',
+            'hub_task_document',
+            'hub_task_status_event',
+          ],
+        },
+      })
+    if (url.pathname === '/v1/changes')
+      return Response.json(
+        (body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })),
+      )
     if (url.pathname === '/v1/tasks') {
       const project = body.project as string
       const prefixes: Record<string, string> = {
@@ -65,16 +84,6 @@ const hosted = {
         next_document_number: 1,
       })
     }
-    if (url.pathname.endsWith('/comments'))
-      return Response.json({
-        id: Bun.randomUUIDv7(),
-        task_key: key,
-        project_name: 'workshop',
-        body: body.body,
-        created_at: at,
-        updated_at: at,
-        deleted_at: null,
-      })
     if (url.pathname.endsWith('/documents'))
       return Response.json({
         id: Bun.randomUUIDv7(),
@@ -125,6 +134,104 @@ const branchClassification = (
   operator,
   wouldDelete: [],
   errors: [],
+})
+
+describe('hosted-authoritative existing-row edits', () => {
+  beforeEach(resetFixtureStore)
+  const unreachable = {
+    baseUrl: 'https://unreachable.example.test',
+    token: 'test',
+    fetch: async () => {
+      throw new Error('hosted hub unavailable')
+    },
+  }
+
+  test('set, comment, and close save locally and queue while offline', async () => {
+    const id = seed('GAM-70', 'gamma')
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
+      await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
+      await closeTask(
+        'GAM-70',
+        { recordId: id },
+        {
+          hosted: unreachable,
+          classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
+        },
+      )
+    } finally {
+      log.mockRestore()
+    }
+    expect(messages).toEqual([
+      expect.stringContaining('hosted change saved and queued'),
+      expect.stringContaining('hosted change saved and queued'),
+      expect.stringContaining('hosted change saved and queued'),
+    ])
+    expect(db().query(`SELECT title,status_category FROM task WHERE record_id=?`).get(id)).toEqual({
+      title: 'Offline title',
+      status_category: 'done',
+    })
+    expect(
+      db()
+        .query<{ table_name: string }, []>(
+          `SELECT table_name FROM hosted_outbox ORDER BY table_name`,
+        )
+        .all()
+        .map((row) => row.table_name),
+    ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
+  })
+
+  test('an applied or rejected after-write drain reports its outcome and keeps rejections', async () => {
+    const sentId = seed('GAM-71', 'gamma')
+    const rejectedId = seed('GAM-72', 'gamma')
+    let reject = false
+    const fetch = async (input: string, init?: RequestInit) => {
+      const url = new URL(input)
+      if (url.pathname === '/v1/tasks/identity')
+        return Response.json({
+          userId: 'user-1',
+          activeSpaceId: 'declared-gamma-space',
+          memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
+          capabilities: { spacePush: true, spacePushTables: ['hub_task'] },
+        })
+      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+      return Response.json(
+        changes.map(({ id }) =>
+          reject ? { id, status: 'rejected', reason: 'policy says no' } : { id, status: 'applied' },
+        ),
+      )
+    }
+    const messages: unknown[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    try {
+      const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
+      await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, { hosted })
+      reject = true
+      await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, { hosted })
+    } finally {
+      log.mockRestore()
+    }
+    expect(messages).toEqual([
+      'hosted change sent',
+      'hosted change rejected: policy says no; inspect it with `hub outbox`',
+    ])
+    expect(
+      db().query(`SELECT last_error FROM hosted_outbox WHERE row_id=?`).get(rejectedId),
+    ).toEqual({
+      last_error: 'policy says no',
+    })
+  })
+
+  test('new still needs hosting and local-authoritative edits queue nothing', async () => {
+    await expect(
+      createTask({ project: 'gamma', title: 'Cannot create offline' }, { hosted: unreachable }),
+    ).rejects.toThrow('hosted hub unavailable')
+    const id = seed('BET-70', 'beta')
+    await setTask('BET-70', { recordId: id }, { title: 'Local only' }, { hosted: { baseUrl: '' } })
+    expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
+  })
 })
 
 describe('local task tracker', () => {
@@ -391,66 +498,11 @@ describe('declared project space task writes', () => {
     const fetch = async (input: string, init?: RequestInit) => {
       const url = new URL(input)
       const method = init?.method ?? 'GET'
-      const body = init?.body ? JSON.parse(String(init.body)) : {}
       requests.push({
         method,
         pathname: url.pathname,
         space: new Headers(init?.headers).get('x-record-space'),
       })
-
-      const taskMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
-      if (method === 'PATCH' && taskMatch) {
-        const current = showTask(decodeURIComponent(taskMatch[1]!)).task
-        const at = new Date().toISOString()
-        return Response.json({
-          id: current.record_id,
-          key: current.key,
-          project: current.project,
-          project_name: current.project,
-          title: body.title ?? current.title,
-          status: body.status ?? current.status,
-          status_category: body.status_category ?? current.status_category,
-          parent_key: body.parent_key ?? current.parent_key,
-          body: body.body ?? current.body,
-          assignee: body.assignee ?? current.assignee,
-          opened_at: current.opened_at,
-          closed_at: current.closed_at,
-          source: current.source,
-          first_seen: current.first_seen,
-          last_seen: at,
-          created_at: current.first_seen,
-          updated_at: at,
-          deleted_at: null,
-          next_document_number: current.next_document_number,
-        })
-      }
-
-      const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
-      if (method === 'POST' && closeMatch) {
-        const current = showTask(decodeURIComponent(closeMatch[1]!)).task
-        const at = new Date().toISOString()
-        return Response.json({
-          id: current.record_id,
-          key: current.key,
-          project: current.project,
-          project_name: current.project,
-          title: current.title,
-          status: 'done',
-          status_category: 'done',
-          parent_key: current.parent_key,
-          body: current.body,
-          assignee: current.assignee,
-          opened_at: current.opened_at,
-          closed_at: at,
-          source: current.source,
-          first_seen: current.first_seen,
-          last_seen: at,
-          created_at: current.first_seen,
-          updated_at: at,
-          deleted_at: null,
-          next_document_number: current.next_document_number,
-        })
-      }
 
       return hosted.fetch(input, init)
     }
@@ -472,26 +524,10 @@ describe('declared project space task writes', () => {
     expect(requests).toEqual([
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
       { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
-      {
-        method: 'POST',
-        pathname: expect.stringMatching(/^\/v1\/tasks\/GAM-\d+\/comments$/),
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'PATCH',
-        pathname: `/v1/tasks/${created.key}`,
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'POST',
-        pathname: `/v1/tasks/${created.key}/close`,
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'POST',
-        pathname: `/v1/tasks/${created.key}/comments`,
-        space: 'declared-gamma-space',
-      },
+      ...Array.from({ length: 4 }, () => [
+        { method: 'GET', pathname: '/v1/tasks/identity', space: null },
+        { method: 'POST', pathname: '/v1/changes', space: 'declared-gamma-space' },
+      ]).flat(),
     ])
   })
 })
