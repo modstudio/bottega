@@ -21,7 +21,9 @@ export function registerBoardSharedSpaceApiProof(
       ).json()) as { items: Array<{ message: { id: string; sharedSpaceReach?: boolean } }> }
     const shared = await changes(sharedToken())
     expect(shared.items.find((item) => item.message.id === id)?.message.sharedSpaceReach).toBeTrue()
-    expect((await changes(unrelatedToken())).items.some((item) => item.message.id === id)).toBeFalse()
+    expect(
+      (await changes(unrelatedToken())).items.some((item) => item.message.id === id),
+    ).toBeFalse()
   })
 
   test('stored shared-space messages describe their audience across hosted reads and delivery', async () => {
