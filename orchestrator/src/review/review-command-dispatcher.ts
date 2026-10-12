@@ -1,10 +1,14 @@
 // concern: review-commands
 /** Routes exceptional review maintenance verbs, otherwise preserving the frozen review command. */
+
+import { Database } from 'bun:sqlite'
+import { DB_PATH } from '../database/db.ts'
 import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
 import { recordArchitectReadCommand } from './review-read.ts'
 import { recordProjectReviewCommand } from './review-record-command.ts'
+import { renderReviewBudgetHuman, reviewBudgetReport } from './review-round-budget.ts'
 import { restoreReviewTriageCommand } from './review-triage-restore.ts'
 
 type ReviewFlags = {
@@ -24,6 +28,21 @@ export async function dispatchReviewCommand(
   }
   if (sub === 'read') {
     recordArchitectReadCommand(argv, flags, presentation)
+    return
+  }
+  if (sub === 'budget') {
+    if (argv.length !== 2) throw new Error('orch review budget [--since <ISO date>] [--json]')
+    const since = flags.flag('since')
+    if (since && !Number.isFinite(Date.parse(since))) {
+      throw new Error('--since must be an ISO date')
+    }
+    const database = new Database(DB_PATH, { readonly: true })
+    try {
+      const report = reviewBudgetReport(database, since)
+      presentation.log(flags.has('json') ? JSON.stringify(report) : renderReviewBudgetHuman(report))
+    } finally {
+      database.close()
+    }
     return
   }
   if (sub === 'project-record') {

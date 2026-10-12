@@ -1,0 +1,119 @@
+import { describe, expect, test } from 'bun:test'
+import { addRun, score } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
+import {
+  reviewBudgetForBranch,
+  reviewBudgetReport,
+  reviewRoundBudgetDecision,
+} from './review-round-budget.ts'
+
+describe('review round budget decision', () => {
+  test.each([
+    ['under the ceiling', 3, 1, false, false],
+    ['current change already counted', 1, 1, true, false],
+    ['new round reaches the ceiling', 2, 1, false, false],
+    ['new round passes the ceiling', 2, 2, false, true],
+    ['tier zero permits no rounds', 0, 0, false, true],
+  ] as const)('%s', (_name, tier, roundsUsed, currentChangeCounted, wouldExceedCeiling) => {
+    expect(reviewRoundBudgetDecision({ tier, roundsUsed, currentChangeCounted })).toEqual({
+      roundsUsed,
+      ceiling: tier,
+      currentChangeCounted,
+      startsNewRound: !currentChangeCounted,
+      wouldExceedCeiling,
+    })
+  })
+})
+
+function addEvidence(input: {
+  branch: string
+  at: string
+  patch: string | null
+  tier: 0 | 1 | 2 | 3 | null
+  path?: string
+  probe?: boolean
+  excluded?: boolean
+  deliveryNone?: boolean
+}): void {
+  const review = db()
+    .query<{ id: number }, [string, number | null, string | null, string]>(
+      `INSERT INTO review (recorded_at,tier,patch_id,path_set)
+       VALUES (?,?,?,?) RETURNING id`,
+    )
+    .get(input.at, input.tier, input.patch, JSON.stringify([input.path ?? 'change.ts']))!
+  const run = addRun({
+    agent: 'codex',
+    job: 'review-lens',
+    lens: 'correctness',
+    probe: input.probe ? 1 : 0,
+    startedAt: input.at,
+    repo: 'fixture',
+  })
+  db().query('UPDATE run SET branch=?,launch_key=? WHERE id=?').run(input.branch, 'DEV-1256', run)
+  if (input.excluded) db().query("UPDATE run SET evidence_excluded='void' WHERE id=?").run(run)
+  if (input.deliveryNone) score(run, 'none')
+  db()
+    .query(
+      `INSERT INTO review_lens
+       (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+    )
+    .run(review.id, run)
+}
+
+describe('review budget query', () => {
+  test('uses yield identity and evidence eligibility without classifying absent history as zero', () => {
+    addEvidence({ branch: 'over', at: '2026-10-01T00:00:00Z', patch: 'one', tier: 1 })
+    addEvidence({ branch: 'over', at: '2026-10-02T00:00:00Z', patch: 'one', tier: 1 })
+    addEvidence({ branch: 'over', at: '2026-10-03T00:00:00Z', patch: 'two', tier: 1 })
+    addEvidence({
+      branch: 'over',
+      at: '2026-10-04T00:00:00Z',
+      patch: 'void',
+      tier: 1,
+      excluded: true,
+    })
+    addEvidence({
+      branch: 'over',
+      at: '2026-10-05T00:00:00Z',
+      patch: 'probe',
+      tier: 1,
+      probe: true,
+    })
+    addEvidence({
+      branch: 'over',
+      at: '2026-10-06T00:00:00Z',
+      patch: 'none',
+      tier: 1,
+      deliveryNone: true,
+    })
+    addEvidence({ branch: 'exact', at: '2026-10-01T00:00:00Z', patch: 'one', tier: 2 })
+    addEvidence({ branch: 'exact', at: '2026-10-02T00:00:00Z', patch: 'two', tier: 2 })
+    addEvidence({ branch: 'no-tier', at: '2026-10-01T00:00:00Z', patch: 'one', tier: null })
+    addEvidence({ branch: 'no-round', at: '2026-10-01T00:00:00Z', patch: null, tier: 1 })
+
+    const report = reviewBudgetReport(db())
+    expect(report.branches).toEqual([
+      {
+        branch: 'over',
+        tier: 1,
+        rounds: 2,
+        firstReviewAt: '2026-10-01T00:00:00Z',
+        exceededAt: '2026-10-03T00:00:00Z',
+      },
+    ])
+    expect(report.denominators).toEqual({
+      eligibleReviewBranches: 4,
+      withRecordedTier: 3,
+      withClassifiableRound: 3,
+      exactlyAtCeiling: 1,
+      overCeiling: 1,
+      withoutRecordedTier: 1,
+      withoutClassifiableRound: 1,
+    })
+    expect(reviewBudgetForBranch(db(), 'over', 'dev-1256\0two\0["change.ts"]')).toEqual({
+      roundsUsed: 2,
+      currentChangeCounted: true,
+    })
+  })
+})

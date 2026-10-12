@@ -86,6 +86,20 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       .get(staleBase, staleBase, git(repo, 'rev-parse', 'DEV-992-fixture'))!
     const output: string[] = []
 
+    const review = db()
+      .query<{ id: number }, []>(
+        `INSERT INTO review (recorded_at,tier,patch_id,path_set)
+         VALUES ('2026-09-28',0,'earlier','["notes.md"]') RETURNING id`,
+      )
+      .get()!
+    db()
+      .query(
+        `INSERT INTO review_lens
+         (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+      )
+      .run(review.id, run.id)
+
     await reviewCommand(
       'tier',
       ['review', 'tier', String(run.id), '--json'],
@@ -98,7 +112,18 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       },
     )
 
-    expect(JSON.parse(output.join('\n'))).toMatchObject({ tier: 0, risk: 0, size: 0 })
+    expect(JSON.parse(output.join('\n'))).toMatchObject({
+      tier: 0,
+      risk: 0,
+      size: 0,
+      review_budget: {
+        roundsUsed: 1,
+        ceiling: 0,
+        currentChangeCounted: false,
+        startsNewRound: true,
+        wouldExceedCeiling: true,
+      },
+    })
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -154,6 +179,8 @@ test('review tier reports stack and generic profile sources resolved for its pro
 
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain('rounds 0/3')
+    expect(output).toContain('current change would start a new round')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

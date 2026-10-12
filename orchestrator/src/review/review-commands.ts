@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
+import { attributedTaskKey } from '../epic/epic.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
@@ -13,7 +14,9 @@ import { getReview, listReviews, parseReviewOutput, recordReviews } from './revi
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
-import { reviewPins } from './review-pins.ts'
+import { serializePathSet } from './review-group.ts'
+import { measureChangeIdentity, reviewPins } from './review-pins.ts'
+import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import { resolveReviewMergeBase, reviewTrunkRef } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
@@ -94,6 +97,7 @@ function resolveTierTarget(value: string): {
   repo: string
   from: string
   to: string
+  branch: string
   project: NonNullable<ReturnType<typeof projectAt>>
 } {
   if (/^\d+$/.test(value)) {
@@ -135,7 +139,14 @@ function resolveTierTarget(value: string): {
         }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-      if (!branchLive) return { repo: project.path, from: row.base_commit, to: reviewed, project }
+      if (!branchLive)
+        return {
+          repo: project.path,
+          from: row.base_commit,
+          to: reviewed,
+          branch: row.branch ?? reviewed,
+          project,
+        }
       const trunk = project.settings.trunk?.trim()
       if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
       const from = (() => {
@@ -148,7 +159,7 @@ function resolveTierTarget(value: string): {
       if (!from) {
         throw new Error(`cannot find merge-base between branch ${row.branch} and trunk ${trunk}`)
       }
-      return { repo: project.path, from, to: reviewed, project }
+      return { repo: project.path, from, to: reviewed, branch: row.branch!, project }
     })()
   }
 
@@ -163,7 +174,12 @@ function resolveTierTarget(value: string): {
   const range = parseTierRange(value)
   if (range && 'refusal' in range) throw new Error(range.refusal)
   if (range) {
-    return { repo, ...resolveTierRangeInRepo(repo, range.from, range.to), project }
+    return {
+      repo,
+      ...resolveTierRangeInRepo(repo, range.from, range.to),
+      branch: range.to,
+      project,
+    }
   }
 
   const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
@@ -187,15 +203,27 @@ function resolveTierTarget(value: string): {
   return {
     repo,
     ...resolveTierRangeInRepo(repo, reviewTrunkRef(remoteTrackingRefExists, trunk), value, trunk),
+    branch: value,
     project,
   }
 }
 
 function reviewTierOutput(value: string) {
-  const { repo, from, to, project } = resolveTierTarget(value)
+  const { repo, from, to, branch, project } = resolveTierTarget(value)
   const output = reviewTierForRange(repo, from, to, project.settings.review)
+  const identity = measureChangeIdentity(repo, from, to)
+  const task = attributedTaskKey(null, branch)
+  const currentRoundIdentity =
+    task && identity
+      ? `${task.trim().toLowerCase()}\0${identity.patchId}\0${serializePathSet(identity.paths)}`
+      : null
+  const branchBudget = reviewBudgetForBranch(db(), branch, currentRoundIdentity)
   return {
     ...output,
+    review_budget: reviewRoundBudgetDecision({
+      tier: output.tier,
+      ...branchBudget,
+    }),
     lens_profiles: output.lenses.map((id) => ({
       id,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
@@ -215,6 +243,15 @@ function printReviewTier(
   log(`tier ${output.tier}`)
   log(`risk ${output.risk}`)
   log(`size ${output.size}`)
+  log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
+  log(
+    output.review_budget.currentChangeCounted
+      ? 'current change is already a counted round; no new round consumed'
+      : 'current change would start a new round',
+  )
+  if (output.review_budget.wouldExceedCeiling) {
+    log('a new round would exceed the ceiling; stop and ask the operator')
+  }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
