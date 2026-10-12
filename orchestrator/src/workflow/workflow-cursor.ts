@@ -13,10 +13,7 @@ import { questionOpenSql } from '../run/question-open.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
-import {
-  cursorAutonomy,
-  refuseTerminalCursorBeforeComposition,
-} from './workflow-cursor-autonomy.ts'
+import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import {
   cursorName,
   formatCursorOpened,
@@ -329,6 +326,13 @@ function refuseInvalidServe(
   throw new Error(remedy(row!, composition))
 }
 
+function refuseTerminalCursor(row: CursorRow): void {
+  if (decideCursorStart(row.state) === 'retire')
+    throw new Error(
+      `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is ${row.state}`,
+    )
+}
+
 function prepareStepServe(
   slug: string,
   project: string,
@@ -342,10 +346,10 @@ function prepareStepServe(
 ) {
   const handled =
     cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
-  if (handled) refuseTerminalCursorBeforeComposition(handled)
-  const preliminary = handled
-    ? cursorComposition(handled, d)
-    : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
+  const preliminary =
+    handled && decideCursorStart(handled.state) === 'reuse'
+      ? cursorComposition(handled, d)
+      : composeWorkflow(slug, project, mode, args, d, { mode }, autonomy)
   const preliminaryStepSlug = resolveWorkflowStepReference(stepSlug, [
     { mode, steps: preliminary.steps.map((step) => step.slug) },
   ])
@@ -359,7 +363,6 @@ function prepareStepServe(
       ) as CursorRow | null)
     : (handled ?? findCursor(project, slug, mode, args, context, d, cursor))
   let row = handled ?? candidate
-  if (row) refuseTerminalCursorBeforeComposition(row)
   const opensCursor = row === null
   const startDecision = decideCursorStart(row?.state ?? null)
   if (row && startDecision === 'reuse') applyCursorArguments(row, args, d)
@@ -371,7 +374,7 @@ function prepareStepServe(
     input.effectiveArgs,
     d,
     input.selection,
-    row ? cursorAutonomy(row) : autonomy,
+    row && input.startDecision === 'reuse' ? cursorAutonomy(row) : autonomy,
   )
   const resolvedStepSlug = resolveWorkflowStepReference(stepSlug, [
     { mode, steps: composition.steps.map((step) => step.slug) },
@@ -607,7 +610,7 @@ function nextWorkflowStepImpl(
   slug = row.workflow_slug
   project = row.project
   mode = row.mode_slug
-  refuseTerminalCursorBeforeComposition(row)
+  refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   adoptWorkflowTask(row, evidence.task, d)
   if (!note?.trim()) {
@@ -784,7 +787,7 @@ function abandonSelectedWorkflowCursor(
 ): string {
   const slug = row.workflow_slug
   const mode = row.mode_slug
-  refuseTerminalCursorBeforeComposition(row)
+  refuseTerminalCursor(row)
   const at = nowIso()
   if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.id, 'abandoned', at, d)
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
@@ -852,7 +855,7 @@ function awaitWorkflowRulingImpl(
     throw new Error(
       `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
     )
-  refuseTerminalCursorBeforeComposition(row)
+  refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   const at = nowIso()
   d.query(

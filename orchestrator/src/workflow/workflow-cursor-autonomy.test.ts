@@ -11,6 +11,7 @@ import {
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
 } from './workflow-cursor.ts'
+import { mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -84,6 +85,28 @@ function composeShipToFlow(d: Database) {
 }
 
 describe('workflow cursor stored autonomy', () => {
+  test('maps a legacy release resolution to ship-to', () => {
+    const stored = {
+      steps: {},
+      rulings: { value: 'agent' as const, scope: 'test' },
+      release: { value: 'push', scope: 'legacy project' },
+    }
+
+    expect(mapStoredAutonomyResolution(stored).shipTo).toEqual({
+      value: 'branch',
+      scope: 'legacy project',
+    })
+  })
+
+  test('leaves ship-to absent when a stored snapshot has no usable level', () => {
+    const stored = {
+      steps: {},
+      rulings: { value: 'agent' as const, scope: 'test' },
+    }
+
+    expect(mapStoredAutonomyResolution(stored).shipTo).toBeUndefined()
+  })
+
   test('step fetch refuses an abandoned cursor without composing its old autonomy', () => {
     const d = database()
     installShipToFlow(d)
@@ -94,22 +117,8 @@ describe('workflow cursor stored autonomy', () => {
     })
 
     expect(() =>
-      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d),
+      getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d),
     ).toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
-  })
-
-  test('an active cursor maps its legacy release resolution to ship-to', () => {
-    const d = database()
-    installShipToFlow(d)
-    composeShipToFlow(d)
-    replaceCursorAutonomy(d, (stored) => {
-      delete stored.shipTo
-      stored.release = { value: 'push', scope: 'legacy project' }
-    })
-
-    const step = getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
-
-    expect(step.facts.shipTo).toMatchObject({ level: 'branch', scope: 'legacy project' })
   })
 
   test('an active cursor needing ship-to refuses a snapshot with no level', () => {
