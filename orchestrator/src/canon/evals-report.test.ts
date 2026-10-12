@@ -20,6 +20,7 @@ describe('behavioral canon evals', () => {
     status: 'asking',
     summary: 'need a ruling',
     files_changed: null,
+    change_guide: null,
     questions: [
       {
         question: 'Persist the count as a JSON file or as SQLite?',

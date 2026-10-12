@@ -59,7 +59,7 @@ if [ "$harness" = "codex" ] && [ "$1" = "exec" ]; then
   printf '%s\n' "$PWD" > "$state/writing-worktree"
   printf '%s\n' "$hooks" > "$state/writing-hooks"
   git branch --show-current > "$state/writing-branch"
-  reply='{"status":"done","summary":"The guarded commit completed.","files_changed":["binary-smoke.txt"],"questions":null,"deviations":null,"blockers":null,"tests":null}'
+  reply='{"status":"done","summary":"The guarded commit completed.","files_changed":["binary-smoke.txt"],"change_guide":[{"files":["binary-smoke.txt"],"explanation":"Adds the guarded smoke artifact.","verify":"The guarded commit contains the artifact."}],"questions":null,"deviations":null,"blockers":null,"tests":null}'
   if [ -n "$output" ]; then printf '%s\n' "$reply" > "$output"; fi
   printf '%s\n' '{"type":"thread.started","thread_id":"binary-smoke-thread"}'
   printf '{"type":"item.completed","item":{"type":"agent_message","text":%s}}\n' "$reply"

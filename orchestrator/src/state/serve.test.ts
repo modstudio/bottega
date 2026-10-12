@@ -46,6 +46,23 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('returns a stored writer reply from before change guides', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const outputPath = trackResidue(join(dir, `old-writer-reply-${id}.txt`))
+    const oldReply = JSON.stringify({
+      status: 'done',
+      summary: 'stored before change guides',
+      files_changed: ['old.ts'],
+      questions: null,
+      deviations: null,
+      blockers: null,
+      tests: null,
+    })
+    writeFileSync(outputPath, oldReply)
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, id)
+    expect(runDetail(id)?.output).toBe(oldReply)
+  })
+
   test('publishes ask lifecycle evidence and distinguishes a missing log', () => {
     const missing = addRun({ agent: 'codex', job: 'implement' })
     expect(runDetail(missing)!.ask_server).toMatchObject({

@@ -33,11 +33,50 @@ const baseWorkerReply = {
   status: 'done',
   summary: 'done',
   files_changed: null,
+  change_guide: null,
   questions: null,
   deviations: null,
   tests: null,
   blockers: null,
 }
+
+describe('worker change guide', () => {
+  test('keeps the authored reading order', () => {
+    const changeGuide = [
+      {
+        files: ['orchestrator/src/contract/contract.ts'],
+        explanation: 'Defines the contract.',
+        verify: 'The field is required.',
+      },
+      {
+        files: ['orchestrator/src/contract/contract.test.ts'],
+        explanation: 'Exercises the contract.',
+        verify: 'Malformed steps are rejected.',
+      },
+    ]
+    expect(
+      parseWorkerReply(JSON.stringify({ ...baseWorkerReply, change_guide: changeGuide })),
+    ).toMatchObject({ change_guide: changeGuide })
+  })
+
+  test.each(['files', 'explanation', 'verify'] as const)('rejects a step missing %s', (part) => {
+    const step = {
+      files: ['orchestrator/src/contract/contract.ts'],
+      explanation: 'Defines the contract.',
+      verify: 'The field is required.',
+    }
+    const { [part]: _missing, ...malformed } = step
+    expect(
+      parseWorkerReply(JSON.stringify({ ...baseWorkerReply, change_guide: [malformed] })),
+    ).toBeNull()
+  })
+
+  test('accepts null and rejects an absent guide', () => {
+    expect(parseWorkerReply(JSON.stringify(baseWorkerReply))?.change_guide).toBeNull()
+    const { change_guide: _missing, ...withoutGuide } = baseWorkerReply
+    expect(parseWorkerReply(JSON.stringify(withoutGuide))).toBeNull()
+  })
+})
 
 const issueWorkerReply = {
   ...baseWorkerReply,
