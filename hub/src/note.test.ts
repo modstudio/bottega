@@ -35,7 +35,6 @@ const hosted = {
     const url = new URL(input),
       body = init?.body ? JSON.parse(String(init.body)) : {},
       at = new Date().toISOString()
-    const pathRecordId = url.pathname.split('/')[3]!
     if (url.pathname === '/v1/tasks/identity')
       return Response.json({
         userId: 'user-1',
@@ -99,44 +98,6 @@ const hosted = {
         promoted_task: null,
         updated_at: at,
         deleted_at: null,
-      })
-    }
-    if (url.pathname === '/v1/notes/merge') {
-      const target = getNote(resolveNoteReference(String(body.target), 'workshop')),
-        source = getNote(resolveNoteReference(String(body.source), 'workshop'))
-      return Response.json({
-        note: {
-          ...shape(target),
-          anchors: JSON.stringify([...target.anchors, ...source.anchors]),
-          sightings: target.sightings + source.sightings,
-        },
-        deleted: source.record_id,
-      })
-    }
-    if (url.pathname.endsWith('/drop'))
-      return Response.json({
-        ...shape(getNote(pathRecordId)),
-        stale_at: at,
-        stale_reason: `dropped: ${body.reason}`,
-        last_seen_at: at,
-      })
-    if (url.pathname.endsWith('/acknowledgements')) {
-      const note = getNote(pathRecordId)
-      const hostedNote = shape(note)
-      return Response.json({
-        note: hostedNote,
-        alreadyAcknowledged: false,
-        acknowledgement: {
-          id: crypto.randomUUID(),
-          note_id: hostedNote.id,
-          project_name: note.project,
-          session_id: body.session,
-          acknowledged_at: at,
-          sightings: note.sightings,
-          created_at: at,
-          updated_at: at,
-          deleted_at: null,
-        },
       })
     }
     if (url.pathname === '/v1/notes/reap')

@@ -1,8 +1,18 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
-import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
-import type { PushedDocument, PushedTask } from './push-contract.ts'
+import {
+  decideDocumentUpsert,
+  decideNoteAcknowledgementUpsert,
+  decideNoteUpsert,
+  decideTaskUpsert,
+} from './hosted-push-decision.ts'
+import type {
+  PushedDocument,
+  PushedNote,
+  PushedNoteAcknowledgement,
+  PushedTask,
+} from './push-contract.ts'
 
 const at = '2026-10-11T12:00:00.000Z'
 const later = '2026-10-11T13:00:00.000Z'
@@ -81,4 +91,65 @@ test('document field decisions are duplicate by listed fields and reject tombsto
   expect(decideDocumentUpsert(document, { ...document, title: 'other' }, [])).toEqual({
     kind: 'duplicate',
   })
+})
+
+test('note decisions compare last-seen timestamps as instants and never move them backwards', () => {
+  const note: PushedNote = {
+    id: Bun.randomUUIDv7(),
+    number: 1,
+    project: PLATFORM_SLUG,
+    project_name: PLATFORM_SLUG,
+    text: 'note',
+    area: null,
+    anchors: '[]',
+    sightings: 0,
+    created_at: at,
+    last_seen_at: later,
+    stale_at: null,
+    stale_reason: null,
+    promoted_task: null,
+    promoted_task_id: null,
+    updated_at: later,
+    deleted_at: null,
+  }
+  expect(decideNoteUpsert(note, { ...note, last_seen_at: at }, ['last_seen_at'])).toEqual({
+    kind: 'duplicate',
+  })
+  expect(
+    decideNoteUpsert(
+      { ...note, last_seen_at: new Date(later) as unknown as string },
+      note,
+      ['last_seen_at'],
+    ),
+  ).toEqual({ kind: 'duplicate' })
+})
+
+test('acknowledgement decisions compare timestamps as instants and never move them backwards', () => {
+  const acknowledgement: PushedNoteAcknowledgement = {
+    id: Bun.randomUUIDv7(),
+    note_id: Bun.randomUUIDv7(),
+    project_name: PLATFORM_SLUG,
+    session_id: 'session',
+    acknowledged_at: later,
+    sightings: 1,
+    created_at: at,
+    updated_at: later,
+    deleted_at: null,
+  }
+  expect(
+    decideNoteAcknowledgementUpsert(acknowledgement, {
+      ...acknowledgement,
+      acknowledged_at: at,
+      updated_at: at,
+    }),
+  ).toEqual({ kind: 'duplicate' })
+  expect(
+    decideNoteAcknowledgementUpsert(
+      {
+        ...acknowledgement,
+        acknowledged_at: new Date(later) as unknown as string,
+      },
+      acknowledgement,
+    ),
+  ).toEqual({ kind: 'duplicate' })
 })

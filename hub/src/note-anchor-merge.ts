@@ -1,4 +1,4 @@
-export type IdentifiedAnchor = { id?: string }
+type IdentifiedAnchor = { id?: string }
 
 export function mergeNoteAnchors<T extends IdentifiedAnchor>(
   stored: readonly T[],

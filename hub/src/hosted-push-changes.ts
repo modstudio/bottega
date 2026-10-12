@@ -2,7 +2,12 @@ import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
-import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
+import {
+  decideDocumentUpsert,
+  decideNoteAcknowledgementUpsert,
+  decideNoteUpsert,
+  decideTaskUpsert,
+} from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
   mirrorCommentRow,
@@ -11,7 +16,6 @@ import {
   mirrorTaskRow,
   type TaskIdentity,
 } from './hosted-tasks.ts'
-import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
@@ -125,33 +129,6 @@ async function deleteHostedNoteFromPush(
   return { id: input.id, status: 'applied' as const }
 }
 
-function notePatchValues(current: PushedNote, input: Extract<NotePushChange, { op: 'upsert' }>) {
-  const fields = new Set(input.fields)
-  const merged = fields.has('anchors')
-    ? mergeNoteAnchors(
-        JSON.parse(current.anchors) as Array<{ id?: string }>,
-        JSON.parse(input.row.anchors) as Array<{ id?: string }>,
-      )
-    : { anchors: JSON.parse(current.anchors), sightings: current.sightings, appended: 0 }
-  return {
-    anchors: JSON.stringify(merged.anchors),
-    sightings: merged.sightings,
-    lastSeen: fields.has('last_seen_at')
-      ? current.last_seen_at > input.row.last_seen_at
-        ? current.last_seen_at
-        : input.row.last_seen_at
-      : current.last_seen_at,
-    staleAt:
-      merged.appended > 0 ? null : fields.has('stale_at') ? input.row.stale_at : current.stale_at,
-    staleReason:
-      merged.appended > 0
-        ? null
-        : fields.has('stale_reason')
-          ? input.row.stale_reason
-          : current.stale_reason,
-  }
-}
-
 async function upsertHostedNoteFromPush(
   tx: SQL,
   identity: TaskIdentity,
@@ -159,19 +136,14 @@ async function upsertHostedNoteFromPush(
   current: PushedNote | undefined,
 ) {
   if (!current) throw new Error(`no live hosted note matches ${input.id}`)
-  if (current.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
-  const values = notePatchValues(current, input)
-  if (
-    values.anchors === current.anchors &&
-    values.sightings === current.sightings &&
-    values.lastSeen === current.last_seen_at &&
-    values.staleAt === current.stale_at &&
-    values.staleReason === current.stale_reason
-  )
-    return { id: input.id, status: 'duplicate' as const }
-  await tx`UPDATE hub_note SET anchors=${values.anchors},sightings=${values.sightings},
-    last_seen_at=${values.lastSeen}::timestamptz,stale_at=${values.staleAt}::timestamptz,
-    stale_reason=${values.staleReason},updated_at=now()
+  const decision = decideNoteUpsert(current, input.row, input.fields)
+  if (decision.kind === 'reject') throw new Error(decision.reason)
+  if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' as const }
+  if (decision.kind !== 'patch') throw new Error('an existing note must produce a patch')
+  const values = decision.values
+  await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
+    last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
+    stale_reason=${values.stale_reason ?? null},updated_at=now()
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return { id: input.id, status: 'applied' as const }
 }
@@ -305,23 +277,20 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
         WHERE space_id=${identity.spaceId}::uuid AND note_id=${row.note_id}::uuid
         AND session_id=${row.session_id} FOR UPDATE`) as PushedNoteAcknowledgement[]
       const old = existing[0]
-      if (
-        old &&
-        !old.deleted_at &&
-        old.acknowledged_at === row.acknowledged_at &&
-        old.sightings === row.sightings
-      )
+      const decision = decideNoteAcknowledgementUpsert(old ?? null, row)
+      if (decision.kind === 'duplicate')
         return {
           id: input.id,
           status: 'duplicate',
-          ...(old.id !== input.id ? { adoptedId: old.id } : {}),
+          ...(old!.id !== input.id ? { adoptedId: old!.id } : {}),
         }
       const adoptedId = old?.id ?? input.id
+      const values = decision.kind === 'patch' ? decision.values : row
       await tx`INSERT INTO hub_note_acknowledgement
         (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
         VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.note_id}::uuid,
-        ${row.session_id},${row.acknowledged_at}::timestamptz,${row.sightings},
-        ${row.created_at}::timestamptz,${row.updated_at}::timestamptz,NULL)
+        ${row.session_id},${values.acknowledged_at!}::timestamptz,${values.sightings!},
+        ${row.created_at}::timestamptz,${values.updated_at ?? row.updated_at}::timestamptz,NULL)
         ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET
         acknowledged_at=excluded.acknowledged_at,sightings=excluded.sightings,
         updated_at=excluded.updated_at,deleted_at=NULL`

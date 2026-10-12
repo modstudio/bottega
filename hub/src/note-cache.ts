@@ -3,6 +3,7 @@ import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
+import { adoptPendingHostedAcknowledgement } from './outbox.ts'
 import { taskRecordIdFor } from './task-identity.ts'
 export function applyHostedNote(conn: Database, row: HostedNote) {
   persistInstallBinding(conn)
@@ -55,6 +56,31 @@ export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledg
     return
   }
   if (!conn.query('SELECT 1 FROM note WHERE record_id=?').get(row.note_id)) return
+  const local = conn
+    .query<
+      {
+        record_id: string
+        acknowledged_at: string
+        sightings: number
+      },
+      [string, string]
+    >(
+      `SELECT record_id,acknowledged_at,sightings FROM note_acknowledgement
+       WHERE note_record_id=? AND session_id=?`,
+    )
+    .get(row.note_id, row.session_id)
+  if (local && local.record_id !== row.id) {
+    const pending = conn
+      .query<{ id: string }, [string, string]>(
+        `SELECT id FROM hosted_outbox WHERE table_name=? AND row_id=?`,
+      )
+      .get('hub_note_acknowledgement', local.record_id)
+    adoptPendingHostedAcknowledgement(conn, local.record_id, row.id)
+    conn
+      .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
+      .run(row.id, local.record_id)
+    if (pending) return
+  }
   conn
     .query(`INSERT INTO note_acknowledgement(record_id,note_record_id,session_id,acknowledged_at,sightings)
     VALUES (?,?,?,?,?) ON CONFLICT(note_record_id,session_id) DO UPDATE SET record_id=excluded.record_id,

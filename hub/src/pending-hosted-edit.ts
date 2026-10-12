@@ -1,14 +1,15 @@
 import type { Database } from 'bun:sqlite'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
+import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 
 export const HOSTED_MACHINE_TABLES = {
   hub_task: 'task',
   hub_task_comment: 'task_comment',
   hub_task_document: 'task_document',
   hub_task_status_event: 'task_status_event',
-  hub_note: 'note',
-  hub_note_acknowledgement: 'note_acknowledgement',
+  [HOSTED_NOTE_TABLE]: 'note',
+  [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: 'note_acknowledgement',
 } as const
 
 export type ReconciledHostedTable = keyof typeof HOSTED_MACHINE_TABLES
