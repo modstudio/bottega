@@ -131,9 +131,6 @@ export function cognitiveComplexityDecision({
   ]
 }
 
-function isMeasuredSourcePath(path: string) {
-  return measuredSourceFiles().some((file) => file.path === path)
-}
 
 function lintFailed(result: LintResult) {
   return Boolean(result.fatalErrorCount) || result.messages.some((message) => message.fatal)
@@ -185,9 +182,10 @@ async function changedMeasurements(eslint: ESLint, base: string, reporter: Repor
   const before: Finding[] = []
   const after: Finding[] = []
   const baseFailures = new Set<string>()
+  const measuredPaths = new Set(measuredSourceFiles().map((file) => file.path))
 
   for (const entry of view.entries) {
-    if (entry.status === 'D' || !isMeasuredSourcePath(entry.path)) continue
+    if (entry.status === 'D' || !measuredPaths.has(entry.path)) continue
     const measurement = await measureChangedFile(eslint, view, entry, reporter)
     before.push(...measurement.base)
     after.push(...measurement.head)
