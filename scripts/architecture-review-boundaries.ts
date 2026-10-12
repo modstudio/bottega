@@ -45,8 +45,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review/review-command-dispatcher.ts',
     allowed: [
       './review-commands.ts',
-      'bun:sqlite',
-      '../database/db.ts',
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
       './review-read.ts',
@@ -90,7 +88,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'zod',
       '../../../shared/git.ts',
       '../database/db.ts',
-      '../epic/epic.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',
       '../lens/lenses.ts',
@@ -116,7 +113,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-round-budget-boundary',
     file: 'orchestrator/src/review/review-round-budget.ts',
-    allowed: ['bun:sqlite', './review-evidence-sql.ts', './review-yield.ts'],
+    allowed: ['bun:sqlite', '../database/db.ts', './review-evidence-sql.ts', './review-yield.ts'],
     reason: 'Keep review budget policy and reporting inside eligible review evidence.',
   },
   {

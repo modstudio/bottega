@@ -6,6 +6,8 @@ import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reviewCommand } from './review-commands.ts'
+import { serializePathSet } from './review-group.ts'
+import { measureChangeIdentity } from './review-pins.ts'
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -181,6 +183,122 @@ test('review tier reports stack and generic profile sources resolved for its pro
     expect(output).toContain('lens craft  framework=generic')
     expect(output).toContain('rounds 0/3')
     expect(output).toContain('current change would start a new round')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier recognizes evidence for the fixture current change without consuming a round', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-counted-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    importRebasedHistory(repo)
+    upsertProject({ name: 'tier-counted-fixture', path: repo, settings: { trunk: 'main' } })
+    const base = git(repo, 'rev-parse', 'refs/remotes/origin/main')
+    const reviewed = git(repo, 'rev-parse', 'DEV-992-fixture')
+    const identity = measureChangeIdentity(repo, base, reviewed)!
+    const project = db()
+      .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
+      .get('tier-counted-fixture')!
+    const run = db()
+      .query<{ id: number }, [number, string, string, string]>(
+        `INSERT INTO run
+           (started_at,agent,job,project_id,repo,branch,base_commit,input_tree,head_commit,
+            prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-10-12','codex','implement',?,'tier-counted-fixture','DEV-992-fixture',?,?,?,
+                 'sha',1,'head','ok')
+         RETURNING id`,
+      )
+      .get(project.id, base, base, reviewed)!
+    const review = db()
+      .query<{ id: number }, [number, string, string]>(
+        `INSERT INTO review (recorded_at,project_id,tier,patch_id,path_set)
+         VALUES ('2026-10-12',?,0,?,?) RETURNING id`,
+      )
+      .get(project.id, identity.patchId, serializePathSet(identity.paths))!
+    db()
+      .query(
+        `INSERT INTO review_lens
+         (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+      )
+      .run(review.id, run.id)
+    const output: string[] = []
+
+    await reviewCommand(
+      'tier',
+      ['review', 'tier', String(run.id)],
+      { has: () => false, flag: () => undefined },
+      {
+        log: (...values) => output.push(values.join(' ')),
+        usage: () => {
+          throw new Error('unexpected usage')
+        },
+      },
+    )
+
+    expect(output).toContain('rounds 1/0')
+    expect(output).toContain('current change is already a counted round; no new round consumed')
+    expect(output).not.toContain('current change would start a new round')
+    expect(output).not.toContain('a new round would exceed the ceiling; stop and ask the operator')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier reports eligible unclassifiable history as unknown without a ceiling warning', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-unknown-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    importRebasedHistory(repo)
+    upsertProject({ name: 'tier-unknown-fixture', path: repo, settings: { trunk: 'main' } })
+    const base = git(repo, 'rev-parse', 'refs/remotes/origin/main')
+    const reviewed = git(repo, 'rev-parse', 'DEV-992-fixture')
+    const project = db()
+      .query<{ id: number }, [string]>('SELECT id FROM project WHERE name=?')
+      .get('tier-unknown-fixture')!
+    const run = db()
+      .query<{ id: number }, [number, string, string, string]>(
+        `INSERT INTO run
+           (started_at,agent,job,project_id,repo,branch,base_commit,input_tree,head_commit,
+            prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-10-12','codex','implement',?,'tier-unknown-fixture','DEV-992-fixture',?,?,?,
+                 'sha',1,'head','ok')
+         RETURNING id`,
+      )
+      .get(project.id, base, base, reviewed)!
+    const review = db()
+      .query<{ id: number }, [number]>(
+        `INSERT INTO review (recorded_at,project_id,tier,patch_id,path_set)
+         VALUES ('2026-10-12',?,0,NULL,'["notes.md"]') RETURNING id`,
+      )
+      .get(project.id)!
+    db()
+      .query(
+        `INSERT INTO review_lens
+         (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+      )
+      .run(review.id, run.id)
+    const output: string[] = []
+
+    await reviewCommand(
+      'tier',
+      ['review', 'tier', String(run.id)],
+      { has: () => false, flag: () => undefined },
+      {
+        log: (...values) => output.push(values.join(' ')),
+        usage: () => {
+          throw new Error('unexpected usage')
+        },
+      },
+    )
+
+    expect(output).toContain(
+      'rounds at least 0/0; round count is unknown for 1 eligible review because the task or patch identity is missing',
+    )
+    expect(output).not.toContain('rounds 0/0')
+    expect(output).not.toContain('a new round would exceed the ceiling; stop and ask the operator')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

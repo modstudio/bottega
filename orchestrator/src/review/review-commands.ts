@@ -5,7 +5,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
-import { attributedTaskKey } from '../epic/epic.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
@@ -28,6 +27,7 @@ import {
   triageFinding,
 } from './review-triage.ts'
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
+import { reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
 type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
@@ -212,18 +212,26 @@ function reviewTierOutput(value: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value)
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
-  const task = attributedTaskKey(null, branch)
-  const currentRoundIdentity =
-    task && identity
-      ? `${task.trim().toLowerCase()}\0${identity.patchId}\0${serializePathSet(identity.paths)}`
-      : null
-  const branchBudget = reviewBudgetForBranch(db(), branch, currentRoundIdentity)
+  const currentRoundIdentity = identity
+    ? reviewRoundIdentity({
+        launch_key: null,
+        branch,
+        patch_id: identity.patchId,
+        path_set: serializePathSet(identity.paths),
+      }).identity
+    : null
+  const branchBudget = reviewBudgetForBranch(db(), project.name, branch, currentRoundIdentity)
+  const reviewBudget = reviewRoundBudgetDecision({
+    tier: output.tier,
+    ...branchBudget,
+  })
   return {
     ...output,
-    review_budget: reviewRoundBudgetDecision({
-      tier: output.tier,
-      ...branchBudget,
-    }),
+    review_budget: {
+      ...reviewBudget,
+      eligibleReviewCount: branchBudget.eligibleReviewCount,
+      unclassifiableReviewCount: branchBudget.unclassifiableReviewCount,
+    },
     lens_profiles: output.lenses.map((id) => ({
       id,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
@@ -243,13 +251,24 @@ function printReviewTier(
   log(`tier ${output.tier}`)
   log(`risk ${output.risk}`)
   log(`size ${output.size}`)
-  log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
+  if (output.review_budget.unclassifiableReviewCount > 0) {
+    log(
+      `rounds at least ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}; ` +
+        `round count is unknown for ${output.review_budget.unclassifiableReviewCount} eligible ` +
+        `review${output.review_budget.unclassifiableReviewCount === 1 ? '' : 's'} because the task or patch identity is missing`,
+    )
+  } else {
+    log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
+  }
   log(
     output.review_budget.currentChangeCounted
       ? 'current change is already a counted round; no new round consumed'
       : 'current change would start a new round',
   )
-  if (output.review_budget.wouldExceedCeiling) {
+  if (
+    output.review_budget.unclassifiableReviewCount === 0 &&
+    output.review_budget.wouldExceedCeiling
+  ) {
     log('a new round would exceed the ceiling; stop and ask the operator')
   }
   for (const lens of output.lens_profiles) {
