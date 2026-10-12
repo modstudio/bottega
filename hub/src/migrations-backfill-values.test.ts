@@ -25,9 +25,7 @@ test('a named backfill value must be supplied by the migration caller', () => {
     }),
   )
   const database = new Database(':memory:')
-  expect(() => applyMigrations(database, dir)).toThrow(
-    'missing migration backfill value: identity',
-  )
+  expect(() => applyMigrations(database, dir)).toThrow('missing migration backfill value: identity')
   expect(applyMigrations(database, dir, { identity: 'machine' })).toEqual([
     '0000_base',
     '0001_fill',
