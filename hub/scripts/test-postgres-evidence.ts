@@ -29,6 +29,7 @@ import { hostedTaskPresence, softDeleteHostedTasks } from '../src/hosted-task-pr
 import {
   createHostedDocument,
   createHostedTask,
+  type HostedTask,
   listHostedTasks,
   mirrorHostedTasks,
 } from '../src/hosted-tasks.ts'
@@ -277,6 +278,7 @@ try {
     }
     const waitingNow = new Date()
     const sent: string[] = []
+    const sentCount = () => sent.length
     const mail = { send: async () => void sent.push('sent') }
     const fresh = await sendOperatorWaitingEmail(actorUrl, identity, waitingInput, {
       mail,
@@ -286,7 +288,7 @@ try {
       mail,
       now: waitingNow,
     })
-    if (fresh.status !== 'sent' || duplicate.status !== 'sent' || sent.length !== 1)
+    if (fresh.status !== 'sent' || duplicate.status !== 'sent' || sentCount() !== 1)
       throw new Error('operator waiting fresh send was not idempotent after sent')
 
     const staleInput = { ...waitingInput, item_id: 943_002, episode: 'stale-intent' }
@@ -301,7 +303,7 @@ try {
       mail,
       now: waitingNow,
     })
-    if (reclaimed.status !== 'sent' || sent.length !== 2)
+    if (reclaimed.status !== 'sent' || sentCount() !== 2)
       throw new Error('stale operator waiting intent was not reclaimed')
 
     const cappedInput = { ...waitingInput, item_id: 943_003, episode: 'attempt-cap' }
@@ -324,7 +326,7 @@ try {
     if (
       abandoned.status !== 'abandoned' ||
       Number(cappedRows[0]?.attempts) !== OPERATOR_EMAIL_MAX_ATTEMPTS ||
-      sent.length !== 2
+      sentCount() !== 2
     )
       throw new Error('operator waiting failed row was not abandoned at the attempt cap')
 
@@ -349,7 +351,7 @@ try {
         if (!(error instanceof OperatorEmailBudgetExceededError)) throw error
       },
     )
-    const mirrored = {
+    const mirrored: HostedTask = {
       id: '01990000-0000-7000-8000-00000000065d',
       key: 'DEV-700',
       project: PLATFORM_SLUG,
@@ -473,7 +475,14 @@ try {
         name: 'done',
         hours: 720,
         filters: { agent: '', project: '', source: '' },
-        projects: [{ name: PLATFORM_SLUG, keyPrefixes: ['DEV'] }],
+        projects: [
+          {
+            spaceId: SPACE_A,
+            spaceName: 'Evidence A',
+            name: PLATFORM_SLUG,
+            keyPrefixes: ['DEV'],
+          },
+        ],
       },
       FIXED_CLOCK,
     )
@@ -516,7 +525,7 @@ try {
       last_seen: '2026-09-17T12:11:00.000Z',
     }
     await mirrorHostedTasks(actorUrl, identity, { tasks: [renamed] })
-    const repaired = await admin`
+    const repaired = await admin<{ key: string | null; id: string | null }[]>`
       SELECT 'comment' kind,task_key key,task_id id FROM hub_task_comment WHERE id=${legacyCommentId}::uuid
       UNION ALL SELECT 'document',task_key,task_id FROM hub_task_document WHERE id=${legacyDocumentId}::uuid
       UNION ALL SELECT 'event',task_key,task_id FROM hub_task_status_event WHERE id=${legacyEventId}::uuid
@@ -576,6 +585,7 @@ try {
         project: PLATFORM_SLUG,
       }),
     })
+    if (!allocatedNote) throw new Error('allocated note was missing after creation')
     if (allocatedNote.number !== 801)
       throw new Error(`note allocation returned ${allocatedNote.number}`)
     await admin`CREATE OR REPLACE FUNCTION fail_hub_task_insert() RETURNS trigger LANGUAGE plpgsql AS
@@ -594,7 +604,9 @@ try {
     if ((await getHostedNote(actorUrl, identity, allocatedNote.id))?.promoted_task)
       throw new Error('failed promotion marked its note')
     const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.id)
-    if (!promoted?.task.key || promoted.note.promoted_task !== promoted.task.key)
+    if (!promoted) throw new Error('allocated note was missing during promotion')
+    if (!promoted.task) throw new Error('promotion did not return its created task')
+    if (promoted.note.promoted_task !== promoted.task.key)
       throw new Error('promotion did not create a task and mark its note')
     await mirrorHostedNotes(actorUrl, identity, {
       notes: [
@@ -664,8 +676,9 @@ try {
     const otherIdentity = { userId: USER, spaceId: SPACE_B }
     if ((await listHostedSends(actorUrl, otherIdentity, {})).sends.length)
       throw new Error('another space observed send history')
-    const recipientColumns =
-      await admin`SELECT column_name,is_nullable FROM information_schema.columns
+    const recipientColumns = await admin<
+      { column_name: string; is_nullable: string }[]
+    >`SELECT column_name,is_nullable FROM information_schema.columns
       WHERE table_schema='public' AND table_name='hub_report_subscription_recipient'
         AND column_name IN ('user_id','email','unsubscribe_token') ORDER BY column_name`
     if (
@@ -673,8 +686,9 @@ try {
       recipientColumns.some((column) => column.is_nullable !== 'YES')
     )
       throw new Error('report email recipient columns did not migrate as nullable')
-    const projectSubscriptionColumns =
-      await admin`SELECT column_name,is_nullable FROM information_schema.columns
+    const projectSubscriptionColumns = await admin<
+      { column_name: string; is_nullable: string }[]
+    >`SELECT column_name,is_nullable FROM information_schema.columns
       WHERE table_schema='public' AND table_name='hub_report_subscription_project'
       ORDER BY column_name`
     if (
@@ -763,7 +777,9 @@ try {
     const total = preview.reduce((sum, row) => sum + Number(row.row_count), 0)
     const moveRows = await client.begin(async (tx) => {
       await bindTenant(tx, moveTenant)
-      return tx`SELECT * FROM record_move_project_space(
+      return tx<
+        { table_name: string; moved: boolean; reached_by: string }[]
+      >`SELECT * FROM record_move_project_space(
         'evidence-b','move-proof','evidence-c',${total}::bigint)`
     })
     const selectionMove = moveRows.find(
@@ -910,7 +926,7 @@ try {
     const memberReport = await hostedGatherReport(
       actorUrl,
       identity,
-      { from: interval.start_at, to: interval.end_at },
+      { from: interval.start_at, to: interval.end_at, key: interval.end_at },
       { kind: 'members', userIds: [USER] },
     )
     if (!memberReport.items.some((item) => item.key === created.key))
@@ -1277,7 +1293,7 @@ try {
       )
     if (hosted.agentHours.sumMs <= hosted.hoursRunning.unionMs)
       throw new Error('hosted agent-hours did not keep overlapping orch spans')
-    if (hosted.scope === 'person' || hosted.shipped.count !== 1)
+    if (!('shipped' in hosted) || hosted.shipped.count !== 1)
       throw new Error('shipped counted a task more than once after two done entries')
     const otherMeasures = await hostedMeasures(actorUrl, otherIdentity, measureWindow, {
       kind: 'space',
@@ -1286,7 +1302,7 @@ try {
       otherMeasures.hoursRunning.unionMs !== 0 ||
       otherMeasures.agentHours.sumMs !== 0 ||
       otherMeasures.sessionTime.unionThenSumMs !== 0 ||
-      otherMeasures.scope === 'person' ||
+      !('shipped' in otherMeasures) ||
       otherMeasures.shipped.count !== 0
     )
       throw new Error('another space observed hosted measures')
