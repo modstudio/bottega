@@ -7,6 +7,7 @@ type HostedOutboxProgress = {
   sent: number
   quarantined: number
   dropped: number
+  lockAcquired?: boolean
 }
 
 type LastHostedOutboxDrain = {
@@ -50,6 +51,7 @@ export class HostedOutboxDrainSchedule<Report extends HostedOutboxProgress> {
     const at = this.clock()
     try {
       const report = await this.drain()
+      if (report.lockAcquired === false) return report
       this.lastDrain = { at, madeProgress: drainMadeProgress(report) }
       return report
     } catch (error) {

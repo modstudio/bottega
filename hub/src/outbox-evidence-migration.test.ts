@@ -45,6 +45,7 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
     '0029_outbox_fields',
     '0030_outbox_kept_values',
     '0031_change_log_pull_cutover',
+    '0032_outbox_delivery_trace',
   ])
   expect(
     database.query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(interval),

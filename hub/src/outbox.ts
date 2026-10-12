@@ -4,6 +4,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
+import { type OutboxProcessKind, recordOutboxTrace, runOutboxTraceCommand } from './outbox-trace.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -15,11 +16,15 @@ import {
   type HostedPushOutcome,
 } from './push-contract.ts'
 import { orderHostedPushChanges } from './push-order.ts'
+import { acquireStoredLease, holdStoredLease, StoredLeaseLostError } from './store-lease.ts'
 import { persistTaskAdoptionsOn } from './task-adoption.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows, type RegisteredTaskSpace } from './task-project-space.ts'
 
 const HOSTED_OUTBOX_BATCH_SIZE = 500
+const HOSTED_OUTBOX_LEASE_MS = 60_000
+const HOSTED_OUTBOX_LEASE_RENEW_MS = 20_000
+const HOSTED_OUTBOX_LEASE_KEY = 'hosted-outbox.lease'
 
 export type OutboxEntry = {
   id: string
@@ -60,6 +65,7 @@ export type HostedOutboxReport = {
   waitingOnHostedHub?: Record<string, number>
   skippedCapability: boolean
   hostedReachable?: boolean
+  lockAcquired?: boolean
 }
 
 type DrainDependencies = {
@@ -70,6 +76,8 @@ type DrainDependencies = {
   ) => Promise<HostedPushOutcome[]>
   clock?: () => string
   registered?: () => RegisteredTaskSpace[]
+  processKind?: OutboxProcessKind
+  assertLock?: () => void
 }
 
 type PreparedOutboxRow = {
@@ -171,7 +179,42 @@ function loadPendingOutboxRows(): OutboxEntry[] {
     .all()
 }
 
-function recordOutcome(item: PreparedOutboxRow, outcome: HostedPushOutcome, at: string) {
+function traceOutcome(
+  conn: Database,
+  item: PreparedOutboxRow,
+  outcome: HostedPushOutcome,
+  at: string,
+  processKind: OutboxProcessKind,
+  operation = item.change.op,
+  destination = item.destinationSpaceId,
+): void {
+  const replacedId = outcome.status === 'rejected' ? undefined : outcome.replacedId
+  if (operation === 'upsert' && outcome.status === 'applied' && !replacedId) return
+  recordOutboxTrace(conn, {
+    table_name: item.entry.table_name,
+    row_id: item.entry.row_id,
+    operation,
+    destination_space_id: destination,
+    outcome: replacedId ? 'replaced' : outcome.status,
+    reason:
+      outcome.status === 'rejected'
+        ? outcome.reason
+        : replacedId
+          ? `replaced interval ${replacedId}`
+          : (outcome.reason ?? null),
+    generation: item.entry.generation,
+    process_kind: processKind,
+    created_at: at,
+  })
+}
+
+function recordOutcome(
+  item: PreparedOutboxRow,
+  outcome: HostedPushOutcome,
+  at: string,
+  processKind: OutboxProcessKind,
+  trace?: { operation: 'upsert' | 'delete'; destination: string | null },
+) {
   const { entry } = item
   const decision = decideOutboxLifecycle(
     entry.attempts,
@@ -192,6 +235,7 @@ function recordOutcome(item: PreparedOutboxRow, outcome: HostedPushOutcome, at: 
       const removed = conn
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
         .run(entry.id, entry.generation).changes
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
       if (
         removed > 0 &&
         outcome.status !== 'rejected' &&
@@ -209,20 +253,30 @@ function recordOutcome(item: PreparedOutboxRow, outcome: HostedPushOutcome, at: 
         ])
       return removed
     } else if (decision.action === 'retry') {
-      return conn
+      const updated = conn
         .query(
           `UPDATE hosted_outbox SET attempts=?,last_error=?
            WHERE id=? AND generation=? AND quarantined_at IS NULL`,
         )
         .run(decision.attempts, decision.lastError, entry.id, entry.generation).changes
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      return updated
     } else if (decision.action === 'quarantine') {
-      return conn
+      const updated = conn
         .query(
           `UPDATE hosted_outbox SET attempts=?,last_error=?,quarantined_at=?,quarantine_reason=?
            WHERE id=? AND generation=? AND quarantined_at IS NULL`,
         )
-        .run(decision.attempts, decision.lastError, at, decision.reason, entry.id, entry.generation)
-        .changes
+        .run(
+          decision.attempts,
+          decision.lastError,
+          at,
+          decision.reason,
+          entry.id,
+          entry.generation,
+        ).changes
+      traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
+      return updated
     }
     return 0
   })
@@ -273,12 +327,13 @@ function recordBatchOutcomes(
   outcomes: HostedPushOutcome[],
   report: HostedOutboxReport,
   clock: () => string,
+  processKind: OutboxProcessKind,
 ): void {
   const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
   for (const item of batch) {
     const outcome = byId.get(item.change.id)
     if (!outcome) continue
-    const action = recordOutcome(item, outcome, clock())
+    const action = recordOutcome(item, outcome, clock(), processKind)
     if (action === 'sent') report.sent++
     else if (action) {
       report.rejected++
@@ -287,12 +342,50 @@ function recordBatchOutcomes(
   }
 }
 
+function traceLeaseLostOutcomes(
+  batch: PreparedOutboxRow[],
+  outcomes: HostedPushOutcome[],
+  clock: () => string,
+  processKind: OutboxProcessKind,
+  operation?: 'upsert' | 'delete',
+  destination?: string,
+): void {
+  const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
+  writeTransaction((conn) => {
+    for (const item of batch) {
+      const outcome = byId.get(item.change.id)
+      if (!outcome) continue
+      const replacedId = outcome.status === 'rejected' ? undefined : outcome.replacedId
+      const outcomeReason =
+        outcome.status === 'rejected'
+          ? outcome.reason
+          : replacedId
+            ? `replaced interval ${replacedId}`
+            : outcome.reason
+      recordOutboxTrace(conn, {
+        table_name: item.entry.table_name,
+        row_id: item.entry.row_id,
+        operation: operation ?? item.change.op,
+        destination_space_id: destination ?? item.destinationSpaceId,
+        outcome: replacedId ? 'replaced' : outcome.status,
+        reason: [outcomeReason, 'hosted outbox lease was lost after delivery']
+          .filter(Boolean)
+          .join('; '),
+        generation: item.entry.generation,
+        process_kind: processKind,
+        created_at: clock(),
+      })
+    }
+  })
+}
+
 async function drainDestinations(
   destinations: Map<string, PreparedOutboxRow[]>,
   dependencies: DrainDependencies,
   report: HostedOutboxReport,
 ): Promise<boolean> {
   const clock = dependencies.clock ?? nowIso
+  const processKind = dependencies.processKind ?? 'command'
   for (const intervalDeletes of [true, false]) {
     for (const [spaceId, selected] of destinations) {
       for (const item of selected) item.destinationSpaceId = spaceId
@@ -307,18 +400,40 @@ async function drainDestinations(
       )
       for (let index = 0; index < ordered.length; index += HOSTED_OUTBOX_BATCH_SIZE) {
         const batch = ordered.slice(index, index + HOSTED_OUTBOX_BATCH_SIZE)
-        try {
-          const outcomes = await (dependencies.push ?? hostedPushChanges)(
-            batch.map((item) => item.change),
-            { recordSpace: spaceId },
-          )
-          recordBatchOutcomes(batch, outcomes, report, clock)
-        } catch {
+        if (!(await deliverOutboxBatch(batch, spaceId, dependencies, report, clock, processKind)))
           return false
-        }
       }
     }
   }
+  return true
+}
+
+async function deliverOutboxBatch(
+  batch: PreparedOutboxRow[],
+  spaceId: string,
+  dependencies: DrainDependencies,
+  report: HostedOutboxReport,
+  clock: () => string,
+  processKind: OutboxProcessKind,
+): Promise<boolean> {
+  let outcomes: HostedPushOutcome[]
+  try {
+    dependencies.assertLock?.()
+    outcomes = await (dependencies.push ?? hostedPushChanges)(
+      batch.map((item) => item.change),
+      { recordSpace: spaceId },
+    )
+  } catch {
+    return false
+  }
+  try {
+    dependencies.assertLock?.()
+  } catch (error) {
+    if (error instanceof StoredLeaseLostError)
+      traceLeaseLostOutcomes(batch, outcomes, clock, processKind)
+    return false
+  }
+  recordBatchOutcomes(batch, outcomes, report, clock, processKind)
   return true
 }
 
@@ -329,10 +444,19 @@ async function removeMovedIntervals(
 ): Promise<boolean> {
   const push = dependencies.push ?? hostedPushChanges
   const clock = dependencies.clock ?? nowIso
+  const processKind = dependencies.processKind ?? 'command'
   const blocked = new Set<PreparedOutboxRow>()
   for (const [destination, rows] of destinations) {
     for (const item of rows) {
-      const result = await removeMovedInterval(item, destination, push, clock, report)
+      const result = await removeMovedInterval(
+        item,
+        destination,
+        push,
+        clock,
+        processKind,
+        dependencies.assertLock,
+        report,
+      )
       if (result === 'failed') return false
       if (result === 'blocked') blocked.add(item)
     }
@@ -349,6 +473,8 @@ async function removeMovedInterval(
   destination: string,
   push: NonNullable<DrainDependencies['push']>,
   clock: () => string,
+  processKind: OutboxProcessKind,
+  assertLock: (() => void) | undefined,
   report: HostedOutboxReport,
 ): Promise<'ready' | 'blocked' | 'failed'> {
   if (
@@ -360,24 +486,43 @@ async function removeMovedInterval(
     return 'ready'
   let outcomes: HostedPushOutcome[]
   try {
+    assertLock?.()
     outcomes = await push([{ table: HOSTED_INTERVAL_TABLE, id: item.change.id, op: 'delete' }], {
       recordSpace: item.acknowledgedSpaceId,
     })
+    try {
+      assertLock?.()
+    } catch (error) {
+      if (error instanceof StoredLeaseLostError)
+        traceLeaseLostOutcomes(
+          [item],
+          outcomes,
+          clock,
+          processKind,
+          'delete',
+          item.acknowledgedSpaceId,
+        )
+      return 'failed'
+    }
   } catch {
     return 'failed'
   }
   const outcome = outcomes[0]
   if (!outcome) return 'failed'
   if (outcome.status === 'applied' || outcome.status === 'duplicate') {
-    writeTransaction((conn) =>
+    writeTransaction((conn) => {
       conn
         .query(`UPDATE interval SET hosted_space_id=NULL WHERE record_id=? AND hosted_space_id=?`)
-        .run(item.change.id, item.acknowledgedSpaceId),
-    )
+        .run(item.change.id, item.acknowledgedSpaceId)
+      traceOutcome(conn, item, outcome, clock(), processKind, 'delete', item.acknowledgedSpaceId)
+    })
     item.acknowledgedSpaceId = null
     return 'ready'
   }
-  const action = recordOutcome(item, outcome, clock())
+  const action = recordOutcome(item, outcome, clock(), processKind, {
+    operation: 'delete',
+    destination: item.acknowledgedSpaceId,
+  })
   if (action) report.rejected++
   if (action === 'quarantine') report.quarantined++
   return 'blocked'
@@ -407,7 +552,7 @@ function routeOutboxRows(
   return routed
 }
 
-export async function drainHostedOutbox(
+async function drainHostedOutboxHeld(
   dependencies: DrainDependencies = {},
 ): Promise<HostedOutboxReport> {
   const entries = loadPendingOutboxRows()
@@ -425,12 +570,23 @@ export async function drainHostedOutbox(
   const prepared = prepareOutboxRows(entries)
   for (const entry of prepared.missing) {
     if (entry.quarantined_at) continue
-    const removed = writeTransaction(
-      (conn) =>
-        conn
-          .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
-          .run(entry.id, entry.generation).changes,
-    )
+    const removed = writeTransaction((conn) => {
+      const changes = conn
+        .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
+        .run(entry.id, entry.generation).changes
+      recordOutboxTrace(conn, {
+        table_name: entry.table_name,
+        row_id: entry.row_id,
+        operation: entry.operation,
+        destination_space_id: entry.routing_space_id,
+        outcome: 'dropped',
+        reason: 'machine row is gone',
+        generation: entry.generation,
+        process_kind: dependencies.processKind ?? 'command',
+        created_at: (dependencies.clock ?? nowIso)(),
+      })
+      return changes
+    })
     if (removed > 0) report.dropped++
   }
   let rows = prepared.rows
@@ -462,7 +618,48 @@ export async function drainHostedOutbox(
   return report
 }
 
+export async function drainHostedOutbox(
+  dependencies: DrainDependencies = {},
+): Promise<HostedOutboxReport> {
+  const holder = `outbox:${process.pid}:${newRecordId()}`
+  if (!acquireStoredLease(HOSTED_OUTBOX_LEASE_KEY, holder, HOSTED_OUTBOX_LEASE_MS)) {
+    return {
+      queued: loadPendingOutboxRows().length,
+      sent: 0,
+      rejected: 0,
+      quarantined: 0,
+      dropped: 0,
+      waitingOnRouting: {},
+      waitingOnHostedHub: {},
+      skippedCapability: false,
+      lockAcquired: false,
+    }
+  }
+  const held = await holdStoredLease({
+    key: HOSTED_OUTBOX_LEASE_KEY,
+    holder,
+    durationMs: HOSTED_OUTBOX_LEASE_MS,
+    renewEveryMs: HOSTED_OUTBOX_LEASE_RENEW_MS,
+    lostMessage: () => 'hosted outbox lease was lost during the drain',
+    work: (guard) => drainHostedOutboxHeld({ ...dependencies, assertLock: guard.assertHeld }),
+  })
+  if (held.value) return held.value
+  return {
+    queued: loadPendingOutboxRows().length,
+    sent: 0,
+    rejected: 0,
+    quarantined: 0,
+    dropped: 0,
+    waitingOnRouting: {},
+    waitingOnHostedHub: {},
+    skippedCapability: false,
+    lockAcquired: false,
+  }
+}
+
 export function hostedOutboxLine(report: HostedOutboxReport): string {
+  if (report.lockAcquired === false)
+    return `queued=${report.queued} skipped: another process is draining`
   if (report.skippedCapability)
     return `queued=${report.queued} skipped: hosted hub does not advertise spacePush`
   const waiting = Object.entries(report.waitingOnRouting)
@@ -553,6 +750,7 @@ function retryHostedOutboxCommand(id: string | undefined): string[] {
 }
 
 export function runHostedOutboxCommand(argv: string[]): string[] {
+  if (argv[1] === 'trace') return runOutboxTraceCommand(argv.slice(1))
   if (argv[1] === 'show') return showHostedOutboxEntry(argv[2])
   if (argv[1] === 'discard') return discardHostedOutboxCommand(argv[2])
   if (argv[1] === 'retry') return retryHostedOutboxCommand(argv[2])

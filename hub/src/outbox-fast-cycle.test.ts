@@ -52,6 +52,22 @@ describe('fast hosted outbox decision', () => {
 })
 
 describe('fast hosted outbox collection', () => {
+  test('a missed lease leaves the same pending entry eligible for the next fast cycle', async () => {
+    const missed = { ...waitingReport(), lockAcquired: false }
+    const drain = mock(async () => (drain.mock.calls.length === 1 ? missed : waitingReport()))
+    const schedule = new HostedOutboxDrainSchedule(drain, () => '2026-10-12T12:00:02.000Z')
+    const pending = () => ({
+      pendingCount: 1,
+      newestQueuedAt: '2026-10-12T12:00:01.000Z',
+    })
+
+    expect(await collectFastHostedOutbox(schedule, { pending })).toMatchObject({
+      hostedOutbox: missed,
+    })
+    expect(await collectFastHostedOutbox(schedule, { pending })).not.toBeNull()
+    expect(drain).toHaveBeenCalledTimes(2)
+  })
+
   test('waiting work pauses fast drains until new work while slow drains unconditionally', async () => {
     let now = '2026-10-12T12:00:02.000Z'
     const drain = mock(async () => waitingReport())

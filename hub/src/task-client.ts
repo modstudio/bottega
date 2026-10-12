@@ -447,10 +447,15 @@ export async function hostedPushChanges(
       typeof row.id !== 'string' ||
       (row.status !== 'applied' && row.status !== 'duplicate' && row.status !== 'rejected') ||
       (row.status === 'rejected' && typeof row.reason !== 'string') ||
-      (row.status === 'rejected' && row.adoptedId !== undefined) ||
+      (row.status !== 'rejected' && row.reason !== undefined && typeof row.reason !== 'string') ||
+      (row.status === 'rejected' &&
+        (row.adoptedId !== undefined || row.replacedId !== undefined)) ||
       (row.status !== 'rejected' &&
         row.adoptedId !== undefined &&
-        (typeof row.adoptedId !== 'string' || !UUID.test(row.adoptedId)))
+        (typeof row.adoptedId !== 'string' || !UUID.test(row.adoptedId))) ||
+      (row.status !== 'rejected' &&
+        row.replacedId !== undefined &&
+        (typeof row.replacedId !== 'string' || !UUID.test(row.replacedId)))
     )
       throw new Error('hosted hub returned a malformed push outcome')
     return row as HostedPushOutcome

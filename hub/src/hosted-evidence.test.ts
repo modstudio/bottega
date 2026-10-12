@@ -15,8 +15,10 @@ import {
   type IntervalEvidence,
 } from './hosted-evidence.ts'
 
+const olderIntervalId = '01990000-0000-7000-8000-000000001000'
+const newerIntervalId = '01990000-0000-7000-8000-000000001001'
 const interval = {
-  id: 'client-id',
+  id: newerIntervalId,
   source: 'orch',
   ref: 'orch:1',
   start_at: '2026-10-08T00:00:00.000Z',
@@ -24,10 +26,12 @@ const interval = {
 
 const day = { id: 'client-id', day: '2026-10-08' } as DayEvidence
 
-test('an unknown interval id with an existing tuple names both ids and the tuple', () => {
-  expect(() => hostedIntervalWrite(interval, null, 'hosted-id')).toThrow(
-    'interval identity conflict: tuple (orch, orch:1, 2026-10-08T00:00:00.000Z) belongs to UUID hosted-id, not incoming UUID client-id',
-  )
+test('an unknown interval id with an existing tuple replaces it', () => {
+  expect(hostedIntervalWrite(newerIntervalId, false, olderIntervalId)).toBe('replace')
+})
+
+test('an older interval id is superseded by the newer tuple holder', () => {
+  expect(hostedIntervalWrite(olderIntervalId, false, newerIntervalId)).toBe('superseded')
 })
 
 test('an unknown day id with an existing date names both ids and the date', () => {
@@ -37,13 +41,17 @@ test('an unknown day id with an existing date names both ids and the date', () =
 })
 
 test('a known interval and day id update', () => {
-  expect(hostedIntervalWrite(interval, interval.id, interval.id)).toBe('update')
+  expect(hostedIntervalWrite(interval.id, true, interval.id)).toBe('update')
   expect(hostedDayWrite(day, day.id, day.id)).toBe('update')
 })
 
 test('a new interval tuple and day insert', () => {
-  expect(hostedIntervalWrite(interval, null, null)).toBe('insert')
+  expect(hostedIntervalWrite(interval.id, false, null)).toBe('insert')
   expect(hostedDayWrite(day, null, null)).toBe('insert')
+})
+
+test('an existing newer interval replaces an older holder when it moves tuples', () => {
+  expect(hostedIntervalWrite(newerIntervalId, true, olderIntervalId)).toBe('replace')
 })
 
 const migrationsFolder = join(

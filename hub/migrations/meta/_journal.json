@@ -225,6 +225,13 @@
       "when": 1792274936000,
       "tag": "0031_change_log_pull_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792361336000,
+      "tag": "0032_outbox_delivery_trace",
+      "breakpoints": true
     }
   ]
 }

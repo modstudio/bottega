@@ -237,6 +237,16 @@ test('push client accepts one outcome per requested id and refuses a malformed s
       fetch: async () => Response.json([{ id: 'event-one', status: 'applied' }]),
     }),
   ).toEqual([{ id: 'event-one', status: 'applied' }])
+  const intervalId = '01990000-0000-7000-8000-000000001301'
+  const replacedId = '01990000-0000-7000-8000-000000001300'
+  expect(
+    await hostedPushChanges([{ table: 'hub_interval', id: intervalId, op: 'delete' }], {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      recordSpace: 'space-a',
+      fetch: async () => Response.json([{ id: intervalId, status: 'applied', replacedId }]),
+    }),
+  ).toEqual([{ id: intervalId, status: 'applied', replacedId }])
   await expect(
     hostedPushChanges(body, {
       baseUrl: 'https://hub.example.test',

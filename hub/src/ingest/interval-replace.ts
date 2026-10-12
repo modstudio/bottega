@@ -20,6 +20,7 @@ function naturalKey(row: IntervalNaturalKey): string {
 export function decideCollectorReplace<T extends IntervalNaturalKey>(
   existing: readonly ExistingIntervalRow[],
   recomputed: readonly T[],
+  preservedRefs: ReadonlySet<string> = new Set(),
 ): CollectorReplaceDecision<T> {
   const byKey = new Map(existing.map((row) => [naturalKey(row), row]))
   const recomputedKeys = new Set(recomputed.map(naturalKey))
@@ -34,7 +35,7 @@ export function decideCollectorReplace<T extends IntervalNaturalKey>(
     updates,
     inserts,
     deletes: existing
-      .filter((row) => !recomputedKeys.has(naturalKey(row)))
+      .filter((row) => !preservedRefs.has(row.ref) && !recomputedKeys.has(naturalKey(row)))
       .map((row) => row.record_id),
   }
 }

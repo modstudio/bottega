@@ -194,8 +194,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_INTERVAL_TABLE)
         throw new Error(`${input.table} was routed to the interval handler`)
-      const status = await applyIntervalChangeInTransaction(tx, identity, input)
-      return { id: input.id, status }
+      const outcome = await applyIntervalChangeInTransaction(tx, identity, input)
+      return { id: input.id, ...outcome }
     },
   },
   [HOSTED_DAY_TABLE]: {

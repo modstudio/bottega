@@ -40,6 +40,7 @@ test('outbox migration moves pending tracker status events and retires the setti
     '0029_outbox_fields',
     '0030_outbox_kept_values',
     '0031_change_log_pull_cutover',
+    '0032_outbox_delivery_trace',
   ])
   expect(
     database
@@ -112,6 +113,7 @@ test('the additive outbox migration brings each queued status event task once', 
     '0029_outbox_fields',
     '0030_outbox_kept_values',
     '0031_change_log_pull_cutover',
+    '0032_outbox_delivery_trace',
   ])
   expect(
     database

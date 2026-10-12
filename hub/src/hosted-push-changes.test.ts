@@ -13,6 +13,7 @@ import { drainHostedOutbox } from './outbox.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
+  type PushedInterval,
   type PushedStatusEvent,
   type PushedTask,
   parseHostedPushItem,
@@ -63,6 +64,25 @@ const taskRow = (id: string, key: string, source: PushedTask['source'] = 'git'):
   next_document_number: 1,
 })
 
+const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedInterval => ({
+  id,
+  task_key: 'DEV-1240',
+  project_name: 'workshop',
+  source: 'orch',
+  agent: 'codex',
+  job: 'writing',
+  start_at: startAt,
+  end_at: '2026-10-12T16:55:15.905Z',
+  claude_tokens: 0,
+  vendor_tokens: 100,
+  vendor_cost_usd: null,
+  ref: 'orch:11154:turn:11154',
+  via: 'task-key',
+  open: 0,
+  session_id: null,
+  user_id: userId,
+})
+
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
@@ -105,6 +125,152 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (database) await database.close()
+})
+
+test('an interval recreation replaces only the tuple holder in its space and logs both rows', async () => {
+  const oldId = '01990000-0000-7000-8000-000000001252'
+  const newId = '01990000-0000-7000-8000-000000001253'
+  const otherId = '01990000-0000-7000-8000-000000001254'
+  const otherSpace = '01990000-0000-7000-8000-000000001255'
+  expect(
+    await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
+  ).toEqual([{ id: oldId, status: 'applied' }])
+  const sequence = Number(
+    (
+      await database.query<{ sequence: string | number }>(
+        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+        [spaceId],
+      )
+    ).rows[0]!.sequence,
+  )
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO space(id,name,slug,created_at)
+    VALUES ('${otherSpace}','Other interval space','other-interval-space',now());
+    INSERT INTO hub_interval
+      (id,space_id,task_key,project_name,source,agent,job,start_at,end_at,claude_tokens,
+       vendor_tokens,vendor_cost_usd,ref,via,open,session_id,user_id,updated_at)
+    VALUES
+      ('${otherId}','${otherSpace}','DEV-1240','workshop','orch','codex','writing',
+       '2026-10-12T16:54:46.612Z','2026-10-12T16:55:15.905Z',0,100,NULL,
+       'orch:11154:turn:11154','task-key',0,NULL,'${userId}',now());
+    RESET ROLE;
+    SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);
+  `)
+
+  expect(
+    await apply([{ table: 'hub_interval', id: newId, op: 'upsert', row: intervalRow(newId) }]),
+  ).toEqual([{ id: newId, status: 'applied', replacedId: oldId }])
+  await database.exec('RESET ROLE;')
+  expect(
+    (
+      await database.query<{ id: string; space_id: string }>(
+        `SELECT id::text,space_id::text FROM hub_interval WHERE id=ANY($1::uuid[]) ORDER BY id`,
+        [[oldId, newId, otherId]],
+      )
+    ).rows,
+  ).toEqual([
+    { id: newId, space_id: spaceId },
+    { id: otherId, space_id: otherSpace },
+  ])
+  expect(
+    (
+      await database.query<{ row_id: string; op: string }>(
+        `SELECT row_id::text,op FROM hub_change
+         WHERE space_id=$1 AND sequence>$2 ORDER BY sequence`,
+        [spaceId, sequence],
+      )
+    ).rows,
+  ).toEqual([
+    { row_id: oldId, op: 'delete' },
+    { row_id: newId, op: 'upsert' },
+  ])
+  await database.exec(`
+    RESET ROLE;
+    SET ROLE ${RECORD_ACTOR_ROLE};
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);
+  `)
+  expect(await apply([{ table: 'hub_interval', id: oldId, op: 'delete' }])).toEqual([
+    { id: oldId, status: 'duplicate' },
+  ])
+
+  const afterReplace = Number(
+    (
+      await database.query<{ sequence: string | number }>(
+        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+        [spaceId],
+      )
+    ).rows[0]!.sequence,
+  )
+  expect(
+    await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
+  ).toEqual([
+    {
+      id: oldId,
+      status: 'duplicate',
+      reason: `interval superseded by newer UUID ${newId}`,
+    },
+  ])
+  expect(
+    Number(
+      (
+        await database.query<{ sequence: string | number }>(
+          `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+          [spaceId],
+        )
+      ).rows[0]!.sequence,
+    ),
+  ).toBe(afterReplace)
+})
+
+test('an existing incoming interval moves onto a tuple held by an older id', async () => {
+  const holderId = '01990000-0000-7000-8000-000000001256'
+  const incomingId = '01990000-0000-7000-8000-000000001257'
+  const heldStart = '2026-10-12T18:00:00.000Z'
+  expect(
+    await apply([
+      {
+        table: 'hub_interval',
+        id: incomingId,
+        op: 'upsert',
+        row: intervalRow(incomingId, '2026-10-12T17:00:00.000Z'),
+      },
+      {
+        table: 'hub_interval',
+        id: holderId,
+        op: 'upsert',
+        row: intervalRow(holderId, heldStart),
+      },
+    ]),
+  ).toEqual([
+    { id: incomingId, status: 'applied' },
+    { id: holderId, status: 'applied' },
+  ])
+
+  expect(
+    await apply([
+      {
+        table: 'hub_interval',
+        id: incomingId,
+        op: 'upsert',
+        row: intervalRow(incomingId, heldStart),
+      },
+    ]),
+  ).toEqual([{ id: incomingId, status: 'applied', replacedId: holderId }])
+  expect(
+    (
+      await database.query<{ id: string; moved: boolean }>(
+        `SELECT id::text,start_at=$2::timestamptz AS moved
+         FROM hub_interval WHERE id=ANY($1::uuid[])`,
+        [[holderId, incomingId], heldStart],
+      )
+    ).rows,
+  ).toEqual([{ id: incomingId, moved: true }])
 })
 
 test('isolates one rejected status event while committing applied and duplicate rows', async () => {
