@@ -47,11 +47,13 @@ export async function drainHostedEditOutbox(
 }
 
 function reportHostedEditDelivery(result: HostedEditDelivery): void {
-  if (result.kind === 'sent') console.log('hosted change sent')
+  if (result.kind === 'sent') console.error('hosted change sent')
   else if (result.kind === 'rejected')
-    console.log(`hosted change rejected: ${result.reason}; inspect it with \`hub outbox\``)
+    console.error(`hosted change rejected: ${result.reason}; inspect it with \`hub outbox\``)
   else
-    console.log(`hosted change saved and queued: ${result.reason}; inspect it with \`hub outbox\``)
+    console.error(
+      `hosted change saved and queued: ${result.reason}; inspect it with \`hub outbox\``,
+    )
 }
 
 export function queueHostedDocumentUpsert(

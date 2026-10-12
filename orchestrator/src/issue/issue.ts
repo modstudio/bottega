@@ -134,12 +134,14 @@ export const ISSUE_DIAGNOSIS_SCHEMA = {
 } as const
 
 /** A task key created on orch's behalf must meet the same project rule as --key. */
-export function validatedTrackerTaskKey(value: string, project: Project): string {
+export function validatedTrackerTaskKey(
+  value: string,
+  project: Project,
+  source = 'hub task tracker-new',
+): string {
   const keyPattern = project.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   if (!new RegExp(keyPattern).test(value)) {
-    throw new Error(
-      `hub task tracker-new did not return a valid task key; returned ${JSON.stringify(value)}`,
-    )
+    throw new Error(`${source} did not return a valid task key; returned ${JSON.stringify(value)}`)
   }
   return value
 }

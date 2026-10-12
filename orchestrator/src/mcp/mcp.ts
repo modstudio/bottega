@@ -11,6 +11,7 @@ import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
+import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
@@ -33,7 +34,7 @@ import {
   setBaseline,
   setLedgerRef,
 } from '../porting/porting.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
@@ -167,6 +168,10 @@ export type IssueReporter =
   | { kind: 'session' }
   | { kind: 'monitor'; invocationId: number; affectedProject: string }
 
+export function fileIssueTaskKey(stdout: string, project: Project): string {
+  return validatedTrackerTaskKey(stdout.trim(), project, 'hub task new for file_issue')
+}
+
 type WorkerReporter = {
   id: number
   job: string
@@ -240,6 +245,7 @@ export async function fileIssue(
     const cwd = worker?.launch_cwd ?? process.cwd()
     throw new Error(`cannot file issue: no registered project contains ${cwd}`)
   }
+  const platformProject = registeredProject(PLATFORM_SLUG)
   const type = input.kind.toUpperCase()
   const { title, shortened: titleShortened } = filedIssueTitle(input)
   const duplicateSearch = await searchDuplicateIssues(title)
@@ -335,7 +341,7 @@ export async function fileIssue(
     )
   }
   return {
-    key: stdout.trim(),
+    key: fileIssueTaskKey(stdout, platformProject),
     kind: input.kind,
     session,
     project: project.name,

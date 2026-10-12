@@ -12,10 +12,10 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
-import { removeProject, upsertProject } from '../project/projects.ts'
+import { type Project, removeProject, upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { promoteWorkflow, setWorkflow } from '../workflow/workflows.ts'
-import { createDocsMcpServer } from './mcp.ts'
+import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
 describe('orch MCP', () => {
   test('workflow ruling tools return the durable question id', async () => {
@@ -401,6 +401,27 @@ describe('orch MCP', () => {
       await client.close()
       await server.close()
     }
+  })
+
+  const fileIssueProject = {
+    settings: { worktree: { keyPattern: '^DEV-[1-9][0-9]*$' } },
+  } as unknown as Project
+
+  test('file_issue validates a returned key for the platform project, not the reporting project', () => {
+    const reportingProject = {
+      settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } },
+    } as unknown as Project
+
+    expect(fileIssueTaskKey('DEV-1270\n', fileIssueProject)).toBe('DEV-1270')
+    expect(() => fileIssueTaskKey('DEV-1270\n', reportingProject)).toThrow(
+      'hub task new for file_issue did not return a valid task key; returned "DEV-1270"',
+    )
+  })
+
+  test('file_issue refuses a notice line followed by a task key', () => {
+    expect(() => fileIssueTaskKey('hosted change sent\nDEV-1270\n', fileIssueProject)).toThrow(
+      'hub task new for file_issue did not return a valid task key; returned "hosted change sent\\nDEV-1270"',
+    )
   })
 
   test('kind-dependent fields have exact missing sets', () => {
