@@ -43,6 +43,7 @@ export type UnrepairableRow = {
   table: PushableHubChangeTable
   id: string
   reason: string
+  remedy: string
 }
 
 export type RoutedMachineRow =
@@ -242,7 +243,12 @@ function unrepairableRows(spaces: readonly SpaceAudit[]): UnrepairableRow[] {
       const decision = repairDecisionFor(table.table)
       if (!decision.repairable)
         for (const id of table.machineOnly)
-          rows.push({ table: table.table, id, reason: decision.reason })
+          rows.push({
+            table: table.table,
+            id,
+            reason: decision.reason,
+            remedy: `inspect with \`hub note list --json\` and find record_id ${id}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+          })
     }
   return rows
 }

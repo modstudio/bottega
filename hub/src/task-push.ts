@@ -308,7 +308,10 @@ function drainFailureLines(drain: HostedOutboxReport): string[] {
 }
 
 function unrepairableLines(rows: readonly UnrepairableRow[]): string[] {
-  return rows.map((row) => `unrepairable ${row.table} ${row.id} ${row.reason}`)
+  return rows.flatMap((row) => [
+    `unrepairable ${row.table} ${row.id} ${row.reason}`,
+    `  remedy: ${row.remedy}`,
+  ])
 }
 
 export function formatTaskPushReport(report: TaskPushReport): string {

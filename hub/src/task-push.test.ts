@@ -274,11 +274,15 @@ test('a machine-only note is reported as unrepairable and repair queues nothing 
       table: HOSTED_NOTE_TABLE,
       id: noteId,
       reason: 'the hosted record assigns note numbers, so a missing note cannot be created by push',
+      remedy: `inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
     },
   ])
   expect(report.drain?.queued).toBe(0)
   expect(listHostedOutbox()).toEqual([])
-  expect(formatTaskPushReport(report)).toContain(`unrepairable ${HOSTED_NOTE_TABLE} ${noteId}`)
+  expect(formatTaskPushReport(report)).toContain(
+    `unrepairable ${HOSTED_NOTE_TABLE} ${noteId} the hosted record assigns note numbers, so a missing note cannot be created by push\n` +
+      `  remedy: inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+  )
   expect(report.ok).toBeFalse()
 })
 
