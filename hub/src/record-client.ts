@@ -158,6 +158,38 @@ const reviewDetailSchema = reviewListItemSchema.extend({
   lenses: z.array(z.unknown()),
 })
 
+const releaseSchema = z.object({
+  id: z.string().uuid(),
+  rung: z.string(),
+  candidateCommit: z.string(),
+  liveCommitBefore: z.string().nullable(),
+  liveCommitAfter: z.string().nullable(),
+  rollback: z.boolean(),
+  rollbackReason: z.string().nullable(),
+  actor: z.string(),
+  sessionId: z.string().nullable(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  exitCode: z.number().int().nullable(),
+  liveMatchesCandidate: z.boolean().nullable(),
+  warning: z.string().nullable(),
+})
+
+const releaseListSchema = z.object({
+  items: z.array(releaseSchema),
+  nextCursor: z.string().nullable(),
+})
+
+const latestReleaseListSchema = z.object({
+  items: z.array(
+    z.object({
+      rung: z.string(),
+      lastGood: releaseSchema.nullable(),
+      latestAttempt: releaseSchema.nullable(),
+    }),
+  ),
+})
+
 type RecordRunWindowInput = {
   hours: 24 | 48 | 168 | 720
   agent: string
@@ -171,6 +203,8 @@ type RecordReviewListInput = {
   limit?: number
   cursor?: string
 }
+
+type RecordReleaseListInput = RecordReviewListInput & { project: string }
 
 const jobSchema = z.object({
   name: z.string(),
@@ -491,6 +525,18 @@ export function createRecordClient(options: RecordClientOptions) {
         reviewListSchema,
       ),
     review: (id: string) => request(options, `/v1/reviews/${id}`, reviewDetailSchema),
+    releases: (input: RecordReleaseListInput) =>
+      request(
+        options,
+        query('/v1/releases', {
+          project: input.project,
+          limit: input.limit,
+          before: input.cursor,
+        }),
+        releaseListSchema,
+      ),
+    latestReleases: (project: string) =>
+      request(options, query('/v1/releases/latest', { project }), latestReleaseListSchema),
     projects: () => request(options, '/v1/projects', z.array(projectSchema)),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
     boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>

@@ -4,6 +4,7 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../../shared/docs.
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
+import { hostedProjectReleases } from '../../hosted-releases.ts'
 import {
   createHostedReportSubscription,
   unsubscribeHostedReportSubscription,
@@ -273,6 +274,9 @@ export const recordRouter = t.router({
   review: t.procedure
     .input(z.object({ id: uuid }))
     .query(({ ctx, input }) => recordClient(ctx).review(input.id)),
+  projectReleases: t.procedure
+    .input(z.object({ project: z.string().min(1), limit, cursor: z.string().optional() }))
+    .query(({ ctx, input }) => hostedProjectReleases(recordClient(ctx), input)),
   projects: t.procedure.query(({ ctx }) => recordClient(ctx).projects()),
   snapshots: t.procedure.query(({ ctx }) => recordClient(ctx).snapshots()),
   docs: t.procedure

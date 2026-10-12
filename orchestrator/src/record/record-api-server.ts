@@ -70,6 +70,7 @@ import {
   searchRecordDocs,
 } from './record-public-docs.ts'
 import { recordReleaseCheck } from './record-release-check.ts'
+import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
@@ -147,6 +148,8 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     readRun: getRecordRun,
     readReviews: listRecordReviews,
     readReview: getRecordReview,
+    readReleases: listRecordReleases,
+    readLatestReleases: readLatestRecordReleases,
     readProjects: listRecordProjects,
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
