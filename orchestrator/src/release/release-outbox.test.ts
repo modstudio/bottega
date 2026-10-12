@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import {
@@ -18,7 +19,7 @@ function fixture(): Database {
 function started(database: Database): number {
   return insertStarted(
     {
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       rung: 'production',
       candidate: 'candidate-sha',
       live: 'before-sha',
@@ -42,7 +43,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   expect(Object.keys(startedPayload).sort()).toEqual([...RELEASE_RECORD_PAYLOAD_COLUMNS].sort())
   expect(startedPayload).toMatchObject({
     id: initial.record_id,
-    projectName: 'bottega',
+    projectName: PLATFORM_SLUG,
     rung: 'production',
     candidateCommit: 'candidate-sha',
     liveCommitBefore: 'before-sha',
@@ -123,13 +124,13 @@ test('release sanitizer withholds warning and rollback reason while local values
   const database = fixture()
   const secret = 'Authorization: Bearer top-secret-value'
   const id = database
-    .query<{ id: number }, [string, string]>(
+    .query<{ id: number }, [string, string, string]>(
       `INSERT INTO release_ledger
        (record_id,project,rung,candidate_commit,rollback,rollback_reason,actor,started_at,warning)
-       VALUES ('01990000-0000-7000-8000-000000000077','bottega','production','sha',1,?,'operator','2026-10-12T00:00:00.000Z',?)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'production','sha',1,?,'operator','2026-10-12T00:00:00.000Z',?)
        RETURNING id`,
     )
-    .get(secret, secret)!.id
+    .get(PLATFORM_SLUG, secret, secret)!.id
   enqueueReleaseRecord(database, id)
   const payload = JSON.parse(
     database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload,
@@ -149,10 +150,10 @@ test('release backfill mints and enqueues each existing row once', () => {
     .query(
       `INSERT INTO release_ledger
        (project,rung,candidate_commit,rollback,actor,started_at)
-       VALUES ('bottega','production','one',0,'operator','2026-10-12T00:00:00.000Z'),
-              ('bottega','production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
+       VALUES (?,'production','one',0,'operator','2026-10-12T00:00:00.000Z'),
+              (?,'production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
     )
-    .run()
+    .run(PLATFORM_SLUG, PLATFORM_SLUG)
   expect(backfillReleaseRecords(database)).toEqual({ minted: 2, enqueued: 2 })
   expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({

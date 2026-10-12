@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { syncRecord } from '../record/record-sync.ts'
@@ -22,7 +23,7 @@ function senderStore(row: LocalOutboxRow): Database {
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL);
   CREATE TABLE project (name TEXT PRIMARY KEY, settings TEXT NOT NULL);`)
-  database.query("INSERT INTO project VALUES ('bottega','{}')").run()
+  database.query("INSERT INTO project VALUES (?,'{}')").run(PLATFORM_SLUG)
   database
     .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('release',?,?,?)")
     .run(row.record_id, row.payload, row.created_at)
@@ -37,7 +38,7 @@ test('release sender upserts the finished state by record id in the project spac
     .run(MACHINE_ID)
   const releaseId = insertStarted(
     {
-      project: 'bottega',
+      project: PLATFORM_SLUG,
       rung: 'production',
       candidate: 'candidate-sha',
       live: 'before-sha',

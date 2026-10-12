@@ -18,7 +18,6 @@ import {
   questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
-import { release as releaseRecord } from '../../../shared/record/schema-release.ts'
 import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
@@ -55,6 +54,7 @@ import {
   projectRecordDestination,
   recordSpaceMembershipRefusal,
 } from './record-project-destination.ts'
+import { pushReleaseRecord, type RecordPrincipal } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
@@ -85,7 +85,6 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
   }
 }
 
-type RecordPrincipal = { userId: string; spaceId: string }
 async function syncMemberships(
   postgres: SQL,
   principal: RecordPrincipal,
@@ -446,33 +445,6 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
-function releaseValues(row: Payload, projectId: string | null) {
-  return {
-    id: String(row.id),
-    spaceId: String(row.spaceId),
-    projectId,
-    machineId: String(row.machineId),
-    localId: bigint(row.localId),
-    rung: String(row.rung),
-    candidateCommit: String(row.candidateCommit),
-    liveCommitBefore: nullableString(row.liveCommitBefore),
-    liveCommitAfter: nullableString(row.liveCommitAfter),
-    rollback: Boolean(row.rollback),
-    rollbackReason: nullableString(row.rollbackReason),
-    actor: String(row.actor),
-    sessionId: nullableString(row.sessionId),
-    startedAt: date(row.startedAt),
-    finishedAt: nullableDate(row.finishedAt),
-    exitCode: nullableNumber(row.exitCode),
-    liveMatchesCandidate:
-      row.liveMatchesCandidate == null ? null : Boolean(row.liveMatchesCandidate),
-    warning: nullableString(row.warning),
-    withheldFields: jsonString(row.withheldFields),
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
-  }
-}
-
 function questionValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
@@ -799,16 +771,8 @@ const recordKinds = {
   },
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
-    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
-      postgres.begin(async (tx) => {
-        await bindPrincipal(tx, principal)
-        const values = releaseValues(row, await projectRecordId(tx, row, principal))
-        const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
-          .insert(releaseRecord)
-          .values(values)
-          .onConflictDoUpdate({ target: releaseRecord.id, set: updates })
-      }),
+    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      pushReleaseRecord(postgres, row, principal, projectRecordId),
   },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,

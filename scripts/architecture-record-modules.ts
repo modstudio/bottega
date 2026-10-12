@@ -157,6 +157,12 @@ export const recordModules: RecordModule[] = [
     './outbox-quarantine.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),
+  module('orchestrator/src/record/record-release-sync.ts', [
+    'bun',
+    'drizzle-orm/bun-sql',
+    '../../../shared/record/schema-release.ts',
+    './record-sync-types.ts',
+  ]),
   module('orchestrator/src/record/outbox-dependency.ts', ['bun:sqlite', './record-sync-types.ts']),
   module('orchestrator/src/record/outbox-operator.ts', [
     'bun:sqlite',
