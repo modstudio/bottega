@@ -1,7 +1,15 @@
 ALTER TABLE "board_message" ADD COLUMN "shared_space_reach" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "board_message" ADD COLUMN "thread_root_author_user_id" uuid;--> statement-breakpoint
 ALTER TABLE "board_message" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-UPDATE "board_message" SET "thread_root_author_user_id" = "author_user_id";--> statement-breakpoint
+UPDATE "board_message" AS message
+SET "thread_root_author_user_id" = CASE
+  WHEN message."kind" = 'reply' THEN (
+    SELECT root."author_user_id"
+    FROM "board_message" AS root
+    WHERE root."id" = message."thread_root_id"
+  )
+  ELSE message."author_user_id"
+END;--> statement-breakpoint
 ALTER TABLE "board_message" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "board_message" ALTER COLUMN "thread_root_author_user_id" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "board_message" ADD CONSTRAINT "board_message_thread_root_author_user_id_user_id_fkey" FOREIGN KEY ("thread_root_author_user_id") REFERENCES "user"("id");--> statement-breakpoint
