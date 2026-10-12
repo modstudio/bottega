@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import {
   hostedTaskJoin,
   hostedTaskRelationship,
@@ -13,6 +14,7 @@ import type {
   PushedStatusEvent,
   PushedTask,
 } from './push-contract.ts'
+import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
@@ -338,28 +340,50 @@ type HostedStatusEventHolder = {
   id: string
   space_id: string
   task_id: string | null
+  task_key: string
+  to_status: string
+  at: string | Date
+  deleted_at: string | Date | null
 }
 
 async function statusEventNaturalKeyHolder(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedStatusEvent,
+  resolvedTaskId: string | null,
 ): Promise<HostedStatusEventHolder | undefined> {
-  if (row.task_id)
+  if (resolvedTaskId)
     return rows<HostedStatusEventHolder>(
-      await tx`SELECT id,space_id,task_id
+      await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
         FROM hub_task_status_event
         WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${row.task_id}::uuid OR
+          AND (task_id=${resolvedTaskId}::uuid OR
             (task_id IS NULL AND task_key=${row.task_key}))
           AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
     )[0]
   return rows<HostedStatusEventHolder>(
-    await tx`SELECT id,space_id,task_id
+    await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
       FROM hub_task_status_event
       WHERE space_id=${identity.spaceId}::uuid AND task_key=${row.task_key}
         AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
   )[0]
+}
+
+function statusEventHolderToAdopt(
+  incoming: HostedStatusEvent,
+  holder: HostedStatusEventHolder | undefined,
+  resolvedTaskId: string | null,
+): HostedStatusEventHolder | undefined {
+  if (
+    !holder ||
+    !isSameStatusEvent(
+      statusEventIdentity(resolvedTaskId, incoming.task_key, incoming.to_status, incoming.at),
+      statusEventIdentity(holder.task_id, holder.task_key, holder.to_status, holder.at),
+    )
+  )
+    return undefined
+  if (holder.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
+  return holder
 }
 
 export async function mirrorTaskRow(
@@ -546,13 +570,17 @@ export async function mirrorStatusEventRow(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedStatusEvent,
-): Promise<void> {
+): Promise<{ id: string } | null> {
   const taskId = await taskIdFor(tx, identity.spaceId, row.task_key, row.task_id)
   const existing = rows<{ id: string; space_id: string }>(
     await tx`SELECT id,space_id FROM hub_task_status_event WHERE id=${row.id}::uuid`,
   )[0]
   const naturalKeyHolder = !existing
-    ? await statusEventNaturalKeyHolder(tx, identity, row)
+    ? statusEventHolderToAdopt(
+        row,
+        await statusEventNaturalKeyHolder(tx, identity, row, taskId),
+        taskId,
+      )
     : undefined
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: statusEventMirrorNaturalKey(row) },
@@ -561,16 +589,19 @@ export async function mirrorStatusEventRow(
       sameRow: 'idempotent',
       naturalKey: {
         holder: selectedMirrorIdentity(naturalKeyHolder, () => statusEventMirrorNaturalKey(row)),
+        mayAdopt: true,
       },
     },
   )
   applyMirrorDecision(decision)
+  if (decision.action === 'adopt') return { id: decision.id }
   if (decision.action === 'idempotent-duplicate') {
     await tx`UPDATE hub_task_status_event SET task_key=${row.task_key},task_id=${taskId}::uuid
       WHERE id=${row.id}::uuid`
-    return
+    return null
   }
   await tx`INSERT INTO hub_task_status_event
     (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+  return null
 }

@@ -1,6 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { persistInstallBinding } from './install-binding.ts'
+import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
+import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
+import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
@@ -148,23 +151,90 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     .run(row.number + 1, taskRecordId)
 }
 
+type StatusEventMatchRow = {
+  record_id: string
+  task_record_id: string | null
+  task_key: string
+  to_status: string
+  at: string
+}
+
+function matchingStatusEvent(
+  conn: Database,
+  row: HostedChanges['statusEvents'][number],
+  taskRecordId: string | null,
+): { record_id: string } | null {
+  const candidates = taskRecordId
+    ? conn
+        .query<StatusEventMatchRow, [string, string, string]>(
+          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+           WHERE record_id<>? AND (task_record_id=? OR (task_record_id IS NULL AND task_key=?))`,
+        )
+        .all(row.id, taskRecordId, row.task_key)
+    : conn
+        .query<StatusEventMatchRow, [string, string]>(
+          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+           WHERE record_id<>? AND task_key=?`,
+        )
+        .all(row.id, row.task_key)
+  return (
+    candidates.find((candidate) =>
+      isSameStatusEvent(
+        statusEventIdentity(taskRecordId, row.task_key, row.to_status, row.at),
+        statusEventIdentity(
+          candidate.task_record_id,
+          candidate.task_key,
+          candidate.to_status,
+          candidate.at,
+        ),
+      ),
+    ) ?? null
+  )
+}
+
+function writeStatusEvent(
+  conn: Database,
+  row: HostedChanges['statusEvents'][number],
+  taskRecordId: string | null,
+) {
+  const updated = conn
+    .query(
+      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=? WHERE record_id=?`,
+    )
+    .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
+  if (!updated.changes)
+    conn
+      .query(
+        `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
+      )
+      .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
+}
+
+function retargetStatusEvent(
+  conn: Database,
+  fromId: string,
+  toId: string,
+  hostedRowExists: boolean,
+) {
+  adoptPendingHostedRow(conn, HOSTED_STATUS_EVENT_TABLE, fromId, toId)
+  if (hostedRowExists) conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(fromId)
+  else conn.query(`UPDATE task_status_event SET record_id=? WHERE record_id=?`).run(toId, fromId)
+}
+
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
   const taskRecordId = taskRecordIdFor(conn, row.task_key, row.project_name)
   if (row.deleted_at) {
     conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(row.id)
     return
   }
-  const updated = conn
-    .query(
-      `UPDATE task_status_event SET task_key=?,task_record_id=?,at=?,from_status=?,to_status=? WHERE record_id=?`,
+  const existing = conn
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM task_status_event WHERE record_id=?`,
     )
-    .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
-  if (!updated.changes)
-    conn
-      .query(
-        `INSERT OR IGNORE INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
-      )
-      .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
+    .get(row.id)
+  const match = matchingStatusEvent(conn, row, taskRecordId)
+  if (match) retargetStatusEvent(conn, match.record_id, row.id, Boolean(existing))
+  writeStatusEvent(conn, row, taskRecordId)
 }
 
 export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {

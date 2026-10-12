@@ -235,7 +235,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       const row = input.row
       const existing = (await tx`SELECT id FROM hub_task_status_event WHERE id=${input.id}::uuid
           AND space_id=${identity.spaceId}::uuid`) as Array<{ id: string }>
-      await mirrorStatusEventRow(tx, identity, row)
+      const adoption = await mirrorStatusEventRow(tx, identity, row)
+      if (adoption) return { id: input.id, status: 'duplicate', adoptedId: adoption.id }
       if (!existing.length) return { id: input.id, status: 'applied' }
       if (!(await statusEventEquals(tx, identity, row)))
         throw new Error(`hub_task_status_event ${input.id} differs from the pushed row`)

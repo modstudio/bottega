@@ -129,8 +129,9 @@ export function queueHostedChange(
     )
 }
 
-export function adoptPendingHostedAcknowledgement(
+export function adoptPendingHostedRow(
   conn: Database,
+  table: string,
   localId: string,
   hostedId: string,
 ): void {
@@ -139,20 +140,21 @@ export function adoptPendingHostedAcknowledgement(
     .query<OutboxEntry, [string, string]>(
       `SELECT * FROM hosted_outbox WHERE table_name=? AND row_id=?`,
     )
-    .get(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId)
+    .get(table, localId)
   if (!local) return
   const hosted = conn
     .query<OutboxEntry, [string, string]>(
       `SELECT * FROM hosted_outbox WHERE table_name=? AND row_id=?`,
     )
-    .get(HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, hostedId)
+    .get(table, hostedId)
   if (!hosted) {
     conn
       .query(
-        `UPDATE hosted_outbox SET row_id=?,generation=generation+1
+        `UPDATE hosted_outbox SET row_id=?,generation=generation+1,attempts=0,last_error=NULL,
+         quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL
          WHERE table_name=? AND row_id=?`,
       )
-      .run(hostedId, HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId)
+      .run(hostedId, table, localId)
     return
   }
   const merged = mergeQueuedHostedChange(
@@ -260,6 +262,28 @@ function traceOutcome(
   })
 }
 
+function persistAdoptedId(conn: Database, item: PreparedOutboxRow, adoptedId: string): void {
+  if (item.change.table === HOSTED_TASK_TABLE && item.change.op === 'upsert') {
+    persistTaskAdoptionsOn(conn, [
+      {
+        table: 'task',
+        project: item.change.row.project,
+        key: item.change.row.key,
+        id: adoptedId,
+      },
+    ])
+    return
+  }
+  if (item.change.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE)
+    conn
+      .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
+      .run(adoptedId, item.change.id)
+  else if (item.change.table === HOSTED_STATUS_EVENT_TABLE)
+    conn
+      .query(`UPDATE task_status_event SET record_id=? WHERE record_id=?`)
+      .run(adoptedId, item.change.id)
+}
+
 function recordOutcome(
   item: PreparedOutboxRow,
   outcome: HostedPushOutcome,
@@ -288,30 +312,8 @@ function recordOutcome(
         .query(`DELETE FROM hosted_outbox WHERE id=? AND generation=?`)
         .run(entry.id, entry.generation).changes
       traceOutcome(conn, item, outcome, at, processKind, trace?.operation, trace?.destination)
-      if (
-        removed > 0 &&
-        outcome.status !== 'rejected' &&
-        outcome.adoptedId &&
-        item.change.table === HOSTED_TASK_TABLE &&
-        item.change.op === 'upsert'
-      )
-        persistTaskAdoptionsOn(conn, [
-          {
-            table: 'task',
-            project: item.change.row.project,
-            key: item.change.row.key,
-            id: outcome.adoptedId,
-          },
-        ])
-      if (
-        removed > 0 &&
-        outcome.status !== 'rejected' &&
-        outcome.adoptedId &&
-        item.change.table === HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
-      )
-        conn
-          .query(`UPDATE note_acknowledgement SET record_id=? WHERE record_id=?`)
-          .run(outcome.adoptedId, item.change.id)
+      if (removed > 0 && outcome.status !== 'rejected' && outcome.adoptedId)
+        persistAdoptedId(conn, item, outcome.adoptedId)
       return removed
     } else if (decision.action === 'retry') {
       const updated = conn

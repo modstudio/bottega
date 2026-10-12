@@ -299,7 +299,7 @@ test('isolates one rejected status event while committing applied and duplicate 
     ]),
   ).toEqual([
     { id: eventId, status: 'duplicate' },
-    { id: collisionId, status: 'rejected', reason: expect.stringContaining('already belongs') },
+    { id: collisionId, status: 'duplicate', adoptedId: eventId },
     { id: laterId, status: 'applied' },
   ])
   expect(
