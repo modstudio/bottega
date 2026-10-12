@@ -86,10 +86,12 @@ describe('enforcementCommand', () => {
       'no',
       'Function length',
     ])
-    expect(functionLength).toContain('[biome complexity/noExcessiveLinesPerFunction]')
-    expect(functionLength).toContain('[write, commit]')
+    expect(functionLength).toContain(
+      '[biome complexity/noExcessiveLinesPerFunction, blank lines not counted, tests exempt]',
+    )
+    expect(functionLength).toContain('[commit, gate]')
     expect(functionLength).toContain('[yes]')
-    expect(functionLength).toContain('[50]')
+    expect(functionLength).toContain('[80]')
     expect(testSubstance?.split(/\s{2,}/).slice(0, 3)).toEqual([
       'test-substance',
       'yes',
@@ -99,7 +101,7 @@ describe('enforcementCommand', () => {
     expect(testSubstance).not.toContain(`[${PLATFORM_SLUG} test-substance]`)
     expect(filePlacement?.split(/\s{2,}/).slice(4, 8)).toEqual(['—', '—', '—', '—'])
     expect(result.output).toContain(
-      'summary: 2 enforced, 14 standard defaults not adopted, 8 uncovered, 0 opt-outs',
+      'summary: 2 enforced, 16 standard defaults not adopted, 6 uncovered, 0 opt-outs',
     )
     expect(result.exitCode()).toBe(0)
   })

@@ -39,7 +39,7 @@ type EnforcementProjectSettings = Pick<
 >
 
 const defaultPoints = (scope: EnforcementScope): EnforcementPoint[] =>
-  scope === 'file' ? ['write', 'commit'] : ['gate']
+  scope === 'file' ? ['commit', 'gate'] : ['gate']
 
 function joinedNote(...parts: Array<string | null | undefined>): string | undefined {
   const present = parts.filter((part): part is string => Boolean(part))
