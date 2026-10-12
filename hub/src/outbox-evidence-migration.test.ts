@@ -27,6 +27,7 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
   const interval = '01990000-0000-7000-8000-000000008201'
   const vanished = '01990000-0000-7000-8000-000000008202'
   const day = '01990000-0000-7000-8000-000000008203'
+  const machine = '01990000-0000-7000-8000-000000008204'
   database
     .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
     VALUES (?,'workshop','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:8201')`)
@@ -40,7 +41,7 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
   ledger.run('interval', interval, 'hash', '2026-10-11T12:00:00.000Z', 'space-old')
   ledger.run('interval', vanished, 'hash', '2026-10-11T12:01:00.000Z', 'space-gone')
 
-  expect(applyMigrations(database)).toEqual([
+  expect(applyMigrations(database, undefined, machine)).toEqual([
     '0028_outbox_evidence',
     '0029_outbox_fields',
     '0030_outbox_kept_values',
@@ -48,6 +49,9 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
     '0032_outbox_delivery_trace',
     '0033_day_machine',
   ])
+  expect(database.query(`SELECT machine_id FROM day WHERE record_id=?`).get(day)).toEqual({
+    machine_id: machine,
+  })
   expect(
     database.query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(interval),
   ).toEqual({
@@ -72,7 +76,7 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
     { table_name: 'hub_day', row_id: day, operation: 'upsert', routing_space_id: null },
   ])
   const serialized = database.serialize()
-  expect(applyMigrations(database)).toEqual([])
+  expect(applyMigrations(database, undefined, machine)).toEqual([])
   expect(database.serialize()).toEqual(serialized)
   database.close()
 })

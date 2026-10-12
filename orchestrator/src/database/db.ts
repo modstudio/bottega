@@ -6,6 +6,7 @@ import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } f
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { storedMachineId } from '../../../shared/machine-config.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -20,8 +21,7 @@ import {
   legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
 } from './database-location.ts'
-import { machineId as sharedMachineId, storedMachineId } from '../../../shared/machine-config.ts'
-import { machineIdStored, removeStoredMachineId } from './machine-identity-store.ts'
+import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -281,9 +281,7 @@ export function writeTransaction<T>(fn: () => T, database: Database = db(true)):
 
 /** Mint the install identity only on a database lifecycle path already authorized to write. */
 export function ensureMachineIdentity(database: Database): void {
-  const legacy = machineIdStored(database)
-  sharedMachineId(legacy)
-  if (legacy) writeTransaction(() => removeStoredMachineId(database), database)
+  carryMachineIdentity(database, (fn) => writeTransaction(fn, database))
 }
 
 /** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */

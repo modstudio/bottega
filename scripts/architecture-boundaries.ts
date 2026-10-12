@@ -527,7 +527,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'machine-identity-boundary',
     'orchestrator/src/record/machine-identity.ts',
-    ['node:os', '../database/db.ts', '../database/machine-identity-store.ts'],
+    [
+      'node:os',
+      '../../../shared/machine-config.ts',
+      '../database/db.ts',
+      '../database/machine-identity-store.ts',
+    ],
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,

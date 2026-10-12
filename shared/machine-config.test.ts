@@ -6,8 +6,8 @@ import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
   editMachinePermission,
   editMachinePermissionTable,
-  machineId,
   MACHINE_CONFIG,
+  machineId,
   readMachinePermissions,
   readMachineValue,
   resolveMachineValue,

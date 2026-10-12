@@ -14,6 +14,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'node:url',
       'shared/brand.ts',
       'shared/embedded-assets.ts',
+      'shared/machine-config.ts',
       'orchestrator/src/caller-classification.ts',
       `${source}contention.ts`,
       `${source}database-location.ts`,
@@ -27,8 +28,8 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
   {
     name: 'machine-identity-store-boundary',
     file: `${source}machine-identity-store.ts`,
-    allowed: ['shared/record/schema.ts'],
-    typeOnlyAllowed: ['bun:sqlite'],
+    allowed: ['shared/machine-config.ts', 'shared/record/schema.ts'],
+    typeOnlyAllowed: ['bun:sqlite', 'shared/config-directory.ts'],
     reason: 'Enforce the machine identity store concern boundary.',
   },
 ]

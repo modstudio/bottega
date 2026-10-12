@@ -1,15 +1,15 @@
 import { engagedMs } from '../../shared/interval.ts'
-import { newRecordId } from '../../shared/record/schema.ts'
 import { machineId } from '../../shared/machine-config.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 import {
-  type DayIntervalRow,
-  type MachineDayRow,
   combineMachineDays,
+  type DayIntervalRow,
   intervalEndMs,
+  type MachineDayRow,
   projectBoard,
   projectRatioSummary,
   projectRollUpDays,

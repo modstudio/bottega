@@ -1,6 +1,6 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { machineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'

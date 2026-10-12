@@ -8,10 +8,10 @@ import { formatTaskDocumentLabel } from './task-document-label.ts'
 import {
   type BoardSourceRow,
   type CompletedRow,
-  type DayIntervalRow,
-  type MachineDayRow,
   combineMachineDays,
+  type DayIntervalRow,
   type IntervalRow,
+  type MachineDayRow,
   type ProjectionProject,
   projectBoard,
   projectFlightDone,
