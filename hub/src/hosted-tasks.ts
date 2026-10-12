@@ -234,14 +234,6 @@ export function confirmCount(
     throw new Error(`refusing to delete ${count} rows without confirmation count ${count}`)
 }
 
-type MirrorBody = {
-  tasks: HostedTask[]
-  comments?: HostedComment[]
-  documents?: HostedDocument[]
-  statusEvents?: HostedStatusEvent[]
-  raiseSequences?: Array<{ project: string; prefix: string; next: number }>
-}
-
 type MirrorIdentity = { id: string; spaceId: string; naturalKey: string }
 type MirrorCollisionDecision =
   | { action: 'insert' }
@@ -581,73 +573,6 @@ export async function mirrorStatusEventRow(
   await tx`INSERT INTO hub_task_status_event
     (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
-}
-
-async function mirrorTaskRows(tx: SQL, identity: TaskIdentity, body: MirrorBody) {
-  const adoptions: MirrorAdoption[] = []
-  const taskIds = new Map<string, string>()
-  for (const row of body.tasks) {
-    const adoption = await mirrorTaskRow(tx, identity, row)
-    if (adoption) adoptions.push(adoption)
-    taskIds.set(row.key, adoption?.id ?? row.id)
-  }
-  return { adoptions, taskIds }
-}
-
-async function repairMirroredTaskParents(
-  tx: SQL,
-  identity: TaskIdentity,
-  tasks: HostedTask[],
-  taskIds: ReadonlyMap<string, string>,
-) {
-  for (const row of tasks) {
-    const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
-    const parent = hostedTaskRelationship('hub_task')
-    await tx`UPDATE hub_task SET ${tx.unsafe(parent.idColumn)}=${parentId}::uuid
-        WHERE id=${taskIds.get(row.key)!}::uuid AND space_id=${identity.spaceId}::uuid
-          AND ${tx.unsafe(parent.keyColumn)} IS NOT DISTINCT FROM ${row.parent_key}`
-  }
-}
-
-async function mirrorTaskChildren(tx: SQL, identity: TaskIdentity, body: MirrorBody) {
-  for (const row of body.comments ?? []) await mirrorCommentRow(tx, identity, row)
-  for (const row of body.documents ?? []) await mirrorDocumentRow(tx, identity, row)
-  for (const row of body.statusEvents ?? []) await mirrorStatusEventRow(tx, identity, row)
-}
-
-async function raiseMirroredSequences(tx: SQL, identity: TaskIdentity, body: MirrorBody) {
-  for (const sequence of body.raiseSequences ?? []) {
-    const project = rows<{ id: string }>(
-      await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND name=${sequence.project}`,
-    )[0]
-    if (project)
-      await tx`INSERT INTO seq(space_id,project_id,name,next)
-        VALUES (${identity.spaceId}::uuid,${project.id}::uuid,${`task:${sequence.prefix}`},${sequence.next})
-        ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
-  }
-}
-
-export async function mirrorHostedTaskBody(
-  tx: SQL,
-  identity: TaskIdentity,
-  body: MirrorBody,
-  total: number,
-) {
-  const { adoptions, taskIds } = await mirrorTaskRows(tx, identity, body)
-  await repairMirroredTaskParents(tx, identity, body.tasks, taskIds)
-  await mirrorTaskChildren(tx, identity, body)
-  await raiseMirroredSequences(tx, identity, body)
-  return { upserted: total, adoptions }
-}
-
-export async function mirrorHostedTasks(url: string, identity: TaskIdentity, body: MirrorBody) {
-  const total =
-    body.tasks.length +
-    (body.comments?.length ?? 0) +
-    (body.documents?.length ?? 0) +
-    (body.statusEvents?.length ?? 0)
-  if (total > 500) throw new Error('mirror accepts at most 500 rows')
-  return withHostedTenant(url, identity, (tx) => mirrorHostedTaskBody(tx, identity, body, total))
 }
 
 export async function hostedTaskCounts(url: string, identity: TaskIdentity) {

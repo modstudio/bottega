@@ -1,6 +1,6 @@
 import type { ParsedTaskArguments } from './task-command-arguments.ts'
 import { pruneForeignHostedTasks } from './task-prune-foreign.ts'
-import { pushTasks } from './task-push.ts'
+import { formatTaskPushReport, pushTasks } from './task-push.ts'
 
 export async function runHostedTaskMaintenance(
   command: 'push' | 'prune-foreign',
@@ -9,9 +9,9 @@ export async function runHostedTaskMaintenance(
   const has = (name: string) => args.booleans.has(`--${name}`)
   const flag = (name: string) => args.values.get(`--${name}`)
   if (command === 'push') {
-    const result = await pushTasks({ dryRun: has('dry-run') })
-    console.log(JSON.stringify(result, null, 2))
-    if (result.match === false) process.exitCode = 1
+    const result = await pushTasks({ repair: has('repair') })
+    console.log(has('json') ? JSON.stringify(result, null, 2) : formatTaskPushReport(result))
+    if (!result.ok) process.exitCode = 1
     return
   }
   const confirmation = flag('confirm')

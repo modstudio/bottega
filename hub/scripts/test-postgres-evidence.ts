@@ -31,7 +31,6 @@ import {
   createHostedTask,
   type HostedTask,
   listHostedTasks,
-  mirrorHostedTasks,
 } from '../src/hosted-tasks.ts'
 import {
   hostedFlightDone,
@@ -372,8 +371,12 @@ try {
       deleted_at: null,
       next_document_number: 1,
     }
-    await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
-    await mirrorHostedTasks(actorUrl, identity, { tasks: [mirrored] })
+    await pushEvidence(actorUrl, identity, [
+      { table: 'hub_task', id: mirrored.id, op: 'upsert', row: mirrored },
+    ])
+    await pushEvidence(actorUrl, identity, [
+      { table: 'hub_task', id: mirrored.id, op: 'upsert', row: mirrored },
+    ])
     const created = await createHostedTask(actorUrl, identity, {
       project: PLATFORM_SLUG,
       title: 'Allocated fixture',
@@ -435,9 +438,9 @@ try {
     if (visible.statusEvents.length !== 1)
       throw new Error('status patch did not append exactly one event')
     await admin`UPDATE hub_task SET next_document_number=9 WHERE id=${created.id}::uuid`
-    await mirrorHostedTasks(actorUrl, identity, {
-      tasks: [{ ...closed, next_document_number: 2 }],
-    })
+    await pushEvidence(actorUrl, identity, [
+      { table: 'hub_task', id: closed.id, op: 'upsert', row: { ...closed, next_document_number: 2 } },
+    ])
     const preservedDocumentCounter = (
       await admin<{ next_document_number: number }[]>`
         SELECT next_document_number FROM hub_task WHERE id=${created.id}::uuid
@@ -446,17 +449,19 @@ try {
     if (preservedDocumentCounter !== 9)
       throw new Error(`task mirror lowered the document counter to ${preservedDocumentCounter}`)
     const collidingDocumentId = newRecordId()
-    await mirrorHostedTasks(actorUrl, identity, {
-      tasks: [],
-      documents: [
-        {
+    await pushEvidence(actorUrl, identity, [
+      {
+        table: 'hub_task_document',
+        id: collidingDocumentId,
+        op: 'upsert',
+        row: {
           ...document,
           id: collidingDocumentId,
           task_id: created.id,
           deleted_at: null,
         },
-      ],
-    }).then(
+      },
+    ]).then(
       () => {
         throw new Error('task document mirror reused a soft-deleted document number')
       },
@@ -524,7 +529,9 @@ try {
       updated_at: '2026-09-17T12:11:00.000Z',
       last_seen: '2026-09-17T12:11:00.000Z',
     }
-    await mirrorHostedTasks(actorUrl, identity, { tasks: [renamed] })
+    await pushEvidence(actorUrl, identity, [
+      { table: 'hub_task', id: renamed.id, op: 'upsert', row: renamed },
+    ])
     const repaired = await admin<{ key: string | null; id: string | null }[]>`
       SELECT 'comment' kind,task_key key,task_id id FROM hub_task_comment WHERE id=${legacyCommentId}::uuid
       UNION ALL SELECT 'document',task_key,task_id FROM hub_task_document WHERE id=${legacyDocumentId}::uuid
@@ -1248,9 +1255,12 @@ try {
       },
     ]
     await pushIntervals(actorUrl, identity, measureIntervals)
-    await mirrorHostedTasks(actorUrl, identity, {
-      tasks: [
-        {
+    await pushEvidence(actorUrl, identity, [
+      {
+        table: 'hub_task',
+        id: '01990000-0000-7000-8000-000000000758',
+        op: 'upsert',
+        row: {
           id: '01990000-0000-7000-8000-000000000758',
           key: 'DEV-758',
           project: PLATFORM_SLUG,
@@ -1271,8 +1281,8 @@ try {
           deleted_at: null,
           next_document_number: 1,
         },
-      ],
-    })
+      },
+    ])
     const doneAt = '2026-09-17T12:10:00.000Z'
     await admin`INSERT INTO hub_task_status_event
       (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at)

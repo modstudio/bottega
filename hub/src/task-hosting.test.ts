@@ -173,21 +173,17 @@ describe('hosted-only task safety', () => {
     ).rejects.toThrow("project 'present' has no key prefix")
   })
 
-  test('a non-member mirror target and injected spaceIds reach no write service', async () => {
+  test('a non-member create target and injected spaceIds reach no write service', async () => {
     let writes = 0
     const response = await taskApi(
-      new Request('https://hub.example.test/v1/tasks/mirror', {
-        method: 'PUT',
+      new Request('https://hub.example.test/v1/tasks', {
+        method: 'POST',
         headers: {
           authorization: 'Bearer test',
           'content-type': 'application/json',
           'x-record-space': 'space-z',
         },
-        body: JSON.stringify({
-          tasks: [],
-          targetSpaceId: 'space-a',
-          spaceIds: ['space-z'],
-        }),
+        body: JSON.stringify({ project: 'workshop', title: 'New' }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
@@ -197,9 +193,9 @@ describe('hosted-only task safety', () => {
             activeSpaceId: 'space-a',
             memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
           }),
-        mirror: async () => {
+        create: async () => {
           writes++
-          return { upserted: 0, adoptions: [] }
+          throw new Error('should not create')
         },
       },
     )
@@ -212,7 +208,7 @@ describe('hosted-only task safety', () => {
     expect(writes).toBe(0)
   })
 
-  test('a member mirror target derives its tenant principal without body-supplied spaceIds', async () => {
+  test('a member create target derives its tenant principal without body-supplied spaceIds', async () => {
     const principals: Array<{
       userId: string
       spaceId: string
@@ -220,14 +216,14 @@ describe('hosted-only task safety', () => {
       memberships?: Array<{ spaceId: string; slug: string; permission: string }>
     }> = []
     const response = await taskApi(
-      new Request('https://hub.example.test/v1/tasks/mirror', {
-        method: 'PUT',
+      new Request('https://hub.example.test/v1/tasks', {
+        method: 'POST',
         headers: {
           authorization: 'Bearer test',
           'content-type': 'application/json',
           'x-record-space': 'space-b',
         },
-        body: JSON.stringify({ tasks: [], targetSpaceId: 'space-a', spaceIds: ['space-z'] }),
+        body: JSON.stringify({ project: 'workshop', title: 'New', targetSpaceId: 'space-a' }),
       }),
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: 'postgres://unused' },
       {
@@ -240,14 +236,14 @@ describe('hosted-only task safety', () => {
               { space_id: 'space-b', slug: 'other', permission: 'write' },
             ],
           }),
-        mirror: async (_url, identity) => {
+        create: async (_url, identity) => {
           principals.push(identity)
-          return { upserted: 0, adoptions: [] }
+          return { id: 'task-1' } as never
         },
       },
     )
 
-    expect(response?.status).toBe(200)
+    expect(response?.status).toBe(201)
     expect(principals).toEqual([
       {
         userId: 'user-1',
@@ -508,7 +504,6 @@ describe('hosted-only task safety', () => {
         { spaceId: 'space-b', slug: 'stopal', permission: 'write' },
       ],
       capabilities: {
-        targetSpaceTaskMirror: true,
         projectNoteCounters: true,
         targetSpaceNotes: true,
         spaceChanges: true,
@@ -521,6 +516,7 @@ describe('hosted-only task safety', () => {
           'hub_interval',
           'hub_day',
         ],
+        spaceIdentitySet: true,
       },
     })
   })
@@ -585,7 +581,6 @@ describe('hosted-only task safety', () => {
     for (const [method, pathname] of [
       ['POST', '/v1/tasks'],
       ['POST', '/v1/tasks/DEV-1/documents'],
-      ['PUT', '/v1/tasks/mirror'],
       ['POST', '/v1/tasks/presence'],
       ['DELETE', '/v1/tasks'],
     ]) {

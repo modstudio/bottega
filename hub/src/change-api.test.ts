@@ -19,6 +19,10 @@ const request = (query: string, space = 'space-b') =>
   new Request(`https://hub.example.test/v1/changes?${query}`, {
     headers: { authorization: 'Bearer test', 'x-record-space': space },
   })
+const idsRequest = (query: string, space = 'space-b') =>
+  new Request(`https://hub.example.test/v1/changes/ids?${query}`, {
+    headers: { authorization: 'Bearer test', 'x-record-space': space },
+  })
 const pushRequest = (body: unknown, space = 'space-b') =>
   new Request('https://hub.example.test/v1/changes', {
     method: 'POST',
@@ -240,6 +244,60 @@ test('push client accepts one outcome per requested id and refuses a malformed s
       fetch: async () => Response.json([]),
     }),
   ).rejects.toThrow('do not match the requested ids')
+})
+
+test('identity-set route binds the requested space and refuses a non-member before reading', async () => {
+  let received: unknown
+  const response = await changeApi(idsRequest('table=hub_task'), config, {
+    fetch: whoami,
+    ids: async (_url, identity, input) => {
+      received = { identity, input }
+      return { ids: [], more: false }
+    },
+  })
+  expect(response?.status).toBe(200)
+  expect(received).toEqual({
+    identity: expect.objectContaining({ spaceId: 'space-b' }),
+    input: { table: 'hub_task', after: null },
+  })
+  const paged = await changeApi(
+    idsRequest('table=hub_interval&after=01990000-0000-7000-8000-000000000001'),
+    config,
+    {
+      fetch: whoami,
+      ids: async (_url, _identity, input) => {
+        received = input
+        return { ids: [], more: false }
+      },
+    },
+  )
+  expect(paged?.status).toBe(200)
+  expect(received).toEqual({
+    table: 'hub_interval',
+    after: '01990000-0000-7000-8000-000000000001',
+  })
+  let reads = 0
+  expect(
+    (
+      await changeApi(idsRequest('table=hub_task', 'outside'), config, {
+        fetch: whoami,
+        ids: async () => {
+          reads++
+          return { ids: [], more: false }
+        },
+      })
+    )?.status,
+  ).toBe(403)
+  expect(reads).toBe(0)
+  const invalid = await changeApi(idsRequest('table=hub_note'), config, {
+    fetch: whoami,
+    ids: async () => {
+      reads++
+      return { ids: [], more: false }
+    },
+  })
+  expect(invalid?.status).toBe(400)
+  expect(reads).toBe(0)
 })
 
 test('change route refuses non-members before reading and validates every query boundary', async () => {

@@ -7,7 +7,6 @@ import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
-import { mirrorHostedTaskBody } from './hosted-tasks.ts'
 import { upsertGitTasks } from './ingest/git-task-cache.ts'
 import { applyMigrations } from './migrations.ts'
 import { drainHostedOutbox } from './outbox.ts'
@@ -74,36 +73,34 @@ const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
-  await mirrorHostedTaskBody(
-    pgliteSql(database),
-    identity,
+  await apply([
     {
-      tasks: [
-        {
-          id: taskId,
-          key: 'DEV-1',
-          project: 'workshop',
-          project_name: 'workshop',
-          title: 'First',
-          status: 'active',
-          status_category: 'active',
-          parent_key: null,
-          body: null,
-          assignee: null,
-          opened_at: '2026-10-09T10:00:00.000Z',
-          closed_at: null,
-          source: 'mcp',
-          first_seen: '2026-10-09T10:00:00.000Z',
-          last_seen: '2026-10-09T11:00:00.000Z',
-          created_at: '2026-10-09T10:00:00.000Z',
-          updated_at: '2026-10-09T11:00:00.000Z',
-          deleted_at: null,
-          next_document_number: 1,
-        },
-      ],
+      table: 'hub_task',
+      id: taskId,
+      op: 'upsert',
+      row: {
+        id: taskId,
+        key: 'DEV-1',
+        project: 'workshop',
+        project_name: 'workshop',
+        title: 'First',
+        status: 'active',
+        status_category: 'active',
+        parent_key: null,
+        body: null,
+        assignee: null,
+        opened_at: '2026-10-09T10:00:00.000Z',
+        closed_at: null,
+        source: 'mcp',
+        first_seen: '2026-10-09T10:00:00.000Z',
+        last_seen: '2026-10-09T11:00:00.000Z',
+        created_at: '2026-10-09T10:00:00.000Z',
+        updated_at: '2026-10-09T11:00:00.000Z',
+        deleted_at: null,
+        next_document_number: 1,
+      },
     },
-    1,
-  )
+  ])
 })
 
 afterAll(async () => {
