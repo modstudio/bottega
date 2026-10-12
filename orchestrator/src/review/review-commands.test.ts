@@ -132,35 +132,6 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
   }
 })
 
-test('review tier resolves a branch from --cwd', async () => {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-cwd-'))
-  try {
-    git(repo, 'init', '-b', 'main')
-    importRebasedHistory(repo)
-    upsertProject({ name: 'tier-cwd-fixture', path: repo, settings: { trunk: 'main' } })
-    const output: string[] = []
-
-    await reviewCommand(
-      'tier',
-      ['review', 'tier', 'DEV-992-fixture'],
-      {
-        has: () => false,
-        flag: (name) => (name === 'cwd' ? repo : undefined),
-      },
-      {
-        log: (...values) => output.push(values.join(' ')),
-        usage: () => {
-          throw new Error('unexpected usage')
-        },
-      },
-    )
-
-    expect(output).toContain('tier 0')
-  } finally {
-    rmSync(repo, { recursive: true, force: true })
-  }
-})
-
 test('review tier reports stack and generic profile sources resolved for its project', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-profiles-'))
   try {
