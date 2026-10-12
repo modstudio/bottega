@@ -49,6 +49,8 @@ test('note project counter migration preserves rows and acknowledgements', () =>
     '0026_outbox',
     '0027_outbox_status_event_tasks',
     '0028_outbox_evidence',
+    '0029_outbox_fields',
+    '0030_outbox_kept_values',
   ])
   expect(d.query('SELECT project,next FROM note_counter ORDER BY project').all()).toEqual([
     { project: 'alpha', next: 42 },

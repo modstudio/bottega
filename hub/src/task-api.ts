@@ -6,16 +6,12 @@ import {
 import { taskSpaceIdentity } from './hosted-route-identity.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import {
-  addHostedComment,
   createHostedDocument,
   createHostedTask,
   getHostedTask,
   hostedTaskCounts,
   listHostedTasks,
   mirrorHostedTasks,
-  patchHostedDocument,
-  patchHostedTask,
-  softDeleteHostedDocuments,
 } from './hosted-tasks.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from './push-contract.ts'
 
@@ -28,11 +24,7 @@ type Dependencies = {
   list?: typeof listHostedTasks
   get?: typeof getHostedTask
   create?: typeof createHostedTask
-  patch?: typeof patchHostedTask
-  comment?: typeof addHostedComment
   createDocument?: typeof createHostedDocument
-  patchDocument?: typeof patchHostedDocument
-  deleteDocuments?: typeof softDeleteHostedDocuments
   presence?: typeof hostedTaskPresence
   deleteTasks?: typeof softDeleteHostedTasks
   mirror?: typeof mirrorHostedTasks
@@ -55,14 +47,7 @@ function taskRouteHonorsRequestedSpace(method: string, pathname: string): boolea
   if (method === 'POST' && pathname === '/v1/tasks') return true
   if (method === 'GET')
     return /^\/v1\/tasks\/[^/]+$/.test(pathname) && pathname !== '/v1/tasks/identity'
-  if (method === 'PATCH')
-    return (
-      /^\/v1\/tasks\/[^/]+$/.test(pathname) ||
-      /^\/v1\/tasks\/[^/]+\/documents\/[^/]+$/.test(pathname)
-    )
-  if (method === 'DELETE') return /^\/v1\/tasks\/[^/]+\/documents\/[^/]+$/.test(pathname)
-  if (method !== 'POST') return false
-  return /^\/v1\/tasks\/[^/]+\/(?:comments|documents|close)$/.test(pathname)
+  return method === 'POST' && /^\/v1\/tasks\/[^/]+\/documents$/.test(pathname)
 }
 
 type RouteContext = {
@@ -78,10 +63,7 @@ type RouteContext = {
   }
   body: Record<string, unknown> | null
   keyMatch: RegExpExecArray | null
-  commentMatch: RegExpExecArray | null
   documentsMatch: RegExpExecArray | null
-  documentMatch: RegExpExecArray | null
-  closeMatch: RegExpExecArray | null
 }
 
 async function readRoute(ctx: RouteContext): Promise<Response | null> {
@@ -110,7 +92,7 @@ async function readRoute(ctx: RouteContext): Promise<Response | null> {
 }
 
 async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
-  const { request, url, config, dependencies, who, body, keyMatch, closeMatch } = ctx
+  const { request, url, config, dependencies, who, body } = ctx
   const bulk = await taskBulkRoute(ctx)
   if (bulk) return bulk
   if (request.method === 'POST' && url.pathname === '/v1/tasks')
@@ -122,24 +104,6 @@ async function taskWriteRoute(ctx: RouteContext): Promise<Response | null> {
       ),
       201,
     )
-  if (request.method === 'PATCH' && keyMatch) {
-    const value = await call(dependencies.patch, patchHostedTask)(
-      config.recordDatabaseUrl,
-      who,
-      decodeURIComponent(keyMatch[1]!),
-      body as Parameters<typeof patchHostedTask>[3],
-    )
-    return value ? json(value) : json({ error: 'task not found' }, 404)
-  }
-  if (request.method === 'POST' && closeMatch) {
-    const value = await call(dependencies.patch, patchHostedTask)(
-      config.recordDatabaseUrl,
-      who,
-      decodeURIComponent(closeMatch[1]!),
-      { status: 'done', status_category: 'done' },
-    )
-    return value ? json(value) : json({ error: 'task not found' }, 404)
-  }
   if (request.method !== 'PUT' || url.pathname !== '/v1/tasks/mirror') return null
   return json(
     await call(dependencies.mirror, mirrorHostedTasks)(
@@ -179,17 +143,7 @@ async function taskBulkRoute(ctx: RouteContext): Promise<Response | null> {
 }
 
 async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
-  const { request, config, dependencies, who, body, commentMatch, documentsMatch, documentMatch } =
-    ctx
-  if (request.method === 'POST' && commentMatch) {
-    const value = await call(dependencies.comment, addHostedComment)(
-      config.recordDatabaseUrl,
-      who,
-      decodeURIComponent(commentMatch[1]!),
-      String(body?.body ?? ''),
-    )
-    return value ? json(value, 201) : json({ error: 'task not found' }, 404)
-  }
+  const { request, config, dependencies, who, body, documentsMatch } = ctx
   if (request.method === 'POST' && documentsMatch) {
     const value = await call(dependencies.createDocument, createHostedDocument)(
       config.recordDatabaseUrl,
@@ -199,23 +153,7 @@ async function childWriteRoute(ctx: RouteContext): Promise<Response | null> {
     )
     return value ? json(value, 201) : json({ error: 'task not found' }, 404)
   }
-  if (request.method === 'PATCH' && documentMatch) {
-    const value = await call(dependencies.patchDocument, patchHostedDocument)(
-      config.recordDatabaseUrl,
-      who,
-      documentMatch[2]!,
-      body as Parameters<typeof patchHostedDocument>[3],
-    )
-    return value ? json(value) : json({ error: 'document not found' }, 404)
-  }
-  if (request.method !== 'DELETE' || !documentMatch) return null
-  return json(
-    await call(dependencies.deleteDocuments, softDeleteHostedDocuments)(
-      config.recordDatabaseUrl,
-      who,
-      [documentMatch[2]!],
-    ),
-  )
+  return null
 }
 
 export async function taskApi(
@@ -227,10 +165,7 @@ export async function taskApi(
   if (!url.pathname.startsWith('/v1/tasks')) return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
   const keyMatch = /^\/v1\/tasks\/([^/]+)$/.exec(url.pathname)
-  const commentMatch = /^\/v1\/tasks\/([^/]+)\/comments$/.exec(url.pathname)
   const documentsMatch = /^\/v1\/tasks\/([^/]+)\/documents$/.exec(url.pathname)
-  const documentMatch = /^\/v1\/tasks\/([^/]+)\/documents\/([^/]+)$/.exec(url.pathname)
-  const closeMatch = /^\/v1\/tasks\/([^/]+)\/close$/.exec(url.pathname)
   const honorRequestedSpace = taskRouteHonorsRequestedSpace(request.method, url.pathname)
   const who = await taskSpaceIdentity(
     request,
@@ -277,10 +212,7 @@ export async function taskApi(
       who,
       body,
       keyMatch,
-      commentMatch,
       documentsMatch,
-      documentMatch,
-      closeMatch,
     }
     const response =
       (await readRoute(context)) ??

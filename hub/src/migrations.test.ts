@@ -93,6 +93,8 @@ const LATEST_MIGRATIONS = [
   '0026_outbox',
   '0027_outbox_status_event_tasks',
   '0028_outbox_evidence',
+  '0029_outbox_fields',
+  '0030_outbox_kept_values',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>

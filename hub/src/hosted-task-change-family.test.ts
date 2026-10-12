@@ -5,6 +5,7 @@ import { db, writeTransaction } from './db.ts'
 import { MAX_HOSTED_CHANGE_PAGES_PER_PASS, pullHostedTaskChanges } from './hosted-change-cache.ts'
 import { HOSTED_CHANGES_CURSOR_KEY } from './hosted-task-change-family.ts'
 import type { HostedTask } from './hosted-tasks.ts'
+import { queueHostedChange } from './outbox.ts'
 import { applyHostedTask, pullHostedTasks } from './task-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
@@ -248,6 +249,60 @@ test('a later page applies upserts and advances the cursor in one transaction', 
   ).toBe('log task')
   expect(report?.upsertsChanged).toBe(1)
   expect(report?.upsertsNoop).toBe(0)
+})
+
+test('a later page preserves pending fields and advances past a pending document delete', async () => {
+  storeChangeCursor('space-one', '12')
+  seedTask()
+  insertChildren()
+  writeTransaction((conn) => {
+    conn.query(`UPDATE task SET title='pending machine title' WHERE record_id=?`).run(taskId)
+    queueHostedChange(conn, 'hub_task', taskId, 'upsert', at, ['title'])
+    queueHostedChange(conn, 'hub_task_document', documentId, 'delete', at)
+    conn.query(`DELETE FROM task_document WHERE record_id=?`).run(documentId)
+  })
+  const { fetch } = routeFetch({
+    changes: () =>
+      changePage({
+        next: 16,
+        changes: [
+          {
+            sequence: 15,
+            table: 'hub_task',
+            id: taskId,
+            op: 'upsert',
+            row: hostedTask({ title: 'hosted title', status: 'active', status_category: 'active' }),
+          },
+          {
+            sequence: 16,
+            table: 'hub_task_document',
+            id: documentId,
+            op: 'upsert',
+            row: {
+              id: documentId,
+              task_key: 'DEV-1240',
+              task_id: taskId,
+              project_name: 'one',
+              number: 1,
+              role: 'handoff',
+              title: 'hosted document',
+              body: 'hosted body',
+              version: 'hosted-v1',
+              created_at: at,
+              updated_at: at,
+              deleted_at: null,
+            },
+          },
+        ],
+      }),
+  })
+  await pull(fetch)
+  expect(cursor('space-one')).toBe('16')
+  expect(db().query(`SELECT title,status FROM task WHERE record_id=?`).get(taskId)).toEqual({
+    title: 'pending machine title',
+    status: 'active',
+  })
+  expect(db().query(`SELECT 1 FROM task_document WHERE record_id=?`).get(documentId)).toBeNull()
 })
 
 test('a throwing apply leaves the change cursor unmoved', async () => {

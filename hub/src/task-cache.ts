@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
+import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
 import { projects } from './projects.ts'
 import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
@@ -160,25 +161,45 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 
 export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
   changes.tasks.forEach((row) => {
-    applyHostedTask(conn, row)
+    applySnapshotRow(conn, 'hub_task', row.id, row, applyHostedTask)
   })
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
-    applyComment(conn, row)
+    applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyComment)
   })
   changes.documents.forEach((row) => {
-    applyDocument(conn, row)
+    applySnapshotRow(conn, 'hub_task_document', row.id, row, applyDocument)
   })
   changes.statusEvents.forEach((row) => {
     applyStatusEvent(conn, row)
   })
 }
 
+function applySnapshotRow(
+  conn: Database,
+  table: HostedTaskChangeTable,
+  id: string,
+  row: HostedChangeRow,
+  apply: (conn: Database, row: never) => void,
+) {
+  reconcilePulledRow(conn, {
+    table,
+    id,
+    operation: row.deleted_at ? 'delete' : 'upsert',
+    current: () => hostedChangeMachineRow(conn, table, id),
+    apply: () => apply(conn, row as never),
+    remove: () => deleteHostedChangeRow(conn, table, id),
+  })
+}
+
 const hostedTaskChangeTables = {
-  hub_task: { machine: 'task', apply: applyHostedTask },
-  hub_task_comment: { machine: 'task_comment', apply: applyComment },
-  hub_task_document: { machine: 'task_document', apply: applyDocument },
-  hub_task_status_event: { machine: 'task_status_event', apply: applyStatusEvent },
+  hub_task: { machine: HOSTED_MACHINE_TABLES.hub_task, apply: applyHostedTask },
+  hub_task_comment: { machine: HOSTED_MACHINE_TABLES.hub_task_comment, apply: applyComment },
+  hub_task_document: { machine: HOSTED_MACHINE_TABLES.hub_task_document, apply: applyDocument },
+  hub_task_status_event: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_status_event,
+    apply: applyStatusEvent,
+  },
 } as const
 
 export type HostedTaskChangeTable = keyof typeof hostedTaskChangeTables

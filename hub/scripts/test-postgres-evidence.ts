@@ -31,8 +31,6 @@ import {
   createHostedTask,
   listHostedTasks,
   mirrorHostedTasks,
-  patchHostedTask,
-  softDeleteHostedDocuments,
 } from '../src/hosted-tasks.ts'
 import {
   hostedFlightDone,
@@ -379,16 +377,55 @@ try {
       title: 'Allocated fixture',
     })
     if (created.key !== 'DEV-701') throw new Error(`task allocation returned ${created.key}`)
-    const closed = await patchHostedTask(actorUrl, identity, created.key, {
+    const closedAt = new Date().toISOString()
+    const closed = {
+      ...created,
       status: 'done',
-      status_category: 'done',
-    })
+      status_category: 'done' as const,
+      closed_at: closedAt,
+      last_seen: closedAt,
+      updated_at: closedAt,
+    }
+    await applyHostedPushChanges(
+      actorUrl,
+      identity,
+      [
+        {
+          table: 'hub_task',
+          id: created.id,
+          op: 'upsert',
+          row: closed,
+          fields: ['status', 'status_category'],
+        },
+        {
+          table: 'hub_task_status_event',
+          id: newRecordId(),
+          op: 'upsert',
+          row: {
+            id: newRecordId(),
+            task_key: created.key,
+            task_id: created.id,
+            project_name: created.project_name,
+            at: closedAt,
+            from_status: created.status,
+            to_status: 'done',
+            created_at: closedAt,
+            updated_at: closedAt,
+            deleted_at: null,
+          },
+        },
+      ].map((change) =>
+        change.table === 'hub_task_status_event' ? { ...change, id: change.row.id } : change,
+      ) as HostedPushChange[],
+    )
     const document = await createHostedDocument(actorUrl, identity, created.key, {
       title: 'Disposable',
       version: 'v1',
     })
     if (!document) throw new Error('task document create did not find its task')
-    await softDeleteHostedDocuments(actorUrl, identity, [document.id])
+    await applyHostedPushChanges(actorUrl, identity, [
+      { table: 'hub_task_document', id: document.id, op: 'delete' },
+    ])
     const visible = await listHostedTasks(actorUrl, identity, {})
     if (visible.tasks.length !== 2) throw new Error('mirror re-push was not idempotent')
     if (visible.documents.some((row) => row.id === document.id))

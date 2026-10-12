@@ -10,14 +10,9 @@ import { createTask } from './task.ts'
 import { taskApi } from './task-api.ts'
 import { applyHostedTaskChanges } from './task-cache.ts'
 import {
-  hostedCloseTask,
-  hostedCommentTask,
   hostedCreateDocument,
   hostedCreateTask,
-  hostedDeleteDocument,
   hostedDeleteTasks,
-  hostedPatchDocument,
-  hostedPatchTask,
   hostedTaskIdentity,
   hostedTaskPresence,
 } from './task-client.ts'
@@ -515,7 +510,14 @@ describe('hosted-only task safety', () => {
         targetSpaceNotes: true,
         spaceChanges: true,
         spacePush: true,
-        spacePushTables: ['hub_task', 'hub_task_status_event', 'hub_interval', 'hub_day'],
+        spacePushTables: [
+          'hub_task',
+          'hub_task_status_event',
+          'hub_task_comment',
+          'hub_task_document',
+          'hub_interval',
+          'hub_day',
+        ],
       },
     })
   })
@@ -579,12 +581,7 @@ describe('hosted-only task safety', () => {
     // Production break watched: remove the access decision before task route dispatch.
     for (const [method, pathname] of [
       ['POST', '/v1/tasks'],
-      ['PATCH', '/v1/tasks/DEV-1'],
-      ['POST', '/v1/tasks/DEV-1/close'],
-      ['POST', '/v1/tasks/DEV-1/comments'],
       ['POST', '/v1/tasks/DEV-1/documents'],
-      ['PATCH', '/v1/tasks/DEV-1/documents/document-1'],
-      ['DELETE', '/v1/tasks/DEV-1/documents/document-1'],
       ['PUT', '/v1/tasks/mirror'],
       ['POST', '/v1/tasks/presence'],
       ['DELETE', '/v1/tasks'],
@@ -659,30 +656,12 @@ describe('hosted-only task safety', () => {
       recordSpace: 'declared-space',
     }
     await hostedCreateTask({}, options)
-    await hostedPatchTask('DEV-1', {}, options)
-    await hostedCloseTask('DEV-1', options)
-    await hostedCommentTask('DEV-1', 'comment', options)
     await hostedCreateDocument('DEV-1', {}, options)
-    await hostedPatchDocument('DEV-1', 'document-1', {}, options)
-    await hostedDeleteDocument('DEV-1', 'document-1', options)
     await hostedCreateTask({}, { ...options, recordSpace: null })
 
     expect(requests).toEqual([
       { path: '/v1/tasks', method: 'POST', space: 'declared-space' },
-      { path: '/v1/tasks/DEV-1', method: 'PATCH', space: 'declared-space' },
-      { path: '/v1/tasks/DEV-1/close', method: 'POST', space: 'declared-space' },
-      { path: '/v1/tasks/DEV-1/comments', method: 'POST', space: 'declared-space' },
       { path: '/v1/tasks/DEV-1/documents', method: 'POST', space: 'declared-space' },
-      {
-        path: '/v1/tasks/DEV-1/documents/document-1',
-        method: 'PATCH',
-        space: 'declared-space',
-      },
-      {
-        path: '/v1/tasks/DEV-1/documents/document-1',
-        method: 'DELETE',
-        space: 'declared-space',
-      },
       { path: '/v1/tasks', method: 'POST', space: null },
     ])
   })

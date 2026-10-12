@@ -5,10 +5,12 @@ import type { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { mirrorHostedTaskBody } from './hosted-tasks.ts'
 import { upsertGitTasks } from './ingest/git-task-cache.ts'
 import { applyMigrations } from './migrations.ts'
+import { drainHostedOutbox } from './outbox.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   type HostedPushChange,
@@ -16,6 +18,9 @@ import {
   type PushedTask,
   parseHostedPushItem,
 } from './push-contract.ts'
+import { closeTask, commentTask, setTask } from './task.ts'
+import type { HostedTaskIdentity } from './task-client.ts'
+import { deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
@@ -349,4 +354,332 @@ test('real policies reject a push into a space without write membership', async 
   expect(
     (await database.query(`SELECT 1 FROM hub_task_status_event WHERE id=$1`, [eventId])).rows,
   ).toHaveLength(0)
+})
+
+test('field task pushes preserve other hosted edits, deduplicate, and create an absent whole row', async () => {
+  const hostedEdit = {
+    ...taskRow(taskId, 'DEV-1', 'mcp'),
+    title: 'Other writer title',
+    status: 'review',
+    status_category: 'review' as const,
+    updated_at: '2026-10-11T13:00:00.000Z',
+    last_seen: '2026-10-11T13:00:00.000Z',
+  }
+  expect(await apply([{ table: 'hub_task', id: taskId, op: 'upsert', row: hostedEdit }])).toEqual([
+    { id: taskId, status: 'applied' },
+  ])
+  const offlineStatus = {
+    ...hostedEdit,
+    title: 'Stale machine title',
+    status: 'done',
+    status_category: 'done' as const,
+    closed_at: '2026-10-11T14:00:00.000Z',
+    updated_at: '2026-10-11T14:00:00.000Z',
+    last_seen: '2026-10-11T14:00:00.000Z',
+  }
+  const change: HostedPushChange = {
+    table: 'hub_task',
+    id: taskId,
+    op: 'upsert',
+    row: offlineStatus,
+    fields: ['status', 'status_category'],
+  }
+  expect(await apply([change])).toEqual([{ id: taskId, status: 'applied' }])
+  expect(await apply([change])).toEqual([{ id: taskId, status: 'duplicate' }])
+  expect(
+    (await database.query(`SELECT title,status FROM hub_task WHERE id=$1`, [taskId])).rows,
+  ).toEqual([{ title: 'Other writer title', status: 'done' }])
+
+  const repeatedDone = {
+    ...offlineStatus,
+    closed_at: '2026-10-11T15:00:00.000Z',
+    updated_at: '2026-10-11T15:00:00.000Z',
+    last_seen: '2026-10-11T15:00:00.000Z',
+  }
+  const repeatedDoneChange: HostedPushChange = { ...change, row: repeatedDone }
+  expect(await apply([repeatedDoneChange])).toEqual([{ id: taskId, status: 'duplicate' }])
+  expect(
+    (await database.query(`SELECT closed_at::text FROM hub_task WHERE id=$1`, [taskId])).rows,
+  ).toEqual([{ closed_at: '2026-10-11 14:00:00+00' }])
+
+  const laterTitle: HostedPushChange = {
+    table: 'hub_task',
+    id: taskId,
+    op: 'upsert',
+    row: { ...repeatedDone, title: 'Later arriving title' },
+    fields: ['title'],
+  }
+  expect(await apply([laterTitle])).toEqual([{ id: taskId, status: 'applied' }])
+  expect((await database.query(`SELECT title FROM hub_task WHERE id=$1`, [taskId])).rows).toEqual([
+    { title: 'Later arriving title' },
+  ])
+
+  const absentId = '01990000-0000-7000-8000-000000001299'
+  const absent = { ...taskRow(absentId, 'DEV-99', 'local'), title: 'Whole insert', body: 'kept' }
+  expect(
+    await apply([
+      { table: 'hub_task', id: absentId, op: 'upsert', row: absent, fields: ['title'] },
+    ]),
+  ).toEqual([{ id: absentId, status: 'applied' }])
+  expect(
+    (await database.query(`SELECT title,body FROM hub_task WHERE id=$1`, [absentId])).rows,
+  ).toEqual([{ title: 'Whole insert', body: 'kept' }])
+})
+
+test('offline commands later drain through the real outbox into hosted task rows', async () => {
+  const machineTaskId = '01990000-0000-7000-8000-000000001320'
+  const documentId = '01990000-0000-7000-8000-000000001321'
+  const at = '2026-10-11T16:00:00.000Z'
+  const unavailable = {
+    baseUrl: 'https://unreachable.example.test',
+    token: 'test',
+    fetch: async () => {
+      throw new Error('hosted hub unavailable')
+    },
+  }
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task
+        (record_id,key,project,title,status,status_category,source,first_seen,last_seen,updated_at)
+        VALUES (?,'GAM-320','gamma','Before','open','open','local',?,?,?)`,
+      )
+      .run(machineTaskId, at, at, at)
+    conn
+      .query(
+        `INSERT INTO task_document
+        (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+        VALUES (?,'GAM-320',?,1,'Before','body','v1',?,?)`,
+      )
+      .run(documentId, machineTaskId, at, at)
+  })
+  expect(
+    await apply([
+      {
+        table: 'hub_task',
+        id: machineTaskId,
+        op: 'upsert',
+        row: {
+          ...taskRow(machineTaskId, 'GAM-320', 'local'),
+          project: 'gamma',
+          project_name: 'gamma',
+        },
+      },
+      {
+        table: 'hub_task_document',
+        id: documentId,
+        op: 'upsert',
+        row: {
+          id: documentId,
+          task_key: 'GAM-320',
+          task_id: machineTaskId,
+          project_name: 'gamma',
+          number: 1,
+          role: null,
+          title: 'Before',
+          body: 'body',
+          version: 'v1',
+          created_at: at,
+          updated_at: at,
+          deleted_at: null,
+        },
+      },
+    ]),
+  ).toEqual([
+    { id: machineTaskId, status: 'applied' },
+    { id: documentId, status: 'applied' },
+  ])
+
+  const registered = () => [{ name: 'gamma', settings: { keyPrefixes: ['GAM'], space: spaceId } }]
+  const hostedIdentity = async (): Promise<HostedTaskIdentity> => ({
+    userId,
+    activeSpaceId: spaceId,
+    memberships: [{ spaceId, slug: 'gamma', permission: 'write' as const }],
+    capabilities: {
+      spacePush: true,
+      spacePushTables: [
+        'hub_task',
+        'hub_task_comment',
+        'hub_task_document',
+        'hub_task_status_event',
+      ],
+    },
+  })
+  const sent: HostedPushChange[] = []
+  const drain = () =>
+    drainHostedOutbox({
+      identity: hostedIdentity,
+      registered,
+      push: async (changes) => {
+        sent.push(...changes)
+        return apply(changes)
+      },
+    })
+
+  await setTask(
+    'GAM-320',
+    { recordId: machineTaskId },
+    { title: 'Offline title' },
+    { hosted: unavailable },
+  )
+  expect((await drain()).sent).toBe(1)
+  expect(
+    (await database.query(`SELECT title FROM hub_task WHERE id=$1`, [machineTaskId])).rows,
+  ).toEqual([{ title: 'Offline title' }])
+
+  await commentTask('GAM-320', { recordId: machineTaskId }, 'Offline comment', {
+    hosted: unavailable,
+  })
+  expect((await drain()).sent).toBe(1)
+  expect(
+    (await database.query(`SELECT body FROM hub_task_comment WHERE task_id=$1`, [machineTaskId]))
+      .rows,
+  ).toEqual([{ body: 'Offline comment' }])
+
+  await updateTaskDocument(documentId, { title: 'Offline document' }, { hosted: unavailable })
+  expect((await drain()).sent).toBe(1)
+  expect(
+    (await database.query(`SELECT title FROM hub_task_document WHERE id=$1`, [documentId])).rows,
+  ).toEqual([{ title: 'Offline document' }])
+
+  await closeTask(
+    'GAM-320',
+    { recordId: machineTaskId },
+    {
+      hosted: unavailable,
+      classify: async () => ({
+        project: 'gamma',
+        key: 'GAM-320',
+        dryRun: true,
+        deleted: [],
+        kept: [],
+        operator: [],
+        wouldDelete: [],
+        errors: [],
+      }),
+    },
+  )
+  expect((await drain()).sent).toBe(2)
+  const statusEvent = sent.find((change) => change.table === 'hub_task_status_event')
+  if (!statusEvent) throw new Error('expected a drained status event')
+  expect(await apply([statusEvent])).toEqual([{ id: statusEvent.id, status: 'duplicate' }])
+
+  await deleteTaskDocument(documentId, { hosted: unavailable })
+  expect((await drain()).sent).toBe(1)
+  expect(
+    (
+      await database.query(
+        `SELECT deleted_at IS NOT NULL AS deleted FROM hub_task_document WHERE id=$1`,
+        [documentId],
+      )
+    ).rows,
+  ).toEqual([{ deleted: true }])
+  expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
+})
+
+test('comment and document pushes apply their route effects and deduplicate deletes', async () => {
+  const commentId = '01990000-0000-7000-8000-000000001301'
+  const at = '2026-10-11T15:00:00.000Z'
+  const comment: HostedPushChange = {
+    table: 'hub_task_comment',
+    id: commentId,
+    op: 'upsert',
+    row: {
+      id: commentId,
+      task_key: 'DEV-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      body: 'offline',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  expect(await apply([comment])).toEqual([{ id: commentId, status: 'applied' }])
+  expect(await apply([comment])).toEqual([{ id: commentId, status: 'duplicate' }])
+  expect(
+    (await database.query(`SELECT body FROM hub_task_comment WHERE id=$1`, [commentId])).rows,
+  ).toEqual([{ body: 'offline' }])
+  const taskAfterComment = (
+    await database.query<{ updated_at: Date }>(`SELECT updated_at FROM hub_task WHERE id=$1`, [
+      taskId,
+    ])
+  ).rows[0]!
+  expect(taskAfterComment.updated_at.toISOString()).toBe(at)
+
+  const documentId = '01990000-0000-7000-8000-000000001302'
+  const document: HostedPushChange = {
+    table: 'hub_task_document',
+    id: documentId,
+    op: 'upsert',
+    row: {
+      id: documentId,
+      task_key: 'DEV-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      number: 1,
+      role: null,
+      title: 'offline',
+      body: 'body',
+      version: 'v1',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  expect(await apply([document])).toEqual([{ id: documentId, status: 'applied' }])
+  expect(await apply([document])).toEqual([{ id: documentId, status: 'duplicate' }])
+  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
+    { id: documentId, status: 'applied' },
+  ])
+  expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
+    { id: documentId, status: 'duplicate' },
+  ])
+})
+
+test('new child pushes require matching ids, keys, projects, and a live task', async () => {
+  const commentId = '01990000-0000-7000-8000-000000001350'
+  const at = '2026-10-11T18:00:00.000Z'
+  const child = {
+    table: 'hub_task_comment' as const,
+    id: commentId,
+    op: 'upsert' as const,
+    row: {
+      id: commentId,
+      task_key: 'WRONG-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      body: 'body',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  expect(await apply([child])).toEqual([
+    {
+      id: commentId,
+      status: 'rejected',
+      reason: expect.stringContaining('no live hosted task matches'),
+    },
+  ])
+
+  const deletedTaskId = '01990000-0000-7000-8000-000000001351'
+  const deletedTask = { ...taskRow(deletedTaskId, 'DEV-351', 'local'), project_name: 'workshop' }
+  expect(
+    await apply([{ table: 'hub_task', id: deletedTaskId, op: 'upsert', row: deletedTask }]),
+  ).toEqual([{ id: deletedTaskId, status: 'applied' }])
+  await database.query(`UPDATE hub_task SET deleted_at=now() WHERE id=$1`, [deletedTaskId])
+  const deletedChild = {
+    ...child,
+    id: '01990000-0000-7000-8000-000000001352',
+    row: {
+      ...child.row,
+      id: '01990000-0000-7000-8000-000000001352',
+      task_key: 'DEV-351',
+      task_id: deletedTaskId,
+    },
+  }
+  expect(await apply([deletedChild])).toEqual([
+    { id: deletedChild.id, status: 'rejected', reason: 'row was deleted on the hosted record' },
+  ])
 })

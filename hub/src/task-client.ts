@@ -159,58 +159,12 @@ async function operatorWaitingEmailRequest(
   if (!parsed.success) throw new Error('hosted hub returned an invalid operator waiting email')
   return parsed.data
 }
-export const hostedPatchTask = (
-  key: string,
-  body: unknown,
-  options?: Parameters<typeof request>[3],
-) =>
-  request<
-    HostedTask & {
-      status_event?: import('./hosted-tasks.ts').HostedStatusEvent
-    }
-  >(`/v1/tasks/${encodeURIComponent(key)}`, 'PATCH', body, options)
-export const hostedCloseTask = (key: string, options?: Parameters<typeof request>[3]) =>
-  request<
-    HostedTask & {
-      status_event?: import('./hosted-tasks.ts').HostedStatusEvent
-    }
-  >(`/v1/tasks/${encodeURIComponent(key)}/close`, 'POST', {}, options)
-export const hostedCommentTask = (
-  key: string,
-  body: string,
-  options?: Parameters<typeof request>[3],
-) =>
-  request<HostedComment>(`/v1/tasks/${encodeURIComponent(key)}/comments`, 'POST', { body }, options)
 export const hostedCreateDocument = (
   key: string,
   body: unknown,
   options?: Parameters<typeof request>[3],
 ) =>
   request<HostedDocument>(`/v1/tasks/${encodeURIComponent(key)}/documents`, 'POST', body, options)
-export const hostedPatchDocument = (
-  key: string,
-  id: string,
-  body: unknown,
-  options?: Parameters<typeof request>[3],
-) =>
-  request<HostedDocument>(
-    `/v1/tasks/${encodeURIComponent(key)}/documents/${id}`,
-    'PATCH',
-    body,
-    options,
-  )
-export const hostedDeleteDocument = (
-  key: string,
-  id: string,
-  options?: Parameters<typeof request>[3],
-) =>
-  request<{ deleted: number }>(
-    `/v1/tasks/${encodeURIComponent(key)}/documents/${id}`,
-    'DELETE',
-    undefined,
-    options,
-  )
-
 export const hostedListTasks = (options?: Parameters<typeof request>[3]) =>
   request<{
     tasks: HostedTask[]

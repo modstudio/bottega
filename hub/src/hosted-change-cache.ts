@@ -18,6 +18,13 @@ import {
   hostedNotePullRows,
 } from './note-cache.ts'
 import { notePullSpaces } from './note-project-space.ts'
+import {
+  HOSTED_MACHINE_TABLES,
+  pendingEditSkipsPull,
+  pendingHostedEdit,
+  type ReconciledHostedTable,
+  reconcilePulledRow,
+} from './pending-hosted-edit.ts'
 import { projects } from './projects.ts'
 import {
   type HostedSpaceChange,
@@ -100,6 +107,56 @@ function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string
     )
     .run(`${family.cursorPrefix}.${spaceId}`, String(cursor))
 }
+function applyDelete(conn: Database, change: HostedSpaceChange, family: HostedChangeFamily) {
+  if (Object.hasOwn(HOSTED_MACHINE_TABLES, change.table))
+    return reconcilePulledRow(conn, {
+      table: change.table as ReconciledHostedTable,
+      id: change.id,
+      operation: 'delete',
+      current: () => family.machineRow(conn, change.table, change.id),
+      apply: () => {},
+      remove: () => family.delete(conn, change.table, change.id),
+    })
+  family.delete(conn, change.table, change.id)
+  return { kind: 'deleted' as const }
+}
+
+function applyDeleteChange(
+  conn: Database,
+  change: HostedSpaceChange,
+  spaceId: string,
+  family: HostedChangeFamily,
+  counts: SpaceCounts,
+) {
+  const decision = classifyHostedChangeDelete(
+    family.rowSpace(conn, change.table, change.id),
+    spaceId,
+  )
+  if (decision === 'skip') {
+    counts.deletesSkipped += 1
+    recordHostedChangeEvidence(conn, {
+      family: family.evidenceFamily,
+      spaceId,
+      table: change.table,
+      rowId: change.id,
+      kind: 'skipped-delete',
+      differingColumns: [],
+    })
+    return
+  }
+  const reconciled = applyDelete(conn, change, family)
+  if (reconciled.kind === 'skipped') counts.deletesSkipped += 1
+  else counts.deletesApplied += 1
+  recordHostedChangeEvidence(conn, {
+    family: family.evidenceFamily,
+    spaceId,
+    table: change.table,
+    rowId: change.id,
+    kind: 'applied-delete',
+    differingColumns: [],
+  })
+}
+
 function applyOneChange(
   conn: Database,
   change: HostedSpaceChange,
@@ -108,42 +165,42 @@ function applyOneChange(
   counts: SpaceCounts,
 ) {
   if (!family.accepts(change.table)) return
+  const pending = pendingHostedEdit(conn, change.table, change.id)
+  if (change.op !== 'delete' && pendingEditSkipsPull(pending)) {
+    counts.upsertsNoop += 1
+    return
+  }
   if (change.op === 'delete') {
-    const decision = classifyHostedChangeDelete(
-      family.rowSpace(conn, change.table, change.id),
-      spaceId,
-    )
-    if (decision === 'skip') {
-      counts.deletesSkipped += 1
-      recordHostedChangeEvidence(conn, {
-        family: family.evidenceFamily,
-        spaceId,
-        table: change.table,
-        rowId: change.id,
-        kind: 'skipped-delete',
-        differingColumns: [],
-      })
-    } else {
-      family.delete(conn, change.table, change.id)
-      counts.deletesApplied += 1
-      recordHostedChangeEvidence(conn, {
-        family: family.evidenceFamily,
-        spaceId,
-        table: change.table,
-        rowId: change.id,
-        kind: 'applied-delete',
-        differingColumns: [],
-      })
-    }
+    applyDeleteChange(conn, change, spaceId, family, counts)
     return
   }
   if (change.row === undefined) {
     counts.upsertsNoop += 1
     return
   }
-  const before = family.machineRow(conn, change.table, change.id)
-  family.apply(conn, change.table, change.row)
-  const after = family.machineRow(conn, change.table, change.id)
+  const reconciled = Object.hasOwn(HOSTED_MACHINE_TABLES, change.table)
+    ? reconcilePulledRow(conn, {
+        table: change.table as ReconciledHostedTable,
+        id: change.id,
+        operation: 'upsert',
+        current: () => family.machineRow(conn, change.table, change.id),
+        apply: () => family.apply(conn, change.table, change.row!),
+        remove: () => family.delete(conn, change.table, change.id),
+      })
+    : (() => {
+        const before = family.machineRow(conn, change.table, change.id)
+        family.apply(conn, change.table, change.row!)
+        return {
+          kind: 'upserted' as const,
+          before,
+          after: family.machineRow(conn, change.table, change.id),
+        }
+      })()
+  if (reconciled.kind === 'skipped') {
+    counts.upsertsNoop += 1
+    return
+  }
+  const { before, after } = reconciled
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else {
