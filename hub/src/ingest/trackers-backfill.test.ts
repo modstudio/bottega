@@ -9,7 +9,6 @@ const taskKey = 'ALP-991'
 
 const { db, writeTransaction } = await import('../db.ts')
 const { applyHostedPushChangesInTransaction } = await import('../hosted-push-changes.ts')
-const { mirrorHostedTaskBody } = await import('../hosted-tasks.ts')
 const { loadOutboxChange } = await import('../outbox-row.ts')
 const { parseHostedPushItem } = await import('../push-contract.ts')
 const { ingestTrackers } = await import('./trackers.ts')
@@ -66,12 +65,17 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
   const taskId = '01990000-0000-7000-8000-000000001292'
   const database = await createHostedRecordFixture({ spaceId, userId })
   try {
-    await mirrorHostedTaskBody(
-      pgliteSql(database),
-      { userId, spaceId },
-      {
-        tasks: [
-          {
+    await database.transaction(async (transaction) => {
+      const sql = pgliteSql(transaction as unknown as PGlite)
+      sql.unsafe = (async (statement: string) =>
+        (await transaction.query(statement)).rows) as SQL['unsafe']
+      await bindTenant(sql, { userId, spaceId })
+      return applyHostedPushChangesInTransaction(sql, { userId, spaceId }, [
+        {
+          table: 'hub_task',
+          id: taskId,
+          op: 'upsert',
+          row: {
             id: taskId,
             key: taskKey,
             project: 'alpha',
@@ -92,10 +96,9 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
             deleted_at: null,
             next_document_number: 1,
           },
-        ],
-      },
-      1,
-    )
+        },
+      ])
+    })
 
     writeTransaction((conn) => {
       conn

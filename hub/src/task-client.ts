@@ -6,6 +6,7 @@ import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { parseIdentitySetPage } from './identity-set-contract.ts'
 import {
   type OperatorWaitingEmailResult,
   operatorWaitingEmailResponseSchema,
@@ -61,22 +62,21 @@ export type HostedTaskIdentity = {
   activeSpaceId: string
   memberships: RecordSpaceMembership[]
   capabilities?: {
-    targetSpaceTaskMirror?: boolean
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
     spaceChanges?: boolean
     spacePush?: boolean
     spacePushTables?: PushableHubChangeTable[]
+    spaceIdentitySet?: boolean
   }
 }
 
-const TARGET_SPACE_MIRROR_REMEDY =
-  'deploy the hub server at or after the target-space task mirror change'
+const SPACE_IDENTITY_SET_REMEDY = 'deploy the hub server at or after the space identity set change'
 
-export function assertTargetSpaceTaskMirror(identity: HostedTaskIdentity) {
-  if (identity.capabilities?.targetSpaceTaskMirror !== true)
+export function assertSpaceIdentitySet(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.spaceIdentitySet !== true)
     throw new Error(
-      `hosted hub does not advertise target-space task mirror support; ${TARGET_SPACE_MIRROR_REMEDY}`,
+      `hosted hub does not advertise space identity set support; ${SPACE_IDENTITY_SET_REMEDY}`,
     )
 }
 
@@ -384,11 +384,24 @@ export async function hostedSpaceChanges(after: number, options: HostedSpaceChan
   return parseHostedSpaceChangePage(page, after, new Set(options.tables.split(',')))
 }
 
-export const hostedMirrorTasks = (body: unknown, options?: Parameters<typeof request>[3]) =>
-  request<{
-    upserted: number
-    adoptions?: import('./hosted-tasks.ts').MirrorAdoption[]
-  }>('/v1/tasks/mirror', 'PUT', body, options)
+function capabilityFlag(capabilities: unknown, name: string): boolean {
+  return (
+    typeof capabilities === 'object' &&
+    capabilities !== null &&
+    (capabilities as Record<string, unknown>)[name] === true
+  )
+}
+
+export async function hostedIdentitySet(
+  table: PushableHubChangeTable,
+  options: Parameters<typeof request>[3] & { after?: string | null } = {},
+): Promise<{ ids: string[]; more: boolean }> {
+  const query = new URLSearchParams({ table })
+  if (options.after) query.set('after', options.after)
+  return parseIdentitySetPage(
+    await request<Record<string, unknown>>(`/v1/changes/ids?${query}`, 'GET', undefined, options),
+  )
+}
 
 export async function hostedPushChanges(
   body: HostedPushChange[],
@@ -536,26 +549,11 @@ export async function hostedTaskIdentity(
     activeSpaceId: value.activeSpaceId as string,
     memberships: value.memberships as RecordSpaceMembership[],
     capabilities: {
-      targetSpaceTaskMirror:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).targetSpaceTaskMirror === true,
-      projectNoteCounters:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).projectNoteCounters === true,
-      targetSpaceNotes:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).targetSpaceNotes === true,
-      spaceChanges:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).spaceChanges === true,
-      spacePush:
-        typeof value.capabilities === 'object' &&
-        value.capabilities !== null &&
-        (value.capabilities as Record<string, unknown>).spacePush === true,
+      projectNoteCounters: capabilityFlag(value.capabilities, 'projectNoteCounters'),
+      targetSpaceNotes: capabilityFlag(value.capabilities, 'targetSpaceNotes'),
+      spaceChanges: capabilityFlag(value.capabilities, 'spaceChanges'),
+      spacePush: capabilityFlag(value.capabilities, 'spacePush'),
+      spaceIdentitySet: capabilityFlag(value.capabilities, 'spaceIdentitySet'),
       spacePushTables:
         typeof value.capabilities === 'object' &&
         value.capabilities !== null &&
@@ -573,10 +571,3 @@ export async function hostedSignedInUserId(
   const result = await taskIdentityResult(options)
   return result.unauthorized ? null : (result.value.userId as string)
 }
-export const hostedTaskCounts = (targetSpaceId: string, options?: Parameters<typeof request>[3]) =>
-  request<Record<string, Array<{ source: string; count: number }>>>(
-    '/v1/tasks/counts',
-    'GET',
-    undefined,
-    { ...options, recordSpace: targetSpaceId },
-  )

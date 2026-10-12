@@ -1,100 +1,230 @@
 import {
-  partitionProjectRows,
-  type RegisteredTaskSpace,
-  type TaskDestinationIdentity,
-} from './task-project-space.ts'
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DOCUMENT_TABLE,
+  HOSTED_TASK_TABLE,
+  type PushableHubChangeTable,
+} from './push-contract.ts'
 
-export type PushCollections = {
-  tasks: Array<
-    Record<string, unknown> & {
-      key: string
-      project: string
-      project_name: string
-      source: string
-      newly_assigned?: boolean
-    }
-  >
-  comments: Array<Record<string, unknown> & { task_key: string; project_name: string }>
-  documents: Array<Record<string, unknown> & { task_key: string; project_name: string }>
-  statusEvents: Array<Record<string, unknown> & { task_key: string; project_name: string }>
+export type IdentitySetComparison = {
+  both: number
+  machineOnly: string[]
+  hostedOnly: string[]
+  inFlight: string[]
 }
 
-export type PushIssue = {
+type TableAudit = IdentitySetComparison & {
+  table: PushableHubChangeTable
+  pulled: boolean
+}
+
+export type SpaceAudit = { spaceId: string; tables: TableAudit[] }
+
+export type UnroutableRows = {
   project: string
   reason: string
-  tasks: number
-  comments: number
-  documents: number
-  statusEvents: number
+  table: PushableHubChangeTable
+  ids: string[]
 }
 
-export type TaskPushDestination = {
+export type StuckRow = { table: string; id: string; reason: string | null }
+
+export type RepairCandidate = {
+  table: PushableHubChangeTable
+  id: string
+  fields: string[] | null
+}
+
+export type RoutedMachineRow =
+  | { table: PushableHubChangeTable; id: string; destinationSpaceId: string }
+  | { table: PushableHubChangeTable; id: string; project: string; reason: string }
+
+export type HostedTableIds = {
+  table: PushableHubChangeTable
   spaceId: string
-  projects: string[]
-  rows: PushCollections
+  ids: readonly string[]
 }
 
-const emptyRows = (): PushCollections => ({
-  tasks: [],
-  comments: [],
-  documents: [],
-  statusEvents: [],
-})
-const emptyIssue = (project: string, reason: string): PushIssue => ({
-  project,
-  reason,
-  tasks: 0,
-  comments: 0,
-  documents: 0,
-  statusEvents: 0,
-})
+export type AuditOutboxEntry = {
+  table: string
+  rowId: string
+  quarantinedAt: string | null
+  quarantineReason: string | null
+}
 
-/** Partition every task mirror row by its project's resolved destination. */
-export function planTaskPush(
-  rows: PushCollections,
-  registered: readonly RegisteredTaskSpace[],
-  identity: TaskDestinationIdentity,
-) {
-  const tagged = (
-    Object.entries(rows) as Array<[keyof PushCollections, PushCollections[keyof PushCollections]]>
-  ).flatMap(([name, values]) =>
-    values.map((row) => ({ name, row, project_name: row.project_name })),
-  )
-  const partitioned = partitionProjectRows(tagged, registered, identity)
-  const destinations = new Map<string, TaskPushDestination>()
-  for (const [spaceId, selected] of partitioned.destinations) {
-    const destination = destinations.get(spaceId) ?? {
-      spaceId,
-      projects: [],
-      rows: emptyRows(),
-    }
-    for (const { name, row } of selected) {
-      if (!destination.projects.includes(row.project_name))
-        destination.projects.push(row.project_name)
-      ;(destination.rows[name] as Array<typeof row>).push(row)
-    }
-    destinations.set(spaceId, destination)
+export type DrainAudit = {
+  rejected: number
+  quarantined: number
+  waitingOnRouting: Record<string, number>
+  waitingOnHostedHub?: Record<string, number>
+  hostedReachable?: boolean
+  skippedCapability?: boolean
+}
+
+export type TaskPushPlan = {
+  spaces: SpaceAudit[]
+  unroutable: UnroutableRows[]
+  stuck: StuckRow[]
+  repair: RepairCandidate[]
+}
+
+/** Classify one table's machine, hosted, pending, and stuck ids. Pending is in flight; stuck is not missing. */
+export function compareIdentitySets(
+  machineIds: readonly string[],
+  hostedIds: readonly string[],
+  pendingIds: ReadonlySet<string>,
+  stuckIds: ReadonlySet<string> = new Set(),
+): IdentitySetComparison {
+  const hosted = new Set(hostedIds)
+  const machine = new Set(machineIds)
+  let both = 0
+  const machineOnly: string[] = []
+  const inFlight: string[] = []
+  for (const id of machine) {
+    if (hosted.has(id)) both++
+    else if (pendingIds.has(id)) inFlight.push(id)
+    else if (!stuckIds.has(id)) machineOnly.push(id)
   }
-  const refused = [...partitioned.refusals].map(([project, refusal]) => {
-    const issue = emptyIssue(project, refusal.reason)
-    for (const { name } of refusal.rows) issue[name]++
-    return issue
-  })
   return {
-    destinations: [...destinations.values()]
-      .map((destination) => ({ ...destination, projects: destination.projects.sort() }))
-      .sort((a, b) => a.spaceId.localeCompare(b.spaceId)),
-    refused: refused.sort((a, b) => a.project.localeCompare(b.project)),
+    both,
+    machineOnly: machineOnly.sort(),
+    hostedOnly: hostedIds.filter((id) => !machine.has(id)).sort(),
+    inFlight: inFlight.sort(),
   }
 }
 
-export function issueForDestination(destination: TaskPushDestination, reason: string): PushIssue[] {
-  return destination.projects.map((project) => {
-    const issue = emptyIssue(project, reason)
-    for (const [name, rows] of Object.entries(destination.rows) as Array<
-      [keyof PushCollections, PushCollections[keyof PushCollections]]
-    >)
-      issue[name] = rows.filter((row) => row.project_name === project).length
-    return issue
-  })
+export function repairFieldsFor(table: PushableHubChangeTable): string[] | null {
+  if (
+    table === HOSTED_TASK_TABLE ||
+    table === HOSTED_COMMENT_TABLE ||
+    table === HOSTED_DOCUMENT_TABLE
+  )
+    return []
+  return null
+}
+
+export function drainFailsAudit(drain: DrainAudit): boolean {
+  if (drain.rejected > 0 || drain.quarantined > 0) return true
+  if (drain.skippedCapability) return true
+  if (drain.hostedReachable === false) return true
+  if (Object.keys(drain.waitingOnRouting).length > 0) return true
+  return Object.keys(drain.waitingOnHostedHub ?? {}).length > 0
+}
+
+export function taskPushVerdict(plan: TaskPushPlan, drain: DrainAudit | null): boolean {
+  if (plan.unroutable.length > 0 || plan.stuck.length > 0) return false
+  if (plan.spaces.some((space) => space.tables.some((table) => pulledHostedOnly(table))))
+    return false
+  if (drain) return !drainFailsAudit(drain)
+  return !plan.spaces.some((space) => space.tables.some((table) => table.machineOnly.length > 0))
+}
+
+function pulledHostedOnly(table: TableAudit): boolean {
+  return table.pulled && table.hostedOnly.length > 0
+}
+
+function pendingIds(outbox: readonly AuditOutboxEntry[], table: string): Set<string> {
+  return new Set(
+    outbox
+      .filter((entry) => entry.table === table && !entry.quarantinedAt)
+      .map((entry) => entry.rowId),
+  )
+}
+
+function stuckIds(outbox: readonly AuditOutboxEntry[], table: string): Set<string> {
+  return new Set(
+    outbox
+      .filter((entry) => entry.table === table && entry.quarantinedAt)
+      .map((entry) => entry.rowId),
+  )
+}
+
+function machineIdsFor(
+  machine: readonly RoutedMachineRow[],
+  table: PushableHubChangeTable,
+  spaceId: string,
+): string[] {
+  return machine
+    .filter(
+      (row) =>
+        row.table === table && 'destinationSpaceId' in row && row.destinationSpaceId === spaceId,
+    )
+    .map((row) => row.id)
+}
+
+function hostedIdsFor(
+  hosted: readonly HostedTableIds[],
+  table: PushableHubChangeTable,
+  spaceId: string,
+): readonly string[] {
+  return hosted.find((row) => row.table === table && row.spaceId === spaceId)?.ids ?? []
+}
+
+function unroutableRows(machine: readonly RoutedMachineRow[]): UnroutableRows[] {
+  const grouped = new Map<string, UnroutableRows>()
+  for (const row of machine) {
+    if ('destinationSpaceId' in row) continue
+    const key = `${row.table}\0${row.project}\0${row.reason}`
+    const selected = grouped.get(key) ?? {
+      project: row.project,
+      reason: row.reason,
+      table: row.table,
+      ids: [],
+    }
+    selected.ids.push(row.id)
+    grouped.set(key, selected)
+  }
+  return [...grouped.values()].map((row) => ({ ...row, ids: row.ids.sort() }))
+}
+
+function stuckRows(outbox: readonly AuditOutboxEntry[], tables: ReadonlySet<string>): StuckRow[] {
+  return outbox
+    .filter((entry) => entry.quarantinedAt && tables.has(entry.table))
+    .map((entry) => ({
+      table: entry.table,
+      id: entry.rowId,
+      reason: entry.quarantineReason,
+    }))
+    .sort((left, right) =>
+      left.table === right.table
+        ? left.id.localeCompare(right.id)
+        : left.table.localeCompare(right.table),
+    )
+}
+
+function repairCandidates(spaces: readonly SpaceAudit[]): RepairCandidate[] {
+  const repair: RepairCandidate[] = []
+  for (const space of spaces)
+    for (const table of space.tables)
+      for (const id of table.machineOnly)
+        repair.push({ table: table.table, id, fields: repairFieldsFor(table.table) })
+  return repair
+}
+
+export function planTaskPushAudit(input: {
+  spaces: readonly string[]
+  tables: readonly PushableHubChangeTable[]
+  machine: readonly RoutedMachineRow[]
+  hosted: readonly HostedTableIds[]
+  outbox: readonly AuditOutboxEntry[]
+  pulledTables: ReadonlySet<string>
+}): TaskPushPlan {
+  const spaces: SpaceAudit[] = input.spaces.map((spaceId) => ({
+    spaceId,
+    tables: input.tables.map((table) => ({
+      table,
+      pulled: input.pulledTables.has(table),
+      ...compareIdentitySets(
+        machineIdsFor(input.machine, table, spaceId),
+        hostedIdsFor(input.hosted, table, spaceId),
+        pendingIds(input.outbox, table),
+        stuckIds(input.outbox, table),
+      ),
+    })),
+  }))
+  return {
+    spaces,
+    unroutable: unroutableRows(input.machine),
+    stuck: stuckRows(input.outbox, new Set(input.tables)),
+    repair: repairCandidates(spaces),
+  }
 }

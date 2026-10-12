@@ -52,6 +52,9 @@ test('field lists accept only the update vocabulary for their table', () => {
   expect(parseHostedPushItem({ ...task, fields: ['title', 'status', 'title'] })).toEqual({
     input: { ...task, fields: ['title', 'status'] },
   })
+  expect(parseHostedPushItem({ ...task, fields: [] })).toEqual({
+    input: { ...task, fields: [] },
+  })
   for (const fields of [['created_at'], ['unknown'], 'title']) {
     const parsed = parseHostedPushItem({ ...task, fields })
     expect('outcome' in parsed ? parsed.outcome.reason : null).toContain('fields')
