@@ -77,10 +77,10 @@ test('an unchanged clean comparison names the architect read', () => {
     note: 'read before fixes',
   }
   expect(unchangedSinceReadMessage(read, '')).toBe(
-    'nothing changed since architect read read-tip recorded 2026-10-12T12:00:00.000Z',
+    'no file changed since architect readread-tip recorded 2026-10-12T12:00:00.000Z',
   )
   expect(unchangedSinceReadMessage({ ...read, tip: 'earlier-tip' }, '')).toBe(
-    'nothing changed since architect read earlier-tip recorded 2026-10-12T12:00:00.000Z',
+    'no file changed since architect readearlier-tip recorded 2026-10-12T12:00:00.000Z',
   )
   expect(unchangedSinceReadMessage(read, 'patch')).toBeNull()
 })

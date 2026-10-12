@@ -76,7 +76,7 @@ export function chooseSinceReadBound(input: {
 
 export function unchangedSinceReadMessage(read: ArchitectRead | null, diff: string): string | null {
   return read && !diff
-    ? `nothing changed since architect read ${read.tip} recorded ${read.recordedAt}`
+    ? `no file changed since architect read${read.tip} recorded ${read.recordedAt}`
     : null
 }
 
