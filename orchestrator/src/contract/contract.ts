@@ -740,13 +740,12 @@ ${COULD_NOT_VERIFY_INSTRUCTION}
  * exists to prevent. The scoring model backs the promise up: escalating counts
  * as faithful, and guessing is what costs.
  */
-export const CHANGE_GUIDE_INSTRUCTION = `When you changed files, return a change_guide in the order the architect should
-read the diff. Put the part that carries the decision first and mechanical
-follow-ons last. Cover every changed file in exactly one step. Each step names
-at least one repo-relative file, explains what that part does, and gives the one
-thing to verify there. The guide orders the architect's reading of the diff; it
-never replaces the diff, so do not restate the summary. Return null when you
-changed no files, including when you only ask questions or report a blocker.`
+export const CHANGE_GUIDE_INSTRUCTION = `When you changed files, return a change_guide in the order the architect should read the diff.
+Put the part that carries the decision first and mechanical follow-ons last.
+Cover every changed file in exactly one step. Each step names at least one repo-relative file,
+explains what that part does, and gives the one thing to verify there. The guide orders the
+architect's reading of the diff; it never replaces the diff, so do not restate the summary.
+Return null when you changed no files, including when you only ask questions or report a blocker.`
 
 export const WORKER_PREAMBLE = `
 YOUR ROLE
