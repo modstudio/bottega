@@ -58,7 +58,7 @@ describe('resolveMechanicalChecks', () => {
     expect(rows).toHaveLength(MECHANICAL_CHECK_CATALOGUE.length)
   })
 
-  test('resolves PHP-specific limits and scheduled nonblocking checks', () => {
+  test('resolves PHP-specific limits and whole-project checks at the gate', () => {
     const rows = resolved('php-laravel-vue')
     expect(row(rows, 'file-length')).toMatchObject({ limit: 500, source: 'stack' })
     expect(row(rows, 'unused-exports')).toMatchObject({
