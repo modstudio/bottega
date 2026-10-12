@@ -142,4 +142,21 @@ describe('ratchet decision', () => {
       }),
     ).toEqual(findings.map((item) => ({ ...item, reason: 'added-line' })))
   })
+
+  test('an unanalysed base refuses only findings on added lines and leaves other files normal', () => {
+    const added = measured(20, 'added')
+    const unchanged = { ...measured(30, 'existing'), line: 20 }
+    const other = { ...measured(18, 'other'), file: 'other.ts' }
+    expect(
+      ratchetDecision({
+        base: [measured(25, 'ignored'), { ...measured(16, 'other'), file: 'other.ts' }],
+        head: [added, unchanged, other],
+        change: change({ addedLines: new Map([['source.ts', [{ start: 10, end: 10 }]]]) }),
+        unanalysedBase: new Set(['source.ts']),
+      }),
+    ).toEqual([
+      { ...added, reason: 'added-line' },
+      { ...other, reason: 'grew', previousMeasure: 16 },
+    ])
+  })
 })

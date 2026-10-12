@@ -3,7 +3,7 @@ import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import ts from 'typescript'
-import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
+import { type Finding, ratchetDecision } from '../shared/ratchet'
 import { openChangeView } from './change-view'
 import { measuredSourceFiles } from './check-file-ceiling'
 
@@ -27,13 +27,6 @@ type LintResult = {
 }
 
 type Reporter = Pick<Console, 'error' | 'log'>
-type CognitiveChange = {
-  base: Finding[]
-  head: Finding[]
-  facts: ChangeFacts
-  baseFailures?: Set<string>
-}
-
 function functionBaseName(node: ts.FunctionLikeDeclaration): string {
   if (node.name) return node.name.getText()
   let parent: ts.Node | undefined = node.parent
@@ -108,29 +101,6 @@ export function complexityFindings(file: string, text: string, messages: LintMes
   })
 }
 
-function onAddedLine(finding: Finding, facts: ChangeFacts) {
-  return (facts.addedLines.get(finding.file) ?? []).some(
-    ({ start, end }) => finding.line >= start && finding.line <= end,
-  )
-}
-
-export function cognitiveComplexityDecision({
-  base,
-  head,
-  facts,
-  baseFailures = new Set(),
-}: CognitiveChange) {
-  const comparableBase = base.filter((finding) => !baseFailures.has(finding.file))
-  const comparableHead = head.filter((finding) => !baseFailures.has(finding.file))
-  const refused = ratchetDecision({ base: comparableBase, head: comparableHead, change: facts })
-  return [
-    ...refused,
-    ...head
-      .filter((finding) => baseFailures.has(finding.file) && onAddedLine(finding, facts))
-      .map((finding) => ({ ...finding, reason: 'added-line' as const })),
-  ]
-}
-
 function lintFailed(result: LintResult) {
   return Boolean(result.fatalErrorCount) || result.messages.some((message) => message.fatal)
 }
@@ -176,13 +146,15 @@ async function measureChangedFile(
   }
 }
 
-async function changedMeasurements(eslint: ESLint, base: string, reporter: Reporter) {
-  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+async function changedMeasurements(
+  eslint: ESLint,
+  view: ReturnType<typeof openChangeView>,
+  measuredPaths: Set<string>,
+  reporter: Reporter,
+) {
   const before: Finding[] = []
   const after: Finding[] = []
   const baseFailures = new Set<string>()
-  const measuredPaths = new Set(measuredSourceFiles().map((file) => file.path))
-
   for (const entry of view.entries) {
     if (entry.status === 'D' || !measuredPaths.has(entry.path)) continue
     const measurement = await measureChangedFile(eslint, view, entry, reporter)
@@ -214,7 +186,7 @@ async function wholeTreeMeasurements(eslint: ESLint) {
   return { remaining, violations }
 }
 
-function violationLine(finding: ReturnType<typeof cognitiveComplexityDecision>[number]) {
+function violationLine(finding: ReturnType<typeof ratchetDecision>[number]) {
   const previous = finding.reason === 'grew' ? `, previous score ${finding.previousMeasure}` : ''
   return (
     `${finding.file}:${finding.line} ${finding.symbol}: complexity ${finding.measure}, ` +
@@ -223,14 +195,30 @@ function violationLine(finding: ReturnType<typeof cognitiveComplexityDecision>[n
   )
 }
 
+export async function changedComplexityViolations(
+  eslint: ESLint,
+  view: ReturnType<typeof openChangeView>,
+  measuredPaths: Set<string>,
+  reporter: Reporter = console,
+) {
+  const change = await changedMeasurements(eslint, view, measuredPaths, reporter)
+  return ratchetDecision({
+    base: change.base,
+    head: change.head,
+    change: change.facts,
+    unanalysedBase: change.baseFailures,
+  }).map(violationLine)
+}
+
 async function checkCognitiveCeiling(base: string, reporter: Reporter = console) {
   const eslint = new ESLint({ cwd: ROOT })
   const wholeTree = await wholeTreeMeasurements(eslint)
   reporter.log(`cognitive complexity: ${wholeTree.remaining} functions over ${CEILING} remain`)
-  const change = await changedMeasurements(eslint, base, reporter)
+  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+  const measuredPaths = new Set(measuredSourceFiles().map((file) => file.path))
   const violations = [
     ...wholeTree.violations,
-    ...cognitiveComplexityDecision(change).map(violationLine),
+    ...(await changedComplexityViolations(eslint, view, measuredPaths, reporter)),
   ]
   for (const violation of violations) reporter.error(violation)
   if (violations.length) return false

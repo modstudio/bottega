@@ -1,81 +1,42 @@
 import { describe, expect, test } from 'bun:test'
-import type { ChangeFacts, Finding } from '../shared/ratchet'
-import { cognitiveComplexityDecision, complexityFindings } from './check-cognitive-ceiling'
+import { ESLint } from 'eslint'
+import { changedComplexityViolations, complexityFindings } from './check-cognitive-ceiling'
 
-const facts = (): ChangeFacts => ({ renames: new Map(), addedLines: new Map() })
-
-function finding(file: string, symbol: string, measure: number, line = 1): Finding {
-  return {
-    file,
-    line,
-    rule: 'cognitive-complexity',
-    message: `complexity ${measure}, limit 15`,
-    symbol,
-    measure,
-  }
+function complexFunction(name: string, branches: number) {
+  const conditions = Array.from(
+    { length: branches },
+    (_, index) => `  if (value === ${index}) value += 1`,
+  )
+  return [`function ${name}(value: number) {`, ...conditions, '  return value', '}'].join('\n')
 }
 
-describe('cognitive complexity decision', () => {
-  test('refuses a function whose score rose and reports its previous score', () => {
-    expect(
-      cognitiveComplexityDecision({
-        base: [finding('complex.ts', 'work', 20)],
-        head: [finding('complex.ts', 'work', 21)],
-        facts: facts(),
-      }),
-    ).toEqual([expect.objectContaining({ reason: 'grew', previousMeasure: 20 })])
-  })
+describe('changed cognitive complexity check', () => {
+  test('lints supplied content and refuses grown and new functions', async () => {
+    const path = 'scripts/complexity-wiring-fixture.ts'
+    const unchanged = complexFunction('unchanged', 16)
+    const base = [complexFunction('grown', 16), unchanged].join('\n\n')
+    const head = [complexFunction('grown', 17), unchanged, complexFunction('added', 16)].join(
+      '\n\n',
+    )
+    const view = {
+      entries: [{ status: 'M' as const, path }],
+      facts: { renames: new Map<string, string>(), addedLines: new Map() },
+      baseContent: () => ({ status: 'present' as const, text: base }),
+      headContent: () => ({ status: 'present' as const, text: head }),
+    }
 
-  test('allows a function whose score fell but remains over the limit', () => {
-    expect(
-      cognitiveComplexityDecision({
-        base: [finding('complex.ts', 'work', 20)],
-        head: [finding('complex.ts', 'work', 18)],
-        facts: facts(),
-      }),
-    ).toEqual([])
-  })
+    const violations = await changedComplexityViolations(
+      new ESLint({ cwd: process.cwd() }),
+      view,
+      new Set([path]),
+    )
 
-  test('refuses a new function over the limit', () => {
-    expect(
-      cognitiveComplexityDecision({
-        base: [],
-        head: [finding('complex.ts', 'newWork', 16)],
-        facts: facts(),
-      }),
-    ).toEqual([expect.objectContaining({ reason: 'new-measured' })])
-  })
-
-  test('allows an untouched over-limit function in an edited file', () => {
-    const unchanged = finding('complex.ts', 'work', 20)
-    expect(
-      cognitiveComplexityDecision({ base: [unchanged], head: [unchanged], facts: facts() }),
-    ).toEqual([])
-  })
-
-  test('keeps the allowance when a file is renamed', () => {
-    const renameFacts = facts()
-    renameFacts.renames.set('new.ts', 'old.ts')
-    expect(
-      cognitiveComplexityDecision({
-        base: [finding('old.ts', 'work', 20)],
-        head: [finding('new.ts', 'work', 20)],
-        facts: renameFacts,
-      }),
-    ).toEqual([])
-  })
-
-  test('an unlintable base refuses only findings on added lines', () => {
-    const fallbackFacts = facts()
-    fallbackFacts.addedLines.set('complex.ts', [{ start: 5, end: 5 }])
-    expect(
-      cognitiveComplexityDecision({
-        base: [],
-        head: [finding('complex.ts', 'added', 20, 5), finding('complex.ts', 'existing', 30, 10)],
-        facts: fallbackFacts,
-        baseFailures: new Set(['complex.ts']),
-      }),
-    ).toEqual([expect.objectContaining({ symbol: 'added', reason: 'added-line' })])
+    expect(violations).toHaveLength(2)
+    expect(violations).toContainEqual(
+      expect.stringContaining(`${path}:1 grown: complexity 17, limit 15, previous score 16`),
+    )
+    expect(violations).toContainEqual(expect.stringContaining(`${path}:42 added: complexity 16`))
+    expect(violations.every((violation) => !violation.includes('unchanged'))).toBe(true)
   })
 })
 

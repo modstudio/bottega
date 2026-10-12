@@ -142,22 +142,40 @@ export function ratchetDecision({
   base,
   head,
   change,
+  unanalysedBase = new Set(),
 }: {
   base: Finding[]
   head: Finding[]
   change: ChangeFacts
+  unanalysedBase?: Set<string>
 }): RefusedFinding[] {
   const remappedBase = base.map((finding) => remapBaseFinding(finding, change.renames))
-  const refused = measuredRefusals(remappedBase, head)
+  const comparableBase = remappedBase.filter((finding) => !unanalysedBase.has(finding.file))
+  const comparableHead = head
+    .map((finding, index) => ({ finding, index }))
+    .filter(({ finding }) => !unanalysedBase.has(finding.file))
+  const refused = new Map<number, RefusedFinding>()
+  for (const [index, finding] of measuredRefusals(
+    comparableBase,
+    comparableHead.map(({ finding }) => finding),
+  )) {
+    refused.set(comparableHead[index]!.index, finding)
+  }
   const remaining = new Map<string, number>()
 
-  for (const finding of remappedBase) {
+  for (const finding of comparableBase) {
     if (finding.measure !== undefined) continue
     const key = fingerprint(finding)
     remaining.set(key, (remaining.get(key) ?? 0) + 1)
   }
 
   for (const [index, finding] of head.entries()) {
+    if (unanalysedBase.has(finding.file)) {
+      if (isAddedLine(finding, change.addedLines)) {
+        refused.set(index, { ...finding, reason: 'added-line' })
+      }
+      continue
+    }
     if (finding.measure !== undefined) continue
     if (isAddedLine(finding, change.addedLines)) {
       refused.set(index, { ...finding, reason: 'added-line' })
