@@ -127,14 +127,14 @@ export function RevisionViewer({
         </p>
       ) : (
         <div className="mt-6 overflow-x-auto border border-border-default font-mono text-sm">
-          {diff?.hunks.map((hunk, hunkIndex) => (
+          {diff?.hunks.map((hunk) => (
             <div
-              key={`${hunkIndex}-${hunk[0]?.number}`}
+              key={`${hunk[0]?.number}-${hunk.at(-1)?.number}-${hunk[0]?.kind}`}
               className="border-border-default border-t first:border-t-0"
             >
-              {hunk.map((line, lineIndex) => (
+              {hunk.map((line) => (
                 <div
-                  key={`${line.number}-${line.kind}-${lineIndex}`}
+                  key={`${line.number}-${line.kind}`}
                   data-tone={
                     line.kind === 'context'
                       ? undefined

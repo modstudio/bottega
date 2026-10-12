@@ -78,14 +78,14 @@ export function DocsPage() {
     setProject(selectedProject ?? 'all')
     setEmptyChooserSet(true)
   }, [selectedId, selectedProject])
-  useEffect(() => setRevisionMode('version'), [selectedId])
   useEffect(() => {
     if (selectedId || emptyChooserSet || catalog.isPending) return
     setProject(chooserProject(null, subjects))
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected, selectedAudience(filters))
-  const revisionId = source === 'local' ? search?.revision : undefined
+  const revisionId =
+    source === 'local' && search?.revision !== undefined ? String(search.revision) : undefined
   useEffect(() => {
     if (!revisionId) setRevisionMode('version')
   }, [revisionId])
@@ -116,7 +116,7 @@ export function DocsPage() {
   const openRevision = useCallback(
     (id: number) => {
       if (!selected) return
-      void navigate({ ...docsLocation(selected, source), search: { revision: String(id) } })
+      void navigate({ ...docsLocation(selected, source), search: { revision: id } })
     },
     [navigate, selected, source],
   )
