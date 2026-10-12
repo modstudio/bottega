@@ -18,6 +18,7 @@ import {
   questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
+import { release as releaseRecord } from '../../../shared/record/schema-release.ts'
 import {
   reviewFinding as reviewFindingRecord,
   reviewLens as reviewLensRecord,
@@ -31,6 +32,7 @@ import {
 } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { db, nowIso } from '../database/db.ts'
+import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
@@ -444,6 +446,33 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
+function releaseValues(row: Payload, projectId: string | null) {
+  return {
+    id: String(row.id),
+    spaceId: String(row.spaceId),
+    projectId,
+    machineId: String(row.machineId),
+    localId: bigint(row.localId),
+    rung: String(row.rung),
+    candidateCommit: String(row.candidateCommit),
+    liveCommitBefore: nullableString(row.liveCommitBefore),
+    liveCommitAfter: nullableString(row.liveCommitAfter),
+    rollback: Boolean(row.rollback),
+    rollbackReason: nullableString(row.rollbackReason),
+    actor: String(row.actor),
+    sessionId: nullableString(row.sessionId),
+    startedAt: date(row.startedAt),
+    finishedAt: nullableDate(row.finishedAt),
+    exitCode: nullableNumber(row.exitCode),
+    liveMatchesCandidate:
+      row.liveMatchesCandidate == null ? null : Boolean(row.liveMatchesCandidate),
+    warning: nullableString(row.warning),
+    withheldFields: jsonString(row.withheldFields),
+    createdAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+  }
+}
+
 function questionValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
@@ -768,6 +797,19 @@ const recordKinds = {
           .onConflictDoUpdate({ target: reviewReadRecord.id, set: updates })
       }),
   },
+  release: {
+    ...OUTBOX_PAYLOAD_CONTRACTS.release,
+    push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      postgres.begin(async (tx) => {
+        await bindPrincipal(tx, principal)
+        const values = releaseValues(row, await projectRecordId(tx, row, principal))
+        const { id: _id, createdAt: _createdAt, ...updates } = values
+        await drizzle({ client: tx })
+          .insert(releaseRecord)
+          .values(values)
+          .onConflictDoUpdate({ target: releaseRecord.id, set: updates })
+      }),
+  },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
@@ -955,6 +997,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         reviews: backfillReviewRecords(local!),
         landingEvidence: backfillLandingEvidenceRecords(local!),
         questions: backfillQuestionRecords(local!),
+        releases: backfillReleaseRecords(local!),
       }
     : undefined
   if (!recordUrl) {

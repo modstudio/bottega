@@ -471,8 +471,16 @@ export const modules: ArchitectureModule[] = [
     '../project/projects.ts',
     '../../../shared/install-root.ts',
     '../../../shared/secret-shaped.ts',
+    '../../../shared/record/schema.ts',
     './release-decision.ts',
     './live-reading.ts',
+    './release-outbox.ts',
+  ]),
+  module('orchestrator/src/release/release-outbox.ts', [
+    'bun:sqlite',
+    '../../../shared/record/schema.ts',
+    '../database/db.ts',
+    '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',

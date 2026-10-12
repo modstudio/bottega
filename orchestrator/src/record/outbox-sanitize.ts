@@ -12,6 +12,7 @@ export type OutboxSanitizeKind =
   | 'review_lens'
   | 'review_finding'
   | 'review_read'
+  | 'release'
   | 'landing'
   | 'landing_override'
   | 'contention'
@@ -68,6 +69,10 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'proposedCorrection', style: 'value' },
   ],
   review_read: [{ at: 'note', style: 'value' }],
+  release: [
+    { at: 'rollbackReason', style: 'value', recordedAs: 'rollback_reason' },
+    { at: 'warning', style: 'value' },
+  ],
   landing: [
     { at: 'error', style: 'value' },
     { at: 'steps', style: 'walk' },

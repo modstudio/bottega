@@ -170,6 +170,7 @@ export const recordModules: RecordModule[] = [
     '../run/question-outbox.ts',
     '../run/run-outbox.ts',
     '../score/score-outbox.ts',
+    '../release/release-outbox.ts',
     './landing-outbox.ts',
   ]),
   module('orchestrator/src/record/record-session.ts', [

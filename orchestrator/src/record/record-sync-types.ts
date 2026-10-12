@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import type { SQL } from 'bun'
 import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import type { backfillReleaseRecords } from '../release/release-outbox.ts'
 import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
@@ -30,6 +31,7 @@ export type RecordSyncResult = {
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
     questions: { minted: number; enqueued: number }
+    releases: ReturnType<typeof backfillReleaseRecords>
   }
 }
 
