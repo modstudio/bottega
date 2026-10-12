@@ -6,8 +6,10 @@ import {
   drainHostedOutbox,
   hostedOutboxDoctorLines,
   listHostedOutbox,
+  mergeQueuedHostedChange,
   queueHostedChange,
   retryHostedOutboxEntry,
+  runHostedOutboxCommand,
 } from './outbox.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -62,6 +64,49 @@ function queueTransition(key: string, at: string) {
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('field-list merging preserves one-entry whole-row and delete semantics', () => {
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['title'] },
+        { operation: 'upsert', fields: ['status'] },
+      ),
+    ).toEqual({ operation: 'upsert', fields: ['title', 'status'] })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['title'] },
+        { operation: 'upsert', fields: null },
+      ),
+    ).toEqual({ operation: 'upsert', fields: null })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: null },
+        { operation: 'upsert', fields: ['body'] },
+      ),
+    ).toEqual({ operation: 'upsert', fields: null })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: ['body'] },
+        { operation: 'delete', fields: ['title'] },
+      ),
+    ).toEqual({ operation: 'delete', fields: null })
+  })
+
+  test('show exposes kept values and discard removes only quarantined entries', () => {
+    writeTransaction((conn) => {
+      queueHostedChange(conn, HOSTED_TASK_TABLE, 'row-kept', 'upsert', undefined, ['title'])
+      conn
+        .query(
+          `UPDATE hosted_outbox SET quarantined_at='2026-10-11T12:00:00.000Z',quarantine_reason='deleted',kept_values='{"title":"copy me"}' WHERE row_id='row-kept'`,
+        )
+        .run()
+    })
+    const id = listHostedOutbox()[0]!.id
+    expect(runHostedOutboxCommand(['outbox', 'show', id]).join('\n')).toContain('copy me')
+    expect(runHostedOutboxCommand(['outbox', 'discard', id])).toEqual([
+      `outbox entry ${id} discarded`,
+    ])
+    expect(listHostedOutbox()).toHaveLength(0)
+  })
   test('a tracker task queues only when its machine row changes', () => {
     observeTrackerTask(trackerTask('FIX-0', 'open'), '2026-10-11T11:00:00.000Z')
     expect(listHostedOutbox().map((entry) => entry.table_name)).toEqual([HOSTED_TASK_TABLE])

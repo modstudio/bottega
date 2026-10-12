@@ -386,26 +386,38 @@ try {
       last_seen: closedAt,
       updated_at: closedAt,
     }
-    await applyHostedPushChanges(actorUrl, identity, [
-      { table: 'hub_task', id: created.id, op: 'upsert', row: closed, fields: ['status', 'status_category'] },
-      {
-        table: 'hub_task_status_event',
-        id: newRecordId(),
-        op: 'upsert',
-        row: {
-          id: newRecordId(),
-          task_key: created.key,
-          task_id: created.id,
-          project_name: created.project_name,
-          at: closedAt,
-          from_status: created.status,
-          to_status: 'done',
-          created_at: closedAt,
-          updated_at: closedAt,
-          deleted_at: null,
+    await applyHostedPushChanges(
+      actorUrl,
+      identity,
+      [
+        {
+          table: 'hub_task',
+          id: created.id,
+          op: 'upsert',
+          row: closed,
+          fields: ['status', 'status_category'],
         },
-      },
-    ].map((change) => change.table === 'hub_task_status_event' ? { ...change, id: change.row.id } : change) as HostedPushChange[])
+        {
+          table: 'hub_task_status_event',
+          id: newRecordId(),
+          op: 'upsert',
+          row: {
+            id: newRecordId(),
+            task_key: created.key,
+            task_id: created.id,
+            project_name: created.project_name,
+            at: closedAt,
+            from_status: created.status,
+            to_status: 'done',
+            created_at: closedAt,
+            updated_at: closedAt,
+            deleted_at: null,
+          },
+        },
+      ].map((change) =>
+        change.table === 'hub_task_status_event' ? { ...change, id: change.row.id } : change,
+      ) as HostedPushChange[],
+    )
     const document = await createHostedDocument(actorUrl, identity, created.key, {
       title: 'Disposable',
       version: 'v1',

@@ -22,8 +22,8 @@ import {
   HOSTED_MACHINE_TABLES,
   pendingEditSkipsPull,
   pendingHostedEdit,
-  reconcilePulledRow,
   type ReconciledHostedTable,
+  reconcilePulledRow,
 } from './pending-hosted-edit.ts'
 import { projects } from './projects.ts'
 import {
@@ -145,7 +145,10 @@ function applyOneChange(
             apply: () => {},
             remove: () => family.delete(conn, change.table, change.id),
           })
-        : (family.delete(conn, change.table, change.id), { kind: 'deleted' as const })
+        : (() => {
+            family.delete(conn, change.table, change.id)
+            return { kind: 'deleted' as const }
+          })()
       if (reconciled.kind === 'skipped') counts.deletesSkipped += 1
       else counts.deletesApplied += 1
       recordHostedChangeEvidence(conn, {
@@ -175,7 +178,11 @@ function applyOneChange(
     : (() => {
         const before = family.machineRow(conn, change.table, change.id)
         family.apply(conn, change.table, change.row!)
-        return { kind: 'upserted' as const, before, after: family.machineRow(conn, change.table, change.id) }
+        return {
+          kind: 'upserted' as const,
+          before,
+          after: family.machineRow(conn, change.table, change.id),
+        }
       })()
   if (reconciled.kind === 'skipped') {
     counts.upsertsNoop += 1

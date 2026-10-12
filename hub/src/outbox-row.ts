@@ -7,8 +7,8 @@ import {
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
-  type PushedDay,
   type PushedComment,
+  type PushedDay,
   type PushedDocument,
   type PushedInterval,
 } from './push-contract.ts'

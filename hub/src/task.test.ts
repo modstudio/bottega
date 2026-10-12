@@ -136,6 +136,43 @@ const branchClassification = (
   errors: [],
 })
 
+describe('hosted-authoritative existing-row edits', () => {
+  beforeEach(resetFixtureStore)
+  const unreachable = {
+    baseUrl: 'https://unreachable.example.test',
+    token: 'test',
+    fetch: async () => {
+      throw new Error('hosted hub unavailable')
+    },
+  }
+
+  test('set, comment, and close save locally and queue while offline', async () => {
+    const id = seed('GAM-70', 'gamma')
+    await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
+    await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
+    await closeTask(
+      'GAM-70',
+      { recordId: id },
+      {
+        hosted: unreachable,
+        classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
+      },
+    )
+    expect(db().query(`SELECT title,status_category FROM task WHERE record_id=?`).get(id)).toEqual({
+      title: 'Offline title',
+      status_category: 'done',
+    })
+    expect(
+      db()
+        .query<{ table_name: string }, []>(
+          `SELECT table_name FROM hosted_outbox ORDER BY table_name`,
+        )
+        .all()
+        .map((row) => row.table_name),
+    ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
+  })
+})
+
 describe('local task tracker', () => {
   test('a project without a declared space sends no record-space header', async () => {
     let recordSpace: string | null = 'not-called'

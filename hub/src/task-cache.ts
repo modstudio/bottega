@@ -1,10 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import {
-  HOSTED_MACHINE_TABLES,
-  reconcilePulledRow,
-} from './pending-hosted-edit.ts'
+import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
 import { projects } from './projects.ts'
 import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
@@ -199,7 +196,10 @@ const hostedTaskChangeTables = {
   hub_task: { machine: HOSTED_MACHINE_TABLES.hub_task, apply: applyHostedTask },
   hub_task_comment: { machine: HOSTED_MACHINE_TABLES.hub_task_comment, apply: applyComment },
   hub_task_document: { machine: HOSTED_MACHINE_TABLES.hub_task_document, apply: applyDocument },
-  hub_task_status_event: { machine: HOSTED_MACHINE_TABLES.hub_task_status_event, apply: applyStatusEvent },
+  hub_task_status_event: {
+    machine: HOSTED_MACHINE_TABLES.hub_task_status_event,
+    apply: applyStatusEvent,
+  },
 } as const
 
 export type HostedTaskChangeTable = keyof typeof hostedTaskChangeTables

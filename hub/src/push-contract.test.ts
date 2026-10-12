@@ -57,3 +57,40 @@ test('field lists accept only the update vocabulary for their table', () => {
     expect('outcome' in parsed ? parsed.outcome.reason : null).toContain('fields')
   }
 })
+
+test('comment and document rows validate every wire field', () => {
+  const comment = {
+    table: 'hub_task_comment',
+    id,
+    op: 'upsert',
+    row: {
+      id,
+      task_key: 'DEV-30',
+      task_id: id,
+      project_name: PLATFORM_SLUG,
+      body: 'body',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  } satisfies HostedPushChange
+  const document = {
+    table: 'hub_task_document',
+    id,
+    op: 'upsert',
+    row: { ...comment.row, number: 1, role: null, title: 'title', version: 'v1' },
+  } satisfies HostedPushChange
+  expect(parseHostedPushItem(comment)).toEqual({ input: comment })
+  expect(parseHostedPushItem(document)).toEqual({ input: document })
+  for (const [value, field] of [
+    [{ ...comment, row: { ...comment.row, task_id: 'bad' } }, 'task_id'],
+    [{ ...comment, row: { ...comment.row, updated_at: 'bad' } }, 'updated_at'],
+    [{ ...comment, row: { ...comment.row, deleted_at: false } }, 'deleted_at'],
+    [{ ...document, row: { ...document.row, number: 0 } }, 'number'],
+    [{ ...document, row: { ...document.row, role: 1 } }, 'role'],
+    [{ ...document, row: { ...document.row, version: null } }, 'version'],
+  ] as const) {
+    const parsed = parseHostedPushItem(value)
+    expect('outcome' in parsed ? parsed.outcome.reason : null).toContain(`row.${field}`)
+  }
+})

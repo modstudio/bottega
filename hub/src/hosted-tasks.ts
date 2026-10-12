@@ -7,7 +7,12 @@ import {
   repairHostedTaskReferences,
   taskIdFor,
 } from './hosted-task-reference.ts'
-import type { PushedComment, PushedDocument, PushedStatusEvent, PushedTask } from './push-contract.ts'
+import type {
+  PushedComment,
+  PushedDocument,
+  PushedStatusEvent,
+  PushedTask,
+} from './push-contract.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal

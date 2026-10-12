@@ -397,7 +397,6 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
     last_seen: '2026-10-11T15:00:00.000Z',
   }
   const repeatedDoneChange: HostedPushChange = { ...change, row: repeatedDone }
-  expect(await apply([repeatedDoneChange])).toEqual([{ id: taskId, status: 'applied' }])
   expect(await apply([repeatedDoneChange])).toEqual([{ id: taskId, status: 'duplicate' }])
   expect(
     (await database.query(`SELECT closed_at::text FROM hub_task WHERE id=$1`, [taskId])).rows,
@@ -635,5 +634,52 @@ test('comment and document pushes apply their route effects and deduplicate dele
   ])
   expect(await apply([{ table: 'hub_task_document', id: documentId, op: 'delete' }])).toEqual([
     { id: documentId, status: 'duplicate' },
+  ])
+})
+
+test('new child pushes require matching ids, keys, projects, and a live task', async () => {
+  const commentId = '01990000-0000-7000-8000-000000001350'
+  const at = '2026-10-11T18:00:00.000Z'
+  const child = {
+    table: 'hub_task_comment' as const,
+    id: commentId,
+    op: 'upsert' as const,
+    row: {
+      id: commentId,
+      task_key: 'WRONG-1',
+      task_id: taskId,
+      project_name: 'workshop',
+      body: 'body',
+      created_at: at,
+      updated_at: at,
+      deleted_at: null,
+    },
+  }
+  expect(await apply([child])).toEqual([
+    {
+      id: commentId,
+      status: 'rejected',
+      reason: expect.stringContaining('no live hosted task matches'),
+    },
+  ])
+
+  const deletedTaskId = '01990000-0000-7000-8000-000000001351'
+  const deletedTask = { ...taskRow(deletedTaskId, 'DEV-351', 'local'), project_name: 'workshop' }
+  expect(
+    await apply([{ table: 'hub_task', id: deletedTaskId, op: 'upsert', row: deletedTask }]),
+  ).toEqual([{ id: deletedTaskId, status: 'applied' }])
+  await database.query(`UPDATE hub_task SET deleted_at=now() WHERE id=$1`, [deletedTaskId])
+  const deletedChild = {
+    ...child,
+    id: '01990000-0000-7000-8000-000000001352',
+    row: {
+      ...child.row,
+      id: '01990000-0000-7000-8000-000000001352',
+      task_key: 'DEV-351',
+      task_id: deletedTaskId,
+    },
+  }
+  expect(await apply([deletedChild])).toEqual([
+    { id: deletedChild.id, status: 'rejected', reason: 'row was deleted on the hosted record' },
   ])
 })

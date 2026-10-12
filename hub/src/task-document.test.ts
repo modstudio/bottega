@@ -156,6 +156,29 @@ describe('task documents', () => {
     ])
   })
 
+  test('document set and remove save locally and queue while offline', async () => {
+    const taskRecordId = seed('GAM-70', 'gamma')
+    const documentId = Bun.randomUUIDv7()
+    const at = '2026-10-11T12:00:00.000Z'
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO task_document
+      (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+      VALUES (?,'GAM-70',?,1,'Before','body','v1',?,?)`)
+        .run(documentId, taskRecordId, at, at),
+    )
+    const hosted = {
+      baseUrl: 'https://unreachable.example.test',
+      token: 'test',
+      fetch: async () => {
+        throw new Error('hosted hub unavailable')
+      },
+    }
+    await updateTaskDocument(documentId, { title: 'After' }, { hosted })
+    expect(await deleteTaskDocument(documentId, { hosted })).toMatchObject({ title: 'After' })
+    expect(() => getTaskDocument(documentId)).toThrow(`no task document ${documentId}`)
+  })
+
   test('hosted document writes use the project declared space', async () => {
     seed('GAM-1214', 'gamma')
     const requests: Array<{

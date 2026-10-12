@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
+import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
   mirrorCommentRow,
@@ -9,6 +10,7 @@ import {
   mirrorTaskRow,
   type TaskIdentity,
 } from './hosted-tasks.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './pending-hosted-edit.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
@@ -18,15 +20,13 @@ import {
   HOSTED_TASK_TABLE,
   type HostedPushChange,
   type HostedPushOutcome,
+  type PushableHubChangeTable,
   type PushedComment,
   type PushedDocument,
-  type PushableHubChangeTable,
   type PushedStatusEvent,
   type PushedTask,
 } from './push-contract.ts'
 import { orderHostedPushChanges } from './push-order.ts'
-import { DELETED_ON_HOSTED_RECORD_REASON } from './pending-hosted-edit.ts'
-import { decideDocumentUpsert, decideTaskUpsert } from './hosted-push-decision.ts'
 
 type PushDeclaration = {
   apply(
@@ -43,7 +43,10 @@ async function requireLiveChildTask(
 ): Promise<void> {
   const found = row.task_id
     ? ((await tx`SELECT id,deleted_at FROM hub_task WHERE space_id=${identity.spaceId}::uuid
-        AND id=${row.task_id}::uuid AND key=${row.task_key} AND project_name=${row.project_name}`) as Array<{ id: string; deleted_at: string | null }>)
+        AND id=${row.task_id}::uuid AND key=${row.task_key} AND project_name=${row.project_name}`) as Array<{
+        id: string
+        deleted_at: string | null
+      }>)
     : []
   if (found[0]?.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
   if (!found[0])
@@ -52,36 +55,28 @@ async function requireLiveChildTask(
     )
 }
 
-async function applyTaskFields(
+async function applyTaskPatch(
   tx: SQL,
   identity: TaskIdentity,
-  input: Extract<HostedPushChange, { table: typeof HOSTED_TASK_TABLE; op: 'upsert' }>,
+  id: string,
+  values: Partial<PushedTask>,
+  resolveParent?: { key: string | null; preferred: string | null },
 ) {
-  const fields = new Set(input.fields ?? [])
-  const row = input.row
-  const current =
-    (await tx`SELECT id,deleted_at FROM hub_task WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`) as Array<{
-      id: string
-      deleted_at: string | null
-    }>
-  if (current[0]?.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
-  if (!current.length || input.fields == null) return mirrorTaskRow(tx, identity, row)
-  const parentId = fields.has('parent_key')
-    ? await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
+  const has = (field: keyof PushedTask) => Object.hasOwn(values, field)
+  const parentId = resolveParent
+    ? await taskIdFor(tx, identity.spaceId, resolveParent.key, resolveParent.preferred)
     : null
-  const changesStatus = fields.has('status') || fields.has('status_category')
   await tx`UPDATE hub_task SET
-    title=CASE WHEN ${fields.has('title')} THEN ${row.title} ELSE title END,
-    status=CASE WHEN ${fields.has('status')} THEN ${row.status} ELSE status END,
-    status_category=CASE WHEN ${fields.has('status_category')} THEN ${row.status_category} ELSE status_category END,
-    parent_key=CASE WHEN ${fields.has('parent_key')} THEN ${row.parent_key} ELSE parent_key END,
-    parent_id=CASE WHEN ${fields.has('parent_key')} THEN ${parentId}::uuid ELSE parent_id END,
-    body=CASE WHEN ${fields.has('body')} THEN ${row.body} ELSE body END,
-    assignee=CASE WHEN ${fields.has('assignee')} THEN ${row.assignee} ELSE assignee END,
-    closed_at=CASE WHEN ${changesStatus} THEN CASE WHEN ${row.status_category}='done' THEN COALESCE(closed_at,${row.updated_at}::timestamptz) ELSE NULL END ELSE closed_at END,
-    updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${row.updated_at}::timestamptz)
-    WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
-  return null
+    title=CASE WHEN ${has('title')} THEN ${values.title ?? null} ELSE title END,
+    status=CASE WHEN ${has('status')} THEN ${values.status ?? null} ELSE status END,
+    status_category=CASE WHEN ${has('status_category')} THEN ${values.status_category ?? null} ELSE status_category END,
+    parent_key=CASE WHEN ${has('parent_key')} THEN ${values.parent_key ?? null} ELSE parent_key END,
+    parent_id=CASE WHEN ${Boolean(resolveParent)} THEN ${parentId}::uuid ELSE parent_id END,
+    body=CASE WHEN ${has('body')} THEN ${values.body ?? null} ELSE body END,
+    assignee=CASE WHEN ${has('assignee')} THEN ${values.assignee ?? null} ELSE assignee END,
+    closed_at=CASE WHEN ${has('closed_at')} THEN ${values.closed_at ?? null}::timestamptz ELSE closed_at END,
+    updated_at=${values.updated_at!}::timestamptz,last_seen=${values.last_seen!}::timestamptz
+    WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid`
 }
 
 async function commentEquals(
@@ -115,11 +110,15 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
       if (input.op === 'delete') throw new Error('hub_task does not accept delete yet')
-      const existing = (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
+      const existing =
+        (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
       const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
-      const adoption = await applyTaskFields(tx, identity, input)
+      let adoption: Awaited<ReturnType<typeof mirrorTaskRow>> = null
+      if (decision.kind === 'patch')
+        await applyTaskPatch(tx, identity, input.id, decision.values, decision.resolveParent)
+      else adoption = await mirrorTaskRow(tx, identity, input.row)
       return {
         id: input.id,
         status: 'applied',
@@ -142,28 +141,28 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   [HOSTED_DOCUMENT_TABLE]: {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_DOCUMENT_TABLE) throw new Error('wrong document handler')
-      const existing = (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedDocument[]
+      const existing =
+        (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedDocument[]
       if (input.op === 'delete') {
         if (!existing.length || existing[0]!.deleted_at)
           return { id: input.id, status: 'duplicate' }
         await tx`UPDATE hub_task_document SET deleted_at=now(),updated_at=now() WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
         return { id: input.id, status: 'applied' }
       }
-      if (existing[0]?.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
       await requireLiveChildTask(tx, identity, input.row)
       const decision = decideDocumentUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
-      if (existing.length && input.fields != null) {
-        const fields = new Set(input.fields)
-        const row = input.row
+      if (decision.kind === 'patch') {
+        const values = decision.values
+        const has = (field: keyof PushedDocument) => Object.hasOwn(values, field)
         await tx`UPDATE hub_task_document SET
-          role=CASE WHEN ${fields.has('role')} THEN ${row.role} ELSE role END,
-          title=CASE WHEN ${fields.has('title')} THEN ${row.title} ELSE title END,
-          body=CASE WHEN ${fields.has('body')} THEN ${row.body} ELSE body END,
-          version=CASE WHEN ${fields.has('version')} THEN ${row.version} ELSE version END,
-          updated_at=GREATEST(updated_at,${row.updated_at}::timestamptz)
-          WHERE id=${row.id}::uuid AND space_id=${identity.spaceId}::uuid`
+          role=CASE WHEN ${has('role')} THEN ${values.role ?? null} ELSE role END,
+          title=CASE WHEN ${has('title')} THEN ${values.title ?? ''} ELSE title END,
+          body=CASE WHEN ${has('body')} THEN ${values.body ?? ''} ELSE body END,
+          version=CASE WHEN ${has('version')} THEN ${values.version ?? ''} ELSE version END,
+          updated_at=${values.updated_at!}::timestamptz
+          WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
       } else await mirrorDocumentRow(tx, identity, input.row)
       return { id: input.id, status: 'applied' }
     },

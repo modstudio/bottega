@@ -5,6 +5,8 @@ import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import { projects } from './projects.ts'
 import {
+  HOSTED_COMMENT_TABLE,
+  HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
@@ -42,7 +44,8 @@ export function mergeQueuedHostedChange(
   if (incoming.operation === 'delete') return { operation: 'delete', fields: null }
   if (!prior || prior.operation === 'delete')
     return { operation: 'upsert', fields: incoming.fields ? [...new Set(incoming.fields)] : null }
-  if (prior.fields === null || incoming.fields === null) return { operation: 'upsert', fields: null }
+  if (prior.fields === null || incoming.fields === null)
+    return { operation: 'upsert', fields: null }
   return { operation: 'upsert', fields: [...new Set([...prior.fields, ...incoming.fields])] }
 }
 
@@ -91,7 +94,10 @@ export function queueHostedChange(
     .get(table, rowId)
   const merged = mergeQueuedHostedChange(
     prior
-      ? { operation: prior.operation, fields: prior.fields === null ? null : JSON.parse(prior.fields) }
+      ? {
+          operation: prior.operation,
+          fields: prior.fields === null ? null : JSON.parse(prior.fields),
+        }
       : null,
     { operation, fields },
   )
@@ -122,21 +128,19 @@ export function listHostedOutbox(): OutboxEntry[] {
 }
 
 function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 'not-quarantined' {
-  const entry = db()
-    .query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE id=?`)
-    .get(id)
+  const entry = db().query<OutboxEntry, [string]>(`SELECT * FROM hosted_outbox WHERE id=?`).get(id)
   if (!entry?.quarantined_at) return 'not-quarantined'
   if (entry.operation === 'upsert' && !loadOutboxChange(db(), entry)) return 'missing-row'
-  return (
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `UPDATE hosted_outbox SET quarantined_at=NULL,quarantine_reason=NULL,last_error=NULL
+  return writeTransaction((conn) =>
+    conn
+      .query(
+        `UPDATE hosted_outbox SET quarantined_at=NULL,quarantine_reason=NULL,last_error=NULL
            WHERE id=? AND quarantined_at IS NOT NULL`,
-        )
-        .run(id),
-    ).changes > 0 ? 'retried' : 'not-quarantined'
-  )
+      )
+      .run(id),
+  ).changes > 0
+    ? 'retried'
+    : 'not-quarantined'
 }
 
 export function retryHostedOutboxEntry(id: string): boolean {
@@ -144,9 +148,11 @@ export function retryHostedOutboxEntry(id: string): boolean {
 }
 
 export function discardHostedOutboxEntry(id: string): boolean {
-  return writeTransaction((conn) =>
-    conn.query(`DELETE FROM hosted_outbox WHERE id=? AND quarantined_at IS NOT NULL`).run(id),
-  ).changes > 0
+  return (
+    writeTransaction((conn) =>
+      conn.query(`DELETE FROM hosted_outbox WHERE id=? AND quarantined_at IS NOT NULL`).run(id),
+    ).changes > 0
+  )
 }
 
 function loadPendingOutboxRows(): OutboxEntry[] {
@@ -235,8 +241,8 @@ function prepareOutboxRows(entries: OutboxEntry[]): {
         loaded.change.op === 'upsert' &&
         entry.fields !== null &&
         (loaded.change.table === HOSTED_TASK_TABLE ||
-          loaded.change.table === 'hub_task_comment' ||
-          loaded.change.table === 'hub_task_document')
+          loaded.change.table === HOSTED_COMMENT_TABLE ||
+          loaded.change.table === HOSTED_DOCUMENT_TABLE)
           ? { ...loaded.change, fields: JSON.parse(entry.fields) as string[] }
           : loaded.change,
       acknowledgedSpaceId: loaded.acknowledgedSpaceId ?? null,
@@ -510,7 +516,13 @@ export function runHostedOutboxCommand(argv: string[]): string[] {
     if (!id) throw new Error('usage: hub outbox show <ID>')
     const row = listHostedOutbox().find((entry) => entry.id === id)
     if (!row) throw new Error(`no outbox entry ${id}`)
-    return [JSON.stringify({ ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null }, null, 2)]
+    return [
+      JSON.stringify(
+        { ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null },
+        null,
+        2,
+      ),
+    ]
   }
   if (argv[1] === 'discard') {
     const id = argv[2]
@@ -524,9 +536,10 @@ export function runHostedOutboxCommand(argv: string[]): string[] {
     if (!id) throw new Error('usage: hub outbox retry <ID>')
     const outcome = retryHostedOutboxEntryOutcome(id)
     if (outcome === 'missing-row')
-      throw new Error(`outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``)
-    if (outcome !== 'retried')
-      throw new Error(`outbox entry ${id} is not quarantined and unsent`)
+      throw new Error(
+        `outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``,
+      )
+    if (outcome !== 'retried') throw new Error(`outbox entry ${id} is not quarantined and unsent`)
     return [`outbox entry ${id} queued for retry`]
   }
   if (argv[1] && argv[1] !== '--json') throw new Error('usage: hub outbox [--json]')

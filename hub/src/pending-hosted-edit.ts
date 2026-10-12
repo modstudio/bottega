@@ -78,9 +78,51 @@ export function restorePendingFields(
 }
 
 export type ReconcilePulledRowResult =
-  | { kind: 'skipped'; before: Record<string, unknown> | null; after: Record<string, unknown> | null }
+  | {
+      kind: 'skipped'
+      before: Record<string, unknown> | null
+      after: Record<string, unknown> | null
+    }
   | { kind: 'deleted'; before: Record<string, unknown> | null; after: null }
-  | { kind: 'upserted'; before: Record<string, unknown> | null; after: Record<string, unknown> | null }
+  | {
+      kind: 'upserted'
+      before: Record<string, unknown> | null
+      after: Record<string, unknown> | null
+    }
+
+function quarantinePendingUpsert(
+  conn: Database,
+  table: ReconciledHostedTable,
+  id: string,
+  row: Record<string, unknown> | null,
+  at: string,
+): void {
+  const pending = pendingHostedEdit(conn, table, id)
+  if (pending?.operation !== 'upsert') return
+  const kept =
+    pending.fields === null
+      ? row
+      : row
+        ? Object.fromEntries(
+            (JSON.parse(pending.fields) as string[])
+              .filter((field) => field in row)
+              .map((field) => [field, row[field]]),
+          )
+        : null
+  conn
+    .query(
+      `UPDATE hosted_outbox SET kept_values=?,last_error=?,quarantined_at=?,quarantine_reason=?
+       WHERE table_name=? AND row_id=? AND operation='upsert'`,
+    )
+    .run(
+      kept === null ? null : JSON.stringify(kept),
+      DELETED_ON_HOSTED_RECORD_REASON,
+      at,
+      DELETED_ON_HOSTED_RECORD_REASON,
+      table,
+      id,
+    )
+}
 
 export function reconcilePulledRow(
   conn: Database,
@@ -98,29 +140,20 @@ export function reconcilePulledRow(
   const before = input.current()
   if (input.operation === 'delete') {
     if (pending?.operation === 'delete') return { kind: 'skipped', before, after: before }
-    if (pending?.operation === 'upsert') {
-      const kept = pending.fields === null
-        ? before
-        : before
-          ? Object.fromEntries(
-              (JSON.parse(pending.fields) as string[])
-                .filter((field) => field in before)
-                .map((field) => [field, before[field]]),
-            )
-          : null
-      conn
-        .query(
-          `UPDATE hosted_outbox SET kept_values=?,last_error=?,quarantined_at=?,quarantine_reason=?
-           WHERE table_name=? AND row_id=? AND operation='upsert'`,
-        )
-        .run(
-          kept === null ? null : JSON.stringify(kept),
-          DELETED_ON_HOSTED_RECORD_REASON,
-          input.at ?? new Date().toISOString(),
-          DELETED_ON_HOSTED_RECORD_REASON,
-          input.table,
-          input.id,
-        )
+    const at = input.at ?? new Date().toISOString()
+    quarantinePendingUpsert(conn, input.table, input.id, before, at)
+    if (input.table === 'hub_task') {
+      for (const [table, machine] of [
+        ['hub_task_comment', 'task_comment'],
+        ['hub_task_document', 'task_document'],
+      ] as const) {
+        for (const child of conn
+          .query<Record<string, unknown> & { record_id: string }, [string]>(
+            `SELECT * FROM ${machine} WHERE task_record_id=?`,
+          )
+          .all(input.id))
+          quarantinePendingUpsert(conn, table, child.record_id, child, at)
+      }
     }
     input.remove()
     return { kind: 'deleted', before, after: null }

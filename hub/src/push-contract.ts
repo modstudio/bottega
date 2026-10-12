@@ -395,7 +395,8 @@ function parseDocumentRow(value: unknown, id: string): PushedDocument | string {
     return `${HOSTED_DOCUMENT_TABLE} row.number must be a positive safe integer or null`
   if (!nullableString(row.role)) return `${HOSTED_DOCUMENT_TABLE} row.role must be a string or null`
   for (const field of ['title', 'body', 'version'] as const)
-    if (typeof row[field] !== 'string') return `${HOSTED_DOCUMENT_TABLE} row.${field} must be a string`
+    if (typeof row[field] !== 'string')
+      return `${HOSTED_DOCUMENT_TABLE} row.${field} must be a string`
   return row as PushedDocument
 }
 
@@ -403,18 +404,34 @@ function parseTaskChildUpsert(
   input: Record<string, unknown> & { id: string },
   table: typeof HOSTED_COMMENT_TABLE | typeof HOSTED_DOCUMENT_TABLE,
 ): ParsedHostedPushItem {
-  const row = table === HOSTED_COMMENT_TABLE
-    ? parseCommentRow(input.row, input.id)
-    : parseDocumentRow(input.row, input.id)
+  const row =
+    table === HOSTED_COMMENT_TABLE
+      ? parseCommentRow(input.row, input.id)
+      : parseDocumentRow(input.row, input.id)
   if (typeof row === 'string') return rejected(input.id, row)
-  const allowed = table === HOSTED_COMMENT_TABLE
-    ? HOSTED_COMMENT_UPDATE_COLUMNS
-    : HOSTED_DOCUMENT_UPDATE_COLUMNS
+  const allowed =
+    table === HOSTED_COMMENT_TABLE ? HOSTED_COMMENT_UPDATE_COLUMNS : HOSTED_DOCUMENT_UPDATE_COLUMNS
   const fields = parseFields(input.fields, allowed, table)
   if (typeof fields === 'string') return rejected(input.id, fields)
   if (table === HOSTED_COMMENT_TABLE)
-    return { input: { table, id: input.id, op: 'upsert', row: row as PushedComment, ...(fields === null ? {} : { fields }) } }
-  return { input: { table, id: input.id, op: 'upsert', row: row as PushedDocument, ...(fields === null ? {} : { fields }) } }
+    return {
+      input: {
+        table,
+        id: input.id,
+        op: 'upsert',
+        row: row as PushedComment,
+        ...(fields === null ? {} : { fields }),
+      },
+    }
+  return {
+    input: {
+      table,
+      id: input.id,
+      op: 'upsert',
+      row: row as PushedDocument,
+      ...(fields === null ? {} : { fields }),
+    },
+  }
 }
 
 function parseEvidenceUpsert(
