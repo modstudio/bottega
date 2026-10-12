@@ -3,7 +3,7 @@ import { persistInstallBinding } from './install-binding.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
 import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
-import { isSameStatusEvent } from './status-event-identity.ts'
+import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
@@ -156,18 +156,47 @@ function matchingStatusEvent(
   row: HostedChanges['statusEvents'][number],
   taskRecordId: string | null,
 ): { record_id: string } | null {
-  const candidates = conn
-    .query<{ record_id: string; task_key: string; to_status: string; at: string }, [string]>(
-      taskRecordId
-        ? `SELECT record_id,task_key,to_status,at FROM task_status_event WHERE task_record_id=?`
-        : `SELECT record_id,task_key,to_status,at FROM task_status_event WHERE task_key=?`,
-    )
-    .all(taskRecordId ?? row.task_key)
+  const candidates = taskRecordId
+    ? conn
+        .query<
+          {
+            record_id: string
+            task_record_id: string | null
+            task_key: string
+            to_status: string
+            at: string
+          },
+          [string, string, string]
+        >(
+          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+           WHERE record_id<>? AND (task_record_id=? OR (task_record_id IS NULL AND task_key=?))`,
+        )
+        .all(row.id, taskRecordId, row.task_key)
+    : conn
+        .query<
+          {
+            record_id: string
+            task_record_id: string | null
+            task_key: string
+            to_status: string
+            at: string
+          },
+          [string, string]
+        >(
+          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+           WHERE record_id<>? AND task_key=?`,
+        )
+        .all(row.id, row.task_key)
   return (
     candidates.find((candidate) =>
       isSameStatusEvent(
-        { taskKey: row.task_key, toStatus: row.to_status, at: row.at },
-        { taskKey: candidate.task_key, toStatus: candidate.to_status, at: candidate.at },
+        statusEventIdentity(taskRecordId, row.task_key, row.to_status, row.at),
+        statusEventIdentity(
+          candidate.task_record_id,
+          candidate.task_key,
+          candidate.to_status,
+          candidate.at,
+        ),
       ),
     ) ?? null
   )
@@ -180,7 +209,7 @@ function writeStatusEvent(
 ) {
   const updated = conn
     .query(
-      `UPDATE task_status_event SET task_key=?,task_record_id=?,at=?,from_status=?,to_status=? WHERE record_id=?`,
+      `UPDATE task_status_event SET task_key=?,task_record_id=COALESCE(?,task_record_id),at=?,from_status=?,to_status=? WHERE record_id=?`,
     )
     .run(row.task_key, taskRecordId, row.at, row.from_status, row.to_status, row.id)
   if (!updated.changes)
@@ -189,6 +218,12 @@ function writeStatusEvent(
         `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status) VALUES (?,?,?,?,?,?)`,
       )
       .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
+}
+
+function retargetStatusEvent(conn: Database, fromId: string, toId: string, hostedRowExists: boolean) {
+  adoptPendingHostedRow(conn, HOSTED_STATUS_EVENT_TABLE, fromId, toId)
+  if (hostedRowExists) conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(fromId)
+  else conn.query(`UPDATE task_status_event SET record_id=? WHERE record_id=?`).run(toId, fromId)
 }
 
 function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][number]) {
@@ -202,21 +237,8 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
       `SELECT record_id FROM task_status_event WHERE record_id=?`,
     )
     .get(row.id)
-  if (!existing) {
-    const match = matchingStatusEvent(conn, row, taskRecordId)
-    if (match && match.record_id !== row.id) {
-      const pending = conn
-        .query<{ id: string }, [string, string]>(
-          `SELECT id FROM hosted_outbox WHERE table_name=? AND row_id=?`,
-        )
-        .get(HOSTED_STATUS_EVENT_TABLE, match.record_id)
-      adoptPendingHostedRow(conn, HOSTED_STATUS_EVENT_TABLE, match.record_id, row.id)
-      conn
-        .query(`UPDATE task_status_event SET record_id=? WHERE record_id=?`)
-        .run(row.id, match.record_id)
-      if (pending) return
-    }
-  }
+  const match = matchingStatusEvent(conn, row, taskRecordId)
+  if (match) retargetStatusEvent(conn, match.record_id, row.id, Boolean(existing))
   writeStatusEvent(conn, row, taskRecordId)
 }
 

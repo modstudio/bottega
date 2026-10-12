@@ -13,7 +13,8 @@ import type {
   PushedStatusEvent,
   PushedTask,
 } from './push-contract.ts'
-import { isSameStatusEvent } from './status-event-identity.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
 export type TaskIdentity = TenantPrincipal
@@ -342,24 +343,26 @@ type HostedStatusEventHolder = {
   task_key: string
   to_status: string
   at: string | Date
+  deleted_at: string | Date | null
 }
 
 async function statusEventNaturalKeyHolder(
   tx: SQL,
   identity: TaskIdentity,
   row: HostedStatusEvent,
+  resolvedTaskId: string | null,
 ): Promise<HostedStatusEventHolder | undefined> {
-  if (row.task_id)
+  if (resolvedTaskId)
     return rows<HostedStatusEventHolder>(
-      await tx`SELECT id,space_id,task_id,task_key,to_status,at
+      await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
         FROM hub_task_status_event
         WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${row.task_id}::uuid OR
+          AND (task_id=${resolvedTaskId}::uuid OR
             (task_id IS NULL AND task_key=${row.task_key}))
           AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
     )[0]
   return rows<HostedStatusEventHolder>(
-    await tx`SELECT id,space_id,task_id,task_key,to_status,at
+    await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
       FROM hub_task_status_event
       WHERE space_id=${identity.spaceId}::uuid AND task_key=${row.task_key}
         AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
@@ -369,15 +372,17 @@ async function statusEventNaturalKeyHolder(
 function statusEventHolderToAdopt(
   incoming: HostedStatusEvent,
   holder: HostedStatusEventHolder | undefined,
+  resolvedTaskId: string | null,
 ): HostedStatusEventHolder | undefined {
   if (
     !holder ||
     !isSameStatusEvent(
-      { taskKey: incoming.task_key, toStatus: incoming.to_status, at: incoming.at },
-      { taskKey: holder.task_key, toStatus: holder.to_status, at: holder.at },
+      statusEventIdentity(resolvedTaskId, incoming.task_key, incoming.to_status, incoming.at),
+      statusEventIdentity(holder.task_id, holder.task_key, holder.to_status, holder.at),
     )
   )
     return undefined
+  if (holder.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
   return holder
 }
 
@@ -571,7 +576,11 @@ export async function mirrorStatusEventRow(
     await tx`SELECT id,space_id FROM hub_task_status_event WHERE id=${row.id}::uuid`,
   )[0]
   const naturalKeyHolder = !existing
-    ? statusEventHolderToAdopt(row, await statusEventNaturalKeyHolder(tx, identity, row))
+    ? statusEventHolderToAdopt(
+        row,
+        await statusEventNaturalKeyHolder(tx, identity, row, taskId),
+        taskId,
+      )
     : undefined
   const decision = mirrorCollisionDecision(
     { id: row.id, spaceId: identity.spaceId, naturalKey: statusEventMirrorNaturalKey(row) },

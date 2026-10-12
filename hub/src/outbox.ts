@@ -150,7 +150,8 @@ export function adoptPendingHostedRow(
   if (!hosted) {
     conn
       .query(
-        `UPDATE hosted_outbox SET row_id=?,generation=generation+1
+        `UPDATE hosted_outbox SET row_id=?,generation=generation+1,attempts=0,last_error=NULL,
+         quarantined_at=NULL,quarantine_reason=NULL,kept_values=NULL
          WHERE table_name=? AND row_id=?`,
       )
       .run(hostedId, table, localId)
