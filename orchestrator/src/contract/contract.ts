@@ -1,6 +1,6 @@
 // concern: contract
 
-import { isReaderJob, type Job } from '../jobs/jobs.ts'
+import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
@@ -89,7 +89,16 @@ export function replyFileBytes(schemaName: string, scratchDir: string): number {
 export const WORKER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['status', 'summary', 'files_changed', 'questions', 'deviations', 'tests', 'blockers'],
+  required: [
+    'status',
+    'summary',
+    'files_changed',
+    'change_guide',
+    'questions',
+    'deviations',
+    'tests',
+    'blockers',
+  ],
   properties: {
     status: {
       type: 'string',
@@ -99,6 +108,20 @@ export const WORKER_SCHEMA = {
     },
     summary: { type: 'string', description: 'What you did, in a few sentences.' },
     files_changed: nullableStrings,
+    change_guide: {
+      type: ['array', 'null'],
+      description: 'Ordered reading guide for the change. Null when the run changed no files.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['files', 'explanation', 'verify'],
+        properties: {
+          files: { type: 'array', items: { type: 'string' } },
+          explanation: { type: 'string' },
+          verify: { type: 'string' },
+        },
+      },
+    },
     questions: {
       type: ['array', 'null'],
       description: 'Required when status is asking. The rulings you need. Null if none.',
@@ -187,6 +210,7 @@ export type WorkerReply = {
   // Nullable throughout, because the schema requires the keys to be present and
   // a worker with nothing to report sends null rather than omitting them.
   files_changed?: string[] | null
+  change_guide?: { files: string[]; explanation: string; verify: string }[] | null
   questions?:
     | {
         question: string
@@ -225,6 +249,7 @@ export const ISSUE_WORKER_SCHEMA = {
     'blast_radius',
     'branch',
     'files_changed',
+    'change_guide',
     'questions',
     'not_established',
     'blockers',
@@ -262,6 +287,7 @@ export const ISSUE_WORKER_SCHEMA = {
     blast_radius: { type: 'string' },
     branch: nullableString,
     files_changed: nullableStrings,
+    change_guide: WORKER_SCHEMA.properties.change_guide,
     summary: { type: 'string' },
     questions: WORKER_SCHEMA.properties.questions,
     deviations: WORKER_SCHEMA.properties.deviations,
@@ -714,6 +740,12 @@ ${COULD_NOT_VERIFY_INSTRUCTION}
  * exists to prevent. The scoring model backs the promise up: escalating counts
  * as faithful, and guessing is what costs.
  */
+export const CHANGE_GUIDE_INSTRUCTION = `When you changed files, return a change_guide in the order the architect should read the diff.
+Put the part that carries the decision first and mechanical follow-ons last.
+Cover every changed file in exactly one step. Each step names at least one repo-relative file, explains what that part does, and gives the one thing to verify there. The guide orders the
+architect's reading of the diff; it never replaces the diff, so do not restate the summary.
+Return null when you changed no files, including when you only ask questions or report a blocker.`
+
 export const WORKER_PREAMBLE = `
 YOUR ROLE
 
@@ -786,6 +818,8 @@ system cannot catch automatically, and hiding one costs far more than admitting
 it. Run the project's tests if you can, and report what actually happened rather
 than what you expect would happen.
 
+${CHANGE_GUIDE_INSTRUCTION}
+
 When the \`run_gate\` tool is available, run it before reporting done,
 call it again while its reply says the gate is still running, and report done only with a finished result or a refusal, recording that last result in your reply's tests section.
 
@@ -819,7 +853,7 @@ WHAT TO REPORT. Return every issue field it requires: the four-valued outcome,
 cause location, whether it matched the report, established cause, reproduction
 recipe, before and after measurements, both gate results, blast radius, branch,
 questions, blockers, and what you could not establish. Keep the generic summary,
-files, deviations, and tests fields that the issue schema also requires.`
+files, change guide, deviations, and tests fields that the issue schema also requires.`
 
 /** The writing contract is selected by job, never by a caller-controlled flag. */
 export function workerPreamble(jobName: string): string {
@@ -854,18 +888,20 @@ export function rulingPrompt(answers: { question: string; answer: string }[]): s
  * courtesy, not a precondition, and a missing file must not strand the chain.
  */
 export function packResumePrompt(
-  job: string,
+  jobName: string,
   turnPrompt: string,
   originalSpec: string | null,
 ): string {
-  if (originalSpec === null) return turnPrompt
+  const changeGuide = job(jobName).needs.writesRepo ? CHANGE_GUIDE_INSTRUCTION : null
+  if (originalSpec === null) return [changeGuide, turnPrompt].filter(Boolean).join('\n\n')
   return [
     'REMINDER FROM THE ORIGINAL SPEC',
     '',
     originalSpec.slice(0, 600),
     '',
     'Do not decide what the spec did not settle; ask.',
-    workerResumeGuard(job),
+    workerResumeGuard(jobName),
+    ...(changeGuide ? [changeGuide] : []),
     '',
     '---',
     '',

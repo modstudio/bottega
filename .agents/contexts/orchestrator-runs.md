@@ -58,7 +58,9 @@ Writing runs checkpoint on schedule and at limits or stop. Update `$ORCH_SCRATCH
 
 **`asking` is read before the success ladder.** Exit `0` with a reply looks like `ok`. A reply that does not parse is a failure.
 
-**A reply is a file.** Every contract names its JSON schema and requires `$ORCH_SCRATCH/reply.json`. The harness reads that artifact first. Native schema flags are extra, not the carrier. The registration probe must write and validate this file before the row is eligible.
+**Replies are files.** Contracts require schema-bound `$ORCH_SCRATCH/reply.json`, read before the final message; schema flags are supplemental. The registration probe writes and validates it before eligibility.
+
+**Writing replies order their diff.** `change_guide` puts decisions first and mechanical follow-ons last. Its steps partition changed repo-relative files; each explains its part and names one check. It guides reading without replacing the diff or summary. No file changes means null.
 
 # A worktree belongs to the project
 
@@ -106,11 +108,11 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 # A tool that cannot see its data refuses
 
-It never reports emptiness as a finding. "No rows", "no task", "nothing to do" are answers **only** when it looked at the right data and found nothing. When it cannot reach the data it exits nonzero and names what it could not reach. Machine-readable output must error, never a zero, when the data was not seen.
+It reports emptiness only after looking at the right data. Otherwise it exits nonzero and names what it could not reach; machine-readable output errors rather than returning zero.
 
 # The test gate
 
-One in-process `bun test` over `orchestrator/src`, with the test preload, under `gate-load.ts`: at most `GATE_CONCURRENCY_LIMIT` running gates, waiting while loadavg is at or above ncpu or RAM is low (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`). Timing ratchet only moves down. A unit test file above `SPAWN_LIMIT` Bun spawn or spawnSync calls fails `scripts/check-test-spawns.ts`. No size classes, shards, subprocess test leg, or retry path.
+`gate-load.ts` runs preloaded `bun test` in-process over `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for acceptable load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`). Timing ratchet only moves down. `scripts/check-test-spawns.ts` rejects test files above `SPAWN_LIMIT` Bun spawn or spawnSync calls. No size classes, shards, subprocess leg or retry path.
 
 # Prompts and replies age out
 

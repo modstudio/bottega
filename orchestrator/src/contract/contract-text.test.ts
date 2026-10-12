@@ -87,6 +87,14 @@ describe('job contracts are visible before submission', () => {
       expect(preamble).toContain('a mailbox note')
     }
   })
+  test('writer contracts explain the ordered change guide', () => {
+    const text = contract('implement').out.replace(/\s+/g, ' ')
+    expect(text).toContain('change_guide')
+    expect(text).toContain('part that carries the decision first')
+    expect(text).toContain('Cover every changed file in exactly one step')
+    expect(text).toContain('one thing to verify there')
+    expect(text).toContain('never replaces the diff')
+  })
   test('writers run the registered gate while readers inspect its recorded result', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
     expect(WORKER_PREAMBLE).toContain(

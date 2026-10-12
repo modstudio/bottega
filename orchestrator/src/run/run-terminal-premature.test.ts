@@ -46,6 +46,7 @@ describe('premature final terminal integration', () => {
           status: 'done',
           summary: 'Before writing the change, I will read the implementation.',
           files_changed: [],
+          change_guide: null,
           questions: null,
           deviations: null,
           blockers: null,

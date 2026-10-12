@@ -39,6 +39,9 @@ export function workerReply(overrides: Record<string, unknown> = {}): Record<str
     status: 'done',
     summary: 'done',
     files_changed: ['changed.ts'],
+    change_guide: [
+      { files: ['changed.ts'], explanation: 'Changes the fixture subject.', verify: 'The result.' },
+    ],
     questions: null,
     deviations: null,
     tests: { command: 'bun test', ran: true, passed: true, detail: null },

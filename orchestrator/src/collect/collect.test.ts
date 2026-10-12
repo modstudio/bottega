@@ -132,6 +132,27 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test('result returns a stored writer reply from before change guides', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const output = join(dir, `old-writer-reply-${id}.txt`)
+    const oldReply = JSON.stringify({
+      status: 'done',
+      summary: 'stored before change guides',
+      files_changed: ['old.ts'],
+      questions: null,
+      deviations: null,
+      blockers: null,
+      tests: null,
+    })
+    try {
+      writeFileSync(output, oldReply)
+      db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+      expect(recordedResult(id).logs.join('\n')).toContain(oldReply)
+    } finally {
+      rmSync(output, { force: true })
+    }
+  })
+
   test('structured wait returns a failover chain terminal run and reads its output', async () => {
     const requestedId = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
     const finalId = addRun({ agent: 'claude', job: 'review-lens' })

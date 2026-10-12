@@ -132,6 +132,13 @@ describe('filed issue coordinator inputs', () => {
       blast_radius: 'the one caller',
       branch: 'DEV-9-orch-1',
       files_changed: ['src/a.ts'],
+      change_guide: [
+        {
+          files: ['src/a.ts'],
+          explanation: 'Fixes the branch comparison.',
+          verify: 'The corrected comparison.',
+        },
+      ],
       questions: null,
       not_established: '',
       blockers: null,
