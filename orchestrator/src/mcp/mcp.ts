@@ -11,6 +11,7 @@ import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { docsMarkdown, listDocs } from '../doc/docs.ts'
+import { validatedTrackerTaskKey } from '../issue/issue.ts'
 import { filedIssueDataLine } from '../issue/issue-file.ts'
 import {
   CONDITIONAL_ISSUE_REPORT_FIELD_REASONS,
@@ -33,7 +34,7 @@ import {
   setBaseline,
   setLedgerRef,
 } from '../porting/porting.ts'
-import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
 import { getReview, listReviews } from '../review/review.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
@@ -166,6 +167,10 @@ async function searchDuplicateIssues(
 export type IssueReporter =
   | { kind: 'session' }
   | { kind: 'monitor'; invocationId: number; affectedProject: string }
+
+export function fileIssueTaskKey(stdout: string, project: Project): string {
+  return validatedTrackerTaskKey(stdout.trim(), project, 'hub task new for file_issue')
+}
 
 type WorkerReporter = {
   id: number
@@ -335,7 +340,7 @@ export async function fileIssue(
     )
   }
   return {
-    key: stdout.trim(),
+    key: fileIssueTaskKey(stdout, project),
     kind: input.kind,
     session,
     project: project.name,

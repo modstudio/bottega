@@ -149,7 +149,9 @@ describe('hosted-authoritative existing-row edits', () => {
   test('set, comment, and close save locally and queue while offline', async () => {
     const id = seed('GAM-70', 'gamma')
     const messages: unknown[] = []
-    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    const stdout: unknown[] = []
+    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
+    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
     try {
       await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, { hosted: unreachable })
       await commentTask('GAM-70', { recordId: id }, 'offline comment', { hosted: unreachable })
@@ -162,6 +164,7 @@ describe('hosted-authoritative existing-row edits', () => {
         },
       )
     } finally {
+      error.mockRestore()
       log.mockRestore()
     }
     expect(messages).toEqual([
@@ -169,6 +172,7 @@ describe('hosted-authoritative existing-row edits', () => {
       expect.stringContaining('hosted change saved and queued'),
       expect.stringContaining('hosted change saved and queued'),
     ])
+    expect(stdout).toEqual([])
     expect(db().query(`SELECT title,status_category FROM task WHERE record_id=?`).get(id)).toEqual({
       title: 'Offline title',
       status_category: 'done',
@@ -204,19 +208,23 @@ describe('hosted-authoritative existing-row edits', () => {
       )
     }
     const messages: unknown[] = []
-    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    const stdout: unknown[] = []
+    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
+    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
     try {
       const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
       await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, { hosted })
       reject = true
       await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, { hosted })
     } finally {
+      error.mockRestore()
       log.mockRestore()
     }
     expect(messages).toEqual([
       'hosted change sent',
       'hosted change rejected: policy says no; inspect it with `hub outbox`',
     ])
+    expect(stdout).toEqual([])
     expect(
       db().query(`SELECT last_error FROM hosted_outbox WHERE row_id=?`).get(rejectedId),
     ).toEqual({
