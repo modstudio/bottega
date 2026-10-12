@@ -260,9 +260,9 @@ export function registerBoardApiProofs(input: {
   })
 
   registerBoardSharedSpaceApiProof(
-    input.actorUrl,
     () => origin,
     () => tokenD,
+    () => tokenC,
     PROJECT,
     (id) => post(tokenA, notice(id, 'spaces', caseSession('spaces-feed'))),
   )

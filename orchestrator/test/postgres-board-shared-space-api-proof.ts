@@ -1,31 +1,15 @@
-import { beforeAll, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { claimCachedHosted, refreshHostedBoard } from '../src/board/board-hosted-cache.ts'
-import { recordAuth } from '../src/record/record-auth.ts'
-import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 
 export function registerBoardSharedSpaceApiProof(
-  actorUrl: string,
   origin: () => string,
   sharedToken: () => string,
+  unrelatedToken: () => string,
   project: string,
   post: (id: string) => Promise<Response>,
 ): void {
-  let unrelatedToken = ''
-
-  beforeAll(async () => {
-    const signed = await recordAuth(actorUrl).api.signUpEmail({
-      body: {
-        email: 'board-api-shared-space-unrelated@example.test',
-        name: 'Board API Shared Space Unrelated',
-        password: SIGN_UP_AUTH.password,
-      },
-    })
-    if (!signed.token) throw new Error('unrelated board API user has no bearer token')
-    unrelatedToken = signed.token
-  })
-
   test('change feed includes explicit shared-space reach only for a user sharing a space', async () => {
     const id = newRecordId()
     expect((await post(id)).status).toBe(200)
@@ -37,7 +21,7 @@ export function registerBoardSharedSpaceApiProof(
       ).json()) as { items: Array<{ message: { id: string; sharedSpaceReach?: boolean } }> }
     const shared = await changes(sharedToken())
     expect(shared.items.find((item) => item.message.id === id)?.message.sharedSpaceReach).toBeTrue()
-    expect((await changes(unrelatedToken)).items.some((item) => item.message.id === id)).toBeFalse()
+    expect((await changes(unrelatedToken())).items.some((item) => item.message.id === id)).toBeFalse()
   })
 
   test('stored shared-space messages describe their audience across hosted reads and delivery', async () => {
