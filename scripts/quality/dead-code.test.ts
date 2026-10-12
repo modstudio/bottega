@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { ratchetDecision } from '../../shared/ratchet'
+import { readCache } from '../check-dead-code'
 import {
   cacheConfigurationHash,
   type DeadCodeFinding,
@@ -7,8 +9,8 @@ import {
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
   normalizeKnipReport,
+  parseCachedFindings,
   productionSourcesAnalyzed,
-  readCachedFindings,
   unneededExportFindings,
 } from './dead-code'
 
@@ -66,15 +68,18 @@ describe('dead-code ratchet', () => {
     )
   })
 
-  test('an unreadable or malformed cache entry is absent', () => {
+  test('a malformed cache entry is absent', () => {
+    expect(parseCachedFindings('{')).toBeNull()
+    expect(parseCachedFindings('[{"workspace":".","file":"x"}]')).toBeNull()
+    expect(parseCachedFindings(JSON.stringify([existing]))).toEqual([existing])
+  })
+
+  test('an unreadable cache entry is absent at the filesystem adapter', () => {
     expect(
-      readCachedFindings(() => {
+      readCache(join(import.meta.dir, 'dead-code.test.ts'), () => {
         throw new Error('unreadable')
       }),
-    ).toBeNull()
-    expect(readCachedFindings(() => '{')).toBeNull()
-    expect(readCachedFindings(() => '[{"workspace":".","file":"x"}]')).toBeNull()
-    expect(readCachedFindings(() => JSON.stringify([existing]))).toEqual([existing])
+    ).toEqual({ status: 'unreadable' })
   })
 
   test('an unused known-live dependency means production analyzed no sources', () => {

@@ -24,8 +24,8 @@ import {
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
   normalizeKnipReport,
+  parseCachedFindings,
   productionSourcesAnalyzed,
-  readCachedFindings,
   stableFinding,
   unneededExportFindings,
 } from './quality/dead-code'
@@ -181,15 +181,18 @@ function baseConfiguration(commit: string) {
   }))
 }
 
-function readCache(path: string) {
+export function readCache(
+  path: string,
+  read = (cachePath: string) => readFileSync(cachePath, 'utf8'),
+) {
   if (!existsSync(path)) return { status: 'missing' as const }
   let text: string
   try {
-    text = readFileSync(path, 'utf8')
+    text = read(path)
   } catch {
     return { status: 'unreadable' as const }
   }
-  const findings = readCachedFindings(() => text)
+  const findings = parseCachedFindings(text)
   return findings ? { status: 'hit' as const, findings } : { status: 'invalid' as const }
 }
 
@@ -211,14 +214,11 @@ function copyBase(commit: string) {
   const archive = join(directory, 'base.tar')
   const tree = join(directory, 'tree')
   mkdirSync(tree)
-  const archiveResult = Bun.spawnSync(
-    ['git', '-C', ROOT, 'archive', '--format=tar', '-o', archive, commit],
-    { stdout: 'pipe', stderr: 'pipe' },
-  )
-  if (archiveResult.exitCode !== 0) {
-    const detail = archiveResult.stderr.toString().trim() || 'no error output'
+  try {
+    git(['archive', '--format=tar', '-o', archive, commit], 'base copy archive')
+  } catch (error) {
     rmSync(directory, { recursive: true, force: true })
-    throw new Error(`check-dead-code: base copy archive step failed: ${detail}`)
+    throw error
   }
   const extractResult = Bun.spawnSync(['tar', '-xf', archive, '-C', tree], {
     stdout: 'pipe',

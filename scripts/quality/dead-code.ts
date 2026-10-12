@@ -106,19 +106,11 @@ function isDeadCodeFinding(value: unknown): value is DeadCodeFinding {
   )
 }
 
-function parseCachedFindings(text: string | undefined): DeadCodeFinding[] | null {
+export function parseCachedFindings(text: string | undefined): DeadCodeFinding[] | null {
   if (text === undefined) return null
   try {
     const value: unknown = JSON.parse(text)
     return Array.isArray(value) && value.every(isDeadCodeFinding) ? value : null
-  } catch {
-    return null
-  }
-}
-
-export function readCachedFindings(read: () => string): DeadCodeFinding[] | null {
-  try {
-    return parseCachedFindings(read())
   } catch {
     return null
   }
