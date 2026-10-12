@@ -130,6 +130,14 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_COMMENT_TABLE || input.op === 'delete')
         throw new Error('hub_task_comment accepts upsert only')
+      const insertIfAbsent = Array.isArray(input.fields) && input.fields.length === 0
+      if (insertIfAbsent) {
+        const existing =
+          (await tx`SELECT deleted_at FROM hub_task_comment WHERE id=${input.id}::uuid
+            AND space_id=${identity.spaceId}::uuid`) as Array<{ deleted_at: string | null }>
+        if (existing[0]?.deleted_at) throw new Error(DELETED_ON_HOSTED_RECORD_REASON)
+        if (existing[0]) return { id: input.id, status: 'duplicate' }
+      }
       await requireLiveChildTask(tx, identity, input.row)
       if (await commentEquals(tx, identity, input.row)) return { id: input.id, status: 'duplicate' }
       await mirrorCommentRow(tx, identity, input.row)

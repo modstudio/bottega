@@ -137,10 +137,10 @@ const taskCommandShapes = new Map<string, TaskCommandShape>([
     'push',
     shape(
       0,
-      'hub task push [--dry-run]',
+      'hub task push [--repair] [--json]',
       [],
-      ['--dry-run'],
-      'migrate and verify the local task cache',
+      ['--repair', '--json'],
+      'audit hosted identity sets; --repair queues missing machine rows',
     ),
   ],
   [

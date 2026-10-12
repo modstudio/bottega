@@ -88,6 +88,18 @@ describe('hosted outbox', () => {
         { operation: 'delete', fields: ['title'] },
       ),
     ).toEqual({ operation: 'delete', fields: null })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: [] },
+        { operation: 'upsert', fields: ['title'] },
+      ),
+    ).toEqual({ operation: 'upsert', fields: ['title'] })
+    expect(
+      mergeQueuedHostedChange(
+        { operation: 'upsert', fields: [] },
+        { operation: 'upsert', fields: null },
+      ),
+    ).toEqual({ operation: 'upsert', fields: null })
   })
 
   test('show exposes kept values and discard removes only quarantined entries', () => {
