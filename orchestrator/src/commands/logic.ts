@@ -45,6 +45,7 @@ import {
   serveCommand,
   stateCommand,
 } from '../record/record-commands.ts'
+import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -368,8 +369,16 @@ export function register(program: Command): void {
     .option('--follow')
     .option('--detach')
     .option('--quiet')
+    .option('--findings')
     .action((id, _message, options, command) =>
-      continueCommand(Number(id), rawArgv(command).slice(2), runFlags(options), presentation),
+      continueCommand(
+        Number(id),
+        rawArgv(command).slice(2),
+        Boolean(options.findings),
+        runFlags(options),
+        presentation,
+        (runId, message) => continuationFindingsForRun(db(), runId, message),
+      ),
     )
   const doVerb = program.command('do <job> [prompt...]')
   for (const option of ORCH_DO_OPTIONS) {

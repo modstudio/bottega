@@ -28,6 +28,15 @@ import { continueRun, type RunControlPresentation, reportContinuedRun } from './
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: number): void }
 
+export function continuationCommandMessage(
+  runId: number,
+  message: string | undefined,
+  includeFindings: boolean,
+  renderFindings: (runId: number, message: string | undefined) => string,
+): string | undefined {
+  return includeFindings ? renderFindings(runId, message) : message
+}
+
 const duration = (ms: number | null | undefined): string => {
   if (ms == null) return '—'
   const seconds = ms / 1000
@@ -161,8 +170,10 @@ export async function answerCommand(
 export async function continueCommand(
   id: number,
   argv: string[],
+  includeFindings: boolean,
   flags: Flags,
   presentation: Presentation,
+  renderFindings: (runId: number, message: string | undefined) => string,
 ): Promise<void> {
   const chain = db().query('SELECT id, agent, parent_run_id FROM run WHERE id = ?').get(id) as {
     id: number
@@ -170,8 +181,8 @@ export async function continueCommand(
     parent_run_id: number | null
   } | null
   const sources = parseWorkerMessageArgs(argv, {
-    booleans: ['--follow', '--detach', '--quiet'],
-    usage: 'orch continue <id> ["<what next>"] [--file PATH] [--follow]',
+    booleans: ['--follow', '--detach', '--quiet', '--findings'],
+    usage: 'orch continue <id> ["<what next>"] [--file PATH] [--findings] [--follow]',
   })
   const message = await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',
@@ -186,6 +197,12 @@ export async function continueCommand(
       CONTINUE_WORKING_FORMS,
       chain ? argvResumeLimit(chain.agent) : undefined,
     )
-  const resumed = await continueRun(id, message, argvResumeLimit)
+  const continuationMessage = continuationCommandMessage(
+    id,
+    message,
+    includeFindings,
+    renderFindings,
+  )
+  const resumed = await continueRun(id, continuationMessage, argvResumeLimit)
   await reportContinuedRun(resumed.childId, resumed.job, flags, controlPresentation(presentation))
 }
