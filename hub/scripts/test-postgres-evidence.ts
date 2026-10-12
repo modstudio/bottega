@@ -114,6 +114,7 @@ async function pushEvidence(
   const outcomes = await applyHostedPushChanges(url, identity, changes)
   const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
   if (rejected?.status === 'rejected') throw new Error(rejected.reason)
+  return outcomes
 }
 
 const pushIntervals = (
@@ -166,9 +167,21 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
 
-  await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-  await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
-  await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
+  const insertedInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    interval,
+  ])
+  const duplicateInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+    interval,
+  ])
+  const insertedDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
+  const duplicateDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
+  if (
+    insertedInterval[0]?.status !== 'applied' ||
+    duplicateInterval[0]?.status !== 'duplicate' ||
+    insertedDay[0]?.status !== 'applied' ||
+    duplicateDay[0]?.status !== 'duplicate'
+  )
+    throw new Error('unchanged interval and day pushes did not answer duplicate')
 
   const client = new SQL(actorUrl)
   try {
@@ -218,22 +231,25 @@ try {
       throw new Error('vanished interval was not deleted')
 
     const clientIntervalId = interval.id
-    const otherIntervalId = newRecordId()
+    const replacementIntervalId = '01990000-0000-7000-8000-000000000696'
+    const supersededIntervalId = '01990000-0000-7000-8000-00000000068f'
     await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
     await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
       { ...interval, id: clientIntervalId, vendor_tokens: 250 },
     ])
-    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-      { ...interval, id: otherIntervalId },
-    ]).then(
-      () => {
-        throw new Error('unknown id replaced the UUID already owning its interval tuple')
-      },
-      (error) => {
-        const message = error instanceof Error ? error.message : String(error)
-        if (!message.includes(clientIntervalId) || !message.includes(otherIntervalId)) throw error
-      },
+    const replaced = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: replacementIntervalId },
+    ])
+    if (replaced[0]?.status !== 'applied' || replaced[0].replacedId !== clientIntervalId)
+      throw new Error('newer interval UUID did not replace the row owning its natural tuple')
+    const superseded = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
+      { ...interval, id: supersededIntervalId, vendor_tokens: 500 },
+    ])
+    if (
+      superseded[0]?.status !== 'duplicate' ||
+      !superseded[0].reason?.includes(replacementIntervalId)
     )
+      throw new Error('older interval UUID was not answered as superseded')
     const tokens = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
@@ -242,14 +258,20 @@ try {
     })
     if (
       tokens.length !== 1 ||
-      tokens[0]!.id !== clientIntervalId ||
-      Number(tokens[0]!.vendor_tokens) !== 250
+      tokens[0]?.id !== replacementIntervalId ||
+      Number(tokens[0]?.vendor_tokens) !== interval.vendor_tokens
     )
-      throw new Error('known id did not update in place')
+      throw new Error('interval replacement or superseded push wrote the wrong row')
     await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
-      { ...interval, id: otherIntervalId, ref: 'orch:other', start_at: '2026-09-17T13:00:00.000Z' },
+      {
+        ...interval,
+        id: replacementIntervalId,
+        ref: 'orch:other',
+        start_at: '2026-09-17T13:00:00.000Z',
+      },
     ])
-    await pushIntervalDeletes(actorUrl, { userId: USER, spaceId: SPACE_A }, [otherIntervalId])
+    await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [interval])
+    await pushIntervalDeletes(actorUrl, { userId: USER, spaceId: SPACE_A }, [replacementIntervalId])
     const remaining = await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${USER}, true)`
       await tx`SELECT set_config('app.space_id', ${SPACE_A}, true)`
