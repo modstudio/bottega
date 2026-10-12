@@ -5,7 +5,6 @@
  */
 
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
-import type { ResumeKind } from './run-resume-kind.ts'
 
 export type ClaimTreePlanFacts = {
   hasResolvedTaskWorktree: boolean
@@ -24,7 +23,7 @@ export type RetryRootTreeValidation = { branch: string; tip: string }
 
 /** Decide whether recording a retry tree must revalidate a writing branch and tip. */
 export function retryRootTreeValidation(input: {
-  kind: ResumeKind | null
+  kind: string | null
   treePlan: RetryRootTreeValidation | null
   readOnlyBase: string | null
 }): RetryRootTreeValidation | null {
