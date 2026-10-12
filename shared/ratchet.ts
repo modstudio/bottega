@@ -3,7 +3,22 @@ export type Finding = {
   line: number
   rule: string
   message: string
+  symbol?: string
+  measure?: number
 }
+
+export type LineRange = { start: number; end: number }
+
+export type ChangeFacts = {
+  renames: Map<string, string>
+  addedLines: Map<string, LineRange[]>
+}
+
+export type RefusedFinding = Finding &
+  (
+    | { reason: 'added-line' | 'count' | 'new-measured' }
+    | { reason: 'grew'; previousMeasure: number }
+  )
 
 function normalizedMessage(message: string) {
   return message.replace(/\d+/g, '#')
@@ -26,5 +41,130 @@ export function introducedFindings(base: Finding[], head: Finding[]) {
     if (count === 0) return true
     remaining.set(key, count - 1)
     return false
+  })
+}
+
+type IndexedFinding = { finding: Finding; index: number }
+
+function groupKey(finding: Finding) {
+  return JSON.stringify([finding.file, finding.rule])
+}
+
+function remapBaseFinding(finding: Finding, renames: Map<string, string>): Finding {
+  for (const [headPath, basePath] of renames) {
+    if (finding.file === basePath) return { ...finding, file: headPath }
+  }
+  return finding
+}
+
+function measuredRefusals(base: Finding[], head: Finding[]): Map<number, RefusedFinding> {
+  const refused = new Map<number, RefusedFinding>()
+  const baseGroups = new Map<string, IndexedFinding[]>()
+  const headGroups = new Map<string, IndexedFinding[]>()
+
+  for (const [index, finding] of base.entries()) {
+    if (finding.measure === undefined) continue
+    const key = groupKey(finding)
+    const group = baseGroups.get(key) ?? []
+    group.push({ finding, index })
+    baseGroups.set(key, group)
+  }
+  for (const [index, finding] of head.entries()) {
+    if (finding.measure === undefined) continue
+    const key = groupKey(finding)
+    const group = headGroups.get(key) ?? []
+    group.push({ finding, index })
+    headGroups.set(key, group)
+  }
+
+  for (const [key, headGroup] of headGroups) {
+    const baseGroup = baseGroups.get(key) ?? []
+    const pairedBase = new Set<number>()
+    const pairedHead = new Set<number>()
+    const pairs: Array<{ base: IndexedFinding; head: IndexedFinding }> = []
+
+    for (const headFinding of headGroup) {
+      if (headFinding.finding.symbol === undefined) continue
+      const baseFinding = baseGroup.find(
+        (candidate) =>
+          !pairedBase.has(candidate.index) &&
+          candidate.finding.symbol !== undefined &&
+          candidate.finding.symbol === headFinding.finding.symbol,
+      )
+      if (!baseFinding) continue
+      pairedBase.add(baseFinding.index)
+      pairedHead.add(headFinding.index)
+      pairs.push({ base: baseFinding, head: headFinding })
+    }
+
+    const remainingBase = baseGroup
+      .filter((candidate) => !pairedBase.has(candidate.index))
+      .sort((left, right) => right.finding.measure! - left.finding.measure!)
+    const remainingHead = headGroup
+      .filter((candidate) => !pairedHead.has(candidate.index))
+      .sort((left, right) => right.finding.measure! - left.finding.measure!)
+
+    for (const [position, headFinding] of remainingHead.entries()) {
+      const baseFinding = remainingBase[position]
+      if (baseFinding) pairs.push({ base: baseFinding, head: headFinding })
+      else {
+        refused.set(headFinding.index, { ...headFinding.finding, reason: 'new-measured' })
+      }
+    }
+
+    for (const pair of pairs) {
+      if (pair.head.finding.measure! > pair.base.finding.measure!) {
+        refused.set(pair.head.index, {
+          ...pair.head.finding,
+          reason: 'grew',
+          previousMeasure: pair.base.finding.measure!,
+        })
+      }
+    }
+  }
+
+  return refused
+}
+
+function isAddedLine(finding: Finding, addedLines: Map<string, LineRange[]>): boolean {
+  return (addedLines.get(finding.file) ?? []).some(
+    (range) => finding.line >= range.start && finding.line <= range.end,
+  )
+}
+
+export function ratchetDecision({
+  base,
+  head,
+  change,
+}: {
+  base: Finding[]
+  head: Finding[]
+  change: ChangeFacts
+}): RefusedFinding[] {
+  const remappedBase = base.map((finding) => remapBaseFinding(finding, change.renames))
+  const refused = measuredRefusals(remappedBase, head)
+  const remaining = new Map<string, number>()
+
+  for (const finding of remappedBase) {
+    if (finding.measure !== undefined) continue
+    const key = fingerprint(finding)
+    remaining.set(key, (remaining.get(key) ?? 0) + 1)
+  }
+
+  for (const [index, finding] of head.entries()) {
+    if (finding.measure !== undefined) continue
+    if (isAddedLine(finding, change.addedLines)) {
+      refused.set(index, { ...finding, reason: 'added-line' })
+      continue
+    }
+    const key = fingerprint(finding)
+    const count = remaining.get(key) ?? 0
+    if (count > 0) remaining.set(key, count - 1)
+    else refused.set(index, { ...finding, reason: 'count' })
+  }
+
+  return head.flatMap((_, index) => {
+    const finding = refused.get(index)
+    return finding ? [finding] : []
   })
 }

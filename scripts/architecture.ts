@@ -365,6 +365,13 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/change-view/change-view.ts', [
+    'node:fs',
+    'node:os',
+    'node:path',
+    '../git.ts',
+    '../ratchet.ts',
+  ]),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     './config-client.ts',
