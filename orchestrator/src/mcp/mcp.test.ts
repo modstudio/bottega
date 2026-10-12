@@ -407,8 +407,15 @@ describe('orch MCP', () => {
     settings: { worktree: { keyPattern: '^DEV-[1-9][0-9]*$' } },
   } as unknown as Project
 
-  test('file_issue accepts a bare task key from hub', () => {
+  test('file_issue validates a returned key for the platform project, not the reporting project', () => {
+    const reportingProject = {
+      settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } },
+    } as unknown as Project
+
     expect(fileIssueTaskKey('DEV-1270\n', fileIssueProject)).toBe('DEV-1270')
+    expect(() => fileIssueTaskKey('DEV-1270\n', reportingProject)).toThrow(
+      'hub task new for file_issue did not return a valid task key; returned "DEV-1270"',
+    )
   })
 
   test('file_issue refuses a notice line followed by a task key', () => {

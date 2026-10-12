@@ -245,6 +245,7 @@ export async function fileIssue(
     const cwd = worker?.launch_cwd ?? process.cwd()
     throw new Error(`cannot file issue: no registered project contains ${cwd}`)
   }
+  const platformProject = registeredProject(PLATFORM_SLUG)
   const type = input.kind.toUpperCase()
   const { title, shortened: titleShortened } = filedIssueTitle(input)
   const duplicateSearch = await searchDuplicateIssues(title)
@@ -340,7 +341,7 @@ export async function fileIssue(
     )
   }
   return {
-    key: fileIssueTaskKey(stdout, project),
+    key: fileIssueTaskKey(stdout, platformProject),
     kind: input.kind,
     session,
     project: project.name,
