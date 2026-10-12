@@ -18,13 +18,13 @@ import {
   hostedNotePullRows,
 } from './note-cache.ts'
 import { notePullSpaces } from './note-project-space.ts'
-import { projects } from './projects.ts'
 import {
   capturePendingFields,
   pendingEditSkipsPull,
   pendingHostedEdit,
   restorePendingFields,
 } from './pending-hosted-edit.ts'
+import { projects } from './projects.ts'
 import {
   type HostedSpaceChange,
   type HostedSpaceChangePage,

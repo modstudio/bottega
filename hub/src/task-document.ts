@@ -1,9 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { hostedCreateDocument, hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
-import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
-import { HOSTED_DOCUMENT_TABLE } from './push-contract.ts'
+import {
+  drainHostedEditOutbox,
+  queueHostedDocumentDelete,
+  queueHostedDocumentUpsert,
+} from './offline-task-edits.ts'
+import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
@@ -28,18 +31,6 @@ export type TaskDocument = TaskDocumentSummary & {
   body: string
   version: string
   created_at: string
-}
-
-async function drainDocumentOutbox(options?: HostedTaskWriteOptions) {
-  try {
-    await drainHostedOutbox({
-      identity: () => hostedTaskIdentity(options),
-      push: (changes, destination) =>
-        hostedPushChanges(changes, { ...options, recordSpace: destination.recordSpace }),
-    })
-  } catch {
-    /* the durable queue is the offline result */
-  }
 }
 
 type DocumentTask = {
@@ -250,15 +241,15 @@ export async function updateTaskDocument(
           `task document ${id} changed since version ${expectedVersion}; read it again`,
         )
       }
-      if (hosted) queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'upsert', at, fields)
+      if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
       return
     }
     conn
       .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE record_id = ?`)
       .run(changes.title ?? row.title, nextRole, at, id)
-    if (hosted) queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'upsert', at, fields)
+    if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
   })
-  if (hosted) await drainDocumentOutbox(options.hosted)
+  if (hosted) await drainHostedEditOutbox(options.hosted)
   return getTaskDocument(id)
 }
 
@@ -280,15 +271,10 @@ export async function deleteTaskDocument(
       )
       .get(id)
     if (!row) throw new Error(`no task document ${id}`)
-    if (hosted) {
-      queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete')
-      conn
-        .query(`UPDATE hosted_outbox SET routing_project=? WHERE table_name=? AND row_id=?`)
-        .run(task.project, HOSTED_DOCUMENT_TABLE, id)
-    }
+    if (hosted) queueHostedDocumentDelete(conn, id, task.project)
     conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id)
     return withDocumentLabel(row)
   })
-  if (hosted) await drainDocumentOutbox(options.hosted)
+  if (hosted) await drainHostedEditOutbox(options.hosted)
   return result
 }

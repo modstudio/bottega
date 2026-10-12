@@ -1,14 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { projects } from './projects.ts'
-import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import {
   capturePendingFields,
   pendingEditSkipsPull,
   pendingHostedEdit,
   restorePendingFields,
 } from './pending-hosted-edit.ts'
+import { projects } from './projects.ts'
+import { hostedTaskChanges, hostedTaskIdentity, type TaskFetch } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 import { type RegisteredTaskSpace, taskPullSpaces } from './task-project-space.ts'

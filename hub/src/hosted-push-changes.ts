@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
+import { taskIdFor } from './hosted-task-reference.ts'
 import {
   mirrorCommentRow,
   mirrorDocumentRow,
@@ -9,8 +10,8 @@ import {
   type TaskIdentity,
 } from './hosted-tasks.ts'
 import {
-  HOSTED_DAY_TABLE,
   HOSTED_COMMENT_TABLE,
+  HOSTED_DAY_TABLE,
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
@@ -22,7 +23,6 @@ import {
   type PushedTask,
 } from './push-contract.ts'
 import { orderHostedPushChanges } from './push-order.ts'
-import { taskIdFor } from './hosted-task-reference.ts'
 
 type PushDeclaration = {
   apply(
@@ -95,7 +95,8 @@ async function taskFieldsEqual(
     AND (NOT ${fields.has('parent_key')} OR parent_key IS NOT DISTINCT FROM ${row.parent_key})
     AND (NOT ${fields.has('body')} OR body IS NOT DISTINCT FROM ${row.body})
     AND (NOT ${fields.has('assignee')} OR assignee IS NOT DISTINCT FROM ${row.assignee})
-    AND (NOT ${changesStatus} OR closed_at IS NOT DISTINCT FROM ${row.closed_at}::timestamptz)
+    AND (NOT ${changesStatus} OR
+      (CASE WHEN ${row.status_category}='done' THEN closed_at IS NOT NULL ELSE closed_at IS NULL END))
     AND updated_at=${row.updated_at}::timestamptz`
   return (found as unknown[]).length > 0
 }
@@ -175,7 +176,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (await commentEquals(tx, identity, input.row)) return { id: input.id, status: 'duplicate' }
       await mirrorCommentRow(tx, identity, input.row)
       const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
-      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
+      await tx`UPDATE hub_task SET updated_at=${input.row.updated_at}::timestamptz,last_seen=${input.row.updated_at}::timestamptz WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
       return { id: input.id, status: 'applied' }
     },
   },

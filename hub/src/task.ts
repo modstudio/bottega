@@ -5,15 +5,15 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
-import { projects, type StatusCategory } from './projects.ts'
-import { runRef } from './reconcile.ts'
-import { hostedCreateTask, hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
+import { projects, type StatusCategory } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
 } from './push-contract.ts'
+import { runRef } from './reconcile.ts'
+import { hostedCreateTask, hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {

@@ -3,8 +3,8 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { queueHostedChange } from './outbox.ts'
 import { closeTask, commentTask, createTask, setTask } from './task.ts'
-import { createTaskDocument, deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
+import { createTaskDocument, deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const unreachable = {
   baseUrl: 'https://unreachable.example.test',
