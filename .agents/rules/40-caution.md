@@ -62,3 +62,20 @@ the backstop.
 
 A write-time check that cannot judge allows the edit and says so. Failure of
 the write-time check itself never blocks the edit.
+
+## A guard pays for the time it adds
+
+Every guard, rule, hook and gate step costs time on each run of the process it
+guards, and that cost is paid again on every later iteration. Time is a
+trade-off to evaluate, never a free by-product of enforcement. Before adding a
+guard, name the defect it stops, how often that defect occurs, what an escape
+costs, and the time the guard adds at the point where it runs. Measure that
+time; do not estimate it.
+
+Run a guard at the cheapest point that still catches its defect. A check that
+must read the whole project never runs where one file is written, and a check
+too slow for the gate runs on a schedule and reports instead of blocking.
+
+A guard stays under evaluation after it is switched on. Its record is the time
+it takes and what it caught. A guard that costs time and catches nothing is
+moved to a cheaper point or removed; it is not kept because it is process.
