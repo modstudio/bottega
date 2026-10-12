@@ -45,9 +45,9 @@ type Options = {
 type MachineRow = { id: string; project_name: string | null }
 type RequestOptions = { baseUrl?: string; token?: string | null; fetch?: TaskFetch }
 
-export type TableAudit = IdentitySetComparison & { table: PushableHubChangeTable }
-export type SpaceAudit = { spaceId: string; tables: TableAudit[] }
-export type UnroutableRows = {
+type TableAudit = IdentitySetComparison & { table: PushableHubChangeTable }
+type SpaceAudit = { spaceId: string; tables: TableAudit[] }
+type UnroutableRows = {
   project: string
   reason: string
   table: PushableHubChangeTable
