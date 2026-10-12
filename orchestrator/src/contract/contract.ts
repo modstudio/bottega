@@ -1,6 +1,6 @@
 // concern: contract
 
-import { isReaderJob, type Job } from '../jobs/jobs.ts'
+import { isReaderJob, job, type Job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
@@ -116,7 +116,7 @@ export const WORKER_SCHEMA = {
         additionalProperties: false,
         required: ['files', 'explanation', 'verify'],
         properties: {
-          files: { type: 'array', minItems: 1, items: { type: 'string' } },
+          files: { type: 'array', items: { type: 'string' } },
           explanation: { type: 'string' },
           verify: { type: 'string' },
         },
@@ -740,6 +740,14 @@ ${COULD_NOT_VERIFY_INSTRUCTION}
  * exists to prevent. The scoring model backs the promise up: escalating counts
  * as faithful, and guessing is what costs.
  */
+export const CHANGE_GUIDE_INSTRUCTION = `When you changed files, return a change_guide in the order the architect should
+read the diff. Put the part that carries the decision first and mechanical
+follow-ons last. Cover every changed file in exactly one step. Each step names
+at least one repo-relative file, explains what that part does, and gives the one
+thing to verify there. The guide orders the architect's reading of the diff; it
+never replaces the diff, so do not restate the summary. Return null when you
+changed no files, including when you only ask questions or report a blocker.`
+
 export const WORKER_PREAMBLE = `
 YOUR ROLE
 
@@ -812,13 +820,7 @@ system cannot catch automatically, and hiding one costs far more than admitting
 it. Run the project's tests if you can, and report what actually happened rather
 than what you expect would happen.
 
-When you changed files, return a change_guide in the order the architect should
-read the diff. Put the part that carries the decision first and mechanical
-follow-ons last. Cover every changed file in exactly one step. Each step names
-its repo-relative files, explains what that part does, and gives the one thing
-to verify there. The guide orders the architect's reading of the diff; it never
-replaces the diff, so do not restate the summary. Return null when you changed
-no files, including when you only ask questions or report a blocker.
+${CHANGE_GUIDE_INSTRUCTION}
 
 When the \`run_gate\` tool is available, run it before reporting done,
 call it again while its reply says the gate is still running, and report done only with a finished result or a refusal, recording that last result in your reply's tests section.
@@ -888,18 +890,20 @@ export function rulingPrompt(answers: { question: string; answer: string }[]): s
  * courtesy, not a precondition, and a missing file must not strand the chain.
  */
 export function packResumePrompt(
-  job: string,
+  jobName: string,
   turnPrompt: string,
   originalSpec: string | null,
 ): string {
-  if (originalSpec === null) return turnPrompt
+  const changeGuide = job(jobName).needs.writesRepo ? CHANGE_GUIDE_INSTRUCTION : null
+  if (originalSpec === null) return [changeGuide, turnPrompt].filter(Boolean).join('\n\n')
   return [
     'REMINDER FROM THE ORIGINAL SPEC',
     '',
     originalSpec.slice(0, 600),
     '',
     'Do not decide what the spec did not settle; ask.',
-    workerResumeGuard(job),
+    workerResumeGuard(jobName),
+    ...(changeGuide ? [changeGuide] : []),
     '',
     '---',
     '',

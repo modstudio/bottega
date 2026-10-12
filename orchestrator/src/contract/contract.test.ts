@@ -4,12 +4,14 @@ import { detectBlockers } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import {
+  CHANGE_GUIDE_INSTRUCTION,
   hasRealQuestions,
   ISSUE_WORKER_SCHEMA,
   missingDeclaredDeliverables,
   parseReaderReply,
   parseWorkerReply,
   parseWorkerReplyWithCount,
+  packResumePrompt,
   READER_SCHEMA,
   REVIEW_SCHEMA,
   readerDeliverablesInstruction,
@@ -75,6 +77,20 @@ describe('worker change guide', () => {
     expect(parseWorkerReply(JSON.stringify(baseWorkerReply))?.change_guide).toBeNull()
     const { change_guide: _missing, ...withoutGuide } = baseWorkerReply
     expect(parseWorkerReply(JSON.stringify(withoutGuide))).toBeNull()
+  })
+})
+
+describe('resumed change guide contract', () => {
+  test('a writing resume without its original spec still carries the guide rule', () => {
+    const prompt = packResumePrompt('implement', 'Continue.', null)
+    expect(prompt).toContain(CHANGE_GUIDE_INSTRUCTION)
+  })
+
+  test('a non-writing resume does not gain the guide rule', () => {
+    expect(packResumePrompt('file-question', 'Continue.', null)).toBe('Continue.')
+    expect(packResumePrompt('file-question', 'Continue.', 'Original.')).not.toContain(
+      CHANGE_GUIDE_INSTRUCTION,
+    )
   })
 })
 
