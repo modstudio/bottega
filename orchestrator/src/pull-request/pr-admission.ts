@@ -53,7 +53,7 @@ const command = (cwd: string, argv: string[], label: string): string => {
 
 const git: Git = (cwd, args) => command(cwd, ['git', ...args], `git ${args.join(' ')}`)
 
-function resolvePullRequestChange(
+export function resolvePullRequestChange(
   cwd: string,
   sha = 'HEAD',
   database: Database = db(),
@@ -162,7 +162,10 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
     .all(change.project.name, change.branch)
 }
 
-function admissionDecision(change: PullRequestChange, database: Database): AdmissionDecision {
+export function admissionDecision(
+  change: PullRequestChange,
+  database: Database,
+): AdmissionDecision {
   return decideAdmission(
     {
       project: change.project.name,
@@ -334,19 +337,46 @@ export function finalizeTriageIntent(
   prNumber: number,
   database: Database = writableDb(),
 ): number | null {
+  return writeTransaction(
+    () => finalizeTriageIntentWrite(project, branch, prNumber, database),
+    database,
+  )
+}
+
+function finalizeTriageIntentWrite(
+  project: string,
+  branch: string,
+  prNumber: number,
+  database: Database,
+): number | null {
+  const row = database
+    .query<{ id: number }, [string, string]>(
+      `SELECT id FROM landing_triage_snapshot
+        WHERE project=? AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
+    )
+    .get(project, branch)
+  if (!row) return null
+  database.query('UPDATE landing_triage_snapshot SET pr_number=? WHERE id=?').run(prNumber, row.id)
+  enqueueLandingTriageSnapshot(database, row.id)
+  return row.id
+}
+
+export function recordMergeAdmission(
+  change: PullRequestChange,
+  decision: AdmissionDecision,
+  prNumber: number,
+  database: Database,
+): number | null {
   return writeTransaction(() => {
-    const row = database
-      .query<{ id: number }, [string, string]>(
+    const existing = database
+      .query<{ id: number }, [string, string, string]>(
         `SELECT id FROM landing_triage_snapshot
-          WHERE project=? AND branch=? AND pr_number IS NULL ORDER BY id DESC LIMIT 1`,
+          WHERE project=? AND branch=? AND tip=? LIMIT 1`,
       )
-      .get(project, branch)
-    if (!row) return null
-    database
-      .query('UPDATE landing_triage_snapshot SET pr_number=? WHERE id=?')
-      .run(prNumber, row.id)
-    enqueueLandingTriageSnapshot(database, row.id)
-    return row.id
+      .get(change.project.name, change.branch, change.tip)
+    if (existing) return null
+    recordTriageIntent(change, decision.triage, decision.overrideId, database)
+    return finalizeTriageIntentWrite(change.project.name, change.branch, prNumber, database)
   }, database)
 }
 

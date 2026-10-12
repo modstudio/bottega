@@ -1,10 +1,48 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  decideMergeAdmission,
   decideMergeProof,
   decidePullRequestIdentity,
   type MergeProofInput,
   type PullRequestCheck,
 } from './merge-decision.ts'
+
+describe('review admission', () => {
+  test('admits a checked complete admission', () => {
+    expect(decideMergeAdmission({ checked: true, number: 42, complete: true })).toEqual({
+      admitted: true,
+    })
+  })
+
+  test('carries the triage remedy and merge retry for incomplete admission', () => {
+    expect(
+      decideMergeAdmission({
+        checked: true,
+        number: 42,
+        complete: false,
+        triageRefusal: 'review triage is incomplete; cleared by: run the review',
+      }),
+    ).toEqual({
+      admitted: false,
+      refusal: 'review triage is incomplete; cleared by: run the review\nthen orch pr merge 42',
+    })
+  })
+
+  test('a commit that cannot be seen names the fetch and retry commands', () => {
+    const decision = decideMergeAdmission({
+      checked: false,
+      number: 42,
+      headCommit: 'missing-head',
+      problem: 'git rev-parse failed',
+    })
+    expect(decision).toEqual({
+      admitted: false,
+      refusal: expect.stringContaining(
+        'was not checked: git rev-parse failed; cleared by: git fetch origin pull/42/head, then orch pr merge 42',
+      ),
+    })
+  })
+})
 
 const passing = (name: string): PullRequestCheck => ({
   name,

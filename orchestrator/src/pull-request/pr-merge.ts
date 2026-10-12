@@ -9,16 +9,27 @@ import { db } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
+import type { AdmissionDecision } from './admission-decision.ts'
 import {
+  decideMergeAdmission,
   decideMergeProof,
   decidePullRequestIdentity,
+  type MergeDecision,
   type MergeProofInput,
   type PullRequestCheck,
 } from './merge-decision.ts'
+import {
+  admissionDecision,
+  type PullRequestChange,
+  recordMergeAdmission,
+  resolvePullRequestChange,
+  triageRefusal,
+} from './pr-admission.ts'
 
 export type PullRequestMergeFacts = {
   number: number
   headCommit: string
+  headBranch: string
   baseBranch: string
   title: string
   state: string
@@ -32,6 +43,18 @@ export type PullRequestMergeAdapter = {
     headCommit: string,
     landingBranch: string,
   ): { remoteLandingTip: string; mergeBase: string }
+  admission(
+    cwd: string,
+    headCommit: string,
+    headBranch: string,
+    database: Database,
+  ): { change: PullRequestChange; decision: AdmissionDecision }
+  recordAdmission(
+    change: PullRequestChange,
+    decision: AdmissionDecision,
+    prNumber: number,
+    database: Database,
+  ): number | null
   merge(
     cwd: string,
     number: number,
@@ -80,13 +103,21 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     const value = parsed<{
       number?: unknown
       headRefOid?: unknown
+      headRefName?: unknown
       baseRefName?: unknown
       title?: unknown
       state?: unknown
     }>(
       successful(
         cwd,
-        ['gh', 'pr', 'view', target, '--json', 'number,headRefOid,baseRefName,title,state'],
+        [
+          'gh',
+          'pr',
+          'view',
+          target,
+          '--json',
+          'number,headRefOid,headRefName,baseRefName,title,state',
+        ],
         'pull-request lookup',
       ),
       'pull-request lookup',
@@ -94,6 +125,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     if (
       !Number.isSafeInteger(value.number) ||
       typeof value.headRefOid !== 'string' ||
+      typeof value.headRefName !== 'string' ||
       typeof value.baseRefName !== 'string' ||
       typeof value.title !== 'string' ||
       typeof value.state !== 'string'
@@ -103,6 +135,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     return {
       number: Number(value.number),
       headCommit: value.headRefOid,
+      headBranch: value.headRefName,
       baseBranch: value.baseRefName,
       title: value.title,
       state: value.state,
@@ -155,6 +188,13 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
         'landing merge-base lookup',
       ),
     }
+  },
+  admission(cwd, headCommit, headBranch, database) {
+    const change = resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
+    return { change, decision: admissionDecision(change, database) }
+  },
+  recordAdmission(change, decision, prNumber, database) {
+    return recordMergeAdmission(change, decision, prNumber, database)
   },
   merge(cwd, number, method, subject, headCommit) {
     successful(
@@ -234,6 +274,51 @@ function collectMergeProof(
   }
 }
 
+type CheckedMergeAdmission = ReturnType<PullRequestMergeAdapter['admission']>
+
+function collectMergeAdmission(
+  pullRequest: PullRequestMergeFacts,
+  cwd: string,
+  adapter: PullRequestMergeAdapter,
+  database: Database,
+): { decision: MergeDecision; checked: CheckedMergeAdmission | null } {
+  let checked: CheckedMergeAdmission
+  try {
+    checked = adapter.admission(cwd, pullRequest.headCommit, pullRequest.headBranch, database)
+  } catch (cause) {
+    return {
+      checked: null,
+      decision: decideMergeAdmission({
+        checked: false,
+        number: pullRequest.number,
+        headCommit: pullRequest.headCommit,
+        problem: cause instanceof Error ? cause.message : String(cause),
+      }),
+    }
+  }
+  if (checked.decision.complete) {
+    return {
+      checked,
+      decision: decideMergeAdmission({
+        checked: true,
+        number: pullRequest.number,
+        complete: true,
+      }),
+    }
+  }
+  const triage = checked.decision.triage
+  if (triage.complete) throw new Error('incomplete admission returned complete review triage')
+  return {
+    checked,
+    decision: decideMergeAdmission({
+      checked: true,
+      number: pullRequest.number,
+      complete: false,
+      triageRefusal: triageRefusal(checked.change, triage),
+    }),
+  }
+}
+
 export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
@@ -265,6 +350,16 @@ export function mergePullRequest(
     if (!identityDecision.admitted) {
       throw new Error(`refusing merge: ${identityDecision.refusal}`)
     }
+    const admission = collectMergeAdmission(pullRequest, cwd, adapter, database)
+    if (!admission.decision.admitted) {
+      throw new Error(`refusing merge: ${admission.decision.refusal}`)
+    }
+    adapter.recordAdmission(
+      admission.checked!.change,
+      admission.checked!.decision,
+      pullRequest.number,
+      database,
+    )
     const input = collectMergeProof(
       pullRequest,
       landingBranch,
