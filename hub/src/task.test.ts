@@ -241,7 +241,7 @@ describe('hosted-authoritative existing-row edits', () => {
     )
     let sends = 0
     const messages: unknown[] = []
-    const log = spyOn(console, 'log').mockImplementation((message) => messages.push(message))
+    const log = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
     try {
       await setTask(
         'GAM-73',
