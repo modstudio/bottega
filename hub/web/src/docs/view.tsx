@@ -378,8 +378,8 @@ export function DocsView({
         className={classes(
           'mx-auto grid min-h-0 w-full flex-1 grid-cols-1 lg:min-h-[calc(100dvh-var(--docs-stick))]',
           wide
-            ? 'lg:grid-cols-[16.75rem_minmax(0,1fr)]'
-            : 'max-w-(--docs-width) lg:grid-cols-[16.75rem_minmax(0,1fr)_13.5rem]',
+            ? 'lg:grid-cols-[var(--docs-rail)_minmax(0,1fr)]'
+            : 'max-w-(--docs-width) lg:grid-cols-[var(--docs-rail)_minmax(0,1fr)_var(--docs-rail)]',
         )}
       >
         <DocsRail

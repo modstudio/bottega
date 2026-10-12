@@ -1,7 +1,7 @@
 /* Document body: serif headings, sans paragraphs, mono figures, matching the docs page scale. */
 .markdown,
 .doc-measure {
-  max-width: 40rem;
+  max-width: var(--docs-measure);
 }
 .markdown h1,
 .markdown h2,
@@ -275,5 +275,5 @@
 [data-doc-wide] .markdown > ul,
 [data-doc-wide] .markdown > ol,
 [data-doc-wide] .markdown > blockquote {
-  max-width: 40rem;
+  max-width: var(--docs-measure);
 }

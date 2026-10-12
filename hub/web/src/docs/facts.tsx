@@ -152,14 +152,6 @@ function Details({
               </dd>
             </>
           ) : null}
-          {signedIn ? (
-            <>
-              <dt className="text-text-muted">Address</dt>
-              <dd className="m-0 min-w-0 break-words text-text-secondary">
-                {doc.scope} / {doc.subject ?? '—'} / {doc.slug}
-              </dd>
-            </>
-          ) : null}
         </dl>
       </section>
       {showHistory ? (
