@@ -1,17 +1,13 @@
 import { Link } from '@tanstack/react-router'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { CalendarDays, CircleDot, Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { paneTitle, readingBody } from './body.ts'
-import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
-import type { DocHeading } from './headings.ts'
 import type { DocsLocation } from './location.ts'
-import { DocStatusBadge } from './status-badge.tsx'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
-import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -34,6 +30,10 @@ function updatedLabel(value: string) {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function statusLabel(status: DocsDoc['status']) {
+  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 /** Room the sticky article header takes, so the title counts as gone once it is behind it. */
@@ -71,12 +71,14 @@ function ReadingTop({
   crumbs,
   title,
   titleGone,
+  headerAction,
   wide,
   onWide,
 }: {
   crumbs: readonly BreadcrumbPart[]
   title: string
   titleGone: boolean
+  headerAction?: ReactNode
   wide: boolean
   onWide: (wide: boolean) => void
 }) {
@@ -109,11 +111,14 @@ function ReadingTop({
         ) : null}
       </div>
       {/* For an article of wide tables: the pane takes the room of the facts column too. */}
-      <div className="hidden shrink-0 lg:block">
-        <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
-          {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          {wide ? 'Reading width' : 'Wide'}
-        </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        {headerAction}
+        <span className="hidden lg:inline-flex">
+          <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
+            {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {wide ? 'Reading width' : 'Wide'}
+          </Button>
+        </span>
       </div>
     </div>
   )
@@ -164,21 +169,46 @@ function DocLifecycle({
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
 }) {
-  if (doc.status === 'current') return null
+  if (doc.status !== 'superseded' || !doc.replacementSlug) return null
   return (
-    <div className="doc-measure mt-3 flex flex-wrap items-center gap-2 text-md text-text-muted">
-      <DocStatusBadge status={doc.status} />
-      {doc.status === 'superseded' && doc.replacementSlug ? (
-        <span>
-          Replaced by{' '}
-          {replacement ? (
-            <Link {...locationFor(replacement)} className="text-link hover:underline">
-              {replacement.title}
-            </Link>
-          ) : (
-            doc.replacementSlug
-          )}
+    <span>
+      Replaced by{' '}
+      {replacement ? (
+        <Link {...locationFor(replacement)} className="text-link hover:underline">
+          {replacement.title}
+        </Link>
+      ) : (
+        doc.replacementSlug
+      )}
+    </span>
+  )
+}
+
+function DocKeyInfo({
+  doc,
+  signedIn,
+  replacement,
+  locationFor,
+}: {
+  doc: DocsDoc
+  signedIn: boolean
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
+}) {
+  return (
+    <div className="doc-measure mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
+      {signedIn ? (
+        <span className="inline-flex items-center gap-1.5">
+          <CircleDot size={14} />
+          {statusLabel(doc.status)}
         </span>
+      ) : null}
+      <span className="inline-flex items-center gap-1.5">
+        <CalendarDays size={14} />
+        Updated {updatedLabel(doc.updatedAt)}
+      </span>
+      {signedIn ? (
+        <DocLifecycle doc={doc} replacement={replacement} locationFor={locationFor} />
       ) : null}
     </div>
   )
@@ -191,7 +221,7 @@ export function DocsReading({
   onSelect,
   replacement,
   locationFor,
-  localActions,
+  headerAction,
   error,
   pending,
   wide,
@@ -211,7 +241,7 @@ export function DocsReading({
   onSelect: (item: DocsTreeItem) => void
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
-  localActions?: ReactNode
+  headerAction?: ReactNode
   error?: string | null
 }) {
   const shown = doc ? paneTitle(doc.title, doc.body) : { title: '', lede: null }
@@ -233,6 +263,7 @@ export function DocsReading({
             crumbs={crumbs}
             title={shown.title}
             titleGone={titleGone}
+            headerAction={headerAction}
             wide={wide}
             onWide={onWide}
           />
@@ -243,11 +274,15 @@ export function DocsReading({
           >
             {shown.title}
           </h1>
-          <DocLifecycle doc={doc} replacement={replacement} locationFor={locationFor} />
+          <DocKeyInfo
+            doc={doc}
+            signedIn={signedIn}
+            replacement={replacement}
+            locationFor={locationFor}
+          />
           {shown.lede ? (
             <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
           ) : null}
-          {localActions ? <div className="mt-4">{localActions}</div> : null}
           <div className="mt-6">
             <Markdown content={readingBody(doc.body)} />
           </div>
@@ -269,83 +304,5 @@ export function DocsReading({
         <p className="text-md text-text-muted">No document to show.</p>
       )}
     </main>
-  )
-}
-
-export function DocsFacts({
-  doc,
-  headings,
-  signedIn,
-}: {
-  doc: DocsDoc | null
-  headings: readonly DocHeading[]
-  signedIn: boolean
-}) {
-  const panel = useRef<HTMLElement>(null)
-  useHeldPanel(panel)
-  return (
-    <aside
-      ref={panel}
-      className="hidden px-5 py-8 lg:sticky lg:top-(--docs-stick) lg:block lg:max-h-[calc(100dvh-var(--docs-stick))] lg:self-start lg:overflow-y-auto"
-    >
-      {headings.length ? (
-        <section>
-          <span className={eyebrow}>On this page</span>
-          <ul className="mt-2.5 flex list-none flex-col gap-1.5 p-0">
-            {headings.map((heading) => (
-              <li key={heading.id}>
-                <a
-                  href={`#${heading.id}`}
-                  className="text-md text-text-muted hover:text-text-primary"
-                >
-                  {heading.title.replace(/[`*]/g, '')}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {doc ? (
-        <section className={headings.length ? 'mt-7' : undefined}>
-          <span className={eyebrow}>About</span>
-          <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
-            <dt className="text-text-muted">Audience</dt>
-            <dd className="m-0 text-text-secondary">
-              {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
-            </dd>
-            {signedIn && doc.form ? (
-              <>
-                <dt className="text-text-muted">Type</dt>
-                <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
-              </>
-            ) : null}
-            {signedIn && doc.articleSubject ? (
-              <>
-                <dt className="text-text-muted">Subject</dt>
-                <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
-              </>
-            ) : null}
-            {signedIn && doc.relatedSubjects?.length ? (
-              <>
-                <dt className="text-text-muted">Related</dt>
-                <dd className="m-0 text-text-secondary">
-                  {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
-                </dd>
-              </>
-            ) : null}
-            <dt className="text-text-muted">Updated</dt>
-            <dd className="m-0 text-text-secondary">{updatedLabel(doc.updatedAt)}</dd>
-            {signedIn ? (
-              <>
-                <dt className="text-text-muted">Address</dt>
-                <dd className="m-0 min-w-0 break-words text-text-secondary">
-                  {doc.scope} / {doc.subject ?? '—'} / {doc.slug}
-                </dd>
-              </>
-            ) : null}
-          </dl>
-        </section>
-      ) : null}
-    </aside>
   )
 }

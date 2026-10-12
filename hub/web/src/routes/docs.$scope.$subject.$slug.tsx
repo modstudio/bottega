@@ -10,27 +10,22 @@ import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { Select } from '@/ui/listbox/select'
 import { Sheet } from '@/ui/sheet/sheet'
-import { DocStatusBadge } from '../docs/status-badge.tsx'
 import { DOC_SCOPES, type DocScope, isScope } from './docs'
 
-type DocSearch = { edit?: boolean; history?: boolean; id?: string }
+type DocSearch = { edit?: boolean; id?: string }
 
 export const Route = createFileRoute('/docs/$scope/$subject/$slug')({
   validateSearch: (search: Record<string, unknown>): DocSearch => ({
     edit: search.edit === true || search.edit === '1' || search.edit === 'true' ? true : undefined,
-    history:
-      search.history === true || search.history === '1' || search.history === 'true'
-        ? true
-        : undefined,
     id: typeof search.id === 'string' ? search.id : undefined,
   }),
   component: DocRoute,
 })
 
 function DocRoute() {
-  const { edit, history } = Route.useSearch()
+  const { edit } = Route.useSearch()
   if (isHostedMode()) return null
-  if (!edit && !history) return null
+  if (!edit) return null
   return <DocPage />
 }
 
@@ -53,15 +48,6 @@ function DocPage() {
     }),
     enabled: scoped,
   })
-  const history = useQuery({
-    ...trpc.doc.history.queryOptions({
-      scope: (scoped ? scope : 'global') as DocScope,
-      subject,
-      slug,
-    }),
-    enabled: scoped,
-  })
-
   const [editing, setEditing] = useState(Boolean(edit))
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -284,34 +270,6 @@ function DocPage() {
       {doc.data && !editing ? (
         <div className="max-w-[72ch]">
           <Markdown content={doc.data.body} />
-        </div>
-      ) : null}
-      {doc.data && !editing ? (
-        <div className="mt-8 border-t border-border-default pt-4">
-          <h2 className="mb-3 text-sm font-semibold">History</h2>
-          {history.error ? (
-            <p data-tone="error" className="text-status-text">
-              {history.error.message}
-            </p>
-          ) : null}
-          {history.data?.map((revision) => (
-            <div
-              key={revision.id}
-              className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border-default py-2 text-xs"
-            >
-              <span className="flex items-center gap-2">
-                <span>
-                  #{revision.id} {revision.op}
-                </span>
-                <DocStatusBadge status={revision.status} />
-              </span>
-              <span>{revision.author}</span>
-              <span>{revision.reason}</span>
-              <span className="text-text-muted">
-                {revision.at} · {revision.bytes} bytes
-              </span>
-            </div>
-          ))}
         </div>
       ) : null}
     </Sheet>

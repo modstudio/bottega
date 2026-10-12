@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { EMPTY_FILTERS } from './filters.ts'
 import type { DocsTreeItem } from './types.ts'
@@ -67,39 +68,43 @@ const items: DocsTreeItem[] = [
 ]
 
 function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
+  const queryClient = new QueryClient()
   return renderToStaticMarkup(
-    <DocsView
-      sourceLabel="Local store"
-      items={items}
-      selectedId="2"
-      filters={EMPTY_FILTERS}
-      onFilters={() => {}}
-      project="all"
-      onProject={() => {}}
-      signedIn
-      showProjectChooser
-      showDrafts={false}
-      onShowDrafts={() => {}}
-      canShowDrafts
-      doc={{
-        ...items[1]!,
-        body: '## Open a task\n\nEvery piece of work carries a key.\n',
-      }}
-      replacement={null}
-      locationFor={(item) => ({
-        to: '/docs/$scope/$subject/$slug',
-        params: { scope: item.scope, subject: item.subject ?? '_', slug: item.slug },
-        search: {},
-      })}
-      onSelect={() => {}}
-      onOpenFirst={() => {}}
-      ready
-      searchQuery=""
-      onSearchQuery={() => {}}
-      searchResults={[]}
-      framed={false}
-      {...partial}
-    />,
+    <QueryClientProvider client={queryClient}>
+      <DocsView
+        sourceLabel="Local store"
+        source="local"
+        items={items}
+        selectedId="2"
+        filters={EMPTY_FILTERS}
+        onFilters={() => {}}
+        project="all"
+        onProject={() => {}}
+        signedIn
+        showProjectChooser
+        showDrafts={false}
+        onShowDrafts={() => {}}
+        canShowDrafts
+        doc={{
+          ...items[1]!,
+          body: '## Open a task\n\nEvery piece of work carries a key.\n',
+        }}
+        replacement={null}
+        locationFor={(item) => ({
+          to: '/docs/$scope/$subject/$slug',
+          params: { scope: item.scope, subject: item.subject ?? '_', slug: item.slug },
+          search: {},
+        })}
+        onSelect={() => {}}
+        onOpenFirst={() => {}}
+        ready
+        searchQuery=""
+        onSearchQuery={() => {}}
+        searchResults={[]}
+        framed={false}
+        {...partial}
+      />
+    </QueryClientProvider>,
   )
 }
 
@@ -115,7 +120,6 @@ test('the docs page shows one tree with audience in the filter control', () => {
   expect(html).toContain('Local store')
   expect(html).toContain('Install →')
   expect(html).toContain('On this page')
-  expect(html).toContain('project / atlas / first-run')
   expect(html).toContain('Search docs')
   expect(html).toContain('Filter')
 })
@@ -127,7 +131,7 @@ test('About shows every audience on a document', () => {
   expect(html).toContain('Technical, Internal')
 })
 
-test('signed out keeps User guide wording and hides the audience filter, project chooser and address', () => {
+test('signed out keeps User guide wording and hides the audience filter and project chooser', () => {
   const html = render({
     signedIn: false,
     showProjectChooser: false,
@@ -136,7 +140,7 @@ test('signed out keeps User guide wording and hides the audience filter, project
   expect(html).toContain('User guide')
   expect(html).not.toContain('Technical')
   expect(html).not.toContain('All projects')
-  expect(html).not.toContain('project / atlas / first-run')
+  expect(html).toContain('Updated 6 Oct 2026')
 })
 
 test('the audience filter remains available when other filters have one value', () => {
