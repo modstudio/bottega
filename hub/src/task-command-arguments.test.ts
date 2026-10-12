@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { parseTaskArguments, resolveTaskCommand } from './task-command-arguments.ts'
+import {
+  parseTaskArguments,
+  resolveTaskCommand,
+  taskBodyFromArguments,
+} from './task-command-arguments.ts'
 
 function parse(command: string, argv: string[]) {
   const commandArgv = [...command.split(' '), ...argv]
@@ -30,6 +34,22 @@ describe('task command arguments', () => {
 
   test('accepts setting a task status', () => {
     expect(parse('set', ['DEV-847', '--status', 'done']).ok).toBeTrue()
+  })
+
+  test('accepts setting a task body from a file', () => {
+    const result = parse('set', ['DEV-847', '--body-file', 'body.md'])
+    expect(result.ok).toBeTrue()
+    if (result.ok)
+      expect(taskBodyFromArguments(result.arguments, (path) => `read ${path}`)).toBe('read body.md')
+  })
+
+  test('refuses inline and file task bodies together', () => {
+    const result = parse('set', ['DEV-847', '--body', 'inline', '--body-file', 'body.md'])
+    expect(result.ok).toBeTrue()
+    if (result.ok)
+      expect(() => taskBodyFromArguments(result.arguments, () => 'file')).toThrow(
+        '--body and --body-file are mutually exclusive',
+      )
   })
 
   test('accepts keeping branches while closing', () => {

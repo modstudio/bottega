@@ -5,12 +5,11 @@ import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import {
-  auditQuestionMutation,
+  answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
+  upsertWorkflowQuestion,
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
-import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { rulingActor } from '../run/question-vocabulary.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
@@ -47,16 +46,20 @@ import {
   type EnforcementMode,
   type Floor,
   type FloorDecision,
-  type OpenObligation,
 } from './workflow-floor.ts'
 import {
   type FloorEvidencePorts,
   gatherValidatedEvidence,
+  openWorkflowObligations,
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
 import { renderWorkflowStep } from './workflow-render.ts'
+import {
+  recordWorkflowSelfRuling,
+  type WorkflowSelfRulingInput,
+} from './workflow-self-ruling-mutation.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
@@ -487,16 +490,6 @@ export function getWorkflowStepWithCursor(
   )
 }
 
-function openObligations(cursorId: number, d: Database): OpenObligation[] {
-  return d
-    .query<OpenObligation, [number]>(
-      `SELECT id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
-         FROM workflow_obligation
-        WHERE cursor_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY id`,
-    )
-    .all(cursorId)
-}
-
 function applyFloorDecision(
   row: CursorRow,
   composition: ReturnType<typeof composeWorkflow>,
@@ -532,7 +525,7 @@ function applyFloorDecision(
     evidence: gathered,
     enforcement: row.enforcement ?? 'note-only',
     finishing,
-    openObligations: openObligations(row.id, d),
+    openObligations: openWorkflowObligations(row.id, d),
   })
 }
 
@@ -602,6 +595,7 @@ function nextWorkflowStepImpl(
   ports: FloorEvidencePorts,
   d: Database = writableDb(),
   cursor?: number,
+  selfRuling?: WorkflowSelfRulingInput,
 ): string {
   const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
@@ -623,6 +617,27 @@ function nextWorkflowStepImpl(
     )
   }
   const composition = cursorComposition(row, d)
+  let effectiveEvidence = evidence
+  if (selfRuling) {
+    if (evidence.ruling !== undefined)
+      throw new Error('--self-ruling and --ruling are mutually exclusive')
+    const step = composition.steps[row.ordinal]!
+    const floors = catalogueFloorsFor(step)
+    const questionId = recordWorkflowSelfRuling(
+      {
+        cursorId: row.id,
+        workflowKey: row.workflow_key,
+        stepOrdinal: row.ordinal + 1,
+        stepSlug: row.step_slug,
+        stepTitle: step.title,
+        resolvedAutonomy: step.resolvedAutonomy.value,
+        floors,
+        selfRuling,
+      },
+      d,
+    )
+    effectiveEvidence = { ...evidence, ruling: questionId }
+  }
   const next = composition.steps[row.ordinal + 1] ?? null
   const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
     kind: 'next',
@@ -636,7 +651,7 @@ function nextWorkflowStepImpl(
   const floor = applyFloorDecision(
     row,
     composition,
-    evidence,
+    effectiveEvidence,
     ports,
     decision.action === 'finish',
     d,
@@ -718,6 +733,7 @@ export function nextWorkflowStep(
   evidence: WorkflowEvidenceInput = {},
   ports: FloorEvidencePorts = productionFloorPorts(),
   cursor?: number,
+  selfRuling?: WorkflowSelfRulingInput,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     writeTransaction(
@@ -733,6 +749,7 @@ export function nextWorkflowStep(
           replayPorts,
           d,
           cursor,
+          selfRuling,
         ),
       d,
     ),
@@ -843,40 +860,17 @@ function awaitWorkflowRulingImpl(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
      session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
   ).run(question.trim(), context.session ?? null, at, row.id)
-  const open = d
-    .query(
-      `SELECT id FROM question
-       WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
-    )
-    .get(row.id) as { id: number } | null
-  let questionId: number
-  if (open) {
-    d.query(
-      `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
-       revision=revision+1 WHERE id=?`,
-    ).run(question.trim(), row.workflow_key || null, row.ordinal + 1, row.step_slug, open.id)
-    enqueueQuestionRecord(d, open.id)
-    questionId = open.id
-  } else {
-    const inserted = d
-      .query(
-        `INSERT INTO question
-        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
-         workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
-      )
-      .get(
-        row.id,
-        row.workflow_key || null,
-        at,
-        question.trim(),
-        at,
-        row.ordinal + 1,
-        row.step_slug,
-      ) as { id: number }
-    enqueueQuestionRecord(d, inserted.id)
-    questionId = inserted.id
-  }
+  const questionId = upsertWorkflowQuestion(
+    {
+      cursorId: row.id,
+      workflowKey: row.workflow_key,
+      stepOrdinal: row.ordinal + 1,
+      stepSlug: row.step_slug,
+      question: question.trim(),
+      at,
+    },
+    d,
+  )
   return {
     summary: {
       id: row.id,
@@ -922,24 +916,27 @@ export function ruleWorkflow(
       database: d,
     })
     const at = nowIso()
-    const answeredBy = rulingActor(fromOperator, actor)
-    const changed = d
-      .query(
-        `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
-          revision=revision+1
+    const question = d
+      .query<{ id: number }, [number]>(
+        `SELECT id FROM question
          WHERE workflow_cursor_id=? AND ${questionOpenSql('question')}`,
       )
-      .run(ruling.trim(), at, answeredBy, fromOperator ? 'operator' : 'agent', channel, row.id)
-    if (changed.changes !== 1)
+      .get(row.id)
+    if (!question)
       throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
-    const question = d
-      .query('SELECT id FROM question WHERE workflow_cursor_id=? AND answered_at=?')
-      .get(row.id, at) as { id: number }
-    auditQuestionMutation(
-      { questionId: question.id, action: 'rule', actor, at, reason: ruling.trim(), adoptionReason },
+    answerWorkflowQuestion(
+      {
+        questionId: question.id,
+        cursorId: row.id,
+        ruling: ruling.trim(),
+        at,
+        actor,
+        fromOperator,
+        channel,
+        adoptionReason,
+      },
       d,
     )
-    enqueueQuestionRecord(d, question.id)
     d.query(
       `UPDATE workflow_cursor SET state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
@@ -1010,7 +1007,7 @@ export function listWorkflowCursors(
     .query(`SELECT * FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
     .all(...values) as CursorRow[]
   return rows.map((row) => {
-    const open = openObligations(row.id, d)
+    const open = openWorkflowObligations(row.id, d)
     const listed = {
       ...row,
       next_slug: cursorComposition(row, d).steps[row.ordinal + 1]?.slug ?? 'finished',

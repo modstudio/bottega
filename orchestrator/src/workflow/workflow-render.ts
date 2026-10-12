@@ -123,10 +123,10 @@ function autonomyInstruction(
   if (resolved === 'ask')
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
   if (resolved === 'auto' && declared === 'ask')
-    return 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+    return 'rule this step yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
   if (resolved === 'review')
-    return 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-  return 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    return 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+  return 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {

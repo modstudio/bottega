@@ -61,6 +61,7 @@ import {
   parseTaskArguments,
   resolveTaskCommand,
   TASK_USAGE,
+  taskBodyFromArguments,
   taskHelpRequested,
 } from './task-command-arguments.ts'
 import {
@@ -436,14 +437,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
       )
     }
   }
-  const newBody = () => {
-    if (taskHas('body') && taskHas('body-file')) {
-      throw new Error('--body and --body-file are mutually exclusive')
-    }
-    if (taskHas('body-file')) return readFileSync(required('body-file'), 'utf8')
-    if (taskHas('body')) return required('body')
-    return undefined
-  }
+  const newBody = () => taskBodyFromArguments(parsed, (path) => readFileSync(path, 'utf8'))
 
   if (sub?.startsWith('doc ')) {
     const action = sub.slice('doc '.length)
@@ -572,6 +566,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
   if (sub === 'set') {
     if (taskHas('parent') && taskHas('no-parent'))
       throw new Error('--parent and --no-parent are mutually exclusive')
+    const body = newBody()
     const changes = {
       ...(taskHas('title') ? { title: required('title') } : {}),
       ...(taskHas('status') ? { status: required('status') } : {}),
@@ -580,7 +575,7 @@ async function task(parsed: ParsedTaskArguments | undefined) {
         : taskHas('no-parent')
           ? { parent: null }
           : {}),
-      ...(taskHas('body') ? { body: required('body') } : {}),
+      ...(body !== undefined ? { body } : {}),
       ...(taskHas('assignee') ? { assignee: required('assignee') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')

@@ -216,6 +216,30 @@ test('a terminal run with the expected exit satisfies command-exit', () => {
   })
 })
 
+test('a run offered to an artifact floor names the same run artifact form', () => {
+  const decision = decide({
+    floors: [artifact],
+    evidence: { runOffered: 8, run: { id: 8, terminal: true, exitCode: 0 } },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'floor recorded-artifact is unmet; pass --artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+  })
+})
+
+test('a run artifact offered to a command floor names the same run command form', () => {
+  const decision = decide({
+    floors: [commandExit],
+    evidence: { artifactRunOffered: 8, artifact: { ref: '8', exists: true } },
+  })
+  expect(decision).toEqual({
+    action: 'refuse',
+    message:
+      'floor command-exit is unmet; pass --gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id> with exit code 0; run 8 is accepted as --run 8 once terminal with exit code 0',
+  })
+})
+
 test('a probe with the expected exit satisfies command-exit', () => {
   expect(decide({ floors: [commandExit], evidence: passingProbe }).action).toBe('allow')
   expect(

@@ -63,6 +63,8 @@ type ValidatedSatisfy =
     }
 
 export type ValidatedEvidence = {
+  runOffered?: number
+  artifactRunOffered?: number
   ruling?: {
     id: number
     answered: boolean
@@ -321,14 +323,18 @@ function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
     const commit = evidence.tree?.commit ?? '<current tree commit>'
     return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`orch gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
   }
-  return (
+  const existing =
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
     (floor.kind === 'command-exit'
       ? ` with exit code ${floor.expectedExitCode}`
       : floor.kind === 'tracker-transition'
         ? trackerUnmetMessage(floor, evidence)
         : '')
-  )
+  if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)
+    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when it has a reply or a recorded artifact`
+  if (floor.kind === 'command-exit' && evidence.artifactRunOffered !== undefined)
+    return `${existing}; run ${evidence.artifactRunOffered} is accepted as --run ${evidence.artifactRunOffered} once terminal with exit code ${floor.expectedExitCode}`
+  return existing
 }
 
 function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {

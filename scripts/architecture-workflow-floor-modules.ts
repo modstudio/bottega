@@ -36,6 +36,18 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor.ts', []),
+  module('orchestrator/src/workflow/workflow-self-ruling.ts', [
+    './autonomy.ts',
+    './workflow-floor.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-self-ruling-mutation.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../run/question-mutation.ts',
+    './autonomy.ts',
+    './workflow-floor.ts',
+    './workflow-self-ruling.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-run-binding.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', []),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
@@ -93,6 +105,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-render.ts',
+    './workflow-self-ruling-mutation.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-trail.ts',
