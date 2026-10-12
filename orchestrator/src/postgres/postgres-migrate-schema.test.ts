@@ -32,6 +32,7 @@ describe('Postgres substrate shape', () => {
       'review_lens',
       'review_finding',
       'review_read',
+      'release',
       'landing',
       'landing_override',
       'landing_review_carry',

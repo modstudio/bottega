@@ -31,6 +31,7 @@ import {
 } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { db, nowIso } from '../database/db.ts'
+import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
@@ -53,13 +54,16 @@ import {
   projectRecordDestination,
   recordSpaceMembershipRefusal,
 } from './record-project-destination.ts'
+import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { currentRecordSession } from './record-session.ts'
+import { bindPrincipal } from './record-sync-principal.ts'
 import type {
   BlockedOutboxRow,
   OutboxRow,
   Payload,
+  RecordPrincipal,
   RecordSyncOptions,
   RecordSyncResult,
 } from './record-sync-types.ts'
@@ -83,7 +87,6 @@ export function outboxOrder(kind: string, id: number): readonly [phase: number, 
   }
 }
 
-type RecordPrincipal = { userId: string; spaceId: string }
 async function syncMemberships(
   postgres: SQL,
   principal: RecordPrincipal,
@@ -159,11 +162,6 @@ function cachedProjectPrincipal(
  * is not a member of. That is one project's problem, so sync skips its rows and
  * carries on rather than stopping at the first of them.
  */
-async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
-  await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`
-  await tx`SELECT set_config('app.space_id', ${principal.spaceId}, true)`
-}
-
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   let parsed: unknown
   try {
@@ -768,6 +766,11 @@ const recordKinds = {
           .onConflictDoUpdate({ target: reviewReadRecord.id, set: updates })
       }),
   },
+  release: {
+    ...OUTBOX_PAYLOAD_CONTRACTS.release,
+    push: (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
+      pushReleaseRecord(postgres, row, principal, projectRecordId),
+  },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,
     push: async (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
@@ -955,6 +958,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
         reviews: backfillReviewRecords(local!),
         landingEvidence: backfillLandingEvidenceRecords(local!),
         questions: backfillQuestionRecords(local!),
+        releases: backfillReleaseRecords(local!),
       }
     : undefined
   if (!recordUrl) {

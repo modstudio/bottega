@@ -230,6 +230,7 @@ test('document audience vocabulary migration converts local docs and revisions w
     expect(applyMigrations(database)).toEqual([
       '0094_doc_audience_vocabulary',
       '0095_doc_article_fields',
+      '0096_release_record_id',
     ])
     expect(database.query('SELECT audiences FROM doc').get()).toEqual({
       audiences: '["technical","internal"]',

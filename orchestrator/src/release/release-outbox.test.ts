@@ -1,0 +1,178 @@
+import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { applyMigrations } from '../database/migrations.ts'
+import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
+import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
+import {
+  backfillReleaseRecords,
+  enqueueReleaseRecord,
+  RELEASE_RECORD_PAYLOAD_CONTRACT,
+} from './release-outbox.ts'
+
+function fixture(): Database {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  return database
+}
+
+function started(database: Database): number {
+  return startReleaseLedgerEntry(database, {
+    project: PLATFORM_SLUG,
+    rung: 'production',
+    candidate: 'candidate-sha',
+    live: 'before-sha',
+    rollback: false,
+    reason: null,
+  })
+}
+
+test('release writes and evolves one whole-row pending payload without deploy output', () => {
+  const database = fixture()
+  const id = started(database)
+  const initial = database
+    .query<{ record_id: string; payload: string }, []>(
+      `SELECT release_ledger.record_id,outbox.payload FROM release_ledger
+       JOIN outbox ON outbox.record_id=release_ledger.record_id`,
+    )
+    .get()!
+  const startedPayload = JSON.parse(initial.payload) as Record<string, unknown>
+  expect(Object.keys(startedPayload).sort()).toEqual(
+    [...RELEASE_RECORD_PAYLOAD_CONTRACT.columns].sort(),
+  )
+  expect(startedPayload).toMatchObject({
+    id: initial.record_id,
+    projectName: PLATFORM_SLUG,
+    rung: 'production',
+    candidateCommit: 'candidate-sha',
+    liveCommitBefore: 'before-sha',
+    finishedAt: null,
+    exitCode: null,
+    withheldFields: [],
+  })
+  expect(startedPayload).not.toHaveProperty('outputTail')
+  expect(startedPayload).not.toHaveProperty('output_tail')
+
+  finishReleaseLedgerEntry(
+    database,
+    id,
+    { exitCode: 0, output: 'deploy secret' },
+    'local output',
+    'candidate-sha',
+    true,
+    null,
+  )
+  const rows = database
+    .query<{ record_id: string; payload: string }, []>(
+      "SELECT record_id,payload FROM outbox WHERE kind='release' ORDER BY id",
+    )
+    .all()
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.record_id).toBe(initial.record_id)
+  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    id: initial.record_id,
+    exitCode: 0,
+    liveCommitAfter: 'candidate-sha',
+    liveMatchesCandidate: true,
+  })
+  expect(rows[0]!.payload).not.toContain('local output')
+  database.close()
+})
+
+test('finishing after the started payload was sent appends the same record identity', () => {
+  const database = fixture()
+  const id = started(database)
+  const first = database.query<{ record_id: string }, []>('SELECT record_id FROM outbox').get()!
+  database.query("UPDATE outbox SET synced_at='2026-10-12T00:00:00.000Z'").run()
+
+  finishReleaseLedgerEntry(
+    database,
+    id,
+    { exitCode: 1, output: '' },
+    'failed',
+    null,
+    null,
+    'warning',
+  )
+
+  expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
+    count: 2,
+  })
+  expect(database.query<{ record_id: string }, []>('SELECT record_id FROM outbox').all()).toEqual([
+    { record_id: first.record_id },
+    { record_id: first.record_id },
+  ])
+  database.close()
+})
+
+test('release ledger and outbox mutations roll back together', () => {
+  const startDatabase = fixture()
+  startDatabase.exec(`CREATE TRIGGER fail_release_enqueue BEFORE INSERT ON outbox
+    WHEN NEW.kind='release' BEGIN SELECT RAISE(ABORT, 'enqueue failed'); END`)
+  expect(() => started(startDatabase)).toThrow('enqueue failed')
+  expect(startDatabase.query('SELECT id FROM release_ledger').all()).toEqual([])
+  expect(startDatabase.query("SELECT id FROM outbox WHERE kind='release'").all()).toEqual([])
+
+  const finishDatabase = fixture()
+  const id = started(finishDatabase)
+  finishDatabase.exec(`CREATE TRIGGER fail_release_update BEFORE UPDATE OF payload ON outbox
+    WHEN OLD.kind='release' BEGIN SELECT RAISE(ABORT, 'update failed'); END`)
+  expect(() =>
+    finishReleaseLedgerEntry(
+      finishDatabase,
+      id,
+      { exitCode: 0, output: '' },
+      'tail',
+      'after',
+      true,
+      null,
+    ),
+  ).toThrow('update failed')
+  expect(
+    finishDatabase
+      .query('SELECT finished_at,exit_code,output_tail FROM release_ledger WHERE id=?')
+      .get(id),
+  ).toEqual({ finished_at: null, exit_code: null, output_tail: '' })
+})
+
+test('release sanitizer withholds warning and rollback reason while local values stay intact', () => {
+  const database = fixture()
+  const secret = 'Authorization: Bearer top-secret-value'
+  const id = database
+    .query<{ id: number }, [string, string, string]>(
+      `INSERT INTO release_ledger
+       (record_id,project,rung,candidate_commit,rollback,rollback_reason,actor,started_at,warning)
+       VALUES ('01990000-0000-7000-8000-000000000077',?,'production','sha',1,?,'operator','2026-10-12T00:00:00.000Z',?)
+       RETURNING id`,
+    )
+    .get(PLATFORM_SLUG, secret, secret)!.id
+  enqueueReleaseRecord(database, id)
+  const payload = JSON.parse(
+    database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload,
+  ) as Record<string, unknown>
+  expect(payload.rollbackReason).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.warning).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.withheldFields).toEqual(['rollback_reason', 'warning'])
+  expect(database.query('SELECT rollback_reason,warning FROM release_ledger').get()).toEqual({
+    rollback_reason: secret,
+    warning: secret,
+  })
+})
+
+test('release backfill mints and enqueues each existing row once', () => {
+  const database = fixture()
+  database
+    .query(
+      `INSERT INTO release_ledger
+       (project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES (?,'production','one',0,'operator','2026-10-12T00:00:00.000Z'),
+              (?,'production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
+    )
+    .run(PLATFORM_SLUG, PLATFORM_SLUG)
+  expect(backfillReleaseRecords(database)).toEqual({ minted: 2, enqueued: 2 })
+  expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 0 })
+  expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
+    count: 2,
+  })
+  database.close()
+})

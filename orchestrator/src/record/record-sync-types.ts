@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import type { SQL } from 'bun'
 import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import type { backfillReleaseRecords } from '../release/release-outbox.ts'
 import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
@@ -10,6 +11,7 @@ import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 
 export type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 export type Payload = Record<string, unknown>
+export type RecordPrincipal = { userId: string; spaceId: string }
 export type BlockedOutboxRow = {
   id: number
   kind: string
@@ -30,6 +32,7 @@ export type RecordSyncResult = {
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
     questions: { minted: number; enqueued: number }
+    releases: ReturnType<typeof backfillReleaseRecords>
   }
 }
 

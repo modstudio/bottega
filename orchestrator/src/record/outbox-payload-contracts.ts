@@ -1,5 +1,7 @@
 // concern: record-sync
 /** The payload contracts for every outbox kind registered by record sync. */
+
+import { RELEASE_RECORD_PAYLOAD_CONTRACT } from '../release/release-outbox.ts'
 import {
   REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
   REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
@@ -26,6 +28,7 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   review_lens: REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
   review_finding: REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
   review_read: REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
+  release: RELEASE_RECORD_PAYLOAD_CONTRACT,
   landing: LANDING_RECORD_PAYLOAD_CONTRACT,
   landing_override: LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
   landing_review_carry: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,

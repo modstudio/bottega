@@ -357,6 +357,7 @@ export function applyLocalProjectRename(
     d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
   d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
   d.query('UPDATE doc_revision SET subject=? WHERE subject=?').run(nextName, currentName)
+  d.query('UPDATE release_ledger SET project=? WHERE project=?').run(nextName, currentName)
 }
 
 export type ProjectReferenceCounts = {
