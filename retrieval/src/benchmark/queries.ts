@@ -238,7 +238,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-file-ceiling',
     'Where is the per-file line ceiling enforced?',
     'scripts/check-file-ceiling.ts',
-    'const decision = decideCeiling({',
+    'return ratchetDecision({',
   ),
   codeQuestion(
     'real-retrieval-command',

@@ -166,7 +166,6 @@ async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
 }
 
 function qualityBaseArgument() {
-  if (!process.env.CI) return '--staged'
   const base = resolveLandingBase(root, 'quality ratchet')
   collectCpu(describeCommand(base.command), base.cpuTime)
   return `--base=${base.commit}`
@@ -276,7 +275,6 @@ if (
     './shared/test-substance/test-substance-php.test.ts',
     './shared/test-substance/self-comparison.test.ts',
     './shared/ratchet.test.ts',
-    './scripts/quality/ceiling-decision.test.ts',
     './scripts/quality/test-timing-decision.test.ts',
     './shared/file-kind.test.ts',
     './shared/git.test.ts',
@@ -297,6 +295,13 @@ const results = await Promise.all(
 )
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...results]
+let qualityMode: string
+try {
+  qualityMode = qualityBaseArgument()
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exit(1)
+}
 const staticChecks: StaticCheck[] = [
   { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
   staticCheck('scripts/check-machine-state.ts'),
@@ -318,7 +323,7 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-gitleaks.ts'),
   staticCheck('scripts/check-write-transaction-site.ts'),
   staticCheck('scripts/check-file-ceiling.ts'),
-  staticCheck('scripts/check-cognitive-ceiling.ts'),
+  staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode]),
   staticCheck('scripts/check-test-fixtures.ts'),
   staticCheck('scripts/check-test-placement.ts'),
   staticCheck('scripts/check-test-spawns.ts'),
@@ -332,13 +337,6 @@ const staticChecks: StaticCheck[] = [
 ]
 for (const check of staticChecks) gateSteps.push(await recordGateStep(check))
 
-let qualityMode: string
-try {
-  qualityMode = qualityBaseArgument()
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
-}
 gateSteps.push(
   await recordGateStep(staticCheck('scripts/quality/check-test-substance.ts', [qualityMode])),
 )

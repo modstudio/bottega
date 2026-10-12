@@ -17,21 +17,13 @@ import {
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
 import { phpTestSubstanceReport } from '../../shared/test-substance/test-substance-php'
+import { openChangeView } from '../change-view'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
 const fixtureDirectory = fileURLToPath(
   new URL('../../shared/test-substance/fixtures/', import.meta.url),
 )
-
-function git(args: string[], allowFailure = false) {
-  const result = Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' })
-  if (result.exitCode !== 0 && !allowFailure) {
-    const detail = result.stderr.toString().trim()
-    throw new Error(`git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
-  }
-  return { exitCode: result.exitCode, stdout: result.stdout.toString() }
-}
 
 function parseMode(argv: string[]): Mode {
   if (argv.length !== 1) throw new Error('usage: check-test-substance.ts (--staged | --base=<ref>)')
@@ -40,25 +32,6 @@ function parseMode(argv: string[]): Mode {
     return { kind: 'base', ref: argv[0]!.slice('--base='.length) }
   }
   throw new Error('usage: check-test-substance.ts (--staged | --base=<ref>)')
-}
-
-function changedTestFiles(mode: Mode) {
-  const args =
-    mode.kind === 'staged'
-      ? ['diff', '--cached', '--name-only', '--diff-filter=ACMR', 'HEAD']
-      : ['diff', '--name-only', '--diff-filter=ACMR', mode.ref, 'HEAD']
-  return git(args).stdout.split('\n').filter(isTestFile)
-}
-
-function contentAt(ref: string, file: string): string | undefined {
-  const exists = git(['ls-tree', '-r', '--name-only', ref, '--', file]).stdout.trim() === file
-  return exists ? git(['show', `${ref}:${file}`]).stdout : undefined
-}
-
-function afterContent(mode: Mode, file: string) {
-  return mode.kind === 'staged'
-    ? git(['show', `:${file}`]).stdout
-    : git(['show', `HEAD:${file}`]).stdout
 }
 
 function guardGenuineCases(runner: 'bun' | 'vitest', findings: TestFinding[], failures: string[]) {
@@ -248,15 +221,17 @@ type FileJudgment = {
 }
 
 async function judgeFile(
-  mode: Mode,
+  view: ReturnType<typeof openChangeView>,
   file: string,
   phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
 ): Promise<FileJudgment> {
-  const beforeContent = contentAt(mode.kind === 'staged' ? 'HEAD' : mode.ref, file)
+  const beforeContent = view.baseContent(file)
+  const afterContent = view.headContent(file)
+  if (afterContent.status === 'absent') throw new Error(`could not read changed test file ${file}`)
   const judgment = await judgeTestSubstance({
     file: resolve(file),
-    before: beforeContent ?? null,
-    after: afterContent(mode, file),
+    before: beforeContent.status === 'present' ? beforeContent.text : null,
+    after: afterContent.text,
     phpPolicyRules,
   })
   const unrecognised = judgment.reason === 'test runner not recognised'
@@ -284,7 +259,7 @@ function gatePhpPolicyRulesFor(files: string[]) {
 }
 
 async function collectFileJudgments(
-  mode: Mode,
+  view: ReturnType<typeof openChangeView>,
   files: string[],
   phpPolicyRules: Parameters<typeof judgeTestSubstance>[0]['phpPolicyRules'],
 ) {
@@ -293,7 +268,7 @@ async function collectFileJudgments(
   const unrecognised: string[] = []
   let browserFiles = 0
   for (const file of files) {
-    const judgment = await judgeFile(mode, file, phpPolicyRules)
+    const judgment = await judgeFile(view, file, phpPolicyRules)
     browserFiles += Number(judgment.browser)
     if (judgment.unrecognised) unrecognised.push(file)
     if (judgment.unchecked) unchecked.push(judgment.unchecked)
@@ -314,10 +289,18 @@ async function main() {
     return
   }
 
-  const files = changedTestFiles(mode)
+  const view = openChangeView({
+    cwd: process.cwd(),
+    base: mode.kind === 'staged' ? 'HEAD' : mode.ref,
+    mode: mode.kind === 'staged' ? 'staged' : 'worktree',
+  })
+  const files = view.entries
+    .filter((entry) => entry.status !== 'D')
+    .map((entry) => entry.path)
+    .filter(isTestFile)
   const phpPolicyRules = gatePhpPolicyRulesFor(files)
   const { browserFiles, introduced, unchecked, unrecognised } = await collectFileJudgments(
-    mode,
+    view,
     files,
     phpPolicyRules,
   )
