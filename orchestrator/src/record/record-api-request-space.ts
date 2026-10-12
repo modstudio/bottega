@@ -49,6 +49,8 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   }
   app.use('/v1/projects', requestedSpace)
   app.use('/v1/projects/*', requestedSpace)
+  app.use('/v1/releases', requestedSpace)
+  app.use('/v1/releases/*', requestedSpace)
   app.use('/v1/docs', requestedSpace)
   app.use('/v1/docs/*', requestedSpace)
   app.use('/v1/subjects', requestedSpace)

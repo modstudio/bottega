@@ -3,29 +3,12 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCursor } from './record-cursor.ts'
-
-export type RecordRelease = {
-  id: string
-  rung: string
-  candidateCommit: string
-  liveCommitBefore: string | null
-  liveCommitAfter: string | null
-  rollback: boolean
-  rollbackReason: string | null
-  actor: string
-  sessionId: string | null
-  startedAt: string
-  finishedAt: string | null
-  exitCode: number | null
-  liveMatchesCandidate: boolean | null
-  warning: string | null
-}
-
-export type LatestRecordRelease = {
-  rung: string
-  lastGood: RecordRelease | null
-  latestAttempt: RecordRelease | null
-}
+import {
+  type LatestRecordRelease,
+  latestRecordReleases,
+  type RecordRelease,
+  RecordReleaseSpaceRequiredError,
+} from './record-release-reading.ts'
 
 type ReleaseListInput = TenantPrincipal & {
   url: string
@@ -61,34 +44,6 @@ function releaseRow(row: Record<string, unknown>): RecordRelease {
   }
 }
 
-function newest(first: RecordRelease, second: RecordRelease): RecordRelease {
-  const byStartedAt = first.startedAt.localeCompare(second.startedAt)
-  if (byStartedAt !== 0) return byStartedAt > 0 ? first : second
-  return first.id.localeCompare(second.id) > 0 ? first : second
-}
-
-export function latestRecordReleases(rows: RecordRelease[]): LatestRecordRelease[] {
-  const releases = new Map<string, { latest: RecordRelease; lastGood: RecordRelease | null }>()
-  for (const row of rows) {
-    const current = releases.get(row.rung)
-    const latest = current ? newest(current.latest, row) : row
-    const successful = row.finishedAt !== null && row.exitCode === 0
-    const lastGood = successful
-      ? current?.lastGood
-        ? newest(current.lastGood, row)
-        : row
-      : (current?.lastGood ?? null)
-    releases.set(row.rung, { latest, lastGood })
-  }
-  return [...releases.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([rung, value]) => ({
-      rung,
-      lastGood: value.lastGood,
-      latestAttempt: value.latest.id === value.lastGood?.id ? null : value.latest,
-    }))
-}
-
 async function tenant<T>(
   input: { url: string } & TenantPrincipal,
   read: (tx: SQL) => Promise<T>,
@@ -105,7 +60,11 @@ async function tenant<T>(
 }
 
 async function projectId(tx: SQL, project: string): Promise<string | null> {
-  const rows = await tx`SELECT id FROM project WHERE name=${project} ORDER BY id LIMIT 1`
+  const rows = await tx`SELECT id FROM project WHERE name=${project} ORDER BY id LIMIT 2`
+  if (rows.length > 1)
+    throw new RecordReleaseSpaceRequiredError(
+      'project exists in more than one record space; select a space',
+    )
   return rows[0] ? String(rows[0].id) : null
 }
 

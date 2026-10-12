@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { identity } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
+import { RecordReleaseSpaceRequiredError } from './record-release-reading.ts'
 
 function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
   const deps = {
@@ -72,6 +73,81 @@ describe('record release API', () => {
     const response = await app.request('/v1/releases?project=unknown')
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: 'project not found' })
+  })
+
+  test('refuses an ambiguous visible project and returns no releases', async () => {
+    let latestRead = false
+    const app = appWith(
+      {
+        ...identity,
+        memberships: [
+          identity.memberships[0]!,
+          {
+            space_id: 'space-b',
+            name: 'Space B',
+            slug: 'space-b',
+            role: 'member',
+            permission: 'read',
+          },
+        ],
+      },
+      {
+        readReleases: async () => {
+          throw new RecordReleaseSpaceRequiredError(
+            'project exists in more than one record space; select a space',
+          )
+        },
+        readLatestReleases: async () => {
+          latestRead = true
+          throw new RecordReleaseSpaceRequiredError(
+            'project exists in more than one record space; select a space',
+          )
+        },
+      },
+    )
+    for (const path of [
+      '/v1/releases?project=project-one',
+      '/v1/releases/latest?project=project-one',
+    ]) {
+      const response = await app.request(path)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: 'project exists in more than one record space; select a space',
+        remedy: 'send x-record-space to select the record space',
+      })
+    }
+    expect(latestRead).toBe(true)
+  })
+
+  test('a requested space resolves releases within that space', async () => {
+    const selected: Array<{ spaceId: string; spaceIds: string[] }> = []
+    const app = appWith(
+      {
+        ...identity,
+        memberships: [
+          identity.memberships[0]!,
+          {
+            space_id: 'space-b',
+            name: 'Space B',
+            slug: 'space-b',
+            role: 'member',
+            permission: 'read',
+          },
+        ],
+      },
+      {
+        readReleases: async (input: { spaceId: string; spaceIds: string[] }) => {
+          selected.push({ spaceId: input.spaceId, spaceIds: input.spaceIds })
+          return [first]
+        },
+      },
+    )
+    const response = await app.request('/v1/releases?project=project-one', {
+      headers: { 'x-record-space': 'space-b' },
+    })
+    expect(response.status).toBe(200)
+    expect((await response.json()) as { items: unknown[] }).toMatchObject({ items: [first] })
+    expect(selected).toEqual([{ spaceId: 'space-b', spaceIds: ['space-b'] }])
   })
 
   test('returns the latest release reading and refuses a missing session', async () => {

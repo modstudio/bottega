@@ -43,6 +43,41 @@ test('project routes refuse an empty requested space before writes', async () =>
   expect(writes).toEqual([])
 })
 
+test('release routes authorize and bind a requested space', async () => {
+  const destinations: Array<string | undefined> = []
+  const app = new Hono<ApiEnvironment>()
+  app.use('/v1/*', async (context, next) => {
+    context.set('identity', {
+      ...identity,
+      memberships: [
+        identity.memberships[0]!,
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'space-b',
+          role: 'member',
+          permission: 'read',
+        },
+      ],
+    })
+    return next()
+  })
+  registerRecordRequestSpace(app)
+  for (const path of ['/v1/releases', '/v1/releases/latest']) {
+    app.get(path, (context) => {
+      destinations.push(context.get('destinationSpaceId'))
+      return context.json({ ok: true })
+    })
+  }
+  for (const path of ['/v1/releases', '/v1/releases/latest']) {
+    const response = await app.request(path, {
+      headers: { 'x-record-space': 'space-b' },
+    })
+    expect(response.status).toBe(200)
+  }
+  expect(destinations).toEqual(['space-b', 'space-b'])
+})
+
 test('read-only members are refused before remaining tenant write routes run', async () => {
   // Production break watched: register request-space authorization only for projects and docs.
   const writes: string[] = []

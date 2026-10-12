@@ -4,7 +4,11 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
-import type { LatestRecordRelease, RecordRelease } from './record-releases.ts'
+import {
+  type LatestRecordRelease,
+  type RecordRelease,
+  RecordReleaseSpaceRequiredError,
+} from './record-release-reading.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
@@ -22,6 +26,14 @@ export type RecordReleaseRouteDeps = {
 
 const project = z.string().trim().min(1)
 const limit = z.coerce.number().int().min(1).max(100).default(20)
+const spaceRequired = (context: Context<Environment>) =>
+  context.json(
+    {
+      error: 'project exists in more than one record space; select a space',
+      remedy: 'send x-record-space to select the record space',
+    },
+    409,
+  )
 
 export function registerRecordReleaseRoutes(
   app: Hono<Environment>,
@@ -44,12 +56,18 @@ export function registerRecordReleaseRoutes(
     } catch {
       return context.json({ error: 'invalid before cursor' }, 400)
     }
-    const items = await deps.readReleases({
-      ...tenant,
-      project: query.data.project,
-      limit: query.data.limit,
-      before,
-    })
+    let items: RecordRelease[] | null
+    try {
+      items = await deps.readReleases({
+        ...tenant,
+        project: query.data.project,
+        limit: query.data.limit,
+        before,
+      })
+    } catch (error) {
+      if (error instanceof RecordReleaseSpaceRequiredError) return spaceRequired(context)
+      throw error
+    }
     if (!items) return context.json({ error: 'project not found' }, 404)
     const hasMore = items.length > query.data.limit
     if (hasMore) items.pop()
@@ -65,7 +83,13 @@ export function registerRecordReleaseRoutes(
     if (!tenant) return ports.noSpace(context)
     const query = z.object({ project }).safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid latest release query' }, 400)
-    const items = await deps.readLatestReleases({ ...tenant, project: query.data.project })
+    let items: LatestRecordRelease[] | null
+    try {
+      items = await deps.readLatestReleases({ ...tenant, project: query.data.project })
+    } catch (error) {
+      if (error instanceof RecordReleaseSpaceRequiredError) return spaceRequired(context)
+      throw error
+    }
     return items ? context.json({ items }) : context.json({ error: 'project not found' }, 404)
   })
 }

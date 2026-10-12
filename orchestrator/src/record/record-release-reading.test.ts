@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { latestRecordReleases, type RecordRelease } from './record-releases.ts'
+import { latestRecordReleases, type RecordRelease } from './record-release-reading.ts'
 
 const release = (
   id: string,

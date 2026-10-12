@@ -42,6 +42,7 @@ export const release = pgTable.withRLS(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    // Serves latest-per-rung reads; per-project history is accepted to sort at release volume.
     index('release_project_rung_started').on(
       table.projectId,
       table.rung,

@@ -144,9 +144,20 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'Keep hosted review record access limited to the hosted run record contract.',
   ),
   boundary(
+    'record-release-reading-boundary',
+    'orchestrator/src/record/record-release-reading.ts',
+    [],
+    'Keep hosted release presentation decisions independent of SQL and HTTP.',
+  ),
+  boundary(
     'record-releases-boundary',
     'orchestrator/src/record/record-releases.ts',
-    ['bun', '../../../shared/record/tenant.ts', './record-cursor.ts'],
+    [
+      'bun',
+      '../../../shared/record/tenant.ts',
+      './record-cursor.ts',
+      './record-release-reading.ts',
+    ],
     'Keep hosted release reads independent of local release execution, HTTP, and stores.',
   ),
   boundary(

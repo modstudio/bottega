@@ -673,7 +673,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-api-releases-boundary',
     'orchestrator/src/record/record-api-releases.ts',
-    ['hono', 'zod', './record-auth.ts', './record-cursor.ts'],
+    ['hono', 'zod', './record-auth.ts', './record-cursor.ts', './record-release-reading.ts'],
     'Keep hosted release routes independent of SQL and local release execution.',
     ['./record-releases.ts'],
   ),
