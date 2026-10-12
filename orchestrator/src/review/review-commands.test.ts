@@ -76,7 +76,7 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
 
     upsertProject({ name: 'tier-fixture', path: repo, settings: { trunk: 'main' } })
     const writerHead = git(repo, 'rev-parse', 'DEV-992-fixture')
-    // Deterministic fast-import fixture identity for origin/main..DEV-992-fixture.
+    // Deterministic fast-import identity for the fixture's trunk-to-writer range.
     // The command measures the live range, so this assertion fails if they diverge.
     const currentIdentity = {
       patchId: '344d5a66fb0f57fb36bc50cb2108a9046933150d',
