@@ -493,11 +493,19 @@ function recordContinuationTreeSource(
   appendRunEvent(childId, { ts: nowIso(), type: 'text', text })
 }
 
+function producedContinuationMessage(
+  message: string | undefined,
+  produceMessage: (() => string | undefined) | undefined,
+): string | undefined {
+  return produceMessage ? produceMessage() : message
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 export async function continueRun(
   id: number,
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
+  produceMessage?: () => string | undefined,
 ): Promise<{ childId: number; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
@@ -556,6 +564,7 @@ export async function continueRun(
   // prevent.
   if (open.n)
     throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
+  const continuationMessage = producedContinuationMessage(message, produceMessage)
   const { latest, nextTurn } = continuationTurn(
     id,
     db()
@@ -646,11 +655,11 @@ export async function continueRun(
       checkpointContext,
       originalSpec: readFileSync(rootPrompt.prompt_path, 'utf8'),
       continuationInstructions,
-      message,
+      message: continuationMessage,
     })
   } else {
     prompt =
-      message ??
+      continuationMessage ??
       'Continue from where you stopped and finish the spec. If you reached a ' +
         'decision that is not yours, stop and ask as before.'
   }
@@ -690,7 +699,7 @@ export async function continueRun(
     },
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)
-  auditRunMutation(authority, 'continue', message ?? null, db(), childId)
+  auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)
   return { childId, job: row.job }
 }
 

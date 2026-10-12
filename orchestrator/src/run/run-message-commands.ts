@@ -27,6 +27,12 @@ import { continueRun, type RunControlPresentation, reportContinuedRun } from './
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: number): void }
+export type ContinueCommandDependencies = {
+  continueRun: typeof continueRun
+  reportContinuedRun: typeof reportContinuedRun
+}
+
+const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
 
 const duration = (ms: number | null | undefined): string => {
   if (ms == null) return '—'
@@ -161,8 +167,11 @@ export async function answerCommand(
 export async function continueCommand(
   id: number,
   argv: string[],
+  includeFindings: boolean,
   flags: Flags,
   presentation: Presentation,
+  renderFindings: (runId: number, message: string | undefined) => string,
+  dependencies: ContinueCommandDependencies = continueCommandDependencies,
 ): Promise<void> {
   const chain = db().query('SELECT id, agent, parent_run_id FROM run WHERE id = ?').get(id) as {
     id: number
@@ -170,9 +179,15 @@ export async function continueCommand(
     parent_run_id: number | null
   } | null
   const sources = parseWorkerMessageArgs(argv, {
-    booleans: ['--follow', '--detach', '--quiet'],
-    usage: 'orch continue <id> ["<what next>"] [--file PATH] [--follow]',
+    booleans: ['--follow', '--detach', '--quiet', '--findings'],
+    usage: 'orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
   })
+  if (includeFindings && sources.positionals.includes('--findings')) {
+    throw new Error(
+      '--findings must appear before the message\n' +
+        'working form: orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
+    )
+  }
   const message = await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',
     exclusive: 'pass the message either positionally or with --file, not both',
@@ -186,6 +201,16 @@ export async function continueCommand(
       CONTINUE_WORKING_FORMS,
       chain ? argvResumeLimit(chain.agent) : undefined,
     )
-  const resumed = await continueRun(id, message, argvResumeLimit)
-  await reportContinuedRun(resumed.childId, resumed.job, flags, controlPresentation(presentation))
+  const resumed = await dependencies.continueRun(
+    id,
+    message,
+    argvResumeLimit,
+    includeFindings ? () => renderFindings(id, message) : undefined,
+  )
+  await dependencies.reportContinuedRun(
+    resumed.childId,
+    resumed.job,
+    flags,
+    controlPresentation(presentation),
+  )
 }

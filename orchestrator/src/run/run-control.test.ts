@@ -181,6 +181,22 @@ describe('run continuation', () => {
     ).toEqual(before)
   })
 
+  test('an open question refuses before a continuation message callback is called', async () => {
+    const root = insert('asking')
+    db()
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .run(root, new Date().toISOString(), 'Which correction should be applied?')
+    let calls = 0
+
+    await expect(
+      continueRun(root, 'architect message', limit, () => {
+        calls++
+        return 'rendered findings'
+      }),
+    ).rejects.toThrow(`run ${root} is waiting on 1 question(s): orch answer ${root} ...`)
+    expect(calls).toBe(0)
+  })
+
   test('continue --file refuses when a just-below-limit body plus the reminder exceeds argv', async () => {
     const root = insert('ok')
     const longSpec = 's'.repeat(600)

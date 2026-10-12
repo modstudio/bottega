@@ -45,6 +45,7 @@ import {
   serveCommand,
   stateCommand,
 } from '../record/record-commands.ts'
+import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -79,7 +80,12 @@ const runFlags = (options: OptionValues) => ({
   quiet: Boolean(options.quiet),
 })
 
-export function register(program: Command): void {
+type LogicDependencies = {
+  continuationFindingsForRun?: typeof continuationFindingsForRun
+  continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
+}
+
+export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('check [kind]')
     .option('--enabled')
@@ -368,8 +374,22 @@ export function register(program: Command): void {
     .option('--follow')
     .option('--detach')
     .option('--quiet')
+    .option('--findings')
     .action((id, _message, options, command) =>
-      continueCommand(Number(id), rawArgv(command).slice(2), runFlags(options), presentation),
+      continueCommand(
+        Number(id),
+        rawArgv(command).slice(2),
+        Boolean(options.findings),
+        runFlags(options),
+        presentation,
+        (runId, message) =>
+          (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
+            db(),
+            runId,
+            message,
+          ),
+        dependencies.continueCommandDependencies,
+      ),
     )
   const doVerb = program.command('do <job> [prompt...]')
   for (const option of ORCH_DO_OPTIONS) {
