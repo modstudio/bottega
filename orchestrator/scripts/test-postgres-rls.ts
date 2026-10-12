@@ -119,11 +119,18 @@ try {
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE board_shared_space_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE board_shared_space_invalid_migration OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'board_shared_space_migration')
+  postgres(
+    `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`,
+    'board_shared_space_invalid_migration',
+  )
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -134,6 +141,23 @@ try {
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
   const publicRoleMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/public_role_migration`
   const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
+  const boardSharedSpaceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_migration`
+  const boardSharedSpaceInvalidMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_invalid_migration`
+
+  const boardSharedSpaceMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-board-shared-space.test.ts',
+    ],
+    {
+      ORCH_TEST_BOARD_SHARED_SPACE_MIGRATION_URL: boardSharedSpaceMigrationUrl,
+      ORCH_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
+    },
+  )
+  if (boardSharedSpaceMigration !== 0) process.exit(boardSharedSpaceMigration)
 
   const publicRoleMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],
@@ -234,6 +258,8 @@ try {
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
         DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};

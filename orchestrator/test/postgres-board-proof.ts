@@ -488,6 +488,54 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
     ).toBe(IDS.userA)
   })
 
+  test('a reply cannot name another reply as its thread root', () => {
+    const nested = actor(
+      input,
+      IDS.userB,
+      [IDS.spaceA, IDS.spaceC],
+      `INSERT INTO board_message
+       (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+        scope_project_ids,recipient_user_ids,shared_space_reach)
+       VALUES ('02990000-0000-7000-8000-000000000051','${IDS.userB}','reply',
+        '${IDS.sharedReply}','nested reply',false,now(),ARRAY[]::uuid[],ARRAY[]::uuid[],true);`,
+    )
+    expect(nested.code).not.toBe(0)
+    expect(nested.stderr).toContain('thread_root_id must name a row that is not a reply')
+  })
+
+  test('board message thread identity and authorship cannot change after posting', () => {
+    const cases = [
+      {
+        statement: `UPDATE board_message SET kind='notice' WHERE id='${IDS.sharedReply}';`,
+        column: 'kind',
+        userId: IDS.userB,
+      },
+      {
+        statement: `UPDATE board_message SET kind='reply', thread_root_id='${IDS.sharedSpace}'
+          WHERE id='${IDS.authorOnly}';`,
+        column: 'kind',
+        userId: IDS.userA,
+      },
+      {
+        statement: `UPDATE board_message SET thread_root_id='${IDS.scopedA}'
+          WHERE id='${IDS.sharedReply}';`,
+        column: 'thread_root_id',
+        userId: IDS.userB,
+      },
+      {
+        statement: `UPDATE board_message SET author_user_id='${IDS.userB}'
+          WHERE id='${IDS.sharedSpace}';`,
+        column: 'author_user_id',
+        userId: IDS.userA,
+      },
+    ]
+    for (const item of cases) {
+      const changed = actor(input, item.userId, [IDS.spaceA, IDS.spaceB], item.statement)
+      expect(changed.code).not.toBe(0)
+      expect(changed.stderr).toContain(`board message ${item.column} cannot change after posting`)
+    }
+  })
+
   test('a board message thread-root author anchor cannot change after posting', () => {
     const changed = actor(
       input,
@@ -497,7 +545,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
        WHERE id='${IDS.sharedSpace}';`,
     )
     expect(changed.code).not.toBe(0)
-    expect(changed.stderr).toContain('thread-root author cannot change')
+    expect(changed.stderr).toContain('thread_root_author_user_id cannot change')
   })
 
   test('shared-space reach cannot change after posting', () => {
@@ -508,7 +556,7 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
       `UPDATE board_message SET shared_space_reach=false WHERE id='${IDS.sharedSpace}';`,
     )
     expect(changed.code).not.toBe(0)
-    expect(changed.stderr).toContain('shared-space reach cannot change')
+    expect(changed.stderr).toContain('shared_space_reach cannot change')
   })
 
   test('receipt visibility and writes are limited to readers and message authors', () => {
