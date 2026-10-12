@@ -7,6 +7,7 @@ import {
   releaseCapturedText,
   releaseCommandEnvironment,
   releaseLockDecision,
+  releaseProcessEnvironment,
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
@@ -17,6 +18,24 @@ test('identifies the release to its deploy command', () => {
     ORCH_RELEASE_PROJECT: 'project-name',
     ORCH_RELEASE_RUNG: 'hosted-api',
     ORCH_RELEASE_COMMIT: 'abc123',
+  })
+})
+
+test('release variables reach only the deploy environment', () => {
+  const stale = {
+    ORCH_RELEASE_PROJECT: 'stale-project',
+    ORCH_RELEASE_RUNG: 'stale-rung',
+    ORCH_RELEASE_COMMIT: 'stale-commit',
+    UNRELATED: 'kept',
+  }
+  expect(releaseProcessEnvironment(stale)).toEqual({ UNRELATED: 'kept' })
+  expect(
+    releaseProcessEnvironment(stale, releaseCommandEnvironment('project-name', 'rung', 'commit')),
+  ).toEqual({
+    UNRELATED: 'kept',
+    ORCH_RELEASE_PROJECT: 'project-name',
+    ORCH_RELEASE_RUNG: 'rung',
+    ORCH_RELEASE_COMMIT: 'commit',
   })
 })
 

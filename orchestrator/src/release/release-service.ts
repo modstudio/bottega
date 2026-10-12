@@ -23,6 +23,7 @@ import {
   releaseCapturedText,
   releaseCommandEnvironment,
   releaseLockDecision,
+  releaseProcessEnvironment,
   releaseTagVersionDecision,
   rollbackReasonDecision,
   selectReleaseRung,
@@ -82,7 +83,7 @@ function run(
 ): CommandResult {
   const result = Bun.spawnSync(argv, {
     cwd,
-    env: { ...targetGitEnvironment(cwd), ...extraEnvironment },
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
     stdout: 'pipe',
     stderr: 'pipe',
   })

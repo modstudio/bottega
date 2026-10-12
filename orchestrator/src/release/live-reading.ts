@@ -3,7 +3,7 @@
 
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { releaseCapturedText } from './release-decision.ts'
+import { releaseCapturedText, releaseProcessEnvironment } from './release-decision.ts'
 
 export const RELEASE_LIVE_READING_TIMEOUT_MS = 15_000
 
@@ -58,7 +58,7 @@ function parseLiveReading(capture: LiveReadingCapture): LiveReading {
 const runLiveCommand: LiveReadingRunner = (command, cwd, timeoutMs) => {
   const result = Bun.spawnSync(['/bin/sh', '-lc', command], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd)),
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: timeoutMs,
