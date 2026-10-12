@@ -1,0 +1,1 @@
+CREATE INDEX "release_project_rung_started" ON "release" ("project_id","rung","started_at" DESC NULLS LAST,"id" DESC NULLS LAST);

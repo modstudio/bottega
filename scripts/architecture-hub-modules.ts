@@ -1,5 +1,9 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/hosted-releases.ts',
+    allowed: ['./record-client.ts'],
+  },
+  {
     file: 'hub/src/change-api.ts',
     allowed: [
       '../../shared/record-space-request.ts',

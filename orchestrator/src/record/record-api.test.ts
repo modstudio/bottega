@@ -33,6 +33,8 @@ function appWith(session: typeof identity | null, overrides: Record<string, unkn
     readRun: async () => null,
     readReviews: async () => [],
     readReview: async () => null,
+    readReleases: async () => [],
+    readLatestReleases: async () => [],
     readProjects: async () => [],
     upsertProject: async () => ({ name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
