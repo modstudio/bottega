@@ -194,7 +194,7 @@ export function reviewBudgetReport(database: Database, since?: string): ReviewBu
   }
 }
 
-export function renderReviewBudgetHuman(report: ReviewBudgetReport): string {
+function renderReviewBudgetHuman(report: ReviewBudgetReport): string {
   const lines = ['PROJECT  BRANCH  TIER  ROUNDS  FIRST REVIEW  CEILING CROSSED']
   if (!report.branches.length) lines.push('(none)')
   for (const row of report.branches) {
