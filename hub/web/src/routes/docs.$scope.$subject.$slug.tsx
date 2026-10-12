@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Pencil, Save, Trash2, X } from 'lucide-react'
+import { Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
 import { isHostedMode } from '@/lib/hub-mode'
@@ -36,7 +36,6 @@ function subjectFromParam(param: string): string | null {
 function DocPage() {
   const navigate = useNavigate()
   const { scope, subject: subjectParam, slug } = Route.useParams()
-  const { edit } = Route.useSearch()
   const subject = subjectFromParam(subjectParam)
   const scoped = isScope(scope)
 
@@ -48,16 +47,11 @@ function DocPage() {
     }),
     enabled: scoped,
   })
-  const [editing, setEditing] = useState(Boolean(edit))
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [delivery, setDelivery] = useState<'inject' | 'demand'>('inject')
   const [reason, setReason] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-
-  useEffect(() => {
-    if (edit) setEditing(true)
-  }, [edit])
 
   useEffect(() => {
     if (doc.data) {
@@ -71,7 +65,6 @@ function DocPage() {
     ...trpc.doc.set.mutationOptions(),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
-      setEditing(false)
       setReason('')
       setConfirmingDelete(false)
       await navigate({
@@ -97,7 +90,6 @@ function DocPage() {
       setBody(doc.data.body)
       setDelivery(doc.data.delivery)
     }
-    setEditing(false)
     setReason('')
     setConfirmingDelete(false)
     void navigate({
@@ -148,68 +140,43 @@ function DocPage() {
       open
       size="document"
       onClose={closeSheet}
-      title={
-        editing ? (
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} size="title" />
-        ) : (
-          (doc.data?.title ?? slug)
-        )
-      }
+      title={<Input value={title} onChange={(e) => setTitle(e.target.value)} size="title" />}
       subtitle={`${scope} \u00b7 ${subject ?? slug}`}
       actions={
         <div className="flex shrink-0 gap-2">
-          {editing || confirmingDelete ? (
-            <Input
-              aria-label="Reason"
-              placeholder="Reason (required)"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-52"
-            />
-          ) : null}
-          {editing ? (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() =>
-                  save.mutate({
-                    scope,
-                    subject,
-                    slug,
-                    title,
-                    body,
-                    delivery,
-                    reason,
-                    expectedRevision: doc.data?.revision ?? undefined,
-                  })
-                }
-                disabled={save.isPending || !title || !reason.trim()}
-              >
-                <Save size={14} />
-                Save
-              </Button>
-              <Button size="sm" variant="secondary" onClick={cancelEdit}>
-                <X size={14} />
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setConfirmingDelete(false)
-                setReason('')
-                setEditing(true)
-              }}
-              disabled={!doc.data}
-            >
-              <Pencil size={14} />
-              Edit
-            </Button>
-          )}
+          <Input
+            aria-label="Reason"
+            placeholder="Reason (required)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-52"
+          />
           <Button
+            variant="primary"
+            size="sm"
+            onClick={() =>
+              save.mutate({
+                scope,
+                subject,
+                slug,
+                title,
+                body,
+                delivery,
+                reason,
+                expectedRevision: doc.data?.revision ?? undefined,
+              })
+            }
+            disabled={save.isPending || !title || !reason.trim()}
+          >
+            <Save size={14} />
+            Save
+          </Button>
+          <Button size="sm" variant="secondary" onClick={cancelEdit}>
+            <X size={14} />
+            Cancel
+          </Button>
+          <Button
+            className="ml-2"
             size="sm"
             variant="danger"
             onClick={onDelete}
@@ -238,7 +205,7 @@ function DocPage() {
         </p>
       ) : null}
 
-      {doc.data && editing ? (
+      {doc.data ? (
         <div>
           <div className="mb-3 grid max-w-xs gap-1 text-sm">
             <span className="text-text-muted">Delivery</span>
@@ -264,12 +231,6 @@ function DocPage() {
               <Markdown content={body} />
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {doc.data && !editing ? (
-        <div className="max-w-[72ch]">
-          <Markdown content={doc.data.body} />
         </div>
       ) : null}
     </Sheet>

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, History } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { relativeTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
@@ -12,14 +13,6 @@ import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 type FactsTab = 'contents' | 'details'
-
-export function revisionRelativeTime(value: string, now = Date.now()): string {
-  const elapsed = Math.max(0, now - new Date(value).getTime())
-  if (elapsed < 90_000) return 'now'
-  if (elapsed < 3_600_000) return `${Math.round(elapsed / 60_000)}m ago`
-  if (elapsed < 86_400_000) return `${Math.round(elapsed / 3_600_000)}h ago`
-  return `${Math.round(elapsed / 86_400_000)}d ago`
-}
 
 function exactTime(value: string): string {
   const date = new Date(value)
@@ -72,7 +65,7 @@ function DocHistory({ doc }: { doc: DocsDoc }) {
         <History size={14} />
         <span>History</span>
         <span className="ml-auto tabular-nums text-text-muted">
-          {history.isPending ? '…' : revisions.length}
+          {history.isPending ? '…' : history.isSuccess ? revisions.length : null}
         </span>
         <ChevronDown
           size={14}
@@ -95,7 +88,7 @@ function DocHistory({ doc }: { doc: DocsDoc }) {
               title={`${exactTime(revision.at)} — ${revision.reason}`}
               className="border-border-default border-t py-2 text-sm text-text-muted"
             >
-              {revisionRelativeTime(revision.at)} · {revision.author}
+              {relativeTime(revision.at)} · {revision.author}
             </div>
           ))}
         </div>
