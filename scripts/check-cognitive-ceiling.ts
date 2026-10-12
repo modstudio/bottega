@@ -1,27 +1,37 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { relative } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import ts from 'typescript'
+import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
+import { openChangeView } from './change-view'
 import { measuredSourceFiles } from './check-file-ceiling'
-import { decideCeiling } from './quality/ceiling-decision'
-
-type FrozenFunction = { file: string; function: string; line: number; score: number }
-type MeasuredFunction = FrozenFunction & { key: string }
-type LintViolation = { file: string; line: number; ruleId: string | null; message: string }
-type Measurement = MeasuredFunction | LintViolation
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const STATE_FILE = `${ROOT}/scripts/quality/cognitive-ceiling.json`
-const STATE_LABEL = 'scripts/quality/cognitive-ceiling.json'
 const CEILING = 15
+const COMPLEXITY_RULE = 'sonarjs/cognitive-complexity'
+
+type LintMessage = {
+  ruleId: string | null
+  severity: number
+  line?: number
+  column?: number
+  message: string
+  fatal?: boolean
+}
+
+type LintResult = {
+  filePath: string
+  messages: LintMessage[]
+  fatalErrorCount?: number
+}
 
 type Reporter = Pick<Console, 'error' | 'log'>
-type CognitiveCeilingOptions = {
-  measure?: () => Promise<Measurement[]>
-  reporter?: Reporter
-  stateFile?: string
+type CognitiveChange = {
+  base: Finding[]
+  head: Finding[]
+  facts: ChangeFacts
+  baseFailures?: Set<string>
 }
 
 function functionBaseName(node: ts.FunctionLikeDeclaration): string {
@@ -30,8 +40,9 @@ function functionBaseName(node: ts.FunctionLikeDeclaration): string {
   while (parent && (ts.isParenthesizedExpression(parent) || ts.isAsExpression(parent))) {
     parent = parent.parent
   }
-  if (parent && ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name))
+  if (parent && ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
     return parent.name.text
+  }
   if (parent && (ts.isPropertyAssignment(parent) || ts.isPropertyDeclaration(parent))) {
     return parent.name.getText()
   }
@@ -64,132 +75,184 @@ function namedFunctions(source: ts.SourceFile) {
   })
 }
 
-function functionAt(file: string, line: number, column: number): string {
-  const content = readFileSync(file, 'utf8')
-  const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-  const position = source.getPositionOfLineAndCharacter(line - 1, column - 1)
-  const containing = namedFunctions(source).filter(
-    ({ node }) => node.getStart(source) <= position && position <= node.getEnd(),
+function complexityScore(message: string) {
+  const score = Number(message.match(/from (\d+) to/)?.[1])
+  if (!Number.isFinite(score)) throw new Error(`could not read complexity: ${message}`)
+  return score
+}
+
+export function complexityFindings(file: string, text: string, messages: LintMessage[]): Finding[] {
+  const diagnostics = messages.filter(
+    (message) =>
+      message.ruleId === COMPLEXITY_RULE &&
+      message.line !== undefined &&
+      message.column !== undefined,
   )
-  return containing.at(-1)?.name ?? '<anonymous>'
-}
-
-function readState(stateFile: string): FrozenFunction[] {
-  if (!existsSync(stateFile)) return []
-  return JSON.parse(readFileSync(stateFile, 'utf8')) as FrozenFunction[]
-}
-
-function keyOf(entry: Pick<FrozenFunction, 'file' | 'function'>) {
-  return `${entry.file}\0${entry.function}`
-}
-
-function writeState(stateFile: string, entries: FrozenFunction[]) {
-  entries.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
-  writeFileSync(stateFile, `${JSON.stringify(entries, null, 2)}\n`)
-}
-
-async function measureCognitiveComplexity(): Promise<Measurement[]> {
-  const results = await new ESLint({ cwd: ROOT }).lintFiles(
-    measuredSourceFiles().map(({ absolute }) => absolute),
-  )
-  return results.flatMap((result) =>
-    result.messages.flatMap((message) => {
-      const file = relative(ROOT, result.filePath)
-      if (message.severity === 2 && message.ruleId !== 'sonarjs/cognitive-complexity') {
-        return [{ file, line: message.line, ruleId: message.ruleId, message: message.message }]
-      }
-      if (message.ruleId !== 'sonarjs/cognitive-complexity' || !message.line || !message.column)
-        return []
-      const score = Number(message.message.match(/from (\d+) to/)?.[1])
-      if (!Number.isFinite(score)) throw new Error(`could not read complexity: ${message.message}`)
-      const functionName = functionAt(result.filePath, message.line, message.column)
-      const entry = { file, function: functionName, line: message.line, score }
-      return [{ ...entry, key: keyOf(entry) }]
-    }),
-  )
-}
-
-function assessMeasurement(
-  current: MeasuredFunction,
-  prior: FrozenFunction | undefined,
-  next: FrozenFunction[],
-) {
-  const decision = decideCeiling({
-    key: current.key,
-    value: current.score,
-    frozen: prior?.score,
-    ceiling: CEILING,
+  if (!diagnostics.length) return []
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const functions = namedFunctions(source)
+  return diagnostics.map((message) => {
+    const position = source.getPositionOfLineAndCharacter(message.line! - 1, message.column! - 1)
+    const symbol = functions
+      .filter(({ node }) => node.getStart(source) <= position && position <= node.getEnd())
+      .at(-1)?.name
+    const score = complexityScore(message.message)
+    return {
+      file,
+      line: message.line!,
+      rule: 'cognitive-complexity',
+      message: `complexity ${score}, limit ${CEILING}`,
+      symbol: symbol ?? '<anonymous>',
+      measure: score,
+    }
   })
-  if (decision === 'lower') {
-    Object.assign(next.find((entry) => keyOf(entry) === current.key)!, current)
-    return {
-      tightening:
-        `${STATE_LABEL}: ${current.file}:${current.line} ${current.function} ` +
-        `tightened ${prior?.score} -> ${current.score}`,
-    }
-  }
-  if (decision === 'remove') {
-    const index = next.findIndex((entry) => keyOf(entry) === current.key)
-    if (index >= 0) next.splice(index, 1)
-    return {
-      tightening:
-        `${STATE_LABEL}: ${current.file}:${current.line} ${current.function} ` +
-        `tightened ${prior?.score} -> ${current.score}`,
-    }
-  }
-  if (decision === 'fail') {
-    return {
-      violation:
-        `${current.file}:${current.line} ${current.function}: complexity ${current.score}, ` +
-        `frozen at ${prior?.score ?? CEILING}; extract a decision (canon 10-code: Respect the complexity ceiling)`,
-    }
-  }
-  return {}
 }
 
-export async function checkCognitiveCeiling(options: CognitiveCeilingOptions = {}) {
-  const stateFile = options.stateFile ?? STATE_FILE
-  const reporter = options.reporter ?? console
-  const frozen = readState(stateFile)
-  const frozenByKey = new Map(frozen.map((entry) => [keyOf(entry), entry]))
-  const measurement = await (options.measure ?? measureCognitiveComplexity)()
-  const measured = measurement.filter((entry): entry is MeasuredFunction => 'key' in entry)
-  const lintViolations = measurement.filter((entry): entry is LintViolation => 'ruleId' in entry)
-  const measuredKeys = new Set(measured.map(({ key }) => key))
-  const next = frozen
-    .filter((entry) => measuredKeys.has(keyOf(entry)))
-    .map((entry) => ({ ...entry }))
-  const violations = lintViolations.map(
-    ({ file, line, ruleId, message }) => `${file}:${line} ${ruleId ?? '<unknown>'} ${message}`,
+function onAddedLine(finding: Finding, facts: ChangeFacts) {
+  return (facts.addedLines.get(finding.file) ?? []).some(
+    ({ start, end }) => finding.line >= start && finding.line <= end,
   )
-  const tightenings: string[] = []
-  for (const current of measured) {
-    const prior = frozenByKey.get(current.key)
-    const result = assessMeasurement(current, prior, next)
-    if (result.tightening) tightenings.push(result.tightening)
-    if (result.violation) violations.push(result.violation)
+}
+
+export function cognitiveComplexityDecision({
+  base,
+  head,
+  facts,
+  baseFailures = new Set(),
+}: CognitiveChange) {
+  const comparableBase = base.filter((finding) => !baseFailures.has(finding.file))
+  const comparableHead = head.filter((finding) => !baseFailures.has(finding.file))
+  const refused = ratchetDecision({ base: comparableBase, head: comparableHead, change: facts })
+  return [
+    ...refused,
+    ...head
+      .filter((finding) => baseFailures.has(finding.file) && onAddedLine(finding, facts))
+      .map((finding) => ({ ...finding, reason: 'added-line' as const })),
+  ]
+}
+
+function isMeasuredSourcePath(path: string) {
+  return measuredSourceFiles().some((file) => file.path === path)
+}
+
+function lintFailed(result: LintResult) {
+  return Boolean(result.fatalErrorCount) || result.messages.some((message) => message.fatal)
+}
+
+async function lintText(eslint: ESLint, path: string, text: string) {
+  const results = (await eslint.lintText(text, { filePath: resolve(ROOT, path) })) as LintResult[]
+  const result = results[0]
+  if (!result) throw new Error(`ESLint returned no result for ${path}`)
+  return result
+}
+
+async function measureChangedFile(
+  eslint: ESLint,
+  view: ReturnType<typeof openChangeView>,
+  entry: ReturnType<typeof openChangeView>['entries'][number],
+  reporter: Reporter,
+) {
+  const headContent = view.headContent(entry.path)
+  if (headContent.status === 'absent') {
+    throw new Error(`check-cognitive-ceiling could not read HEAD:${entry.path}`)
   }
-  for (const prior of frozen) {
-    if (!measuredKeys.has(keyOf(prior))) {
-      tightenings.push(
-        `${STATE_LABEL}: ${prior.file}:${prior.line} ${prior.function} ` +
-          `tightened ${prior.score} -> removed`,
-      )
+  const headResult = await lintText(eslint, entry.path, headContent.text)
+  if (lintFailed(headResult)) {
+    throw new Error(`check-cognitive-ceiling could not lint head content for ${entry.path}`)
+  }
+  const head = complexityFindings(entry.path, headContent.text, headResult.messages)
+  const baseContent = view.baseContent(entry.path)
+  if (baseContent.status === 'absent') return { base: [], head, baseFailed: false }
+  const basePath = view.facts.renames.get(entry.path) ?? entry.path
+  try {
+    const baseResult = await lintText(eslint, basePath, baseContent.text)
+    if (lintFailed(baseResult)) throw new Error('ESLint reported a fatal diagnostic')
+    return {
+      base: complexityFindings(basePath, baseContent.text, baseResult.messages),
+      head,
+      baseFailed: false,
+    }
+  } catch (error) {
+    reporter.error(
+      `${entry.path}: base content could not be linted: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return { base: [], head, baseFailed: true }
+  }
+}
+
+async function changedMeasurements(eslint: ESLint, base: string, reporter: Reporter) {
+  const view = openChangeView({ cwd: ROOT, base, mode: 'commit' })
+  const before: Finding[] = []
+  const after: Finding[] = []
+  const baseFailures = new Set<string>()
+
+  for (const entry of view.entries) {
+    if (entry.status === 'D' || !isMeasuredSourcePath(entry.path)) continue
+    const measurement = await measureChangedFile(eslint, view, entry, reporter)
+    before.push(...measurement.base)
+    after.push(...measurement.head)
+    if (measurement.baseFailed) baseFailures.add(entry.path)
+  }
+  return { base: before, head: after, facts: view.facts, baseFailures }
+}
+
+async function wholeTreeMeasurements(eslint: ESLint) {
+  const results = (await eslint.lintFiles(
+    measuredSourceFiles().map(({ absolute }) => absolute),
+  )) as LintResult[]
+  const violations: string[] = []
+  let remaining = 0
+  for (const result of results) {
+    const file = relative(ROOT, result.filePath)
+    for (const message of result.messages) {
+      if (message.ruleId === COMPLEXITY_RULE) {
+        remaining += 1
+      } else if (message.severity === 2) {
+        violations.push(
+          `${file}:${message.line ?? 1} ${message.ruleId ?? '<unknown>'} ${message.message}`,
+        )
+      }
     }
   }
-  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(stateFile, next)
-  for (const tightening of tightenings) reporter.error(tightening)
+  return { remaining, violations }
+}
+
+function violationLine(finding: ReturnType<typeof cognitiveComplexityDecision>[number]) {
+  const previous = finding.reason === 'grew' ? `, previous score ${finding.previousMeasure}` : ''
+  return (
+    `${finding.file}:${finding.line} ${finding.symbol}: complexity ${finding.measure}, ` +
+    `limit ${CEILING}${previous}; extract a decision ` +
+    '(canon 10-code: Respect the complexity ceiling)'
+  )
+}
+
+export async function checkCognitiveCeiling(base: string, reporter: Reporter = console) {
+  const eslint = new ESLint({ cwd: ROOT })
+  const wholeTree = await wholeTreeMeasurements(eslint)
+  reporter.log(`cognitive complexity: ${wholeTree.remaining} functions over ${CEILING} remain`)
+  const change = await changedMeasurements(eslint, base, reporter)
+  const violations = [
+    ...wholeTree.violations,
+    ...cognitiveComplexityDecision(change).map(violationLine),
+  ]
   for (const violation of violations) reporter.error(violation)
-  if (tightenings.length) {
-    reporter.error(
-      `baseline tightened; commit ${STATE_LABEL} and re-run (canon 10-code: Respect the complexity ceiling)`,
-    )
-  }
-  if (violations.length || tightenings.length) {
-    return false
-  }
-  reporter.log(`check-cognitive-ceiling: ok (${measured.length} frozen functions)`)
+  if (violations.length) return false
+  reporter.log('check-cognitive-ceiling: ok')
   return true
 }
 
-if (import.meta.main && !(await checkCognitiveCeiling())) process.exit(1)
+function parseBase(argv: string[]) {
+  if (argv.length === 1 && argv[0]!.startsWith('--base=') && argv[0]!.length > 7) {
+    return argv[0]!.slice(7)
+  }
+  throw new Error('usage: check-cognitive-ceiling.ts --base=<ref>')
+}
+
+if (import.meta.main) {
+  try {
+    if (!(await checkCognitiveCeiling(parseBase(Bun.argv.slice(2))))) process.exit(1)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+}
