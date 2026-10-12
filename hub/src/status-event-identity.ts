@@ -1,4 +1,4 @@
-export type StatusEventTaskIdentity = {
+type StatusEventTaskIdentity = {
   id: string | null
   key: string
 }

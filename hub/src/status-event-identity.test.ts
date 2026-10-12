@@ -27,18 +27,14 @@ test('known equal task ids are the same event even when the key snapshot differs
 })
 
 test('the key is used only when a task id is unknown on one side', () => {
-  expect(
-    isSameStatusEvent(base, { ...base, task: { id: 'task-1', key: 'DEV-1' } }),
-  ).toBe(true)
+  expect(isSameStatusEvent(base, { ...base, task: { id: 'task-1', key: 'DEV-1' } })).toBe(true)
   expect(
     isSameStatusEvent(
       { ...base, task: { id: 'task-1', key: 'DEV-1' } },
       { ...base, task: { id: 'task-2', key: 'DEV-1' } },
     ),
   ).toBe(false)
-  expect(
-    isSameStatusEvent(base, { ...base, task: { id: null, key: 'DEV-2' } }),
-  ).toBe(false)
+  expect(isSameStatusEvent(base, { ...base, task: { id: null, key: 'DEV-2' } })).toBe(false)
 })
 
 test('a different task, new status, or instant is another event', () => {

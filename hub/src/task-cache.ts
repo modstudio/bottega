@@ -151,6 +151,14 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     .run(row.number + 1, taskRecordId)
 }
 
+type StatusEventMatchRow = {
+  record_id: string
+  task_record_id: string | null
+  task_key: string
+  to_status: string
+  at: string
+}
+
 function matchingStatusEvent(
   conn: Database,
   row: HostedChanges['statusEvents'][number],
@@ -158,31 +166,13 @@ function matchingStatusEvent(
 ): { record_id: string } | null {
   const candidates = taskRecordId
     ? conn
-        .query<
-          {
-            record_id: string
-            task_record_id: string | null
-            task_key: string
-            to_status: string
-            at: string
-          },
-          [string, string, string]
-        >(
+        .query<StatusEventMatchRow, [string, string, string]>(
           `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
            WHERE record_id<>? AND (task_record_id=? OR (task_record_id IS NULL AND task_key=?))`,
         )
         .all(row.id, taskRecordId, row.task_key)
     : conn
-        .query<
-          {
-            record_id: string
-            task_record_id: string | null
-            task_key: string
-            to_status: string
-            at: string
-          },
-          [string, string]
-        >(
+        .query<StatusEventMatchRow, [string, string]>(
           `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
            WHERE record_id<>? AND task_key=?`,
         )
@@ -220,7 +210,12 @@ function writeStatusEvent(
       .run(row.id, row.task_key, taskRecordId, row.at, row.from_status, row.to_status)
 }
 
-function retargetStatusEvent(conn: Database, fromId: string, toId: string, hostedRowExists: boolean) {
+function retargetStatusEvent(
+  conn: Database,
+  fromId: string,
+  toId: string,
+  hostedRowExists: boolean,
+) {
   adoptPendingHostedRow(conn, HOSTED_STATUS_EVENT_TABLE, fromId, toId)
   if (hostedRowExists) conn.query(`DELETE FROM task_status_event WHERE record_id=?`).run(fromId)
   else conn.query(`UPDATE task_status_event SET record_id=? WHERE record_id=?`).run(toId, fromId)

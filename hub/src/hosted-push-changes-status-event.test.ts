@@ -95,7 +95,6 @@ function insertTaskAndEvent(
   at: string,
   options: {
     taskId?: string
-    taskRecordId?: string | null
     fromStatus?: string
     toStatus?: string
     queueTask?: boolean
@@ -110,13 +109,12 @@ function insertTaskAndEvent(
     )
     .run(localTaskId, at, at)
   if (options.queueTask) queueHostedChange(conn, HOSTED_TASK_TABLE, localTaskId, 'upsert', at)
-  const eventTaskId = 'taskRecordId' in options ? options.taskRecordId : localTaskId
   conn
     .query(
       `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status)
        VALUES (?,'DEV-1',?,?,?,?)`,
     )
-    .run(eventId, eventTaskId, at, options.fromStatus ?? 'open', options.toStatus ?? 'active')
+    .run(eventId, localTaskId, at, options.fromStatus ?? 'open', options.toStatus ?? 'active')
   if (options.queueEvent !== false)
     queueHostedChange(conn, HOSTED_STATUS_EVENT_TABLE, eventId, 'upsert', at)
 }
@@ -160,10 +158,9 @@ function machineEvent() {
 
 function eventOutbox() {
   return db()
-    .query<
-      { row_id: string; quarantined_at: string | null },
-      []
-    >(`SELECT row_id,quarantined_at FROM hosted_outbox WHERE table_name='${HOSTED_STATUS_EVENT_TABLE}'`)
+    .query<{ row_id: string; quarantined_at: string | null }, []>(
+      `SELECT row_id,quarantined_at FROM hosted_outbox WHERE table_name='${HOSTED_STATUS_EVENT_TABLE}'`,
+    )
     .all()
 }
 
@@ -234,9 +231,7 @@ test('two machines mint the same transition and the second adopts the hosted id'
   writeTransaction((conn) => insertTaskAndEvent(conn, secondId, at))
   expect((await drainToHosted()).sent).toBe(1)
   expect(await hostedIds([firstId, secondId])).toEqual([{ id: firstId }])
-  expect(machineEvent()).toEqual([
-    { record_id: firstId, from_status: 'open', to_status: 'active' },
-  ])
+  expect(machineEvent()).toEqual([{ record_id: firstId, from_status: 'open', to_status: 'active' }])
 })
 
 test('two machines whose task ids and event ids both differ share one hosted event', async () => {
@@ -436,9 +431,7 @@ test('a deleted holder is rejected and not adopted', async () => {
         row: eventRow(incomingId, at),
       },
     ]),
-  ).toEqual([
-    { id: incomingId, status: 'rejected', reason: DELETED_ON_HOSTED_RECORD_REASON },
-  ])
+  ).toEqual([{ id: incomingId, status: 'rejected', reason: DELETED_ON_HOSTED_RECORD_REASON }])
   const remaining = await database.query<{ id: string; deleted_at: string | null }>(
     `SELECT id::text id, deleted_at FROM hub_task_status_event WHERE id=ANY($1::uuid[])`,
     [[hostedId, incomingId]],

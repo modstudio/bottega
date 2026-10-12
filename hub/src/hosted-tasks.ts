@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
+import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import {
   hostedTaskJoin,
   hostedTaskRelationship,
@@ -13,7 +14,6 @@ import type {
   PushedStatusEvent,
   PushedTask,
 } from './push-contract.ts'
-import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
