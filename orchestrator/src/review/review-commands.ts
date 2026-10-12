@@ -93,7 +93,10 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   return resolution
 }
 
-function resolveTierTarget(value: string): {
+function resolveTierTarget(
+  value: string,
+  cwd: string,
+): {
   repo: string
   from: string
   to: string
@@ -163,9 +166,9 @@ function resolveTierTarget(value: string): {
     })()
   }
 
-  const project = projectAt(process.cwd())
+  const project = projectAt(cwd)
   if (!project) throw new Error('review tier target is not inside a registered project')
-  const repo = gitToplevel(process.cwd())
+  const repo = gitToplevel(cwd)
   if (!repo) {
     throw new Error(
       `cannot resolve the caller's git top-level; run review tier from a git checkout of project ${project.name}`,
@@ -208,8 +211,8 @@ function resolveTierTarget(value: string): {
   }
 }
 
-function reviewTierOutput(value: string) {
-  const { repo, from, to, branch, project } = resolveTierTarget(value)
+function reviewTierOutput(value: string, cwd: string) {
+  const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
   const output = reviewTierForRange(repo, from, to, project.settings.review)
   const identity = measureChangeIdentity(repo, from, to)
   const currentRoundIdentity = identity
@@ -372,7 +375,7 @@ export async function reviewCommand(
   if (sub === 'tier') {
     const value = argv[2]
     if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
-    printReviewTier(reviewTierOutput(value), has('json'), log)
+    printReviewTier(reviewTierOutput(value, flag('cwd') ?? process.cwd()), has('json'), log)
     return
   }
   if (sub === 'coverage-audit') {

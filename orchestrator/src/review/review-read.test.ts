@@ -1,8 +1,27 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { db } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { latestArchitectRead, recordArchitectRead, requireBranchRunOwner } from './review-read.ts'
+import { upsertProject } from '../project/projects.ts'
+import {
+  latestArchitectRead,
+  recordArchitectRead,
+  recordArchitectReadCommand,
+  requireBranchRunOwner,
+} from './review-read.ts'
+
+function git(cwd: string, ...args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
 
 let priorDepth: string | undefined
 let priorSession: string | undefined
@@ -56,6 +75,68 @@ test('the latest architect read is selected for one project branch', () => {
     recordedAt: '2026-10-12T12:00:00.000Z',
   })
   expect(latestArchitectRead(d, 'fixture', 'missing')).toBeNull()
+})
+
+test('the read command records the branch and tip from --cwd', () => {
+  delete process.env.ORCH_DEPTH
+  process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
+  const cwd = mkdtempSync(join(tmpdir(), 'orch-review-read-'))
+  try {
+    git(cwd, 'init', '-b', 'main')
+    writeFileSync(join(cwd, 'base.txt'), 'base\n')
+    git(cwd, 'add', 'base.txt')
+    git(
+      cwd,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      'commit',
+      '-m',
+      'base',
+    )
+    git(cwd, 'switch', '-c', 'DEV-1262-review-read-fixture')
+    writeFileSync(join(cwd, 'change.txt'), 'change\n')
+    git(cwd, 'add', 'change.txt')
+    git(
+      cwd,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      'commit',
+      '-m',
+      'change',
+    )
+    const tip = git(cwd, 'rev-parse', 'HEAD')
+    expect(git(process.cwd(), 'branch', '--show-current')).not.toBe('DEV-1262-review-read-fixture')
+    upsertProject({ name: 'read-command-fixture', path: cwd, settings: { trunk: 'main' } })
+    db()
+      .query(
+        `INSERT INTO run
+          (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+         VALUES ('2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
+      )
+      .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
+
+    recordArchitectReadCommand(
+      ['review', 'read'],
+      {
+        flag: (name) => (name === 'cwd' ? cwd : name === 'note' ? 'read the final fix' : undefined),
+      },
+      { log: () => undefined },
+    )
+
+    expect(
+      db()
+        .query<{ branch: string; tip: string }, []>(
+          'SELECT branch,tip FROM review_read ORDER BY id DESC LIMIT 1',
+        )
+        .get(),
+    ).toEqual({ branch: 'DEV-1262-review-read-fixture', tip })
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
 })
 
 test('a tip unreachable from the checked-out branch is refused without a review read', () => {

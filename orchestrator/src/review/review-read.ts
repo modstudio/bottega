@@ -136,7 +136,7 @@ export function recordArchitectReadCommand(
 ): void {
   if (argv.length !== 2) throw new Error('orch review read [--sha <tip>] --note <text>')
   const id = recordArchitectRead({
-    cwd: process.cwd(),
+    cwd: flags.flag('cwd') ?? process.cwd(),
     sha: flags.flag('sha'),
     note: flags.flag('note') ?? '',
   })
