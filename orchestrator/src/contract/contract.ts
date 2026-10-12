@@ -1,6 +1,6 @@
 // concern: contract
 
-import { isReaderJob, job, type Job } from '../jobs/jobs.ts'
+import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
