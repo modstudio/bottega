@@ -26,13 +26,18 @@ describe('resolveMechanicalChecks', () => {
     const rows = resolved('node')
     expect(row(rows, 'function-length')).toMatchObject({
       enforced: false,
-      tool: 'biome complexity/noExcessiveLinesPerFunction',
-      points: ['write', 'commit'],
+      tool: 'biome complexity/noExcessiveLinesPerFunction, blank lines not counted, tests exempt',
+      points: ['commit', 'gate'],
       blocking: true,
-      limit: 50,
+      limit: 80,
       source: 'stack',
     })
-    expect(row(rows, 'test-substance')).toMatchObject({ source: 'default', enforced: true })
+    expect(row(rows, 'naming')?.points).toEqual(['commit', 'gate'])
+    expect(row(rows, 'test-substance')).toMatchObject({
+      source: 'default',
+      enforced: true,
+      points: ['write', 'gate'],
+    })
     expect(row(rows, 'attribution-markers')).toMatchObject({
       source: 'default',
       enforced: true,
@@ -55,11 +60,11 @@ describe('resolveMechanicalChecks', () => {
 
   test('resolves PHP-specific limits and scheduled nonblocking checks', () => {
     const rows = resolved('php-laravel-vue')
-    expect(row(rows, 'file-length')).toMatchObject({ limit: 300, source: 'stack' })
+    expect(row(rows, 'file-length')).toMatchObject({ limit: 500, source: 'stack' })
     expect(row(rows, 'unused-exports')).toMatchObject({
       tool: 'shipmonk/dead-code-detector',
-      points: ['schedule'],
-      blocking: false,
+      points: ['gate'],
+      blocking: true,
       source: 'stack',
     })
     expect(row(rows, 'unreachable-code')).toMatchObject({
@@ -76,8 +81,8 @@ describe('resolveMechanicalChecks', () => {
         'function-length',
       ),
     ).toMatchObject({
-      tool: 'biome complexity/noExcessiveLinesPerFunction',
-      points: ['write', 'commit'],
+      tool: 'biome complexity/noExcessiveLinesPerFunction, blank lines not counted, tests exempt',
+      points: ['commit', 'gate'],
       limit: 75,
       source: 'own',
       enforced: true,
@@ -105,7 +110,7 @@ describe('resolveMechanicalChecks', () => {
     const covered = rows
       .filter((entry) => entry.source === 'default')
       .map((entry) => entry.category)
-    expect(covered).toEqual(['test-substance', 'attribution-markers', 'secrets'])
+    expect(covered).toEqual(['test-substance', 'attribution-markers', 'spelling', 'secrets'])
     expect(row(rows, 'function-length')?.source).toBe('uncovered')
   })
 
