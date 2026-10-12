@@ -79,6 +79,7 @@ import {
   decideClaimTreePlan,
   resumeCreationLifecycle,
   resumeCreationTool,
+  retryRootTreeValidation,
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
@@ -594,11 +595,16 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
         const recordWorktree = (created: Worktree) => {
-          if (opts.resume?.kind === 'retry-root' && resumePlan) {
+          const retryValidation = retryRootTreeValidation({
+            kind: opts.resume?.kind ?? null,
+            treePlan: resumePlan ?? null,
+            readOnlyBase: opts.resume?.readOnlyBase ?? null,
+          })
+          if (retryValidation) {
             assertRetryRootWorkspace({
               worktree: created,
-              expectedBranch: resumePlan.branch,
-              validatedTip: resumePlan.tip,
+              expectedBranch: retryValidation.branch,
+              validatedTip: retryValidation.tip,
               conversationRootId: claim.id,
               projectId: runProjectId,
               projectName: runProjectName,
