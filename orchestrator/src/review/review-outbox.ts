@@ -5,13 +5,6 @@ import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
-export {
-  REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_READ_RECORD_PAYLOAD_CONTRACT,
-  REVIEW_RECORD_PAYLOAD_CONTRACT,
-} from '../record/outbox-payload-contracts.ts'
-
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {

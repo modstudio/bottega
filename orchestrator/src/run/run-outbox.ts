@@ -3,11 +3,6 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
-export {
-  RUN_RECORD_PAYLOAD_COLUMNS,
-  RUN_RECORD_PAYLOAD_CONTRACT,
-} from '../record/outbox-payload-contracts.ts'
-
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 

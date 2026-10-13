@@ -9,10 +9,7 @@ import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 
 export type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
-export type {
-  RecordPayload as Payload,
-  RecordPrincipal,
-} from './record-sync-contract.ts'
+export type { RecordPayload as Payload } from './record-sync-contract.ts'
 export type BlockedOutboxRow = {
   id: number
   kind: string

@@ -8,19 +8,21 @@ import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postg
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
-import {
-  enqueueContention,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-} from './landing-outbox.ts'
+import { enqueueContention } from './landing-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
+
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
+const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
+  OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = machineId()

@@ -2,15 +2,17 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { listRecordScores, unvoidRecordRun, voidRecordRun } from '../src/record/record-verdicts.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from '../src/run/run-outbox.ts'
-import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score/score-outbox.ts'
 import { VOID_EXCLUSION_REASON } from '../src/verdict/verdict-rules.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
 
 export { proveHostedDocs } from './postgres-docs-proof.ts'
+
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+const SCORE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.score.columns
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 

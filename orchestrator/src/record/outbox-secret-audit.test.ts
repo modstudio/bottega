@@ -1,11 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
 
 const SECRET = 'ghp_123456789012345678901234567890123456'
 const STAMP = '2026-09-15T01:01:00.000Z'
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 
 function runPayload(error: string): string {
   const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))

@@ -1,14 +1,16 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
   backfillScoreRecords,
   buildScoreRecordPayload,
   enqueueScoreRecord,
   reviewGradesForVerdict,
-  SCORE_RECORD_PAYLOAD_COLUMNS,
 } from './score-outbox.ts'
+
+const SCORE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.score.columns
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'

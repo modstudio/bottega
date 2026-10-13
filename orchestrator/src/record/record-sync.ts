@@ -127,6 +127,44 @@ function syncRouteError(error: unknown): never {
   throw error
 }
 
+type PlannedBatchRow =
+  | { disposition: 'include'; request: RecordSyncRequestRow }
+  | { disposition: 'skip' }
+  | { disposition: 'stop' }
+
+function planBatchRow(
+  row: OutboxRow,
+  input: {
+    local: Database
+    hasBatchRows: boolean
+    memberships: ReturnType<typeof parseRecordSpaceMemberships>
+    blocked: BlockedOutboxRow[]
+    projectSpaces?: Record<string, string>
+  },
+): PlannedBatchRow {
+  const parsed = parsedPayload(row.payload)
+  if (parsed && outboxRowWaitsForParent(input.local, row, parsed)) {
+    return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
+  }
+  if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked))
+    return { disposition: 'skip' }
+  if (!outboxRowIsEligible(input.local, row)) return { disposition: 'skip' }
+  const projectName = outboxProjectName(row.kind, parsed, input.local)
+  const declared = projectName
+    ? declaredProjectSpace(input.local, projectName, input.projectSpaces)
+    : null
+  const membership = declared ? recordSpaceMembership(declared, input.memberships) : undefined
+  return {
+    disposition: 'include',
+    request: {
+      id: row.id,
+      kind: row.kind,
+      payload: row.payload,
+      spaceHint: membership?.spaceId ?? declared,
+    },
+  }
+}
+
 function nextBatch(input: {
   local: Database
   attempted: Set<number>
@@ -149,24 +187,16 @@ function nextBatch(input: {
   const localRows = new Map<number, OutboxRow>()
   for (const row of candidates) {
     if (input.attempted.has(row.id)) continue
-    const parsed = parsedPayload(row.payload)
-    if (parsed && outboxRowWaitsForParent(input.local, row, parsed)) {
-      if (rows.length) break
-      continue
-    }
-    if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked)) continue
-    if (!outboxRowIsEligible(input.local, row)) continue
-    const projectName = outboxProjectName(row.kind, parsed, input.local)
-    const declared = projectName
-      ? declaredProjectSpace(input.local, projectName, input.projectSpaces)
-      : null
-    const membership = declared ? recordSpaceMembership(declared, input.memberships) : undefined
-    rows.push({
-      id: row.id,
-      kind: row.kind,
-      payload: row.payload,
-      spaceHint: membership?.spaceId ?? declared,
+    const planned = planBatchRow(row, {
+      local: input.local,
+      hasBatchRows: rows.length > 0,
+      memberships: input.memberships,
+      blocked: input.blocked,
+      projectSpaces: input.projectSpaces,
     })
+    if (planned.disposition === 'stop') break
+    if (planned.disposition === 'skip') continue
+    rows.push(planned.request)
     localRows.set(row.id, row)
     if (rows.length === RECORD_SYNC_BATCH_SIZE) break
   }

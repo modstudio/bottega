@@ -2,12 +2,11 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import {
-  backfillRunRecords,
-  buildRunRecordPayload,
-  RUN_RECORD_PAYLOAD_COLUMNS,
-} from './run-outbox.ts'
+import { backfillRunRecords, buildRunRecordPayload } from './run-outbox.ts'
+
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
   const payload = sanitizeOutboxPayload(

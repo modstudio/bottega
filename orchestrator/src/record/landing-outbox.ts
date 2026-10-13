@@ -4,21 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { machineId } from './machine-identity.ts'
 
-export {
-  CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  CONTENTION_RECORD_PAYLOAD_CONTRACT,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
-  LANDING_RECORD_PAYLOAD_COLUMNS,
-  LANDING_RECORD_PAYLOAD_CONTRACT,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
-  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-  TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
-} from './outbox-payload-contracts.ts'
-
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {

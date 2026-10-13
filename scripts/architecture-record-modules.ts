@@ -12,6 +12,36 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-sync-contract.ts', []),
+  module('orchestrator/src/record/record-api-sync.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-sync-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-sync-service.ts', [
+    'bun',
+    'drizzle-orm',
+    'drizzle-orm/bun-sql',
+    '../../../shared/record/schema.ts',
+    '../../../shared/record/schema-landing.ts',
+    '../../../shared/record/schema-question.ts',
+    '../../../shared/record/schema-review.ts',
+    '../../../shared/record/schema-run.ts',
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-space-request.ts',
+    '../verdict/verdict-rules.ts',
+    './outbox-failure.ts',
+    './outbox-payload-contracts.ts',
+    './record-auth.ts',
+    './record-project-destination.ts',
+    './record-release-sync.ts',
+    './record-review-read.ts',
+    './record-review-values.ts',
+    './record-sync-contract.ts',
+    './record-sync-principal.ts',
+    './score-sync.ts',
+  ]),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',
     './record-auth.ts',

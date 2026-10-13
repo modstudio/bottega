@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
   redactSyncedOutbox,
   renderSyncedRedaction,
@@ -11,6 +11,7 @@ import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 
 const STAMP = '2026-09-28T10:00:00.000Z'
 const NEXT_STAMP = '2026-09-28T10:01:00.000Z'
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 
 function plantedValues(): { urlUserinfo: string; base64: string } {
   return {

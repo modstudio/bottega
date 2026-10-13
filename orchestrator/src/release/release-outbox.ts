@@ -5,8 +5,6 @@ import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
-export { RELEASE_RECORD_PAYLOAD_CONTRACT } from '../record/outbox-payload-contracts.ts'
-
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type ReleaseRow = Record<string, unknown> & { id: number; record_id: string | null }

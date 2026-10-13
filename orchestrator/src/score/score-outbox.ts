@@ -3,11 +3,6 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
-export {
-  SCORE_RECORD_PAYLOAD_COLUMNS,
-  SCORE_RECORD_PAYLOAD_CONTRACT,
-} from '../record/outbox-payload-contracts.ts'
-
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 
