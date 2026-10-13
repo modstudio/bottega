@@ -75,7 +75,7 @@ test('author backfill uses the cached person before the cutoff and is repeatable
     for (const [reason, author, sessionId, at] of cases)
       seedRevision(populated.database, docId, reason, author, sessionId, at)
 
-    expect(applyMigrations(populated.database)).toEqual([AUTHOR_BACKFILL])
+    expect(applyMigrations(populated.database)).toEqual([AUTHOR_BACKFILL, '0099_board_reach'])
     expect(applyMigrations(populated.database)).toEqual([])
     expect(
       populated.database
@@ -98,7 +98,7 @@ test('author backfill uses the cached person before the cutoff and is repeatable
       'session-uncached',
       '2026-10-13T01:59:50.000Z',
     )
-    expect(applyMigrations(uncached.database)).toEqual([AUTHOR_BACKFILL])
+    expect(applyMigrations(uncached.database)).toEqual([AUTHOR_BACKFILL, '0099_board_reach'])
     expect(uncached.database.query('SELECT author,session_id FROM doc_revision').get()).toEqual({
       author: 'unknown',
       session_id: 'session-uncached',
