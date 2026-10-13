@@ -736,7 +736,13 @@ export function classifyBoardStreamResponse(
   return { kind: 'stream', source: sourceFromBody(body), close }
 }
 
-function releaseUnopenedStream(_response: Response, _connection: AbortController): void {}
+function releaseUnopenedStream(response: Response, connection: AbortController): void {
+  try {
+    if (response.body) void response.body.cancel()
+  } finally {
+    connection.abort()
+  }
+}
 
 async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
   if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
