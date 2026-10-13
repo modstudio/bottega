@@ -18,7 +18,7 @@ export type CategoryExecutionRow = {
 
 export type CategoryExecution = Pick<
   CategoryExecutionRow,
-  'category' | 'wallMs' | 'remaining' | 'finishedAt'
+  'wallMs' | 'remaining' | 'finishedAt'
 >
 
 function isInProject(projectPath: string, cwd: string | null): boolean {
@@ -49,7 +49,6 @@ export function newestCategoryExecutions(
     [...selected].map(([category, row]) => [
       category,
       {
-        category,
         wallMs: row.wallMs,
         remaining: row.remaining,
         finishedAt: row.finishedAt,

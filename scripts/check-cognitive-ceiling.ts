@@ -6,7 +6,7 @@ import ts from 'typescript'
 import { type Finding, ratchetDecision } from '../shared/ratchet'
 import { openChangeView } from './change-view'
 import { measuredSourceFiles } from './check-file-ceiling'
-import { reportRemaining } from './remaining-report'
+import { reportPathFromArguments, reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CEILING = 15
@@ -234,7 +234,7 @@ async function checkCognitiveCeiling(
 
 function parseArguments(argv: string[]) {
   const base = argv.find((argument) => argument.startsWith('--base='))?.slice(7)
-  const report = argv.find((argument) => argument.startsWith('--report='))?.slice(9)
+  const report = reportPathFromArguments(argv)
   if (
     base &&
     argv.every((argument) => argument.startsWith('--base=') || argument.startsWith('--report='))

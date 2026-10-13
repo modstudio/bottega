@@ -96,7 +96,6 @@ describe('enforcementCommand', () => {
           [
             'file-length',
             {
-              category: 'file-length',
               remaining: 3,
               wallMs: 149.6,
               finishedAt: '2026-10-12T12:00:00.000Z',

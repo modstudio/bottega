@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +13,7 @@ import {
   SUITE_RUNTIME_BUDGET_MS,
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
+import { readRemainingReport } from './remaining-report'
 
 type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
@@ -56,20 +57,6 @@ function collectCpu(
   })
 }
 
-function remainingFromReport(path: string | undefined): number | undefined {
-  if (!path) return undefined
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { remaining?: unknown }
-    return Number.isInteger(parsed.remaining) && Number(parsed.remaining) >= 0
-      ? Number(parsed.remaining)
-      : undefined
-  } catch {
-    return undefined
-  } finally {
-    rmSync(path, { force: true })
-  }
-}
-
 function appendExecution(record: CheckExecutionRecord) {
   if (!executionFile) return
   try {
@@ -86,7 +73,7 @@ function collectChild(child: Bun.Subprocess, exitCode: number) {
   if (!measurement) throw new Error('child measurement was not registered')
   const cpuTime = child.resourceUsage()?.cpuTime
   collectCpu(measurement.name, cpuTime)
-  const remaining = remainingFromReport(measurement.reportPath)
+  const remaining = readRemainingReport(measurement.reportPath)
   appendExecution({
     check: measurement.check ?? measurement.name,
     ...(measurement.category ? { category: measurement.category } : {}),

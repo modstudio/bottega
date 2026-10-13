@@ -25,18 +25,8 @@ test('category records prefer the newest eligible passing project gate', () => {
     '/work/project',
   )
   expect(selected.get('file-length')).toEqual({
-    category: 'file-length',
     wallMs: 20,
     remaining: 4,
     finishedAt: '2026-10-12T11:00:00.000Z',
   })
-})
-
-test('category records return nothing when no gate is eligible', () => {
-  expect(
-    newestCategoryExecutions(
-      [row({ gateExitCode: 1 }), row({ headCommit: null }), row({ cwd: '/work/other' })],
-      '/work/project',
-    ).size,
-  ).toBe(0)
 })

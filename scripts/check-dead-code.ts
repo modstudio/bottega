@@ -32,7 +32,7 @@ import {
   stableFinding,
   unneededExportFindings,
 } from './quality/dead-code'
-import { reportRemaining } from './remaining-report'
+import { reportPathFromArguments, reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const BASE_CONFIG_NAMES = ['knip.jsonc', 'knip.production.jsonc'] as const
@@ -344,7 +344,7 @@ async function checkDeadCode(base: string, reportPath?: string) {
 
 function parseArguments(argv: string[]) {
   const base = argv.find((argument) => argument.startsWith('--base='))?.slice(7)
-  const report = argv.find((argument) => argument.startsWith('--report='))?.slice(9)
+  const report = reportPathFromArguments(argv)
   if (
     base &&
     argv.every((argument) => argument.startsWith('--base=') || argument.startsWith('--report='))

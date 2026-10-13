@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
 import { openChangeView } from './change-view'
 import { resolveLandingBase } from './landing-base'
-import { reportRemaining } from './remaining-report'
+import { reportPathFromArguments, reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CEILING = 1000
@@ -180,10 +180,7 @@ export function checkFileCeiling(options: FileCeilingOptions = {}, reportPath?: 
 
 if (import.meta.main) {
   try {
-    const report = Bun.argv
-      .slice(2)
-      .find((argument) => argument.startsWith('--report='))
-      ?.slice(9)
+    const report = reportPathFromArguments(Bun.argv.slice(2))
     if (!checkFileCeiling({}, report)) process.exit(1)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
