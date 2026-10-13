@@ -118,10 +118,9 @@ function reportFindings(
   format: string,
   reportRoot: string,
   measures: MeasurePattern[],
-  baseRenames?: Map<string, string>,
 ) {
   const parse = reportAdapter(format)
-  return parse(readFileSync(path, 'utf8'), { reportRoot, measures, baseRenames })
+  return parse(readFileSync(path, 'utf8'), { reportRoot, measures })
 }
 
 function runSide(
@@ -176,10 +175,10 @@ function refusalReason(finding: ReturnType<typeof ratchetDecision>[number]) {
 
 type RatchetView = ReturnType<typeof openChangeView>
 
-function runReportsMode(
+export function runReportsMode(
   options: RatchetOptions,
   root: string,
-  view: RatchetView,
+  view: Pick<RatchetView, 'facts'>,
   headReport: string,
   baseReport: string,
   reporter: Reporter,
@@ -206,15 +205,12 @@ function runReportsMode(
       options.format,
       options.reportRoot ?? root,
       options.measures ?? [],
-      view.facts.renames,
     )
   } catch (error) {
     reporter.error(
       `ratchet base report ${baseReport} failed: ${error instanceof Error ? error.message : String(error)}`,
     )
-    for (const entry of view.entries) {
-      if (entry.status !== 'D') unanalysedBase.add(entry.path)
-    }
+    for (const finding of headFindings) unanalysedBase.add(finding.file)
   }
   return reportDecision(baseFindings, headFindings, view.facts, unanalysedBase, reporter)
 }

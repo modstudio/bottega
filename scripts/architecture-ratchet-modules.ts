@@ -35,7 +35,7 @@ export const ratchetModules = [
   },
   {
     file: 'orchestrator/src/ratchet/php-report-adapters.test.ts',
-    allowed: ['bun:test', '../../../shared/ratchet.ts', './php-report-adapters.ts'],
+    allowed: ['bun:test', './php-report-adapters.ts'],
   },
   {
     file: 'orchestrator/src/commands/ratchet.test.ts',

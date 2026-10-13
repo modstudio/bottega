@@ -8,7 +8,6 @@ export type MeasurePattern = { rule: string; pattern: string }
 type AdapterOptions = {
   reportRoot: string
   measures?: MeasurePattern[]
-  baseRenames?: Map<string, string>
 }
 
 type ReportMessage = {
@@ -29,7 +28,7 @@ function reportFiles(text: string, format: string): Record<string, unknown> {
     )
   }
   const files = (value as { files?: unknown }).files
-  if (typeof files !== 'object' || files === null || Array.isArray(files)) {
+  if (typeof files !== 'object' || files === null) {
     throw new Error(`${format} report has no files object`)
   }
   return files as Record<string, unknown>
@@ -42,11 +41,6 @@ function relativeReportPath(path: string, reportRoot: string): string {
     throw new Error(`report path is outside report root ${reportRoot}: ${path}`)
   }
   return fromRoot
-}
-
-function normalizedPath(path: string, options: AdapterOptions): string {
-  const relativePath = relativeReportPath(path, options.reportRoot)
-  return options.baseRenames?.get(relativePath) ?? relativePath
 }
 
 function messagesFor(raw: unknown, format: string, file: string): ReportMessage[] {
@@ -118,11 +112,12 @@ function finding(
   options: AdapterOptions,
   measures: Map<string, RegExp>,
 ): Finding {
-  if (typeof raw.line !== 'number' || typeof rule !== 'string' || typeof raw.message !== 'string') {
+  const line = raw.line == null ? 0 : raw.line
+  if (typeof line !== 'number' || typeof rule !== 'string' || typeof raw.message !== 'string') {
     throw new Error(`${format} message in ${file} has no line, rule, or message`)
   }
   return measuredFinding(
-    { file: normalizedPath(file, options), line: raw.line, rule, message: raw.message },
+    { file: relativeReportPath(file, options.reportRoot), line, rule, message: raw.message },
     measures,
   )
 }
