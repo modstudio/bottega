@@ -276,6 +276,11 @@ const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an ac
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
 
+function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
+  registerRecordInvitationRoute(app, deps)
+  registerRecordSyncRoute(app, deps)
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   registerRecordCors(app, deps.allowedOrigins)
@@ -300,8 +305,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
-  registerRecordInvitationRoute(app, deps)
-  registerRecordSyncRoute(app, deps)
+  registerSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z

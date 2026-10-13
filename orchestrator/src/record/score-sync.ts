@@ -4,7 +4,7 @@ import type { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { runScore as runScoreRecord } from '../../../shared/record/schema-run.ts'
 import { VERDICT_PAYLOAD_SCHEMA, type VerdictPayload } from '../verdict/verdict-payload.ts'
-import type { Payload } from './record-sync-types.ts'
+import type { RecordPayload as Payload } from './record-sync-contract.ts'
 import { validateRecordVerdict } from './record-verdicts.ts'
 
 const nullableString = (value: unknown) => (value == null ? null : String(value))

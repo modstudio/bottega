@@ -4,52 +4,13 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
-export const QUESTION_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'runId',
-  'workflowKey',
-  'workflowCursorId',
-  'projectName',
-  'machineId',
-  'localId',
-  'revision',
-  'askedAt',
-  'question',
-  'options',
-  'recommendation',
-  'why',
-  'askedVia',
-  'answer',
-  'answerBasis',
-  'answeredAt',
-  'answeredBy',
-  'answererKind',
-  'answerChannel',
-  'awaitingOperatorAt',
-  'relayedBy',
-  'overturnedAt',
-  'overturnedBy',
-  'overturnReason',
-  'replacement',
-  'filedAs',
-  'filedRef',
-  'filedRecordId',
-  'filedLabel',
-  'filedAt',
-  'closedAt',
-  'closeReason',
-  'withheldFields',
-  'audits',
-  'createdAt',
-  'updatedAt',
-] as const
-export const QUESTION_RECORD_PAYLOAD_CONTRACT = {
-  columns: QUESTION_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { filedRecordId: null, filedLabel: null, answerBasis: null },
-} as const
+export {
+  QUESTION_RECORD_PAYLOAD_COLUMNS,
+  QUESTION_RECORD_PAYLOAD_CONTRACT,
+} from '../record/outbox-payload-contracts.ts'
+
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type QuestionRow = Record<string, unknown> & {
   id: number

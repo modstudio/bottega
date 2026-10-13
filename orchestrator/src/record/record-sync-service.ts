@@ -38,12 +38,13 @@ import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import type {
+  RecordPayload as Payload,
+  RecordPrincipal,
   RecordSyncRequest,
   RecordSyncResponse,
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-import type { Payload, RecordPrincipal } from './record-sync-types.ts'
 import { pushScore } from './score-sync.ts'
 
 export type RecordSyncAuthorizationDecision =
@@ -73,22 +74,6 @@ export function recordSyncAuthorizationDecision(
   return {
     status: 'allowed',
     principal: { userId: identity.user.id, spaceId: membership.spaceId },
-  }
-}
-
-export function outboxOrder(kind: string, id: number): readonly [phase: number, id: number] {
-  if (kind === 'run') return [0, id]
-  switch (kind) {
-    case 'score':
-    case 'question':
-    case 'review':
-    case 'review_lens':
-    case 'review_finding':
-    case 'review_read':
-    case 'contention':
-      return [2, id]
-    default:
-      return [1, id]
   }
 }
 

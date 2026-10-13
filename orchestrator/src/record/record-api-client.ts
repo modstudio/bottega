@@ -645,7 +645,6 @@ export function recordApiClient(): RecordApiClient {
     throw new Error(TEST_REFUSAL)
   return {
     ...recordIdentityAndSpaceClient(),
-    sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),
@@ -850,6 +849,7 @@ export function recordApiClient(): RecordApiClient {
 function recordIdentityAndSpaceClient(): Pick<
   RecordApiClient,
   | 'whoami'
+  | 'sync'
   | 'createOrganization'
   | 'setActiveOrganization'
   | 'listInvitations'
@@ -858,6 +858,7 @@ function recordIdentityAndSpaceClient(): Pick<
 > {
   return {
     whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
+    sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
     createOrganization: (input) =>
       request('/api/auth/organization/create', {
         method: 'POST',

@@ -3,7 +3,7 @@
 import type { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { release as releaseRecord } from '../../../shared/record/schema-release.ts'
-import type { Payload, RecordPrincipal } from './record-sync-types.ts'
+import type { RecordPayload as Payload, RecordPrincipal } from './record-sync-contract.ts'
 
 const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))

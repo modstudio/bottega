@@ -3,148 +3,23 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { machineId } from './machine-identity.ts'
-import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
-export const LANDING_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'branch',
-  'tip',
-  'trunkBefore',
-  'status',
-  'error',
-  'sessionId',
-  'startedAt',
-  'finishedAt',
-  'pathSet',
-  'requestedAt',
-  'steps',
-  'causingLandingId',
-  'withheldFields',
-  'createdAt',
-  'updatedAt',
-] as const
-export const LANDING_RECORD_PAYLOAD_CONTRACT = {
-  columns: LANDING_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { withheldFields: null },
-} as const
-export const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'branch',
-  'tip',
-  'tree',
-  'patchId',
-  'pathSet',
-  'reason',
-  'sessionId',
-  'at',
-  'withheldFields',
-  'createdAt',
-  'updatedAt',
-] as const
-export const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = {
-  columns: LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { patchId: null, pathSet: null, withheldFields: null },
-} as const
-export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'branch',
-  'tip',
-  'tree',
-  'reviewId',
-  'reviewedCommit',
-  'reviewedTree',
-  'patchId',
-  'oldBase',
-  'newBase',
-  'sessionId',
-  'at',
-  'createdAt',
-  'updatedAt',
-] as const
-export const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT = {
-  columns: LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {},
-} as const
-export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'branch',
-  'tip',
-  'tree',
-  'prNumber',
-  'reviewIds',
-  'patchId',
-  'tier',
-  'lensRounds',
-  'findingCount',
-  'admissionPath',
-  'readId',
-  'overrideId',
-  'sessionId',
-  'at',
-  'createdAt',
-  'updatedAt',
-] as const
-export const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT = {
-  columns: LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { admissionPath: 'exact_review', readId: null },
-} as const
-export const CONTENTION_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'machineId',
-  'localId',
-  'at',
-  'sessionId',
-  'resourceKind',
-  'resourceKey',
-  'eventKind',
-  'durationMs',
-  'cause',
-  'runId',
-  'landingId',
-  'withheldFields',
-  'createdAt',
-  'updatedAt',
-] as const
-export const CONTENTION_RECORD_PAYLOAD_CONTRACT = {
-  columns: CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { withheldFields: null },
-} as const
-export const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = [
-  'id',
-  'spaceId',
-  'projectName',
-  'machineId',
-  'localId',
-  'test',
-  'file',
-  'loadAtFailure',
-  'signal',
-  'at',
-  'withheldFields',
-  'createdAt',
-  'updatedAt',
-] as const
-export const TEST_FLAKE_RECORD_PAYLOAD_CONTRACT = {
-  columns: TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: { withheldFields: null },
-} as const
+export {
+  CONTENTION_RECORD_PAYLOAD_COLUMNS,
+  CONTENTION_RECORD_PAYLOAD_CONTRACT,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
+  LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT,
+  LANDING_RECORD_PAYLOAD_COLUMNS,
+  LANDING_RECORD_PAYLOAD_CONTRACT,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT,
+  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
+  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT,
+  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
+  TEST_FLAKE_RECORD_PAYLOAD_CONTRACT,
+} from './outbox-payload-contracts.ts'
+
+import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
   mintedLandings: number

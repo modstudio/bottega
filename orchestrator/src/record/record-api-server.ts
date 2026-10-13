@@ -174,7 +174,6 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),
     readRuns: listRecordRuns,
-    syncRecord: syncHostedRecord,
     readRunsWindow: viewRecordRuns,
     readRun: getRecordRun,
     readReviews: listRecordReviews,
@@ -267,6 +266,7 @@ function recordApiAccessDependencies(
   migrations: number,
 ) {
   return {
+    syncRecord: syncHostedRecord,
     auth,
     readSession: async (headers: Headers) => {
       const current = await auth.api.getSession({ headers })

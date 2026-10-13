@@ -2,22 +2,14 @@
 /** Knows how a local verdict becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+
+export {
+  SCORE_RECORD_PAYLOAD_COLUMNS,
+  SCORE_RECORD_PAYLOAD_CONTRACT,
+} from '../record/outbox-payload-contracts.ts'
+
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
-import { VERDICT_PAYLOAD_COLUMNS } from '../verdict/verdict-payload.ts'
-
-export const SCORE_RECORD_PAYLOAD_COLUMNS = VERDICT_PAYLOAD_COLUMNS
-export const SCORE_RECORD_PAYLOAD_CONTRACT = {
-  columns: SCORE_RECORD_PAYLOAD_COLUMNS,
-  laterAdded: {
-    projectName: null,
-    reproduced: null,
-    coverage: null,
-    limits: null,
-    overlap: null,
-    withheldFields: null,
-  },
-} as const
 
 type LocalScore = {
   record_id: string | null

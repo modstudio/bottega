@@ -121,10 +121,3 @@ export function outboxFailureDisposition(error: unknown): OutboxFailureDispositi
     errorClass: outboxErrorClass(chain),
   })
 }
-
-export function unreachableSpaceProject(error: unknown): string | null {
-  const refusal = errorChain(error).find(
-    (item) => item instanceof OutboxRowError && item.errorClass === 'declared-space',
-  )
-  return refusal instanceof OutboxRowError ? refusal.blockedProject : null
-}

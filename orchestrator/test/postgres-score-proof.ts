@@ -80,9 +80,7 @@ export async function proveProjectSpaceRecordSync(input: {
 
 export async function proveScoreRecordSync(input: {
   actorUrl: string
-  ownerUrl: string
   actorRole: string
-  ownerRole: string
   machineId: string
   userId: string
   spaceId: string
@@ -252,13 +250,9 @@ export async function proveScoreRecordSync(input: {
 }
 
 export function registerScoreRecordSyncProof(
-  input: Parameters<typeof proveScoreRecordSync>[0] & {
-    token: () => string
-    setToken(token: string): void
-  },
+  input: Parameters<typeof proveScoreRecordSync>[0],
 ): void {
   test('sync round trip writes and updates a tenant-confined score', async () => {
-    input.setToken(input.token())
     const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input)
     expect(actorRead.code, actorRead.stderr).toBe(0)
     expect(actorRead.stdout).toBe('full|right|first')

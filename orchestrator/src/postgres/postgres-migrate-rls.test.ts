@@ -276,6 +276,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   beforeEach(() => {
     installRecordApiClient(null)
+    recordSession.setToken(tokenA)
   })
 
   afterAll(async () => {
@@ -1036,16 +1037,12 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerScoreRecordSyncProof({
     actorUrl: actorUrl!,
-    ownerUrl: ownerUrl!,
     actorRole: RECORD_ACTOR_ROLE,
-    ownerRole: RECORD_OWNER_ROLE,
     machineId: MACHINE_A,
     userId: OPERATOR_USER_ID,
     spaceId: PLATFORM_SPACE_ID,
     otherSpaceId: SPACE_A,
     projectName: PLATFORM_SLUG,
-    token: () => tokenA,
-    setToken: (token) => recordSession.setToken(token),
     asSpace,
   })
 
