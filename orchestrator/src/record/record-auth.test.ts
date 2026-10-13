@@ -6,6 +6,7 @@ import {
   recordAllowedOrigins,
   recordAuth,
   recordIdentityFromRows,
+  rememberedSessionSpaceWrite,
   sessionSpace,
 } from './record-auth.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
@@ -148,6 +149,14 @@ test('session ignores a departed remembered space and falls back through members
       membershipSpaceIds: ['personal'],
     }),
   ).toBe('personal')
+})
+
+test('session updates remember only a non-null active space', () => {
+  expect(rememberedSessionSpaceWrite({ activeOrganizationId: 'space-a' })).toEqual({
+    activeSpaceId: 'space-a',
+  })
+  expect(rememberedSessionSpaceWrite({ activeOrganizationId: null })).toBeNull()
+  expect(rememberedSessionSpaceWrite({})).toBeNull()
 })
 
 test('active space is kept only while it is a current membership', () => {

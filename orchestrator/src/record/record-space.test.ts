@@ -110,7 +110,7 @@ describe('record space decisions', () => {
     expect(calls).toEqual([{ organizationId: 'space-a' }])
   })
 
-  test('refuses a non-member without calling set-active and names the remedy and slugs', async () => {
+  test('refuses a non-member without calling set-active and names the available slugs', async () => {
     let called = false
     const switched = switchRecordSpace('outsider', {
       whoami: async () => ({
@@ -133,7 +133,7 @@ describe('record space decisions', () => {
       },
     })
     await expect(switched).rejects.toThrow(
-      'join it first with an invitation, then retry; available slugs: team',
+      "record space outsider is not one of the user's memberships; available slugs: team",
     )
     expect(called).toBe(false)
   })

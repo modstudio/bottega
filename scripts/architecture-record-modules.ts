@@ -15,9 +15,9 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',
     './record-auth.ts',
-    './record-invitations.ts',
+    './record-pending-invitations.ts',
   ]),
-  module('orchestrator/src/record/record-invitations.ts', ['bun']),
+  module('orchestrator/src/record/record-pending-invitations.ts', ['bun']),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
     'bun',
     '../../../shared/docs.ts',

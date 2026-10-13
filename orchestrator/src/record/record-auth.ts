@@ -179,6 +179,14 @@ async function rememberSessionSpace(
   })
 }
 
+export function rememberedSessionSpaceWrite(updated: {
+  activeOrganizationId?: unknown
+}): { activeSpaceId: string } | null {
+  return typeof updated.activeOrganizationId === 'string'
+    ? { activeSpaceId: updated.activeOrganizationId }
+    : null
+}
+
 function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
   return {
     user: {
@@ -199,11 +207,8 @@ function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof pers
       },
       update: {
         after: async (updated: { userId: string; activeOrganizationId?: unknown }) => {
-          await rememberSessionSpace(
-            client,
-            updated.userId,
-            typeof updated.activeOrganizationId === 'string' ? updated.activeOrganizationId : null,
-          )
+          const write = rememberedSessionSpaceWrite(updated)
+          if (write) await rememberSessionSpace(client, updated.userId, write.activeSpaceId)
         },
       },
     },

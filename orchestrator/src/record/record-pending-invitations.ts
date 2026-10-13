@@ -1,4 +1,4 @@
-// concern: record-invitations
+// concern: record-pending-invitations
 /** Owns signed-in users' pending hosted invitations. Must not know HTTP or CLI presentation. */
 
 import { SQL } from 'bun'

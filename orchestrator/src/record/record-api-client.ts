@@ -36,7 +36,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
-import type { HostedRecordInvitation } from './record-invitations.ts'
+import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,

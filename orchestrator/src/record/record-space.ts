@@ -81,19 +81,7 @@ export async function switchRecordSpace(
   client: Pick<RecordApiClient, 'whoami' | 'setActiveOrganization'> = recordApiClient(),
 ): Promise<RecordMembership> {
   const listed = await recordMemberships(client)
-  let selected: RecordMembership
-  try {
-    selected = resolveRecordSpace(value, listed.memberships)
-  } catch {
-    const slugs =
-      listed.memberships
-        .map((membership) => membership.slug)
-        .sort()
-        .join(', ') || '(none)'
-    throw new Error(
-      `record space ${value} is not one of the signed-in user's memberships; join it first with an invitation, then retry; available slugs: ${slugs}`,
-    )
-  }
+  const selected = resolveRecordSpace(value, listed.memberships)
   await client.setActiveOrganization({ organizationId: selected.spaceId })
   return selected
 }

@@ -3,7 +3,7 @@
 
 import type { Hono } from 'hono'
 import type { RecordIdentity } from './record-auth.ts'
-import type { HostedRecordInvitation } from './record-invitations.ts'
+import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 
 type InvitationEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
