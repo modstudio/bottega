@@ -14,8 +14,10 @@ export function machineIdStored(database: Database): string | null {
   )
 }
 
-function removeStoredMachineId(database: Database): void {
-  database.query('DELETE FROM schema_meta WHERE key=?').run(MACHINE_ID_KEY)
+function storeMachineId(database: Database, id: string): void {
+  database
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(MACHINE_ID_KEY, id)
 }
 
 export function carryMachineIdentity(
@@ -28,12 +30,12 @@ export function carryMachineIdentity(
   if (shared) {
     if (legacy && legacy !== shared)
       process.stderr.write(
-        `removing stale orchestrator machine identity ${legacy}; shared machine identity is ${shared}\n`,
+        `replacing stale orchestrator machine identity ${legacy}; shared machine identity is ${shared}\n`,
       )
-    if (legacy) transaction(() => removeStoredMachineId(database))
+    if (legacy !== shared) transaction(() => storeMachineId(database, shared))
     return shared
   }
   const id = sharedMachineId(legacy, env)
-  if (legacy) transaction(() => removeStoredMachineId(database))
+  transaction(() => storeMachineId(database, id))
   return id
 }

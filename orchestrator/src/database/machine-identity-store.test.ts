@@ -23,7 +23,7 @@ test('an orchestrator identity is carried to shared configuration once', () => {
     expect(carryMachineIdentity(database, (fn) => database.transaction(fn).immediate(), env)).toBe(
       id,
     )
-    expect(machineIdStored(database)).toBeNull()
+    expect(machineIdStored(database)).toBe(id)
     expect(storedMachineId(env)).toBe(id)
     expect(carryMachineIdentity(database, (fn) => database.transaction(fn).immediate(), env)).toBe(
       id,
@@ -34,7 +34,7 @@ test('an orchestrator identity is carried to shared configuration once', () => {
   }
 })
 
-test('a stale orchestrator identity is removed in favor of shared configuration', () => {
+test('a stale orchestrator identity is replaced by shared configuration', () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-carry-stale-'))
   const database = new Database(':memory:')
   try {
@@ -46,18 +46,18 @@ test('a stale orchestrator identity is removed in favor of shared configuration'
     expect(carryMachineIdentity(database, (fn) => database.transaction(fn).immediate(), env)).toBe(
       shared,
     )
-    database.query("INSERT INTO schema_meta VALUES ('machine_id', ?)").run(stale)
+    database.query("INSERT OR REPLACE INTO schema_meta VALUES ('machine_id', ?)").run(stale)
     expect(carryMachineIdentity(database, (fn) => database.transaction(fn).immediate(), env)).toBe(
       shared,
     )
-    expect(machineIdStored(database)).toBeNull()
+    expect(machineIdStored(database)).toBe(shared)
   } finally {
     database.close()
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('all evidence enqueue paths use the shared id without recreating its legacy key', () => {
+test('all evidence enqueue paths use the shared id and preserve its legacy key', () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-enqueue-'))
   const prior = process.env[CONFIG_HOME_ENV]
   process.env[CONFIG_HOME_ENV] = join(root, 'config')
@@ -107,7 +107,7 @@ test('all evidence enqueue paths use the shared id without recreating its legacy
       shared,
       shared,
     ])
-    expect(machineIdStored(database)).toBeNull()
+    expect(machineIdStored(database)).toBe(shared)
   } finally {
     database.close()
     if (prior === undefined) delete process.env[CONFIG_HOME_ENV]

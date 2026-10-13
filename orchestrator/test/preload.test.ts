@@ -9,7 +9,7 @@ const recordApiUrlAtModuleLoad = process.env.ORCH_RECORD_API_URL
 
 test('the preload isolates config before test modules are evaluated', () => {
   expect(realpathSync(configHomeAtModuleLoad!).startsWith(realpathSync(tmpdir()))).toBe(true)
-  expect(readdirSync(configHomeAtModuleLoad!)).toEqual([])
+  expect(readdirSync(configHomeAtModuleLoad!)).toEqual(['machine.toml'])
   expect(recordApiUrlAtModuleLoad).toBeUndefined()
 })
 
