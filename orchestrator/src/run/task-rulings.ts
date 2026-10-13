@@ -14,6 +14,7 @@ export type TaskRulingRow = {
   workflow_cursor_id?: number | null
   question: string
   answer: string
+  answer_basis?: string | null
   answered_at: string
   answerer_kind: AnswererKind | null
   overturned_at: string | null
@@ -27,6 +28,7 @@ type CarriedTaskRuling = {
   workflowCursorId: number | null
   question: string
   ruling: string
+  basis: string | null
   ruledBy: 'operator' | 'agent'
   date: string
   replacement: boolean
@@ -54,6 +56,7 @@ function carriedRuling(row: TaskRulingRow): CarriedTaskRuling {
     workflowCursorId: row.workflow_cursor_id ?? null,
     question: question.value,
     ruling: ruling.value,
+    basis: row.replacement === null ? (row.answer_basis ?? null) : null,
     ruledBy: row.answerer_kind === 'operator' ? 'operator' : 'agent',
     date: (row.replacement !== null ? row.overturned_at : row.answered_at)!.slice(0, 10),
     replacement: row.replacement !== null,
@@ -76,6 +79,7 @@ function entryText(ruling: CarriedTaskRuling): string {
   return (
     `- Question${questionTruncated}:\n${quoted(ruling.question)}\n` +
     `  Ruling${replacement}${rulingTruncated}:\n${quoted(ruling.ruling)}\n` +
+    (ruling.basis ? `  Basis:\n${quoted(ruling.basis)}\n` : '') +
     `  Ruled by: ${ruling.ruledBy} · ${ruling.runId === null ? `workflow cursor ${ruling.workflowCursorId}` : `run ${ruling.runId}`} · ${ruling.date}`
   )
 }

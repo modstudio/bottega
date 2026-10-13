@@ -30,6 +30,7 @@ export const question = pgTable.withRLS(
     why: text(),
     askedVia: text('asked_via'),
     answer: text(),
+    answerBasis: text('answer_basis'),
     answeredAt: timestamp('answered_at', { withTimezone: true }),
     answeredBy: text('answered_by'),
     answererKind: text('answerer_kind'),

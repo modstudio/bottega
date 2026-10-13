@@ -10,6 +10,7 @@ const remedy =
 export function selfRulingRefusal(
   resolvedAutonomy: AutonomyValue,
   floors: Pick<Floor, 'kind' | 'operatorRuling'>[],
+  basis: string,
 ): string | null {
   if (!floors.some((floor) => floor.kind === 'ruling'))
     return 'self-ruling is refused because this step has no ruling floor; this step is closed with the evidence its floor names'
@@ -17,5 +18,7 @@ export function selfRulingRefusal(
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))
     return `self-ruling is refused because this step's floor requires an operator ruling; ${remedy}`
+  if (!basis.trim())
+    return 'self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with `orch workflow await` and `orch workflow rule --from-operator`'
   return null
 }

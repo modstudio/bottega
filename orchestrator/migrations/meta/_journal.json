@@ -708,6 +708,13 @@
       "when": 1791874800000,
       "tag": "0100_board_reach_emission",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "6",
+      "when": 1791914400000,
+      "tag": "0101_workflow_self_ruling_basis",
+      "breakpoints": true
     }
   ]
 }

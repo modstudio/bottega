@@ -18,6 +18,15 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
 }
 type WorkflowStep = ReturnType<typeof getWorkflowStep> & { cursor?: number; notice?: string }
 
+export function withSelfRuling(
+  result: string,
+  selfRuling?: { ruling: string; basis: string },
+): string {
+  return selfRuling
+    ? `${result}\nSelf-ruling: ${selfRuling.ruling.trim()}\nBasis: ${selfRuling.basis.trim()}`
+    : result
+}
+
 const legend =
   "Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with `orch workflow await` and stop."
 
@@ -125,14 +134,14 @@ function autonomyInstruction(
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
   if (resolved === 'auto' && declared === 'ask')
     return maySelfRule
-      ? 'rule this step yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+      ? 'rule this step yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
       : 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
   if (resolved === 'review')
     return maySelfRule
-      ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+      ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
       : 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
   return maySelfRule
-    ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
     : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
 }
 

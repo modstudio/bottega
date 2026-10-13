@@ -22,7 +22,15 @@ export type ArgumentReboundEvent = {
 
 export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 
-export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
+const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
+
+export function completedWorkflowSummary(name: string, entries: CursorTrailEntry[]): string {
+  const closed = entries.filter(isClosedStep)
+  const reviews = closed
+    .filter((step) => step.review)
+    .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
+  return [`${name} is finished: ${closed.length} steps closed.`, ...reviews].join('\n')
+}
 
 export const hasClosedStep = (trail: string): boolean =>
   (JSON.parse(trail) as CursorTrailEntry[]).some(isClosedStep)

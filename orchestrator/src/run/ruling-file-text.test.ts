@@ -43,6 +43,22 @@ describe('filed ruling text', () => {
     expect(lintProse(filed)).toEqual([])
   })
 
+  test('renders a self-ruling basis beside the ruling', () => {
+    expect(
+      renderRulingFileText({
+        question: 'Which shape?',
+        ruling: 'Keep it.',
+        basis: 'specification line 4',
+        answererKind: 'agent',
+        runId: null,
+        workflow: { slug: 'flow', mode: 'default', cursorId: 3 },
+        taskKey: 'DEV-1294',
+        date: '2026-10-13T12:00:00.000Z',
+        questionId: 8,
+      }),
+    ).toContain('ruling: |\n  Keep it.\nbasis: |\n  specification line 4')
+  })
+
   test('prefixes a canon proposal and collapses it to one line', () => {
     expect(renderCanonProposalNote('Question: Which?\nRuling: This.')).toBe(
       'Canon proposal: Question: Which? / Ruling: This.',

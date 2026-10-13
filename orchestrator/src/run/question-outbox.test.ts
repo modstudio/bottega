@@ -39,7 +39,7 @@ test('question payload contains the hosted shape and replaces a pending mutation
   enqueueQuestionRecord(database, question.id)
   database
     .query(
-      `UPDATE question SET answer='One',answered_at='2026-09-25T10:02:00.000Z',revision=revision+1,
+      `UPDATE question SET answer='One',answer_basis='specification line 4',answered_at='2026-09-25T10:02:00.000Z',revision=revision+1,
        answered_by='architect',answerer_kind='agent',answer_channel='cli',
        filed_as='canon-proposal',filed_record_id='11111111-1111-4111-8111-111111111111',
        filed_label='${PLATFORM_SLUG}#44' WHERE id=?`,
@@ -64,6 +64,7 @@ test('question payload contains the hosted shape and replaces a pending mutation
     localId: question.id,
     options: ['one', 'two'],
     answer: 'One',
+    answerBasis: 'specification line 4',
     revision: 2,
     withheldFields: [],
     answeredAt: '2026-09-25T10:02:00.000Z',
@@ -119,22 +120,23 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
   const secret = 'Authorization: Bearer top-secret-value'
   const question = database
     .query(
-      `INSERT INTO question (run_id,asked_at,question,answer,answered_at,revision)
-       VALUES (42,'2026-09-25T10:01:00.000Z','Which?',?,'2026-09-25T10:02:00.000Z',2)
+      `INSERT INTO question (run_id,asked_at,question,answer,answer_basis,answered_at,revision)
+       VALUES (42,'2026-09-25T10:01:00.000Z','Which?',?,?,'2026-09-25T10:02:00.000Z',2)
        RETURNING id`,
     )
-    .get(secret) as { id: number }
+    .get(secret, secret) as { id: number }
   enqueueQuestionRecord(database, question.id)
 
-  expect(database.query('SELECT answer FROM question WHERE id=?').get(question.id)).toEqual({
-    answer: secret,
-  })
+  expect(
+    database.query('SELECT answer,answer_basis FROM question WHERE id=?').get(question.id),
+  ).toEqual({ answer: secret, answer_basis: secret })
   const outbox = database
     .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
     .get()!
   const payload = JSON.parse(outbox.payload) as Record<string, unknown>
   expect(payload.answer).toBe(WITHHELD_SECRET_SHAPED)
-  expect(payload.withheldFields).toEqual(['answer'])
+  expect(payload.answerBasis).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.withheldFields).toEqual(['answer', 'answer_basis'])
   expect(outbox.payload).not.toContain(secret)
 })
 

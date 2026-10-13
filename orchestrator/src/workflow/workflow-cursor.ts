@@ -30,8 +30,8 @@ import {
 import {
   type ClosedStep,
   type CursorTrailEntry,
+  completedWorkflowSummary,
   currentStepActivatedAt,
-  isClosedStep,
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
@@ -56,7 +56,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
-import { renderWorkflowStep } from './workflow-render.ts'
+import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
@@ -627,7 +627,7 @@ function nextWorkflowStepImpl(
       throw new Error('--self-ruling and --ruling are mutually exclusive')
     const step = composition.steps[row.ordinal]!
     const floors = catalogueFloorsFor(step)
-    const questionId = recordWorkflowSelfRuling(
+    const recorded = recordWorkflowSelfRuling(
       {
         cursorId: row.id,
         workflowKey: row.workflow_key,
@@ -640,7 +640,7 @@ function nextWorkflowStepImpl(
       },
       d,
     )
-    effectiveEvidence = { ...evidence, ruling: questionId }
+    effectiveEvidence = { ...evidence, ruling: recorded.questionId }
   }
   const next = composition.steps[row.ordinal + 1] ?? null
   const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
@@ -684,14 +684,10 @@ function nextWorkflowStepImpl(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    const closedSteps = closed.filter(isClosedStep)
-    const reviews = closedSteps
-      .filter((step) => step.review)
-      .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
-    return [
-      `${cursorName(slug, mode, row.workflow_key, true)} is finished: ${closedSteps.length} steps closed.`,
-      ...reviews,
-    ].join('\n')
+    return withSelfRuling(
+      completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
+      selfRuling,
+    )
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
@@ -704,7 +700,7 @@ function nextWorkflowStepImpl(
     at,
     row.id,
   )
-  return renderWorkflowStep({
+  const rendered = renderWorkflowStep({
     ...withWorkflowTextFacts(
       getWorkflowStep(
         slug,
@@ -724,6 +720,7 @@ function nextWorkflowStepImpl(
     ),
     cursor: row.id,
   })
+  return withSelfRuling(rendered, selfRuling)
 }
 
 export function nextWorkflowStep(

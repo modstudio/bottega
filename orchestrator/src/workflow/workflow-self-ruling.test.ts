@@ -12,17 +12,27 @@ const ruling = (operatorRuling = false): Floor => ({
 })
 
 test('only auto and review autonomy permit an agent self-ruling', () => {
-  expect(selfRulingRefusal('auto', [ruling()])).toBeNull()
-  expect(selfRulingRefusal('review', [ruling()])).toBeNull()
-  expect(selfRulingRefusal('ask', [ruling()])).toContain('resolved autonomy is ask')
+  expect(selfRulingRefusal('auto', [ruling()], 'specification line 4')).toBeNull()
+  expect(selfRulingRefusal('review', [ruling()], 'canon: delegation')).toBeNull()
+  expect(selfRulingRefusal('ask', [ruling()], 'specification line 4')).toContain(
+    'resolved autonomy is ask',
+  )
 })
 
 test('an operator-ruling floor refuses an agent self-ruling', () => {
-  expect(selfRulingRefusal('auto', [ruling(true)])).toContain('requires an operator ruling')
+  expect(selfRulingRefusal('auto', [ruling(true)], 'specification line 4')).toContain(
+    'requires an operator ruling',
+  )
 })
 
 test('a step without a ruling floor refuses an agent self-ruling', () => {
-  expect(selfRulingRefusal('auto', [{ ...ruling(), kind: 'command-exit' }])).toContain(
-    'has no ruling floor; this step is closed with the evidence its floor names',
-  )
+  expect(
+    selfRulingRefusal('auto', [{ ...ruling(), kind: 'command-exit' }], 'specification line 4'),
+  ).toContain('has no ruling floor; this step is closed with the evidence its floor names')
+})
+
+test('a self-ruling requires a non-empty basis after authority checks pass', () => {
+  expect(selfRulingRefusal('auto', [ruling()], '')).toContain('names no basis')
+  expect(selfRulingRefusal('auto', [ruling()], ' \n\t ')).toContain('names no basis')
+  expect(selfRulingRefusal('auto', [ruling()], 'recorded operator ruling 17')).toBeNull()
 })

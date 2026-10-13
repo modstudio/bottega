@@ -258,6 +258,32 @@ describe('orch MCP', () => {
     }
   })
 
+  test('next_workflow_step refuses a basis without a self-ruling at the MCP edge', async () => {
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const result = await client.callTool({
+        name: 'next_workflow_step',
+        arguments: {
+          slug: 'fix-defect',
+          project: 'fixture',
+          note: 'done',
+          self_ruling_basis: 'specification line 4',
+        },
+      })
+      expect(result.isError).toBe(true)
+      expect((result.content as { text: string }[])[0]?.text).toContain(
+        'self_ruling_basis requires self_ruling',
+      )
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('every MCP workflow operation routes by cursor handle', async () => {
     const project = 'mcp-cursor-handles'
     upsertProject({

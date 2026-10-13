@@ -107,6 +107,40 @@ function registerMcpServers(program: Command): void {
     )
 }
 
+function workflowCommandOptions(program: Command): Command {
+  return program
+    .command('workflow [args...]')
+    .option('--version <value>')
+    .option('--catalogue-version <value>')
+    .option('--cursor <value>')
+    .option('--file <value>')
+    .option('--reason <value>')
+    .option('--author <value>')
+    .option('--from <value>')
+    .option('--mode <value>')
+    .option('--project <value>')
+    .option('--session <value>')
+    .option('--note <value>')
+    .option('--question <value>')
+    .option('--ruling <value>')
+    .option('--self-ruling <value>')
+    .option('--basis <value>')
+    .option('--review <value>')
+    .option('--gate <value>')
+    .option('--run <value>')
+    .option('--artifact <value>')
+    .option('--task <value>')
+    .option('--defer <value>')
+    .option('--satisfies <value>')
+    .option('--from-operator')
+    .option('--cwd <value>')
+    .option('--check')
+    .option('--all')
+    .option('--arg <value>', '', collect, [])
+    .option('--autonomy <value>', '', collect, [])
+    .option('--json')
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('enforcement')
@@ -211,48 +245,18 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('workflow [args...]')
-    .option('--version <value>')
-    .option('--catalogue-version <value>')
-    .option('--cursor <value>')
-    .option('--file <value>')
-    .option('--reason <value>')
-    .option('--author <value>')
-    .option('--from <value>')
-    .option('--mode <value>')
-    .option('--project <value>')
-    .option('--session <value>')
-    .option('--note <value>')
-    .option('--question <value>')
-    .option('--ruling <value>')
-    .option('--self-ruling <value>')
-    .option('--review <value>')
-    .option('--gate <value>')
-    .option('--run <value>')
-    .option('--artifact <value>')
-    .option('--task <value>')
-    .option('--defer <value>')
-    .option('--satisfies <value>')
-    .option('--from-operator')
-    .option('--cwd <value>')
-    .option('--check')
-    .option('--all')
-    .option('--arg <value>', '', collect, [])
-    .option('--autonomy <value>', '', collect, [])
-    .option('--json')
-    .action((args, options, command) => {
-      const childInvocation = workflowChildCommandInvocation(
-        args,
-        command.parent?.rawArgs ?? [],
-        options,
-      )
-      return workflowCommand(
-        childInvocation?.argv ?? productArgv('workflow', args, options),
-        presentation,
-        childInvocation?.options,
-      )
-    })
+  workflowCommandOptions(program).action((args, options, command) => {
+    const childInvocation = workflowChildCommandInvocation(
+      args,
+      command.parent?.rawArgs ?? [],
+      options,
+    )
+    return workflowCommand(
+      childInvocation?.argv ?? productArgv('workflow', args, options),
+      presentation,
+      childInvocation?.options,
+    )
+  })
   program
     .command('lens [args...]')
     .option('--title <value>')

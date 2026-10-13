@@ -42,6 +42,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'recommendation', style: 'value' },
     { at: 'why', style: 'value' },
     { at: 'answer', style: 'value' },
+    { at: 'answerBasis', style: 'value', recordedAs: 'answer_basis' },
     { at: 'overturnReason', style: 'value', recordedAs: 'overturn_reason' },
     { at: 'replacement', style: 'value' },
     { at: 'filedRef', style: 'value', recordedAs: 'filed_ref' },

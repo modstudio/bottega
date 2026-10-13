@@ -44,6 +44,24 @@ describe('task ruling carry', () => {
     expect(renderTaskRulings(selected)).toContain('Ruled by: operator')
   })
 
+  test('shows a self-ruling basis beside its ruling but not beside a replacement', () => {
+    const original = renderTaskRulings(
+      selectTaskRulings([row({ answer_basis: 'specification line 4' })]),
+    )
+    expect(original).toContain('Ruling:\n> Use the settled way.\n  Basis:\n> specification line 4')
+
+    const replaced = renderTaskRulings(
+      selectTaskRulings([
+        row({
+          answer_basis: 'specification line 4',
+          overturned_at: '2026-09-24T12:00:00.000Z',
+          replacement: 'Use the replacement.',
+        }),
+      ]),
+    )
+    expect(replaced).not.toContain('Basis:')
+  })
+
   test('reports the candidate count omitted by the store', () => {
     const selected = selectTaskRulings(
       [
