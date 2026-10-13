@@ -4,7 +4,7 @@
 import { SQL } from 'bun'
 import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../../../shared/record/board-stream.ts'
 
-export const BOARD_WAKE_SAFETY_INTERVAL_MS = 30_000
+const BOARD_WAKE_SAFETY_INTERVAL_MS = 30_000
 
 export type BoardWakeSource = {
   subscribe(listener: () => void): () => void

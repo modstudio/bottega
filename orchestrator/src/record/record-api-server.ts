@@ -116,6 +116,33 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
   }
 }
 
+function serveRecordApi(
+  app: ReturnType<typeof recordApi>,
+  port: number,
+  boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
+) {
+  const server = Bun.serve({
+    hostname: '0.0.0.0',
+    port,
+    fetch: async (request, bunServer) => {
+      const started = performance.now()
+      if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
+        bunServer.timeout(request, 0)
+      }
+      const response = await app.fetch(request)
+      console.log(
+        `${request.method} ${new URL(request.url).pathname} ${response.status} ${Math.round(performance.now() - started)}ms`,
+      )
+      return response
+    },
+  })
+  const stop = server.stop.bind(server)
+  server.stop = async (closeActiveConnections) => {
+    await Promise.all([stop(closeActiveConnections), boardWakeSource.close()])
+  }
+  return server
+}
+
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
@@ -228,26 +255,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
-  const server = Bun.serve({
-    hostname: '0.0.0.0',
-    port: config.port,
-    fetch: async (request, bunServer) => {
-      const started = performance.now()
-      if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
-        bunServer.timeout(request, 0)
-      }
-      const response = await app.fetch(request)
-      console.log(
-        `${request.method} ${new URL(request.url).pathname} ${response.status} ${Math.round(performance.now() - started)}ms`,
-      )
-      return response
-    },
-  })
-  const stop = server.stop.bind(server)
-  server.stop = async (closeActiveConnections) => {
-    await Promise.all([stop(closeActiveConnections), boardWakeSource.close()])
-  }
-  return server
+  return serveRecordApi(app, config.port, boardWakeSource)
 }
 
 if (import.meta.main) {

@@ -148,6 +148,24 @@ function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant |
   }
 }
 
+function registerBoardStreamRoute(
+  app: Hono<ApiEnvironment>,
+  deps: { recordUrl: string } & RecordBoardDeps,
+  noSpace: (context: Context<ApiEnvironment>) => Response,
+): void {
+  app.get('/v1/board/stream', (context) => {
+    const tenant = boardTenant(deps.recordUrl, context.get('identity'))
+    if (!tenant) return noSpace(context)
+    return boardStreamResponse({
+      tenant,
+      wakeSource: deps.boardWakeSource,
+      readHead: deps.readBoardHead,
+      signal: context.req.raw.signal,
+      clock: deps.boardStreamClock,
+    })
+  })
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: { recordUrl: string } & RecordBoardDeps,
@@ -161,6 +179,8 @@ export function registerRecordBoardRoutes(
   const readJson = async (context: Context<ApiEnvironment>) => context.req.json().catch(() => null)
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
+
+  registerBoardStreamRoute(app, deps, helpers.noSpace)
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
@@ -323,17 +343,6 @@ export function registerRecordBoardRoutes(
     } catch (error) {
       return writeError(context, error)
     }
-  })
-  app.get('/v1/board/stream', (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
-    return boardStreamResponse({
-      tenant,
-      wakeSource: deps.boardWakeSource,
-      readHead: deps.readBoardHead,
-      signal: context.req.raw.signal,
-      clock: deps.boardStreamClock,
-    })
   })
   app.put('/v1/board/claims', async (context) => {
     const tenant = tenantOf(context)
