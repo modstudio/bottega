@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { MECHANICAL_CHECK_CATALOGUE, toolchainForStack } from './enforcement-catalogue.ts'
-import { resolveMechanicalChecks } from './enforcement-resolution.ts'
+import {
+  mechanicallyEnforcedChecks,
+  type ResolvedMechanicalCheck,
+  resolveMechanicalChecks,
+} from './enforcement-resolution.ts'
 
 const resolved = (
   stack: string | null,
@@ -160,5 +164,43 @@ describe('resolveMechanicalChecks', () => {
     expect(row(rows, 'test-substance')?.note).toBe(
       'project assertion policy; PHP policy rules: createMock',
     )
+  })
+})
+
+describe('mechanicallyEnforcedChecks', () => {
+  const resolvedRow = (overrides: Partial<ResolvedMechanicalCheck>): ResolvedMechanicalCheck => ({
+    category: 'formatting',
+    title: 'Formatting',
+    scope: 'file',
+    enforced: true,
+    tool: 'biome format',
+    points: ['gate'],
+    blocking: true,
+    limit: null,
+    source: 'own',
+    note: null,
+    reason: null,
+    ...overrides,
+  })
+
+  test('selects only enforced blocking commit or gate rows', () => {
+    const rows = [
+      resolvedRow({}),
+      resolvedRow({ category: 'write-only', points: ['write'] }),
+      resolvedRow({ category: 'report-only', blocking: false }),
+      resolvedRow({ category: 'unadopted-default', enforced: false, source: 'stack' }),
+      resolvedRow({
+        category: 'opted-out',
+        enforced: false,
+        tool: null,
+        points: [],
+        blocking: false,
+        source: 'opted-out',
+      }),
+    ]
+
+    expect(mechanicallyEnforcedChecks(rows)).toEqual([
+      { category: 'formatting', title: 'Formatting', tool: 'biome format' },
+    ])
   })
 })
