@@ -1,12 +1,12 @@
 import { structuredPatch } from 'diff'
 
-type RevisionComparison = { kind: 'current' } | { kind: 'revision'; id: number }
+type RevisionComparison<T> = { kind: 'current' } | { kind: 'revision'; id: T }
 
 /** The body that replaced a stored revision, given revision ids newest first. */
-export function revisionComparison(
-  revisionIds: readonly number[],
-  selectedId: number,
-): RevisionComparison | null {
+export function revisionComparison<T>(
+  revisionIds: readonly T[],
+  selectedId: T,
+): RevisionComparison<T> | null {
   const selectedIndex = revisionIds.indexOf(selectedId)
   if (selectedIndex < 0) return null
   const newerId = revisionIds[selectedIndex - 1]

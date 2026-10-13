@@ -50,6 +50,7 @@ export type RecordDocRevision = {
   op: DocRevisionOp
   title: string
   body: string
+  withheldForAudience: boolean
   delivery: DocDelivery
   audiences: DocAudiences
   parentId: string | null
@@ -63,6 +64,7 @@ export type RecordDocRevision = {
   sourceFiles?: string[]
   replacementSlug?: string | null
   author: string
+  authorName: string | null
   reason: string
   sessionId: string | null
   at: string
@@ -338,6 +340,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     op: String(row.op) as DocRevisionOp,
     title: String(row.title),
     body: String(row.body),
+    withheldForAudience: false,
     delivery: String(row.delivery) as DocDelivery,
     audiences: recordDocAudiences(row.audiences),
     parentId: row.parent_id == null ? null : String(row.parent_id),
@@ -357,6 +360,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
+    authorName: row.author_name == null ? null : String(row.author_name),
     reason: String(row.reason),
     sessionId: row.session_id == null ? null : String(row.session_id),
     at: recordDocIso(row.at)!,

@@ -7,6 +7,7 @@ describe('revision comparison', () => {
     expect(revisionComparison([30, 20, 10], 20)).toEqual({ kind: 'revision', id: 30 })
     expect(revisionComparison([30, 20, 10], 30)).toEqual({ kind: 'current' })
     expect(revisionComparison([30, 20, 10], 99)).toBeNull()
+    expect(revisionComparison(['new', 'old'], 'old')).toEqual({ kind: 'revision', id: 'new' })
   })
 })
 

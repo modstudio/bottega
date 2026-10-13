@@ -6,6 +6,7 @@ import { Button } from '@/ui/button/button'
 import { Callout } from '@/ui/callout/callout'
 import { Segmented } from '@/ui/segmented/segmented'
 import type { DocScope } from '../../../../shared/docs.ts'
+import { hasRecordIdShape } from '../../../../shared/record-id.ts'
 import { readingBody } from './body.ts'
 import { savedVersionAuthor } from './reading.tsx'
 import { revisionComparison, shapeRevisionDiff } from './revision-diff.ts'
@@ -35,30 +36,34 @@ export function revisionIdForSource(
 ): number | string | null {
   if (!revisionParam) return null
   if (source === 'local') return /^\d+$/.test(revisionParam) ? Number(revisionParam) : null
-  if (source === 'hosted') {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      revisionParam,
-    )
-      ? revisionParam
-      : null
-  }
+  if (source === 'hosted') return hasRecordIdShape(revisionParam) ? revisionParam : null
   return null
 }
 
-function hostedRevisionSelection<T extends { id: string; body: string }>(
+function hostedRevisionSelection<
+  T extends { id: string; body: string; withheldForAudience: boolean },
+>(
   revisions: readonly T[] | undefined,
   revisionId: number | string | null,
   currentBody: string | null,
 ): { selected: T | null; replacementBody: string | null; ids: string[] | undefined } {
-  const index =
-    typeof revisionId === 'string'
-      ? (revisions?.findIndex(({ id }) => id === revisionId) ?? -1)
-      : -1
+  const ids = revisions?.map(({ id }) => id)
+  const comparison =
+    typeof revisionId === 'string' && ids ? revisionComparison(ids, revisionId) : null
+  const selected = revisions?.find(({ id }) => id === revisionId) ?? null
+  const newer =
+    comparison?.kind === 'revision'
+      ? (revisions?.find(({ id }) => id === comparison.id) ?? null)
+      : null
   return {
-    selected: index >= 0 ? (revisions?.[index] ?? null) : null,
+    selected,
     replacementBody:
-      index === 0 ? currentBody : index > 0 ? (revisions?.[index - 1]?.body ?? null) : null,
-    ids: revisions?.map(({ id }) => id),
+      selected?.withheldForAudience || newer?.withheldForAudience
+        ? null
+        : comparison?.kind === 'current'
+          ? currentBody
+          : (newer?.body ?? null),
+    ids,
   }
 }
 
@@ -160,12 +165,19 @@ export function RevisionViewer({
   mode,
   onMode,
 }: {
-  revision: { body: string; author: string; at: string }
+  revision: {
+    body: string
+    author: string
+    authorName?: string | null
+    at: string
+    withheldForAudience?: boolean
+  }
   replacementBody: string | null
   onCurrent: () => void
   mode: RevisionMode
   onMode: (mode: RevisionMode) => void
 }) {
+  const diffOffered = !revision.withheldForAudience && replacementBody !== null
   const diff = useMemo(
     () => (replacementBody === null ? null : shapeRevisionDiff(revision.body, replacementBody)),
     [revision.body, replacementBody],
@@ -178,21 +190,27 @@ export function RevisionViewer({
         title={`Viewing a version saved by ${author} on ${savedAt(revision.at)}`}
       >
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <Segmented
-            label="Version display"
-            value={mode}
-            options={[
-              { value: 'diff', label: 'Show diff' },
-              { value: 'version', label: 'Show version' },
-            ]}
-            onChange={(value) => onMode(value as RevisionMode)}
-          />
+          {diffOffered ? (
+            <Segmented
+              label="Version display"
+              value={mode}
+              options={[
+                { value: 'diff', label: 'Show diff' },
+                { value: 'version', label: 'Show version' },
+              ]}
+              onChange={(value) => onMode(value as RevisionMode)}
+            />
+          ) : null}
           <Button size="sm" variant="secondary" onClick={onCurrent}>
             Back to current
           </Button>
         </div>
       </Callout>
-      {mode === 'version' ? (
+      {revision.withheldForAudience ? (
+        <p className="mt-6 text-md text-text-muted">
+          This version was not available to the selected audience.
+        </p>
+      ) : mode === 'version' || !diffOffered ? (
         <div className="mt-6">
           <Markdown content={readingBody(revision.body)} />
         </div>

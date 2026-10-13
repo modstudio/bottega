@@ -96,6 +96,20 @@ function appWith(session: typeof identity | null, overrides: Record<string, unkn
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
+  test('the revisions route forwards its audience to the record service', async () => {
+    const calls: unknown[] = []
+    const app = appWith(identity, {
+      listDocRevisions: async (input: unknown) => {
+        calls.push(input)
+        return []
+      },
+    })
+
+    expect((await app.request(`/v1/docs/${id}/revisions?audience=internal`)).status).toBe(200)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ id, audience: 'internal' })
+  })
+
   test('a document destination binds a member space while no header keeps the active space', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
     const session = {
@@ -343,12 +357,14 @@ describe('record API', () => {
                 op: 'set',
                 title: 'settings',
                 body: '{}',
+                withheldForAudience: false,
                 delivery: 'demand',
                 audiences: ['technical'],
                 parentId: null,
                 position: 0,
                 reason: 'fixture',
                 author: 'fixture',
+                authorName: null,
                 sessionId: null,
                 at: '2026-09-28T12:00:00.000Z',
               },
