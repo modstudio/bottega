@@ -66,6 +66,8 @@ registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)
 
+const READ_ONLY_COMMANDS = new Set(['migrate', 'ratchet'])
+
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
@@ -73,8 +75,7 @@ function isReadOnlyInvocation(argv: string[]): boolean {
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
-  if (argv[0] === 'migrate') return true
-  if (argv[0] === 'ratchet') return true
+  if (READ_ONLY_COMMANDS.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
   if (argv[0] === 'monitor') return true

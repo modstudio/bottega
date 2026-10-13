@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { inspectionGitEnv } from './git'
 import type { ChangeFacts, LineRange } from './ratchet'
 
-export type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
+type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
 
 export type ChangeEntry = {
   status: ChangeStatus
