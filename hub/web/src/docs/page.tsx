@@ -18,12 +18,25 @@ import {
 } from './filters.ts'
 import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
-import { docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
+import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
 import { type RevisionMode, RevisionViewer, useRevisionView } from './revision-viewer.tsx'
 import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
 import { DocsView } from './view.tsx'
+
+function docsSourceName(
+  source: ReturnType<typeof docsSource>,
+  memberships: unknown,
+  active?: string | null,
+) {
+  return docsSourceLabel(
+    source,
+    recordSpaces(memberships as Parameters<typeof recordSpaces>[0]).find(
+      (space) => space.id === active,
+    )?.name,
+  )
+}
 
 export function DocsPage() {
   const hosted = isHostedMode()
@@ -38,11 +51,7 @@ export function DocsPage() {
   const signedIn = hosted ? Boolean(whoami.data?.user && 'email' in whoami.data.user) : true
   const identityResolved = !hosted || origin.kind === 'public' || whoami.isFetched
   const source = docsSource(hosted, signedIn)
-  const sourceLabel = docsSourceLabel(
-    source,
-    recordSpaces(whoami.data?.memberships).find((space) => space.id === whoami.data?.activeSpaceId)
-      ?.name,
-  )
+  const sourceLabel = docsSourceName(source, whoami.data?.memberships, whoami.data?.activeSpaceId)
   const detail = useMatch({ from: '/docs/$scope/$subject/$slug', shouldThrow: false })
   const params = detail?.params
   const search = detail?.search
@@ -52,6 +61,7 @@ export function DocsPage() {
   const [creating, setCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showDrafts, setShowDrafts] = useState(false)
+  const [showWorking, setShowWorking] = useState(false)
   const [revisionMode, setRevisionMode] = useState<RevisionMode>('version')
   const catalog = useDocsTree(source)
   const includeDrafts = source !== 'public' && showDrafts
@@ -59,6 +69,7 @@ export function DocsPage() {
     () => docsVisibleByStatus(catalog.items, includeDrafts),
     [catalog.items, includeDrafts],
   )
+  const includeWorking = docsSearchIncludesWorking(navigationItems, project, showWorking)
   const subjects = useMemo(() => projectSubjects(navigationItems), [navigationItems])
   const selected = useMemo(() => {
     if (!params) return null
@@ -73,12 +84,11 @@ export function DocsPage() {
     )
   }, [catalog.items, params, search?.id])
   const selectedId = selected?.id
-  const selectedProject = selected?.projectName
   useEffect(() => {
     if (!selectedId) return
-    setProject(selectedProject ?? 'all')
+    setProject(selected?.projectName ?? 'all')
     setEmptyChooserSet(true)
-  }, [selectedId, selectedProject])
+  }, [selectedId, selected?.projectName])
   useEffect(() => {
     if (selectedId || emptyChooserSet || catalog.isPending) return
     setProject(chooserProject(null, subjects))
@@ -101,6 +111,7 @@ export function DocsPage() {
     selectedAudience(filters),
     searchSubject(project, navigationItems),
     includeDrafts,
+    includeWorking,
   )
 
   const open = useCallback(
@@ -158,6 +169,8 @@ export function DocsPage() {
         showDrafts={includeDrafts}
         onShowDrafts={setShowDrafts}
         canShowDrafts={source !== 'public'}
+        showWorking={source !== 'public' && showWorking}
+        onShowWorking={setShowWorking}
         doc={reading.document}
         replacement={replacement}
         locationFor={locationFor}

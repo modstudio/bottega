@@ -41,6 +41,7 @@ export function FilterPanel({
   onChange,
   total,
   drafts,
+  working,
 }: {
   offered: OfferedFilter[]
   chosen: FilterSelection
@@ -48,8 +49,11 @@ export function FilterPanel({
   total: number
   /** The drafts switch, or null where the reader may not see drafts. */
   drafts: { shown: boolean; onChange: (shown: boolean) => void } | null
+  /** The working-document switch, or null where it does not apply. */
+  working: { shown: boolean; onChange: (shown: boolean) => void } | null
 }) {
   const draftsId = useId()
+  const workingId = useId()
   const labels: Record<FilterKey, string> = {
     audience: 'Audience',
     scope: 'Scope',
@@ -97,6 +101,20 @@ export function FilterPanel({
             aria-label="Show drafts"
             checked={drafts.shown}
             onChange={(event) => drafts.onChange(event.currentTarget.checked)}
+          />
+        </label>
+      ) : null}
+      {working ? (
+        <label
+          htmlFor={workingId}
+          className="mt-3 flex cursor-pointer items-center justify-between gap-2 border-border-default border-t pt-3 text-md text-text-secondary first:mt-0 first:border-t-0 first:pt-0"
+        >
+          Show working documents
+          <Switch
+            id={workingId}
+            aria-label="Show working documents"
+            checked={working.shown}
+            onChange={(event) => working.onChange(event.currentTarget.checked)}
           />
         </label>
       ) : null}

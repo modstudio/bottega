@@ -5,14 +5,16 @@ export function docsSearchInputs(
   audience: DocsAudience | null,
   subject: string | undefined,
   includeDrafts: boolean,
+  includeWorking: boolean,
 ) {
   return {
-    local: { query, audience: audience ?? undefined, subject, includeDrafts },
+    local: { query, audience: audience ?? undefined, subject, includeDrafts, includeWorking },
     hosted: {
       query,
       audience: audience ?? undefined,
       subject,
       includeDrafts,
+      includeWorking,
       acrossReadableSpaces: true as const,
     },
     public: { query },

@@ -62,6 +62,7 @@ test('local search makes one orch call and excludes a subject-only store match',
     created_at: '2026-10-06T12:00:00.000Z',
     updated_at: '2026-10-06T12:00:00.000Z',
     status: 'current' as const,
+    kind: 'article' as const,
   }
   const list = mock(async () => [base, { ...base, id: 2, body: 'Other.', subject: 'needle' }])
   expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([
@@ -71,7 +72,7 @@ test('local search makes one orch call and excludes a subject-only store match',
       title: 'Guide',
       audiences: ['technical'],
       status: 'current',
-      kind: 'working',
+      kind: 'article',
       snippet: 'A needle in the body.',
       matchPosition: 2,
     },
@@ -97,6 +98,7 @@ test('local search includes draft rows only when requested', async () => {
             title: 'Draft guide',
             body: 'Needle draft.',
             status: 'draft' as const,
+            kind: 'article' as const,
           },
         ]
       : [],
@@ -104,5 +106,32 @@ test('local search includes draft rows only when requested', async () => {
   expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([])
   expect(await searchLocalDocs({ query: 'needle', includeDrafts: true }, list as never)).toEqual([
     expect.objectContaining({ slug: 'draft-guide', status: 'draft' }),
+  ])
+})
+
+test('local search hides matching working documents unless requested', async () => {
+  const article = {
+    id: 1,
+    slug: 'article',
+    title: 'Needle article',
+    body: 'Article body.',
+    status: 'current' as const,
+    kind: 'article' as const,
+  }
+  const working = {
+    ...article,
+    id: 2,
+    slug: 'working',
+    title: 'Needle working document',
+    kind: 'working' as const,
+  }
+  const list = mock(async () => [article, working])
+
+  expect(await searchLocalDocs({ query: 'needle' }, list as never)).toEqual([
+    expect.objectContaining({ slug: 'article' }),
+  ])
+  expect(await searchLocalDocs({ query: 'needle', includeWorking: true }, list as never)).toEqual([
+    expect.objectContaining({ slug: 'article' }),
+    expect.objectContaining({ slug: 'working' }),
   ])
 })

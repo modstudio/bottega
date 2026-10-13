@@ -88,6 +88,7 @@ describe('record client', () => {
       audiences: ['user'] as const,
       summary: 'Welcome summary',
       featured: false,
+      kind: 'article' as const,
     }
     const fetch: RecordFetch = async (url, init) => {
       const headers = new Headers(init?.headers)
@@ -99,7 +100,14 @@ describe('record client', () => {
       if (url.includes('/search'))
         return jsonResponse({
           items: [
-            { id, slug: 'welcome', title: 'Welcome', audiences: ['user'], snippet: 'Welcome body' },
+            {
+              id,
+              slug: 'welcome',
+              title: 'Welcome',
+              audiences: ['user'],
+              kind: 'article',
+              snippet: 'Welcome body',
+            },
           ],
         })
       if (url.endsWith(`/${id}`)) return jsonResponse({ ...serverItem, body: 'Welcome body' })
@@ -120,7 +128,7 @@ describe('record client', () => {
           title: 'Welcome',
           audiences: ['internal'],
           status: 'current',
-          kind: 'working',
+          kind: 'article',
           snippet: 'Welcome body',
           matchPosition: null,
         },
@@ -162,6 +170,7 @@ describe('record client', () => {
             slug: 'welcome',
             title: 'Welcome',
             audiences: ['technical'],
+            kind: 'article',
             snippet: 'Welcome body',
             spaceName: 'Workshop',
           },
@@ -333,6 +342,7 @@ describe('record client', () => {
         body: 'Body.',
         delivery: 'demand',
         audiences: ['technical'],
+        kind: 'article',
         projectName: 'atlas',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-02T00:00:00.000Z',

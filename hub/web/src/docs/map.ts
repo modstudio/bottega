@@ -1,8 +1,10 @@
 import {
   DOC_FORMS,
+  DOC_KINDS,
   DOC_STATUSES,
   type DocArticleSubject,
   type DocAudiences,
+  type DocKind,
   type DocStatus,
   docScopeHasProjectSubject,
   normalizeDocAudiences,
@@ -20,6 +22,11 @@ function deliveryOf(value: unknown): DocsTreeItem['delivery'] {
 
 function statusOf(value: unknown): DocStatus {
   return DOC_STATUSES.includes(value as DocStatus) ? (value as DocStatus) : 'current'
+}
+
+function kindOf(value: unknown): DocKind {
+  if (!DOC_KINDS.includes(value as DocKind)) throw new Error('document kind is required')
+  return value as DocKind
 }
 
 function articleSubjectOf(value: unknown): DocArticleSubject | null | undefined {
@@ -66,6 +73,7 @@ export function mapTreeItem(row: Record<string, unknown>): DocsTreeItem {
     subject,
     audiences: audiencesOf(row.audiences),
     status: statusOf(row.status),
+    kind: kindOf(row.kind),
     replacementSlug: typeof row.replacementSlug === 'string' ? row.replacementSlug : null,
     delivery: deliveryOf(row.delivery),
     summary: typeof row.summary === 'string' ? row.summary : '',
@@ -98,6 +106,7 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     slug: String(row.slug ?? ''),
     title: String(row.title ?? ''),
     status: statusOf(row.status),
+    kind: kindOf(row.kind),
     audiences: audiencesOf(row.audiences),
     snippet: String(row.snippet ?? ''),
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,

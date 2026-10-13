@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import { docScopeHasProjectSubject } from '../../../../shared/docs.ts'
 import { EMPTY_FILTERS } from './filters.ts'
-import { docsViewModel, docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
+import {
+  docsViewModel,
+  docsVisibleByKind,
+  docsVisibleByStatus,
+  resolveDocsReplacement,
+} from './model.ts'
 import type { DocsTreeItem } from './types.ts'
 
 function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'>): DocsTreeItem {
@@ -15,6 +20,7 @@ function item(partial: Partial<DocsTreeItem> & Pick<DocsTreeItem, 'id' | 'title'
     audiences: ['internal'],
     ...partial,
     status: partial.status ?? 'current',
+    kind: partial.kind ?? 'article',
     replacementSlug: partial.replacementSlug ?? null,
     scope,
     subject,
@@ -46,6 +52,45 @@ test('tree visibility includes drafts only when asked and never includes retired
     'current',
     'draft',
   ])
+})
+
+test('working documents are opt-in except when a view has no article', () => {
+  const article = item({ id: 'article', title: 'Article' })
+  const working = item({ id: 'working', title: 'Working', kind: 'working' })
+  expect(docsVisibleByKind([article, working], false).map((row) => row.id)).toEqual(['article'])
+  expect(docsVisibleByKind([article, working], true).map((row) => row.id)).toEqual([
+    'article',
+    'working',
+  ])
+  expect(docsVisibleByKind([working], false).map((row) => row.id)).toEqual(['working'])
+})
+
+test('kind visibility and its switch follow the status-visible catalogue', () => {
+  const catalogue = [
+    item({ id: 'article', title: 'Draft article', status: 'draft' }),
+    item({ id: 'working', title: 'Working document', kind: 'working' }),
+  ]
+  const draftsHidden = docsViewModel(
+    docsVisibleByStatus(catalogue, false),
+    'atlas',
+    EMPTY_FILTERS,
+    null,
+    null,
+  )
+  expect(draftsHidden.tree.map((row) => row.id)).toEqual(['working'])
+  expect(draftsHidden.canShowWorking).toBeFalse()
+  expect(draftsHidden.searchIncludesWorking).toBeTrue()
+
+  const draftsShown = docsViewModel(
+    docsVisibleByStatus(catalogue, true),
+    'atlas',
+    EMPTY_FILTERS,
+    null,
+    null,
+  )
+  expect(draftsShown.tree.map((row) => row.id)).toEqual(['article'])
+  expect(draftsShown.canShowWorking).toBeTrue()
+  expect(draftsShown.searchIncludesWorking).toBeFalse()
 })
 
 test('replacement resolution requires one row at the same document address', () => {

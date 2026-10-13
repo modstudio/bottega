@@ -16,6 +16,7 @@ const rows: DocsTreeItem[] = [
     subject: 'starship',
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
   },
   {
@@ -29,6 +30,7 @@ const rows: DocsTreeItem[] = [
     subject: 'starship',
     audiences: ['technical'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
   },
 ]

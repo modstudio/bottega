@@ -5,6 +5,7 @@ import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   type DocAudience,
   type DocAudiences,
+  type DocKind,
   type DocStatus,
   docSummary,
 } from '../../../shared/docs.ts'
@@ -28,6 +29,7 @@ export type PublicRecordDoc = {
   audiences: DocAudiences
   summary?: string
   featured?: boolean
+  kind: DocKind
 }
 
 export type PublicRecordDocTreeItem = Omit<PublicRecordDoc, 'body'>
@@ -39,6 +41,7 @@ export type RecordDocSearchMatch = {
   snippet: string
   spaceName?: string
   status: DocStatus
+  kind: DocKind
   audiences: DocAudiences
 }
 
@@ -49,6 +52,7 @@ export type RecordDocSearchInput = {
   audience?: DocAudience
   acrossReadableSpaces: boolean
   includeDrafts?: boolean
+  includeWorking?: boolean
 }
 
 export function normalizeDocSearchQuery(value: string): string {
@@ -73,6 +77,7 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     audiences: recordDocAudiences(row.audiences),
     summary: docSummary(body),
     featured: row.featured == null ? false : Boolean(row.featured),
+    kind: String(row.kind) as DocKind,
   }
 }
 
@@ -83,6 +88,7 @@ export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDoc
     title: String(row.title),
     snippet: String(row.snippet),
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
+    kind: String(row.kind) as DocKind,
     audiences: recordDocAudiences(row.audiences),
     ...(row.space_name == null ? {} : { spaceName: String(row.space_name) }),
   }
@@ -117,8 +123,9 @@ export async function listPublicRecordDocs(input: {
 }): Promise<PublicRecordDocTreeItem[]> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences, kind
       FROM doc
+      WHERE kind = 'article'
       ORDER BY position, title, id
     `
     return rows.map((row: Record<string, unknown>) => {
@@ -134,9 +141,9 @@ export async function getPublicRecordDoc(input: {
 }): Promise<PublicRecordDoc | null> {
   return publicRead(input.url, async (tx) => {
     const rows = await tx`
-      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences
+      SELECT id, slug, title, body, featured, parent_id, position, updated_at, scope, subject, audiences, kind
       FROM doc
-      WHERE id=${input.id}::uuid
+      WHERE id=${input.id}::uuid AND kind = 'article'
     `
     return rows[0] ? publicRecordDocRow(rows[0] as Record<string, unknown>) : null
   })
@@ -190,25 +197,25 @@ export async function searchPublicRecordDocs(input: {
       WITH search_query AS (
         SELECT websearch_to_tsquery('english', ${query}) AS value
       ), limited AS (
-        SELECT d.id, d.slug, d.title, d.body, d.audiences, d.updated_at, q.value,
+        SELECT d.id, d.slug, d.title, d.body, d.audiences, d.kind, d.updated_at, q.value,
                ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         CROSS JOIN search_query q
-        WHERE d.status = 'current'
+        WHERE d.status = 'current' AND d.kind = 'article'
           AND strpos(d.body, ':::section') = 0
           AND d.search_vector @@ q.value
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, audiences, updated_at, 'current' AS status,
+      SELECT id, slug, title, audiences, kind, updated_at, 'current' AS status,
              ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, updated_at DESC, id
     `) as Record<string, unknown>[]
     const marked = (await tx`
-      SELECT d.id, d.slug, d.title, d.body, d.audiences, d.updated_at, 'current' AS status
+      SELECT d.id, d.slug, d.title, d.body, d.audiences, d.kind, d.updated_at, 'current' AS status
       FROM doc d
-      WHERE d.status = 'current' AND strpos(d.body, ':::section') > 0
+      WHERE d.status = 'current' AND d.kind = 'article' AND strpos(d.body, ':::section') > 0
     `) as Record<string, unknown>[]
     const projected = await searchedMarkedRows(tx, marked, query, 'customer')
     return rankedRows([...unmarked, ...projected]).map(recordDocSearchMatchRow)
@@ -228,7 +235,7 @@ export async function searchRecordDocs(
         WITH search_query AS (
           SELECT websearch_to_tsquery('english', ${query}) AS value
         ), limited AS (
-          SELECT d.id, d.slug, d.title, d.body, d.status, d.audiences, s.name AS space_name, q.value,
+          SELECT d.id, d.slug, d.title, d.body, d.status, d.kind, d.audiences, s.name AS space_name, q.value,
                  ts_rank(d.search_vector, q.value) AS rank
           FROM doc d
           JOIN space s ON s.id=d.space_id
@@ -243,11 +250,12 @@ export async function searchRecordDocs(
               OR d.subject=${input.subject ?? null}
             )
             AND (d.status = 'current' OR (${input.includeDrafts ?? false}::boolean AND d.status = 'draft'))
+            AND (d.kind = 'article' OR ${input.includeWorking ?? false}::boolean)
             AND d.search_vector @@ q.value
           ORDER BY rank DESC, d.updated_at DESC, d.id
           LIMIT ${DOC_SEARCH_RESULT_LIMIT}
         )
-        SELECT id, slug, title, status, audiences, space_name,
+        SELECT id, slug, title, status, kind, audiences, space_name,
                ts_headline('english', body, value) AS snippet, rank
         FROM limited
         ORDER BY rank DESC, id
@@ -258,7 +266,7 @@ export async function searchRecordDocs(
       WITH search_query AS (
         SELECT websearch_to_tsquery('english', ${query}) AS value
       ), limited AS (
-        SELECT d.id, d.slug, d.title, d.body, d.status, d.audiences, d.updated_at,
+        SELECT d.id, d.slug, d.title, d.body, d.status, d.kind, d.audiences, d.updated_at,
                s.name AS space_name, q.value, ts_rank(d.search_vector, q.value) AS rank
         FROM doc d
         JOIN space s ON s.id=d.space_id
@@ -273,18 +281,19 @@ export async function searchRecordDocs(
             OR d.subject=${input.subject ?? null}
           )
           AND (d.status = 'current' OR (${input.includeDrafts ?? false}::boolean AND d.status = 'draft'))
+          AND (d.kind = 'article' OR ${input.includeWorking ?? false}::boolean)
           AND strpos(d.body, ':::section') = 0
           AND d.search_vector @@ q.value
         ORDER BY rank DESC, d.updated_at DESC, d.id
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
-      SELECT id, slug, title, status, audiences, updated_at, space_name,
+      SELECT id, slug, title, status, kind, audiences, updated_at, space_name,
              ts_headline('english', body, value) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, updated_at DESC, id
     `) as Record<string, unknown>[]
     const marked = (await tx`
-        SELECT d.id, d.slug, d.title, d.body, d.status, d.audiences, d.updated_at, s.name AS space_name
+        SELECT d.id, d.slug, d.title, d.body, d.status, d.kind, d.audiences, d.updated_at, s.name AS space_name
         FROM doc d
         JOIN space s ON s.id=d.space_id
         WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
@@ -297,6 +306,7 @@ export async function searchRecordDocs(
             OR d.subject=${input.subject ?? null}
           )
           AND (d.status = 'current' OR (${input.includeDrafts ?? false}::boolean AND d.status = 'draft'))
+          AND (d.kind = 'article' OR ${input.includeWorking ?? false}::boolean)
           AND strpos(d.body, ':::section') > 0
     `) as Record<string, unknown>[]
     const projected = await searchedMarkedRows(tx, marked, query, input.audience)

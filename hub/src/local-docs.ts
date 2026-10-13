@@ -28,7 +28,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     summary: docSummary(row.body),
     featured: Boolean(row.featured),
     status: row.status ?? 'current',
-    kind: row.kind ?? 'working',
+    kind: row.kind,
     replacementSlug: row.replacement_slug ?? null,
     form: row.form ?? null,
     articleSubject: row.articleSubject ?? null,

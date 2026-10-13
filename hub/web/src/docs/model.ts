@@ -29,6 +29,27 @@ export function docsVisibleByStatus(
   )
 }
 
+/** Articles are the normal reader catalogue; a working-only view remains usable. */
+export function docsVisibleByKind(
+  items: readonly DocsTreeItem[],
+  showWorking: boolean,
+): DocsTreeItem[] {
+  const hasArticle = items.some((item) => item.kind === 'article')
+  if (showWorking || !hasArticle) return [...items]
+  return items.filter((item) => item.kind === 'article')
+}
+
+/** Whether search follows a working-document view of this catalogue. */
+export function docsSearchIncludesWorking(
+  items: readonly DocsTreeItem[],
+  project: string | 'all',
+  showWorking: boolean,
+): boolean {
+  return docsVisibleByKind(inProject(items, project), showWorking).some(
+    (item) => item.kind === 'working',
+  )
+}
+
 /** A replacement is linkable only when its address identifies one catalogue row. */
 export function resolveDocsReplacement(
   doc: DocsDoc | null,
@@ -49,8 +70,10 @@ export function docsViewModel(
   selectedId: string | null,
   doc: DocsDoc | null,
   includeAudienceFilter = true,
+  showWorking = false,
 ) {
-  const forProject = inProject(items, project)
+  const projectItems = inProject(items, project)
+  const forProject = docsVisibleByKind(projectItems, showWorking)
   const stale = clearStaleFilters(forProject, chosen)
   const structural = applyFilters(forProject, { ...stale, audience: null })
   const tree = treeForAudience(structural, selectedAudience(stale))
@@ -63,6 +86,10 @@ export function docsViewModel(
     first: first ?? null,
     documentCount: openableItems(tree).length,
     inView: forProject.length,
+    canShowWorking:
+      projectItems.some((item) => item.kind === 'article') &&
+      projectItems.some((item) => item.kind === 'working'),
+    searchIncludesWorking: docsSearchIncludesWorking(items, project, showWorking),
     stale,
     offered: offeredFilters(forProject, includeAudienceFilter),
     tree,

@@ -36,6 +36,8 @@ export type DocsViewProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
+  showWorking: boolean
+  onShowWorking: (show: boolean) => void
   doc: Docs.DocsDoc | null
   replacement: Docs.DocsTreeItem | null
   locationFor: (item: Docs.DocsTreeItem) => DocsLocation
@@ -70,6 +72,9 @@ type DocsControlsProps = {
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
+  showWorking: boolean
+  onShowWorking: (show: boolean) => void
+  canShowWorking: boolean
 }
 
 /** The project chooser, the filter panel and the create action: one group, wherever the page puts it. */
@@ -87,6 +92,9 @@ function DocsControls({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
+  showWorking,
+  onShowWorking,
+  canShowWorking,
 }: DocsControlsProps) {
   return (
     <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -107,7 +115,7 @@ function DocsControls({
           />
         </div>
       ) : null}
-      {offered.length || canShowDrafts ? (
+      {offered.length || canShowDrafts || canShowWorking ? (
         <Popover
           label="Filters"
           align="end"
@@ -128,6 +136,7 @@ function DocsControls({
             onChange={onFilters}
             total={inView}
             drafts={canShowDrafts ? { shown: showDrafts, onChange: onShowDrafts } : null}
+            working={canShowWorking ? { shown: showWorking, onChange: onShowWorking } : null}
           />
         </Popover>
       ) : null}
@@ -258,6 +267,124 @@ function searchScopeLabel(
   return audience ? `Searching ${DOC_AUDIENCE_LABELS[audience]} docs` : 'Searching all docs'
 }
 
+function DocsViewControls({
+  model,
+  navigationItems,
+  selectedItem,
+  showProjectChooser,
+  project,
+  onProject,
+  filters,
+  onFilters,
+  createAction,
+  showDrafts,
+  onShowDrafts,
+  canShowDrafts,
+  showWorking,
+  onShowWorking,
+  source,
+  doc,
+  signedIn,
+  onOpenFirst,
+}: {
+  model: ReturnType<typeof docsViewModel>
+  navigationItems: readonly Docs.DocsTreeItem[]
+  selectedItem: Docs.DocsTreeItem | null
+} & Pick<
+  DocsViewProps,
+  | 'showProjectChooser'
+  | 'project'
+  | 'onProject'
+  | 'filters'
+  | 'onFilters'
+  | 'createAction'
+  | 'showDrafts'
+  | 'onShowDrafts'
+  | 'canShowDrafts'
+  | 'showWorking'
+  | 'onShowWorking'
+  | 'source'
+  | 'doc'
+  | 'signedIn'
+  | 'onOpenFirst'
+>) {
+  const selectProject = (next: string | 'all') => {
+    onProject(next)
+    if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
+    const first = docsViewModel(
+      navigationItems,
+      next,
+      filters,
+      null,
+      doc,
+      signedIn,
+      showWorking,
+    ).first
+    if (first) onOpenFirst(first)
+  }
+  return (
+    <DocsControls
+      showProjectChooser={showProjectChooser}
+      project={project}
+      onProject={selectProject}
+      subjects={model.subjects}
+      offered={model.offered}
+      chosen={model.stale}
+      onFilters={onFilters}
+      inView={model.inView}
+      active={model.active}
+      createAction={createAction}
+      showDrafts={showDrafts}
+      onShowDrafts={onShowDrafts}
+      canShowDrafts={canShowDrafts}
+      showWorking={showWorking}
+      onShowWorking={onShowWorking}
+      canShowWorking={source !== 'public' && model.canShowWorking}
+    />
+  )
+}
+
+function useDocsNavigationModel(
+  items: readonly Docs.DocsTreeItem[],
+  showDrafts: boolean,
+  selectedId: string | null,
+  project: string | 'all',
+  chosen: FilterSelection,
+  doc: Docs.DocsDoc | null,
+  signedIn: boolean,
+  showWorking: boolean,
+  onFilters: (filters: FilterSelection) => void,
+) {
+  const openedId = useRef<string | null>(null)
+  const navigationItems = useMemo(() => docsVisibleByStatus(items, showDrafts), [items, showDrafts])
+  const selectedItem = items.find((item) => item.id === selectedId) ?? null
+  const model = docsViewModel(
+    navigationItems,
+    project,
+    chosen,
+    selectedId,
+    doc,
+    signedIn,
+    showWorking,
+  )
+  useEffect(() => {
+    if (!sameFilters(model.stale, chosen)) onFilters(model.stale)
+  }, [model.stale, chosen, onFilters])
+  useEffect(() => {
+    if (!selectedId) {
+      openedId.current = null
+      return
+    }
+    if (openedId.current === selectedId) return
+    openedId.current = selectedId
+    const item = navigationItems.find((row) => row.id === selectedId)
+    if (!item) return
+    const next = filtersHiding(item, chosen)
+    if (!sameFilters(next, chosen)) onFilters(next)
+  }, [selectedId, navigationItems, chosen, onFilters])
+  return { model, navigationItems, selectedItem }
+}
+
 export function DocsView({
   sourceLabel,
   source,
@@ -272,6 +399,8 @@ export function DocsView({
   showDrafts,
   onShowDrafts,
   canShowDrafts,
+  showWorking,
+  onShowWorking,
   doc,
   replacement,
   locationFor,
@@ -294,25 +423,17 @@ export function DocsView({
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [wide, setWide] = useState(false)
-  const openedId = useRef<string | null>(null)
-  const navigationItems = useMemo(() => docsVisibleByStatus(items, showDrafts), [items, showDrafts])
-  const selectedItem = items.find((item) => item.id === selectedId) ?? null
-  const model = docsViewModel(navigationItems, project, chosen, selectedId, doc, signedIn)
-  useEffect(() => {
-    if (!sameFilters(model.stale, chosen)) onFilters(model.stale)
-  }, [model.stale, chosen, onFilters])
-  useEffect(() => {
-    if (!selectedId) {
-      openedId.current = null
-      return
-    }
-    if (openedId.current === selectedId) return
-    openedId.current = selectedId
-    const item = navigationItems.find((row) => row.id === selectedId)
-    if (!item) return
-    const next = filtersHiding(item, chosen)
-    if (!sameFilters(next, chosen)) onFilters(next)
-  }, [selectedId, navigationItems, chosen, onFilters])
+  const { model, navigationItems, selectedItem } = useDocsNavigationModel(
+    items,
+    showDrafts,
+    selectedId,
+    project,
+    chosen,
+    doc,
+    signedIn,
+    showWorking,
+    onFilters,
+  )
   useEffect(() => {
     if (!selectedId) return
     const ancestors = treePath(model.tree, selectedId).slice(0, -1)
@@ -328,7 +449,10 @@ export function DocsView({
   }, [selectedId, model.tree])
   useSearchHotkey(() => setSearchOpen(true))
   const detached =
-    selectedItem !== null && !navigationItems.some((item) => item.id === selectedItem.id)
+    selectedItem !== null &&
+    !model.tree.some(function contains(item): boolean {
+      return item.id === selectedItem.id || item.children.some(contains)
+    })
   const visible = doc
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
@@ -339,25 +463,25 @@ export function DocsView({
     if (first) onOpenFirst(first)
   }, [ready, selectedId, firstId, navigationItems, onOpenFirst])
   const controls = (
-    <DocsControls
+    <DocsViewControls
+      model={model}
+      navigationItems={navigationItems}
+      selectedItem={selectedItem}
       showProjectChooser={showProjectChooser}
       project={project}
-      onProject={(next) => {
-        onProject(next)
-        if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
-        const first = docsViewModel(navigationItems, next, chosen, null, doc, signedIn).first
-        if (first) onOpenFirst(first)
-      }}
-      subjects={model.subjects}
-      offered={model.offered}
-      chosen={model.stale}
+      onProject={onProject}
+      filters={chosen}
       onFilters={onFilters}
-      inView={model.inView}
-      active={model.active}
       createAction={createAction}
       showDrafts={showDrafts}
       onShowDrafts={onShowDrafts}
       canShowDrafts={canShowDrafts}
+      showWorking={showWorking}
+      onShowWorking={onShowWorking}
+      source={source}
+      doc={doc}
+      signedIn={signedIn}
+      onOpenFirst={onOpenFirst}
     />
   )
   return (

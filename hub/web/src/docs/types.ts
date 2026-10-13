@@ -3,6 +3,7 @@ import type {
   DocAudience,
   DocAudiences,
   DocForm,
+  DocKind,
   DocStatus,
 } from '../../../../shared/docs.ts'
 
@@ -23,6 +24,7 @@ export type DocsTreeItem = {
   subject: string | null
   audiences: DocAudiences
   status: DocStatus
+  kind: DocKind
   replacementSlug: string | null
   delivery?: DocsDelivery
   summary?: string
@@ -44,6 +46,7 @@ export type DocsSearchMatch = {
   slug: string
   title: string
   status: DocStatus
+  kind: DocKind
   audiences: DocAudiences
   snippet: string
   spaceName?: string

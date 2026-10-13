@@ -16,6 +16,7 @@ const doc = {
   parent_id: null,
   parent_slug: null,
   position: 0,
+  kind: 'working' as const,
   revision: 'revision-1',
   created_at: '2026-09-25T12:00:00.000Z',
   updated_at: '2026-09-25T12:00:00.000Z',
