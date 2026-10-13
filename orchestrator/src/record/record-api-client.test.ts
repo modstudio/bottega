@@ -313,7 +313,7 @@ describe('record API client test safety', () => {
     process.env.NODE_ENV = 'development'
     process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
-    globalThis.fetch = (async () =>
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json(
         { error: 'board post rate limit reached; retry after the ten-minute author window' },
         { status: 429 },
