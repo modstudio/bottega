@@ -1,7 +1,6 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
-import { DocStatusBadge } from './status-badge.tsx'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -29,10 +28,9 @@ function TreeDocumentRow({
         aria-current={current ? 'page' : undefined}
         aria-disabled="true"
         title={node.title}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left text-text-secondary"
+        className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-text-secondary"
       >
-        <span className="min-w-0 flex-1 truncate">{node.title}</span>
-        <DocStatusBadge status={node.status} />
+        <span className="line-clamp-2 text-pretty">{node.title}</span>
       </span>
     )
   }
@@ -44,29 +42,28 @@ function TreeDocumentRow({
       onClick={() => onSelect(item)}
       title={node.title}
       className={classes(
-        'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-1 text-left',
+        'min-w-0 flex-1 rounded-sm px-2 py-1 text-left',
         current
           ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
           : 'text-text-secondary hover:bg-control-hover',
       )}
     >
-      <span className="min-w-0 flex-1 truncate">{node.title}</span>
-      <DocStatusBadge status={node.status} />
+      <span className="line-clamp-2 text-pretty">{node.title}</span>
     </button>
   )
 }
 
 function TreeRow({
   node,
-  gutter,
+  depth,
   selectedId,
   collapsed,
   onToggle,
   onSelect,
 }: {
   node: TreeNode
-  /** Reserve the toggle's width, so rows align in a list where some row can expand. */
-  gutter: boolean
+  /** How far below the top of the tree this row sits; the top level is zero. */
+  depth: number
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
@@ -82,24 +79,7 @@ function TreeRow({
   }, [current])
   return (
     <li className="m-0">
-      <div className="flex items-center">
-        {children.length ? (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? `Collapse ${node.title}` : `Expand ${node.title}`}
-            onClick={() => onToggle(node.id)}
-            className="grid size-6 shrink-0 place-items-center text-text-muted"
-          >
-            {open ? (
-              <ChevronDown className="size-3" aria-hidden />
-            ) : (
-              <ChevronRight className="size-3" aria-hidden />
-            )}
-          </button>
-        ) : gutter ? (
-          <span className="size-6 shrink-0" />
-        ) : null}
+      <div className="flex items-start">
         <TreeDocumentRow
           node={node}
           item={item}
@@ -107,11 +87,28 @@ function TreeRow({
           rowRef={rowRef}
           onSelect={onSelect}
         />
+        {children.length ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? `Collapse ${node.title}` : `Expand ${node.title}`}
+            onClick={() => onToggle(node.id)}
+            className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-sm text-text-muted hover:bg-control-hover hover:text-text-primary"
+          >
+            {open ? (
+              <ChevronDown className="size-3.5" aria-hidden />
+            ) : (
+              <ChevronRight className="size-3.5" aria-hidden />
+            )}
+          </button>
+        ) : null}
       </div>
       {children.length && open ? (
-        <div className="ml-3 border-border-default border-l pl-4">
+        // The top level indents without a rule; a rule marks nesting only from the second level down.
+        <div className={depth === 0 ? 'pl-3' : 'ml-2 border-border-default border-l pl-2'}>
           <TreeList
             nodes={children}
+            depth={depth + 1}
             selectedId={selectedId}
             collapsed={collapsed}
             onToggle={onToggle}
@@ -125,25 +122,26 @@ function TreeRow({
 
 export function TreeList({
   nodes,
+  depth = 0,
   selectedId,
   collapsed,
   onToggle,
   onSelect,
 }: {
   nodes: readonly TreeNode[]
+  depth?: number
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
 }) {
-  const gutter = nodes.some((node) => node.children.length > 0)
   return (
     <ul className="m-0 list-none p-0 text-md">
       {nodes.map((node) => (
         <TreeRow
           key={node.id}
           node={node}
-          gutter={gutter}
+          depth={depth}
           selectedId={selectedId}
           collapsed={collapsed}
           onToggle={onToggle}

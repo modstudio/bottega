@@ -1,10 +1,9 @@
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Popover } from '@/ui/popover/popover'
-import { Switch } from '@/ui/switch/switch'
 import { classes } from '@/ui/text/classes'
 import { DocsFacts } from './facts.tsx'
 import { FilterPanel } from './filter-panel.tsx'
@@ -88,26 +87,11 @@ function DocsChrome({
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
 }) {
-  const showDraftsId = useId()
   return (
     <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
       <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-center justify-between gap-3 px-5 py-2">
         {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {canShowDrafts ? (
-            <label
-              htmlFor={showDraftsId}
-              className="flex items-center gap-2 text-md text-text-secondary"
-            >
-              <Switch
-                id={showDraftsId}
-                aria-label="Show drafts"
-                checked={showDrafts}
-                onChange={(event) => onShowDrafts(event.currentTarget.checked)}
-              />
-              Show drafts
-            </label>
-          ) : null}
           {showProjectChooser ? (
             <div className="flex items-center gap-2">
               <span className="font-mono text-text-muted text-xs tracking-[0.14em] uppercase">
@@ -125,7 +109,7 @@ function DocsChrome({
               />
             </div>
           ) : null}
-          {offered.length ? (
+          {offered.length || canShowDrafts ? (
             <Popover
               label="Filters"
               align="end"
@@ -140,7 +124,13 @@ function DocsChrome({
                 </Button>
               }
             >
-              <FilterPanel offered={offered} chosen={chosen} onChange={onFilters} total={inView} />
+              <FilterPanel
+                offered={offered}
+                chosen={chosen}
+                onChange={onFilters}
+                total={inView}
+                drafts={canShowDrafts ? { shown: showDrafts, onChange: onShowDrafts } : null}
+              />
             </Popover>
           ) : null}
           {createAction}

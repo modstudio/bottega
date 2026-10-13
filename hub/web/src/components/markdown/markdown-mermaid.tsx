@@ -60,6 +60,9 @@ export function MermaidBlock({ source }: { source: string }) {
   )
 }
 
+/** A drawing this much wider than its column is scaled to fit; a wider one keeps its size and scrolls. */
+const FIT_LIMIT = 1.35
+
 function MermaidDrawing({ svg }: { svg: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -67,9 +70,26 @@ function MermaidDrawing({ svg }: { svg: string }) {
     if (!node) return
     const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml')
     const drawing = parsed.documentElement
-    if (drawing instanceof SVGSVGElement) node.replaceChildren(drawing)
+    if (!(drawing instanceof SVGSVGElement)) return
+    node.replaceChildren(drawing)
+    const natural = drawing.viewBox.baseVal
+    if (!natural.width || !natural.height) return
+    const fit = () => {
+      const width = fittedDiagramWidth(natural.width, node.clientWidth)
+      drawing.setAttribute('width', String(width))
+      drawing.setAttribute('height', String((natural.height * width) / natural.width))
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(node)
+    return () => observer.disconnect()
   }, [svg])
   return <div className="doc-mermaid" ref={ref} />
+}
+
+export function fittedDiagramWidth(natural: number, available: number): number {
+  if (available <= 0 || natural <= available) return natural
+  return natural <= available * FIT_LIMIT ? available : natural
 }
 
 function useDarkClass() {
@@ -110,9 +130,17 @@ async function drawMermaid(source: string, dark: boolean): Promise<string> {
     secure: [...defaultSecure, ...MERMAID_SECURE_EXTRA],
     theme: 'base',
     darkMode: dark,
-    fontFamily: cssToken('--family-mono'),
+    fontFamily: cssToken('--family-sans'),
+    fontSize: 14,
     themeVariables: mermaidTokens(),
-    flowchart: { useMaxWidth: false },
+    flowchart: {
+      useMaxWidth: false,
+      wrappingWidth: 240,
+      padding: 14,
+      nodeSpacing: 36,
+      rankSpacing: 44,
+      curve: 'linear',
+    },
     sequence: { useMaxWidth: false },
     class: { useMaxWidth: false },
     state: { useMaxWidth: false },

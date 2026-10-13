@@ -1,4 +1,6 @@
+import { useId } from 'react'
 import { TextButton } from '@/ui/button/button'
+import { Switch } from '@/ui/switch/switch'
 import { RadioIndicator } from '@/ui/radio-rows/radio-rows'
 import { classes } from '@/ui/text/classes'
 import {
@@ -38,12 +40,16 @@ export function FilterPanel({
   chosen,
   onChange,
   total,
+  drafts,
 }: {
   offered: OfferedFilter[]
   chosen: FilterSelection
   onChange: (next: FilterSelection) => void
   total: number
+  /** The drafts switch, or null where the reader may not see drafts. */
+  drafts: { shown: boolean; onChange: (shown: boolean) => void } | null
 }) {
+  const draftsId = useId()
   const labels: Record<FilterKey, string> = {
     audience: 'Audience',
     scope: 'Scope',
@@ -80,10 +86,26 @@ export function FilterPanel({
           </fieldset>
         </div>
       ))}
-      <div className="mt-3 flex justify-between border-border-default border-t pt-2.5 text-sm text-text-muted">
-        <span>Only filters these docs can use</span>
-        {active ? <TextButton onClick={() => onChange(EMPTY_FILTERS)}>Clear</TextButton> : null}
-      </div>
+      {drafts ? (
+        <label
+          htmlFor={draftsId}
+          className="mt-3 flex cursor-pointer items-center justify-between gap-2 border-border-default border-t pt-3 text-md text-text-secondary first:mt-0 first:border-t-0 first:pt-0"
+        >
+          Show drafts
+          <Switch
+            id={draftsId}
+            aria-label="Show drafts"
+            checked={drafts.shown}
+            onChange={(event) => drafts.onChange(event.currentTarget.checked)}
+          />
+        </label>
+      ) : null}
+      {offered.length ? (
+        <div className="mt-3 flex justify-between border-border-default border-t pt-2.5 text-sm text-text-muted">
+          <span>Only filters these docs can use</span>
+          {active ? <TextButton onClick={() => onChange(EMPTY_FILTERS)}>Clear</TextButton> : null}
+        </div>
+      ) : null}
     </div>
   )
 }
