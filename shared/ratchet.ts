@@ -24,7 +24,7 @@ function normalizedMessage(message: string) {
   return message.replace(/\d+/g, '#')
 }
 
-export function fingerprint(finding: Finding) {
+function fingerprint(finding: Finding) {
   return JSON.stringify([finding.file, finding.rule, normalizedMessage(finding.message)])
 }
 
