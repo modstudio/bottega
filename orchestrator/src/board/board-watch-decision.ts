@@ -37,7 +37,7 @@ export type BoardWatchEvent =
   | { kind: 'slow-timer' }
   | { kind: 'silence' }
   | { kind: 'ended' }
-  | { kind: 'error' }
+  | { kind: 'error'; detail: string }
   | { kind: 'unauthorized' }
   | { kind: 'pull-failed'; reason: string }
   | { kind: 'pull-incomplete'; progressed: boolean }
@@ -46,7 +46,8 @@ export type BoardWatchEvent =
 export type BoardWatchAnnounce =
   | { kind: 'connected' }
   | { kind: 'signed-out' }
-  | { kind: 'disconnected'; reason: 'silence' | 'ended' | 'error' }
+  | { kind: 'disconnected'; reason: 'silence' | 'ended' }
+  | { kind: 'disconnected'; reason: 'error'; detail: string }
   | { kind: 'unconfigured' }
   | { kind: 'newer-build' }
   | { kind: 'pull-failed'; detail: string }
@@ -143,7 +144,7 @@ function exit(
 
 function reconnect(
   state: BoardWatchState,
-  reason: 'silence' | 'ended' | 'error',
+  reason: 'silence' | 'ended',
   delayMs: number,
 ): BoardWatchDecision {
   return {
@@ -153,6 +154,21 @@ function reconnect(
     delayMs,
     pull: false,
     announce: { kind: 'disconnected', reason },
+  }
+}
+
+function reconnectError(
+  state: BoardWatchState,
+  detail: string,
+  delayMs: number,
+): BoardWatchDecision {
+  return {
+    state: { ...state, attempt: state.attempt + 1 },
+    action: 'reconnect',
+    exitCode: null,
+    delayMs,
+    pull: false,
+    announce: { kind: 'disconnected', reason: 'error', detail },
   }
 }
 
@@ -252,7 +268,7 @@ export function decideBoardWatch(
     case 'ended':
       return decideEnded(state, jitter)
     case 'error':
-      return reconnect(state, 'error', boardWatchBackoffMs(state.attempt, jitter))
+      return reconnectError(state, event.detail, boardWatchBackoffMs(state.attempt, jitter))
     case 'unauthorized':
       return decideUnauthorized(state)
     case 'pull-failed':

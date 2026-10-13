@@ -83,11 +83,15 @@ test('the first event resets backoff so the next normal end is immediate again',
 })
 
 test('a stream error uses backoff', () => {
-  const decision = decideBoardWatch(initialBoardWatchState(), { kind: 'error' }, fullJitter)
+  const decision = decideBoardWatch(
+    initialBoardWatchState(),
+    { kind: 'error', detail: 'Error: reset' },
+    fullJitter,
+  )
   expect(decision).toMatchObject({
     action: 'reconnect',
     delayMs: BOARD_WATCH_BACKOFF_BASE_MS,
-    announce: { kind: 'disconnected', reason: 'error' },
+    announce: { kind: 'disconnected', reason: 'error', detail: 'Error: reset' },
   })
 })
 
@@ -203,7 +207,7 @@ test('every observed input has a decision', () => {
     { kind: 'slow-timer' },
     { kind: 'silence' },
     { kind: 'ended' },
-    { kind: 'error' },
+    { kind: 'error', detail: 'Error: reset' },
     { kind: 'unauthorized' },
     { kind: 'pull-failed', reason: 'offline' },
     { kind: 'pull-incomplete', progressed: false },

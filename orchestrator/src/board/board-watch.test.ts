@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BOARD_STREAM_EVENT } from '../record/record-board-stream.ts'
 import {
+  BOARD_WATCH_ERROR_DETAIL_MAX,
   BOARD_WATCH_UNCONFIGURED_REMEDY,
   type BoardWatchLoopInput,
   type BoardWatchOpen,
@@ -486,7 +487,9 @@ test('a rejected stream read after an event logs one error and reconnects', asyn
   run.source().reject(connectionResetError())
   await run.clock.flush()
   await run.clock.flush()
-  expect(run.logs.filter((line) => ended(line, ' disconnected error'))).toHaveLength(1)
+  expect(
+    run.logs.filter((line) => line.includes(' disconnected error Error: ECONNRESET:')),
+  ).toHaveLength(1)
   expect(run.opens()).toBe(1)
   await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
   await run.clock.flush()
@@ -503,11 +506,33 @@ test('a rejected stream read while a pull is in flight logs one error and reconn
   run.source().reject(connectionResetError())
   await run.clock.flush()
   await run.clock.flush()
-  expect(run.logs.filter((line) => ended(line, ' disconnected error'))).toHaveLength(1)
+  expect(
+    run.logs.filter((line) => line.includes(' disconnected error Error: ECONNRESET:')),
+  ).toHaveLength(1)
   expect(run.opens()).toBe(1)
   await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
   await run.clock.flush()
   expect(run.opens()).toBe(2)
+  expect(run.pullCount()).toBe(1)
+  run.releasePull()
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  run.releasePull()
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('an error detail is one bounded line', async () => {
+  const run = await startLoop()
+  run.source().reject(new TypeError(`${'x'.repeat(BOARD_WATCH_ERROR_DETAIL_MAX * 2)}\nnot logged`))
+  await run.clock.flush()
+  await run.clock.flush()
+  const line = run.logs.find((candidate) => candidate.includes(' disconnected error '))!
+  const detail = line.split(' disconnected error ')[1] ?? ''
+  expect(detail).toHaveLength(BOARD_WATCH_ERROR_DETAIL_MAX)
+  expect(detail.startsWith('TypeError: ')).toBe(true)
+  expect(detail.includes('\n')).toBe(false)
+  expect(detail.includes('not logged')).toBe(false)
   run.ac.abort()
   expect(await run.done).toBe(0)
 })
@@ -591,7 +616,7 @@ test('an oversized frame reconnects on the error path', async () => {
   const run = await startLoop()
   run.source().push('x'.repeat(BOARD_WATCH_FRAME_BUFFER_MAX + 1))
   await run.clock.flush()
-  expect(run.logs.some((line) => ended(line, ' disconnected error'))).toBe(true)
+  expect(run.logs.some((line) => line.includes(' disconnected error Error: '))).toBe(true)
   await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
   await run.clock.flush()
   expect(run.opens()).toBe(2)
