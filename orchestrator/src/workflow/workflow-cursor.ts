@@ -56,11 +56,11 @@ import {
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
 import { renderWorkflowCompletion, renderWorkflowStep } from './workflow-render.ts'
+import { renderSelfRulingResult } from './workflow-self-ruling.ts'
 import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
-import { renderSelfRulingResult } from './workflow-self-ruling.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
