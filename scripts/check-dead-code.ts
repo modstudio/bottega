@@ -197,19 +197,23 @@ function readCache(path: string) {
   return findings ? { status: 'hit' as const, findings } : { status: 'invalid' as const }
 }
 
-function pruneCache(justWritten: string) {
-  const entries = readdirSync(CACHE_DIRECTORY, { withFileTypes: true })
+function cacheEntries() {
+  return readdirSync(CACHE_DIRECTORY, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => ({
       name: entry.name,
       modifiedMs: statSync(join(CACHE_DIRECTORY, entry.name)).mtimeMs,
     }))
-  for (const name of deadCodeCacheEntriesToRemove(entries, justWritten, MAX_CACHE_ENTRIES)) {
-    try {
-      rmSync(join(CACHE_DIRECTORY, name))
-    } catch (error) {
-      console.warn(`dead code base cache could not remove ${name}: ${String(error)}`)
-    }
+}
+
+// Gates in other worktrees share this directory, so an entry may vanish between
+// the listing and its removal; the cache is derived data and never fails the check.
+function pruneCache(justWritten: string) {
+  try {
+    const stale = deadCodeCacheEntriesToRemove(cacheEntries(), justWritten, MAX_CACHE_ENTRIES)
+    for (const name of stale) rmSync(join(CACHE_DIRECTORY, name), { force: true })
+  } catch (error) {
+    console.warn(`dead code base cache could not be pruned: ${String(error)}`)
   }
 }
 
@@ -283,7 +287,12 @@ function cachedBaseFindings(commit: string, knipVersion: string, configurationHa
   }
   console.log(`dead code base cache ${cached.status}; rebuilding: ${basename(path)}`)
   const findings = buildBaseFindings(commit)
-  writeCache(path, findings)
+  try {
+    writeCache(path, findings)
+  } catch (error) {
+    console.warn(`dead code base cache could not be written: ${String(error)}`)
+    return findings
+  }
   pruneCache(basename(path))
   return findings
 }
