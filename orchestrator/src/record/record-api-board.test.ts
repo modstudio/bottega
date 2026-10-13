@@ -230,6 +230,32 @@ test('board stream binds the caller tenant and sends its visible head immediatel
   await reader.cancel()
 })
 
+test('board stream re-resolves the caller tenant before every head read', async () => {
+  const listeners = new Set<() => void>()
+  let sessionReads = 0
+  let headReads = 0
+  const app = appWith(identity, {
+    readSession: async () => (++sessionReads <= 2 ? identity : null),
+    boardWakeSource: {
+      subscribe(listener: () => void) {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    },
+    readBoardHead: async () => {
+      headReads++
+      return '42'
+    },
+  })
+  const response = await app.request('/v1/board/stream')
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain('id: 42')
+  for (const listener of listeners) listener()
+  expect((await reader.read()).done).toBe(true)
+  expect(sessionReads).toBe(3)
+  expect(headReads).toBe(1)
+})
+
 test('a board trigger exception is a named refusal not a server error', async () => {
   const app = appWith(identity, {
     replyBoardMessage: async () => {

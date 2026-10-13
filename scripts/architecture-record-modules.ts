@@ -265,15 +265,8 @@ export const recordModules: RecordModule[] = [
     './record-board-receipts.ts',
     './record-board-tx.ts',
   ]),
-  module('orchestrator/src/record/record-board-wake.ts', [
-    'bun',
-    '../../../shared/record/board-stream.ts',
-  ]),
-  module('orchestrator/src/record/record-board-stream.ts', [
-    '../../../shared/record/board-stream.ts',
-    './record-board-tx.ts',
-    './record-board-wake.ts',
-  ]),
+  module('orchestrator/src/record/record-board-wake.ts', ['bun', './record-board-stream.ts']),
+  module('orchestrator/src/record/record-board-stream.ts', ['zod', './record-board-tx.ts']),
   module('orchestrator/src/record/record-board-overview.ts', [
     'bun',
     '../board/board-tags.ts',
@@ -299,6 +292,5 @@ export const recordModules: RecordModule[] = [
     './record-board-stream.ts',
     './record-board-contract.ts',
     './record-board-tx.ts',
-    './record-board-wake.ts',
   ]),
 ]

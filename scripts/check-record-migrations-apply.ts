@@ -5,7 +5,7 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
-import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../shared/record/board-stream.ts'
+import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../orchestrator/src/record/record-board-stream.ts'
 import {
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,

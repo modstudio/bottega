@@ -2,13 +2,9 @@
 /** Owns the process-wide Postgres wake adapter. Must not know HTTP or board visibility. */
 
 import { SQL } from 'bun'
-import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../../../shared/record/board-stream.ts'
+import { BOARD_MESSAGE_NOTIFY_CHANNEL, type BoardWakeSource } from './record-board-stream.ts'
 
 const BOARD_WAKE_SAFETY_INTERVAL_MS = 30_000
-
-export type BoardWakeSource = {
-  subscribe(listener: () => void): () => void
-}
 
 type BoardWakeClock = {
   setInterval(callback: () => void, milliseconds: number): ReturnType<typeof setInterval>

@@ -238,13 +238,13 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-board-wake-boundary',
     'orchestrator/src/record/record-board-wake.ts',
-    ['bun', '../../../shared/record/board-stream.ts'],
+    ['bun', './record-board-stream.ts'],
     'Keep the process-wide board wake adapter independent of HTTP and board visibility.',
   ),
   boundary(
     'record-board-stream-boundary',
     'orchestrator/src/record/record-board-stream.ts',
-    ['../../../shared/record/board-stream.ts', './record-board-tx.ts', './record-board-wake.ts'],
+    ['zod', './record-board-tx.ts'],
     'Keep board stream policy and streaming independent of SQL and authentication.',
   ),
   boundary(
@@ -285,7 +285,6 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       './record-board-contract.ts',
       './record-board-stream.ts',
       './record-board-tx.ts',
-      './record-board-wake.ts',
     ],
     'Keep hosted board routes independent of SQL and local execution.',
   ),

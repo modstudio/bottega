@@ -56,6 +56,7 @@ export function registerBoardApiProofs(input: {
   let tokenD = ''
   let userA = ''
   let userB = ''
+  let userC = ''
   let userD = ''
   let spaceA = ''
   let spaceB = ''
@@ -107,6 +108,7 @@ export function registerBoardApiProofs(input: {
     tokenD = signedD.token
     userA = a.userId
     userB = b.userId
+    userC = c.userId
     userD = signedD.user.id
     spaceA = a.spaceId
     spaceB = b.spaceId
@@ -145,10 +147,13 @@ export function registerBoardApiProofs(input: {
   registerBoardStreamProof({
     actorUrl: input.actorUrl,
     origin: () => origin,
-    token: () => tokenC,
-    userId: () => userA,
-    activeSpaceId: () => spaceA,
-    spaceIds: () => [spaceA, spaceB],
+    streamToken: () => tokenC,
+    streamUserId: () => userC,
+    writerUserId: () => userA,
+    visibleSpaceId: () => spaceA,
+    invisibleSpaceId: () => spaceB,
+    writerSpaceIds: () => [spaceA, spaceB],
+    admin: (statement) => input.succeeds('postgres', 'postgres', statement),
   })
 
   registerBoardAdoptionProof({

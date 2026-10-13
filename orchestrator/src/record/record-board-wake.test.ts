@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../../../shared/record/board-stream.ts'
+import { BOARD_MESSAGE_NOTIFY_CHANNEL } from './record-board-stream.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
 
 test('a listener reconnect and the safety timer each count as a wake', async () => {

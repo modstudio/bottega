@@ -23,9 +23,13 @@ import {
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
 } from './record-board-contract.ts'
-import { type BoardStreamClock, boardStreamResponse } from './record-board-stream.ts'
+import {
+  type BoardStreamClock,
+  type BoardStreamRegistry,
+  type BoardWakeSource,
+  boardStreamResponse,
+} from './record-board-stream.ts'
 import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
-import type { BoardWakeSource } from './record-board-wake.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 
@@ -95,6 +99,7 @@ const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string()
 
 export type RecordBoardDeps = {
   boardWakeSource: BoardWakeSource
+  boardStreamRegistry: BoardStreamRegistry
   boardStreamClock?: BoardStreamClock
   readBoardHead(input: BoardTenant): Promise<string>
   listBoardMessages(input: BoardTenant & HostedBoardOverviewFilters): Promise<HostedBoardOverview>
@@ -150,15 +155,20 @@ function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant |
 
 function registerBoardStreamRoute(
   app: Hono<ApiEnvironment>,
-  deps: { recordUrl: string } & RecordBoardDeps,
+  deps: {
+    recordUrl: string
+    readSession(headers: Headers): Promise<RecordIdentity | null>
+  } & RecordBoardDeps,
   noSpace: (context: Context<ApiEnvironment>) => Response,
 ): void {
   app.get('/v1/board/stream', (context) => {
-    const tenant = boardTenant(deps.recordUrl, context.get('identity'))
-    if (!tenant) return noSpace(context)
     return boardStreamResponse({
-      tenant,
+      readTenant: async () => {
+        const identity = await deps.readSession(context.req.raw.headers)
+        return identity ? boardTenant(deps.recordUrl, identity) : null
+      },
       wakeSource: deps.boardWakeSource,
+      registry: deps.boardStreamRegistry,
       readHead: deps.readBoardHead,
       signal: context.req.raw.signal,
       clock: deps.boardStreamClock,
@@ -172,7 +182,10 @@ async function readJson(context: Context<ApiEnvironment>): Promise<unknown> {
 
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
-  deps: { recordUrl: string } & RecordBoardDeps,
+  deps: {
+    recordUrl: string
+    readSession(headers: Headers): Promise<RecordIdentity | null>
+  } & RecordBoardDeps,
   helpers: {
     noSpace(context: Context<ApiEnvironment>): Response
     writeError(context: Context<ApiEnvironment>, error: unknown): Response | Promise<Response>

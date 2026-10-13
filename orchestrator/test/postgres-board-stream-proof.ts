@@ -1,25 +1,76 @@
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
-import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../../shared/record/board-stream.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../src/record/record-board-stream.ts'
+
+async function waitFor(probe: () => boolean, milliseconds = 2_000): Promise<boolean> {
+  const deadline = Date.now() + milliseconds
+  while (Date.now() < deadline) {
+    if (probe()) return true
+    await Bun.sleep(25)
+  }
+  return probe()
+}
 
 export function registerBoardStreamProof(input: {
   actorUrl: string
   origin: () => string
-  token: () => string
-  userId: () => string
-  activeSpaceId: () => string
-  spaceIds: () => string[]
+  streamToken: () => string
+  streamUserId: () => string
+  writerUserId: () => string
+  visibleSpaceId: () => string
+  invisibleSpaceId: () => string
+  writerSpaceIds: () => string[]
+  admin(statement: string): string
 }): void {
-  test('board notification waits for commit and an invisible write does not advance the stream', async () => {
+  test('board notification waits for commit and the production stream follows current membership', async () => {
+    const membershipId = newRecordId()
+    input.admin(
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('${membershipId}','${input.visibleSpaceId()}','${input.streamUserId()}',
+         'member','write',now());`,
+    )
+    const selected = await fetch(`${input.origin()}/v1/active-space`, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${input.streamToken()}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ spaceId: input.visibleSpaceId() }),
+    })
+    expect(selected.status).toBe(200)
+
     const stream = await fetch(`${input.origin()}/v1/board/stream`, {
-      headers: { authorization: `Bearer ${input.token()}` },
+      headers: { authorization: `Bearer ${input.streamToken()}` },
     })
     expect(stream.status).toBe(200)
     const reader = stream.body!.getReader()
-    const initial = await reader.read()
-    expect(initial.done).toBe(false)
+    const revisions: string[] = []
+    let buffered = ''
+    let ended = false
+    const pumping = (async () => {
+      try {
+        while (true) {
+          const next = await reader.read()
+          if (next.done) {
+            ended = true
+            return
+          }
+          buffered += new TextDecoder().decode(next.value)
+          const frames = buffered.split('\n\n')
+          buffered = frames.pop() ?? ''
+          for (const frame of frames) {
+            const id = frame.match(/^id: (\d+)$/m)?.[1]
+            if (id) revisions.push(id)
+          }
+        }
+      } catch {
+        ended = true
+      }
+    })()
+    expect(await waitFor(() => revisions.length === 1)).toBe(true)
+    const initialRevision = revisions[0]!
 
     const listener = new SQL(input.actorUrl)
     const writer = new SQL(input.actorUrl)
@@ -27,36 +78,62 @@ export function registerBoardStreamProof(input: {
     const subscription = await listener.listen(BOARD_MESSAGE_NOTIFY_CHANNEL, () => {
       notifications++
     })
-    try {
-      const id = newRecordId()
-      await writer.begin(async (tx) => {
+    const insert = (spaceId: string, title: string) =>
+      writer.begin(async (tx) => {
         await bindTenant(tx, {
-          userId: input.userId(),
-          spaceId: input.activeSpaceId(),
-          spaceIds: input.spaceIds(),
+          userId: input.writerUserId(),
+          spaceId,
+          spaceIds: input.writerSpaceIds(),
         })
-        await tx`
+        const rows = await tx`
           INSERT INTO board_message
             (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
           VALUES
-            (${id}::uuid, ${input.userId()}::uuid, 'notice', 'operator', 'stream proof', 'proof',
-             false, now() + interval '1 day', now())
+            (${newRecordId()}::uuid, ${input.writerUserId()}::uuid, 'notice', 'operator', ${title},
+             'proof', false, now() + interval '1 day', now())
+          RETURNING revision
         `
+        return String(rows[0]!.revision)
+      })
+    try {
+      let invisibleRevision = ''
+      await writer.begin(async (tx) => {
+        await bindTenant(tx, {
+          userId: input.writerUserId(),
+          spaceId: input.invisibleSpaceId(),
+          spaceIds: input.writerSpaceIds(),
+        })
+        const rows = await tx`
+          INSERT INTO board_message
+            (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
+          VALUES
+            (${newRecordId()}::uuid, ${input.writerUserId()}::uuid, 'notice', 'operator',
+             'invisible stream proof', 'proof', false, now() + interval '1 day', now())
+          RETURNING revision
+        `
+        invisibleRevision = String(rows[0]!.revision)
         await Bun.sleep(100)
         expect(notifications).toBe(0)
       })
-      for (let attempt = 0; attempt < 20 && notifications === 0; attempt++) await Bun.sleep(25)
-      expect(notifications).toBe(1)
-      const next = await Promise.race([
-        reader.read().then(() => 'event'),
-        Bun.sleep(300).then(() => 'silent'),
-      ])
-      expect(next).toBe('silent')
+      expect(await waitFor(() => notifications === 1)).toBe(true)
+      await Bun.sleep(300)
+      expect(revisions).not.toContain(invisibleRevision)
+
+      const visibleRevision = await insert(input.visibleSpaceId(), 'visible stream proof')
+      expect(await waitFor(() => revisions.includes(visibleRevision))).toBe(true)
+      expect(BigInt(visibleRevision)).toBeGreaterThan(BigInt(initialRevision))
+
+      input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
+      const revokedRevision = await insert(input.visibleSpaceId(), 'revoked stream proof')
+      expect(await waitFor(() => ended)).toBe(true)
+      expect(revisions).not.toContain(revokedRevision)
     } finally {
-      await reader.cancel()
+      await reader.cancel().catch(() => undefined)
+      await pumping
       await subscription.unlisten()
       await listener.close()
       await writer.close()
+      input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
     }
   })
 }

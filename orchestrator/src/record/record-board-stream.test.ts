@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
-import { BOARD_STREAM_EVENT } from '../../../shared/record/board-stream.ts'
 import {
+  BOARD_STREAM_EVENT,
   BOARD_STREAM_HEARTBEAT_INTERVAL_MS,
   BOARD_STREAM_MAX_LIFETIME_MS,
   type BoardStreamClock,
   boardStreamAdvance,
   boardStreamResponse,
+  createBoardStreamRegistry,
 } from './record-board-stream.ts'
-import type { BoardWakeSource } from './record-board-wake.ts'
+import type { BoardWakeSource } from './record-board-stream.ts'
 
 class FakeClock implements BoardStreamClock {
   intervals = new Map<number, () => void>()
@@ -71,8 +72,9 @@ test('board stream emits the visible head, advances on wakes, and collapses conc
   let release: ((value: string) => void) | undefined
   let reads = 0
   const response = boardStreamResponse({
-    tenant,
+    readTenant: async () => tenant,
     wakeSource: wakes,
+    registry: createBoardStreamRegistry(),
     signal: new AbortController().signal,
     clock,
     readHead: async () => {
@@ -106,8 +108,9 @@ test('board stream suppresses an unchanged wake and emits heartbeat comments', a
   const wakes = new FakeWakeSource()
   let reads = 0
   const response = boardStreamResponse({
-    tenant,
+    readTenant: async () => tenant,
     wakeSource: wakes,
+    registry: createBoardStreamRegistry(),
     signal: new AbortController().signal,
     clock,
     readHead: async () => {
@@ -125,12 +128,29 @@ test('board stream suppresses an unchanged wake and emits heartbeat comments', a
   await reader.cancel()
 })
 
+test('board stream ends when a head check finds no current tenant', async () => {
+  const wakes = new FakeWakeSource()
+  const response = boardStreamResponse({
+    readTenant: async () => null,
+    wakeSource: wakes,
+    registry: createBoardStreamRegistry(),
+    signal: new AbortController().signal,
+    clock: new FakeClock(),
+    readHead: async () => {
+      throw new Error('a missing tenant must not read the board head')
+    },
+  })
+  expect((await response.body!.getReader().read()).done).toBe(true)
+  expect(wakes.listeners.size).toBe(0)
+})
+
 test('board stream ends at maximum lifetime and cleans up when its client leaves', async () => {
   const clock = new FakeClock()
   const wakes = new FakeWakeSource()
   const response = boardStreamResponse({
-    tenant,
+    readTenant: async () => tenant,
     wakeSource: wakes,
+    registry: createBoardStreamRegistry(),
     signal: new AbortController().signal,
     clock,
     readHead: async () => '0',
@@ -144,8 +164,9 @@ test('board stream ends at maximum lifetime and cleans up when its client leaves
   expect(clock.intervals.size).toBe(0)
 
   const second = boardStreamResponse({
-    tenant,
+    readTenant: async () => tenant,
     wakeSource: wakes,
+    registry: createBoardStreamRegistry(),
     signal: new AbortController().signal,
     clock,
     readHead: async () => '0',

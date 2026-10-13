@@ -29,6 +29,7 @@ import {
 } from './record-board-messages.ts'
 import { listHostedBoardOverview } from './record-board-overview.ts'
 import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipts.ts'
+import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
 import {
   addDataKeyWraps,
@@ -116,10 +117,22 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
   }
 }
 
+export async function stopRecordApiServer(input: {
+  stop(closeActiveConnections?: boolean): void | Promise<void>
+  closeActiveConnections?: boolean
+  boardWakeSource: { close(): Promise<void> }
+  boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>
+}): Promise<void> {
+  input.boardStreamRegistry.closeAll()
+  await input.boardWakeSource.close()
+  await input.stop(input.closeActiveConnections)
+}
+
 function serveRecordApi(
-  app: ReturnType<typeof recordApi>,
+  app: { fetch(request: Request): Response | Promise<Response> },
   port: number,
   boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
+  boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>,
 ) {
   const server = Bun.serve({
     hostname: '0.0.0.0',
@@ -138,7 +151,12 @@ function serveRecordApi(
   })
   const stop = server.stop.bind(server)
   server.stop = async (closeActiveConnections) => {
-    await Promise.all([stop(closeActiveConnections), boardWakeSource.close()])
+    await stopRecordApiServer({
+      stop,
+      closeActiveConnections,
+      boardWakeSource,
+      boardStreamRegistry,
+    })
   }
   return server
 }
@@ -147,6 +165,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
+  const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()
   const app = recordApi({
     recordUrl: config.recordUrl,
@@ -247,6 +266,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     putBoardReceipt: putHostedBoardReceipt,
     boardStatus: hostedBoardStatus,
     boardWakeSource,
+    boardStreamRegistry,
     readBoardHead: readHostedBoardHead,
     listBoardChanges: listHostedBoardChanges,
     takeBoardClaim: takeHostedBoardClaim,
@@ -255,7 +275,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
-  return serveRecordApi(app, config.port, boardWakeSource)
+  return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry)
 }
 
 if (import.meta.main) {

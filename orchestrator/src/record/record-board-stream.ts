@@ -1,12 +1,47 @@
 // concern: record-board-stream
 /** Owns board stream policy and streaming. Must not know SQL, authentication, or local stores. */
 
-import {
-  BOARD_STREAM_EVENT,
-  type BoardStreamEventData,
-} from '../../../shared/record/board-stream.ts'
+import { z } from 'zod'
 import type { BoardTenant } from './record-board-tx.ts'
-import type { BoardWakeSource } from './record-board-wake.ts'
+
+/** Postgres channel used only to wake hosted board stream subscribers. */
+export const BOARD_MESSAGE_NOTIFY_CHANNEL = 'record_board_message_advanced' as const
+
+/** Wire contract shared by the hosted stream and its later machine client. */
+export const BOARD_STREAM_EVENT = {
+  name: 'board-advanced',
+  data: z.object({ revision: z.string().regex(/^\d+$/) }).strict(),
+} as const
+
+export type BoardStreamEventData = z.infer<(typeof BOARD_STREAM_EVENT)['data']>
+
+export type BoardWakeSource = {
+  subscribe(listener: () => void): () => void
+}
+
+export type BoardStreamRegistry = {
+  register(close: () => void): () => void
+}
+
+export function createBoardStreamRegistry(): BoardStreamRegistry & { closeAll(): void } {
+  const streams = new Set<() => void>()
+  let closed = false
+  return {
+    register(close) {
+      if (closed) {
+        close()
+        return () => undefined
+      }
+      streams.add(close)
+      return () => streams.delete(close)
+    },
+    closeAll() {
+      closed = true
+      for (const close of streams) close()
+      streams.clear()
+    },
+  }
+}
 
 export const BOARD_STREAM_HEARTBEAT_INTERVAL_MS = 20_000
 export const BOARD_STREAM_MAX_LIFETIME_MS = 15 * 60_000
@@ -30,8 +65,9 @@ function event(revision: string): string {
 }
 
 export function boardStreamResponse(input: {
-  tenant: BoardTenant
+  readTenant(): Promise<BoardTenant | null>
   wakeSource: BoardWakeSource
+  registry: BoardStreamRegistry
   readHead(tenant: BoardTenant): Promise<string>
   signal: AbortSignal
   clock?: BoardStreamClock
@@ -46,6 +82,7 @@ export function boardStreamResponse(input: {
       let pending = false
       let lastSent: string | null = null
       let unsubscribe: () => void = () => undefined
+      let unregister: () => void = () => undefined
       let heartbeat: ReturnType<typeof setInterval>
       let lifetime: ReturnType<typeof setTimeout>
 
@@ -53,6 +90,7 @@ export function boardStreamResponse(input: {
         if (closed) return
         closed = true
         unsubscribe()
+        unregister()
         clock.clearInterval(heartbeat)
         clock.clearTimeout(lifetime)
         input.signal.removeEventListener('abort', dispose)
@@ -72,7 +110,12 @@ export function boardStreamResponse(input: {
         try {
           do {
             pending = false
-            const visibleHead = await input.readHead(input.tenant)
+            const tenant = await input.readTenant()
+            if (!tenant) {
+              close()
+              return
+            }
+            const visibleHead = await input.readHead(tenant)
             if (closed) return
             const decision = boardStreamAdvance(lastSent, visibleHead)
             lastSent = decision.lastSent
@@ -89,6 +132,8 @@ export function boardStreamResponse(input: {
       }
 
       unsubscribe = input.wakeSource.subscribe(() => void check())
+      unregister = input.registry.register(close)
+      if (closed) return
       heartbeat = clock.setInterval(() => {
         if (!closed) controller.enqueue(encoder.encode(': heartbeat\n\n'))
       }, BOARD_STREAM_HEARTBEAT_INTERVAL_MS)
