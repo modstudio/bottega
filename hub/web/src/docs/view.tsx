@@ -56,24 +56,8 @@ export type DocsViewProps = {
   viewedRevision?: { title: string; body: string } | null
 }
 
-function DocsChrome({
-  showProjectChooser,
-  signedIn,
-  project,
-  onProject,
-  subjects,
-  offered,
-  chosen,
-  onFilters,
-  inView,
-  active,
-  createAction,
-  showDrafts,
-  onShowDrafts,
-  canShowDrafts,
-}: {
+type DocsControlsProps = {
   showProjectChooser: boolean
-  signedIn: boolean
   project: string | 'all'
   onProject: (project: string | 'all') => void
   subjects: readonly string[]
@@ -86,55 +70,79 @@ function DocsChrome({
   showDrafts: boolean
   onShowDrafts: (show: boolean) => void
   canShowDrafts: boolean
-}) {
+}
+
+/** The project chooser, the filter panel and the create action: one group, wherever the page puts it. */
+function DocsControls({
+  showProjectChooser,
+  project,
+  onProject,
+  subjects,
+  offered,
+  chosen,
+  onFilters,
+  inView,
+  active,
+  createAction,
+  showDrafts,
+  onShowDrafts,
+  canShowDrafts,
+}: DocsControlsProps) {
+  return (
+    <div className="ml-auto flex flex-wrap items-center gap-3">
+      {showProjectChooser ? (
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-text-muted text-xs tracking-[0.14em] uppercase">
+            Project
+          </span>
+          <Select
+            label="Project"
+            size="sm"
+            value={project}
+            onChange={(value) => onProject(value === 'all' ? 'all' : value)}
+            options={[
+              ...subjects.map((name) => ({ value: name, label: name })),
+              { value: 'all', label: 'All projects' },
+            ]}
+          />
+        </div>
+      ) : null}
+      {offered.length || canShowDrafts ? (
+        <Popover
+          label="Filters"
+          align="end"
+          trigger={
+            <Button size="sm">
+              Filter
+              {active ? (
+                <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
+                  {active}
+                </span>
+              ) : null}
+            </Button>
+          }
+        >
+          <FilterPanel
+            offered={offered}
+            chosen={chosen}
+            onChange={onFilters}
+            total={inView}
+            drafts={canShowDrafts ? { shown: showDrafts, onChange: onShowDrafts } : null}
+          />
+        </Popover>
+      ) : null}
+      {createAction}
+    </div>
+  )
+}
+
+/** The public site's own row above the docs; the dashboard carries the controls in its page header. */
+function DocsChrome({ signedIn, controls }: { signedIn: boolean; controls: ReactNode }) {
   return (
     <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
       <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-center justify-between gap-3 px-5 py-2">
         {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          {showProjectChooser ? (
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-text-muted text-xs tracking-[0.14em] uppercase">
-                Project
-              </span>
-              <Select
-                label="Project"
-                size="sm"
-                value={project}
-                onChange={(value) => onProject(value === 'all' ? 'all' : value)}
-                options={[
-                  ...subjects.map((name) => ({ value: name, label: name })),
-                  { value: 'all', label: 'All projects' },
-                ]}
-              />
-            </div>
-          ) : null}
-          {offered.length || canShowDrafts ? (
-            <Popover
-              label="Filters"
-              align="end"
-              trigger={
-                <Button size="sm">
-                  Filter
-                  {active ? (
-                    <span className="bg-accent-fill px-1.5 font-mono text-accent-on-fill text-xs">
-                      {active}
-                    </span>
-                  ) : null}
-                </Button>
-              }
-            >
-              <FilterPanel
-                offered={offered}
-                chosen={chosen}
-                onChange={onFilters}
-                total={inView}
-                drafts={canShowDrafts ? { shown: showDrafts, onChange: onShowDrafts } : null}
-              />
-            </Popover>
-          ) : null}
-          {createAction}
-        </div>
+        {controls}
       </div>
     </div>
   )
@@ -323,47 +331,50 @@ export function DocsView({
     const first = navigationItems.find((item) => item.id === firstId)
     if (first) onOpenFirst(first)
   }, [ready, selectedId, firstId, navigationItems, onOpenFirst])
+  const controls = (
+    <DocsControls
+      showProjectChooser={showProjectChooser}
+      project={project}
+      onProject={(next) => {
+        onProject(next)
+        if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
+        const first = docsViewModel(navigationItems, next, chosen, null, doc, signedIn).first
+        if (first) onOpenFirst(first)
+      }}
+      subjects={model.subjects}
+      offered={model.offered}
+      chosen={model.stale}
+      onFilters={(next) => {
+        onFilters(next)
+      }}
+      inView={model.inView}
+      active={model.active}
+      createAction={createAction}
+      showDrafts={showDrafts}
+      onShowDrafts={onShowDrafts}
+      canShowDrafts={canShowDrafts}
+    />
+  )
   return (
     <div
       className={classes(
         'flex flex-col',
         framed
           ? 'site-docs-chrome min-h-dvh bg-surface-sunken [--docs-top:var(--site-nav-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))]'
-          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] [--docs-stick:calc(var(--docs-top)+var(--docs-chrome-h))] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
+          : 'min-h-[calc(100dvh-var(--topbar-h))] bg-surface-page [--docs-top:var(--topbar-h)] [--docs-stick:var(--docs-top)] md:-mt-6 -mx-4 -mb-8 md:-mx-8',
       )}
     >
-      {framed ? null : (
+      {framed ? (
+        <DocsChrome signedIn={signedIn} controls={controls} />
+      ) : (
         <div className="px-4 md:px-8">
           <PageHeader
             title="Docs"
             subtitle={`${model.documentCount} documents · ${sourceLabel}`}
-            actions={createAction}
+            actions={controls}
           />
         </div>
       )}
-      <DocsChrome
-        showProjectChooser={showProjectChooser}
-        signedIn={signedIn}
-        project={project}
-        onProject={(next) => {
-          onProject(next)
-          if (!selectedItem || next === 'all' || selectedItem.projectName === next) return
-          const first = docsViewModel(navigationItems, next, chosen, null, doc, signedIn).first
-          if (first) onOpenFirst(first)
-        }}
-        subjects={model.subjects}
-        offered={model.offered}
-        chosen={model.stale}
-        onFilters={(next) => {
-          onFilters(next)
-        }}
-        inView={model.inView}
-        active={model.active}
-        createAction={framed ? createAction : null}
-        showDrafts={showDrafts}
-        onShowDrafts={onShowDrafts}
-        canShowDrafts={canShowDrafts}
-      />
       <div
         className={classes(
           'mx-auto grid min-h-0 w-full flex-1 grid-cols-1 lg:min-h-[calc(100dvh-var(--docs-stick))]',

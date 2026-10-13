@@ -87,7 +87,7 @@ function MermaidDrawing({ svg }: { svg: string }) {
   return <div className="doc-mermaid" ref={ref} />
 }
 
-export function fittedDiagramWidth(natural: number, available: number): number {
+function fittedDiagramWidth(natural: number, available: number): number {
   if (available <= 0 || natural <= available) return natural
   return natural <= available * FIT_LIMIT ? available : natural
 }
