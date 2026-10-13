@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   newRecordId,
@@ -272,6 +272,10 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${EXPIRED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','pending',now() - interval '1 day',now()),
         ('${ACCEPTED_INVITATION}','${authSpaceA}','${SIGN_UP_AUTH.emailB}','${authUserA}','member','accepted',now() + interval '1 day',now());`,
     )
+  })
+
+  beforeEach(() => {
+    installRecordApiClient(null)
   })
 
   afterAll(async () => {
