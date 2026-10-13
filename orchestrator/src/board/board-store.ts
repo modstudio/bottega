@@ -5,12 +5,14 @@ import {
 } from '../../../shared/board-duration.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
+import { projectAt, projects } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
+  type Audience,
   acknowledgementRefusal,
   architectIdentity,
+  architectsPostingRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
@@ -284,9 +286,10 @@ export function recipients(
   tags: BoardTag[],
   database = db(),
   facts = presenceFacts(database, at),
+  postingProject: string | null = null,
 ): string[] {
   const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS)
+  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
     const run = /^run:(\d+)$/.exec(reader)
@@ -305,13 +308,44 @@ function resolvePostAudience(expression: string, machine: string) {
 }
 
 function resolvePostOrigin(actor: BoardActor, env: Environment, cwd: string) {
-  if (actor.kind === 'operator') return { harness: null, project: null }
   const project = projectAt(cwd)
-  if (!project)
+  return {
+    harness: actor.kind === 'operator' ? null : architectIdentity(env)!.harness,
+    project: project?.name ?? null,
+  }
+}
+
+function validateArchitectAudience(
+  actor: BoardActor,
+  audience: Audience,
+  project: string | null,
+  cwd: string,
+  database: ReturnType<typeof writableDb>,
+): void {
+  if (actor.kind === 'architect' && !project && audience.kind !== 'architects')
     throw new Error(
       `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
     )
-  return { harness: architectIdentity(env)!.harness, project: project.name }
+  const refusal = architectsPostingRefusal(audience, project)
+  if (refusal) throw new Error(refusal)
+  if (audience.kind !== 'architects') return
+  if (audience.value && !projects(undefined, database).some((item) => item.name === audience.value))
+    throw new Error(
+      `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
+    )
+}
+
+function validateRunAudience(
+  audience: Audience,
+  actor: BoardActor,
+  database: ReturnType<typeof writableDb>,
+): void {
+  const owner =
+    audience.kind === 'run' && typeof audience.value === 'number'
+      ? runOwnerSession(audience.value, database)
+      : null
+  const refusal = runAudienceRefusal(audience, actor.kind, actor.session, owner)
+  if (refusal) throw new Error(refusal)
 }
 
 function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
@@ -337,7 +371,7 @@ function refreshPostingPresence(
   cwd: string,
   at: string,
 ): void {
-  if (actor.kind !== 'architect') return
+  if (actor.kind !== 'architect' || !origin.project) return
   const current = database
     .query(
       `SELECT launch_key FROM run
@@ -384,6 +418,32 @@ export function authorWindowDecision(
   return postDecision({ recentPosts, duplicate })
 }
 
+function recordRecipients(
+  messageId: number,
+  audience: string,
+  kind: 'notice' | 'question',
+  clock: number,
+  tags: BoardTag[],
+  project: string | null,
+  database: ReturnType<typeof writableDb>,
+): number {
+  const readers = recipients(
+    audience,
+    clock,
+    tags,
+    database,
+    presenceFacts(database, clock),
+    project,
+  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
+  const add = database.query(
+    `INSERT OR IGNORE INTO board_receipt
+     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,1,NULL,NULL)`,
+  )
+  for (const reader of readers) add.run(messageId, reader)
+  return readers.length
+}
+
 export function insertRootMessage(
   kind: 'notice' | 'question',
   input: PostNoticeInput,
@@ -399,16 +459,9 @@ export function insertRootMessage(
     input.audience,
     postingMachine,
   )
-  const runRefusal = runAudienceRefusal(
-    audience,
-    actor.kind,
-    actor.session,
-    audience.kind === 'run' && typeof audience.value === 'number'
-      ? runOwnerSession(audience.value, database)
-      : null,
-  )
-  if (runRefusal) throw new Error(runRefusal)
+  validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd)
+  validateArchitectAudience(actor, audience, origin.project, cwd, database)
   const ackRefusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
     audience,
@@ -427,7 +480,7 @@ export function insertRootMessage(
     .query(
       `SELECT id FROM board_message
        WHERE kind=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
-         AND audience=? AND title=? AND body=?
+         AND author_project IS ? AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
@@ -435,6 +488,7 @@ export function insertRootMessage(
       actor.kind,
       actor.session,
       input.suggestingRunId ?? null,
+      origin.project,
       audienceExpression,
       input.title,
       input.body,
@@ -499,16 +553,16 @@ export function insertRootMessage(
     `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin) VALUES (?,?,?,?)`,
   )
   for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
-  const add = database.query(
-    `INSERT OR IGNORE INTO board_receipt
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,1,NULL,NULL)`,
+  const reached = recordRecipients(
+    id,
+    audienceExpression,
+    kind,
+    clock,
+    tags,
+    origin.project,
+    database,
   )
-  const postingRecipients = recipients(audienceExpression, clock, tags, database).filter(
-    (reader) => kind !== 'question' || !reader.startsWith('run:'),
-  )
-  for (const reader of postingRecipients) add.run(id, reader)
-  return postNoticeResult(id, false, postingRecipients.length)
+  return postNoticeResult(id, false, reached)
 }
 
 export function messageRows(database = db()): MessageRow[] {
@@ -535,6 +589,7 @@ export function addressed(
       messageTags(message.id, database),
       database,
       presenceFacts(database, clock),
+      message.author_project,
     ).includes(reader)
   )
 }

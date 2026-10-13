@@ -43,7 +43,12 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
     )
     .run(PLATFORM_SLUG, new Date(clock).toISOString())
   const posted = postNotice(
-    { audience: 'architects', title: 'Wind down', body: 'Finish owned work.', ackRequired: true },
+    {
+      audience: 'architects:all',
+      title: 'Wind down',
+      body: 'Finish owned work.',
+      ackRequired: true,
+    },
     {},
     clock,
   )
@@ -67,6 +72,71 @@ test('recordPresence preserves first_seen after the first insert', () => {
       .query('SELECT first_seen,last_seen FROM presence WHERE session_id=?')
       .get(env.CLAUDE_CODE_SESSION_ID),
   ).toEqual({ first_seen: '2026-10-05T11:00:00.000Z', last_seen: '2026-10-05T12:00:00.000Z' })
+})
+
+test('local architect audiences select the posting project, all projects, or one named project', () => {
+  const { cwd, project } = postingProject()
+  const clock = Date.now()
+  db()
+    .query(
+      `INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-other','/tmp/board-other','{}')`,
+    )
+    .run()
+  const presence = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,'/tmp',NULL,?,?)`,
+  )
+  for (const [session, name] of [
+    ['architect-a', project.name],
+    ['architect-b', 'board-other'],
+  ] as const)
+    presence.run(session, name, new Date(clock).toISOString(), new Date(clock).toISOString())
+  const env = { CLAUDE_CODE_SESSION_ID: 'architect-author' }
+  const posting = postNotice(
+    { audience: 'architects', title: 'Local project', body: 'A only.' },
+    env,
+    clock,
+    cwd,
+  )
+  const all = postNotice(
+    { audience: 'architects:all', title: 'Local all', body: 'Both.' },
+    env,
+    clock + 1,
+    cwd,
+  )
+  const named = postNotice(
+    { audience: 'architects:board-other', title: 'Local named', body: 'B only.' },
+    env,
+    clock + 2,
+    cwd,
+  )
+  expect(
+    noticeStatus(posting.id, env, clock + 3).receipts.map((row) => row.reader_session),
+  ).toEqual(['architect-a', 'architect-author'])
+  expect(noticeStatus(all.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
+    'architect-a',
+    'architect-author',
+    'architect-b',
+  ])
+  expect(noticeStatus(named.id, env, clock + 3).receipts.map((row) => row.reader_session)).toEqual([
+    'architect-b',
+  ])
+  expect(() =>
+    postNotice(
+      { audience: 'architects:missing', title: 'Unknown', body: 'No.' },
+      env,
+      clock + 4,
+      cwd,
+    ),
+  ).toThrow(/unknown board project missing.*orch project list/)
+  expect(() =>
+    postNotice(
+      { audience: 'architects', title: 'Projectless', body: 'No.' },
+      env,
+      clock + 5,
+      '/tmp/outside-registered-projects',
+    ),
+  ).toThrow(/use architects:all or architects:<project>/)
 })
 
 test('a message posted after the hook start but before presence is written is due', () => {
@@ -442,6 +512,29 @@ test('duplicate notices require the same order-independent sender tag set', () =
     reached: 0,
     warning: 'reached no live session; re-address it or wait for a matching session',
   })
+})
+
+test('plain architects duplicate identity includes the posting project', () => {
+  const clock = Date.now() + 19_000
+  const firstCwd = resolve(import.meta.dir)
+  const secondCwd = resolve(import.meta.dir, '../record')
+  const project = db().query(
+    `INSERT OR IGNORE INTO project(name,path,settings) VALUES (?,?, '{}') RETURNING id`,
+  )
+  project.get('board-duplicate-a', firstCwd)
+  project.get('board-duplicate-b', secondCwd)
+  const input = { audience: 'architects', title: 'Same notice', body: 'Same body.' }
+  const env = { CLAUDE_CODE_SESSION_ID: 'duplicate-project-author' }
+  const first = postNotice(input, env, clock, firstCwd)
+  const second = postNotice(input, env, clock + 1, secondCwd)
+  expect(first.dropped).toBeFalse()
+  expect(second.dropped).toBeFalse()
+  expect(second.id).not.toBe(first.id)
+  expect(
+    db()
+      .query('SELECT author_project FROM board_message WHERE id IN (?,?) ORDER BY id')
+      .all(first.id, second.id),
+  ).toEqual([{ author_project: 'board-duplicate-a' }, { author_project: 'board-duplicate-b' }])
 })
 
 test('a session-start notice reduced to a title or count stays unread until a stamping read', () => {

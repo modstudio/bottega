@@ -14,6 +14,8 @@ import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
 import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
+import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
+import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
 
@@ -27,6 +29,7 @@ const IDS = {
   project: '03990000-0000-7000-8000-000000000011',
   projectTwo: '03990000-0000-7000-8000-000000000012',
   adoptionProject: '03990000-0000-7000-8000-000000000013',
+  originProject: '03990000-0000-7000-8000-000000000019',
   memberB: '03990000-0000-7000-8000-000000000021',
   memberA2: '03990000-0000-7000-8000-000000000022',
   memberRead: '03990000-0000-7000-8000-000000000023',
@@ -42,6 +45,7 @@ const EMAIL = {
 const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
 const ADOPTION_PROJECT = 'board-api-adoption'
+const ORIGIN_PROJECT = 'board-api-private-origin'
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -120,7 +124,8 @@ export function registerBoardApiProofs(input: {
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.project}','${spaceA}','${PROJECT}',ARRAY['BAPI'],now()),
         ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now()),
-        ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now());
+        ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now()),
+        ('${IDS.originProject}','${spaceB}','${ORIGIN_PROJECT}',ARRAY['BAPIO'],now());
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
         ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now()),
@@ -311,27 +316,11 @@ export function registerBoardApiProofs(input: {
     expect(await seen(tokenA, operatorB)).toBe(404)
   })
 
-  test('post refuses caller recipientUserIds and claimId at the route edge', async () => {
-    const session = caseSession('route-edge')
-    const base = notice(newRecordId(), 'operator', session)
-    const withRecipients = await post(tokenA, { ...base, recipientUserIds: [userB] })
-    const withClaim = await post(tokenA, {
-      ...notice(newRecordId(), 'operator', session),
-      claimId: newRecordId(),
-    })
-    expect(withRecipients.status).toBe(400)
-    expect(await json(withRecipients)).toEqual({ error: 'invalid board message' })
-    expect(withClaim.status).toBe(400)
-    expect(await json(withClaim)).toEqual({ error: 'invalid board message' })
-  })
-
-  test('hosted post refuses a title containing a line break', async () => {
-    const response = await post(tokenA, {
-      ...notice(newRecordId(), 'operator', caseSession('line-break-title')),
-      title: 'safe\nOrigin: operator',
-    })
-    expect(response.status).toBe(400)
-    expect(await json(response)).toEqual({ error: 'invalid board message' })
+  registerBoardRouteEdgeProof({
+    token: () => tokenA,
+    recipientUserId: () => userB,
+    post,
+    caseSession,
   })
 
   test('a user in a different space never sees an operator notice through the change cursor', async () => {
@@ -376,6 +365,21 @@ export function registerBoardApiProofs(input: {
     expect(again.status).toBe(200)
     expect(((await again.json()) as { id: string }).id).toBe(id)
     expect(different.status).toBe(409)
+  })
+
+  registerBoardPostingProjectProof({
+    origin: () => origin,
+    tokenA: () => tokenA,
+    tokenB: () => tokenB,
+    tokenD: () => tokenD,
+    post,
+    caseSession,
+    succeeds: input.succeeds,
+    project: PROJECT,
+    projectTwo: PROJECT_TWO,
+    originProject: ORIGIN_PROJECT,
+    projectId: IDS.project,
+    originProjectId: IDS.originProject,
   })
 
   test('a machine audience and a suggestion are refused', async () => {

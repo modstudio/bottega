@@ -102,6 +102,7 @@ export function sameHostedBoardCreateContent(
     sameIds(stored.scopeProjectIds, requested.scopeProjectIds) &&
     sameIds(stored.recipientUserIds, requested.recipientUserIds) &&
     stored.sharedSpaceReach === requested.sharedSpaceReach &&
-    senderTagKey(stored.senderTags) === senderTagKey(requested.senderTags)
+    senderTagKey(stored.senderTags) === senderTagKey(requested.senderTags) &&
+    (stored.authorProjectId ?? null) === (requested.authorProjectId ?? null)
   )
 }

@@ -12,7 +12,7 @@ export const BOARD_REACH_DEFAULT_HOURS = 24
 export const BOARD_REACH_MAX_HOURS = 7 * 24
 export const BOARD_REACH_RETENTION_HOURS = 30 * 24
 
-export type BoardDeliveryPoint = 'session-start' | 'after-tool-call' | 'stop'
+export type BoardDeliveryPoint = 'session-start' | 'after-tool-call' | 'stop' | 'heartbeat-monitor'
 type BoardReachConcern = 'concerned' | 'not-concerned' | 'unqualified'
 
 export type BoardReachRow = {
@@ -48,6 +48,7 @@ type MessageFacts = {
   acknowledgementRequired: boolean
   postedAt: string
   expiresAt: string | null
+  postingProject: string | null
 }
 
 export type PreparedBoardReach = BoardReachRecordingInput &
@@ -71,21 +72,39 @@ export function boardReachConcern(
   readerSession: string,
   readerProject: string,
   resolvedTaskProject: string | null,
+  postingProject: string | null = null,
 ): BoardReachConcern {
-  if (audience.kind === 'project' || audience.kind === 'workers')
-    return audience.value === readerProject ? 'concerned' : 'not-concerned'
-  if (audience.kind === 'task') {
-    return resolvedTaskProject === null
-      ? 'unqualified'
-      : resolvedTaskProject === readerProject
-        ? 'concerned'
-        : 'not-concerned'
-  }
+  const byProject = audienceProjectConcern(
+    audience,
+    readerProject,
+    resolvedTaskProject,
+    postingProject,
+  )
+  if (byProject) return byProject
   if (audience.kind === 'session')
     return audience.value === readerSession ? 'concerned' : 'not-concerned'
   if (audience.kind === 'run')
     return readerSession === `run:${audience.value}` ? 'concerned' : 'not-concerned'
   return 'unqualified'
+}
+
+function audienceProjectConcern(
+  audience: Audience,
+  readerProject: string,
+  resolvedTaskProject: string | null,
+  postingProject: string | null,
+): BoardReachConcern | null {
+  if (audience.kind === 'architects')
+    return projectConcern(audience.all ? null : (audience.value ?? postingProject), readerProject)
+  if (audience.kind === 'project' || audience.kind === 'workers')
+    return projectConcern(audience.value, readerProject)
+  if (audience.kind === 'task') return projectConcern(resolvedTaskProject, readerProject)
+  return null
+}
+
+function projectConcern(project: string | null, readerProject: string): BoardReachConcern {
+  if (project === null) return 'unqualified'
+  return project === readerProject ? 'concerned' : 'not-concerned'
 }
 
 function localMessageFacts(id: string, database: Database): MessageFacts | null {
@@ -104,6 +123,7 @@ function localMessageFacts(id: string, database: Database): MessageFacts | null 
         acknowledgementRequired: row.ack_required === 1,
         postedAt: row.created_at,
         expiresAt: root.expires_at,
+        postingProject: root.author_project,
       }
     : null
 }
@@ -127,6 +147,7 @@ function hostedMessageFacts(id: string, database: Database): MessageFacts | null
         acknowledgementRequired: message.ackRequired,
         postedAt: message.createdAt,
         expiresAt: audienceOwner.expiresAt,
+        postingProject: audienceOwner.origin.project,
       }
     : null
 }
@@ -157,6 +178,7 @@ export function prepareBoardReach(
       input.session,
       presence.project,
       audience.kind === 'task' ? taskProject(String(audience.value), database) : null,
+      message.postingProject,
     ),
   }
 }

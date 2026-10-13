@@ -1,12 +1,12 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { markBoardDeliveriesDelivered } from '../board/board-delivery.ts'
+import { randomUUID } from 'node:crypto'
 import {
   hostedBoardVerificationWarning,
   takeHostedBoardVerificationTransition,
 } from '../board/board-hosted-cache.ts'
-import { pendingBoardDelivery } from '../board/board-push-service.ts'
+import { markBoardDeliveryDelivered, pendingBoardDelivery } from '../board/board-push-service.ts'
 import { requireRealSession } from '../board/board-service.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
@@ -314,5 +314,12 @@ export async function markMonitorNoticesDeliveredWithHosted(
 ): Promise<void> {
   markMonitorNoticesDelivered(ownerSession, ids, deliveredAt)
   const board = ids.map((token) => /^board:(.+)$/.exec(token)?.[1] ?? '').filter((id) => id !== '')
-  await markBoardDeliveriesDelivered(ownerSession, board, deliveredAt)
+  if (board.length)
+    await markBoardDeliveryDelivered({
+      session: ownerSession,
+      ids: board,
+      clock: Date.parse(deliveredAt),
+      deliveryPoint: 'heartbeat-monitor',
+      emissionId: randomUUID(),
+    })
 }

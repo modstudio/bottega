@@ -194,7 +194,11 @@ test('rendering identifies a removed message by id alone', async () => {
      VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
-  const posted = postNotice({ audience: 'architects', title: 'Soon gone', body: 'body' }, {}, clock)
+  const posted = postNotice(
+    { audience: 'architects:all', title: 'Soon gone', body: 'body' },
+    {},
+    clock,
+  )
   await markBoardDeliveryDelivered({
     session,
     ids: [String(posted.id)],
@@ -203,11 +207,11 @@ test('rendering identifies a removed message by id alone', async () => {
     clock: clock + 1,
   })
   expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
-    `${posted.id} — Soon gone [architects]`,
+    `${posted.id} — Soon gone [architects:all]`,
   )
   db().query('DELETE FROM board_message WHERE id=?').run(posted.id)
   expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
-    `${posted.id} [architects]: 1 not shown to concern`,
+    `${posted.id} [architects:all]: 1 not shown to concern`,
   )
 })
 
@@ -220,6 +224,14 @@ test('the pure concern classifier covers every audience form', () => {
   ) => boardReachConcern(parseAudience(audience), session, project, taskProject)
   expect(classify('operator')).toBe('unqualified')
   expect(classify('architects')).toBe('unqualified')
+  expect(boardReachConcern(parseAudience('architects'), 'reader', 'alpha', null, 'alpha')).toBe(
+    'concerned',
+  )
+  expect(boardReachConcern(parseAudience('architects'), 'reader', 'beta', null, 'alpha')).toBe(
+    'not-concerned',
+  )
+  expect(classify('architects:all')).toBe('unqualified')
+  expect(classify('architects:alpha')).toBe('concerned')
   expect(classify('spaces')).toBe('unqualified')
   expect(classify('project:alpha')).toBe('concerned')
   expect(classify('project:beta')).toBe('not-concerned')

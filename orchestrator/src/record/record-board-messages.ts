@@ -6,6 +6,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
   acknowledgementRefusal,
+  architectsPostingRefusal,
   audienceDescription,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -56,6 +57,14 @@ type HostedBoardForcedScope = {
   claimId?: string | null
 }
 
+type PreparedHostedPost = {
+  authorProjectId: string | null
+  scopeProjectIds: string[]
+  recipientUserIds: string[]
+  sharedSpaceReach: boolean
+  claimId: string | null
+}
+
 export const RATE_LIMITED =
   'board post rate limit reached; retry after the ten-minute author window'
 
@@ -78,7 +87,8 @@ function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['or
     kind: row.author_session ? 'architect' : 'operator',
     session: row.author_session == null ? null : String(row.author_session),
     harness: row.author_harness == null ? null : String(row.author_harness),
-    project: null,
+    project: row.author_project_name == null ? null : String(row.author_project_name),
+    projectStored: row.author_project_id != null,
     runId: row.author_run_id == null ? null : String(row.author_run_id),
   }
 }
@@ -159,6 +169,7 @@ function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBo
     senderTags: tags
       .filter((tag) => tag.origin === 'sender')
       .map(({ kind, value }) => ({ kind, value })),
+    authorProjectId: row.author_project_id == null ? null : String(row.author_project_id),
   }
 }
 
@@ -174,7 +185,11 @@ export async function loadHostedBoardMessage(
   tx: SQL,
   id: string,
 ): Promise<{ row: Record<string, unknown>; tags: BoardTag[] } | null> {
-  const rows = await tx`SELECT * FROM board_message WHERE id=${id}::uuid`
+  const rows = await tx`
+    SELECT board_message.*, project.name AS author_project_name
+    FROM board_message LEFT JOIN project ON project.id=board_message.author_project_id
+    WHERE board_message.id=${id}::uuid
+  `
   if (!rows[0]) return null
   return { row: rows[0] as Record<string, unknown>, tags: await messageTags(tx, id) }
 }
@@ -256,6 +271,7 @@ async function duplicateRootId(
     audience: string
     title: string
     body: string
+    authorProjectId: string | null
   },
   senderTags: BoardTag[],
   clock: number,
@@ -265,6 +281,7 @@ async function duplicateRootId(
     SELECT id FROM board_message
     WHERE kind=${input.kind} AND author_user_id=${input.userId}::uuid
       AND author_session IS NOT DISTINCT FROM ${input.session}
+      AND author_project_id IS NOT DISTINCT FROM ${input.authorProjectId}::uuid
       AND audience IS NOT DISTINCT FROM ${input.audience}
       AND title IS NOT DISTINCT FROM ${input.title}
       AND body=${input.body}
@@ -299,45 +316,10 @@ async function insertRoot(
   input: HostedBoardPostInput,
   userId: string,
   session: string | null,
-  audience: Audience,
   tags: BoardTag[],
   clock: number,
-  forcedScope?: HostedBoardForcedScope,
+  prepared: PreparedHostedPost,
 ): Promise<string> {
-  const projectName = hostedProjectNameForAudience(audience, input.project)
-  if (
-    (audience.kind === 'project' || audience.kind === 'workers' || audience.kind === 'task') &&
-    !projectName
-  ) {
-    throw new RecordBoardError(
-      audience.kind === 'task'
-        ? 'task audience requires the author project; send project'
-        : 'board project audience needs a visible project name',
-      400,
-    )
-  }
-  if (
-    projectName &&
-    input.project &&
-    (audience.kind === 'project' || audience.kind === 'workers') &&
-    input.project !== projectName
-  ) {
-    throw new RecordBoardError(
-      `board project ${input.project} does not match audience ${audience.kind}:${projectName}`,
-      400,
-    )
-  }
-  const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const derived = hostedBoardScope(audience, projectId)
-  const scopeProjectIds = forcedScope?.scopeProjectIds ?? derived.scopeProjectIds
-  const recipients = forcedScope?.recipientUserIds ?? derived.recipientUserIds
-  const sharedSpaceReach = forcedScope?.sharedSpaceReach ?? derived.sharedSpaceReach
-  if (sharedSpaceReach && (scopeProjectIds.length > 0 || recipients.length > 0))
-    throw new RecordBoardError(
-      'spaces audience cannot be combined with a project or recipient scope; use spaces alone or choose the narrower audience',
-      400,
-    )
-  const claimId = forcedScope?.claimId ?? null
   const createdAt = new Date(clock).toISOString()
   const ackRequired = input.ackRequired ?? false
   await requireOwnedHostedRunAndMachine(tx, userId, {
@@ -348,17 +330,17 @@ async function insertRoot(
   })
   await tx`
     INSERT INTO board_message (
-      id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
+      id, author_user_id, author_session, author_harness, author_machine_id, author_run_id, author_project_id,
       kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
       created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     ) VALUES (
       ${input.id}::uuid, ${userId}::uuid, ${session}, ${input.authorHarness ?? null},
-      ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
+      ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid, ${prepared.authorProjectId}::uuid,
       ${input.kind}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
-      ${createdAt}::timestamptz, ${claimId}::uuid,
-      COALESCE(${boardUuidArray(tx, scopeProjectIds)}, ARRAY[]::uuid[]),
-      COALESCE(${boardUuidArray(tx, recipients)}, ARRAY[]::uuid[]), ${sharedSpaceReach}
+      ${createdAt}::timestamptz, ${prepared.claimId}::uuid,
+      COALESCE(${boardUuidArray(tx, prepared.scopeProjectIds)}, ARRAY[]::uuid[]),
+      COALESCE(${boardUuidArray(tx, prepared.recipientUserIds)}, ARRAY[]::uuid[]), ${prepared.sharedSpaceReach}
     )
   `
   await insertTags(tx, input.id, tags)
@@ -422,28 +404,20 @@ export async function postHostedBoardMessage(
     ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
   ]
   const clock = Date.now()
-  const requested: HostedBoardCreateContent = {
-    kind: input.kind,
-    audience: input.audience,
-    title: input.title,
-    body: input.body,
-    ackRequired,
-    ackDeadline,
-    expiresAt,
-    threadRootId: null,
-    scopeProjectIds: [],
-    recipientUserIds: [],
-    sharedSpaceReach: false,
-    claimId: null,
-    senderTags: senderTags.map(({ kind, value }) => ({ kind, value })),
-  }
   return withBoardTenant(input, true, async (tx) => {
-    const projectName = hostedProjectNameForAudience(audience, input.project)
-    const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-    const derived = hostedBoardScope(audience, projectId)
-    requested.scopeProjectIds = derived.scopeProjectIds
-    requested.recipientUserIds = derived.recipientUserIds
-    requested.sharedSpaceReach = derived.sharedSpaceReach
+    const prepared = await prepareHostedPost(tx, audience, input.project)
+    const requested: HostedBoardCreateContent = {
+      kind: input.kind,
+      audience: input.audience,
+      title: input.title,
+      body: input.body,
+      ackRequired,
+      ackDeadline,
+      expiresAt,
+      threadRootId: null,
+      ...prepared,
+      senderTags: senderTags.map(({ kind, value }) => ({ kind, value })),
+    }
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const duplicateId = await duplicateRootId(
@@ -455,6 +429,7 @@ export async function postHostedBoardMessage(
         audience: input.audience,
         title: input.title,
         body: input.body,
+        authorProjectId: prepared.authorProjectId,
       },
       senderTags,
       clock,
@@ -467,12 +442,63 @@ export async function postHostedBoardMessage(
       { ...input, ackRequired, ackDeadline, expiresAt, authorSession: session },
       input.userId,
       session,
-      audience,
       tags,
       clock,
+      prepared,
     )
     return viewById(tx, input.id, clock)
   })
+}
+
+async function prepareHostedPost(
+  tx: SQL,
+  audience: Audience,
+  postingProject: string | undefined,
+  forcedScope?: HostedBoardForcedScope,
+): Promise<PreparedHostedPost> {
+  const refusal = architectsPostingRefusal(audience, postingProject)
+  if (refusal) throw new RecordBoardError(refusal, 400)
+  const projectName = hostedProjectNameForAudience(audience, postingProject)
+  if (
+    (audience.kind === 'project' || audience.kind === 'workers' || audience.kind === 'task') &&
+    !projectName
+  )
+    throw new RecordBoardError(
+      audience.kind === 'task'
+        ? 'task audience requires the author project; send project'
+        : 'board project audience needs a visible project name',
+      400,
+    )
+  if (
+    projectName &&
+    postingProject &&
+    (audience.kind === 'project' || audience.kind === 'workers') &&
+    postingProject !== projectName
+  )
+    throw new RecordBoardError(
+      `board project ${postingProject} does not match audience ${audience.kind}:${projectName}`,
+      400,
+    )
+  const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
+  const authorProjectId = postingProject ? await resolveVisibleProjectId(tx, postingProject) : null
+  if (audience.kind === 'architects' && audience.value)
+    await resolveVisibleProjectId(tx, audience.value)
+  const derived = hostedBoardScope(audience, projectId)
+  const scopeProjectIds = forcedScope?.scopeProjectIds ?? derived.scopeProjectIds
+  const recipientUserIds = forcedScope?.recipientUserIds ?? derived.recipientUserIds
+  const sharedSpaceReach = forcedScope?.sharedSpaceReach ?? derived.sharedSpaceReach
+  if (sharedSpaceReach && (scopeProjectIds.length > 0 || recipientUserIds.length > 0))
+    throw new RecordBoardError(
+      'spaces audience cannot be combined with a project or recipient scope; use spaces alone or choose the narrower audience',
+      400,
+    )
+  return {
+    authorProjectId,
+    scopeProjectIds,
+    recipientUserIds,
+    sharedSpaceReach,
+    claimId: forcedScope?.claimId ?? null,
+  }
 }
 
 export async function postHostedBoardNoticeInTransaction(
@@ -491,6 +517,7 @@ export async function postHostedBoardNoticeInTransaction(
     ...senderTags,
     ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
   ]
+  const prepared = await prepareHostedPost(tx, audience, input.project, forcedScope)
   const decision = await authorWindow(tx, input.userId, session, clock, false)
   if (decision === 'rate-limited') return 'rate-limited'
   await insertRoot(
@@ -498,10 +525,9 @@ export async function postHostedBoardNoticeInTransaction(
     { ...input, authorSession: session },
     input.userId,
     session,
-    audience,
     tags,
     clock,
-    forcedScope,
+    prepared,
   )
   return viewById(tx, input.id, clock)
 }
@@ -561,13 +587,14 @@ async function insertReplyCopyingRoot(
   })
   const inserted = await tx`
     INSERT INTO board_message (
-      id, author_user_id, author_session, author_harness, author_machine_id, author_run_id,
+      id, author_user_id, author_session, author_harness, author_machine_id, author_run_id, author_project_id,
       kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
       created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     )
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
+      ${input.project ? await resolveVisibleProjectId(tx, input.project) : null}::uuid,
       'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
@@ -601,6 +628,7 @@ export async function replyHostedBoardMessage(
     sharedSpaceReach: false,
     claimId: null,
     senderTags: [],
+    authorProjectId: null,
   }
   return withBoardTenant(input, true, async (tx) => {
     const rootRow = await loadThreadRoot(tx, input.rootId)
@@ -609,6 +637,9 @@ export async function replyHostedBoardMessage(
     requested.threadRootId = String(rootRow.row.id)
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
+    requested.authorProjectId = input.project
+      ? await resolveVisibleProjectId(tx, input.project)
+      : null
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const audienceKind = rootRow.row.audience
@@ -726,7 +757,10 @@ async function readThreadInTx(tx: SQL, id: string, clock: number): Promise<Hoste
   const root = rootId === String(loaded.row.id) ? loaded : await loadHostedBoardMessage(tx, rootId)
   if (!root) throw new RecordBoardError(`board message ${id} not found`, 404)
   const replies = (await tx`
-    SELECT * FROM board_message WHERE thread_root_id=${rootId}::uuid ORDER BY created_at, id
+    SELECT board_message.*, project.name AS author_project_name
+    FROM board_message LEFT JOIN project ON project.id=board_message.author_project_id
+    WHERE board_message.thread_root_id=${rootId}::uuid
+    ORDER BY board_message.created_at, board_message.id
   `) as Record<string, unknown>[]
   return {
     root: hostedBoardMessageView(root.row, root.tags, clock),

@@ -39,6 +39,7 @@ import {
   type Audience,
   acknowledgementRefusal,
   architectIdentity,
+  architectsPostingRefusal,
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
@@ -375,6 +376,8 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
     if (localRefusal) throw new Error(localRefusal)
     return localPostResult(postNotice(input, c.env, c.clock, c.cwd))
   }
+  const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
+  if (audienceRefusal) throw new Error(audienceRefusal)
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }
@@ -390,6 +393,8 @@ export async function boardAsk(
     if (localRefusal) throw new Error(localRefusal)
     return localPostResult(askQuestion(input, c.env, c.clock, c.cwd))
   }
+  const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
+  if (audienceRefusal) throw new Error(audienceRefusal)
   const row = await hostedClient(c).postBoardMessage(hostedPostInput('question', input, c))
   return { id: row.id, dropped: false, reached: null, warning: null } satisfies BoardPostResult
 }
@@ -416,6 +421,7 @@ export async function boardReply(id: string, body: string, inputContext?: Contex
     authorHarness: actor.harness,
     authorMachineId: actor.machine,
     authorRunId: actor.runId,
+    project: projectAt(c.cwd)?.name,
   })
   return {
     id: row.id,

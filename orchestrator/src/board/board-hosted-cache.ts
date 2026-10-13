@@ -426,12 +426,21 @@ export function cachedMessageAddressed(
     message.authorUserId !== signedIn
   )
     return false
+  if (
+    audience.kind === 'architects' &&
+    !audience.all &&
+    !audience.value &&
+    message.origin.projectStored === true &&
+    message.origin.project === null
+  )
+    return false
   const addressed = recipients(
     message.audience,
     clock,
     tags,
     database,
     presenceFacts(database, clock),
+    message.origin.project,
   ).includes(reader)
   if (!addressed) return false
   if (message.kind === 'question' && reader.startsWith('run:')) return false

@@ -109,6 +109,13 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
     session,
     delivery.notices.map((row) => row.noticeId),
   )
+  const measured = db()
+    .query(
+      `SELECT delivery_point,COUNT(DISTINCT emission_id) emissions,COUNT(*) messages
+       FROM board_reach_delivery GROUP BY delivery_point`,
+    )
+    .get()
+  expect(measured).toEqual({ delivery_point: 'heartbeat-monitor', emissions: 1, messages: 2 })
   const repeatedFailure = await claimMonitorNoticesWithHosted(session)
   expect(repeatedFailure.notices).toEqual([])
   expect(repeatedFailure.warning).toBeNull()
@@ -118,6 +125,7 @@ test('heartbeat delivery emits ordinary hosted beside local once with a failed-r
   expect(recovery.warning).toContain('Hosted board cache is verified again')
   const verified = await claimMonitorNoticesWithHosted(session)
   expect(verified.notices).toEqual([])
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
   expect(verified.warning).toBeNull()
 })
 
@@ -178,7 +186,7 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
       ackRequired: true,
     },
     {},
-    Date.parse('2026-10-05T12:00:00.000Z'),
+    Date.now(),
   )
   let hostedCalls = 0
   installRecordApiClient({
