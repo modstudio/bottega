@@ -16,6 +16,7 @@ const item = (id: string, title: string, extra: Partial<DocsTreeItem> = {}): Doc
   featured: false,
   ...extra,
   status: extra.status ?? 'current',
+  kind: extra.kind ?? 'article',
   replacementSlug: extra.replacementSlug ?? null,
 })
 

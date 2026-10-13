@@ -44,6 +44,7 @@ describe('record public docs', () => {
         scope: 'global',
         subject: null,
         audiences: ['customer', 'technical'],
+        kind: 'article',
       }),
     ).toEqual({
       id: 'doc-a',
@@ -58,6 +59,7 @@ describe('record public docs', () => {
       scope: 'global',
       subject: null,
       audiences: ['technical', 'customer'],
+      kind: 'article',
     })
     expect(
       recordDocSearchMatchRow({
@@ -65,6 +67,7 @@ describe('record public docs', () => {
         slug: 'guide',
         title: 'Guide',
         status: 'current',
+        kind: 'article',
         audiences: ['customer'],
         snippet: '<b>Read</b> me',
         space_name: 'Public',
@@ -74,6 +77,7 @@ describe('record public docs', () => {
       slug: 'guide',
       title: 'Guide',
       status: 'current',
+      kind: 'article',
       audiences: ['customer'],
       snippet: '<b>Read</b> me',
       spaceName: 'Public',

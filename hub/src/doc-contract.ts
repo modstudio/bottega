@@ -32,7 +32,7 @@ export type ContractDocRow = ArticleDocFields & {
   position: number
   featured?: boolean
   status?: DocStatus
-  kind?: DocKind
+  kind: DocKind
   replacement_slug?: string | null
   revision: string | null
   created_at: string
@@ -53,7 +53,7 @@ export const DocTreeItemSchema = z.object({
   summary: z.string().optional(),
   featured: z.boolean().optional(),
   status: z.enum(DOC_STATUSES).optional(),
-  kind: z.enum(DOC_KINDS).optional(),
+  kind: z.enum(DOC_KINDS),
   replacementSlug: z.string().nullable().optional(),
 })
 
@@ -65,7 +65,7 @@ export const DocSearchMatchSchema = z.object({
   title: z.string(),
   audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   status: z.enum(DOC_STATUSES).default('current'),
-  kind: z.enum(DOC_KINDS).default('working'),
+  kind: z.enum(DOC_KINDS),
   snippet: z.string(),
   spaceName: z.string().optional(),
   matchPosition: z.number().int().nonnegative().nullable().default(null),

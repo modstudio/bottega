@@ -15,6 +15,7 @@ const doc: DocsDoc = {
   subject: 'workshop',
   audiences: ['internal'],
   status: 'current',
+  kind: 'article',
   replacementSlug: null,
   body: 'Write down what matters.',
 }

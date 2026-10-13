@@ -71,6 +71,7 @@ export const docRouter = t.router({
         subject: z.string().nullable().optional(),
         audience: z.enum(DOC_AUDIENCES).optional(),
         includeDrafts: z.boolean().optional(),
+        includeWorking: z.boolean().optional(),
       }),
     )
     .query(({ input }) => fromOrch(() => localDocSearch(input))),

@@ -85,10 +85,11 @@ export function useDocsSearch(
   audience: DocsAudience | null,
   subject: string | undefined,
   includeDrafts: boolean,
+  includeWorking: boolean,
 ) {
   const trimmed = query.trim()
   const enabled = trimmed.length >= 2
-  const input = docsSearchInputs(trimmed, audience, subject, includeDrafts)
+  const input = docsSearchInputs(trimmed, audience, subject, includeDrafts, includeWorking)
   const local = useQuery({
     ...trpc.doc.search.queryOptions(input.local),
     enabled: source === 'local' && enabled,

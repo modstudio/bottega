@@ -22,6 +22,7 @@ const articleRow = {
   subject: 'starship',
   audiences: ['technical'],
   status: 'current',
+  kind: 'article',
   replacementSlug: null,
   body: 'Body.',
   ...article,
@@ -49,6 +50,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     audiences: ['internal'],
     delivery: 'demand',
     status: 'draft',
+    kind: 'working',
     replacementSlug: null,
     spaceName: 'Workshop',
     body: 'hello',
@@ -66,6 +68,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     audiences: ['internal'],
     delivery: 'demand',
     status: 'draft',
+    kind: 'working',
     replacementSlug: null,
     summary: '',
     featured: false,
@@ -80,6 +83,7 @@ test('local, hosted and public records carry lifecycle fields through the shared
     slug: 'local',
     title: 'Local',
     audiences: ['technical'],
+    kind: 'article',
     status: 'superseded',
     replacementSlug: 'replacement',
   })
@@ -89,12 +93,14 @@ test('local, hosted and public records carry lifecycle fields through the shared
     title: 'Hosted',
     audiences: ['technical'],
     status: 'draft',
+    kind: 'article',
   })
   const published = mapTreeItem({
     id: 'public',
     slug: 'public',
     title: 'Public',
     audiences: ['internal'],
+    kind: 'article',
   })
   expect([local.status, local.replacementSlug]).toEqual(['superseded', 'replacement'])
   expect([hosted.status, hosted.replacementSlug]).toEqual(['draft', null])
@@ -113,6 +119,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       scope: 'agent',
       subject: 'writer',
       audiences: ['technical'],
+      kind: 'working',
       projectName: null,
     }).projectName,
   ).toBeUndefined()
@@ -127,6 +134,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       scope: 'agent',
       subject: 'writer',
       audiences: ['technical'],
+      kind: 'working',
     }).projectName,
   ).toBeUndefined()
   expect(
@@ -140,6 +148,7 @@ test('hosted projectName is used as-is; local and public derive it from project 
       scope: 'project',
       subject: 'atlas',
       audiences: ['internal'],
+      kind: 'article',
     }).projectName,
   ).toBe('atlas')
 })
@@ -156,6 +165,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
       slug: 'a',
       title: 'A',
       audiences: ['internal'],
+      kind: 'article',
       snippet: 'x',
       matchPosition: 0,
     }),
@@ -165,6 +175,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     title: 'A',
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     snippet: 'x',
     matchPosition: 0,
   })

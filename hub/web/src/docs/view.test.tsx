@@ -17,6 +17,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
@@ -32,6 +33,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
     delivery: 'demand',
     projectName: 'atlas',
@@ -47,6 +49,7 @@ const items: DocsTreeItem[] = [
     subject: null,
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
     delivery: 'inject',
   },
@@ -61,6 +64,7 @@ const items: DocsTreeItem[] = [
     subject: 'atlas',
     audiences: ['technical'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
     delivery: 'inject',
     projectName: 'atlas',
@@ -85,6 +89,8 @@ function render(partial: Partial<Parameters<typeof DocsView>[0]> = {}) {
         showDrafts={false}
         onShowDrafts={() => {}}
         canShowDrafts
+        showWorking={false}
+        onShowWorking={() => {}}
         doc={{
           ...items[1]!,
           body: '## Open a task\n\nEvery piece of work carries a key.\n',
@@ -163,6 +169,7 @@ test('All projects groups roots by subject, and a single project does not', () =
     subject: null,
     audiences: ['internal'],
     status: 'current',
+    kind: 'article',
     replacementSlug: null,
   }
   const grouped = render({ items: [...items, extra], project: 'all', selectedId: '1' })

@@ -284,7 +284,7 @@ const docSchema = DocSchema.extend({
   parentId: z.string().uuid().nullable().default(null),
   position: z.number().int().default(0),
   status: z.enum(DOC_STATUSES).default('current'),
-  kind: z.enum(DOC_KINDS).default('working'),
+  kind: z.enum(DOC_KINDS),
   replacementSlug: z.string().nullable().default(null),
   summary: z.string().default(''),
   featured: z.boolean().default(false),
@@ -327,7 +327,7 @@ const docRevisionSchema = z
     parentId: z.string().uuid().nullable().default(null),
     position: z.number().int().default(0),
     status: z.enum(DOC_STATUSES).default('current'),
-    kind: z.enum(DOC_KINDS).default('working'),
+    kind: z.enum(DOC_KINDS),
     replacementSlug: z.string().nullable().default(null),
     author: z.string(),
     authorName: z.string().nullable(),
@@ -480,6 +480,32 @@ function publicRequest<T>(
   return request({ ...options, headers: {} }, path, schema)
 }
 
+type RecordDocSearchInput = {
+  query: string
+  scope?: string
+  subject?: string
+  audience?: DocAudience
+  includeDrafts?: boolean
+  includeWorking?: boolean
+  acrossReadableSpaces?: boolean
+}
+
+function recordDocSearch(options: RecordClientOptions, input: RecordDocSearchInput) {
+  return request(
+    options,
+    query('/v1/docs/search', {
+      q: input.query,
+      scope: input.scope,
+      subject: input.subject,
+      audience: input.audience,
+      includeDrafts: input.includeDrafts ? 'true' : undefined,
+      includeWorking: input.includeWorking ? 'true' : undefined,
+      acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
+    }),
+    hostedDocSearchSchema,
+  )
+}
+
 export function createRecordClient(options: RecordClientOptions) {
   return {
     publicDocs: () => publicRequest(options, '/public/v1/docs', publicDocsSchema),
@@ -615,26 +641,7 @@ export function createRecordClient(options: RecordClientOptions) {
       ),
     doc: (id: string, audience?: DocAudience) =>
       request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema),
-    docSearch: (input: {
-      query: string
-      scope?: string
-      subject?: string
-      audience?: DocAudience
-      includeDrafts?: boolean
-      acrossReadableSpaces?: boolean
-    }) =>
-      request(
-        options,
-        query('/v1/docs/search', {
-          q: input.query,
-          scope: input.scope,
-          subject: input.subject,
-          audience: input.audience,
-          includeDrafts: input.includeDrafts ? 'true' : undefined,
-          acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
-        }),
-        hostedDocSearchSchema,
-      ),
+    docSearch: (input: RecordDocSearchInput) => recordDocSearch(options, input),
     docRevisions: (id: string, audience?: DocAudience) =>
       request(
         options,

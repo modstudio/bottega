@@ -11,6 +11,7 @@ export type LocalDocSearchInput = {
   subject?: string | null
   audience?: DocAudience
   includeDrafts?: boolean
+  includeWorking?: boolean
 }
 
 export function docSnippet(
@@ -78,6 +79,7 @@ export async function searchLocalDocs(
   ).flat()
   const normalized = query.toLocaleLowerCase()
   return rows
+    .filter((row) => input.includeWorking || row.kind === 'article')
     .filter((row) =>
       [row.title, row.slug, row.body].some((value) =>
         value.toLocaleLowerCase().includes(normalized),
@@ -90,7 +92,7 @@ export async function searchLocalDocs(
       title: row.title,
       audiences: row.audiences,
       status: row.status ?? 'current',
-      kind: row.kind ?? 'working',
+      kind: row.kind,
       ...docSnippet(row.body, query),
     }))
 }

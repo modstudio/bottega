@@ -575,7 +575,7 @@ const DocRowSchema = z.object({
   position: z.number().int(),
   featured: z.boolean().default(false),
   status: z.enum(DOC_STATUSES).default('current'),
-  kind: z.enum(DOC_KINDS).default('working'),
+  kind: z.enum(DOC_KINDS),
   replacement_slug: z.string().nullable().default(null),
   revision: z.string().nullable(),
   created_at: z.string(),
