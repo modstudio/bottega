@@ -207,6 +207,78 @@ describe('record API client test safety', () => {
     }
   })
 
+  test('openBoardStream releases a refused or bodiless response', async () => {
+    const session = memoryRecordSession()
+    session.setToken('stream-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    const stub = (status: number, withBody: boolean) => {
+      let cancelled = false
+      let aborted = false
+      const body = withBody
+        ? new ReadableStream<Uint8Array>({
+            cancel() {
+              cancelled = true
+            },
+          })
+        : null
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+        })
+        return { status, body } as Response
+      }) as unknown as typeof fetch
+      return {
+        cancelled: () => cancelled,
+        aborted: () => aborted,
+      }
+    }
+    try {
+      const unauthorized = stub(401, true)
+      expect(await recordApiClient().openBoardStream()).toEqual({ kind: 'unauthorized' })
+      expect(unauthorized.cancelled()).toBe(true)
+      expect(unauthorized.aborted()).toBe(true)
+      const error = stub(500, true)
+      expect(await recordApiClient().openBoardStream()).toEqual({
+        kind: 'error',
+        reason: 'record API 500',
+      })
+      expect(error.cancelled()).toBe(true)
+      expect(error.aborted()).toBe(true)
+      const missing = stub(200, false)
+      expect(await recordApiClient().openBoardStream()).toEqual({
+        kind: 'error',
+        reason: 'record API 200',
+      })
+      expect(missing.cancelled()).toBe(false)
+      expect(missing.aborted()).toBe(true)
+      const parent = new AbortController()
+      parent.abort()
+      let fetched = false
+      globalThis.fetch = (async () => {
+        fetched = true
+        return new Response('nope')
+      }) as unknown as typeof fetch
+      expect(await recordApiClient().openBoardStream(parent.signal)).toEqual({
+        kind: 'error',
+        reason: 'aborted',
+      })
+      expect(fetched).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('openBoardStream classifies 200, 401, 403, 500, and a thrown fetch', async () => {
     const session = memoryRecordSession()
     session.setToken('stream-token')

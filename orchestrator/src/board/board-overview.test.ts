@@ -1,10 +1,13 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
+import { BOARD_CACHE_OWNER_KEY, BOARD_REFRESH_OUTCOME_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import {
   type BoardOverviewEntry,
@@ -201,4 +204,49 @@ test('an adopted overview combines local and cached roots with null hosted reach
   })
   expect(listed.messages[1]).toMatchObject({ id: String(local.id), store: 'local', reached: 0 })
   expect(listed.warning).toContain('overview refresh offline')
+})
+
+test('a spent refresh budget keeps the failed store outcome for overview and push', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const userId = newRecordId()
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_CACHE_OWNER_KEY, userId)
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', userId)
+  const hanging = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async ({ signal }: { signal?: AbortSignal }) =>
+      await new Promise<never>((_, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      }),
+  }
+  const listed = await listBoardOverview(
+    {},
+    { env: { ORCH_RECORD_API_URL: 'https://record.test' }, clock, budgetMs: 20, client: hanging },
+  )
+  expect(listed.warning).toContain('hosted board refresh budget spent')
+  const session = 'overview-push'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','overview-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', '2026-10-05T12:00:00.000Z')
+  installRecordApiClient(hanging)
+  const previousUrl = process.env.ORCH_RECORD_API_URL
+  process.env.ORCH_RECORD_API_URL = 'https://record.test'
+  try {
+    await pendingBoardDelivery({ session, budgetMs: 20, clock: clock + 1 })
+    expect(
+      (
+        db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_OUTCOME_KEY) as {
+          value: string
+        }
+      ).value,
+    ).toContain('hosted board refresh budget spent')
+  } finally {
+    if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+    else process.env.ORCH_RECORD_API_URL = previousUrl
+    installRecordApiClient(null)
+  }
 })

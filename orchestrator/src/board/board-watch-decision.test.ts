@@ -6,6 +6,7 @@ import {
   BOARD_WATCH_NEWER_BUILD_EXIT_CODE,
   BOARD_WATCH_SILENCE_MS,
   BOARD_WATCH_SLOW_INTERVAL_MS,
+  boardWatchAdoptBuild,
   boardWatchBackoffMs,
   boardWatchDueEvent,
   boardWatchPullEvent,
@@ -141,13 +142,29 @@ test('a failed pull stays on the stream, announces, and retries on backoff', () 
   })
 })
 
-test('an incomplete pull queues another immediately', () => {
-  const decision = decideBoardWatch(
+test('an incomplete pull retries on the failed-pull backoff and resets on progress', () => {
+  const first = decideBoardWatch(
     initialBoardWatchState(),
-    { kind: 'pull-incomplete' },
+    { kind: 'pull-incomplete', progressed: false },
     fullJitter,
   )
-  expect(decision).toMatchObject({ action: 'stay', pull: true, delayMs: 0 })
+  expect(first).toMatchObject({
+    action: 'stay',
+    pull: true,
+    delayMs: BOARD_WATCH_BACKOFF_BASE_MS,
+  })
+  const progressed = decideBoardWatch(
+    first.state,
+    { kind: 'pull-incomplete', progressed: true },
+    fullJitter,
+  )
+  expect(progressed.delayMs).toBe(BOARD_WATCH_BACKOFF_BASE_MS)
+  const stuck = decideBoardWatch(
+    progressed.state,
+    { kind: 'pull-incomplete', progressed: false },
+    fullJitter,
+  )
+  expect(stuck.delayMs).toBe(BOARD_WATCH_BACKOFF_BASE_MS * 2)
 })
 
 test('every observed input has a decision', () => {
@@ -163,7 +180,8 @@ test('every observed input has a decision', () => {
     { kind: 'error' },
     { kind: 'unauthorized' },
     { kind: 'pull-failed', reason: 'offline' },
-    { kind: 'pull-incomplete' },
+    { kind: 'pull-incomplete', progressed: false },
+    { kind: 'pull-progressed' },
   ]
   for (const event of kinds) {
     const decision = decideBoardWatch(initialBoardWatchState(), event, fullJitter)
@@ -204,12 +222,36 @@ test('timer due events prefer silence, then the build check, then the slow pull'
   ).toBe(BOARD_WATCH_SILENCE_MS)
 })
 
-test('a pull result becomes failed, incomplete, or nothing', () => {
+test('a pull result becomes failed, incomplete with progress, progressed, or nothing', () => {
   expect(boardWatchPullEvent({ kind: 'failed', reason: 'offline' }, '5', '9')).toEqual({
     kind: 'pull-failed',
     reason: 'offline',
   })
-  expect(boardWatchPullEvent({ kind: 'incomplete' }, '5', '9')).toEqual({ kind: 'pull-incomplete' })
-  expect(boardWatchPullEvent({ kind: 'ok' }, '4', '9')).toEqual({ kind: 'pull-incomplete' })
-  expect(boardWatchPullEvent({ kind: 'ok' }, '9', '9')).toBeNull()
+  expect(boardWatchPullEvent({ kind: 'incomplete', applied: 0 }, '5', '9')).toEqual({
+    kind: 'pull-incomplete',
+    progressed: false,
+  })
+  expect(boardWatchPullEvent({ kind: 'incomplete', applied: 2 }, '5', '9')).toEqual({
+    kind: 'pull-incomplete',
+    progressed: true,
+  })
+  expect(boardWatchPullEvent({ kind: 'ok', applied: 0 }, '4', '9')).toEqual({
+    kind: 'pull-incomplete',
+    progressed: false,
+  })
+  expect(boardWatchPullEvent({ kind: 'ok', applied: 0 }, '9', '9')).toEqual({
+    kind: 'pull-progressed',
+  })
+  expect(boardWatchPullEvent({ kind: 'incomplete', applied: 0 }, '9', '9')).toEqual({
+    kind: 'pull-progressed',
+  })
+  expect(boardWatchPullEvent({ kind: 'ok', applied: 0 }, '5', null)).toBeNull()
+})
+
+test('an unreadable commit is not a newer build; a later concrete one can be', () => {
+  expect(boardWatchAdoptBuild(null, null)).toEqual({ started: null, changed: false })
+  expect(boardWatchAdoptBuild(null, 'aaa')).toEqual({ started: 'aaa', changed: false })
+  expect(boardWatchAdoptBuild('aaa', null)).toEqual({ started: 'aaa', changed: false })
+  expect(boardWatchAdoptBuild('aaa', 'aaa')).toEqual({ started: 'aaa', changed: false })
+  expect(boardWatchAdoptBuild('aaa', 'bbb')).toEqual({ started: 'aaa', changed: true })
 })

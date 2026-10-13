@@ -231,10 +231,10 @@ export function checkoutHeadCommit(root: string): string | undefined {
 }
 
 /** Installed build identity: distribution commit, or the main checkout's current commit. */
-export function installationBuildId(fromDirectory: string, env: InstallEnvironment): string {
+export function installationBuildId(fromDirectory: string, env: InstallEnvironment): string | null {
   const identity = installationIdentity(fromDirectory, env)
   if (identity.kind === 'distribution') return identity.manifest.commit
-  return checkoutHeadCommit(identity.root) ?? `development:${identity.version}`
+  return checkoutHeadCommit(identity.root) ?? null
 }
 
 /** The root of the running distribution or checkout. */

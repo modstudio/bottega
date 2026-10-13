@@ -165,6 +165,16 @@ describe('installation identity', () => {
     expect(installationBuildId(checkout, {})).toBe(commit)
     expect(checkoutHeadCommit(checkout)).toBe(commit)
 
+    const unreadable = scratch()
+    writeFileSync(
+      join(unreadable, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '0.1.0' }),
+    )
+    mkdirSync(join(unreadable, '.git'))
+    writeFileSync(join(unreadable, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    expect(installationBuildId(unreadable, {})).toBeNull()
+    expect(checkoutHeadCommit(unreadable)).toBeUndefined()
+
     const packed = scratch()
     writeFileSync(
       join(packed, 'package.json'),

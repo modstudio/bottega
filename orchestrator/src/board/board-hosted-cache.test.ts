@@ -409,6 +409,51 @@ test('refresh stops at its budget, keeps the last page cursor, and resumes from 
   expect(calls).toEqual(['0', '100'])
 })
 
+test('a spent refresh budget records failure in the store and returns incomplete', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  let ticks = 0
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => {
+      throw new Error('must not start a page after the budget is spent')
+    },
+  }
+  const now = () => {
+    ticks += 1
+    return ticks <= 2 ? 0 : 5
+  }
+  expect(
+    await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now }),
+  ).toMatchObject({ status: 'incomplete' })
+  expect(
+    (
+      db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_OUTCOME_KEY) as {
+        value: string
+      }
+    ).value,
+  ).toBe('failed: hosted board refresh budget spent')
+  expect(hostedBoardVerificationWarning()).toContain('hosted board refresh budget spent')
+})
+
+test('a page request that outlives its deadline is aborted', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  let aborted = false
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async ({ signal }: { signal?: AbortSignal }) =>
+      await new Promise<never>((_, reject) => {
+        signal?.addEventListener('abort', () => {
+          aborted = true
+          reject(new Error('aborted'))
+        })
+      }),
+  }
+  expect(
+    await refreshHostedBoard({ budgetMs: 20, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+  ).toMatchObject({ status: 'incomplete' })
+  expect(aborted).toBe(true)
+})
+
 test('refresh establishes identity from changes without a whoami round trip', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   let identities = 0

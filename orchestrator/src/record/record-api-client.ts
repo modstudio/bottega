@@ -318,7 +318,11 @@ export type RecordApiClient = {
   getBoardThread(id: string): Promise<HostedBoardThread>
   getBoardStatus(id: string): Promise<HostedBoardStatus>
   putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
-  listBoardChanges(query: { after?: string; limit?: number }): Promise<HostedBoardChanges>
+  listBoardChanges(query: {
+    after?: string
+    limit?: number
+    signal?: AbortSignal
+  }): Promise<HostedBoardChanges>
   takeBoardClaim(
     input: HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -678,7 +682,10 @@ export function recordApiClient(): RecordApiClient {
       if (query.after) search.set('after', query.after)
       if (query.limit) search.set('limit', String(query.limit))
       const suffix = search.toString()
-      return request(`/v1/board/changes${suffix ? `?${suffix}` : ''}`)
+      return request(
+        `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
+        query.signal ? { signal: query.signal } : {},
+      )
     },
     takeBoardClaim: (input) =>
       request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
@@ -729,7 +736,10 @@ export function classifyBoardStreamResponse(
   return { kind: 'stream', source: sourceFromBody(body), close }
 }
 
+function releaseUnopenedStream(_response: Response, _connection: AbortController): void {}
+
 async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
+  if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
   const token = storedRecordToken()
   if (!token) return { kind: 'unauthorized' }
   const connection = new AbortController()
@@ -747,9 +757,13 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
       signal: connection.signal,
     })
     const opened = classifyBoardStreamResponse(response.status, response.body, close)
-    if (opened.kind !== 'stream') drop()
+    if (opened.kind !== 'stream') {
+      releaseUnopenedStream(response, connection)
+      drop()
+    }
     return opened
   } catch (error) {
+    connection.abort()
     drop()
     if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
     return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }

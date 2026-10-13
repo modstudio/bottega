@@ -13,6 +13,7 @@ import {
   type BoardWatchDecision,
   type BoardWatchEvent,
   type BoardWatchState,
+  boardWatchAdoptBuild,
   boardWatchDueEvent,
   boardWatchPullEvent,
   boardWatchWaitMs,
@@ -40,8 +41,8 @@ export type BoardWatchLoopInput = {
   openStream: (signal: AbortSignal) => Promise<BoardWatchOpen>
   pull: () => Promise<BoardWatchPullResult>
   readCursor: () => string
-  readBuild: () => string
-  startedBuild: string
+  readBuild: () => string | null
+  startedBuild: string | null
   configured: boolean
   random: () => number
   log: (line: string) => void
@@ -53,6 +54,7 @@ type LiveWatch = {
   state: BoardWatchState
   target: string | null
   lastBuild: number
+  startedBuild: string | null
 }
 
 const iso = (now: number) => new Date(now).toISOString()
@@ -113,6 +115,7 @@ export async function runBoardWatchLoop(input: BoardWatchLoopInput): Promise<num
     state: initialBoardWatchState(),
     target: null,
     lastBuild: input.now(),
+    startedBuild: input.startedBuild,
   }
   while (!input.signal.aborted) {
     const ended = await oneConnection(input, live, gate)
@@ -154,7 +157,9 @@ function checkBuild(input: BoardWatchLoopInput, live: LiveWatch): number | null 
 
 function dueBuildExit(input: BoardWatchLoopInput, live: LiveWatch): number | null {
   live.lastBuild = input.now()
-  if (input.readBuild() === input.startedBuild) return null
+  const adopted = boardWatchAdoptBuild(live.startedBuild, input.readBuild())
+  live.startedBuild = adopted.started
+  if (!adopted.changed) return null
   const decision = decide(input, live.state, { kind: 'build-changed' })
   announce(input, decision)
   return decision.exitCode ?? 0
@@ -227,7 +232,10 @@ async function runOnePull(
   const decision = decide(input, live.state, event)
   live.state = decision.state
   announce(input, decision)
-  if (decision.action === 'exit' || !decision.pull) return
+  if (decision.action === 'exit' || !decision.pull) {
+    if (!decision.pull) live.target = null
+    return
+  }
   if (decision.delayMs > 0 && (await input.wait(decision.delayMs, input.signal)) === 'aborted')
     return
   gate.queued = true

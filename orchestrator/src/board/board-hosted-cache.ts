@@ -253,12 +253,38 @@ function refreshFailure(
   applied: number,
 ): HostedBoardRefresh {
   const reason = error instanceof Error ? error.message : String(error)
+  recordRefresh(database, now(), `failed: ${reason}`)
   if (reason === 'hosted board refresh budget spent') {
-    recordRefresh(database, now(), 'success')
     return { status: 'incomplete', applied }
   }
-  recordRefresh(database, now(), `failed: ${reason}`)
   return { status: 'failed', applied, reason }
+}
+
+async function withinPage(
+  client: RecordApiClient,
+  query: { after: string; limit: number },
+  remainingMs: number,
+): Promise<HostedBoardChanges> {
+  if (remainingMs <= 0) throw new Error('hosted board refresh budget spent')
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const operation = client.listBoardChanges({ ...query, signal: controller.signal })
+  try {
+    return await Promise.race([
+      operation.catch((error: unknown) => {
+        if (controller.signal.aborted) throw new Error('hosted board refresh budget spent')
+        throw error
+      }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('hosted board refresh budget spent'))
+        }, remainingMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 async function fetchHostedPages(
@@ -270,8 +296,9 @@ async function fetchHostedPages(
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
   while (now() < deadline) {
-    const page = await within(
-      client.listBoardChanges({ after, limit: BOARD_CHANGES_PAGE_LIMIT }),
+    const page = await withinPage(
+      client,
+      { after, limit: BOARD_CHANGES_PAGE_LIMIT },
       deadline - now(),
     )
     if (establishCacheOwner(database, page.userId)) {

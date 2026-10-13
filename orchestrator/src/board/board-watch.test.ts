@@ -126,7 +126,8 @@ async function startLoop(
   const pulls: Array<() => void> = []
   const decisions: BoardWatchDecision[] = []
   let cursor = '0'
-  let build = 'build-a'
+  let build: string | null =
+    overrides.startedBuild === undefined ? 'build-a' : overrides.startedBuild
   let source = new ScriptedSource()
   let opens = 0
   let pullCount = 0
@@ -166,7 +167,7 @@ async function startLoop(
       buildReads += 1
       return build
     },
-    startedBuild: 'build-a',
+    startedBuild: overrides.startedBuild === undefined ? 'build-a' : overrides.startedBuild,
     configured: overrides.configured ?? true,
     random: () => 1,
     log: (line) => logs.push(line),
@@ -188,7 +189,7 @@ async function startLoop(
     setCursor: (value: string) => {
       cursor = value
     },
-    setBuild: (value: string) => {
+    setBuild: (value: string | null) => {
       build = value
     },
     done,
@@ -244,6 +245,9 @@ test('reasons that arrive during a pull collapse into one further pull', async (
   expect(run.pullCount()).toBe(1)
   run.releasePull()
   await run.clock.flush()
+  expect(run.pullCount()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
   expect(run.pullCount()).toBe(2)
   run.releasePull()
   run.ac.abort()
@@ -280,10 +284,7 @@ test('silence reconnects after backoff', async () => {
   await run.done
 })
 
-test('a changed build exits with the named unsuccessful code after the check interval', async () => {
-  const run = await startLoop()
-  const readsAtConnect = run.buildReads()
-  run.setBuild('build-b')
+async function advancePastBuildCheck(run: Awaited<ReturnType<typeof startLoop>>) {
   const deadline = run.clock.nowMs + BOARD_WATCH_BUILD_CHECK_MS
   while (run.clock.nowMs < deadline) {
     run.source().push(': heartbeat\n\n')
@@ -292,7 +293,31 @@ test('a changed build exits with the named unsuccessful code after the check int
     await run.clock.advance(step)
   }
   await run.clock.flush()
+}
+
+test('a changed build exits with the named unsuccessful code after the check interval', async () => {
+  const run = await startLoop()
+  const readsAtConnect = run.buildReads()
+  run.setBuild('build-b')
+  await advancePastBuildCheck(run)
   expect(run.buildReads()).toBeGreaterThan(readsAtConnect)
+  expect(await run.done).toBe(BOARD_WATCH_NEWER_BUILD_EXIT_CODE)
+  expect(run.logs.some((line) => ended(line, ' exiting for a newer build'))).toBe(true)
+})
+
+test('an unreadable commit then a restored one does not exit; a later concrete one does', async () => {
+  const run = await startLoop({ startedBuild: null })
+  run.setBuild('build-a')
+  await advancePastBuildCheck(run)
+  expect(run.logs.some((line) => line.includes('exiting for a newer build'))).toBe(false)
+  run.setBuild(null)
+  await advancePastBuildCheck(run)
+  expect(run.logs.some((line) => line.includes('exiting for a newer build'))).toBe(false)
+  run.setBuild('build-a')
+  await advancePastBuildCheck(run)
+  expect(run.logs.some((line) => line.includes('exiting for a newer build'))).toBe(false)
+  run.setBuild('build-b')
+  await advancePastBuildCheck(run)
   expect(await run.done).toBe(BOARD_WATCH_NEWER_BUILD_EXIT_CODE)
   expect(run.logs.some((line) => ended(line, ' exiting for a newer build'))).toBe(true)
 })
@@ -328,16 +353,36 @@ test('an API refusal is logged and retried without ending the stream', async () 
   await run.done
 })
 
-test('a multi-page deadline expiry queues another pull at once', async () => {
+test('an incomplete pull does not run before backoff and resets that delay on progress', async () => {
   const run = await startLoop({
     pullResults: [
+      { kind: 'incomplete', applied: 0 },
       { kind: 'incomplete', applied: 3 },
+      { kind: 'incomplete', applied: 0 },
       { kind: 'ok', applied: 1 },
     ],
   })
   await run.clock.flush()
+  expect(run.pullCount()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS - 1)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(1)
+  await run.clock.advance(1)
+  await run.clock.flush()
   expect(run.pullCount()).toBe(2)
   expect(run.logs.some((line) => ended(line, ' pulled 3'))).toBe(true)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS - 1)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  await run.clock.advance(1)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(3)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(3)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(4)
   expect(run.logs.some((line) => ended(line, ' pulled 1'))).toBe(true)
   expect(run.opens()).toBe(1)
   run.ac.abort()

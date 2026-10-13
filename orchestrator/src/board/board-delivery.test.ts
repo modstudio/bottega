@@ -170,3 +170,45 @@ test('a second chain turn claims and marks hosted and local notices through its 
       .get(remote.id),
   ).toEqual({ reader_session: `run:${root.id}` })
 })
+
+test('a spent refresh budget still surfaces the failed-refresh warning', async () => {
+  const env = {
+    CLAUDE_CODE_SESSION_ID: 'delivery-reader',
+    ORCH_RECORD_API_URL: 'https://record.test',
+  }
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('delivery-reader','claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+    )
+    .run('2026-10-05T11:00:00.000Z', new Date().toISOString())
+  const hostedClaim = hosted('session:delivery-reader')
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, hostedClaim.authorUserId)
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run('board_hosted_signed_in_user', hostedClaim.authorUserId)
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(
+      hostedClaim.id,
+      hostedClaim.kind,
+      hostedClaim.threadRootId,
+      hostedClaim.revision,
+      JSON.stringify(hostedClaim),
+    )
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async ({ signal }: { signal?: AbortSignal }) =>
+      await new Promise<never>((_, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      }),
+  })
+  const claimed = await claimBoardNotices(false, { env, budgetMs: 20 })
+  expect(claimed.notices.map((row) => row.id)).toEqual([hostedClaim.id])
+  expect(claimed.warning).toContain('hosted board refresh budget spent')
+})

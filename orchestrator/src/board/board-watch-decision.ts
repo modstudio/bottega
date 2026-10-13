@@ -38,7 +38,8 @@ export type BoardWatchEvent =
   | { kind: 'error' }
   | { kind: 'unauthorized' }
   | { kind: 'pull-failed'; reason: string }
-  | { kind: 'pull-incomplete' }
+  | { kind: 'pull-incomplete'; progressed: boolean }
+  | { kind: 'pull-progressed' }
 
 export type BoardWatchAnnounce =
   | { kind: 'connected' }
@@ -93,14 +94,28 @@ export function boardWatchDueEvent(input: {
 }
 
 export function boardWatchPullEvent(
-  result: { kind: 'ok' | 'incomplete' | 'failed'; reason?: string },
+  result: { kind: 'ok' | 'incomplete' | 'failed'; applied?: number; reason?: string },
   cursor: string,
   target: string | null,
 ): BoardWatchEvent | null {
   if (result.kind === 'failed') return { kind: 'pull-failed', reason: result.reason ?? 'failed' }
-  if (result.kind === 'incomplete') return { kind: 'pull-incomplete' }
-  if (target !== null && BigInt(cursor) < BigInt(target)) return { kind: 'pull-incomplete' }
+  const behind = target !== null && BigInt(cursor) < BigInt(target)
+  const progressed = (result.applied ?? 0) > 0 || (target !== null && !behind)
+  if (behind || (result.kind === 'incomplete' && target === null)) {
+    return { kind: 'pull-incomplete', progressed: (result.applied ?? 0) > 0 }
+  }
+  if (progressed) return { kind: 'pull-progressed' }
   return null
+}
+
+/** Adopt an unknown started commit; exit only for two different concrete commits. */
+export function boardWatchAdoptBuild(
+  started: string | null,
+  current: string | null,
+): { started: string | null; changed: boolean } {
+  if (started === null) return { started: current, changed: false }
+  if (current === null || current === started) return { started, changed: false }
+  return { started, changed: true }
 }
 
 function stay(
@@ -180,17 +195,18 @@ function decideEnded(state: BoardWatchState, jitter: number): BoardWatchDecision
   return reconnect(state, 'ended', boardWatchBackoffMs(state.attempt, jitter))
 }
 
-function decidePullFailed(
+function decidePullRetry(
   state: BoardWatchState,
-  reason: string,
   jitter: number,
+  extras: { progressed?: boolean; announce?: BoardWatchAnnounce } = {},
 ): BoardWatchDecision {
+  const attempt = extras.progressed ? 0 : state.attempt
   return stay(
-    { ...state, attempt: state.attempt + 1 },
+    { ...state, attempt: attempt + 1 },
     {
       pull: true,
-      delayMs: boardWatchBackoffMs(state.attempt, jitter),
-      announce: { kind: 'pull-failed', detail: reason },
+      delayMs: boardWatchBackoffMs(attempt, jitter),
+      announce: extras.announce ?? null,
     },
   )
 }
@@ -222,8 +238,12 @@ export function decideBoardWatch(
     case 'unauthorized':
       return decideUnauthorized(state)
     case 'pull-failed':
-      return decidePullFailed(state, event.reason, jitter)
+      return decidePullRetry(state, jitter, {
+        announce: { kind: 'pull-failed', detail: event.reason },
+      })
     case 'pull-incomplete':
-      return stay(state, { pull: true })
+      return decidePullRetry(state, jitter, { progressed: event.progressed })
+    case 'pull-progressed':
+      return stay({ ...state, attempt: 0 })
   }
 }
