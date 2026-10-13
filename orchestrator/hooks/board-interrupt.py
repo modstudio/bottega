@@ -180,7 +180,7 @@ def main() -> int:
             }
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
-            mark_delivered(session, [item["id"] for item in notices])
+            mark_delivered(session, [item["id"] for item in notices], "after-tool-call")
             for notice in notices:
                 injected_at[notice["id"]] = now
         recorded_candidates = candidates

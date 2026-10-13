@@ -803,7 +803,11 @@ def main() -> int:
         if emitted_board_ids and inbox_env is not None and orch is not None:
             try:
                 subprocess.run(
-                    [orch, "board", "delivered", ",".join(str(item) for item in emitted_board_ids)],
+                    [
+                        orch, "board", "delivered",
+                        ",".join(str(item) for item in emitted_board_ids),
+                        "--session", sid, "--point", "session-start",
+                    ],
                     env=inbox_env,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

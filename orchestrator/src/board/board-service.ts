@@ -259,6 +259,7 @@ export function markNoticesDelivered(
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
+  onDelivered?: (id: number, deliveredAt: string, database: Database) => void,
 ): void {
   const reader = boardReader(env)
   const idSet = new Set(ids)
@@ -277,7 +278,10 @@ export function markNoticesDelivered(
        VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.id, reader, deliveredAt)
+    for (const row of rows) {
+      stamp.run(row.id, reader, deliveredAt)
+      onDelivered?.(row.id, deliveredAt, database)
+    }
   }, database)
 }
 

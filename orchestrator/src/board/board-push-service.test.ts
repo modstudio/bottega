@@ -148,7 +148,7 @@ function runHookRepeatedResult(
     '    pending_iterator = iter(pending_values)',
     '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
     'delivered = []',
-    'def mark_delivered(session, ids):',
+    'def mark_delivered(session, ids, delivery_point, blocked_stop=False):',
     '    delivered.append([session, ids])',
     '    if json.loads(sys.argv[5]): raise RuntimeError("delivery stamp failed")',
     'module.mark_delivered = mark_delivered',
@@ -864,7 +864,7 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   )
   const invocations = readFileSync(item.invocationLog, 'utf8').trim().split('\n')
   expect(invocations[0]).toContain('--recently-injected 7')
-  expect(invocations[1]).toBe('board delivered 8 --session reader')
+  expect(invocations[1]).toBe('board delivered 8 --session reader --point after-tool-call')
 })
 
 test('PostToolUse throttles a failed path until the retry interval', () => {

@@ -491,7 +491,12 @@ export function cachedAudienceAtPosting(
 export async function markCachedHostedDelivered(
   reader: string,
   ids: string[],
-  input: { client?: RecordApiClient; database?: Database; clock?: number } = {},
+  input: {
+    client?: RecordApiClient
+    database?: Database
+    clock?: number
+    onDelivered?: (id: string, deliveredAt: string, database: Database) => void
+  } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
   const at = new Date(input.clock ?? Date.now()).toISOString()
@@ -507,13 +512,16 @@ export async function markCachedHostedDelivered(
       (JSON.parse(row.payload) as HostedBoardMessage).createdAt,
       database,
     )
-    database
-      .query(
-        `INSERT INTO hosted_board_receipt_cache(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+    writeTransaction(() => {
+      database
+        .query(
+          `INSERT INTO hosted_board_receipt_cache(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
        VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
-      )
-      .run(id, reader, posting ? 1 : 0, at)
+        )
+        .run(id, reader, posting ? 1 : 0, at)
+      input.onDelivered?.(id, at, database)
+    }, database)
     try {
       await within(
         client.putBoardReceipt({

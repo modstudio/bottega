@@ -12,6 +12,12 @@ import {
 } from './board-hosted-cache.ts'
 import { requireRealSession } from './board-policy.ts'
 import {
+  type BoardDeliveryPoint,
+  type BoardReachRecordingInput,
+  noteBoardReachRecordingFailure,
+  recordBoardReach,
+} from './board-reach.ts'
+import {
   type BoardDelivery,
   boundedBoardDelivery,
   renderPendingAcknowledgement,
@@ -168,15 +174,49 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
 export async function markBoardDeliveryDelivered(input: {
   session: string
   ids: string[]
+  deliveryPoint?: BoardDeliveryPoint
+  blockedStop?: boolean
   clock?: number
   database?: Database
+  recordReach?: (input: BoardReachRecordingInput, database: Database) => void
 }): Promise<void> {
   requireRealSession(input.session, 'board delivery acknowledgement')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
   const local = input.ids.filter((id) => /^\d+$/.test(id)).map(Number)
   const hosted = input.ids.filter((id) => !/^\d+$/.test(id))
+  const record = (source: 'local' | 'hosted', id: string, deliveredAt: string) => {
+    if (!input.deliveryPoint) return
+    try {
+      ;(input.recordReach ?? recordBoardReach)(
+        {
+          session: input.session,
+          messageSource: source,
+          messageId: id,
+          deliveryPoint: input.deliveryPoint,
+          blockedStop: input.blockedStop ?? false,
+          recordedAt: deliveredAt,
+        },
+        database,
+      )
+    } catch {
+      try {
+        noteBoardReachRecordingFailure(database, deliveredAt)
+      } catch {}
+    }
+  }
   if (local.length)
-    markNoticesDelivered(local, { CLAUDE_CODE_SESSION_ID: input.session }, clock, database)
-  if (hosted.length) await markCachedHostedDelivered(input.session, hosted, { database, clock })
+    markNoticesDelivered(
+      local,
+      { CLAUDE_CODE_SESSION_ID: input.session },
+      clock,
+      database,
+      (id, deliveredAt) => record('local', String(id), deliveredAt),
+    )
+  if (hosted.length)
+    await markCachedHostedDelivered(input.session, hosted, {
+      database,
+      clock,
+      onDelivered: (id, deliveredAt) => record('hosted', id, deliveredAt),
+    })
 }

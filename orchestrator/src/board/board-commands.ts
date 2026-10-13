@@ -21,6 +21,8 @@ import {
 } from './board-operations.ts'
 import { listBoardOverview } from './board-overview.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
+import type { BoardDeliveryPoint } from './board-reach.ts'
+import { registerBoardReachCommand } from './board-reach-command.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 
@@ -33,10 +35,16 @@ const localBoardId = (value: string): number => {
     )
   return id
 }
+const deliveryPoint = (value: string): BoardDeliveryPoint => {
+  if (!['session-start', 'after-tool-call', 'stop'].includes(value))
+    throw new Error('--point must be session-start, after-tool-call, or stop')
+  return value as BoardDeliveryPoint
+}
 
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
   registerBoardClaimCommands(board, parseBoardDuration)
+  registerBoardReachCommand(board)
   board
     .command('adopt')
     .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
@@ -204,11 +212,21 @@ export function registerBoardCommands(program: Command): void {
   board
     .command('delivered <ids>')
     .option('--session <id>', 'session whose hook emitted the messages')
+    .option('--point <point>', 'hook delivery point', deliveryPoint)
+    .option('--blocked-stop', 'the emitted delivery blocked Stop')
     .action(async (ids, options) => {
       const parsed = String(ids).split(',')
       if (!parsed.length) throw new Error('board delivered ids are required')
+      if (options.point && !options.session) throw new Error('--point requires --session')
+      if (options.blockedStop && options.point !== 'stop')
+        throw new Error('--blocked-stop requires --point stop')
       if (options.session)
-        await markBoardDeliveryDelivered({ session: options.session, ids: parsed })
+        await markBoardDeliveryDelivered({
+          session: options.session,
+          ids: parsed,
+          deliveryPoint: options.point,
+          blockedStop: Boolean(options.blockedStop),
+        })
       else await markBoardNoticesDelivered(parsed)
     })
   board

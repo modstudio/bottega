@@ -108,13 +108,20 @@ def pending(
     return delivery, overflow, acknowledgements
 
 
-def mark_delivered(session: str, ids: list[str]) -> None:
+def mark_delivered(
+    session: str, ids: list[str], delivery_point: str, blocked_stop: bool = False
+) -> None:
     if not ids:
         return
     binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
     )
-    command = [binary, "board", "delivered", ",".join(ids), "--session", session]
+    command = [
+        binary, "board", "delivered", ",".join(ids), "--session", session,
+        "--point", delivery_point,
+    ]
+    if blocked_stop:
+        command.append("--blocked-stop")
     subprocess.run(
         command,
         capture_output=True,

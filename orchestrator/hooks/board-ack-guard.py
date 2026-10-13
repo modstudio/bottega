@@ -66,7 +66,7 @@ def main() -> int:
         previously_emitted = set(emitted)
         if emitted:
             try:
-                mark_delivered(session, emitted)
+                mark_delivered(session, emitted, "stop", True)
                 emitted = []
             except Exception:
                 pass
@@ -100,7 +100,7 @@ def main() -> int:
             }
             sys.stdout.write(json.dumps(value) + "\n")
             sys.stdout.flush()
-            mark_delivered(session, ordinary_ids)
+            mark_delivered(session, ordinary_ids, "stop", True)
             write_marker(path, {"blocks": next_count, "emitted_ids": emitted})
         elif acknowledgement_block:
             value = {"decision": "block", "reason": notice_summary(notices)}
