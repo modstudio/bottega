@@ -912,7 +912,7 @@ test('PostToolUse runs correctly without following an unreadable marker symlink'
   expect(readFileSync(target, 'utf8')).toBe('sentinel')
 })
 
-test('Stop keeps its acknowledgement budget while carrying fresh ordinary delivery', () => {
+test('Stop keeps its acknowledgement budget and never blocks or stamps for ordinary delivery', () => {
   const item = createHookFixture(hookOutput)
   const required = JSON.parse(hookOutput).delivery
   const pendingValues = [
@@ -933,52 +933,39 @@ test('Stop keeps its acknowledgement budget while carrying fresh ordinary delive
   )
   const values = result.outputs.map((value) => (value ? JSON.parse(value) : null))
   expect(values.slice(0, 3).every((value) => value.decision === 'block')).toBe(true)
-  expect(values[0].reason).toStartWith('ordinary within budget')
-  expect(values[0].reason).toContain('This architect session has 1 unacknowledged board notice.')
+  expect(values[0].reason).toStartWith('This architect session has 1 unacknowledged board notice.')
+  expect(values[0].reason).not.toContain('ordinary within budget')
   expect(values[3].systemMessage).toStartWith(
     'This architect session is stopping with 1 unacknowledged board notice.',
   )
-  expect(values[4]).toEqual({
-    decision: 'block',
-    reason: 'ordinary after budget',
-  })
+  expect(values[4].decision).toBeUndefined()
+  expect(values[4].systemMessage).not.toContain('ordinary after budget')
   expect(values[5].decision).toBeUndefined()
   expect(values[5].systemMessage).toContain('unacknowledged board notice')
   expect(result.outputs[6]).toBe('')
-  expect(result.delivered.map(([session, ids]) => [session, ids])).toEqual([
-    ['reader', ['8']],
-    ['reader', ['9']],
-  ])
+  expect(result.delivered).toEqual([])
 })
 
-test('Stop records and bounds emitted ids, blocks once per message, and preserves markers atomically', () => {
+test('Stop with only ordinary messages does not block, stamps nothing, and preserves markers atomically', () => {
   const item = createHookFixture(hookOutput)
   const first = { id: '1', text: 'first', requiresAcknowledgement: false }
   const second = { id: '2', text: 'second', requiresAcknowledgement: false }
-  const later = Array.from({ length: 99 }, (_, index) => [
-    { id: String(index + 3), text: `message ${index + 3}`, requiresAcknowledgement: false },
-  ])
-  const pendingValues = [[first], [first], [first, second], [first, second], ...later]
+  const pendingValues = [[first], [first, second]]
   const hook = runHookRepeatedResult(
     guardHook,
     JSON.stringify({ session_id: 'reader' }),
     item,
     pendingValues.length,
     pendingValues,
-    true,
+    false,
   )
-  expect(JSON.parse(hook.outputs[0]!)).toEqual({ decision: 'block', reason: 'first' })
-  expect(hook.outputs[1]).toBe('')
-  expect(JSON.parse(hook.outputs[2]!)).toEqual({ decision: 'block', reason: 'second' })
-  expect(hook.outputs[3]).toBe('')
+  expect(hook.outputs).toEqual(['', ''])
+  expect(hook.delivered).toEqual([])
   const markerRoot = join(item.root, 'board-hook-state', 'stop')
   const marker = join(markerRoot, readdirSync(markerRoot)[0]!)
   const value = JSON.parse(readFileSync(marker, 'utf8'))
 
-  expect(hook.emittedLimit).toBeGreaterThan(0)
-  expect(hook.delivered[0]![2]).toBe(hook.delivered[1]![2])
-  expect(value.emitted_ids).toHaveLength(hook.emittedLimit!)
-  expect(value.emitted_ids.at(-1)).toBe('101')
+  expect(value).toEqual({ blocks: 0 })
   expect(hook.atomicWritten).toBeFalse()
   expect(hook.atomicValue).toEqual({ previous: true })
   expect(hook.atomicTemporaryFiles).toEqual([])

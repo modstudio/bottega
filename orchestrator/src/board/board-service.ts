@@ -12,11 +12,13 @@ import {
   parseAudience,
   requireRealSession,
 } from './board-policy.ts'
+import { messageIsDueForPush } from './board-push-policy.ts'
 import { renderBoardNotice } from './board-render.ts'
 import {
   addressed,
   boardActor,
   boardOrigin,
+  boardReaderBeganAt,
   type Environment,
   hasReceipt,
   insertRootMessage,
@@ -209,6 +211,26 @@ export function claimRunNotices(
     }))
 }
 
+export function claimRunPushNotices(
+  runId: number,
+  all = false,
+  clock = Date.now(),
+  database = db(),
+): { notices: ReturnType<typeof claimRunNotices>; withheldOlderCount: number } {
+  const reader = runReader(runId)
+  const beganAt = boardReaderBeganAt(reader, database)
+  if (!beganAt) throw new Error(`run reader ${reader} has no start time; repair the run row`)
+  const candidates = claimRunNotices(runId, all, clock)
+  const notices = candidates.filter((notice) =>
+    messageIsDueForPush({
+      postedAt: notice.createdAt,
+      readerBeganAt: beganAt,
+      acknowledgementRequired: notice.ackRequired,
+    }),
+  )
+  return { notices, withheldOlderCount: candidates.length - notices.length }
+}
+
 export function markRunNoticesDelivered(runId: number, ids: number[], clock = Date.now()): void {
   const reader = runReader(runId)
   const idSet = new Set(ids)
@@ -252,6 +274,29 @@ export function claimNotices(
     ackRequired: row.ack_required === 1,
     createdAt: row.created_at,
   }))
+}
+
+export function claimPushNotices(
+  all = false,
+  env: Environment = process.env,
+  clock = Date.now(),
+  database = db(),
+): { notices: ReturnType<typeof claimNotices>; withheldOlderCount: number } {
+  const reader = boardReader(env)
+  const beganAt = boardReaderBeganAt(reader, database)
+  if (!beganAt)
+    throw new Error(
+      `board reader ${reader} has no session start; run orch board presence before push delivery`,
+    )
+  const candidates = claimNotices(all, env, clock, database)
+  const notices = candidates.filter((notice) =>
+    messageIsDueForPush({
+      postedAt: notice.createdAt,
+      readerBeganAt: beganAt,
+      acknowledgementRequired: notice.ackRequired,
+    }),
+  )
+  return { notices, withheldOlderCount: candidates.length - notices.length }
 }
 
 export function markNoticesDelivered(

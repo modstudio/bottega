@@ -38,6 +38,7 @@ export const boardModules: BoardModule[] = [
     '../record/record-board-contract.ts',
     './board-mode.ts',
     './board-policy.ts',
+    './board-push-policy.ts',
     './board-render.ts',
     './board-store.ts',
     './board-tags.ts',
@@ -61,6 +62,7 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-service.ts',
   ]),
+  module('orchestrator/src/board/board-push-policy.ts', []),
   module('orchestrator/src/board/board-push-service.ts', [
     'bun:sqlite',
     '../database/db.ts',
@@ -155,6 +157,7 @@ export const boardModules: BoardModule[] = [
     '../project/projects.ts',
     './board-hosted-cache.ts',
     './board-policy.ts',
+    './board-push-policy.ts',
     './board-render.ts',
     './board-store.ts',
     './board-thread-render.ts',

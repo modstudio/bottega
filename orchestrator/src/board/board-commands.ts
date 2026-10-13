@@ -245,6 +245,9 @@ export function registerBoardCommands(program: Command): void {
         JSON.stringify({
           notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
           warning: delivery.warning,
+          ...('withheldOlderCount' in delivery
+            ? { withheldOlderCount: delivery.withheldOlderCount }
+            : {}),
         }),
       )
     })

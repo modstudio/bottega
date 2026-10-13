@@ -19,8 +19,9 @@ import {
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
+import { messageIsDueForPush } from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice } from './board-render.ts'
-import { originText, presenceFacts, recipients } from './board-store.ts'
+import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
 
@@ -539,6 +540,25 @@ export function claimCachedHosted(
       ackRequired: message.ackRequired,
       createdAt: message.createdAt,
     }))
+}
+
+export function claimCachedHostedForPush(
+  reader: string,
+  all = false,
+  clock = Date.now(),
+  database: Database = db(),
+): { notices: HostedCacheNotice[]; withheldOlderCount: number } {
+  const beganAt = boardReaderBeganAt(reader, database)
+  if (!beganAt) throw new Error(`board reader ${reader} has no start time; repair its presence`)
+  const candidates = claimCachedHosted(reader, all, clock, database)
+  const notices = candidates.filter((notice) =>
+    messageIsDueForPush({
+      postedAt: notice.createdAt,
+      readerBeganAt: beganAt,
+      acknowledgementRequired: notice.ackRequired,
+    }),
+  )
+  return { notices, withheldOlderCount: candidates.length - notices.length }
 }
 
 function audienceAtPosting(reader: string, createdAt: string, database: Database): boolean {

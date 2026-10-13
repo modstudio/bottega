@@ -8,7 +8,7 @@ import {
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   cachedRows,
-  claimCachedHosted,
+  claimCachedHostedForPush,
   refreshHostedBoard,
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
@@ -25,7 +25,7 @@ import {
   boundedBoardDelivery,
   renderPendingAcknowledgement,
 } from './board-render.ts'
-import { claimNotices, deliverableTo } from './board-service.ts'
+import { claimPushNotices, deliverableTo } from './board-service.ts'
 import { addressed, boardOrigin, messageRows, originText, rowIsLive } from './board-store.ts'
 
 type DeliveryInput = {
@@ -130,15 +130,15 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   if (input.budgetMs > 0) await refreshHostedBoard({ budgetMs: input.budgetMs, database })
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
   const unread: BoardDelivery[] = [
-    ...claimNotices(false, env, clock, database).map((message) => ({
+    ...claimPushNotices(false, env, clock, database).notices.map((message) => ({
       id: String(message.id),
       text: message.text,
       requiresAcknowledgement: message.ackRequired,
       createdAt: message.createdAt,
       deliveredAt: null,
     })),
-    ...claimCachedHosted(input.session, false, clock, database)
-      .filter((message) => message.text.length > 0)
+    ...claimCachedHostedForPush(input.session, false, clock, database)
+      .notices.filter((message) => message.text.length > 0)
       .map((message) => ({
         id: message.id,
         text: message.text,

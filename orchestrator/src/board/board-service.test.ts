@@ -10,7 +10,9 @@ import {
   acknowledgeNotice,
   boardEscalations,
   claimNotices,
+  claimPushNotices,
   claimRunNotices,
+  claimRunPushNotices,
   markSessionMessagesDelivered,
   noticeStatus,
   postNotice,
@@ -66,7 +68,7 @@ test('recordPresence preserves first_seen after the first insert', () => {
   ).toEqual({ first_seen: '2026-10-05T11:00:00.000Z', last_seen: '2026-10-05T12:00:00.000Z' })
 })
 
-test('tagged project notice follows matching run paths at posting and for a late session', () => {
+test('tagged project notice is not pushed to a late session unless acknowledgement is required', () => {
   const clock = Date.now() + 10_000
   const project = 'board-routing-project'
   const insertPresence = db().query(
@@ -105,6 +107,18 @@ test('tagged project notice follows matching run paths at posting and for a late
   expect(matchingNotices[0]!.text).toContain('Tags: path:orchestrator/src/board/**')
   expect(claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'other-reader' }, clock + 1)).toEqual([])
 
+  const required = postNotice(
+    {
+      audience: `project:${project}`,
+      title: 'Required board work',
+      body: 'Acknowledge the board service change.',
+      paths: ['orchestrator/src/board/**'],
+      ackRequired: true,
+    },
+    {},
+    clock + 1,
+  )
+
   insertPresence.run('late-reader', project, new Date(clock + 2).toISOString())
   insertRun.run(
     new Date(clock + 2).toISOString(),
@@ -112,11 +126,16 @@ test('tagged project notice follows matching run paths at posting and for a late
     JSON.stringify(['orchestrator/src/board/board-routing.ts']),
   )
   expect(
-    claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3).map(
+    claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3),
+  ).toMatchObject({
+    notices: [{ id: required.id }],
+    withheldOlderCount: 1,
+  })
+  expect(
+    readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4).map(
       (notice) => notice.id,
     ),
-  ).toEqual([posted.id])
-  readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4)
+  ).toEqual([posted.id, required.id])
   expect(noticeStatus(posted.id, {}).reached).toBe(2)
 })
 
@@ -158,6 +177,48 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     posted.id,
   ])
   expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
+})
+
+test('a run reader is pushed newer notices and older acknowledgement requirements only', () => {
+  const clock = Date.now() + 12_500
+  const run = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES (?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
+       RETURNING id`,
+    )
+    .get(new Date(clock).toISOString()) as { id: number }
+  const older = postNotice(
+    { audience: `run:${run.id}`, title: 'Older', body: 'Do not push this.' },
+    {},
+    clock - 2,
+  )
+  const required = postNotice(
+    {
+      audience: `run:${run.id}`,
+      title: 'Older required',
+      body: 'Push this for acknowledgement.',
+      ackRequired: true,
+    },
+    {},
+    clock - 1,
+  )
+  const newer = postNotice(
+    { audience: `run:${run.id}`, title: 'Newer', body: 'Push this.' },
+    {},
+    clock + 1,
+  )
+
+  expect(claimRunPushNotices(run.id, false, clock + 2)).toMatchObject({
+    notices: [{ id: required.id }, { id: newer.id }],
+    withheldOlderCount: 1,
+  })
+  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.id)).toEqual([
+    older.id,
+    required.id,
+    newer.id,
+  ])
 })
 
 test('run audience is owner-gated for architects and resolves a turn to its chain root', () => {
@@ -297,7 +358,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
   })
 })
 
-test('a session-start notice dropped for budget stays unread until a stamping read', () => {
+test('a session-start notice reduced to a title or count stays unread until a stamping read', () => {
   const clock = Date.now() + 20_000
   db()
     .query(
@@ -312,7 +373,7 @@ test('a session-start notice dropped for budget stays unread until a stamping re
   )
   const env = { CLAUDE_CODE_SESSION_ID: 'budget-reader' }
   expect(claimNotices(false, env, clock + 1).map((notice) => notice.id)).toEqual([posted.id])
-  // The hook drops the whole board section here and therefore does not stamp its claimed ids.
+  // The hook does not stamp ids represented only by its title or fallback count.
   expect(readNotices(false, env, clock + 2).map((notice) => notice.id)).toEqual([posted.id])
 })
 

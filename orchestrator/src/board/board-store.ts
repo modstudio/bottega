@@ -84,6 +84,26 @@ export type MessageRow = {
   claim_id: number | null
 }
 
+export function boardReaderBeganAt(reader: string, database = db()): string | null {
+  const run = /^run:(\d+)$/.exec(reader)
+  if (run)
+    return (
+      (
+        database.query('SELECT started_at FROM run WHERE id=?').get(Number(run[1])) as {
+          started_at: string
+        } | null
+      )?.started_at ?? null
+    )
+  if (reader === OPERATOR_READER) return null
+  return (
+    (
+      database
+        .query('SELECT COALESCE(first_seen,last_seen) began_at FROM presence WHERE session_id=?')
+        .get(reader) as { began_at: string } | null
+    )?.began_at ?? null
+  )
+}
+
 const NO_REACH_WARNING = 'reached no live session; re-address it or wait for a matching session'
 
 export function boardActor(env: Environment = process.env): BoardActor {

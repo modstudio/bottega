@@ -13,6 +13,7 @@ import {
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
+  claimCachedHostedForPush,
   hostedBoardCursor,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
@@ -798,4 +799,45 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
   expect(cachedAudienceAtPosting(cached.id, `run:${earlyRun.id}`)).toBe(true)
   expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`)).toBe(false)
+})
+
+test('hosted push selection withholds older ordinary messages and keeps required and newer messages', () => {
+  const database = db()
+  const beganAt = '2026-10-05T12:00:00.000Z'
+  database
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES ('cache-reader','claude','architect','machine','cache-project','/tmp',NULL,?,?)`,
+    )
+    .run(beganAt, beganAt)
+  const setMeta = database.query(
+    'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+  )
+  setMeta.run(BOARD_CACHE_OWNER_KEY, userId)
+  setMeta.run('board_hosted_signed_in_user', userId)
+  const rows = [
+    message({ createdAt: '2026-10-05T11:59:59.999Z', title: 'older ordinary' }),
+    message({
+      createdAt: '2026-10-05T11:59:59.999Z',
+      title: 'older required',
+      ackRequired: true,
+    }),
+    message({ createdAt: '2026-10-05T12:00:00.001Z', title: 'newer ordinary' }),
+  ]
+  const put = database.query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  for (const row of rows) put.run(row.id, row.kind, null, row.revision, JSON.stringify(row))
+
+  expect(
+    claimCachedHostedForPush(
+      'cache-reader',
+      false,
+      Date.parse('2026-10-05T12:01:00.000Z'),
+      database,
+    ),
+  ).toMatchObject({
+    notices: [{ id: rows[1]!.id }, { id: rows[2]!.id }],
+    withheldOlderCount: 1,
+  })
 })

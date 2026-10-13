@@ -169,39 +169,77 @@ def _fit_to_budget(text, budget):
     return text[: budget - len(marker)] + marker
 
 
-def _board_slice(completed):
+def _board_id(row):
+    value = row.get("id") if isinstance(row, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return str(value)
+    if isinstance(value, str) and value.isascii() and value.isdigit() and value[0] != "0":
+        return value
+    if isinstance(value, str) and str(uuid.UUID(value)) == value.lower():
+        return value
+    raise ValueError("invalid board notice id")
+
+
+def _board_payload(completed):
     if completed is None or completed.returncode != 0:
-        return "", []
+        return [], None, 0
     try:
         result = json.loads(completed.stdout)
         if isinstance(result, list):
             rows = result
             warning = None
+            withheld = 0
         elif isinstance(result, dict):
             rows = result.get("notices")
             warning = result.get("warning")
+            withheld = result.get("withheldOlderCount", 0)
             if warning is not None and not isinstance(warning, str):
                 raise ValueError("invalid board warning")
         else:
             raise ValueError("invalid board notice response")
-        def board_id(row):
-            value = row.get("id") if isinstance(row, dict) else None
-            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-                return str(value)
-            if isinstance(value, str) and value.isascii() and value.isdigit() and value[0] != "0":
-                return value
-            if isinstance(value, str) and str(uuid.UUID(value)) == value.lower():
-                return value
-            raise ValueError("invalid board notice id")
-
         if not isinstance(rows, list) or not all(
             isinstance(row, dict) and isinstance(row.get("text"), str) for row in rows
         ):
             raise ValueError("invalid board notice response")
-        text = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
-        return text, [board_id(row) for row in rows]
+        if not isinstance(withheld, int) or isinstance(withheld, bool) or withheld < 0:
+            raise ValueError("invalid withheld board count")
+        for row in rows:
+            _board_id(row)
+        return rows, warning, withheld
     except Exception:
-        return "", []
+        return [], None, 0
+
+
+def _board_slice(completed):
+    rows, warning, _withheld = _board_payload(completed)
+    text = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
+    return text, [_board_id(row) for row in rows]
+
+
+def _board_header(text, name):
+    prefix = f"{name}: "
+    return next((line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)), None)
+
+
+def _board_start_slice(completed):
+    rows, warning, withheld = _board_payload(completed)
+    full = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
+    compact = []
+    for row in rows:
+        if not isinstance(row.get("ackRequired"), bool):
+            return "", [], "", 0, 0
+        thread = _board_header(row["text"], "Thread")
+        title = _board_header(row["text"], "Title") or (
+            thread.partition(" — ")[2] if thread and " — " in thread else thread
+        ) or "untitled"
+        sender = _board_header(row["text"], "Origin") or "unknown sender"
+        acknowledgement = "required" if row["ackRequired"] else "not required"
+        compact.append(
+            f"Board message {_board_id(row)}: {title} — from {sender}; "
+            f"acknowledgement {acknowledgement}."
+        )
+    compact_text = "\n".join([*compact, *([warning] if warning else [])])
+    return full, [_board_id(row) for row in rows], compact_text, len(rows), withheld
 
 
 def _emitted_board_ids(output, board_text, board_ids):
@@ -298,6 +336,22 @@ def assemble_additional_context(
     return _fit_to_budget(text, budget)
 
 
+def assemble_session_start_context(
+    sections, board_full, board_titles, board_count, budget=HOOK_CONTEXT_MAX_CHARS
+):
+    full_context = assemble_additional_context(**{**sections, "board": board_full}, budget=budget)
+    if not board_full or board_full in full_context or board_count == 0:
+        return full_context, "full", None
+    title_context = assemble_additional_context(**{**sections, "board": board_titles}, budget=budget)
+    if board_titles and board_titles in title_context:
+        return title_context, "titles", None
+    context = assemble_additional_context(**{**sections, "board": ""}, budget=budget)
+    noun = "message" if board_count == 1 else "messages"
+    verb = "is" if board_count == 1 else "are"
+    notice = f"{board_count} board {noun} {verb} waiting; orch board read shows them."
+    return context, "count", notice
+
+
 def _autonomy_slice(completed):
     if completed.returncode == -1:
         return "", "Autonomy observation timed out; autonomy state is unknown."
@@ -354,6 +408,10 @@ def main() -> int:
     output = None
     board_text = ""
     board_ids = []
+    board_titles = ""
+    board_count = 0
+    withheld_board_count = 0
+    board_mode = "full"
     cwd = None
     orch = None
     monitor_notices = []
@@ -420,7 +478,9 @@ def main() -> int:
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
         board = _wait(board_p, deadline) if board_p is not None else None
-        board_text, board_ids = _board_slice(board)
+        board_text, board_ids, board_titles, board_count, withheld_board_count = (
+            _board_start_slice(board)
+        )
         settings_apply = None
         if settings_p is not None:
             try:
@@ -625,6 +685,12 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
+        if withheld_board_count:
+            noun = "message" if withheld_board_count == 1 else "messages"
+            notices.append(
+                f"{withheld_board_count} unexpired board {noun} posted before this session "
+                "were withheld; orch board read shows them."
+            )
         settings_notice = (
             settings_start_failure
             or settings_read_failure
@@ -729,10 +795,14 @@ def main() -> int:
             "inbox": "\n".join(inbox_lines),
             "issues": "\n".join(issues_lines),
             "extra": extra_section,
-            "board": board_text,
         }
-        health_context = assemble_additional_context(**health_sections)
-        health_notices = list(notices)
+        health_context, board_mode, board_count_notice = assemble_session_start_context(
+            health_sections, board_text, board_titles, board_count
+        )
+        base_health_notices = list(notices)
+        health_notices = list(base_health_notices)
+        if board_count_notice:
+            health_notices.append(board_count_notice)
         if health_context or health_notices:
             output = {
                 "hookSpecificOutput": {
@@ -764,7 +834,7 @@ def main() -> int:
                 monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
 
         context = health_context
-        notices = health_notices
+        notices = list(health_notices)
         if monitor_failure:
             notices.append(monitor_failure)
         if monitor_notices or monitor_warning:
@@ -775,9 +845,17 @@ def main() -> int:
                 ),
                 *([monitor_warning] if monitor_warning else []),
             ])
-            context = assemble_additional_context(
-                **{**health_sections, "extra": _join_sections(extra_section, monitor_text)}
+            context, board_mode, board_count_notice = assemble_session_start_context(
+                {**health_sections, "extra": _join_sections(extra_section, monitor_text)},
+                board_text,
+                board_titles,
+                board_count,
             )
+            notices = list(base_health_notices)
+            if monitor_failure:
+                notices.append(monitor_failure)
+            if board_count_notice:
+                notices.append(board_count_notice)
             if monitor_notices:
                 noun = "condition" if len(monitor_notices) == 1 else "conditions"
                 notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
@@ -800,7 +878,9 @@ def main() -> int:
         if output is not None:
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
-        emitted_board_ids = _emitted_board_ids(output, board_text, board_ids)
+        emitted_board_ids = (
+            _emitted_board_ids(output, board_text, board_ids) if board_mode == "full" else []
+        )
         if emitted_board_ids and inbox_env is not None and orch is not None:
             try:
                 subprocess.run(
