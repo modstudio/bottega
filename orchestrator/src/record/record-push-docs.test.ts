@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { installRecordApiClient, unusedBoardClientMethods } from '../../test/fixtures/record-api.ts'
+import {
+  installRecordApiClient,
+  unusedBoardClientMethods,
+  unusedIdentityAndSpaceClientMethods,
+} from '../../test/fixtures/record-api.ts'
 import { db, writableDb } from '../database/db.ts'
 import type { RecordApiClient, RecordDocImportInput } from './record-api-client.ts'
 import { groupLocalDocsForImport, pushDocsCommand } from './record-push-docs.ts'
@@ -109,6 +113,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   const imports: RecordDocImportInput[] = []
   const hosted = new Map<string, Record<string, unknown>>()
   const client: RecordApiClient = {
+    ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     applySettingsPermission: unused,
     inviteMember: unused,

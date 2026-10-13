@@ -26,7 +26,11 @@ export const identity: RecordIdentity = {
   ],
 }
 
-export function idleBoardDeps(): RecordBoardDeps & { listInvitations: () => Promise<[]> } {
+export function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
+  return { listInvitations: async () => [] }
+}
+
+export function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
@@ -51,7 +55,6 @@ export function idleBoardDeps(): RecordBoardDeps & { listInvitations: () => Prom
     releaseBoardClaim: unused,
     listBoardClaims: unused,
     releaseBoardTaskClaims: unused,
-    listInvitations: async () => [],
   }
 }
 
@@ -115,8 +118,31 @@ function unusedBoard(): Promise<never> {
   return Promise.reject(new Error('hosted board is unused in this fixture'))
 }
 
+function unusedIdentityAndSpace(): Promise<never> {
+  return Promise.reject(new Error('hosted identity and space are unused in this fixture'))
+}
+
 function unusedSubject(): Promise<never> {
   return Promise.reject(new Error('hosted subjects are unused in this fixture'))
+}
+
+export function unusedIdentityAndSpaceClientMethods(): Pick<
+  RecordApiClient,
+  | 'whoami'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
+  | 'inviteMember'
+> {
+  return {
+    whoami: unusedIdentityAndSpace,
+    createOrganization: unusedIdentityAndSpace,
+    setActiveOrganization: unusedIdentityAndSpace,
+    listInvitations: unusedIdentityAndSpace,
+    acceptInvitation: unusedIdentityAndSpace,
+    inviteMember: unusedIdentityAndSpace,
+  }
 }
 
 export function unusedBoardClientMethods(): Pick<
@@ -125,10 +151,6 @@ export function unusedBoardClientMethods(): Pick<
   | 'getPublicDoc'
   | 'searchPublicDocs'
   | 'searchDocs'
-  | 'createOrganization'
-  | 'setActiveOrganization'
-  | 'listInvitations'
-  | 'acceptInvitation'
   | 'listBoardMessages'
   | 'postBoardMessage'
   | 'replyBoardMessage'
@@ -159,10 +181,6 @@ export function unusedBoardClientMethods(): Pick<
     getPublicDoc: unusedBoard,
     searchPublicDocs: unusedBoard,
     searchDocs: unusedBoard,
-    createOrganization: unusedBoard,
-    setActiveOrganization: unusedBoard,
-    listInvitations: unusedBoard,
-    acceptInvitation: unusedBoard,
     listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,
@@ -218,6 +236,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')

@@ -1,10 +1,11 @@
 // concern: record-space
-/** Owns record membership, invitations, and active-space changes. Must not know CLI presentation. */
+/** Owns record membership and active-space changes. Must not know CLI presentation. */
 
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import type { HostedRecordInvitation } from './record-invitations.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -15,15 +16,6 @@ export type RecordMembership = {
   slug: string
   role: string
   permission: string
-}
-
-export type RecordInvitation = {
-  id: string
-  spaceName: string
-  spaceSlug: string
-  role: string
-  inviterEmail: string
-  expiresAt: Date
 }
 
 export function recordSpaceRole(value: string): RecordSpaceRole {
@@ -87,12 +79,24 @@ export async function requireRecordSpaceMembership(
 
 export async function switchRecordSpace(
   value: string,
-  client: Pick<RecordApiClient, 'setActiveOrganization'> = recordApiClient(),
+  client: Pick<RecordApiClient, 'whoami' | 'setActiveOrganization'> = recordApiClient(),
 ): Promise<RecordMembership> {
-  const selected = await client.setActiveOrganization(
-    hasRecordIdShape(value.trim()) ? { organizationId: value } : { organizationSlug: value },
-  )
-  return { spaceId: selected.id, name: '', slug: selected.slug, role: '', permission: '' }
+  const listed = await recordMemberships(client)
+  let selected: RecordMembership
+  try {
+    selected = resolveRecordSpace(value, listed.memberships)
+  } catch {
+    const slugs =
+      listed.memberships
+        .map((membership) => membership.slug)
+        .sort()
+        .join(', ') || '(none)'
+    throw new Error(
+      `record space ${value} is not one of the signed-in user's memberships; join it first with an invitation, then retry; available slugs: ${slugs}`,
+    )
+  }
+  await client.setActiveOrganization({ organizationId: selected.spaceId })
+  return selected
 }
 
 export function refuseDuplicateRecordSpaceSlug(
@@ -139,20 +143,8 @@ export async function inviteToActiveRecordSpace(
 
 export async function pendingRecordInvitations(
   client: Pick<RecordApiClient, 'listInvitations'> = recordApiClient(),
-): Promise<RecordInvitation[]> {
-  return (await client.listInvitations())
-    .map((invitation) => ({
-      id: invitation.id,
-      spaceName: invitation.spaceName,
-      spaceSlug: invitation.spaceSlug,
-      role: invitation.role,
-      inviterEmail: invitation.inviterEmail,
-      expiresAt: new Date(invitation.expiresAt),
-    }))
-    .sort(
-      (left, right) =>
-        left.expiresAt.getTime() - right.expiresAt.getTime() || left.id.localeCompare(right.id),
-    )
+): Promise<HostedRecordInvitation[]> {
+  return client.listInvitations()
 }
 
 export async function acceptRecordInvitation(

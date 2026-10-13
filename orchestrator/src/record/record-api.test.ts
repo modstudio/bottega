@@ -1,5 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { identity, idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import {
+  identity,
+  idleBoardDeps,
+  idleIdentityAndSpaceDeps,
+  idleSubjectDeps,
+} from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
@@ -85,6 +90,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     registerMachineKey: notImplemented,
     revokeMachineKey: async () => undefined,
     ...idleSubjectDeps(),
+    ...idleIdentityAndSpaceDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })

@@ -9,6 +9,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
   unusedBoardClientMethods,
+  unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveSubjects } from './postgres-subject-cursor-proof.ts'
@@ -32,6 +33,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
       nextCursor: string | null
     }>
   return {
+    ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,

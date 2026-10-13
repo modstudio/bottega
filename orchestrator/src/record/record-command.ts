@@ -168,7 +168,7 @@ export async function recordSpaceInviteCommand(
 export async function recordSpaceInvitationsCommand(presentation: Presentation): Promise<void> {
   for (const invitation of await pendingRecordInvitations()) {
     presentation.log(
-      `${invitation.id}\t${invitation.spaceName}\t${invitation.spaceSlug}\t${invitation.role}\t${invitation.inviterEmail}\t${invitation.expiresAt.toISOString()}`,
+      `${invitation.id}\t${invitation.spaceName}\t${invitation.spaceSlug}\t${invitation.role}\t${invitation.inviterEmail}\t${invitation.expiresAt}`,
     )
   }
 }

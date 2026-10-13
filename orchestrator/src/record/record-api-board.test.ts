@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import {
+  idleBoardDeps,
+  idleIdentityAndSpaceDeps,
+  idleSubjectDeps,
+} from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -94,6 +98,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     },
     revokeMachineKey: async () => undefined,
     ...idleSubjectDeps(),
+    ...idleIdentityAndSpaceDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })

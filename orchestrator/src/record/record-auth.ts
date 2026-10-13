@@ -164,6 +164,21 @@ async function sessionSpaceForUser(client: SQL, userId: string, personalSpaceId:
   })
 }
 
+async function rememberSessionSpace(
+  client: SQL,
+  userId: string,
+  activeSpaceId: string | null,
+): Promise<void> {
+  await client.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`
+    await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
+    await tx`
+      UPDATE "user" SET last_active_space_id=${activeSpaceId}::uuid, updated_at=now()
+      WHERE id=${userId}::uuid
+    `
+  })
+}
+
 type ResetPasswordSender = typeof sendPasswordResetEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
@@ -292,6 +307,17 @@ export function recordAuth(
             const personal = await ensurePersonalSpace(created.userId, personalSpaces)
             const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
             return { data: { ...created, activeOrganizationId: activeSpaceId } }
+          },
+        },
+        update: {
+          after: async (updated) => {
+            await rememberSessionSpace(
+              client,
+              updated.userId,
+              typeof updated.activeOrganizationId === 'string'
+                ? updated.activeOrganizationId
+                : null,
+            )
           },
         },
       },
