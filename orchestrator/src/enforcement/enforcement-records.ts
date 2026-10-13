@@ -16,10 +16,7 @@ export type CategoryExecutionRow = {
   cwd: string | null
 }
 
-export type CategoryExecution = Pick<
-  CategoryExecutionRow,
-  'wallMs' | 'remaining' | 'finishedAt'
->
+export type CategoryExecution = Pick<CategoryExecutionRow, 'wallMs' | 'remaining' | 'finishedAt'>
 
 function isInProject(projectPath: string, cwd: string | null): boolean {
   if (!cwd) return false
