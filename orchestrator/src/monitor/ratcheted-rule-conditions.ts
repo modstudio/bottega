@@ -35,10 +35,7 @@ export function observeRatchetedRuleRefills(
 ): { conditions: MonitorCondition[]; errors: string[] } {
   try {
     return {
-      conditions: ratchetedRuleRefillConditions(
-        projects,
-        categoryExecutionRows(database),
-      ),
+      conditions: ratchetedRuleRefillConditions(projects, categoryExecutionRows(database)),
       errors: [],
     }
   } catch (cause) {
