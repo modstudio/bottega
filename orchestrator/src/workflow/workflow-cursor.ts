@@ -31,7 +31,6 @@ import {
   type ClosedStep,
   type CursorTrailEntry,
   currentStepActivatedAt,
-  isClosedStep,
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
@@ -56,11 +55,12 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
-import { renderWorkflowStep } from './workflow-render.ts'
+import { renderWorkflowCompletion, renderWorkflowStep } from './workflow-render.ts'
 import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
+import { renderSelfRulingResult } from './workflow-self-ruling.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
@@ -684,15 +684,11 @@ function nextWorkflowStepImpl(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    const closedSteps = closed.filter(isClosedStep)
-    const reviews = closedSteps
-      .filter((step) => step.review)
-      .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
-    const result = [
-      `${cursorName(slug, mode, row.workflow_key, true)} is finished: ${closedSteps.length} steps closed.`,
-      ...reviews,
-    ].join('\n')
-    return selfRuling ? `${result}\nSelf-ruling: ${recordedSelfRulingText(selfRuling)}` : result
+    return renderWorkflowCompletion(
+      cursorName(slug, mode, row.workflow_key, true),
+      closed,
+      selfRuling,
+    )
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
@@ -725,11 +721,7 @@ function nextWorkflowStepImpl(
     ),
     cursor: row.id,
   })
-  return selfRuling ? `${rendered}\nSelf-ruling: ${recordedSelfRulingText(selfRuling)}` : rendered
-}
-
-function recordedSelfRulingText(input: WorkflowSelfRulingInput): string {
-  return `${input.ruling.trim()}\nBasis: ${input.basis.trim()}`
+  return renderSelfRulingResult(rendered, selfRuling)
 }
 
 export function nextWorkflowStep(

@@ -3,7 +3,9 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
+import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import { type FloorKind, floorGuidance } from './workflow-floor.ts'
+import { renderSelfRulingResult } from './workflow-self-ruling.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -30,6 +32,21 @@ const rulingsHeader = (result: WorkflowComposition) =>
 
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
+
+export function renderWorkflowCompletion(
+  name: string,
+  closed: CursorTrailEntry[],
+  selfRuling?: { ruling: string; basis: string },
+): string {
+  const closedSteps = closed.filter(isClosedStep)
+  const reviews = closedSteps
+    .filter((step) => step.review)
+    .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
+  return renderSelfRulingResult(
+    [`${name} is finished: ${closedSteps.length} steps closed.`, ...reviews].join('\n'),
+    selfRuling,
+  )
+}
 
 export function renderWorkflowComposition(result: WorkflowComposition): string {
   if (result.mode && result.steps.length && !result.needs.arguments)

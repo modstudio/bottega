@@ -81,6 +81,26 @@ const requiredReportField = (field: string, belongs: string) =>
     .trim()
     .min(1, `${field} is required: ${belongs}`)
 
+const nextWorkflowStepInputSchema = z.object({
+  slug: z.string().trim().min(1),
+  project: z.string().trim().min(1),
+  mode: z.string().trim().min(1).optional(),
+  args: z.record(z.string(), z.string()).optional(),
+  note: z.string().trim().min(1),
+  ruling: z.number().int().positive().optional(),
+  self_ruling: z.string().trim().min(1).optional(),
+  self_ruling_basis: z.string().optional(),
+  question: z.string().trim().min(1).optional(),
+  review: z.number().int().positive().optional(),
+  gate: z.number().int().positive().optional(),
+  run: z.number().int().positive().optional(),
+  artifact: z.string().trim().min(1).optional(),
+  task: z.string().trim().min(1).optional(),
+  cursor: z.number().int().positive().optional(),
+  defer: z.string().trim().min(1).optional(),
+  satisfies: z.number().int().positive().optional(),
+})
+
 const reporterFields = {
   reporter_kind: z
     .enum(['session', 'monitor'])
@@ -507,25 +527,7 @@ export function createDocsMcpServer(): McpServer {
     {
       description:
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        note: z.string().trim().min(1),
-        ruling: z.number().int().positive().optional(),
-        self_ruling: z.string().trim().min(1).optional(),
-        self_ruling_basis: z.string().optional(),
-        question: z.string().trim().min(1).optional(),
-        review: z.number().int().positive().optional(),
-        gate: z.number().int().positive().optional(),
-        run: z.number().int().positive().optional(),
-        artifact: z.string().trim().min(1).optional(),
-        task: z.string().trim().min(1).optional(),
-        cursor: z.number().int().positive().optional(),
-        defer: z.string().trim().min(1).optional(),
-        satisfies: z.number().int().positive().optional(),
-      }),
+      inputSchema: nextWorkflowStepInputSchema,
     },
     async ({
       slug,

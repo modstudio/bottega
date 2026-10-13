@@ -22,3 +22,12 @@ export function selfRulingRefusal(
     return 'self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with `orch workflow await` and `orch workflow rule --from-operator`'
   return null
 }
+
+export function renderSelfRulingResult(
+  result: string,
+  input: { ruling: string; basis: string } | undefined,
+): string {
+  return input
+    ? `${result}\nSelf-ruling: ${input.ruling.trim()}\nBasis: ${input.basis.trim()}`
+    : result
+}
