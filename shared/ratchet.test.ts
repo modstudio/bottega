@@ -130,6 +130,18 @@ describe('ratchet decision', () => {
     ).toEqual([{ ...extraFinding, reason: 'count' }])
   })
 
+  test.each(['old.test.ts', 'new.test.ts'])(
+    'a renamed file keeps its allowance when the base report names %s',
+    (basePath) => {
+      const baseFinding = { ...finding(4), file: basePath }
+      const renamedFinding = { ...finding(4), file: 'new.test.ts' }
+      const rename = change({ renames: new Map([['new.test.ts', 'old.test.ts']]) })
+      expect(
+        ratchetDecision({ base: [baseFinding], head: [renamedFinding], change: rename }),
+      ).toEqual([])
+    },
+  )
+
   test('a new file refuses every finding on its added lines', () => {
     const findings = [finding(1), finding(8, 'another finding')]
     expect(

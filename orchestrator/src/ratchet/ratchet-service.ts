@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,6 +16,7 @@ import { inspectionGitEnv } from '../../../shared/git.ts'
 import { type Finding, ratchetDecision } from '../../../shared/ratchet.ts'
 import { projectAt } from '../project/projects.ts'
 import { biomeFindings } from './biome-adapter.ts'
+import { type MeasurePattern, phpcsFindings, phpstanFindings } from './php-report-adapters.ts'
 import { commandForSide, type SideFile, sideFiles, supportPlacements } from './ratchet-plan.ts'
 
 type Reporter = Pick<Console, 'error' | 'log'>
@@ -24,7 +26,11 @@ type RatchetOptions = {
   staged: boolean
   base?: string
   support: string[]
-  command: string[]
+  command?: string[]
+  headReport?: string
+  baseReport?: string
+  reportRoot?: string
+  measures?: MeasurePattern[]
 }
 
 const LINTER_TIMEOUT_MS = 120_000
@@ -101,6 +107,22 @@ function adapter(format: string): (text: string) => Finding[] {
   throw new Error(`unknown ratchet format ${JSON.stringify(format)}; available: biome`)
 }
 
+function reportAdapter(format: string) {
+  if (format === 'phpcs') return phpcsFindings
+  if (format === 'phpstan') return phpstanFindings
+  throw new Error(`unknown report format ${JSON.stringify(format)}; available: phpcs, phpstan`)
+}
+
+function reportFindings(
+  path: string,
+  format: string,
+  reportRoot: string,
+  measures: MeasurePattern[],
+) {
+  const parse = reportAdapter(format)
+  return parse(readFileSync(path, 'utf8'), { reportRoot, measures })
+}
+
 function runSide(
   root: string,
   cwd: string,
@@ -151,14 +173,56 @@ function refusalReason(finding: ReturnType<typeof ratchetDecision>[number]) {
   return 'finding count increased'
 }
 
-export async function runRatchet(options: RatchetOptions, reporter: Reporter = console) {
-  const root = checkoutRoot(options.cwd)
-  validatedSupport(root, options.support)
-  if (!options.command.includes('{files}')) throw new Error('linter command must contain {files}')
-  const parse = adapter(options.format)
-  const base = comparisonBase(root, options)
-  const mode: ChangeViewMode = options.staged ? 'staged' : 'worktree'
-  const view = openChangeView({ cwd: root, base, mode })
+type RatchetView = ReturnType<typeof openChangeView>
+
+export function runReportsMode(
+  options: RatchetOptions,
+  root: string,
+  view: Pick<RatchetView, 'facts'>,
+  headReport: string,
+  baseReport: string,
+  reporter: Reporter,
+) {
+  let headFindings: Finding[]
+  try {
+    headFindings = reportFindings(
+      headReport,
+      options.format,
+      options.reportRoot ?? root,
+      options.measures ?? [],
+    )
+  } catch (error) {
+    throw new Error(
+      `head report ${headReport} failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  reporter.log(`ratchet remaining: ${headFindings.length} findings in the head report`)
+  let baseFindings: Finding[] = []
+  const unanalysedBase = new Set<string>()
+  try {
+    baseFindings = reportFindings(
+      baseReport,
+      options.format,
+      options.reportRoot ?? root,
+      options.measures ?? [],
+    )
+  } catch (error) {
+    reporter.error(
+      `ratchet base report ${baseReport} failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    for (const finding of headFindings) unanalysedBase.add(finding.file)
+  }
+  return reportDecision(baseFindings, headFindings, view.facts, unanalysedBase, reporter)
+}
+
+function runCommandMode(
+  options: RatchetOptions,
+  root: string,
+  view: RatchetView,
+  command: string[],
+  parse: (text: string) => Finding[],
+  reporter: Reporter,
+) {
   const lintEntries = view.entries.filter(
     (entry) =>
       !options.support.some((path) => entry.path === path || entry.path.startsWith(`${path}/`)),
@@ -172,7 +236,7 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
     const baseResult = runSide(
       root,
       baseMirror,
-      options.command,
+      command,
       baseFiles.map(({ path }) => path),
       parse,
     )
@@ -181,7 +245,7 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
     const headResult = runSide(
       root,
       headRoot,
-      options.command,
+      command,
       headFiles.map(({ path }) => path),
       parse,
     )
@@ -193,20 +257,44 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
       reporter.error(`ratchet base side failed: ${baseResult.reason}`)
       for (const file of headFiles) unanalysedBase.add(file.path)
     }
-    const refused = ratchetDecision({
-      base: baseFindings,
-      head: headResult.findings,
-      change: view.facts,
-      unanalysedBase,
-    })
-    for (const finding of refused) {
-      reporter.error(
-        `${finding.file}:${finding.line} ${finding.rule} ${finding.message}; ${refusalReason(finding)}`,
-      )
-    }
-    return refused.length === 0
+    return reportDecision(baseFindings, headResult.findings, view.facts, unanalysedBase, reporter)
   } finally {
     if (baseMirror) rmSync(baseMirror, { recursive: true, force: true })
     if (headMirror) rmSync(headMirror, { recursive: true, force: true })
   }
+}
+
+export async function runRatchet(options: RatchetOptions, reporter: Reporter = console) {
+  const root = checkoutRoot(options.cwd)
+  const headReport = options.headReport
+  const baseReport = options.baseReport
+  const reportsMode = headReport && baseReport
+  const command = options.command ?? []
+  if (!reportsMode) {
+    validatedSupport(root, options.support)
+    if (!command.includes('{files}')) throw new Error('linter command must contain {files}')
+  }
+  const base = comparisonBase(root, options)
+  const mode: ChangeViewMode = options.staged ? 'staged' : 'worktree'
+  const view = openChangeView({ cwd: root, base, mode })
+  if (reportsMode) {
+    return runReportsMode(options, root, view, headReport, baseReport, reporter)
+  }
+  return runCommandMode(options, root, view, command, adapter(options.format), reporter)
+}
+
+function reportDecision(
+  base: Finding[],
+  head: Finding[],
+  change: Parameters<typeof ratchetDecision>[0]['change'],
+  unanalysedBase: Set<string>,
+  reporter: Reporter,
+) {
+  const refused = ratchetDecision({ base, head, change, unanalysedBase })
+  for (const finding of refused) {
+    reporter.error(
+      `${finding.file}:${finding.line} ${finding.rule} ${finding.message}; ${refusalReason(finding)}`,
+    )
+  }
+  return refused.length === 0
 }
