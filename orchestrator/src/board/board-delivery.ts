@@ -5,14 +5,15 @@ import { classifyBoardId } from '../../../shared/board-mode.ts'
 
 import {
   claimCachedHosted,
+  claimCachedHostedForPush,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
 import {
-  claimNotices,
-  claimRunNotices,
+  claimPushNotices,
+  claimRunPushNotices,
   markNoticesDelivered,
   markRunNoticesDelivered,
   markSessionMessagesDelivered,
@@ -35,6 +36,7 @@ const sessionReader = (env: Record<string, string | undefined>) =>
 type BoardDeliveryNotice = {
   id: string
   text: string
+  oneLine: string
   ackRequired: boolean
   createdAt: string
 }
@@ -54,9 +56,15 @@ const splitBoardIds = (sourceIds: Array<string | number>) => {
 const deliveryNotice = (notice: {
   id: number | string
   text: string
+  oneLine: string
   ackRequired: boolean
   createdAt: string
 }): BoardDeliveryNotice => ({ ...notice, id: String(notice.id) })
+
+const deliveryWarning = (...warnings: Array<string | null>): string | null => {
+  const unique = [...new Set(warnings.filter((warning): warning is string => warning !== null))]
+  return unique.length ? unique.join(' ') : null
+}
 
 export async function claimBoardNotices(
   all = false,
@@ -67,15 +75,19 @@ export async function claimBoardNotices(
     budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
     env,
   })
-  return refreshed.status === 'local'
-    ? { notices: claimNotices(all, env).map(deliveryNotice), warning: null }
-    : {
-        notices: [
-          ...claimNotices(all, env).map(deliveryNotice),
-          ...claimCachedHosted(sessionReader(env), all).map(deliveryNotice),
-        ],
-        warning: hostedBoardVerificationWarning(),
-      }
+  const local = claimPushNotices(all, env)
+  if (refreshed.status === 'local')
+    return {
+      notices: local.notices.map(deliveryNotice),
+      warning: local.warning,
+      withheldOlderCount: local.withheldOlderCount,
+    }
+  const hosted = claimCachedHostedForPush(sessionReader(env), all)
+  return {
+    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
+    withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
+  }
 }
 
 export async function readBoardNotices(
@@ -107,15 +119,19 @@ export async function claimRunBoardNotices(
 ) {
   const refreshed = await refreshHostedBoard({ budgetMs })
   const reader = runReader(runId)
-  return refreshed.status === 'local'
-    ? { notices: claimRunNotices(runId, all).map(deliveryNotice), warning: null }
-    : {
-        notices: [
-          ...claimRunNotices(runId, all).map(deliveryNotice),
-          ...claimCachedHosted(reader, all).map(deliveryNotice),
-        ],
-        warning: hostedBoardVerificationWarning(),
-      }
+  const local = claimRunPushNotices(runId, all)
+  if (refreshed.status === 'local')
+    return {
+      notices: local.notices.map(deliveryNotice),
+      warning: local.warning,
+      withheldOlderCount: local.withheldOlderCount,
+    }
+  const hosted = claimCachedHostedForPush(reader, all)
+  return {
+    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
+    withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
+  }
 }
 
 export async function markRunBoardNoticesDelivered(

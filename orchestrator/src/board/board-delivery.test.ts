@@ -105,8 +105,8 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   const claimed = await claimBoardNotices(false, { env })
   expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.id), hostedClaim.id])
   expect(claimed.notices.map((row) => Object.keys(row).sort())).toEqual([
-    ['ackRequired', 'createdAt', 'id', 'text'],
-    ['ackRequired', 'createdAt', 'id', 'text'],
+    ['ackRequired', 'createdAt', 'id', 'oneLine', 'text'],
+    ['ackRequired', 'createdAt', 'id', 'oneLine', 'text'],
   ])
   expect(claimed.warning).toContain('offline for warning proof')
   expect(claimed.warning).toContain('proof Forged-Warning: session-start')

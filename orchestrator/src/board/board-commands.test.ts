@@ -7,6 +7,33 @@ import { BOARD_REACH_MAX_HOURS } from './board-reach.ts'
 import { postNotice } from './board-service.ts'
 import { suggestBoardPost } from './board-suggestions.ts'
 
+test('board presence validates and records the hook start instant', async () => {
+  const cwd = process.cwd()
+  db()
+    .query(`INSERT OR IGNORE INTO project(name,path,settings) VALUES ('board-presence-cli',?,'{}')`)
+    .run(cwd)
+  const previous = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = 'presence-cli-reader'
+  try {
+    const invalid = new Command().exitOverride()
+    registerBoardCommands(invalid)
+    await expect(
+      invalid.parseAsync(['node', 'orch', 'board', 'presence', '--started-at', 'yesterday']),
+    ).rejects.toThrow(/ISO 8601 UTC instant/)
+
+    const startedAt = '2026-10-13T12:00:00.000Z'
+    const program = new Command().exitOverride()
+    registerBoardCommands(program)
+    await program.parseAsync(['node', 'orch', 'board', 'presence', '--started-at', startedAt])
+    expect(
+      db().query('SELECT first_seen FROM presence WHERE session_id=?').get('presence-cli-reader'),
+    ).toEqual({ first_seen: startedAt })
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previous
+  }
+})
+
 test('board status CLI refuses worker callers', async () => {
   const posted = postNotice(
     { audience: 'operator', title: 'CLI status guard', body: 'Workers cannot inspect status.' },

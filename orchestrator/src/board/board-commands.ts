@@ -28,9 +28,17 @@ import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions
 import { watchHostedBoard } from './board-watch.ts'
 
 function registerBoardWatchCommand(board: Command): void {
-  board.command('presence').action(() => {
-    recordPresence()
-  })
+  board
+    .command('presence')
+    .option('--started-at <instant>', 'session-start instant', (value: string) => {
+      const parsed = new Date(value)
+      if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value)
+        throw new Error('--started-at must be an ISO 8601 UTC instant with milliseconds')
+      return value
+    })
+    .action((options) => {
+      recordPresence(process.cwd(), process.env, options.startedAt)
+    })
   board
     .command('watch')
     .description('hold the hosted board stream and refresh the local cache')
@@ -81,11 +89,48 @@ function registerBoardDeliveredCommand(board: Command): void {
     })
 }
 
+function registerBoardPendingCommand(board: Command): void {
+  board
+    .command('pending')
+    .requiredOption('--session <id>')
+    .option('--recently-injected <ids>', 'comma-separated message ids not yet due for reminder')
+    .option('--exclude-acknowledgement-required')
+    .option('--json')
+    .action(async (options) => {
+      const delivery = await pendingBoardDelivery({
+        session: options.session,
+        budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
+        includeAcknowledgementReminders: true,
+        excludeAcknowledgementRequired: Boolean(options.excludeAcknowledgementRequired),
+        recentlyInjectedIds: options.recentlyInjected
+          ? String(options.recentlyInjected).split(',').filter(Boolean)
+          : [],
+      })
+      console.log(
+        JSON.stringify({
+          delivery: delivery.delivery.map((notice) => ({
+            id: notice.id,
+            text: notice.text,
+            requiresAcknowledgement: notice.requiresAcknowledgement,
+          })),
+          overflow: delivery.overflow,
+          warning: delivery.warning,
+          pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
+            id: notice.id,
+            text: notice.text,
+            requiresAcknowledgement: true,
+          })),
+        }),
+      )
+    })
+}
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
   registerBoardClaimCommands(board, parseBoardDuration)
   registerBoardReachCommand(board)
   registerBoardDeliveredCommand(board)
+  registerBoardPendingCommand(board)
   board
     .command('adopt')
     .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
@@ -114,38 +159,6 @@ export function registerBoardCommands(program: Command): void {
       }
     })
   registerBoardWatchCommand(board)
-  board
-    .command('pending')
-    .requiredOption('--session <id>')
-    .option('--recently-injected <ids>', 'comma-separated message ids not yet due for reminder')
-    .option('--exclude-acknowledgement-required')
-    .option('--json')
-    .action(async (options) => {
-      const delivery = await pendingBoardDelivery({
-        session: options.session,
-        budgetMs: BOARD_READ_REFRESH_BUDGET_MS,
-        includeAcknowledgementReminders: true,
-        excludeAcknowledgementRequired: Boolean(options.excludeAcknowledgementRequired),
-        recentlyInjectedIds: options.recentlyInjected
-          ? String(options.recentlyInjected).split(',').filter(Boolean)
-          : [],
-      })
-      console.log(
-        JSON.stringify({
-          delivery: delivery.delivery.map((notice) => ({
-            id: notice.id,
-            text: notice.text,
-            requiresAcknowledgement: notice.requiresAcknowledgement,
-          })),
-          overflow: delivery.overflow,
-          pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
-            id: notice.id,
-            text: notice.text,
-            requiresAcknowledgement: true,
-          })),
-        }),
-      )
-    })
   board
     .command('list')
     .option('--kind <kind>', 'limit to notice or question', (value: string) => {
@@ -243,8 +256,8 @@ export function registerBoardCommands(program: Command): void {
         : await readBoardNotices(Boolean(options.all))
       console.log(
         JSON.stringify({
+          ...delivery,
           notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
-          warning: delivery.warning,
         }),
       )
     })

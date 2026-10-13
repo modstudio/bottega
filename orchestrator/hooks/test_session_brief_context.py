@@ -26,60 +26,116 @@ class AssembleAdditionalContext(unittest.TestCase):
     def test_budget_constant_stays_under_the_harness_cap(self):
         self.assertEqual(session_brief.HOOK_CONTEXT_MAX_CHARS, 9000)
 
-    def test_board_notices_drop_before_other_unprotected_sections(self):
-        text = self.assemble(
-            100,
-            autonomy="protected",
-            board="b" * 200,
-            issues="filed issue",
-        )
-        self.assertNotIn("b" * 200, text)
-        self.assertIn("filed issue", text)
-        self.assertIn("Dropped board notices (orch board read --all).", text)
-
-    def test_board_slice_accepts_string_ids_for_post_emit_delivery(self):
-        completed = SimpleNamespace(
+    def board_completed(self, body="body", withheld=0):
+        return SimpleNamespace(
             returncode=0,
-            stdout=json.dumps([{"id": "7", "text": "notice one"}, {"id": "8", "text": "notice two"}]),
+            stdout=json.dumps({
+                "notices": [{
+                    "id": "7",
+                    "text": (
+                        "BOARD NOTICE 7 — INFORMATION ONLY\n"
+                        "Origin: operator\nTitle: Important title\n"
+                        "Acknowledgement: required\n" + body
+                    ),
+                    "oneLine": (
+                        "Board message 7: Important title — from operator; "
+                        "acknowledgement required."
+                    ),
+                    "ackRequired": True,
+                }],
+                "warning": None,
+                "withheldOlderCount": withheld,
+            }),
+        )
+
+    def test_session_start_keeps_full_board_delivery_when_it_fits(self):
+        full, ids, titles, count, _withheld = session_brief._board_start_slice(
+            self.board_completed()
+        )
+        context, mode, notice = session_brief.assemble_session_start_context(
+            {"autonomy": "protected"}, full, titles, count, budget=500
+        )
+        self.assertEqual(mode, "full")
+        self.assertIsNone(notice)
+        self.assertIn("Acknowledgement: required", context)
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        self.assertEqual(session_brief._emitted_board_ids(output, full, ids), ["7"])
+
+    def test_session_start_degrades_to_titles_without_stamping(self):
+        full, ids, titles, count, _withheld = session_brief._board_start_slice(
+            self.board_completed("body" * 100)
+        )
+        context, mode, notice = session_brief.assemble_session_start_context(
+            {"autonomy": "protected"}, full, titles, count, budget=180
+        )
+        self.assertEqual(mode, "titles")
+        self.assertIsNone(notice)
+        self.assertIn(
+            "Board message 7: Important title — from operator; acknowledgement required.",
+            context,
+        )
+        self.assertNotIn("bodybody", context)
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        self.assertEqual(session_brief._emitted_board_ids(output, full, ids), [])
+
+    def test_session_start_degrades_to_count_without_stamping(self):
+        full, ids, titles, count, _withheld = session_brief._board_start_slice(
+            self.board_completed("body" * 100)
+        )
+        context, mode, notice = session_brief.assemble_session_start_context(
+            {"autonomy": "protected" * 8}, full, titles, count, budget=90
+        )
+        self.assertEqual(mode, "count")
+        self.assertEqual(notice, "1 board message is waiting; orch board read shows them.")
+        self.assertNotIn("Important title", context)
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        self.assertEqual(session_brief._emitted_board_ids(output, full, ids), [])
+
+    def test_new_session_sees_the_withheld_older_message_notice(self):
+        _full, _ids, _titles, _count, withheld = session_brief._board_start_slice(
+            self.board_completed(withheld=3)
         )
         self.assertEqual(
-            session_brief._board_slice(completed),
-            ("notice one\n\nnotice two", ["7", "8"]),
+            session_brief._withheld_board_notice(withheld),
+            "3 unexpired board messages posted before this session were withheld; "
+            "orch board read shows them.",
         )
 
-    def test_board_slice_keeps_accepting_integer_ids_for_post_emit_delivery(self):
+    def test_board_start_slice_accepts_string_ids_for_post_emit_delivery(self):
         completed = SimpleNamespace(
             returncode=0,
-            stdout=json.dumps([{"id": 7, "text": "notice one"}, {"id": 8, "text": "notice two"}]),
+            stdout=json.dumps([{"id": "7", "text": "notice one", "oneLine": "one"}, {"id": "8", "text": "notice two", "oneLine": "two"}]),
         )
-        self.assertEqual(
-            session_brief._board_slice(completed),
-            ("notice one\n\nnotice two", ["7", "8"]),
-        )
+        full, ids, titles, count, withheld = session_brief._board_start_slice(completed)
+        self.assertEqual((full, ids, titles, count, withheld), ("notice one\n\nnotice two", ["7", "8"], "one\ntwo", 2, 0))
 
-    def test_board_slice_accepts_hosted_uuid_ids(self):
+    def test_board_start_slice_keeps_accepting_integer_ids_for_post_emit_delivery(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": 7, "text": "notice one", "oneLine": "one"}, {"id": 8, "text": "notice two", "oneLine": "two"}]),
+        )
+        self.assertEqual(session_brief._board_start_slice(completed)[1], ["7", "8"])
+
+    def test_board_start_slice_accepts_hosted_uuid_ids(self):
         hosted = "01990000-0000-7000-8000-000000000099"
         completed = SimpleNamespace(
             returncode=0,
-            stdout=json.dumps([{"id": hosted, "text": "hosted notice"}]),
+            stdout=json.dumps([{"id": hosted, "text": "hosted notice", "oneLine": "hosted"}]),
         )
-        self.assertEqual(session_brief._board_slice(completed), ("hosted notice", [hosted]))
+        self.assertEqual(session_brief._board_start_slice(completed)[1], [hosted])
         self.assertTrue(session_brief._valid_notice_id(f"board:{hosted}"))
 
-    def test_board_slice_accepts_delivery_envelope_and_renders_warning(self):
+    def test_board_start_slice_accepts_delivery_envelope_and_renders_warning(self):
         completed = SimpleNamespace(
             returncode=0,
             stdout=json.dumps({
-                "notices": [{"id": "7", "text": "notice"}],
+                "notices": [{"id": "7", "text": "notice", "oneLine": "title"}],
                 "warning": "Hosted board cache is unverified.",
             }),
         )
-        self.assertEqual(
-            session_brief._board_slice(completed),
-            ("notice\n\nHosted board cache is unverified.", ["7"]),
-        )
+        self.assertEqual(session_brief._board_start_slice(completed)[:3], ("notice\n\nHosted board cache is unverified.", ["7"], "title\nHosted board cache is unverified."))
 
-    def test_board_slice_renders_warning_with_no_notices(self):
+    def test_board_start_slice_renders_warning_with_no_notices(self):
         completed = SimpleNamespace(
             returncode=0,
             stdout=json.dumps({
@@ -87,17 +143,20 @@ class AssembleAdditionalContext(unittest.TestCase):
                 "warning": "Hosted board cache is unverified.",
             }),
         )
-        self.assertEqual(
-            session_brief._board_slice(completed),
-            ("Hosted board cache is unverified.", []),
-        )
+        self.assertEqual(session_brief._board_start_slice(completed)[:2], ("Hosted board cache is unverified.", []))
 
-    def test_board_slice_rejects_a_non_digit_string_id(self):
+    def test_board_start_slice_reports_a_malformed_response(self):
         completed = SimpleNamespace(
             returncode=0,
-            stdout=json.dumps([{"id": "not-an-id", "text": "notice"}]),
+            stdout=json.dumps([{"id": "not-an-id", "text": "notice", "oneLine": "title"}]),
         )
-        self.assertEqual(session_brief._board_slice(completed), ("", []))
+        self.assertEqual(session_brief._board_start_slice(completed)[0], "Board could not be read; orch board read shows it.")
+
+    def test_board_start_slice_reports_a_timed_out_claim(self):
+        completed = SimpleNamespace(returncode=-1, stdout="")
+        full, ids, titles, count, withheld = session_brief._board_start_slice(completed)
+        self.assertEqual(full, "Board could not be read; orch board read shows it.")
+        self.assertEqual((ids, titles, count, withheld), ([], full, 0, 0))
 
     def test_board_dropped_for_budget_has_no_post_emit_delivery_ids(self):
         board = "board notice " * 30

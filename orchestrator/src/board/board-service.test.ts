@@ -10,13 +10,16 @@ import {
   acknowledgeNotice,
   boardEscalations,
   claimNotices,
+  claimPushNotices,
   claimRunNotices,
+  claimRunPushNotices,
   markSessionMessagesDelivered,
   noticeStatus,
   postNotice,
   readNotices,
   recordPresence,
 } from './board-service.ts'
+import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 function postingProject() {
   const cwd = resolve(import.meta.dir, '../../..')
@@ -66,7 +69,84 @@ test('recordPresence preserves first_seen after the first insert', () => {
   ).toEqual({ first_seen: '2026-10-05T11:00:00.000Z', last_seen: '2026-10-05T12:00:00.000Z' })
 })
 
-test('tagged project notice follows matching run paths at posting and for a late session', () => {
+test('a message posted after the hook start but before presence is written is due', () => {
+  const { cwd } = postingProject()
+  const start = Date.parse('2026-10-05T11:00:00.000Z')
+  const env = { CLAUDE_CODE_SESSION_ID: 'presence-race-reader' }
+  const posted = postNotice(
+    { audience: 'session:presence-race-reader', title: 'During start', body: 'Still due.' },
+    {},
+    start + 1,
+  )
+  recordPresence(cwd, env, new Date(start).toISOString())
+  expect(claimPushNotices(false, env, start + 2).notices.map((notice) => notice.id)).toEqual([
+    posted.id,
+  ])
+})
+
+test('operator push is unbounded and a missing session start delivers candidates with a warning', () => {
+  const { cwd, project } = postingProject()
+  const clock = Date.parse('2026-10-05T11:30:00.000Z')
+  const operatorNotice = postNotice(
+    { audience: 'operator', title: 'Operator history', body: 'Operator sees this.' },
+    {},
+    clock,
+  )
+  expect(claimPushNotices(false, {}, clock + 10_000)).toMatchObject({
+    notices: [{ id: operatorNotice.id }],
+    withheldOlderCount: 0,
+    warning: null,
+  })
+
+  const insertPresence = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test',?,?,NULL,?,?)`,
+  )
+  insertPresence.run(
+    'missing-start-reader',
+    project.name,
+    cwd,
+    new Date(clock).toISOString(),
+    new Date(clock).toISOString(),
+  )
+  insertPresence.run(
+    'thread-author',
+    project.name,
+    cwd,
+    new Date(clock).toISOString(),
+    new Date(clock).toISOString(),
+  )
+  const question = askQuestion(
+    { audience: 'session:missing-start-reader', title: 'Thread', body: 'Join this thread.' },
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock + 1,
+    cwd,
+  )
+  replyToThread(
+    question.id,
+    'Reader joined.',
+    { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
+    clock + 2,
+    cwd,
+  )
+  const reply = replyToThread(
+    question.id,
+    'Author followed up.',
+    { CLAUDE_CODE_SESSION_ID: 'thread-author' },
+    clock + 3,
+    cwd,
+  )
+  db().query('DELETE FROM presence WHERE session_id=?').run('missing-start-reader')
+  const missing = claimPushNotices(
+    false,
+    { CLAUDE_CODE_SESSION_ID: 'missing-start-reader' },
+    clock + 4,
+  )
+  expect(missing.notices.map((notice) => notice.id)).toContain(reply.id)
+  expect(missing.warning).toContain('has no recorded start')
+})
+
+test('tagged project notices are not pushed to a late session even when acknowledgement is required', () => {
   const clock = Date.now() + 10_000
   const project = 'board-routing-project'
   const insertPresence = db().query(
@@ -105,6 +185,18 @@ test('tagged project notice follows matching run paths at posting and for a late
   expect(matchingNotices[0]!.text).toContain('Tags: path:orchestrator/src/board/**')
   expect(claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'other-reader' }, clock + 1)).toEqual([])
 
+  const required = postNotice(
+    {
+      audience: `project:${project}`,
+      title: 'Required board work',
+      body: 'Acknowledge the board service change.',
+      paths: ['orchestrator/src/board/**'],
+      ackRequired: true,
+    },
+    {},
+    clock + 1,
+  )
+
   insertPresence.run('late-reader', project, new Date(clock + 2).toISOString())
   insertRun.run(
     new Date(clock + 2).toISOString(),
@@ -112,11 +204,16 @@ test('tagged project notice follows matching run paths at posting and for a late
     JSON.stringify(['orchestrator/src/board/board-routing.ts']),
   )
   expect(
-    claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3).map(
+    claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3),
+  ).toMatchObject({
+    notices: [],
+    withheldOlderCount: 2,
+  })
+  expect(
+    readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4).map(
       (notice) => notice.id,
     ),
-  ).toEqual([posted.id])
-  readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4)
+  ).toEqual([posted.id, required.id])
   expect(noticeStatus(posted.id, {}).reached).toBe(2)
 })
 
@@ -158,6 +255,56 @@ test('tagged project notice reaches a matching worker chain and withholds from a
     posted.id,
   ])
   expect(claimRunNotices(other.id, false, clock + 1)).toEqual([])
+})
+
+test('a run reader is pushed only notices posted after its start', () => {
+  const clock = Date.now() + 12_500
+  const run = db()
+    .query(
+      `INSERT INTO run
+       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES (?,'codex','implement','worker-board-project','sha',1,'prompt','running','DEV-PUSH',1)
+       RETURNING id`,
+    )
+    .get(new Date(clock).toISOString()) as { id: number }
+  const older = postNotice(
+    { audience: `run:${run.id}`, title: 'Older', body: 'Do not push this.' },
+    {},
+    clock - 2,
+  )
+  const required = postNotice(
+    {
+      audience: `run:${run.id}`,
+      title: 'Older required',
+      body: 'Push this for acknowledgement.',
+      ackRequired: true,
+    },
+    {},
+    clock - 1,
+  )
+  const newer = postNotice(
+    { audience: `run:${run.id}`, title: 'Newer', body: 'Push this.' },
+    {},
+    clock + 1,
+  )
+
+  expect(claimRunPushNotices(run.id, false, clock + 2)).toMatchObject({
+    notices: [{ id: newer.id }],
+    withheldOlderCount: 2,
+  })
+  expect(claimRunNotices(run.id, false, clock + 2).map((notice) => notice.id)).toEqual([
+    older.id,
+    required.id,
+    newer.id,
+  ])
+})
+
+test('a missing run reader returns an unbounded empty selection with a warning', () => {
+  expect(claimRunPushNotices(999_999)).toEqual({
+    notices: [],
+    withheldOlderCount: 0,
+    warning: 'Board reader run:999999 has no recorded start; no messages were withheld by age.',
+  })
 })
 
 test('run audience is owner-gated for architects and resolves a turn to its chain root', () => {
@@ -297,7 +444,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
   })
 })
 
-test('a session-start notice dropped for budget stays unread until a stamping read', () => {
+test('a session-start notice reduced to a title or count stays unread until a stamping read', () => {
   const clock = Date.now() + 20_000
   db()
     .query(
@@ -312,7 +459,7 @@ test('a session-start notice dropped for budget stays unread until a stamping re
   )
   const env = { CLAUDE_CODE_SESSION_ID: 'budget-reader' }
   expect(claimNotices(false, env, clock + 1).map((notice) => notice.id)).toEqual([posted.id])
-  // The hook drops the whole board section here and therefore does not stamp its claimed ids.
+  // The hook does not stamp ids represented only by its title or fallback count.
   expect(readNotices(false, env, clock + 2).map((notice) => notice.id)).toEqual([posted.id])
 })
 
