@@ -82,7 +82,6 @@ test('Grok launch scopes a reader home and project while leaving a writer direct
 
   const readerLaunch = await prepareWorkerHomeLaunch({
     agent: grokAgent,
-    harnessName: 'grok',
     sandbox: 'host',
     runDir: readerRun,
     runId: 41,
@@ -116,7 +115,6 @@ test('Grok launch scopes a reader home and project while leaving a writer direct
   writeFileSync(join(writer, '.mcp.json'), '{"mcpServers":{"project":{"command":"writer-tree"}}}')
   const writerLaunch = await prepareWorkerHomeLaunch({
     agent: grokAgent,
-    harnessName: 'grok',
     sandbox: 'host',
     runDir: writerRun,
     runId: 42,

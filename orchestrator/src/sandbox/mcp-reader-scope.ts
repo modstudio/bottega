@@ -10,7 +10,7 @@ export type ReaderProxyServer = {
 }
 
 /** Select project server names without consulting the filesystem or process installation. */
-export function projectReaderServerNames(
+function projectReaderServerNames(
   configuredNames: string[],
   allowed: string[] | undefined,
   primary: string,

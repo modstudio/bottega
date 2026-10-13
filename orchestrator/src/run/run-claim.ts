@@ -157,33 +157,9 @@ export type ClaimInput = {
   carriedQuestionIds: number[]
 }
 
-export type ClaimResult = {
-  promptPath: string
-  originalSchemaPath: string | undefined
-  textReplyContract: boolean
-  schemaPath: string | undefined
-  started: number
-  launchKey: string | null
-  runToken: string
-  claim: { id: number }
-  keepTree: KeepTreeExemption | undefined
-  scratchDir: string
-  worktree: Worktree | null
-  changes: Changes | null
-  isolatedCwd: string | null
-  removeIsolatedCwd: (() => void) | null
-  provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null
-  retargetDiagnostic: string | null
-  mcpSetupHeader: string | null
-  mcpTrustGranted: boolean
-  grokMcpEnvironment: Record<string, string>
-  sandboxRunDir: string
-  sandboxRunDirExisted: boolean
-  cwd: string
-  prompt: string
-  mcpConnection: McpConnection | null
-  usingMcp: boolean
-}
+import type { ClaimResult } from './run-claim-types.ts'
+
+export type { ClaimResult } from './run-claim-types.ts'
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
@@ -930,12 +906,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       ensureProjectMainStack(project, 'mcp')
-      const claimedConfig = prepareClaimedWorkerMcpConfig({
-        cwd,
-        checkout: project.path,
-        inherited: resume.workspaceSource === 'retained',
-        writesRepository: writesJob,
-      })
       const grokScope = prepareClaimedGrokMcpScope(
         {
           agent: a,
@@ -944,7 +914,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           cwd,
           project,
           writesRepository: writesJob,
-          config: claimedConfig,
+          config: prepareClaimedWorkerMcpConfig({
+            cwd,
+            checkout: project.path,
+            inherited: resume.workspaceSource === 'retained',
+            writesRepository: writesJob,
+          }),
           treeConfig: readMcpConfig(cwd),
         },
         () =>

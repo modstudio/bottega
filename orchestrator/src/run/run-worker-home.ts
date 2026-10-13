@@ -1,4 +1,6 @@
 // concern: run worker home provisioning and failed-launch cleanup
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { McpServerConfig } from '../mcp/mcp-probe.ts'
@@ -22,6 +24,28 @@ import {
 import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { childEnv } from './run-process.ts'
+
+export function codexPrivateTempEnvironment(
+  harness: string,
+  repoJob: boolean,
+  scratchDir: string,
+): Record<string, string> {
+  if (harness !== 'codex' || repoJob) return {}
+  const privateTemp = join(scratchDir, 'tmp')
+  mkdirSync(privateTemp, { recursive: true, mode: 0o700 })
+  return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
+}
+
+export function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
+  return harness === 'grok' && usingMcp
+}
+
+export function projectMcpServerName(
+  connection: { server: string } | null,
+  project: Project | null,
+): string | null {
+  return connection?.server ?? project?.settings.mcpServer ?? project?.name ?? null
+}
 
 /** Give cwd-discovered project MCP configuration only to a repository writer. */
 export function prepareClaimedWorkerMcpConfig(input: {
@@ -50,7 +74,6 @@ export function trackedWorkerEnvironment(
 
 export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
-  harnessName: string
   sandbox: RunSandbox
   runDir: string
   runId: number
@@ -62,7 +85,7 @@ export async function prepareWorkerHomeLaunch(input: {
   grokReaderServers: Record<string, ReaderProxyServer> | null
   cwd: string
 }) {
-  const harness = input.harnessName
+  const harness = workerHarnessName(input.agent)
   const hasRunScopedHome = harness === 'codex' || harness === 'grok' || input.sandbox === 'srt'
   const home = hasRunScopedHome
     ? prepareSandboxHome(harness, input.runDir, process.env, input.sandbox)
