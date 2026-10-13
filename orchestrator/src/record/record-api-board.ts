@@ -23,7 +23,9 @@ import {
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
 } from './record-board-contract.ts'
+import { type BoardStreamClock, boardStreamResponse } from './record-board-stream.ts'
 import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
+import type { BoardWakeSource } from './record-board-wake.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
 
@@ -92,6 +94,9 @@ const holderBody = z.object({ holderSession: sessionSchema }).strict()
 const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string().min(1) }).strict()
 
 export type RecordBoardDeps = {
+  boardWakeSource: BoardWakeSource
+  boardStreamClock?: BoardStreamClock
+  readBoardHead(input: BoardTenant): Promise<string>
   listBoardMessages(input: BoardTenant & HostedBoardOverviewFilters): Promise<HostedBoardOverview>
   postBoardMessage(input: BoardTenant & HostedBoardPostInput): Promise<HostedBoardMessage>
   replyBoardMessage(
@@ -318,6 +323,17 @@ export function registerRecordBoardRoutes(
     } catch (error) {
       return writeError(context, error)
     }
+  })
+  app.get('/v1/board/stream', (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    return boardStreamResponse({
+      tenant,
+      wakeSource: deps.boardWakeSource,
+      readHead: deps.readBoardHead,
+      signal: context.req.raw.signal,
+      clock: deps.boardStreamClock,
+    })
   })
   app.put('/v1/board/claims', async (context) => {
     const tenant = tenantOf(context)

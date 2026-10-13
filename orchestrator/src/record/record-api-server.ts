@@ -9,7 +9,7 @@ import {
   recordIdentity,
   setActiveRecordSpaceForSession,
 } from './record-auth.ts'
-import { listHostedBoardChanges } from './record-board-changes.ts'
+import { listHostedBoardChanges, readHostedBoardHead } from './record-board-changes.ts'
 import {
   listHostedBoardClaims,
   releaseHostedBoardClaim,
@@ -29,6 +29,7 @@ import {
 } from './record-board-messages.ts'
 import { listHostedBoardOverview } from './record-board-overview.ts'
 import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipts.ts'
+import { createBoardWakeSource } from './record-board-wake.ts'
 import {
   addDataKeyWraps,
   createDataKey,
@@ -115,9 +116,10 @@ export function recordApiServerConfig(environment: ServerEnvironment = process.e
   }
 }
 
-export function startRecordApiServer(environment: ServerEnvironment = process.env) {
+export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
+  const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const migrations = recordMigrationCount()
   const app = recordApi({
     recordUrl: config.recordUrl,
@@ -217,6 +219,8 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     readBoardThread: readHostedBoardThread,
     putBoardReceipt: putHostedBoardReceipt,
     boardStatus: hostedBoardStatus,
+    boardWakeSource,
+    readBoardHead: readHostedBoardHead,
     listBoardChanges: listHostedBoardChanges,
     takeBoardClaim: takeHostedBoardClaim,
     renewBoardClaim: renewHostedBoardClaim,
@@ -224,11 +228,14 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
-  return Bun.serve({
+  const server = Bun.serve({
     hostname: '0.0.0.0',
     port: config.port,
-    fetch: async (request) => {
+    fetch: async (request, bunServer) => {
       const started = performance.now()
+      if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
+        bunServer.timeout(request, 0)
+      }
       const response = await app.fetch(request)
       console.log(
         `${request.method} ${new URL(request.url).pathname} ${response.status} ${Math.round(performance.now() - started)}ms`,
@@ -236,6 +243,11 @@ export function startRecordApiServer(environment: ServerEnvironment = process.en
       return response
     },
   })
+  const stop = server.stop.bind(server)
+  server.stop = async (closeActiveConnections) => {
+    await Promise.all([stop(closeActiveConnections), boardWakeSource.close()])
+  }
+  return server
 }
 
 if (import.meta.main) {
@@ -247,6 +259,6 @@ if (import.meta.main) {
       process.exitCode = 1
     }
   } else {
-    startRecordApiServer()
+    await startRecordApiServer()
   }
 }

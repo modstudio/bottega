@@ -214,6 +214,22 @@ test('board changes query refuses a non-integer after cursor', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board changes query' })
 })
 
+test('board stream binds the caller tenant and sends its visible head immediately', async () => {
+  const app = appWith(identity, {
+    readBoardHead: async (input: { userId: string; spaceIds: string[] }) => {
+      expect(input.userId).toBe(identity.user.id)
+      expect(input.spaceIds).toEqual(['space-a', 'space-b'])
+      return '42'
+    },
+  })
+  const response = await app.request('/v1/board/stream')
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('text/event-stream')
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain('id: 42')
+  await reader.cancel()
+})
+
 test('a board trigger exception is a named refusal not a server error', async () => {
   const app = appWith(identity, {
     replyBoardMessage: async () => {

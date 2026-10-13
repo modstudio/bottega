@@ -11,9 +11,11 @@ import { startRecordApiServer } from '../src/record/record-api-server.ts'
 import { recordAuth } from '../src/record/record-auth.ts'
 import { SIGN_UP_AUTH } from './fixtures/record-auth-postgres.ts'
 import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
+import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
+import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -40,16 +42,6 @@ const EMAIL = {
 const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
 const ADOPTION_PROJECT = 'board-api-adoption'
-const expiresAt = '2099-01-01T00:00:00.000Z'
-
-function headers(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-}
-
-async function json(response: Response): Promise<Record<string, unknown>> {
-  return (await response.json()) as Record<string, unknown>
-}
-
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -57,7 +49,7 @@ export function registerBoardApiProofs(input: {
   succeeds: Succeeds
 }): void {
   let origin = ''
-  let server: ReturnType<typeof startRecordApiServer> | undefined
+  let server: Awaited<ReturnType<typeof startRecordApiServer>> | undefined
   let tokenA = ''
   let tokenB = ''
   let tokenC = ''
@@ -78,7 +70,7 @@ export function registerBoardApiProofs(input: {
         ('${IDS.inviteC}','${input.spaceA}','${EMAIL.c}','${input.userA}','member','pending',now() + interval '1 day',now()),
         ('${IDS.inviteD}','${input.spaceA}','${EMAIL.d}','${input.userA}','member','pending',now() + interval '1 day',now());`,
     )
-    server = startRecordApiServer({
+    server = await startRecordApiServer({
       ...process.env,
       PORT: '0',
       ORCH_RECORD_URL: input.actorUrl,
@@ -146,25 +138,18 @@ export function registerBoardApiProofs(input: {
   /** Distinct per case so the author rate cap cannot make a case depend on earlier posts. */
   const caseSession = (label: string) => `board-api-${label}`
 
-  const notice = (
-    id: string,
-    audience: string,
-    authorSession: string,
-    extra: Record<string, unknown> = {},
-  ) => ({
-    id,
-    kind: 'notice',
-    audience,
-    title: `title-${id.slice(0, 8)}`,
-    body: `body-${id}`,
-    expiresAt,
-    authorSession,
-    ...extra,
-  })
-
   const cacheStore = (session: string) => postgresBoardCacheStore(session, PROJECT)
 
   const cacheClient = (token: string): RecordApiClient => postgresBoardCacheClient(origin, token)
+
+  registerBoardStreamProof({
+    actorUrl: input.actorUrl,
+    origin: () => origin,
+    token: () => tokenC,
+    userId: () => userA,
+    activeSpaceId: () => spaceA,
+    spaceIds: () => [spaceA, spaceB],
+  })
 
   registerBoardAdoptionProof({
     origin: () => origin,

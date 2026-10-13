@@ -18,7 +18,7 @@ export function registerStaleMembershipProof(input: {
        VALUES ('${newRecordId()}','${input.spaceId()}','${STALE_MEMBERSHIP_EMAIL}',
          '${input.inviterId()}','member','pending',now() + interval '1 day',now());`,
     )
-    const server = startRecordApiServer({
+    const server = await startRecordApiServer({
       ...process.env,
       PORT: '0',
       ORCH_RECORD_URL: input.actorUrl,

@@ -30,6 +30,8 @@ export function idleBoardDeps(): RecordBoardDeps {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
   return {
+    boardWakeSource: { subscribe: () => () => undefined },
+    readBoardHead: async () => '0',
     listBoardMessages: unused,
     postBoardMessage: unused,
     replyBoardMessage: unused,
