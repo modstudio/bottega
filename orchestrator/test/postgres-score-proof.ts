@@ -59,7 +59,7 @@ export async function proveProjectSpaceRecordSync(input: {
     await syncRecord({
       local,
       identity: { id: input.machineId, name: 'proof-machine' },
-      projectSpaces: { alpha: 'alpha-space', beta: 'beta-space' },
+      projectSpaces: { alpha: 'space-a', beta: 'space-b' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
   const first = input.asSpace(
@@ -237,7 +237,8 @@ export async function proveScoreRecordSync(input: {
     ])
     expect(cache.query('SELECT run_id FROM score ORDER BY run_id').all()).toEqual([{ run_id: 991 }])
   } finally {
-    installRecordApiClient(memoryClient)
+    // The later sync in this proof uploads through the real hosted route.
+    installRecordApiClient(null)
     cache.close()
   }
 

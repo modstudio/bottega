@@ -17,6 +17,9 @@ type Input = {
   admin(statement: string): string
 }
 
+// A machine may hold one run per local id, so every proof row takes its own.
+let nextLocalId = 7000
+
 const runPayload = (input: {
   id: string
   machineId: string
@@ -29,7 +32,7 @@ const runPayload = (input: {
   )
   Object.assign(row, {
     ...input,
-    localId: 1,
+    localId: nextLocalId++,
     startedAt: '2026-10-13T01:00:00.000Z',
     agent: 'codex',
     job: 'proof',

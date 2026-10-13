@@ -338,7 +338,9 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: authUserA,
+    get userId() {
+      return authUserA
+    },
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
@@ -1038,11 +1040,19 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: authUserA,
-    spaceId: authSpaceA,
-    otherSpaceId: authSpaceB,
+    get userId() {
+      return authUserA
+    },
+    get spaceId() {
+      return authSpaceA
+    },
+    get otherSpaceId() {
+      return authSpaceB
+    },
     projectName: 'auth-a-project',
-    projectSpace: authSpaceA,
+    get projectSpace() {
+      return authSpaceA
+    },
     asSpace,
   })
 

@@ -82,7 +82,10 @@ export function registerProjectSpaceProofs(input: {
 
   registerHostedSyncAuthorizationProofs({
     machineId: input.machineId,
-    userId: input.userId,
+    // The suite fills the signed-in user in during setup, after registration.
+    get userId() {
+      return input.userId
+    },
     writeSpaceId: input.firstSpaceId,
     writeProjectName: 'alpha',
     token: input.token,
