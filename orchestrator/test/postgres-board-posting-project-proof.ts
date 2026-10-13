@@ -15,6 +15,7 @@ export function registerBoardPostingProjectProof(input: {
   originProject: string
   projectId: string
   originProjectId: string
+  ambiguousProject: string
 }): void {
   test('plain architects duplicate identity includes the posting project', async () => {
     const session = input.caseSession('architects-project-duplicate')
@@ -105,5 +106,75 @@ export function registerBoardPostingProjectProof(input: {
         `SELECT author_project_id IS NULL FROM board_message WHERE id='${rootId}';`,
       ),
     ).toBe('t')
+  })
+
+  test('an ambiguous posting project is omitted without weakening project-scoped audiences', async () => {
+    const rootId = newRecordId()
+    const replyId = newRecordId()
+    const sessionResponse = await input.post(input.tokenA(), {
+      ...notice(
+        rootId,
+        `session:${input.caseSession('ambiguous-recipient')}`,
+        input.caseSession('ambiguous-root'),
+      ),
+      project: input.ambiguousProject,
+    })
+    expect(sessionResponse.status).toBe(200)
+    const root = await json(sessionResponse)
+    expect((root.origin as Record<string, unknown>).project).toBeNull()
+    expect((root.origin as Record<string, unknown>).projectStored).toBe(false)
+
+    const replyResponse = await fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      headers: headers(input.tokenA()),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'Reply from an ambiguous posting project.',
+        authorSession: input.caseSession('ambiguous-reply'),
+        project: input.ambiguousProject,
+      }),
+    })
+    expect(replyResponse.status).toBe(200)
+    const reply = await json(replyResponse)
+    expect((reply.origin as Record<string, unknown>).project).toBeNull()
+    expect((reply.origin as Record<string, unknown>).projectStored).toBe(false)
+
+    const architectsResponse = await input.post(input.tokenA(), {
+      ...notice(newRecordId(), 'architects', input.caseSession('ambiguous-architects')),
+      project: input.ambiguousProject,
+    })
+    expect(architectsResponse.status).toBe(200)
+    const architects = await json(architectsResponse)
+    expect((architects.origin as Record<string, unknown>).project).toBeNull()
+    expect((architects.origin as Record<string, unknown>).projectStored).toBe(false)
+
+    for (const audience of [
+      `project:${input.ambiguousProject}`,
+      `architects:${input.ambiguousProject}`,
+    ]) {
+      const scoped = await input.post(input.tokenA(), {
+        ...notice(
+          newRecordId(),
+          audience,
+          input.caseSession(`ambiguous-${audience.split(':')[0]}`),
+        ),
+        project: input.ambiguousProject,
+      })
+      expect(scoped.status).toBe(400)
+      expect(JSON.stringify(await scoped.json())).toContain(
+        `unknown or invisible board project ${input.ambiguousProject}`,
+      )
+    }
+
+    expect(
+      input
+        .succeeds(
+          'postgres',
+          'postgres',
+          `SELECT author_project_id IS NULL FROM board_message
+         WHERE id IN ('${rootId}','${replyId}') ORDER BY id;`,
+        )
+        .split('\n'),
+    ).toEqual(['t', 't'])
   })
 }

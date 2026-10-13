@@ -207,6 +207,11 @@ export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<st
   return String(rows[0]!.id)
 }
 
+export async function resolvePostingProjectId(tx: SQL, name: string): Promise<string | null> {
+  const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
+  return rows.length === 1 ? String(rows[0]!.id) : null
+}
+
 function sessionOrNull(value: string | null | undefined): string | null {
   const actor = hostedBoardActor(value)
   if (actor.kind === 'architect')
@@ -480,7 +485,7 @@ async function prepareHostedPost(
       400,
     )
   const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const authorProjectId = postingProject ? await resolveVisibleProjectId(tx, postingProject) : null
+  const authorProjectId = postingProject ? await resolvePostingProjectId(tx, postingProject) : null
   if (audience.kind === 'architects' && audience.value)
     await resolveVisibleProjectId(tx, audience.value)
   const derived = hostedBoardScope(audience, projectId)
@@ -594,7 +599,7 @@ async function insertReplyCopyingRoot(
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-      ${input.project ? await resolveVisibleProjectId(tx, input.project) : null}::uuid,
+      ${input.project ? await resolvePostingProjectId(tx, input.project) : null}::uuid,
       'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
@@ -638,7 +643,7 @@ export async function replyHostedBoardMessage(
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
     requested.authorProjectId = input.project
-      ? await resolveVisibleProjectId(tx, input.project)
+      ? await resolvePostingProjectId(tx, input.project)
       : null
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
