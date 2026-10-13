@@ -97,7 +97,17 @@ function announceLine(at: string, announce: BoardWatchAnnounce): string {
       return `${at} exiting for a newer build`
     case 'pull-failed':
       return `${at} pull failed ${announce.detail}`
+    case 'pulling-again':
+      return `${at} pulling again`
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function isWatchShutdownAbort(signal: AbortSignal, error: unknown): boolean {
+  return signal.aborted && isAbortError(error)
 }
 
 function announce(input: BoardWatchLoopInput, decision: BoardWatchDecision): void {
@@ -117,11 +127,16 @@ export async function runBoardWatchLoop(input: BoardWatchLoopInput): Promise<num
     lastBuild: input.now(),
     startedBuild: input.startedBuild,
   }
-  while (!input.signal.aborted) {
-    const ended = await oneConnection(input, live, gate)
-    if (ended !== null) return ended
+  try {
+    while (!input.signal.aborted) {
+      const ended = await oneConnection(input, live, gate)
+      if (ended !== null) return ended
+    }
+    return 0
+  } catch (error) {
+    if (isWatchShutdownAbort(input.signal, error)) return 0
+    throw error
   }
-  return 0
 }
 
 async function oneConnection(
@@ -184,6 +199,7 @@ function connectionResult(result: number | 'reconnect' | 'stay'): number | null 
 
 function queuePull(input: BoardWatchLoopInput, live: LiveWatch, gate: PullGate): void {
   void requestPull(input, live, gate).catch((error) => {
+    if (isWatchShutdownAbort(input.signal, error)) return
     const reason = error instanceof Error ? error.message : String(error)
     const decision = decide(input, live.state, { kind: 'pull-failed', reason })
     live.state = decision.state
@@ -220,8 +236,10 @@ async function runOnePull(
   try {
     result = await input.pull()
   } catch (error) {
+    if (isWatchShutdownAbort(input.signal, error)) return
     result = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) }
   }
+  if (input.signal.aborted) return
   if (result.kind !== 'failed' && result.applied > 0)
     input.log(`${iso(input.now())} pulled ${result.applied}`)
   const event = boardWatchPullEvent(result, input.readCursor(), live.target)
@@ -281,7 +299,10 @@ async function readOrWait(
 ): Promise<{ kind: 'chunk'; value: Uint8Array | null } | { kind: 'timer' } | { kind: 'aborted' }> {
   pending.read ??= source.read()
   const raced = await Promise.race([
-    pending.read.then((value) => ({ kind: 'chunk' as const, value })),
+    pending.read.then(
+      (value) => ({ kind: 'chunk' as const, value }),
+      (error: unknown) => ({ kind: 'read-error' as const, error }),
+    ),
     wait(waitMs, signal).then((result) =>
       result === 'aborted'
         ? ({ kind: 'aborted' as const } as const)
@@ -289,6 +310,11 @@ async function readOrWait(
     ),
   ])
   if (raced.kind === 'chunk') pending.read = null
+  if (raced.kind === 'read-error') {
+    pending.read = null
+    if (isWatchShutdownAbort(signal, raced.error)) return { kind: 'aborted' }
+    throw raced.error
+  }
   return raced
 }
 

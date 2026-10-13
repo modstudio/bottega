@@ -17,6 +17,7 @@ export type BoardWatchState = {
   usedImmediateReconnect: boolean
   signedOut: boolean
   announcedSignedOut: boolean
+  pullFailedReason: string | null
 }
 
 export const initialBoardWatchState = (): BoardWatchState => ({
@@ -24,6 +25,7 @@ export const initialBoardWatchState = (): BoardWatchState => ({
   usedImmediateReconnect: false,
   signedOut: false,
   announcedSignedOut: false,
+  pullFailedReason: null,
 })
 
 export type BoardWatchEvent =
@@ -48,6 +50,7 @@ export type BoardWatchAnnounce =
   | { kind: 'unconfigured' }
   | { kind: 'newer-build' }
   | { kind: 'pull-failed'; detail: string }
+  | { kind: 'pulling-again' }
 
 export type BoardWatchDecision = {
   state: BoardWatchState
@@ -104,7 +107,7 @@ export function boardWatchPullEvent(
   if (behind || (result.kind === 'incomplete' && target === null)) {
     return { kind: 'pull-incomplete', progressed: (result.applied ?? 0) > 0 }
   }
-  if (progressed) return { kind: 'pull-progressed' }
+  if (progressed || result.kind === 'ok') return { kind: 'pull-progressed' }
   return null
 }
 
@@ -198,7 +201,7 @@ function decideEnded(state: BoardWatchState, jitter: number): BoardWatchDecision
 function decidePullRetry(
   state: BoardWatchState,
   jitter: number,
-  extras: { progressed?: boolean; announce?: BoardWatchAnnounce } = {},
+  extras: { progressed?: boolean; announce?: BoardWatchAnnounce | null } = {},
 ): BoardWatchDecision {
   const attempt = extras.progressed ? 0 : state.attempt
   return stay(
@@ -208,6 +211,28 @@ function decidePullRetry(
       delayMs: boardWatchBackoffMs(attempt, jitter),
       announce: extras.announce ?? null,
     },
+  )
+}
+
+function decidePullFailed(
+  state: BoardWatchState,
+  jitter: number,
+  reason: string,
+): BoardWatchDecision {
+  return decidePullRetry(
+    { ...state, pullFailedReason: reason },
+    jitter,
+    {
+      announce:
+        state.pullFailedReason === reason ? null : { kind: 'pull-failed', detail: reason },
+    },
+  )
+}
+
+function decidePullProgressed(state: BoardWatchState): BoardWatchDecision {
+  return stay(
+    { ...state, attempt: 0, pullFailedReason: null },
+    { announce: state.pullFailedReason !== null ? { kind: 'pulling-again' } : null },
   )
 }
 
@@ -238,12 +263,10 @@ export function decideBoardWatch(
     case 'unauthorized':
       return decideUnauthorized(state)
     case 'pull-failed':
-      return decidePullRetry(state, jitter, {
-        announce: { kind: 'pull-failed', detail: event.reason },
-      })
+      return decidePullFailed(state, jitter, event.reason)
     case 'pull-incomplete':
       return decidePullRetry(state, jitter, { progressed: event.progressed })
     case 'pull-progressed':
-      return stay({ ...state, attempt: 0 })
+      return decidePullProgressed(state)
   }
 }
