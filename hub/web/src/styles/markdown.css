@@ -135,13 +135,66 @@
 .markdown [role="note"] ol {
   color: inherit;
 }
-/* A diagram is a layout and paint root so its CSS cannot restyle the page. */
+/* A diagram sits on its own canvas, a plain sunken panel, and is a layout and paint root so its CSS cannot restyle the page. */
 .markdown .doc-mermaid {
   contain: layout paint;
+  box-sizing: border-box;
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-sunken);
+  padding: 1.25rem 1rem;
 }
 .markdown .doc-mermaid svg {
   display: block;
   max-width: none;
+  margin-inline: auto;
+  background: none !important;
+}
+/* Flat white boxes with a firm hairline; the first line of a box is its name, the rest its description. */
+.markdown .doc-mermaid .node rect,
+.markdown .doc-mermaid .node polygon,
+.markdown .doc-mermaid .node circle {
+  filter: none !important;
+  stroke-width: 1px;
+}
+.markdown .doc-mermaid .node .text-outer-tspan {
+  font-size: 0.8125rem;
+  fill: var(--text-muted);
+}
+.markdown .doc-mermaid .node .text-outer-tspan:first-child,
+.markdown .doc-mermaid .node .text-outer-tspan:first-child .text-inner-tspan {
+  font-size: 0.875rem;
+  font-weight: 600;
+  fill: var(--text-primary);
+}
+/* A group is a tinted region a shade darker than the canvas, with a dashed edge. This rule alone sets a group's fill and edge; the diagram theme does not. */
+.markdown .doc-mermaid .cluster rect {
+  filter: none !important;
+  fill: color-mix(in srgb, var(--text-primary) 6%, transparent) !important;
+  stroke: var(--text-muted) !important;
+  stroke-width: 1px;
+  stroke-dasharray: 4 4;
+}
+.markdown .doc-mermaid .edgeLabel text {
+  font-size: 0.75rem;
+  fill: var(--text-muted);
+}
+.markdown .doc-mermaid .cluster rect.doc-mermaid-group-backing {
+  fill: color-mix(in srgb, var(--text-primary) 6%, var(--surface-sunken)) !important;
+  stroke: none !important;
+}
+.markdown .doc-mermaid .cluster-label text,
+.markdown .doc-mermaid .cluster-label .text-inner-tspan {
+  font-size: 0.75rem;
+  font-weight: 600;
+  fill: var(--text-primary);
+}
+.markdown .doc-mermaid .flowchart-link {
+  stroke-width: 1px;
+}
+.markdown .doc-mermaid .marker {
+  transform: scale(0.8);
+  transform-box: fill-box;
+  transform-origin: center;
 }
 .markdown .doc-mermaid-error {
   margin: 0.5rem 0 0;
@@ -198,12 +251,33 @@
 }
 /* Content wider than the measure scrolls inside it instead of running under the next column. */
 .markdown .doc-overflow {
+  position: relative;
   margin: 0.75rem 0 0;
 }
+/* The expand control sits just above the content's corner and shows on hover or focus: it takes no row and covers no cell. */
 .markdown .doc-overflow-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.5rem;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.125rem);
+  z-index: 1;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+/* Keeps the pointer's path from the content up to the control inside the hover area. */
+.markdown .doc-overflow-actions::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 0.25rem;
+}
+.markdown .doc-overflow:hover .doc-overflow-actions,
+.markdown .doc-overflow-actions:focus-within {
+  opacity: 1;
+}
+@media (hover: none) {
+  .markdown .doc-overflow-actions {
+    opacity: 1;
+  }
 }
 .markdown .doc-overflow-scroll {
   max-width: 100%;
