@@ -126,7 +126,7 @@ function wasDelivered(messageId: number, reader: string, database = db()): boole
   return Boolean(receipt?.delivered_at)
 }
 
-function deliverableTo(
+export function deliverableTo(
   message: MessageRow,
   reader: string,
   clock: number,

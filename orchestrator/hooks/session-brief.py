@@ -796,6 +796,7 @@ def main() -> int:
     finally:
         # Emission is deliberately outside the catch-all above. Once health has been
         # assembled, no exception in supplemental notice work can swallow it.
+        board_emission_id = secrets.token_hex(16)
         if output is not None:
             sys.stdout.write(json.dumps(output) + "\n")
             sys.stdout.flush()
@@ -803,7 +804,12 @@ def main() -> int:
         if emitted_board_ids and inbox_env is not None and orch is not None:
             try:
                 subprocess.run(
-                    [orch, "board", "delivered", ",".join(str(item) for item in emitted_board_ids)],
+                    [
+                        orch, "board", "delivered",
+                        ",".join(str(item) for item in emitted_board_ids),
+                        "--session", sid, "--point", "session-start",
+                        "--emission", board_emission_id,
+                    ],
                     env=inbox_env,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

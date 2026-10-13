@@ -9,6 +9,7 @@ import sys
 from board_hook_common import (
     marker_path,
     mark_delivered,
+    new_emission_id,
     pending,
     read_marker,
     store_path,
@@ -18,19 +19,22 @@ from board_hook_common import (
 STOP_EMITTED_ID_LIMIT = 100
 
 
-def stop_state(session: str) -> tuple[str, int | None, list[str]]:
+def stop_state(session: str) -> tuple[str, int | None, list[str], str | None]:
     """The session's Stop state, or a None count when the marker cannot be read."""
     path = marker_path("stop", session)
     value = read_marker(path)
     if not isinstance(value, dict):
-        return path, None, []
+        return path, None, [], None
     count = value.get("blocks", 0)
     if not isinstance(count, int) or count < 0:
         count = 0
     emitted = value.get("emitted_ids", [])
     if not isinstance(emitted, list) or any(not isinstance(item, str) for item in emitted):
         emitted = []
-    return path, count, list(dict.fromkeys(emitted))
+    emission_id = value.get("emission_id")
+    if not isinstance(emission_id, str) or not emission_id:
+        emission_id = None
+    return path, count, list(dict.fromkeys(emitted)), emission_id
 
 
 def notice_summary(notices, stopping: bool = False) -> str:
@@ -59,20 +63,23 @@ def main() -> int:
         ):
             return 0
         delivery, overflow, notices = pending(session, exclude_acknowledgements=True)
-        path, count, emitted = stop_state(session)
+        path, count, emitted, recovery_emission_id = stop_state(session)
         if count is None:
             return 0
 
         previously_emitted = set(emitted)
         if emitted:
             try:
-                mark_delivered(session, emitted)
+                mark_delivered(
+                    session, emitted, "stop", recovery_emission_id or new_emission_id(), True
+                )
                 emitted = []
             except Exception:
                 pass
 
         ordinary = [item for item in delivery if item["id"] not in previously_emitted]
         ordinary_ids = [item["id"] for item in ordinary]
+        emission_id = new_emission_id() if ordinary_ids else None
         limit = int(os.environ["BOARD_ACK_STOP_BLOCKS"])
         acknowledgement_block = bool(notices) and count < limit
         next_count = count + 1 if acknowledgement_block else count
@@ -83,6 +90,7 @@ def main() -> int:
             {
                 "blocks": next_count,
                 "emitted_ids": ([*emitted, *ordinary_ids])[-STOP_EMITTED_ID_LIMIT:],
+                "emission_id": emission_id or (recovery_emission_id if emitted else None),
             },
         ):
             return 0
@@ -100,8 +108,11 @@ def main() -> int:
             }
             sys.stdout.write(json.dumps(value) + "\n")
             sys.stdout.flush()
-            mark_delivered(session, ordinary_ids)
-            write_marker(path, {"blocks": next_count, "emitted_ids": emitted})
+            mark_delivered(session, ordinary_ids, "stop", emission_id, True)
+            write_marker(
+                path,
+                {"blocks": next_count, "emitted_ids": emitted, "emission_id": None},
+            )
         elif acknowledgement_block:
             value = {"decision": "block", "reason": notice_summary(notices)}
             sys.stdout.write(json.dumps(value) + "\n")

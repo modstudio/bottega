@@ -31,7 +31,7 @@ const BOARD_REFRESH_USER_KEY = 'board_hosted_signed_in_user'
 export const BOARD_CACHE_OWNER_KEY = 'board_hosted_cache_owner'
 const BOARD_VERIFIED_AT_KEY = 'board_hosted_verified_at'
 const BOARD_MONITOR_VERIFICATION_KEY = 'board_hosted_monitor_verification'
-const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
+export const BOARD_RECEIPT_WRITE_BUDGET_MS = 250
 export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 
 export type HostedCacheNotice = {
@@ -491,7 +491,11 @@ export function cachedAudienceAtPosting(
 export async function markCachedHostedDelivered(
   reader: string,
   ids: string[],
-  input: { client?: RecordApiClient; database?: Database; clock?: number } = {},
+  input: {
+    client?: RecordApiClient
+    database?: Database
+    clock?: number
+  } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
   const at = new Date(input.clock ?? Date.now()).toISOString()
@@ -507,31 +511,49 @@ export async function markCachedHostedDelivered(
       (JSON.parse(row.payload) as HostedBoardMessage).createdAt,
       database,
     )
-    database
-      .query(
-        `INSERT INTO hosted_board_receipt_cache(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
-       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
-      )
-      .run(id, reader, posting ? 1 : 0, at)
-    try {
-      await within(
-        client.putBoardReceipt({
-          messageId: id,
-          readerSession: reader,
-          audienceAtPosting: posting,
-          delivered: true,
-        }),
-        deadline - Date.now(),
-      )
+    writeTransaction(() => {
       database
         .query(
-          `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
-           WHERE message_id=? AND reader_session=?`,
+          `INSERT INTO hosted_board_receipt_cache(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
         )
-        .run(id, reader)
-    } catch {}
+        .run(id, reader, posting ? 1 : 0, at)
+    }, database)
+    await syncCachedHostedReceipt(reader, id, posting, { client, database, deadline })
   }
+}
+
+export async function syncCachedHostedReceipt(
+  reader: string,
+  id: string,
+  posting: boolean,
+  input: {
+    client?: RecordApiClient
+    database?: Database
+    deadline?: number
+  } = {},
+): Promise<void> {
+  const database = input.database ?? writableDb()
+  const client = input.client ?? recordApiClient()
+  const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
+  try {
+    await within(
+      client.putBoardReceipt({
+        messageId: id,
+        readerSession: reader,
+        audienceAtPosting: posting,
+        delivered: true,
+      }),
+      deadline - Date.now(),
+    )
+    database
+      .query(
+        `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
+           WHERE message_id=? AND reader_session=?`,
+      )
+      .run(id, reader)
+  } catch {}
 }
 
 export function reapHostedBoardCache(
