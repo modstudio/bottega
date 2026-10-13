@@ -89,39 +89,7 @@ function registerBoardDeliveredCommand(board: Command): void {
     })
 }
 
-export function registerBoardCommands(program: Command): void {
-  const board = program.command('board')
-  registerBoardClaimCommands(board, parseBoardDuration)
-  registerBoardReachCommand(board)
-  registerBoardDeliveredCommand(board)
-  board
-    .command('adopt')
-    .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
-      const total = Number(value)
-      if (!/^\d+$/.test(value) || !Number.isSafeInteger(total))
-        throw new Error('--confirm must be a non-negative integer')
-      return total
-    })
-    .option('--json')
-    .action(async (options) => {
-      const result = await adoptHostedBoard({ confirm: options.confirm })
-      if (options.json) return console.log(JSON.stringify(result))
-      console.log(result.note)
-      for (const kind of ['notice', 'question', 'reply', 'claim'] as const)
-        console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
-      console.log(`receipt: ${result.receipts} will be uploaded`)
-      for (const row of result.stays)
-        console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
-      if (result.status === 'plan')
-        console.log(`rerun with: orch board adopt --confirm ${result.total}`)
-      else {
-        console.log(
-          `moved ${result.uploaded}; stayed ${result.refused}; remaining ${result.remaining}`,
-        )
-        if (result.message) console.log(result.message)
-      }
-    })
-  registerBoardWatchCommand(board)
+function registerBoardPendingCommand(board: Command): void {
   board
     .command('pending')
     .requiredOption('--session <id>')
@@ -155,6 +123,42 @@ export function registerBoardCommands(program: Command): void {
         }),
       )
     })
+}
+
+export function registerBoardCommands(program: Command): void {
+  const board = program.command('board')
+  registerBoardClaimCommands(board, parseBoardDuration)
+  registerBoardReachCommand(board)
+  registerBoardDeliveredCommand(board)
+  registerBoardPendingCommand(board)
+  board
+    .command('adopt')
+    .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
+      const total = Number(value)
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(total))
+        throw new Error('--confirm must be a non-negative integer')
+      return total
+    })
+    .option('--json')
+    .action(async (options) => {
+      const result = await adoptHostedBoard({ confirm: options.confirm })
+      if (options.json) return console.log(JSON.stringify(result))
+      console.log(result.note)
+      for (const kind of ['notice', 'question', 'reply', 'claim'] as const)
+        console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
+      console.log(`receipt: ${result.receipts} will be uploaded`)
+      for (const row of result.stays)
+        console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
+      if (result.status === 'plan')
+        console.log(`rerun with: orch board adopt --confirm ${result.total}`)
+      else {
+        console.log(
+          `moved ${result.uploaded}; stayed ${result.refused}; remaining ${result.remaining}`,
+        )
+        if (result.message) console.log(result.message)
+      }
+    })
+  registerBoardWatchCommand(board)
   board
     .command('list')
     .option('--kind <kind>', 'limit to notice or question', (value: string) => {
