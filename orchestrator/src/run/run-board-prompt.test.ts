@@ -37,6 +37,7 @@ const notice = (id: number, ackRequired: boolean, createdAt: string, text = `not
   ackRequired,
   createdAt,
   text,
+  oneLine: text,
 })
 
 test('a dispatch-delivered notice is not returned by the worker pull path', async () => {

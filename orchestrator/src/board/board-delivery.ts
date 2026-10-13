@@ -36,6 +36,7 @@ const sessionReader = (env: Record<string, string | undefined>) =>
 type BoardDeliveryNotice = {
   id: string
   text: string
+  oneLine: string
   ackRequired: boolean
   createdAt: string
 }
@@ -55,9 +56,15 @@ const splitBoardIds = (sourceIds: Array<string | number>) => {
 const deliveryNotice = (notice: {
   id: number | string
   text: string
+  oneLine: string
   ackRequired: boolean
   createdAt: string
 }): BoardDeliveryNotice => ({ ...notice, id: String(notice.id) })
+
+const deliveryWarning = (...warnings: Array<string | null>): string | null => {
+  const unique = [...new Set(warnings.filter((warning): warning is string => warning !== null))]
+  return unique.length ? unique.join(' ') : null
+}
 
 export async function claimBoardNotices(
   all = false,
@@ -72,13 +79,13 @@ export async function claimBoardNotices(
   if (refreshed.status === 'local')
     return {
       notices: local.notices.map(deliveryNotice),
-      warning: null,
+      warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(sessionReader(env), all)
   return {
     notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
-    warning: hostedBoardVerificationWarning(),
+    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }
 }
@@ -116,13 +123,13 @@ export async function claimRunBoardNotices(
   if (refreshed.status === 'local')
     return {
       notices: local.notices.map(deliveryNotice),
-      warning: null,
+      warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(reader, all)
   return {
     notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
-    warning: hostedBoardVerificationWarning(),
+    warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }
 }

@@ -133,3 +133,13 @@ export function renderBoardNotice(message: {
     quoteBoardBody(message.body),
   ].join('\n')
 }
+
+export function renderBoardNoticeOneLine(message: {
+  id: number | string
+  title: string
+  sender: string
+  ackRequired: boolean
+}): string {
+  const acknowledgement = message.ackRequired ? 'required' : 'not required'
+  return `Board message ${boardHeaderValue(message.id)}: ${boardHeaderValue(message.title.slice(0, BOARD_TITLE_MAX_CHARS) || 'untitled')} — from ${boardHeaderValue(message.sender)}; acknowledgement ${acknowledgement}.`
+}

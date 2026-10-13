@@ -28,9 +28,17 @@ import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions
 import { watchHostedBoard } from './board-watch.ts'
 
 function registerBoardWatchCommand(board: Command): void {
-  board.command('presence').action(() => {
-    recordPresence()
-  })
+  board
+    .command('presence')
+    .option('--started-at <instant>', 'session-start instant', (value: string) => {
+      const parsed = new Date(value)
+      if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value)
+        throw new Error('--started-at must be an ISO 8601 UTC instant with milliseconds')
+      return value
+    })
+    .action((options) => {
+      recordPresence(process.cwd(), process.env, options.startedAt)
+    })
   board
     .command('watch')
     .description('hold the hosted board stream and refresh the local cache')
@@ -138,6 +146,7 @@ export function registerBoardCommands(program: Command): void {
             requiresAcknowledgement: notice.requiresAcknowledgement,
           })),
           overflow: delivery.overflow,
+          warning: delivery.warning,
           pendingAcknowledgements: delivery.pendingAcknowledgements.map((notice) => ({
             id: notice.id,
             text: notice.text,

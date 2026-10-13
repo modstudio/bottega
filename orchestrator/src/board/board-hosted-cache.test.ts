@@ -801,7 +801,7 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
   expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`)).toBe(false)
 })
 
-test('hosted push selection withholds older ordinary messages and keeps required and newer messages', () => {
+test('hosted push selection withholds every older message and keeps newer messages', () => {
   const database = db()
   const beganAt = '2026-10-05T12:00:00.000Z'
   database
@@ -837,7 +837,7 @@ test('hosted push selection withholds older ordinary messages and keeps required
       database,
     ),
   ).toMatchObject({
-    notices: [{ id: rows[1]!.id }, { id: rows[2]!.id }],
-    withheldOlderCount: 1,
+    notices: [{ id: rows[2]!.id }],
+    withheldOlderCount: 2,
   })
 })

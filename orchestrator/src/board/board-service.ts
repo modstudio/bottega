@@ -12,8 +12,8 @@ import {
   parseAudience,
   requireRealSession,
 } from './board-policy.ts'
-import { messageIsDueForPush } from './board-push-policy.ts'
-import { renderBoardNotice } from './board-render.ts'
+import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import {
   addressed,
   boardActor,
@@ -113,8 +113,8 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReader(runId: number): string {
-  const row = db()
+export function runReader(runId: number, database = db()): string {
+  const row = database
     .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
     .get(runId) as { root_id: number } | null
   if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
@@ -153,6 +153,12 @@ function render(message: MessageRow, worker = false, database = db()) {
         rootTitle: root.title,
         body: message.body,
       }),
+      oneLine: renderBoardNoticeOneLine({
+        id: message.id,
+        title: root.title,
+        sender: originText(boardOrigin(message)),
+        ackRequired: false,
+      }),
     }
   }
   if (message.kind === 'question') {
@@ -167,6 +173,12 @@ function render(message: MessageRow, worker = false, database = db()) {
         tags: tags
           .filter((tag) => tag.origin === 'sender')
           .map((tag) => `${tag.kind}:${tag.value}`),
+      }),
+      oneLine: renderBoardNoticeOneLine({
+        id: message.id,
+        title: message.title ?? '',
+        sender: originText(boardOrigin(message)),
+        ackRequired: false,
       }),
     }
   }
@@ -187,6 +199,12 @@ function render(message: MessageRow, worker = false, database = db()) {
       tags: tags.filter((tag) => tag.origin === 'sender'),
       worker,
     }),
+    oneLine: renderBoardNoticeOneLine({
+      id: message.id,
+      title: message.title ?? '',
+      sender: originText(boardOrigin(message)),
+      ackRequired: message.ack_required === 1,
+    }),
   }
 }
 
@@ -194,18 +212,19 @@ export function claimRunNotices(
   runId: number,
   all = false,
   clock = Date.now(),
-): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
-  const reader = runReader(runId)
-  return messageRows()
+  database = db(),
+): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
+  const reader = runReader(runId, database)
+  return messageRows(database)
     .filter(
       (row) =>
         row.kind === 'notice' &&
-        rowIsLive(row, clock) &&
-        addressed(row, reader, clock) &&
-        (all || !wasDelivered(row.id, reader)),
+        rowIsLive(row, clock, database) &&
+        addressed(row, reader, clock, database) &&
+        (all || !wasDelivered(row.id, reader, database)),
     )
     .map((row) => ({
-      ...render(row, true),
+      ...render(row, true, database),
       ackRequired: row.ack_required === 1,
       createdAt: row.created_at,
     }))
@@ -216,19 +235,25 @@ export function claimRunPushNotices(
   all = false,
   clock = Date.now(),
   database = db(),
-): { notices: ReturnType<typeof claimRunNotices>; withheldOlderCount: number } {
-  const reader = runReader(runId)
+): {
+  notices: ReturnType<typeof claimRunNotices>
+  withheldOlderCount: number
+  warning: string | null
+} {
+  const run = database
+    .query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(runId) as { root_id: number } | null
+  if (!run)
+    return {
+      ...selectPushNotices(null, []),
+      warning: missingReaderStartWarning(`run:${runId}`),
+    }
+  const reader = `run:${run.root_id}`
   const beganAt = boardReaderBeganAt(reader, database)
-  if (!beganAt) throw new Error(`run reader ${reader} has no start time; repair the run row`)
-  const candidates = claimRunNotices(runId, all, clock)
-  const notices = candidates.filter((notice) =>
-    messageIsDueForPush({
-      postedAt: notice.createdAt,
-      readerBeganAt: beganAt,
-      acknowledgementRequired: notice.ackRequired,
-    }),
-  )
-  return { notices, withheldOlderCount: candidates.length - notices.length }
+  return {
+    ...selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database)),
+    warning: beganAt === null ? missingReaderStartWarning(reader) : null,
+  }
 }
 
 export function markRunNoticesDelivered(runId: number, ids: number[], clock = Date.now()): void {
@@ -260,7 +285,7 @@ export function claimNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
-): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
+): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
     (row) =>
@@ -281,22 +306,18 @@ export function claimPushNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
-): { notices: ReturnType<typeof claimNotices>; withheldOlderCount: number } {
+): {
+  notices: ReturnType<typeof claimNotices>
+  withheldOlderCount: number
+  warning: string | null
+} {
   const reader = boardReader(env)
-  const beganAt = boardReaderBeganAt(reader, database)
-  if (!beganAt)
-    throw new Error(
-      `board reader ${reader} has no session start; run orch board presence before push delivery`,
-    )
-  const candidates = claimNotices(all, env, clock, database)
-  const notices = candidates.filter((notice) =>
-    messageIsDueForPush({
-      postedAt: notice.createdAt,
-      readerBeganAt: beganAt,
-      acknowledgementRequired: notice.ackRequired,
-    }),
-  )
-  return { notices, withheldOlderCount: candidates.length - notices.length }
+  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  return {
+    ...selectPushNotices(beganAt, claimNotices(all, env, clock, database)),
+    warning:
+      reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
+  }
 }
 
 export function markNoticesDelivered(
@@ -330,7 +351,7 @@ export function readNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string; ackRequired: boolean; createdAt: string }[] {
+): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
   const notices = claimNotices(all, env, clock)
   markNoticesDelivered(
     notices.map((notice) => notice.id),

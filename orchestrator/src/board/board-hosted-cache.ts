@@ -19,8 +19,8 @@ import {
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
-import { messageIsDueForPush } from './board-push-policy.ts'
-import { boardHeaderValue, renderBoardNotice } from './board-render.ts'
+import { missingReaderStartWarning, selectPushNotices } from './board-push-policy.ts'
+import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import { renderBoardQuestion, renderBoardReply } from './board-thread-render.ts'
@@ -38,6 +38,7 @@ export const BOARD_VERIFICATION_WARNING_MAX_CHARS = 500
 export type HostedCacheNotice = {
   id: string
   text: string
+  oneLine: string
   ackRequired: boolean
   createdAt: string
 }
@@ -537,6 +538,15 @@ export function claimCachedHosted(
     .map(({ message, tags }) => ({
       id: message.id,
       text: renderCached(message, tags, messages, reader.startsWith('run:')),
+      oneLine: renderBoardNoticeOneLine({
+        id: message.id,
+        title:
+          message.kind === 'reply'
+            ? (messages.find((candidate) => candidate.id === message.threadRootId)?.title ?? '')
+            : (message.title ?? ''),
+        sender: originText(message.origin),
+        ackRequired: message.ackRequired,
+      }),
       ackRequired: message.ackRequired,
       createdAt: message.createdAt,
     }))
@@ -547,33 +557,19 @@ export function claimCachedHostedForPush(
   all = false,
   clock = Date.now(),
   database: Database = db(),
-): { notices: HostedCacheNotice[]; withheldOlderCount: number } {
-  const beganAt = boardReaderBeganAt(reader, database)
-  if (!beganAt) throw new Error(`board reader ${reader} has no start time; repair its presence`)
-  const candidates = claimCachedHosted(reader, all, clock, database)
-  const notices = candidates.filter((notice) =>
-    messageIsDueForPush({
-      postedAt: notice.createdAt,
-      readerBeganAt: beganAt,
-      acknowledgementRequired: notice.ackRequired,
-    }),
-  )
-  return { notices, withheldOlderCount: candidates.length - notices.length }
+): { notices: HostedCacheNotice[]; withheldOlderCount: number; warning: string | null } {
+  const beganAt = reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database)
+  return {
+    ...selectPushNotices(beganAt, claimCachedHosted(reader, all, clock, database)),
+    warning:
+      reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
+  }
 }
 
 function audienceAtPosting(reader: string, createdAt: string, database: Database): boolean {
-  const run = /^run:(\d+)$/.exec(reader)
-  if (run) {
-    const row = database.query('SELECT started_at FROM run WHERE id=?').get(Number(run[1])) as {
-      started_at: string
-    } | null
-    return Boolean(row && row.started_at <= createdAt)
-  }
   if (reader === OPERATOR_READER) return true
-  const row = database
-    .query('SELECT COALESCE(first_seen,last_seen) first_seen FROM presence WHERE session_id=?')
-    .get(reader) as { first_seen: string } | null
-  return Boolean(row && row.first_seen <= createdAt)
+  const beganAt = boardReaderBeganAt(reader, database)
+  return beganAt !== null && beganAt <= createdAt
 }
 
 export function cachedAudienceAtPosting(

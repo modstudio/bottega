@@ -13,6 +13,7 @@ import {
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
 import { requireRealSession } from './board-policy.ts'
+import { selectPushNotices } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -26,7 +27,14 @@ import {
   renderPendingAcknowledgement,
 } from './board-render.ts'
 import { claimPushNotices, deliverableTo } from './board-service.ts'
-import { addressed, boardOrigin, messageRows, originText, rowIsLive } from './board-store.ts'
+import {
+  addressed,
+  boardOrigin,
+  boardReaderBeganAt,
+  messageRows,
+  originText,
+  rowIsLive,
+} from './board-store.ts'
 
 type DeliveryInput = {
   session: string
@@ -50,10 +58,11 @@ const receiptAt = (database: Database, table: string, id: string | number, sessi
 
 function localPendingAcknowledgements(
   session: string,
+  beganAt: string | null,
   clock: number,
   database: Database,
 ): BoardDelivery[] {
-  return messageRows(database)
+  const candidates = messageRows(database)
     .filter((row) => {
       const receipt = receiptAt(database, 'board_receipt', row.id, session)
       return (
@@ -83,14 +92,16 @@ function localPendingAcknowledgements(
         deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
       }),
     }))
+  return selectPushNotices(beganAt, candidates).notices
 }
 
 function hostedPendingAcknowledgements(
   session: string,
+  beganAt: string | null,
   clock: number,
   database: Database,
 ): BoardDelivery[] {
-  return cachedRows(database)
+  const candidates = cachedRows(database)
     .filter(({ message, tags }) => {
       const receipt = receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
       return (
@@ -121,6 +132,7 @@ function hostedPendingAcknowledgements(
           .delivered_at,
       }),
     }))
+  return selectPushNotices(beganAt, candidates).notices
 }
 
 export async function pendingBoardDelivery(input: DeliveryInput) {
@@ -129,16 +141,19 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   const clock = input.clock ?? Date.now()
   if (input.budgetMs > 0) await refreshHostedBoard({ budgetMs: input.budgetMs, database })
   const env = { CLAUDE_CODE_SESSION_ID: input.session }
+  const beganAt = boardReaderBeganAt(input.session, database)
+  const localPush = claimPushNotices(false, env, clock, database)
+  const hostedPush = claimCachedHostedForPush(input.session, false, clock, database)
   const unread: BoardDelivery[] = [
-    ...claimPushNotices(false, env, clock, database).notices.map((message) => ({
+    ...localPush.notices.map((message) => ({
       id: String(message.id),
       text: message.text,
       requiresAcknowledgement: message.ackRequired,
       createdAt: message.createdAt,
       deliveredAt: null,
     })),
-    ...claimCachedHostedForPush(input.session, false, clock, database)
-      .notices.filter((message) => message.text.length > 0)
+    ...hostedPush.notices
+      .filter((message) => message.text.length > 0)
       .map((message) => ({
         id: message.id,
         text: message.text,
@@ -148,8 +163,8 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
       })),
   ]
   const pendingAcknowledgements = [
-    ...localPendingAcknowledgements(input.session, clock, database),
-    ...hostedPendingAcknowledgements(input.session, clock, database),
+    ...localPendingAcknowledgements(input.session, beganAt, clock, database),
+    ...hostedPendingAcknowledgements(input.session, beganAt, clock, database),
   ]
   const recentlyInjected = new Set(input.recentlyInjectedIds ?? [])
   const candidates = input.includeAcknowledgementReminders
@@ -171,6 +186,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     delivery: selected.messages,
     overflow: selected.overflow,
     pendingAcknowledgements,
+    warning: localPush.warning ?? hostedPush.warning,
   }
 }
 

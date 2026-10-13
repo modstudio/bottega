@@ -246,6 +246,16 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     {},
     clock,
   )
+  const olderLocal = postNotice(
+    {
+      audience: 'project:push-project',
+      title: 'Older local',
+      body: 'Do not ask this reader to acknowledge.',
+      ackRequired: true,
+    },
+    {},
+    clock - 2_000,
+  )
   const acknowledged = postNotice(
     {
       audience: 'project:push-project',
@@ -300,6 +310,17 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(hosted.id, hosted.kind, null, hosted.revision, JSON.stringify(hosted))
+  const olderHosted = {
+    ...hosted,
+    id: '01990000-0000-7000-8000-000000000112',
+    title: 'Older hosted',
+    createdAt: new Date(clock - 2_000).toISOString(),
+  }
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(olderHosted.id, olderHosted.kind, null, olderHosted.revision, JSON.stringify(olderHosted))
 
   const pending = await pendingBoardDelivery({
     session: 'push-reader',
@@ -309,6 +330,11 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
   expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
     [String(local.id), hosted.id].sort(),
   )
+  expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
+    [String(local.id), hosted.id].sort(),
+  )
+  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
+  expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
 })
 
 test('an architect may address architects without receiving its own post', async () => {

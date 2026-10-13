@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
+from datetime import datetime, timezone
 
 
 def _start(orch, *args, env=None, cwd=None):
@@ -181,8 +182,6 @@ def _board_id(row):
 
 
 def _board_payload(completed):
-    if completed is None or completed.returncode != 0:
-        return [], None, 0
     try:
         result = json.loads(completed.stdout)
         if isinstance(result, list):
@@ -198,7 +197,10 @@ def _board_payload(completed):
         else:
             raise ValueError("invalid board notice response")
         if not isinstance(rows, list) or not all(
-            isinstance(row, dict) and isinstance(row.get("text"), str) for row in rows
+            isinstance(row, dict)
+            and isinstance(row.get("text"), str)
+            and isinstance(row.get("oneLine"), str)
+            for row in rows
         ):
             raise ValueError("invalid board notice response")
         if not isinstance(withheld, int) or isinstance(withheld, bool) or withheld < 0:
@@ -207,39 +209,34 @@ def _board_payload(completed):
             _board_id(row)
         return rows, warning, withheld
     except Exception:
-        return [], None, 0
-
-
-def _board_slice(completed):
-    rows, warning, _withheld = _board_payload(completed)
-    text = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
-    return text, [_board_id(row) for row in rows]
-
-
-def _board_header(text, name):
-    prefix = f"{name}: "
-    return next((line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)), None)
+        raise ValueError("invalid board notice response")
 
 
 def _board_start_slice(completed):
-    rows, warning, withheld = _board_payload(completed)
+    if completed is None:
+        return "", [], "", 0, 0
+    if completed.returncode != 0:
+        failure = "Board could not be read; orch board read shows it."
+        return failure, [], failure, 0, 0
+    try:
+        rows, warning, withheld = _board_payload(completed)
+    except ValueError:
+        failure = "Board could not be read; orch board read shows it."
+        return failure, [], failure, 0, 0
     full = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
-    compact = []
-    for row in rows:
-        if not isinstance(row.get("ackRequired"), bool):
-            return "", [], "", 0, 0
-        thread = _board_header(row["text"], "Thread")
-        title = _board_header(row["text"], "Title") or (
-            thread.partition(" — ")[2] if thread and " — " in thread else thread
-        ) or "untitled"
-        sender = _board_header(row["text"], "Origin") or "unknown sender"
-        acknowledgement = "required" if row["ackRequired"] else "not required"
-        compact.append(
-            f"Board message {_board_id(row)}: {title} — from {sender}; "
-            f"acknowledgement {acknowledgement}."
-        )
+    compact = [row["oneLine"] for row in rows]
     compact_text = "\n".join([*compact, *([warning] if warning else [])])
     return full, [_board_id(row) for row in rows], compact_text, len(rows), withheld
+
+
+def _withheld_board_notice(count):
+    if not count:
+        return None
+    noun = "message" if count == 1 else "messages"
+    return (
+        f"{count} unexpired board {noun} posted before this session were withheld; "
+        "orch board read shows them."
+    )
 
 
 def _emitted_board_ids(output, board_text, board_ids):
@@ -400,6 +397,9 @@ def orch_worker_session(env=None):
 def main() -> int:
     if orch_worker_session():
         return 0
+    session_started_at = datetime.now(timezone.utc).isoformat(
+        timespec="milliseconds"
+    ).replace("+00:00", "Z")
     resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = board_p = None
     settings_log_path = settings_log_offset = None
     settings_start_failure = None
@@ -442,7 +442,8 @@ def main() -> int:
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
             subprocess.run(
-                [orch, "board", "presence"], env=inbox_env, stdout=subprocess.DEVNULL,
+                [orch, "board", "presence", "--started-at", session_started_at],
+                env=inbox_env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
             )
             board_p = _start(orch, "board", "read", "--claim", env=inbox_env, cwd=cwd)
@@ -685,12 +686,9 @@ def main() -> int:
             notices.append(waiting_failure)
         if autonomy_failure:
             notices.append(autonomy_failure)
-        if withheld_board_count:
-            noun = "message" if withheld_board_count == 1 else "messages"
-            notices.append(
-                f"{withheld_board_count} unexpired board {noun} posted before this session "
-                "were withheld; orch board read shows them."
-            )
+        withheld_board_notice = _withheld_board_notice(withheld_board_count)
+        if withheld_board_notice:
+            notices.append(withheld_board_notice)
         settings_notice = (
             settings_start_failure
             or settings_read_failure
