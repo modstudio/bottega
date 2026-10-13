@@ -38,7 +38,6 @@ import {
   QUESTION_DELIVERY_OUTCOME_FAILED,
   rulingActor,
 } from './question-vocabulary.ts'
-import { packedResumePrompt } from './run.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -60,6 +59,7 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 import {
   decideRetryConversation,
   previousAttemptTaskPointer,

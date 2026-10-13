@@ -9,12 +9,12 @@ import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
-import { packedResumePrompt } from './run.ts'
 import { answerRun as answerRunService, retryRun } from './run-answer.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { continueRun } from './run-control.ts'
 import type { detach } from './run-dispatch.ts'
 import { answerInputFromArgv } from './run-message-commands.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
 

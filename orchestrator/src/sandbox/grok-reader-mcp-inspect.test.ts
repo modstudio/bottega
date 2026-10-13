@@ -2,19 +2,23 @@ import { expect, test } from 'bun:test'
 import { grokReaderMcpInspectionError } from './grok-reader-mcp-inspect.ts'
 
 const proxy = { project: { command: '/bin/orch', args: ['mcp-reader-proxy'] } }
+const runConfig = '/run/config.toml'
+const source = { type: 'configToml', path: runConfig }
 
 test('Grok reader inspection accepts exactly platform and proxy servers', () => {
   expect(
     grokReaderMcpInspectionError(
       {
         mcpServers: [
-          { name: 'orch', target: '/bin/orch' },
-          { name: 'orch-ask', target: '/bin/orch' },
-          { name: 'project', target: '/bin/orch' },
+          { name: 'orch', target: '/bin/orch', source },
+          { name: 'orch-ask', target: '/bin/orch', source },
+          { name: 'project', target: '/bin/orch', source },
           { name: 'disabled-cursor', target: '/bin/direct', disabled: true },
         ],
       },
       proxy,
+      runConfig,
+      ['orch', 'orch-ask'],
     ),
   ).toBeNull()
 })
@@ -24,7 +28,7 @@ test('Grok reader inspection rejects an extra server and names its source', () =
     grokReaderMcpInspectionError(
       {
         mcpServers: [
-          { name: 'project', target: '/bin/orch' },
+          { name: 'project', target: '/bin/orch', source },
           {
             name: 'alias',
             target: '/bin/direct',
@@ -33,6 +37,8 @@ test('Grok reader inspection rejects an extra server and names its source', () =
         ],
       },
       proxy,
+      runConfig,
+      ['orch-ask'],
     ),
   ).toBe("Grok reader MCP inspection found unexpected server 'alias' from mcpJson:/tree/.mcp.json")
 })
@@ -45,13 +51,67 @@ test('Grok reader inspection rejects a same-name direct command and names its so
           {
             name: 'project',
             target: '/bin/direct',
+            source,
+          },
+        ],
+      },
+      proxy,
+      runConfig,
+      ['orch-ask'],
+    ),
+  ).toBe(
+    'Grok reader MCP inspection found server \'project\' from configToml:/run/config.toml using "/bin/direct" instead of the reader proxy',
+  )
+})
+
+test('Grok reader inspection rejects a same-command server from the working tree', () => {
+  expect(
+    grokReaderMcpInspectionError(
+      {
+        mcpServers: [
+          { name: 'orch-ask', target: '/bin/orch', source },
+          {
+            name: 'project',
+            target: '/bin/orch',
             source: { type: 'configToml', path: '/tree/.grok/config.toml' },
           },
         ],
       },
       proxy,
+      runConfig,
+      ['orch-ask'],
     ),
   ).toBe(
-    'Grok reader MCP inspection found server \'project\' from configToml:/tree/.grok/config.toml using "/bin/direct" instead of the reader proxy',
+    "Grok reader MCP inspection found server 'project' from configToml:/tree/.grok/config.toml instead of the run home",
   )
+})
+
+test('Grok reader inspection rejects missing proxies and platform servers', () => {
+  expect(
+    grokReaderMcpInspectionError(
+      { mcpServers: [{ name: 'orch-ask', target: '/bin/orch', source }] },
+      proxy,
+      runConfig,
+      ['orch-ask'],
+    ),
+  ).toBe("Grok reader MCP inspection did not find expected server 'project'")
+  expect(grokReaderMcpInspectionError({ mcpServers: [] }, proxy, runConfig, ['orch-ask'])).toBe(
+    "Grok reader MCP inspection did not find expected server 'orch-ask'",
+  )
+})
+
+test('Grok reader inspection does not require orch when the run home omits it', () => {
+  expect(
+    grokReaderMcpInspectionError(
+      {
+        mcpServers: [
+          { name: 'orch-ask', target: '/bin/orch', source },
+          { name: 'project', target: '/bin/orch', source },
+        ],
+      },
+      proxy,
+      runConfig,
+      ['orch-ask'],
+    ),
+  ).toBeNull()
 })

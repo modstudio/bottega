@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { minimumCliVersionRefusal } from '../agent/agents.ts'
+import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
@@ -76,7 +76,6 @@ import {
   codexProjectServersForRun,
 } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
-import { projectReaderProxyServersForRun } from '../sandbox/mcp-reader-scope.ts'
 import {
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
@@ -121,18 +120,12 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
-import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
-
-export { repoOf } from './run-project-context.ts'
-
 import { bindSignals, sha } from './run-process.ts'
+import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
-import { packedResumePrompt } from './run-resume-prompt.ts'
-
-export { packedResumePrompt } from './run-resume-prompt.ts'
-
 import type { RunResumeOptions } from './run-resume-options.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -140,8 +133,7 @@ import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 function workerMcpLaunchScope(input: {
-  agent: string
-  harness: string
+  agent: Agent
   transport: string
   usingMcp: boolean
   writesJob: boolean
@@ -154,15 +146,16 @@ function workerMcpLaunchScope(input: {
   return {
     config,
     codex: codexProjectServersForRun(
-      input.agent,
+      input.agent.name,
       input.transport,
       codexMcpMode(input.usingMcp, input.writesJob),
       config,
       project,
       input.cwd,
     ),
-    grok: projectReaderProxyServersForRun(
-      workerHome.grokReaderMcpEnabled(input.harness, input.usingMcp),
+    grok: workerHome.grokReaderServersForRun(
+      input.agent,
+      input.usingMcp,
       input.writesJob,
       config,
       project,
@@ -728,8 +721,7 @@ export async function run(opts: {
     assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
   }
   const mcpLaunch = workerMcpLaunchScope({
-    agent: name,
-    harness: harnessName,
+    agent: a,
     transport: transportName,
     usingMcp,
     writesJob,
@@ -772,7 +764,6 @@ export async function run(opts: {
       includeStore: repoJob,
       codexMcpScope,
       grokReaderServers,
-      cwd,
     })
     ;({
       codexMcpCatalogues,
@@ -780,7 +771,6 @@ export async function run(opts: {
       hasRunScopedHome,
       sandboxEnvironment,
     } = home)
-    provisionedMcpConfig ??= home.measurementScope
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)

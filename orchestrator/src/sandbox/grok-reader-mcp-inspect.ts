@@ -1,6 +1,7 @@
 // concern: Grok reader MCP inspection
 /** Verifies the effective MCP set Grok reports after reader scoping. */
 
+import { realpathSync } from 'node:fs'
 import type { ReaderProxyServer } from './mcp-reader-scope.ts'
 
 type GrokInspectServer = {
@@ -25,7 +26,8 @@ function sourceLabel(server: GrokInspectServer): string {
 export function grokReaderMcpInspectionError(
   report: GrokInspectReport,
   expected: Record<string, ReaderProxyServer>,
-  platformServers: readonly string[] = ['orch', 'orch-ask'],
+  runConfigPath: string,
+  platformServers: readonly string[],
 ): string | null {
   const active = (report.mcpServers ?? []).filter(
     (server) => server.disabled !== true && server.compatibilityStatus !== 'disabled',
@@ -36,16 +38,39 @@ export function grokReaderMcpInspectionError(
     if (!allowed.has(name)) {
       return `Grok reader MCP inspection found unexpected server '${name}' from ${sourceLabel(server)}`
     }
+    if (server.source?.path !== runConfigPath) {
+      return `Grok reader MCP inspection found server '${name}' from ${sourceLabel(server)} instead of the run home`
+    }
     const proxy = expected[name]
     if (proxy && server.target !== proxy.command) {
       return `Grok reader MCP inspection found server '${name}' from ${sourceLabel(server)} using ${JSON.stringify(server.target ?? '<missing>')} instead of the reader proxy`
     }
   }
   const activeNames = new Set(active.map((server) => server.name).filter(Boolean))
-  const missing = Object.keys(expected).find((name) => !activeNames.has(name))
-  return missing
-    ? `Grok reader MCP inspection did not find expected proxy server '${missing}'`
-    : null
+  const missing = [...platformServers, ...Object.keys(expected)].find(
+    (name) => !activeNames.has(name),
+  )
+  return missing ? `Grok reader MCP inspection did not find expected server '${missing}'` : null
+}
+
+function canonicalInspectReport(report: GrokInspectReport): GrokInspectReport {
+  return {
+    ...report,
+    mcpServers: report.mcpServers?.map((server) => ({
+      ...server,
+      source: server.source?.path
+        ? { ...server.source, path: canonicalPath(server.source.path) }
+        : server.source,
+    })),
+  }
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
 }
 
 /** Ask the installed Grok CLI for the merged configuration it would launch. */
@@ -54,6 +79,8 @@ export function inspectGrokReaderMcp(
   cwd: string,
   environment: Record<string, string>,
   expected: Record<string, ReaderProxyServer>,
+  runConfigPath: string,
+  platformServers: readonly string[],
 ): string | null {
   const inspected = Bun.spawnSync([bin, 'inspect', '--json'], {
     cwd,
@@ -67,7 +94,12 @@ export function inspectGrokReaderMcp(
     return `Grok reader MCP inspection failed: ${stderr || stdout || `exit ${inspected.exitCode}`}`
   }
   try {
-    return grokReaderMcpInspectionError(JSON.parse(stdout) as GrokInspectReport, expected)
+    return grokReaderMcpInspectionError(
+      canonicalInspectReport(JSON.parse(stdout) as GrokInspectReport),
+      expected,
+      realpathSync(runConfigPath),
+      platformServers,
+    )
   } catch (error) {
     return `Grok reader MCP inspection returned invalid JSON: ${String((error as Error).message ?? error)}`
   }

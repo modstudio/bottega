@@ -93,7 +93,11 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-import { prepareClaimedGrokMcpScope, prepareClaimedWorkerMcpConfig } from './run-worker-home.ts'
+import {
+  grokReaderServersForRun,
+  prepareClaimedGrokMcpScope,
+  prepareClaimedWorkerMcpConfig,
+} from './run-worker-home.ts'
 
 type ClaimOptions = {
   reserveId?: number
@@ -906,6 +910,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       ensureProjectMainStack(project, 'mcp')
+      const treeConfig = readMcpConfig(cwd)
       const grokScope = prepareClaimedGrokMcpScope(
         {
           agent: a,
@@ -913,14 +918,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           runDirExisted: sandboxRunDirExisted,
           cwd,
           project,
-          writesRepository: writesJob,
           config: prepareClaimedWorkerMcpConfig({
             cwd,
             checkout: project.path,
             inherited: resume.workspaceSource === 'retained',
             writesRepository: writesJob,
           }),
-          treeConfig: readMcpConfig(cwd),
+          treeConfig,
+          readerServers: grokReaderServersForRun(a, true, writesJob, treeConfig, project, cwd),
         },
         () =>
           writeTransaction(() => {
@@ -933,11 +938,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             })
           }),
       )
-      provisionedMcpConfig = grokScope.config ?? grokScope.measurementScope
+      provisionedMcpConfig = grokScope.config
       mcpSetupHeader = grokScope.header
       const server = grokScope.server
-      if (grokScope.config?.error) {
-        mcpConnection = { server, connected: false, error: grokScope.config.error }
+      if (grokScope.error) {
+        mcpConnection = { server, connected: false, error: grokScope.error }
       } else {
         const grokTrust = name === 'grok'
         grokMcpEnvironment = grokScope.environment

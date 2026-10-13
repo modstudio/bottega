@@ -52,7 +52,7 @@ test('a writer gets cwd-discovered MCP configuration and a reader does not', () 
 
 const grokAgent = { name: 'grok', harness: 'grok' } as Agent
 
-test('Grok launch scopes a reader home and project while leaving a writer direct', async () => {
+test('Grok launch scopes only a reader home while leaving a writer direct', async () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-grok-launch-'))
   roots.push(root)
   const readerRun = join(root, 'reader-run')
@@ -91,17 +91,15 @@ test('Grok launch scopes a reader home and project while leaving a writer direct
     includeStore: false,
     codexMcpScope: null,
     grokReaderServers: proxies,
-    cwd: reader,
   })
   const readerHome = readFileSync(join(readerRun, 'config.toml'), 'utf8')
   expect(readerHome).toContain('mcp-reader-proxy')
   expect(readerHome).not.toContain('user-direct')
   expect(readerHome).not.toContain('user-alias')
   expect(grokAskCommandFromConfig(readerHome)).toEqual(grokAskServerCommand('host'))
-  expect(readFileSync(join(reader, '.grok', 'config.toml'), 'utf8')).toContain('mcp-reader-proxy')
-  expect(readFileSync(join(reader, '.grok', 'config.toml'), 'utf8')).not.toContain('tree-direct')
-  expect(readFileSync(join(reader, '.mcp.json'), 'utf8')).toBe('{"mcpServers":{}}\n')
-  expect(readFileSync(join(reader, '.cursor', 'mcp.json'), 'utf8')).toBe('{"mcpServers":{}}\n')
+  expect(readFileSync(join(reader, '.grok', 'config.toml'), 'utf8')).toContain('tree-direct')
+  expect(readFileSync(join(reader, '.mcp.json'), 'utf8')).toContain('mcp-direct')
+  expect(readFileSync(join(reader, '.cursor', 'mcp.json'), 'utf8')).toContain('cursor-direct')
   expect(readerLaunch.environment.GROK_CURSOR_MCPS_ENABLED).toBe('0')
 
   const writerRun = join(root, 'writer-run')
@@ -124,7 +122,6 @@ test('Grok launch scopes a reader home and project while leaving a writer direct
     includeStore: false,
     codexMcpScope: null,
     grokReaderServers: null,
-    cwd: writer,
   })
   expect(readFileSync(join(writerRun, 'config.toml'), 'utf8')).toContain('writer-direct')
   expect(readFileSync(join(writer, '.mcp.json'), 'utf8')).toContain('writer-tree')

@@ -40,6 +40,23 @@ export function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolea
   return harness === 'grok' && usingMcp
 }
 
+export function grokReaderServersForRun(
+  agent: Agent,
+  usingMcp: boolean,
+  writesRepository: boolean,
+  treeConfig: Record<string, McpServerConfig>,
+  project: Project | null,
+  cwd: string,
+): Record<string, ReaderProxyServer> | null {
+  return projectReaderProxyServersForRun(
+    grokReaderMcpEnabled(workerHarnessName(agent), usingMcp),
+    writesRepository,
+    treeConfig,
+    project,
+    cwd,
+  )
+}
+
 export function projectMcpServerName(
   connection: { server: string } | null,
   project: Project | null,
@@ -83,17 +100,18 @@ export async function prepareWorkerHomeLaunch(input: {
   includeStore: boolean
   codexMcpScope: CodexMcpScope | null
   grokReaderServers: Record<string, ReaderProxyServer> | null
-  cwd: string
 }) {
   const harness = workerHarnessName(input.agent)
   const hasRunScopedHome = harness === 'codex' || harness === 'grok' || input.sandbox === 'srt'
   const home = hasRunScopedHome
     ? prepareSandboxHome(harness, input.runDir, process.env, input.sandbox)
     : {}
-  const measurementScope =
-    harness === 'grok' && input.grokReaderServers
-      ? scopeGrokReaderMcpHome(input.runDir, input.cwd, input.sandbox, input.grokReaderServers)
-      : null
+  const grokReaderScope = applyGrokReaderMcpScope(
+    harness,
+    input.runDir,
+    input.sandbox,
+    input.grokReaderServers,
+  )
   const environment = childEnv(
     input.agent,
     input.runId,
@@ -102,7 +120,7 @@ export async function prepareWorkerHomeLaunch(input: {
       ...input.environment,
       ...home,
       ...input.grokEnvironment,
-      ...(measurementScope ? { GROK_CURSOR_MCPS_ENABLED: '0' } : {}),
+      ...grokReaderScope?.environment,
     },
     input.includeStore,
   )
@@ -112,7 +130,20 @@ export async function prepareWorkerHomeLaunch(input: {
     environment,
     hasRunScopedHome,
     sandboxEnvironment: home,
-    measurementScope,
+  }
+}
+
+/** Apply the one run-home rewrite and launch-environment change for a Grok reader. */
+export function applyGrokReaderMcpScope(
+  harness: string,
+  runDir: string,
+  sandbox: RunSandbox,
+  servers: Record<string, ReaderProxyServer> | null,
+) {
+  if (harness !== 'grok' || !servers) return null
+  return {
+    ...scopeGrokReaderMcpHome(runDir, sandbox, servers),
+    environment: { GROK_CURSOR_MCPS_ENABLED: '0' },
   }
 }
 
@@ -123,9 +154,9 @@ export function prepareClaimedGrokMcpScope(
     runDirExisted: boolean
     cwd: string
     project: Project
-    writesRepository: boolean
     config: ReturnType<typeof prepareWorkerMcpConfig> | null
     treeConfig: Record<string, McpServerConfig>
+    readerServers: Record<string, ReaderProxyServer> | null
   },
   recordClaim: () => void,
 ) {
@@ -133,21 +164,12 @@ export function prepareClaimedGrokMcpScope(
     const harness = workerHarnessName(input.agent)
     const config = input.config
     const projectConfig = mcpConfigForRun(input.treeConfig, input.project)
-    const readerServers =
-      harness === 'grok'
-        ? projectReaderProxyServersForRun(
-            true,
-            input.writesRepository,
-            input.treeConfig,
-            input.project,
-            input.cwd,
-          )
-        : null
+    const readerServers = input.readerServers
     if (config?.error) {
       return {
         config,
-        measurementScope: null,
         environment: {},
+        error: config.error,
         header: config.header,
         server: input.project.settings.mcpServer ?? input.project.name,
       }
@@ -162,12 +184,9 @@ export function prepareClaimedGrokMcpScope(
       config?.header ?? null,
       'host',
     )
-    const measurementScope =
-      harness === 'grok' && readerServers
-        ? scopeGrokReaderMcpHome(input.runDir, input.cwd, 'host', readerServers)
-        : null
+    const readerScope = applyGrokReaderMcpScope(harness, input.runDir, 'host', readerServers)
     const inspectError =
-      readerServers && measurementScope
+      readerServers && readerScope
         ? inspectGrokReaderMcp(
             input.agent.bin,
             input.cwd,
@@ -177,12 +196,14 @@ export function prepareClaimedGrokMcpScope(
               undefined,
               {
                 ...scope.environment,
+                ...readerScope.environment,
                 HOME: `${input.runDir}/home`,
-                GROK_CURSOR_MCPS_ENABLED: '0',
               },
               true,
             ),
             readerServers,
+            readerScope.configPath,
+            readerScope.platformServers,
           )
         : null
     if (harness === 'grok') recordClaim()
@@ -190,14 +211,10 @@ export function prepareClaimedGrokMcpScope(
       ...scope,
       environment: {
         ...scope.environment,
-        ...(readerServers ? { GROK_CURSOR_MCPS_ENABLED: '0' } : {}),
+        ...readerScope?.environment,
       },
-      config:
-        config ??
-        (inspectError && measurementScope
-          ? { ...measurementScope, header: scope.header, error: inspectError }
-          : null),
-      measurementScope,
+      config,
+      error: config?.error ?? inspectError,
       server: input.project.settings.mcpServer ?? input.project.name,
     }
   } catch (error) {

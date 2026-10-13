@@ -9,13 +9,13 @@ import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
-import { packedResumePrompt } from './run.ts'
 import {
   type ChainTurn,
   continuationTurn,
   continueRun,
   resumeLaunchFromStored,
 } from './run-control.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
 

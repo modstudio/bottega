@@ -9,6 +9,23 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
+export const READER_PLATFORM_MCP_SERVERS = ['orch', 'orch-ask'] as const
+
+/** Build the only MCP table a Grok reader's run home may expose. */
+export function grokReaderMcpServerTable(
+  userServers: Record<string, unknown> | undefined,
+  proxies: Record<string, ReaderProxyServer>,
+): Record<string, unknown> {
+  return {
+    ...(userServers?.orch ? { orch: userServers.orch } : {}),
+    ...Object.fromEntries(
+      Object.entries(proxies)
+        .filter(([name]) => !READER_PLATFORM_MCP_SERVERS.includes(name as 'orch' | 'orch-ask'))
+        .map(([name, server]) => [name, { ...server, enabled: true }]),
+    ),
+  }
+}
+
 /** Select project server names without consulting the filesystem or process installation. */
 function projectReaderServerNames(
   configuredNames: string[],
