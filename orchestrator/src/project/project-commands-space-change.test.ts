@@ -9,7 +9,7 @@ import { projectByName, upsertProject } from './projects.ts'
 async function runProject(
   args: string[],
   flags: Record<string, string | boolean>,
-  requireSpaceMembership: (url: string, space: string) => Promise<unknown> = async () => {},
+  requireSpaceMembership: (space: string) => Promise<unknown> = async () => {},
 ): Promise<void> {
   const present = new Set(Object.keys(flags))
   await projectCommand(

@@ -124,6 +124,10 @@ export function unusedBoardClientMethods(): Pick<
   | 'getPublicDoc'
   | 'searchPublicDocs'
   | 'searchDocs'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
   | 'listBoardMessages'
   | 'postBoardMessage'
   | 'replyBoardMessage'
@@ -154,6 +158,10 @@ export function unusedBoardClientMethods(): Pick<
     getPublicDoc: unusedBoard,
     searchPublicDocs: unusedBoard,
     searchDocs: unusedBoard,
+    createOrganization: unusedBoard,
+    setActiveOrganization: unusedBoard,
+    listInvitations: unusedBoard,
+    acceptInvitation: unusedBoard,
     listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,
@@ -224,6 +232,21 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         personalSpaceId: '01990000-0000-7000-8000-000000000002',
         memberships: [],
       }
+    },
+    async createOrganization(input) {
+      return { id: newRecordId(), slug: input.slug }
+    },
+    async setActiveOrganization(input) {
+      return {
+        id: input.organizationId ?? '01990000-0000-7000-8000-000000000002',
+        slug: input.organizationSlug ?? 'fixture',
+      }
+    },
+    async listInvitations() {
+      return []
+    },
+    async acceptInvitation() {
+      throw new Error('invitation not found')
     },
     async inviteMember() {
       return { id: newRecordId() }

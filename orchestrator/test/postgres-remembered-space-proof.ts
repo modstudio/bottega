@@ -50,21 +50,19 @@ export function registerActiveSpaceProofs(input: {
   password: string
   executeAsOwner: (sql: string) => string
   setToken: (token: string) => void
-  memberships: (url: string) => Promise<{
+  memberships: () => Promise<{
     activeSpaceId: string | null
     memberships: { spaceId: string; slug: string }[]
   }>
-  switchSpace: (url: string, slug: string) => Promise<{ spaceId: string }>
+  switchSpace: (slug: string) => Promise<{ spaceId: string }>
 }) {
   test('space list and switch repair a session with no active space', async () => {
     input.executeAsOwner(`UPDATE session SET active_space_id=NULL WHERE token='${input.tokenB()}';`)
     input.setToken(input.tokenB())
-    const listed = await input.memberships(input.actorUrl())
+    const listed = await input.memberships()
     expect(listed.activeSpaceId).toBeNull()
     expect(listed.memberships.map((row) => row.spaceId)).toEqual([input.spaceB()])
-    expect((await input.switchSpace(input.actorUrl(), listed.memberships[0]!.slug)).spaceId).toBe(
-      input.spaceB(),
-    )
+    expect((await input.switchSpace(listed.memberships[0]!.slug)).spaceId).toBe(input.spaceB())
   })
 
   test('remembered space survives a new session for the same user', async () => {

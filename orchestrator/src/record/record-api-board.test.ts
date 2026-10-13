@@ -21,6 +21,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,
+    listInvitations: async () => [],
     readHealth: async () => ({ ok: true, migrations: 14 }),
     readCommit: () => undefined,
     readRuns: async () => [],

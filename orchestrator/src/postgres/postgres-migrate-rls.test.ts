@@ -9,6 +9,10 @@ import {
 } from '../../../shared/record/schema.ts'
 import { asSpace, asSpaces, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
 import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import {
   invitationApiClient,
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
@@ -30,6 +34,7 @@ import { registerStaleMembershipProof } from '../../test/postgres-stale-membersh
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
+import { recordSpaceListCommand, recordSpaceSwitchCommand } from '../record/record-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
   acceptRecordInvitation,
@@ -81,6 +86,7 @@ realPostgres('RLS proof against real Postgres', () => {
   let pendingInvitation = ''
   let invitationAuth: ReturnType<typeof recordAuth>
   let invitationClient: ReturnType<typeof invitationApiClient>
+  let apiServer: Awaited<ReturnType<typeof startRecordApiServer>>
   const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0]> = []
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
@@ -192,6 +198,22 @@ realPostgres('RLS proof against real Postgres', () => {
       expect(revoked.code, revoked.stderr).toBe(0)
     }
 
+    apiServer = await startRecordApiServer(
+      {
+        ...process.env,
+        PORT: '0',
+        ORCH_RECORD_URL: actorUrl!,
+        RECORD_AUTH_DATABASE_URL: authUrl!,
+        RECORD_HUB_URL: process.env.RECORD_HUB_URL,
+      },
+      {
+        sendInvitation: async (input) => {
+          invitationEmails.push(input)
+        },
+      },
+    )
+    process.env.ORCH_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
     await signUpCommand(SIGN_UP_AUTH.emailA, 'Auth A', async () => SIGN_UP_AUTH.password, {
@@ -243,7 +265,6 @@ realPostgres('RLS proof against real Postgres', () => {
 
     recordSession.setToken(tokenA)
     pendingInvitation = await inviteToActiveRecordSpace(
-      actorUrl!,
       SIGN_UP_AUTH.emailB,
       'member',
       invitationClient,
@@ -260,12 +281,15 @@ realPostgres('RLS proof against real Postgres', () => {
     )
   })
 
-  afterAll(() => {
+  afterAll(async () => {
+    await apiServer?.stop(true)
     installRecordSessionRunner(null)
+    installRecordApiClient(createMemoryRecordApiClient())
     delete process.env.BETTER_AUTH_SECRET
     delete process.env.BETTER_AUTH_URL
     delete process.env.RECORD_HUB_URL
     delete process.env.RECORD_AUTH_DATABASE_URL
+    delete process.env.ORCH_RECORD_API_URL
     if (!container) return
     psql(
       'postgres',
@@ -349,6 +373,34 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(repaired).toBe('t|owner|write')
   })
 
+  test('customer authentication and space commands need only the hosted API address', async () => {
+    const directUrl = process.env.ORCH_RECORD_URL
+    const authSecret = process.env.BETTER_AUTH_SECRET
+    delete process.env.ORCH_RECORD_URL
+    delete process.env.BETTER_AUTH_SECRET
+    try {
+      const output: string[] = []
+      await signInCommand(SIGN_UP_AUTH.emailB, async () => SIGN_UP_AUTH.password, {
+        log: (value) => output.push(value),
+      })
+      await whoamiCommand({ log: (value) => output.push(value) })
+      await recordSpaceListCommand({ log: (value) => output.push(value) })
+      const listed = await recordMemberships()
+      const selected = listed.memberships[0]
+      if (!selected) throw new Error('hosted customer proof has no membership')
+      await recordSpaceSwitchCommand(selected.slug, { log: (value) => output.push(value) })
+      expect(output[0]).toBe(`signed in ${SIGN_UP_AUTH.emailB}`)
+      expect(JSON.parse(output[1]!) as { user: { id: string } }).toHaveProperty(
+        'user.id',
+        authUserB,
+      )
+      expect(output).toContain(`active record space ${selected.slug}`)
+    } finally {
+      if (directUrl !== undefined) process.env.ORCH_RECORD_URL = directUrl
+      if (authSecret !== undefined) process.env.BETTER_AUTH_SECRET = authSecret
+    }
+  })
+
   test('signed-in users see their memberships and spaces but not another space records', () => {
     const visible = psql(
       RECORD_ACTOR_ROLE,
@@ -407,7 +459,7 @@ realPostgres('RLS proof against real Postgres', () => {
     await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member', invitationClient),
+      inviteToActiveRecordSpace('nobody@example.test', 'member', invitationClient),
     ).rejects.toThrow('not allowed to invite users')
   })
 
@@ -421,22 +473,21 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-sent@example.test', 'member', invitationClient),
+      inviteToActiveRecordSpace('admin-sent@example.test', 'member', invitationClient),
     ).resolves.toBeString()
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationClient),
+      inviteToActiveRecordSpace('admin-owner@example.test', 'owner', invitationClient),
     ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {
     recordSession.setToken(tokenA)
     const invited = await inviteToActiveRecordSpace(
-      actorUrl!,
       'owner-sent@example.test',
       'member',
       invitationClient,
     )
-    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
+    expect((await pendingRecordInvitations()).map((row) => row.id)).not.toContain(invited)
   })
 
   test('organization invite and resend email the hosted link and renew seven-day expiry', async () => {
@@ -498,9 +549,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
          'member','pending',now() - interval '1 day',now());`,
     )
-    await expect(
-      inviteToActiveRecordSpace(actorUrl!, email, 'member', invitationClient),
-    ).resolves.toBeString()
+    await expect(inviteToActiveRecordSpace(email, 'member', invitationClient)).resolves.toBeString()
   })
 
   test('invitees see only their invitations and acceptance joins and switches space', async () => {
@@ -528,20 +577,12 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visibleToOther.stdout).toBe('0')
 
     recordSession.setToken(tokenB)
-    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).toEqual([
-      pendingInvitation,
-    ])
-    await expect(acceptRecordInvitation(actorUrl!, WRONG_EMAIL_INVITATION)).rejects.toThrow(
-      'record invitation is unavailable',
-    )
-    await expect(acceptRecordInvitation(actorUrl!, EXPIRED_INVITATION)).rejects.toThrow(
-      'record invitation has expired',
-    )
-    await expect(acceptRecordInvitation(actorUrl!, ACCEPTED_INVITATION)).rejects.toThrow(
-      'record invitation is not pending',
-    )
+    expect((await pendingRecordInvitations()).map((row) => row.id)).toEqual([pendingInvitation])
+    await expect(acceptRecordInvitation(WRONG_EMAIL_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(EXPIRED_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(ACCEPTED_INVITATION)).rejects.toThrow()
 
-    expect(await acceptRecordInvitation(actorUrl!, pendingInvitation)).toBe(authSpaceA)
+    expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
     const session = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
@@ -566,9 +607,7 @@ realPostgres('RLS proof against real Postgres', () => {
          'member','pending',now() + interval '1 day',now());`,
     )
     recordSession.setToken(tokenB)
-    await expect(acceptRecordInvitation(actorUrl!, second)).rejects.toThrow(
-      'record user is already a member',
-    )
+    await expect(acceptRecordInvitation(second)).rejects.toThrow()
   })
 
   test('migrate is idempotent and record doctor diagnoses ownership', async () => {

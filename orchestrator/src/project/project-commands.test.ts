@@ -14,7 +14,7 @@ import { projectByName, projects, retireProject, upsertProject } from './project
 async function runProject(
   args: string[],
   flags: Record<string, string | boolean> = {},
-  requireSpaceMembership: (url: string, space: string) => Promise<unknown> = async () => {},
+  requireSpaceMembership: (space: string) => Promise<unknown> = async () => {},
 ) {
   const present = new Set(Object.keys(flags))
   const out: string[] = []
@@ -37,17 +37,12 @@ async function runProject(
   return out.join('\n')
 }
 
-let priorRecordUrl: string | undefined
 let priorRecordApiUrl: string | undefined
 beforeAll(() => {
-  priorRecordUrl = process.env.ORCH_RECORD_URL
   priorRecordApiUrl = process.env.ORCH_RECORD_API_URL
-  process.env.ORCH_RECORD_URL = 'postgres://record.test/database'
   process.env.ORCH_RECORD_API_URL = 'https://record-api.example.test'
 })
 afterAll(() => {
-  if (priorRecordUrl === undefined) delete process.env.ORCH_RECORD_URL
-  else process.env.ORCH_RECORD_URL = priorRecordUrl
   if (priorRecordApiUrl === undefined) delete process.env.ORCH_RECORD_API_URL
   else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
 })

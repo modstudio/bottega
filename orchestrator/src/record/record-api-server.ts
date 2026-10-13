@@ -64,6 +64,7 @@ import {
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
+import { listPendingRecordInvitations } from './record-invitations.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
   getPublicRecordDoc,
@@ -161,9 +162,18 @@ function serveRecordApi(
   return server
 }
 
-export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
+export async function startRecordApiServer(
+  environment: ServerEnvironment = process.env,
+  testDependencies?: { sendInvitation: NonNullable<Parameters<typeof recordAuth>[4]> },
+) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
+  const auth = recordAuth(
+    config.recordUrl,
+    environment,
+    config.authDatabaseUrl,
+    undefined,
+    testDependencies?.sendInvitation,
+  )
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()
@@ -182,6 +192,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     },
     setActiveSpace: (headers, spaceId) =>
       setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
+    listInvitations: listPendingRecordInvitations,
     readHealth: async () => {
       try {
         await probeRecord(config.recordUrl)

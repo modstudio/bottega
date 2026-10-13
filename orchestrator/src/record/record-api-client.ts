@@ -36,6 +36,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
+import type { HostedRecordInvitation } from './record-invitations.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -156,6 +157,13 @@ export type RecordRequestDestination = { destinationSpaceId?: string }
 
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
+  createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
+  setActiveOrganization(input: {
+    organizationId?: string
+    organizationSlug?: string
+  }): Promise<{ id: string; slug: string }>
+  listInvitations(): Promise<HostedRecordInvitation[]>
+  acceptInvitation(invitationId: string): Promise<{ invitation: { organizationId: string } }>
   inviteMember(input: {
     email: string
     role: 'member' | 'admin' | 'owner'
@@ -372,20 +380,30 @@ export class RecordApiRequestError extends Error {
 
 function recordApiUnreachable(error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error)
-  return new RecordApiRequestError(`${detail}\n${RECORD_WRITE_REMEDY}`, 'unreachable')
+  return new RecordApiRequestError(
+    `record API is unreachable: ${detail}\n${RECORD_WRITE_REMEDY}`,
+    'unreachable',
+  )
 }
 
-function recordApiError(body: unknown, status: number): Error {
-  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  const nested =
-    record.error && typeof record.error === 'object'
-      ? (record.error as Record<string, unknown>)
-      : {}
-  const message =
+function responseRecord(body: unknown): Record<string, unknown> {
+  return body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+}
+
+function responseMessage(body: unknown, fallback: string): string {
+  const record = responseRecord(body)
+  const nested = responseRecord(record.error)
+  return (
     (typeof record.error === 'string' && record.error) ||
     (typeof record.message === 'string' && record.message) ||
     (typeof nested.message === 'string' && nested.message) ||
-    `record API ${status}`
+    fallback
+  )
+}
+
+function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
+  if (status === 401 || status === 429) return recordAuthRefusal(status, body, headers)
+  const message = responseMessage(body, `record API ${status}`)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused')
   if (status >= 400 && status < 500)
@@ -393,12 +411,102 @@ function recordApiError(body: unknown, status: number): Error {
   return recordApiUnreachable(new Error(message))
 }
 
+export function recordAuthToken(headers: Headers, body: unknown): string | null {
+  const fromHeader = headers.get('set-auth-token')?.trim()
+  if (fromHeader) return fromHeader
+  const token = responseRecord(body).token
+  return typeof token === 'string' && token.trim() ? token : null
+}
+
+export function recordAuthRefusal(status: number, body: unknown, headers: Headers): Error {
+  if (status === 401)
+    return new RecordApiRequestError(
+      `record credentials were refused; ${RECORD_SIGN_IN_REMEDY}`,
+      'refused',
+    )
+  if (status === 429) {
+    const interval = headers.get('retry-after') ?? headers.get('x-ratelimit-reset') ?? 'later'
+    return new RecordApiRequestError(
+      `record sign-in is rate limited; retry after ${interval}`,
+      'refused',
+    )
+  }
+  const message = responseMessage(body, `record API ${status}`)
+  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused')
+  return recordApiUnreachable(new Error(message))
+}
+
+type RecordEmailAuthResult = { token: string; user: Record<string, unknown> }
+
+async function recordEmailAuthRequest(
+  path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
+  body: Record<string, string>,
+): Promise<RecordEmailAuthResult> {
+  let response: Response
+  try {
+    response = await fetch(`${recordApiBaseUrl()}${path}`, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify(body),
+    })
+  } catch (error) {
+    throw new RecordApiRequestError(
+      `record API is unreachable: ${error instanceof Error ? error.message : String(error)}`,
+      'unreachable',
+    )
+  }
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
+  const token = recordAuthToken(response.headers, payload)
+  const user = responseRecord(payload).user
+  if (!token || !user || typeof user !== 'object') throw new Error(RECORD_SIGN_IN_REMEDY)
+  return { token, user: user as Record<string, unknown> }
+}
+
+export const recordApiSignIn = (email: string, password: string) =>
+  recordEmailAuthRequest('/api/auth/sign-in/email', { email, password })
+
+export const recordApiSignUp = (email: string, name: string, password: string) =>
+  recordEmailAuthRequest('/api/auth/sign-up/email', { email, name, password })
+
+export function recordIdentityResponse(body: unknown): RecordIdentity {
+  const value = responseRecord(body)
+  const user = responseRecord(value.user)
+  const memberships = Array.isArray(value.memberships)
+    ? value.memberships.map((membership) => responseRecord(membership))
+    : null
+  if (
+    typeof user.id !== 'string' ||
+    (value.activeSpaceId !== null && typeof value.activeSpaceId !== 'string') ||
+    (value.personalSpaceId !== null && typeof value.personalSpaceId !== 'string') ||
+    !memberships ||
+    memberships.some((membership) =>
+      ['space_id', 'name', 'slug', 'role', 'permission'].some(
+        (field) => typeof membership[field] !== 'string',
+      ),
+    )
+  ) {
+    throw recordApiUnreachable(new Error('record API returned an invalid identity'))
+  }
+  return {
+    user: user as RecordIdentity['user'],
+    activeSpaceId: value.activeSpaceId,
+    personalSpaceId: value.personalSpaceId,
+    memberships,
+  }
+}
+
 export function recordApiBaseUrl(
   environment: Record<string, string | undefined> = process.env,
 ): string {
   const url = resolveRecordApiUrl(environment)
   if (!url) throw recordApiUnreachable(new Error('ORCH_RECORD_API_URL is not set'))
-  if (environment.NODE_ENV === 'test' && !injectedClient()) throw new Error(TEST_REFUSAL)
+  if (
+    environment.NODE_ENV === 'test' &&
+    !environment.ORCH_TEST_POSTGRES_CONTAINER &&
+    !injectedClient()
+  )
+    throw new Error(TEST_REFUSAL)
   return url.replace(/\/$/, '')
 }
 
@@ -406,20 +514,21 @@ async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
 ): Promise<T> {
+  const baseUrl = recordApiBaseUrl()
   const token = storedRecordToken()
-  if (!token) throw recordApiUnreachable(new Error(RECORD_SIGN_IN_REMEDY))
+  if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
   const headers = new Headers(init.headers)
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
   let response: Response
   try {
-    response = await fetch(`${recordApiBaseUrl()}${path}`, { ...init, headers })
+    response = await fetch(`${baseUrl}${path}`, { ...init, headers })
   } catch (error) {
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
-  if (!response.ok) throw recordApiError(body, response.status)
+  if (!response.ok) throw recordApiError(body, response.status, response.headers)
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -484,12 +593,75 @@ function importIds(body: unknown): RecordDocImportResult {
   }
 }
 
+function organizationResponse(body: unknown): { id: string; slug: string } {
+  const value = responseRecord(body)
+  if (typeof value.id !== 'string' || typeof value.slug !== 'string')
+    throw recordApiUnreachable(new Error('record API returned an invalid organization'))
+  return { id: value.id, slug: value.slug }
+}
+
+export function recordInvitationListResponse(body: unknown): HostedRecordInvitation[] {
+  if (!Array.isArray(body))
+    throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+  return body.map((row) => {
+    const value = responseRecord(row)
+    for (const field of [
+      'id',
+      'spaceName',
+      'spaceSlug',
+      'role',
+      'inviterEmail',
+      'expiresAt',
+    ] as const) {
+      if (typeof value[field] !== 'string')
+        throw recordApiUnreachable(new Error('record API returned an invalid invitation list'))
+    }
+    const expiresAt = new Date(value.expiresAt as string)
+    if (Number.isNaN(expiresAt.getTime()))
+      throw recordApiUnreachable(new Error('record API returned an invalid invitation'))
+    return value as HostedRecordInvitation
+  })
+}
+
+function acceptedInvitationResponse(
+  body: unknown,
+): Awaited<ReturnType<RecordApiClient['acceptInvitation']>> {
+  const value = responseRecord(body)
+  const invitation = responseRecord(value.invitation)
+  if (typeof invitation.organizationId !== 'string')
+    throw recordApiUnreachable(new Error('record API returned an invalid accepted invitation'))
+  return { invitation: { organizationId: invitation.organizationId } }
+}
+
 export function recordApiClient(): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
-  if (process.env.NODE_ENV === 'test') throw new Error(TEST_REFUSAL)
+  if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
+    throw new Error(TEST_REFUSAL)
   return {
-    whoami: () => request('/v1/whoami'),
+    whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
+    createOrganization: (input) =>
+      request('/api/auth/organization/create', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        schema: organizationResponse,
+      }),
+    setActiveOrganization: (input) =>
+      request('/api/auth/organization/set-active', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        schema: organizationResponse,
+      }),
+    listInvitations: () =>
+      request('/v1/invitations', {
+        schema: recordInvitationListResponse,
+      }),
+    acceptInvitation: (invitationId) =>
+      request('/api/auth/organization/accept-invitation', {
+        method: 'POST',
+        body: JSON.stringify({ invitationId }),
+        schema: acceptedInvitationResponse,
+      }),
     inviteMember: (input) =>
       request('/api/auth/organization/invite-member', {
         method: 'POST',

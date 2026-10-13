@@ -113,20 +113,14 @@ function listProjectsCommand(flags: ProjectFlags, presentation: ProjectPresentat
 
 async function validateDeclaredSpace(
   settingsPatch: unknown,
-  requireMembership: (url: string, space: string) => Promise<unknown>,
+  requireMembership: (space: string) => Promise<unknown>,
 ): Promise<void> {
   if (!settingsPatch || typeof settingsPatch !== 'object' || Array.isArray(settingsPatch)) return
   if (!Object.hasOwn(settingsPatch, 'space')) return
   const space = (settingsPatch as { space?: unknown }).space
   if (space === null || space === undefined) return
   if (typeof space !== 'string' || !space.trim()) return
-  const url = process.env.ORCH_RECORD_URL
-  if (!url) {
-    throw new Error(
-      `cannot validate record space ${space}: ORCH_RECORD_URL is not set; configure the record and sign in, then retry`,
-    )
-  }
-  await requireMembership(url, space)
+  await requireMembership(space)
 }
 
 export type AddProjectInput = {
@@ -140,7 +134,7 @@ export type AddProjectInput = {
 
 export async function addProject(
   input: AddProjectInput,
-  requireMembership: (url: string, space: string) => Promise<unknown>,
+  requireMembership: (space: string) => Promise<unknown>,
 ): Promise<{ project: Project; wasRetired: boolean }> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, input.path, {
@@ -175,7 +169,7 @@ async function addProjectCommand(
   argv: string[],
   flags: ProjectFlags,
   presentation: ProjectPresentation,
-  requireMembership: (url: string, space: string) => Promise<unknown>,
+  requireMembership: (space: string) => Promise<unknown>,
 ): Promise<void> {
   const { has, flag } = flags
   const path = (argv[2] ?? presentation.cwd()).replace(/\/$/, '')
@@ -525,7 +519,7 @@ export async function projectCommand(
   flags: ProjectFlags,
   presentation: ProjectPresentation,
   dependencies: {
-    requireSpaceMembership(url: string, space: string): Promise<unknown>
+    requireSpaceMembership(space: string): Promise<unknown>
   },
 ): Promise<void> {
   const { has, flag } = flags

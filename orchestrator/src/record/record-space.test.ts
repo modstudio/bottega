@@ -1,7 +1,30 @@
 import { describe, expect, test } from 'bun:test'
-import { recordSpaceRole, refuseDuplicateRecordSpaceSlug } from './record-space.ts'
+import {
+  recordMembershipsFromIdentity,
+  recordSpaceRole,
+  refuseDuplicateRecordSpaceSlug,
+} from './record-space.ts'
 
 describe('record space decisions', () => {
+  test('maps whoami memberships into the rows printed by space list', () => {
+    expect(
+      recordMembershipsFromIdentity({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-b',
+        personalSpaceId: 'space-a',
+        memberships: [
+          { space_id: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+          { space_id: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+        ],
+      }),
+    ).toEqual({
+      activeSpaceId: 'space-b',
+      memberships: [
+        { spaceId: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+        { spaceId: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+      ],
+    })
+  })
   test('accepts only supported invitation roles', () => {
     expect(recordSpaceRole('member')).toBe('member')
     expect(recordSpaceRole('admin')).toBe('admin')
