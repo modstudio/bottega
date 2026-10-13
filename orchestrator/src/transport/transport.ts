@@ -65,10 +65,6 @@ export type ArgvOpts = {
   mcpServer?: string
   /** Credential-free project MCP launch definitions resolved by dispatch. */
   projectServers?: Record<string, { command?: string; args?: string[]; cwd?: string; url?: string }>
-  /** Project identity used to scope project-server proxies for reading jobs. */
-  projectName?: string
-  /** Repository-write capability, distinct from the scratch-editable sandbox. */
-  writesJob?: boolean
   /** HOME inherited by the vendor process. */
   home?: string
   /** Grok-only scoped trust for the disposable cwd orch created. */
@@ -212,8 +208,6 @@ export type TransportStartOpts = {
   mcp?: boolean
   mcpServer?: string
   projectServers?: ArgvOpts['projectServers']
-  projectName?: string
-  writesJob?: boolean
   trustCwd?: string
   writableRoots?: ArgvOpts['writableRoots']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']

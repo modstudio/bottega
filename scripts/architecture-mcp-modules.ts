@@ -60,6 +60,14 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/client/stdio.js',
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
   ]),
+  module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
+    '@modelcontextprotocol/client',
+    '@modelcontextprotocol/server',
+    '@modelcontextprotocol/server/stdio',
+    '../project/projects.ts',
+    './mcp-probe.ts',
+    './mcp-tool-list.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [

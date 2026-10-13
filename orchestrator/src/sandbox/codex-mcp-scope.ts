@@ -21,8 +21,6 @@ type CodexScopeOpts = {
   mcpServer?: string
   projectServers?: Record<string, CodexMcpServer>
   home?: string
-  projectName?: string
-  writesJob?: boolean
 }
 
 export type CodexMcpServer = {
@@ -108,15 +106,31 @@ export function codexProjectServers(
 export function codexProjectServersForRun(
   agent: string,
   transport: string,
-  mcp: boolean,
+  mcp: false | 'reader' | 'writer',
   treeConfig: Record<string, McpServerConfig>,
-  project: { path: string; settings: { workerMcpServers?: string[] } } | null,
+  project: {
+    name: string
+    path: string
+    settings: { workerMcpServers?: string[]; mcpServer?: string }
+  } | null,
   cwd: string,
 ): ReturnType<typeof codexProjectServers> | null {
-  if (agent !== 'codex' || transport !== 'cli' || !mcp) return null
+  if (agent !== 'codex' || transport !== 'cli' || mcp === false) return null
   const config =
     Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
-  return codexProjectServers(config, project?.settings.workerMcpServers, cwd)
+  const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
+  if (mcp === 'writer' || !project) return scope
+  const names = new Set([
+    ...Object.keys(scope.servers),
+    ...scope.withheld,
+    project.settings.mcpServer ?? project.name,
+  ])
+  return {
+    servers: Object.fromEntries(
+      [...names].map((server) => [server, readerProxyServer(project.name, server)]),
+    ),
+    withheld: [],
+  }
 }
 
 /** Append the visible reason when project MCP definitions cannot enter argv. */
@@ -176,21 +190,14 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   args.push('-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
     if (name !== 'orch-ask' && name !== 'orch') {
-      const overlay =
-        opts.writesJob === false && opts.projectName
-          ? readerProxyServer(opts.projectName, name)
-          : server
-      args.push('-c', serverOverlay(name, overlay))
+      args.push('-c', serverOverlay(name, server))
     }
   }
   if (opts.mcpServer && opts.mcpServer !== 'orch' && !opts.projectServers?.[opts.mcpServer]) {
-    const fallback =
-      opts.writesJob === false && opts.projectName
-        ? readerProxyServer(opts.projectName, opts.mcpServer)
-        : {
-            command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
-            args: [opts.mcpServer],
-          }
+    const fallback = {
+      command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
+      args: [opts.mcpServer],
+    }
     args.push('-c', serverOverlay(opts.mcpServer, fallback))
   }
   return args

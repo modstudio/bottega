@@ -56,8 +56,6 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     mcp: opts.mcp,
     mcpServer: opts.mcpServer,
     projectServers: opts.projectServers,
-    projectName: opts.projectName,
-    writesJob: opts.writesJob,
     home: opts.env.HOME,
     trustCwd: opts.trustCwd,
     model: opts.model,

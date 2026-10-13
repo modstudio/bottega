@@ -107,7 +107,7 @@ function clientUpstream(
 }
 
 /** Resolve credentials in-process, connect upstream, then serve only the filtered tool surface. */
-export async function serveReaderMcpProxy(projectName: string, serverName: string): Promise<void> {
+async function serveReaderMcpProxy(projectName: string, serverName: string): Promise<void> {
   const project = projectByName(projectName)
   if (!project) throw new Error(`project ${JSON.stringify(projectName)} is not registered`)
   const config = readMcpConfig(project.path)[serverName]

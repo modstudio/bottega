@@ -636,6 +636,43 @@ function reviewLensProblems(
   )
 }
 
+function readerToolServerProblems(server: string, names: unknown): string[] {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(server)) {
+    return [`mcp.reader_tools server name ${JSON.stringify(server)} must be a plain non-empty name`]
+  }
+  if (!Array.isArray(names)) return [`mcp.reader_tools.${server} must be a list of tool names`]
+  const problems: string[] = []
+  const seen = new Set<string>()
+  for (const name of names) {
+    if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
+      problems.push(`mcp.reader_tools.${server} must contain plain non-empty tool names`)
+    } else if (seen.has(name)) {
+      problems.push(
+        `mcp.reader_tools.${server} contains duplicate tool name ${JSON.stringify(name)}`,
+      )
+    }
+    if (typeof name === 'string') seen.add(name)
+  }
+  return problems
+}
+
+function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
+  if (mcp === undefined) return []
+  if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) return ['mcp must be an object']
+  const problems: string[] = []
+  if (mcp.probe_tool !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(mcp.probe_tool)) {
+    problems.push('mcp.probe_tool must be a plain non-empty tool name')
+  }
+  if (!('reader_tools' in mcp)) return problems
+  const readerTools = mcp.reader_tools
+  if (!readerTools || typeof readerTools !== 'object' || Array.isArray(readerTools)) {
+    return [...problems, 'mcp.reader_tools must be a map from server names to tool-name lists']
+  }
+  for (const [server, names] of Object.entries(readerTools))
+    problems.push(...readerToolServerProblems(server, names))
+  return problems
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   projectPath?: string,
@@ -661,6 +698,7 @@ export function validateProjectSettings(
     ...keyPrefixProblems(settings.keyPrefixes, context),
     ...mainStackProblems(settings.mainStack),
     ...reviewLensProblems(settings.review, context.enabledLensIds),
+    ...mcpSettingsProblems(settings.mcp),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
@@ -676,48 +714,6 @@ export function validateProjectSettings(
     (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())
   ) {
     problems.push('mcpServer must be a non-empty string')
-  }
-  if (
-    settings.mcp !== undefined &&
-    (!settings.mcp || typeof settings.mcp !== 'object' || Array.isArray(settings.mcp))
-  ) {
-    problems.push('mcp must be an object')
-  } else if (settings.mcp?.probe_tool !== undefined) {
-    const tool = settings.mcp.probe_tool
-    if (typeof tool !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(tool)) {
-      problems.push('mcp.probe_tool must be a plain non-empty tool name')
-    }
-  }
-  if (settings.mcp && 'reader_tools' in settings.mcp) {
-    const readerTools = settings.mcp.reader_tools
-    if (!readerTools || typeof readerTools !== 'object' || Array.isArray(readerTools)) {
-      problems.push('mcp.reader_tools must be a map from server names to tool-name lists')
-    } else {
-      for (const [server, names] of Object.entries(readerTools)) {
-        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(server)) {
-          problems.push(
-            `mcp.reader_tools server name ${JSON.stringify(server)} must be a plain non-empty name`,
-          )
-          continue
-        }
-        if (!Array.isArray(names)) {
-          problems.push(`mcp.reader_tools.${server} must be a list of tool names`)
-          continue
-        }
-        const seen = new Set<string>()
-        for (const name of names) {
-          if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
-            problems.push(`mcp.reader_tools.${server} must contain plain non-empty tool names`)
-          } else if (seen.has(name)) {
-            problems.push(
-              `mcp.reader_tools.${server} contains duplicate tool name ${JSON.stringify(name)}`,
-            )
-          } else {
-            seen.add(name)
-          }
-        }
-      }
-    }
   }
   const readonly = settings.worktree?.readonly_create
   if (readonly && !createHasPlaceholder(readonly, 'path')) {

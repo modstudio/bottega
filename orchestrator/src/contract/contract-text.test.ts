@@ -86,7 +86,7 @@ describe('job contracts are visible before submission', () => {
       expect(preamble).toContain('do not leave it only as')
       expect(preamble).toContain('a mailbox note')
     }
-    expect(READONLY_PREAMBLE).toContain("never file it through\nanother server's tool")
+    expect(READONLY_PREAMBLE).toContain("never file it through another server's tool")
   })
   test('writer contracts explain the ordered change guide', () => {
     const text = contract('implement').out.replace(/\s+/g, ' ')

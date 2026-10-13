@@ -9,6 +9,7 @@ import {
   CODEX_REASONING_EFFORT,
   codexMcpSetupHeader,
   codexProjectServers,
+  codexProjectServersForRun,
   codexScopeArgs,
   codexWithheldTools,
 } from './codex-mcp-scope.ts'
@@ -113,15 +114,22 @@ test('project server overlay takes the place of the mcp-run definition for the s
 })
 
 test('reading-job project overlays all use the credential-free reader proxy', () => {
+  const scope = codexProjectServersForRun(
+    'codex',
+    'cli',
+    'reader',
+    {
+      local: { name: 'local', command: '/project/server', args: ['literal-secret'] },
+      secret: { name: 'secret', command: '/project/secret', env: { TOKEN: 'literal-secret' } },
+    },
+    { name: 'starship', path: '/project', settings: { mcpServer: 'secret' } },
+    '/project',
+  )!
   const entries = serverEntries(
     codexScopeArgs({
       mcp: true,
       mcpServer: 'secret',
-      projectName: 'starship',
-      writesJob: false,
-      projectServers: {
-        local: { command: '/project/server', args: ['literal-secret'], cwd: '/project' },
-      },
+      projectServers: scope.servers,
     }),
   )
   const local = entries.find((entry) => entry.startsWith('mcp_servers.local='))!
@@ -137,13 +145,14 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
 })
 
 test('writing-job MCP overlays remain byte-for-byte unchanged', () => {
-  const options = {
-    mcp: true,
-    mcpServer: 'starship',
-    projectName: 'starship',
-    projectServers: { starship: { command: '/project/server', args: ['serve'] } },
-  }
-  expect(codexScopeArgs({ ...options, writesJob: true })).toEqual(codexScopeArgs(options))
+  const config = { starship: { name: 'starship', command: '/project/server', args: ['serve'] } }
+  const project = { name: 'starship', path: '/project', settings: {} }
+  const before = codexProjectServers(config, undefined, '/project')
+  const writer = codexProjectServersForRun('codex', 'cli', 'writer', config, project, '/project')
+  expect(writer).toEqual(before)
+  expect(codexScopeArgs({ mcp: true, projectServers: writer!.servers })).toEqual(
+    codexScopeArgs({ mcp: true, projectServers: before.servers }),
+  )
 })
 
 test('platform-shaped MCP scope emits orch exactly once', () => {
