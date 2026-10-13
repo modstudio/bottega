@@ -11,7 +11,7 @@ const ownerUrl = process.env.ORCH_TEST_DOC_AUTHOR_MIGRATION_URL
 const superuserUrl = process.env.ORCH_TEST_DOC_AUTHOR_MIGRATION_SUPERUSER_URL
 const realPostgres = ownerUrl && superuserUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
-const authorBackfill = '20261012220000_dev_1289_doc_revision_author_backfill'
+const authorBackfill = '20261013015000_dev_1289_doc_revision_author_backfill'
 let priorMigrations = ''
 
 const STAND_IN_ID = '01990000-0000-7000-8000-000000000002'
