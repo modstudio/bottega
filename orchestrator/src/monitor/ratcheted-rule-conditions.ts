@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import {
   type CategoryExecutionRow,
-  categoryExecutionRowsWithRemaining,
+  categoryExecutionRows,
   refilledCategoryExecutions,
 } from '../enforcement/enforcement-records.ts'
 import type { Project } from '../project/projects.ts'
@@ -37,7 +37,7 @@ export function observeRatchetedRuleRefills(
     return {
       conditions: ratchetedRuleRefillConditions(
         projects,
-        categoryExecutionRowsWithRemaining(database),
+        categoryExecutionRows(database),
       ),
       errors: [],
     }

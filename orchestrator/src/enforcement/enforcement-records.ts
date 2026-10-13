@@ -40,6 +40,13 @@ function eligibleCategoryExecutionRows(
   )
 }
 
+function compareCategoryExecutionRecency(
+  left: CategoryExecutionRow,
+  right: CategoryExecutionRow,
+): number {
+  return left.finishedAt.localeCompare(right.finishedAt) || left.gateId - right.gateId
+}
+
 export function newestCategoryExecutions(
   rows: readonly CategoryExecutionRow[],
   projectPath: string,
@@ -47,11 +54,7 @@ export function newestCategoryExecutions(
   const selected = new Map<string, CategoryExecutionRow>()
   for (const row of eligibleCategoryExecutionRows(rows, projectPath)) {
     const current = selected.get(row.category)
-    if (
-      !current ||
-      row.finishedAt > current.finishedAt ||
-      (row.finishedAt === current.finishedAt && row.gateId > current.gateId)
-    ) {
+    if (!current || compareCategoryExecutionRecency(row, current) > 0) {
       selected.set(row.category, row)
     }
   }
@@ -80,10 +83,7 @@ export function refilledCategoryExecutions(
     histories.set(row.category, history)
   }
   return [...histories].flatMap(([category, history]) => {
-    history.sort(
-      (left, right) =>
-        left.finishedAt.localeCompare(right.finishedAt) || left.gateId - right.gateId,
-    )
+    history.sort(compareCategoryExecutionRecency)
     const newest = history.at(-1)!
     const remaining = newest.remaining
     if (remaining === null || remaining === 0) return []
@@ -100,18 +100,15 @@ export function refilledCategoryExecutions(
   })
 }
 
-/** Read only category records that carry a remaining count for history decisions. */
-export function categoryExecutionRowsWithRemaining(
-  database: Database = db(),
-): CategoryExecutionRow[] {
+/** Read category records with the fields needed by eligibility and history decisions. */
+export function categoryExecutionRows(database: Database = db()): CategoryExecutionRow[] {
   return database
     .query(
       `SELECT c.category,c.wall_ms wallMs,c.remaining_count remaining,
               g.finished_at finishedAt,g.id gateId,g.exit_code gateExitCode,
               g.head_commit headCommit,g.cwd
          FROM check_execution c JOIN gate_execution g ON g.id=c.gate_execution_id
-        WHERE c.category IS NOT NULL AND c.remaining_count IS NOT NULL
-          AND g.finished_at IS NOT NULL
+        WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL
         ORDER BY g.finished_at,g.id`,
     )
     .all() as CategoryExecutionRow[]
@@ -121,14 +118,5 @@ export function categoryExecutionsForProject(
   projectPath: string,
   database: Database = db(),
 ): Map<string, CategoryExecution> {
-  const rows = database
-    .query(
-      `SELECT c.category,c.wall_ms wallMs,c.remaining_count remaining,
-              g.finished_at finishedAt,g.id gateId,g.exit_code gateExitCode,
-              g.head_commit headCommit,g.cwd
-         FROM check_execution c JOIN gate_execution g ON g.id=c.gate_execution_id
-        WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL`,
-    )
-    .all() as CategoryExecutionRow[]
-  return newestCategoryExecutions(rows, projectPath)
+  return newestCategoryExecutions(categoryExecutionRows(database), projectPath)
 }
