@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeProjectCounters() {
@@ -41,19 +42,7 @@ test('note project counter migration preserves rows and acknowledgements', () =>
   )
   d.query("INSERT INTO seq(name,next) VALUES ('note',100)").run()
 
-  expect(applyMigrations(d)).toEqual([
-    '0022_note_project_counter',
-    '0023_hosted_change_evidence',
-    '0024_hosted_change_evidence_send_family',
-    '0025_send_pending_status',
-    '0026_outbox',
-    '0027_outbox_status_event_tasks',
-    '0028_outbox_evidence',
-    '0029_outbox_fields',
-    '0030_outbox_kept_values',
-    '0031_change_log_pull_cutover',
-    '0032_outbox_delivery_trace',
-  ])
+  applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(d.query('SELECT project,next FROM note_counter ORDER BY project').all()).toEqual([
     { project: 'alpha', next: 42 },
     { project: PLATFORM_NAME.toLowerCase(), next: 2 },

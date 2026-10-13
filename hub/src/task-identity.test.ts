@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations } from './migrations.ts'
 import {
   formatTaskIdentityDoctor,
@@ -19,7 +20,7 @@ test('task key prefixes come only from canonical task keys', () => {
 
 test('observed task prefixes include task rows and claim-only identities', () => {
   const conn = new Database(':memory:')
-  applyMigrations(conn)
+  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   conn.exec(`
     INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
     VALUES ('task-record','B2B-40','alpha','mcp','2026-01-01','2026-01-01');
@@ -33,7 +34,7 @@ test('observed task prefixes include task rows and claim-only identities', () =>
 describe('resolveTask', () => {
   test('resolves one cached task and a project scope among shared claims', () => {
     const conn = new Database(':memory:')
-    applyMigrations(conn)
+    applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     conn.exec(`
       INSERT INTO task(record_id,external_id,key,project,source,first_seen,last_seen)
       VALUES ('beta-record','beta-external','SAME-1','beta','mcp','2026-01-01','2026-01-01');
@@ -61,7 +62,7 @@ describe('resolveTask', () => {
 
   test('reports a missing key exactly', () => {
     const conn = new Database(':memory:')
-    applyMigrations(conn)
+    applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     expect(() => resolveTask(conn, 'none-1')).toThrow('no task NONE-1')
     conn.close()
   })
@@ -70,7 +71,7 @@ describe('resolveTask', () => {
 describe('task identity doctor', () => {
   test('reports cross-project key claims after record identity is required', () => {
     const conn = new Database(':memory:')
-    applyMigrations(conn)
+    applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     conn.exec(`
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
       VALUES ('shared-record','SHARED-1','alpha','mcp','2026-01-01','2026-01-01');

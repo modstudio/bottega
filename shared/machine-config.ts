@@ -1,6 +1,8 @@
 import {
   chmodSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   statSync,
@@ -44,6 +46,7 @@ export const MACHINE_CONFIG = {
     default: '$HOME/.claude/projects',
   },
   'hub.port': { environment: 'HUB_PORT', type: 'integer', default: 7778 },
+  'machine.id': { type: 'string', default: '' },
   'model_host.url': {
     environment: 'ORCH_MODEL_HOST_URL',
     legacyEnvironment: 'ORCH_LOCAL_BASE_URL',
@@ -585,6 +588,72 @@ export function readMachineValue<Key extends MachineConfigKey>(
     (message) => process.stderr.write(`${message}\n`),
     warnedLegacyVariables,
   )
+}
+
+const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const MACHINE_ID_LOCK_WAIT_MS = 10_000
+const MACHINE_ID_LOCK_POLL_MS = 10
+
+type MachineIdentityLockWait = {
+  now: () => number
+  wait: (milliseconds: number) => void
+  timeoutMs: number
+  pollMs: number
+}
+
+const machineIdentityLockWait: MachineIdentityLockWait = {
+  now: Date.now,
+  wait: Bun.sleepSync,
+  timeoutMs: MACHINE_ID_LOCK_WAIT_MS,
+  pollMs: MACHINE_ID_LOCK_POLL_MS,
+}
+
+/** Read the durable machine identity without creating configuration. */
+export function storedMachineId(env: ConfigEnvironment = process.env): string | null {
+  const id = readMachineValue('machine.id', env)
+  if (!id) return null
+  if (!MACHINE_ID.test(id)) throw new Error(`refusing machine config: machine.id must be a UUID`)
+  return id
+}
+
+/** Carry over an existing identity or mint and persist this machine's identity once. */
+export function machineId(
+  existing: string | null = null,
+  env: ConfigEnvironment = process.env,
+  lockWait: MachineIdentityLockWait = machineIdentityLockWait,
+): string {
+  const directory = resolveConfigRoot(env)
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const lock = join(directory, '.machine-id.lock')
+  const deadline = lockWait.now() + lockWait.timeoutMs
+  let descriptor: number
+  for (;;) {
+    try {
+      descriptor = openSync(lock, 'wx', 0o600)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (lockWait.now() >= deadline)
+        throw new Error(
+          `timed out waiting for machine identity lock ${lock}; ` +
+            'remove this lock file when no process is starting',
+        )
+      lockWait.wait(lockWait.pollMs)
+    }
+  }
+  try {
+    const stored = storedMachineId(env)
+    if (stored) return stored
+    const id = existing ?? Bun.randomUUIDv7()
+    if (!MACHINE_ID.test(id)) throw new Error(`refusing legacy machine identity: expected a UUID`)
+    atomicPatch((root) => {
+      root.machine = { ...((root.machine as Record<string, unknown> | undefined) ?? {}), id }
+    }, env)
+    return id
+  } finally {
+    closeSync(descriptor)
+    unlinkSync(lock)
+  }
 }
 
 if (import.meta.main) {

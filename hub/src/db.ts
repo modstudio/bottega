@@ -6,6 +6,7 @@ import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
+import { machineId, storedMachineId } from '../../shared/machine-config.ts'
 import {
   legacyStoreRefusal,
   resolveHubDatabase,
@@ -257,7 +258,12 @@ export function migrateDatabase(): {
       )
     }
     const before = repairCounts()
-    const versions = applyMigrations(d)
+    const identity = create ? machineId() : storedMachineId()
+    if (!identity)
+      throw new Error(
+        'refusing to migrate hub before carrying over the machine identity; run orch migrate, then hub migrate',
+      )
+    const versions = applyMigrations(d, undefined, { machine_id: identity })
     const repairs = [...repairCounts()]
       .map(([reason, count]) => ({ reason, count: count - (before.get(reason) ?? 0) }))
       .filter((row) => row.count > 0)

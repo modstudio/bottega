@@ -21,6 +21,47 @@ export type DayRow = {
   lines_config: number
   lines_generated: number
 }
+export type MachineDayRow = DayRow & {
+  cache_read: number
+  messages: number
+  canon_tokens: number
+  other_tokens: number
+  collected_at: string
+}
+
+const SUM_DAY_FIELDS = [
+  'claude_tokens',
+  'cache_read',
+  'messages',
+  'canon_tokens',
+  'other_tokens',
+] as const
+const MAX_DAY_FIELDS = [
+  'tasks',
+  'commits',
+  'files',
+  'lines_product',
+  'lines_test',
+  'lines_docs',
+  'lines_config',
+  'lines_generated',
+] as const
+
+/** Combine machine contributions into the one observation each projection expects per date. */
+export function combineMachineDays(rows: MachineDayRow[]): MachineDayRow[] {
+  const combined = new Map<string, MachineDayRow>()
+  for (const row of rows) {
+    const current = combined.get(row.day)
+    if (!current) {
+      combined.set(row.day, { ...row })
+      continue
+    }
+    for (const field of SUM_DAY_FIELDS) current[field] += row[field]
+    for (const field of MAX_DAY_FIELDS) current[field] = Math.max(current[field], row[field])
+    if (row.collected_at > current.collected_at) current.collected_at = row.collected_at
+  }
+  return [...combined.values()].sort((left, right) => left.day.localeCompare(right.day))
+}
 
 export type DayIntervalRow = {
   start_at: string

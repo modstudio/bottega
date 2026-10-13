@@ -429,10 +429,64 @@ export function stripSqlComments(source: string): string {
   return result
 }
 
-function executeStatements(d: Database, source: string): void {
+type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
+
+function sqlQuoteState(
+  source: string,
+  index: number,
+  inString: boolean,
+): { index: number; inString: boolean } {
+  if (source[index] !== "'") return { index, inString }
+  if (inString && source[index + 1] === "'") return { index: index + 1, inString }
+  return { index, inString: !inString }
+}
+
+function sqlStatementCount(source: string): number {
+  let count = 0
+  let hasSql = false
+  let inString = false
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]!
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
+      continue
+    }
+    if (inString) {
+      continue
+    }
+    if (char === ';') {
+      if (hasSql) count++
+      hasSql = false
+    } else if (!/\s/.test(char)) hasSql = true
+  }
+  return count + Number(hasSql)
+}
+
+function executeStatements(
+  d: Database,
+  source: string,
+  values: BackfillValues = {},
+  migration = '<unknown>',
+): void {
   for (const statement of source.split('--> statement-breakpoint')) {
     const executable = stripSqlComments(statement).trim()
-    if (executable) d.exec(executable)
+    if (!executable) continue
+    const names = [...executable.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]!)
+    for (const name of names) {
+      if (!(name in values)) throw new Error(`missing migration backfill value: ${name}`)
+    }
+    if (names.length) {
+      if (sqlStatementCount(executable) > 1) {
+        throw new Error(
+          `migration ${migration} has multiple statements in a named-value backfill block; ` +
+            'separate them with --> statement-breakpoint',
+        )
+      }
+      const bindings = Object.fromEntries(names.map((name) => [`$${name}`, values[name]!]))
+      d.query(executable).run(bindings)
+    } else d.exec(executable)
   }
 }
 
@@ -440,10 +494,10 @@ function executeMigrationSource(d: Database, source: string): void {
   executeStatements(d, splitMigrationSource(source).ddl)
 }
 
-function applyBackfills(d: Database, folder: string): void {
+function applyBackfills(d: Database, folder: string, values: BackfillValues): void {
   for (const entry of migrationJournal(folder)) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
-    if (backfill.trim()) executeStatements(d, backfill)
+    if (backfill.trim()) executeStatements(d, backfill, values, entry.tag)
   }
 }
 
@@ -581,7 +635,11 @@ function adoptBaseline(d: Database, folder: string): string[] {
 }
 
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
-export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+export function applyMigrations(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+  backfillValues: BackfillValues = {},
+): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   d.exec('BEGIN IMMEDIATE')
   try {
@@ -601,7 +659,7 @@ export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string
       stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
     }
-    applyBackfills(d, folder)
+    applyBackfills(d, folder, backfillValues)
     stampUserVersion(d, migrationJournal(folder).length)
     d.exec('COMMIT')
     return versions

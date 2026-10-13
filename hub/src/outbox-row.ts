@@ -54,7 +54,7 @@ function currentInterval(conn: Database, id: string): LoadedOutboxChange | null 
 function currentDay(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedDay, [string]>(
-      `SELECT record_id id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
+      `SELECT record_id id,machine_id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
       commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,collected_at
      FROM day WHERE record_id=?`,
     )

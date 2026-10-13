@@ -1,0 +1,3 @@
+export const HUB_MIGRATION_BACKFILL_VALUES = {
+  machine_id: '01990000-0000-7000-8000-000000001240',
+} as const

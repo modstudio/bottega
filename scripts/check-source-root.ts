@@ -69,7 +69,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'hub/src/db.ts',
-    line: 52,
+    line: 53,
     reason: 'embedded hub runtime resolution skips checkout discovery and legacy paths',
   },
   {

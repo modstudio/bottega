@@ -100,6 +100,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
+    '../record/machine-identity.ts',
     '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/record/outbox-sanitize.ts', ['../../../shared/secret-shaped.ts']),

@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 function storeBeforeOutbox() {
@@ -33,15 +34,7 @@ test('outbox migration moves pending tracker status events and retires the setti
     ]),
   )
 
-  expect(applyMigrations(database)).toEqual([
-    '0026_outbox',
-    '0027_outbox_status_event_tasks',
-    '0028_outbox_evidence',
-    '0029_outbox_fields',
-    '0030_outbox_kept_values',
-    '0031_change_log_pull_cutover',
-    '0032_outbox_delivery_trace',
-  ])
+  applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(
     database
       .query(
@@ -106,15 +99,7 @@ test('the additive outbox migration brings each queued status event task once', 
     ]),
   )
 
-  expect(applyMigrations(database)).toEqual([
-    '0026_outbox',
-    '0027_outbox_status_event_tasks',
-    '0028_outbox_evidence',
-    '0029_outbox_fields',
-    '0030_outbox_kept_values',
-    '0031_change_log_pull_cutover',
-    '0032_outbox_delivery_trace',
-  ])
+  applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(
     database
       .query(`SELECT table_name,row_id,queued_at FROM hosted_outbox ORDER BY table_name,row_id`)

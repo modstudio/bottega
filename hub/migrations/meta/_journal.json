@@ -232,6 +232,13 @@
       "when": 1792361336000,
       "tag": "0032_outbox_delivery_trace",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792447736000,
+      "tag": "0033_day_machine",
+      "breakpoints": true
     }
   ]
 }

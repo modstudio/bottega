@@ -1,7 +1,8 @@
 // concern: database
 /** Stores the install's machine identity. Must not know callers, runs, or hosted records. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { machineId as sharedMachineId, storedMachineId } from '../../../shared/machine-config.ts'
 
 const MACHINE_ID_KEY = 'machine_id'
 
@@ -13,15 +14,28 @@ export function machineIdStored(database: Database): string | null {
   )
 }
 
-export function machineIdFromStore(database: Database, transaction: <T>(fn: () => T) => T): string {
-  const existing = machineIdStored(database)
-  if (existing) return existing
+function storeMachineId(database: Database, id: string): void {
+  database
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(MACHINE_ID_KEY, id)
+}
 
-  return transaction(() => {
-    const raced = machineIdStored(database)
-    if (raced) return raced
-    const id = newRecordId()
-    database.query('INSERT INTO schema_meta (key, value) VALUES (?, ?)').run(MACHINE_ID_KEY, id)
-    return id
-  })
+export function carryMachineIdentity(
+  database: Database,
+  transaction: <T>(fn: () => T) => T,
+  env: ConfigEnvironment = process.env,
+): string {
+  const legacy = machineIdStored(database)
+  const shared = storedMachineId(env)
+  if (shared) {
+    if (legacy && legacy !== shared)
+      process.stderr.write(
+        `replacing stale orchestrator machine identity ${legacy}; shared machine identity is ${shared}\n`,
+      )
+    if (legacy !== shared) transaction(() => storeMachineId(database, shared))
+    return shared
+  }
+  const id = sharedMachineId(legacy, env)
+  transaction(() => storeMachineId(database, id))
+  return id
 }

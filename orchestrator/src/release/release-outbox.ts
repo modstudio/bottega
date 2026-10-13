@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 const RELEASE_RECORD_PAYLOAD_COLUMNS = [
@@ -36,16 +37,6 @@ export const RELEASE_RECORD_PAYLOAD_CONTRACT = {
 
 type ReleaseRow = Record<string, unknown> & { id: number; record_id: string | null }
 
-function localMachineId(database: Database): string {
-  const existing = database
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
-    .get()
-  if (existing) return existing.value
-  const id = newRecordId()
-  database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id',?)").run(id)
-  return id
-}
-
 export function enqueueReleaseRecord(database: Database, releaseId: number): void {
   const row = database
     .query<ReleaseRow, [number]>('SELECT * FROM release_ledger WHERE id=?')
@@ -57,7 +48,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
     projectName: row.project,
-    machineId: localMachineId(database),
+    machineId: machineId(),
     localId: row.id,
     rung: row.rung,
     candidateCommit: row.candidate_commit,

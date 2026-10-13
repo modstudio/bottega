@@ -67,6 +67,7 @@ const SPACE_C = '01990000-0000-7000-8000-00000000066b'
 const PROJECT_A = '01990000-0000-7000-8000-00000000065c'
 const PROJECT_B = '01990000-0000-7000-8000-00000000066c'
 const PROJECT_MOVE = '01990000-0000-7000-8000-00000000067c'
+const MACHINE = '01990000-0000-7000-8000-00000000067d'
 const interval: IntervalEvidence = {
   id: '01990000-0000-7000-8000-000000000690',
   task_key: 'DEV-655',
@@ -87,6 +88,7 @@ const interval: IntervalEvidence = {
 }
 const day = {
   id: '01990000-0000-7000-8000-000000000691',
+  machine_id: MACHINE,
   day: '2026-09-17',
   claude_tokens: 20,
   cache_read: 0,
@@ -166,6 +168,8 @@ try {
       (${newRecordId()}::uuid,${SPACE_C}::uuid,${USER}::uuid,'owner','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
+  await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+    VALUES (${MACHINE}::uuid,${USER}::uuid,'evidence-machine',now(),now())`
 
   const changeHead = async () => {
     const rows = await admin<{ head: string }[]>`
@@ -1540,6 +1544,7 @@ try {
   await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid)`
   await admin.close()
 }

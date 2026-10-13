@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { upsertGitTasks } from './ingest/git-task-cache.ts'
@@ -387,7 +388,7 @@ test('applies and deduplicates tasks while isolating collisions and source refus
 
 test('a production-shaped git task date crosses the edge and remains idempotent', async () => {
   const machine = new Database(':memory:')
-  applyMigrations(machine)
+  applyMigrations(machine, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   upsertGitTasks(
     machine,
     [{ key: 'DEV-84', project: 'workshop', first: '2026-10-09', last: '2026-10-09' }],
@@ -426,7 +427,7 @@ test('later git observations cannot send cached tracker or local rows', async ()
   )
 
   const machine = new Database(':memory:')
-  applyMigrations(machine)
+  applyMigrations(machine, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   const insert = machine.query(
     `INSERT INTO task
       (record_id,key,project,title,status,status_category,body,source,first_seen,last_seen,updated_at)

@@ -165,6 +165,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       '../../../shared/record/schema.ts',
       '../database/db.ts',
+      '../record/machine-identity.ts',
       '../record/outbox-sanitize.ts',
       'bun:sqlite',
     ],

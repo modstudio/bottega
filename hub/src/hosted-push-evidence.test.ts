@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
-import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
+import {
+  createHostedRecordFixture,
+  HOSTED_FIXTURE_MACHINE_ID,
+  pgliteSql,
+} from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
@@ -18,6 +22,9 @@ const spaceId = '01990000-0000-7000-8000-000000008301'
 const userId = '01990000-0000-7000-8000-000000008302'
 const intervalId = '01990000-0000-7000-8000-000000008303'
 const dayId = '01990000-0000-7000-8000-000000008304'
+const secondMachineId = '01990000-0000-7000-8000-000000008320'
+const foreignUserId = '01990000-0000-7000-8000-000000008321'
+const foreignMachineId = '01990000-0000-7000-8000-000000008322'
 const identity = { userId, spaceId }
 let database: PGlite
 
@@ -41,6 +48,7 @@ const interval: PushedInterval = {
 }
 const day: PushedDay = {
   id: dayId,
+  machine_id: HOSTED_FIXTURE_MACHINE_ID,
   day: '2026-10-11',
   claude_tokens: 10,
   cache_read: 0,
@@ -68,6 +76,18 @@ const apply = (inputs: HostedPushChange[]) =>
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${foreignUserId}','foreign@example.test','Foreign',now());
+    INSERT INTO machine (id,user_id,name,registered_at,last_seen) VALUES
+      ('${secondMachineId}','${userId}','second',now(),now()),
+      ('${foreignMachineId}','${foreignUserId}','foreign',now(),now());
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);
+  `)
 })
 
 beforeEach(resetFixtureStore)
@@ -103,6 +123,112 @@ test('the edge accepts evidence and unchanged resends append no hosted changes',
   expect(after).toBe(before)
 })
 
+test('day identity is per machine and legacy rows are claimed', async () => {
+  const first = { ...day, id: '01990000-0000-7000-8000-000000008330', day: '2026-10-20' }
+  const second = {
+    ...first,
+    id: '01990000-0000-7000-8000-000000008331',
+    machine_id: secondMachineId,
+    claude_tokens: 20,
+  }
+  expect(
+    await apply([
+      { table: 'hub_day', id: first.id, op: 'upsert', row: first },
+      { table: 'hub_day', id: second.id, op: 'upsert', row: second },
+    ]),
+  ).toEqual([
+    { id: first.id, status: 'applied' },
+    { id: second.id, status: 'applied' },
+  ])
+  expect((await database.query(`SELECT id FROM hub_day WHERE day='2026-10-20'`)).rows).toHaveLength(
+    2,
+  )
+  const firstOnly = {
+    ...first,
+    id: '01990000-0000-7000-8000-000000008335',
+    day: '2026-10-19',
+  }
+  expect(
+    await apply([{ table: 'hub_day', id: firstOnly.id, op: 'upsert', row: firstOnly }]),
+  ).toEqual([{ id: firstOnly.id, status: 'applied' }])
+  const wrongOwner = { ...firstOnly, machine_id: secondMachineId }
+  expect(
+    (await apply([{ table: 'hub_day', id: firstOnly.id, op: 'upsert', row: wrongOwner }]))[0],
+  ).toMatchObject({ status: 'rejected' })
+  expect(
+    (
+      await database.query<{ machine_id: string }>(
+        `SELECT machine_id::text machine_id FROM hub_day WHERE id=$1`,
+        [firstOnly.id],
+      )
+    ).rows[0]!.machine_id,
+  ).toBe(HOSTED_FIXTURE_MACHINE_ID)
+  const secondNewest = {
+    ...second,
+    id: '01990000-0000-7000-8000-000000008334',
+    day: '2026-10-21',
+  }
+  await apply([{ table: 'hub_day', id: secondNewest.id, op: 'upsert', row: secondNewest }])
+  const firstRefreshed = { ...first, collected_at: '2026-10-20T23:30:00.000Z' }
+  expect(
+    await apply([{ table: 'hub_day', id: first.id, op: 'upsert', row: firstRefreshed }]),
+  ).toEqual([{ id: first.id, status: 'applied' }])
+
+  const conflict = { ...first, id: '01990000-0000-7000-8000-000000008332' }
+  expect(
+    (await apply([{ table: 'hub_day', id: conflict.id, op: 'upsert', row: conflict }]))[0],
+  ).toMatchObject({ status: 'rejected' })
+  for (const machine_id of ['01990000-0000-7000-8000-000000008399', foreignMachineId]) {
+    const rejected = { ...first, id: Bun.randomUUIDv7(), machine_id, day: '2026-10-21' }
+    expect(
+      (await apply([{ table: 'hub_day', id: rejected.id, op: 'upsert', row: rejected }]))[0],
+    ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('run orch sync') })
+  }
+
+  const legacyId = '01990000-0000-7000-8000-000000008333'
+  await database.exec(`RESET ROLE; INSERT INTO hub_day
+    (id,space_id,day,claude_tokens,cache_read,messages,tasks,canon_tokens,other_tokens,
+     commits,files,lines_product,lines_test,lines_docs,lines_config,lines_generated,
+     collected_at,updated_at) VALUES
+    ('${legacyId}','${spaceId}','2026-10-22',10,0,1,1,0,0,1,1,1,0,0,0,0,
+     '2026-10-11T23:00:00.000Z',now());
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);`)
+  const claimed = { ...first, id: legacyId, day: '2026-10-22' }
+  expect(await apply([{ table: 'hub_day', id: legacyId, op: 'upsert', row: claimed }])).toEqual([
+    { id: legacyId, status: 'applied' },
+  ])
+  expect(
+    (
+      await database.query<{ machine_id: string }>(
+        `SELECT machine_id::text machine_id FROM hub_day WHERE id=$1`,
+        [legacyId],
+      )
+    ).rows[0]!.machine_id,
+  ).toBe(HOSTED_FIXTURE_MACHINE_ID)
+  expect(
+    (
+      await database.query<{ count: number }>(
+        `SELECT count(*)::int count FROM hub_day
+         WHERE machine_id=$1::uuid AND day='2026-10-22'`,
+        [HOSTED_FIXTURE_MACHINE_ID],
+      )
+    ).rows[0]!.count,
+  ).toBe(1)
+  expect(
+    await apply([
+      {
+        table: 'hub_day',
+        id: first.id,
+        op: 'upsert',
+        row: { ...firstRefreshed, collected_at: '2026-10-20T23:45:00.000Z' },
+      },
+    ]),
+  ).toEqual([{ id: first.id, status: 'duplicate' }])
+})
+
 test('an absent interval delete is duplicate and a present interval delete applies', async () => {
   const absent = '01990000-0000-7000-8000-000000008305'
   expect(await apply([{ table: 'hub_interval', id: absent, op: 'delete' }])).toEqual([
@@ -131,9 +257,9 @@ test('real and legacy machine day timestamps serialize through the strict edge',
   const legacyId = '01990000-0000-7000-8000-000000008311'
   writeTransaction((conn) =>
     conn
-      .query(`INSERT INTO day(record_id,day,collected_at)
-        VALUES (?,'2026-10-10','2026-10-10 23:00:00')`)
-      .run(legacyId),
+      .query(`INSERT INTO day(record_id,machine_id,day,collected_at)
+        VALUES (?,?,'2026-10-10','2026-10-10 23:00:00')`)
+      .run(legacyId, day.machine_id),
   )
   const inputs = [current.record_id, legacyId].map((row_id) =>
     loadOutboxChange(db(), { table_name: 'hub_day', row_id, operation: 'upsert' }),
@@ -141,6 +267,13 @@ test('real and legacy machine day timestamps serialize through the strict edge',
   expect(inputs.every(Boolean)).toBeTrue()
   const changes = inputs.map((loaded) => loaded!.change)
   expect(changes.map(parseHostedPushItem)).toEqual(changes.map((input) => ({ input })))
+  const localMachine = (changes[0] as { row: PushedDay }).row.machine_id
+  await database.exec(`RESET ROLE; INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+    VALUES ('${localMachine}','${userId}','local',now(),now()) ON CONFLICT (id) DO NOTHING;
+    SET ROLE record_actor;
+    SELECT set_config('app.user_id','${userId}',false);
+    SELECT set_config('app.space_id','${spaceId}',false);
+    SELECT set_config('app.space_ids','${spaceId}',false);`)
   expect(await apply(changes)).toEqual(
     changes.map(({ id }) => ({ id, status: 'applied' as const })),
   )

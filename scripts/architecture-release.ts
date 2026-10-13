@@ -37,6 +37,7 @@ export const releaseModules = [
       'bun:sqlite',
       'shared/record/schema.ts',
       'orchestrator/src/database/db.ts',
+      'orchestrator/src/record/machine-identity.ts',
       'orchestrator/src/record/outbox-sanitize.ts',
     ],
   },

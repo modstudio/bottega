@@ -22,10 +22,10 @@ export function hostedIntervalWrite(
 export function hostedDayWrite(
   row: DayEvidence,
   existingId: string | null,
-  existingDayId: string | null,
+  existingMachineDayId: string | null,
 ): 'update' | 'insert' {
   if (existingId) return 'update'
-  if (existingDayId) throw dayIdentityConflict(row, existingDayId)
+  if (existingMachineDayId) throw dayIdentityConflict(row, existingMachineDayId)
   return 'insert'
 }
 
@@ -152,20 +152,30 @@ export async function applyDayChangeInTransaction(
   identity: EvidenceIdentity,
   row: DayEvidence,
 ): Promise<'applied' | 'duplicate'> {
-  const existing = await tx<{ id: string; by_id: boolean }[]>`
-    SELECT id::text AS id,id=${row.id}::uuid AS by_id FROM hub_day
-    WHERE space_id=${identity.spaceId}::uuid AND (id=${row.id}::uuid OR day=${row.day})`
+  const knownMachine = await tx`SELECT 1 FROM machine
+    WHERE id=${row.machine_id}::uuid AND user_id=${identity.userId}::uuid`
+  if (!knownMachine.length)
+    throw new Error(
+      `machine ${row.machine_id} is unknown or belongs to another user; run orch sync to register the machine`,
+    )
+  const existing = await tx<{ id: string; by_id: boolean; machine_id: string | null }[]>`
+    SELECT id::text AS id,id=${row.id}::uuid AS by_id,machine_id::text FROM hub_day
+    WHERE space_id=${identity.spaceId}::uuid
+      AND (id=${row.id}::uuid OR (machine_id=${row.machine_id}::uuid AND day=${row.day}))`
   const byId = existing.find((candidate) => candidate.by_id)?.id ?? null
+  const idHolder = existing.find((candidate) => candidate.by_id)
+  if (idHolder?.machine_id && idHolder.machine_id !== row.machine_id)
+    throw dayIdentityConflict(row, idHolder.id)
   const byDay = existing.find((candidate) => !candidate.by_id)?.id ?? byId
   const write = hostedDayWrite(row, byId, byDay)
   if (write === 'insert') {
     await tx`
       INSERT INTO hub_day
-        (id, space_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
+        (id, space_id, machine_id, day, claude_tokens, cache_read, messages, tasks, canon_tokens,
          other_tokens, commits, files, lines_product, lines_test, lines_docs, lines_config,
          lines_generated, collected_at, updated_at)
       VALUES
-        (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.day}, ${row.claude_tokens},
+        (${row.id}::uuid, ${identity.spaceId}::uuid, ${row.machine_id}::uuid, ${row.day}, ${row.claude_tokens},
          ${row.cache_read}, ${row.messages}, ${row.tasks}, ${row.canon_tokens},
          ${row.other_tokens}, ${row.commits}, ${row.files}, ${row.lines_product},
          ${row.lines_test}, ${row.lines_docs}, ${row.lines_config}, ${row.lines_generated},
@@ -174,18 +184,20 @@ export async function applyDayChangeInTransaction(
   }
   const matches = await tx`SELECT 1 FROM hub_day
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid AND day=${row.day}
+      AND machine_id=${row.machine_id}::uuid
       AND claude_tokens=${row.claude_tokens} AND cache_read=${row.cache_read}
       AND messages=${row.messages} AND tasks=${row.tasks} AND canon_tokens=${row.canon_tokens}
       AND other_tokens=${row.other_tokens} AND commits=${row.commits} AND files=${row.files}
       AND lines_product=${row.lines_product} AND lines_test=${row.lines_test}
       AND lines_docs=${row.lines_docs} AND lines_config=${row.lines_config}
       AND lines_generated=${row.lines_generated}
-      AND (day < (SELECT max(day) FROM hub_day WHERE space_id=${identity.spaceId}::uuid)
+      AND (day < (SELECT max(day) FROM hub_day WHERE space_id=${identity.spaceId}::uuid
+          AND machine_id=${row.machine_id}::uuid)
         OR collected_at=${row.collected_at}::timestamptz)`
   if (matches.length) return 'duplicate'
   await tx`
     UPDATE hub_day SET
-      day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
+      machine_id=${row.machine_id}::uuid, day=${row.day}, claude_tokens=${row.claude_tokens}, cache_read=${row.cache_read},
       messages=${row.messages}, tasks=${row.tasks}, canon_tokens=${row.canon_tokens},
       other_tokens=${row.other_tokens}, commits=${row.commits}, files=${row.files},
       lines_product=${row.lines_product}, lines_test=${row.lines_test},

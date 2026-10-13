@@ -2,6 +2,7 @@
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { machineId } from './machine-identity.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export const LANDING_RECORD_PAYLOAD_COLUMNS = [
@@ -163,15 +164,6 @@ export type LandingEvidenceBackfillResult = {
 type LocalRow = Record<string, unknown>
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
 const nowIso = (): string => new Date().toISOString()
-const localMachineId = (database: Database): string => {
-  const row = database
-    .query<{ value: string }, []>("SELECT value FROM schema_meta WHERE key='machine_id'")
-    .get()
-  if (row) return row.value
-  const id = newRecordId()
-  database.query("INSERT INTO schema_meta (key, value) VALUES ('machine_id', ?)").run(id)
-  return id
-}
 const enqueue = (
   database: Database,
   kind: string,
@@ -330,7 +322,7 @@ function enqueueLanding(database: Database, id: number, at = nowIso()): void {
   if (!row?.record_id) throw new Error(`landing ${id} has no record id`)
   if (row.causing_landing_id != null && row.causing_landing_record_id == null)
     throw new Error(`landing ${id} has a causing landing without a record id`)
-  const value = buildLandingRecordPayload(row, localMachineId(database), at)
+  const value = buildLandingRecordPayload(row, machineId(), at)
   enqueue(database, 'landing', String(row.record_id), value, at)
 }
 
@@ -342,7 +334,7 @@ export function enqueueLandingOverride(database: Database, id: number, at = nowI
     )
     .get(id)
   if (!row?.record_id) throw new Error(`landing override ${id} has no record id`)
-  const value = buildLandingOverrideRecordPayload(row, localMachineId(database), at)
+  const value = buildLandingOverrideRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_override', String(row.record_id), value, at)
 }
 
@@ -369,7 +361,7 @@ export function enqueueLandingTriageSnapshot(database: Database, id: number, at 
     database,
     'landing_triage_snapshot',
     String(row.record_id),
-    buildLandingTriageSnapshotRecordPayload(row, localMachineId(database), at),
+    buildLandingTriageSnapshotRecordPayload(row, machineId(), at),
     at,
   )
 }
@@ -385,7 +377,7 @@ function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()
   if (!row?.record_id) throw new Error(`landing review carry ${id} has no record id`)
   if (!row.review_record_id)
     throw new Error(`landing review carry ${id} has a review without a record id`)
-  const value = buildLandingReviewCarryRecordPayload(row, localMachineId(database), at)
+  const value = buildLandingReviewCarryRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_review_carry', String(row.record_id), value, at)
 }
 
@@ -403,14 +395,14 @@ export function enqueueContention(database: Database, id: number, at = nowIso())
     throw new Error(`contention ${id} has a run without a record id`)
   if (row.landing_id != null && row.landing_record_id == null)
     throw new Error(`contention ${id} has a landing without a record id`)
-  const value = buildContentionRecordPayload(row, localMachineId(database), at)
+  const value = buildContentionRecordPayload(row, machineId(), at)
   enqueue(database, 'contention', String(row.record_id), value, at)
 }
 
 function enqueueTestFlake(database: Database, id: number, at = nowIso()): void {
   const row = database.query<LocalRow, [number]>('SELECT * FROM test_flake WHERE id=?').get(id)
   if (!row?.record_id) throw new Error(`test flake ${id} has no record id`)
-  const value = buildTestFlakeRecordPayload(row, localMachineId(database), at)
+  const value = buildTestFlakeRecordPayload(row, machineId(), at)
   enqueue(database, 'test_flake', String(row.record_id), value, at)
 }
 
