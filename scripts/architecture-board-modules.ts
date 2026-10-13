@@ -67,10 +67,7 @@ export const boardModules: BoardModule[] = [
     '../record/record-board-contract.ts',
     './board-store.ts',
   ]),
-  module('orchestrator/src/board/board-reach-command.ts', [
-    'commander',
-    './board-reach.ts',
-  ]),
+  module('orchestrator/src/board/board-reach-command.ts', ['commander', './board-reach.ts']),
   module('orchestrator/src/board/board-overview.ts', [
     '../database/db.ts',
     '../record/record-api-client.ts',
