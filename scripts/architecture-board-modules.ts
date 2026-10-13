@@ -62,6 +62,7 @@ export const boardModules: BoardModule[] = [
     '../../../shared/board-purpose.ts',
     './board-hosted-cache.ts',
     './board-policy.ts',
+    './board-render.ts',
     './board-service.ts',
   ]),
   module('orchestrator/src/board/board-push-policy.ts', ['../../../shared/board-purpose.ts']),

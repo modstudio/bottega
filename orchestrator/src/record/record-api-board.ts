@@ -3,10 +3,10 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { BOARD_PURPOSES } from '../../../shared/board-purpose.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
+  BOARD_PURPOSES,
   type HostedBoardAcceptInput,
   type HostedBoardChanges,
   type HostedBoardClaim,

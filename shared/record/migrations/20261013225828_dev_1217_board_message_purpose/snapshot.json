@@ -14496,7 +14496,7 @@
       "table": "board_message"
     },
     {
-      "value": "(\"kind\" = 'reply' AND \"purpose\" IS NULL) OR\n          (\"kind\" <> 'reply' AND \"purpose\" IN ('information','request','standing'))",
+      "value": "(\"kind\" = 'reply' AND \"purpose\" IS NULL) OR\n          (\"kind\" <> 'reply' AND\n            (\"purpose\" IS NULL OR \"purpose\" IN ('information','request','standing')))",
       "name": "board_message_purpose_check",
       "entityType": "checks",
       "schema": "public",
