@@ -62,6 +62,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       'bun',
       '../../../shared/doc-sections.ts',
       '../../../shared/docs.ts',
+      '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../canon/canon-import-policy.ts',
@@ -94,7 +95,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-doc-mapping-boundary',
     'orchestrator/src/record/record-doc-mapping.ts',
-    ['../../../shared/docs.ts', './record-doc-audiences.ts'],
+    ['../../../shared/docs.ts', './record-doc-audiences.ts', './record-doc-list-shape.ts'],
     'Keep hosted document row mapping independent of SQL and transports.',
     ['../doc/doc-write-allowed.ts'],
   ),
@@ -181,7 +182,12 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-snapshots-boundary',
     'orchestrator/src/record/record-snapshots.ts',
-    ['bun', '../../../shared/record/schema.ts', '../../../shared/record/tenant.ts'],
+    [
+      'bun',
+      '../../../shared/record/jsonb-sql.ts',
+      '../../../shared/record/schema.ts',
+      '../../../shared/record/tenant.ts',
+    ],
     'Enforce the hosted snapshot service concern boundary.',
   ),
   boundary(

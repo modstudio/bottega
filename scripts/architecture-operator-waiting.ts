@@ -90,6 +90,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   ]),
   module('hub/src/operator-waiting-email-hosted.ts', [
     'bun',
+    '../../shared/record/jsonb-sql.ts',
     '../../shared/record/schema.ts',
     './hosted-tasks.ts',
     './operator-waiting-email-contract.ts',

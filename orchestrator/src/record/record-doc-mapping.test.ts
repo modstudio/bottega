@@ -127,3 +127,32 @@ test('revision rows carry the batched author display name', () => {
 
   expect(mapped).toMatchObject({ authorName: 'Avery Editor', withheldForAudience: false })
 })
+
+test('document rows unwrap source-file strings and name a wrong shape', () => {
+  const row = {
+    id: 'doc-shape',
+    space_id: newRecordId(),
+    space_name: 'space',
+    scope: 'global',
+    subject: null,
+    owner_user_id: null,
+    slug: 'shape',
+    title: 'Shape',
+    body: 'Body',
+    delivery: 'demand',
+    audiences: ['technical'],
+    parent_id: null,
+    position: 0,
+    related_subjects: [],
+    project_name: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    deleted_at: null,
+  }
+  expect(recordDocRow({ ...row, source_files: '["src/article.ts"]' }).sourceFiles).toEqual([
+    'src/article.ts',
+  ])
+  expect(() => recordDocRow({ ...row, source_files: { file: 'src/article.ts' } })).toThrow(
+    /doc-shape.*doc\.source_files/,
+  )
+})

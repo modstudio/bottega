@@ -4,6 +4,7 @@ import type { DocForm, DocKind } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
+import { recordDocList } from './record-doc-list-shape.ts'
 
 type Row = Record<string, unknown>
 type Fields = {
@@ -70,7 +71,12 @@ export async function resolveHostedArticleFields(
     input.relatedSubjectIds ?? existingRelated.map((row: Row) => String(row.subject_id))
   const sourceFiles =
     input.sourceFiles ??
-    (Array.isArray(existing?.source_files) ? (existing.source_files as string[]) : [])
+    recordDocList(existing?.source_files, {
+      document:
+        existing?.id == null ? `${input.scope}/${input.subject ?? '_'}` : String(existing.id),
+      column: 'doc.source_files',
+      optional: true,
+    }).map(String)
   assertWrite(
     articleFieldRefusal({
       scope: input.scope,
@@ -107,14 +113,19 @@ export async function resolveHostedArticleFields(
 }
 
 export function restoredArticleFields(revision: Row): Fields {
+  const document = `revision ${String(revision.id)} of document ${String(revision.doc_id)}`
   return {
     form: revision.form == null ? null : (String(revision.form) as DocForm),
     articleSubjectId:
       revision.article_subject_id == null ? null : String(revision.article_subject_id),
-    relatedSubjectIds: Array.isArray(revision.related_subject_ids)
-      ? revision.related_subject_ids.map(String)
-      : [],
-    sourceFiles: Array.isArray(revision.source_files) ? revision.source_files.map(String) : [],
+    relatedSubjectIds: recordDocList(revision.related_subject_ids, {
+      document,
+      column: 'doc_revision.related_subject_ids',
+    }).map(String),
+    sourceFiles: recordDocList(revision.source_files, {
+      document,
+      column: 'doc_revision.source_files',
+    }).map(String),
   }
 }
 

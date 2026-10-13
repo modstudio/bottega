@@ -12,6 +12,7 @@ import {
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { RecordDocError } from './record-doc-errors.ts'
+import { recordDocList } from './record-doc-list-shape.ts'
 import {
   type RecordDoc,
   type RecordDocRevision,
@@ -129,19 +130,44 @@ export async function listRecordDocRevisions(
       audiences: live.audiences as DocAudiences,
       body: String(live.body),
     }
-    const rows = await tx`
+    const rows = (await tx`
       SELECT r.*, own.name AS article_subject_name,
-        COALESCE(NULLIF(author_user.name,''),author_user.email) AS author_name,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(r.related_subject_ids)='array' THEN r.related_subject_ids ELSE '[]'::jsonb END) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
+        COALESCE(NULLIF(author_user.name,''),author_user.email) AS author_name
       FROM doc_revision r
       LEFT JOIN subject own ON own.id=r.article_subject_id
       LEFT JOIN "user" author_user ON author_user.id::text=r.author
       WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
       ORDER BY at DESC, id DESC
-    `
+    `) as Array<Record<string, unknown>>
+    const relatedIds = new Map<string, string[]>()
+    for (const row of rows) {
+      relatedIds.set(
+        String(row.id),
+        recordDocList(row.related_subject_ids, {
+          document: `revision ${String(row.id)} of document ${input.id}`,
+          column: 'doc_revision.related_subject_ids',
+        }).map(String),
+      )
+    }
+    const subjectIds = [...new Set([...relatedIds.values()].flat())]
+    const subjects = subjectIds.length
+      ? await tx`SELECT id,name FROM subject WHERE space_id=${String(docs[0]!.space_id)}::uuid AND id=ANY(${tx.array(subjectIds, 'uuid')})`
+      : []
+    const subjectNames = new Map(
+      subjects.map((subject: Record<string, unknown>) => [
+        String(subject.id),
+        String(subject.name),
+      ]),
+    )
+    for (const row of rows) {
+      row.related_subjects = (relatedIds.get(String(row.id)) ?? []).map((id) => ({
+        id,
+        name: subjectNames.get(id) ?? '',
+      }))
+    }
     return recordDocRevisionHistoryForAudience(
       liveDocument,
-      rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row)),
+      rows.map((row) => recordDocRevisionRow(row)),
       input.audience,
     )
   })

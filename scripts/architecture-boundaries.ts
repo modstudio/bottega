@@ -764,6 +764,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-cache.ts',
     [
       '../../../shared/docs.ts',
+      '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record-space-membership.ts',
       '../database/db.ts',
@@ -773,6 +774,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-client.ts',
       './record-auth.ts',
       './record-cache-ownership.ts',
+      './record-doc-list-shape.ts',
       './record-cursor.ts',
       './record-project-destination.ts',
       './record-session.ts',

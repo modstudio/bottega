@@ -10,6 +10,7 @@ import {
 } from '../../../shared/docs.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
+import { recordDocList } from './record-doc-list-shape.ts'
 
 export type RecordDoc = {
   id: string
@@ -255,7 +256,11 @@ export function importedLiveArticleFields(
         : [...existingRelatedSubjectIds],
     sourceFiles:
       incoming.sourceFiles ??
-      (Array.isArray(existing?.source_files) ? (existing.source_files as string[]) : []),
+      recordDocList(existing?.source_files, {
+        document: existing?.id == null ? 'incoming document' : String(existing.id),
+        column: 'doc.source_files',
+        optional: true,
+      }).map(String),
   }
 }
 
@@ -291,7 +296,12 @@ const recordDocIso = (value: unknown) =>
   value == null ? null : (value instanceof Date ? value : new Date(String(value))).toISOString()
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {
-  const relatedSubjects = Array.isArray(row.related_subjects) ? row.related_subjects : []
+  const document = `${String(row.scope)}/${row.subject == null ? '_' : String(row.subject)}/${String(row.slug)} (${String(row.id)})`
+  const relatedSubjects = recordDocList(row.related_subjects, {
+    document,
+    column: 'doc.related_subjects',
+    optional: true,
+  })
   return {
     id: String(row.id),
     spaceId: String(row.space_id),
@@ -318,7 +328,11 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
       id: String((subject as Record<string, unknown>).id),
       name: String((subject as Record<string, unknown>).name),
     })),
-    sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
+    sourceFiles: recordDocList(row.source_files, {
+      document,
+      column: 'doc.source_files',
+      optional: true,
+    }).map(String),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
@@ -329,7 +343,12 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
 }
 
 export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRevision {
-  const relatedSubjects = Array.isArray(row.related_subjects) ? row.related_subjects : []
+  const document = `revision ${String(row.id)} of document ${String(row.doc_id)}`
+  const relatedSubjects = recordDocList(row.related_subjects, {
+    document,
+    column: 'doc_revision.related_subject_ids',
+    optional: true,
+  })
   return {
     id: String(row.id),
     docId: String(row.doc_id),
@@ -357,7 +376,11 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
       id: String((subject as Record<string, unknown>).id),
       name: String((subject as Record<string, unknown>).name),
     })),
-    sourceFiles: Array.isArray(row.source_files) ? row.source_files.map(String) : [],
+    sourceFiles: recordDocList(row.source_files, {
+      document,
+      column: 'doc_revision.source_files',
+      optional: true,
+    }).map(String),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     authorName: row.author_name == null ? null : String(row.author_name),

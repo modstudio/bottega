@@ -24,7 +24,9 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/schema.ts',
     '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
+    './record-doc-list-shape.ts',
   ]),
+  module('orchestrator/src/record/record-doc-list-shape.ts', []),
   module('orchestrator/src/record/record-doc-transport-contract.ts', []),
   module('orchestrator/src/record/record-cursor.ts', ['zod']),
   module('orchestrator/src/record/record-api-subjects.ts', [
@@ -76,10 +78,12 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     './record-cursor.ts',
     './record-doc-errors.ts',
+    './record-doc-list-shape.ts',
     './record-doc-mapping.ts',
   ]),
   module('orchestrator/src/record/record-doc-import-write.ts', [
     'bun',
+    '../../../shared/record/jsonb-sql.ts',
     '../../../shared/record/schema.ts',
     './record-doc-audience-sql.ts',
     './record-doc-mapping.ts',
@@ -87,6 +91,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-doc-revision-write.ts', [
     'bun',
     '../../../shared/docs.ts',
+    '../../../shared/record/jsonb-sql.ts',
     '../../../shared/record/schema.ts',
     '../doc/doc-write-allowed.ts',
     './record-doc-audience-sql.ts',

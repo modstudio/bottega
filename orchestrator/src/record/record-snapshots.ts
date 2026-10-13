@@ -1,6 +1,7 @@
 // concern: record-snapshots
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
 import { SQL } from 'bun'
+import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 
@@ -37,7 +38,7 @@ export async function upsertRecordSnapshot(
       INSERT INTO orch_snapshot (id, space_id, kind, machine_id, payload, taken_at)
       VALUES (
         ${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.kind},
-        ${input.machineId}::uuid, ${JSON.stringify(input.payload)}::text::jsonb,
+        ${input.machineId}::uuid, ${bindJsonb(tx, input.payload)},
         ${takenAt}::timestamptz
       )
       ON CONFLICT (space_id, kind, machine_id) DO UPDATE SET
