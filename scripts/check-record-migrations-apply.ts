@@ -176,7 +176,6 @@ async function seedAudienceVocabularyBackfill(transaction: Transaction): Promise
   await transaction.exec(`
     SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
     SELECT set_config('app.user_id', '${platformOperatorId}', true);
-    SELECT set_config('app.user_id', '${platformOperatorId}', true);
     INSERT INTO project (id, space_id, name, created_at) VALUES
       ('${publicAudienceProjectId}', '${PLATFORM_SPACE_ID}', 'public-audience-proof', now()),
       ('${internalAudienceProjectId}', '${PLATFORM_SPACE_ID}', 'internal-audience-proof', now());

@@ -764,7 +764,6 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-cache.ts',
     [
       '../../../shared/docs.ts',
-      '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record-space-membership.ts',
       '../database/db.ts',
