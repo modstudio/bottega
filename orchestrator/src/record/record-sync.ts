@@ -275,6 +275,35 @@ function noBatchRemaining(rowCount: number, sentBatch: boolean): boolean {
   return rowCount === 0 && sentBatch
 }
 
+async function sendSyncBatch(input: {
+  client: { sync: NonNullable<ReturnType<typeof recordApiClient>['sync']> }
+  identity: { id: string; name: string }
+  batch: ReturnType<typeof nextBatch>
+  local: Database
+  attempted: Set<number>
+  readOnlyDeferred: Map<string, number>
+  now: () => string
+}): Promise<{ pushed: number; failed: number }> {
+  let response: RecordSyncResponse
+  try {
+    response = await input.client.sync!({
+      machine: { ...input.identity, seenAt: input.now() },
+      rows: input.batch.rows,
+    })
+  } catch (error) {
+    syncRouteError(error)
+  }
+  return applyBatchResults({
+    local: input.local,
+    batch: input.batch.rows,
+    localRows: input.batch.localRows,
+    response,
+    attempted: input.attempted,
+    readOnlyDeferred: input.readOnlyDeferred,
+    now: input.now,
+  })
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
   const identity = options.identity ?? { id: machineId(), name: machineName() }
@@ -320,27 +349,19 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       projectSpaces: options.projectSpaces,
     })
     if (noBatchRemaining(batch.rows.length, sentBatch)) break
-    let response: RecordSyncResponse
-    try {
-      response = await client.sync({
-        machine: { ...identity, seenAt: (options.now ?? nowIso)() },
-        rows: batch.rows,
-      })
-    } catch (error) {
-      syncRouteError(error)
-    }
-    sentBatch = true
-    const applied = applyBatchResults({
+    const applied = await sendSyncBatch({
+      client: { sync: client.sync },
+      identity,
+      batch,
       local: writableLocal,
-      batch: batch.rows,
-      localRows: batch.localRows,
-      response,
       attempted,
       readOnlyDeferred,
       now: options.now ?? nowIso,
     })
+    sentBatch = true
     pushed += applied.pushed
     failed += applied.failed
+    if (!batch.rows.length) break
   }
   if (!options.client) await pullRecordCache(writableLocal)
   rememberHostedRecord(writableLocal)
