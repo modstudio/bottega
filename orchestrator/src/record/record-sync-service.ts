@@ -1,7 +1,7 @@
 // concern: record-sync-service
 /** Validates and writes ordered evidence batches under the hosted session's authority. */
 import { SQL } from 'bun'
-import { and, eq, sql as drizzleSql } from 'drizzle-orm'
+import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import {
   contention as contentionRecord,
