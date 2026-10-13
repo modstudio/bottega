@@ -129,9 +129,18 @@ function replacePage(database: Database, page: HostedBoardChanges): void {
           receipt.acknowledgedAt,
         )
     }
-    if (page.highestRevision !== null)
-      setMeta(database, BOARD_REFRESH_CURSOR_KEY, page.highestRevision)
+    if (page.highestRevision !== null) advanceHostedBoardCursor(database, page.highestRevision)
   }, database)
+}
+
+function advanceHostedBoardCursor(database: Database, highestRevision: string): void {
+  const current = meta(database, BOARD_REFRESH_CURSOR_KEY)
+  if (current === null || BigInt(highestRevision) > BigInt(current))
+    setMeta(database, BOARD_REFRESH_CURSOR_KEY, highestRevision)
+}
+
+export function hostedBoardCursor(database: Database = db()): string {
+  return meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
 }
 
 const CACHE_VERIFICATION_KEYS = [

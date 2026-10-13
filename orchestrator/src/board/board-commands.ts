@@ -25,6 +25,7 @@ import type { BoardDeliveryPoint } from './board-reach.ts'
 import { registerBoardReachCommand } from './board-reach-command.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
+import { watchHostedBoard } from './board-watch.ts'
 
 const collect = (value: string, values: string[] = []) => [...values, value]
 const localBoardId = (value: string): number => {
@@ -102,6 +103,13 @@ export function registerBoardCommands(program: Command): void {
   board.command('presence').action(() => {
     recordPresence()
   })
+  board
+    .command('watch')
+    .description('hold the hosted board stream and refresh the local cache')
+    .action(async () => {
+      const code = await watchHostedBoard()
+      if (code !== 0) process.exitCode = code
+    })
   board
     .command('pending')
     .requiredOption('--session <id>')

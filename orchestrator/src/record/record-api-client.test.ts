@@ -202,4 +202,45 @@ describe('record API client test safety', () => {
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
+
+  test('openBoardStream returns the response body without reading JSON', async () => {
+    const session = memoryRecordSession()
+    session.setToken('stream-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    let jsonReads = 0
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = new Response(': heartbeat\n\n', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+      const json = response.json.bind(response)
+      response.json = async () => {
+        jsonReads += 1
+        return json()
+      }
+      expect(String(input)).toBe('https://api.example.test/v1/board/stream')
+      expect(init?.method ?? 'GET').toBe('GET')
+      expect(new Headers(init?.headers).get('accept')).toBe('text/event-stream')
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer stream-token')
+      return response
+    }) as typeof fetch
+    try {
+      const response = await recordApiClient().openBoardStream()
+      expect(jsonReads).toBe(0)
+      expect(await response.text()).toBe(': heartbeat\n\n')
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
 })

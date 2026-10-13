@@ -141,6 +141,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'releaseBoardClaim'
   | 'listBoardClaims'
   | 'releaseBoardTaskClaims'
+  | 'openBoardStream'
   | 'listProjectSubjects'
   | 'addProjectSubject'
   | 'renameProjectSubject'
@@ -170,6 +171,7 @@ export function unusedBoardClientMethods(): Pick<
     releaseBoardClaim: unusedBoard,
     listBoardClaims: unusedBoard,
     releaseBoardTaskClaims: unusedBoard,
+    openBoardStream: unusedBoard,
     listProjectSubjects: async () => ({ items: [], nextCursor: null }),
     addProjectSubject: unusedSubject,
     renameProjectSubject: unusedSubject,

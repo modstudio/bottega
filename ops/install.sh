@@ -82,7 +82,7 @@ remove_skipped_agent() {
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
   "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit" \
-  "$HOME/Library/Logs/orch-canon-mirror"
+  "$HOME/Library/Logs/orch-canon-mirror" "$HOME/Library/Logs/orch-board-watch"
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
@@ -159,7 +159,7 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|hub-note-maintenance' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|record-tunnel|orch-sweep|orch-monitor|orch-fix-defect|orch-canon-eval|orch-canon-audit|orch-canon-mirror|orch-record-sync|orch-board-watch|hub-note-maintenance' \
   || echo "  (none found)"
 
 if ((${#FAILED_LABELS[@]})); then

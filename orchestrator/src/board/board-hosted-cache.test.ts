@@ -13,6 +13,7 @@ import {
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   claimCachedHosted,
+  hostedBoardCursor,
   hostedBoardVerificationWarning,
   markCachedHostedDelivered,
   reapHostedBoardCache,
@@ -599,6 +600,30 @@ test('cache pruning removes an expired unaccepted thread and keeps an accepted t
   expect(db().query('SELECT id FROM hosted_board_message_cache').all()).toEqual([
     { id: accepted.id },
   ])
+})
+
+test('applying an older page after a newer one leaves the cursor where it was', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  let calls = 0
+  const newer = message({ revision: '20' })
+  const older = message({ revision: '10' })
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => {
+      calls += 1
+      return calls === 1
+        ? { userId, items: [change(newer)], highestRevision: '20' }
+        : { userId, items: [change(older)], highestRevision: '10' }
+    },
+  }
+  expect(
+    await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+  ).toBe('success')
+  expect(hostedBoardCursor()).toBe('20')
+  expect(
+    await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
+  ).toBe('success')
+  expect(hostedBoardCursor()).toBe('20')
 })
 
 test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {

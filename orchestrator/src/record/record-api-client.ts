@@ -329,6 +329,7 @@ export type RecordApiClient = {
   ): Promise<HostedBoardClaim>
   listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
+  openBoardStream(signal?: AbortSignal): Promise<Response>
 }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
@@ -686,5 +687,20 @@ export function recordApiClient(): RecordApiClient {
       request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
     releaseBoardTaskClaims: (input) =>
       request('/v1/board/claims/release-task', { method: 'POST', body: JSON.stringify(input) }),
+    openBoardStream: (signal) => fetchBoardStream(signal),
+  }
+}
+
+async function fetchBoardStream(signal?: AbortSignal): Promise<Response> {
+  const token = storedRecordToken()
+  if (!token) throw recordApiUnreachable(new Error(RECORD_SIGN_IN_REMEDY))
+  const headers = new Headers()
+  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
+  headers.set('accept', 'text/event-stream')
+  try {
+    return await fetch(`${recordApiBaseUrl()}/v1/board/stream`, { method: 'GET', headers, signal })
+  } catch (error) {
+    if (signal?.aborted) throw error
+    throw recordApiUnreachable(error)
   }
 }
