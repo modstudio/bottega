@@ -1,6 +1,6 @@
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import type { BoardTag } from './board-tags.ts'
-import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
 const HEADER_BREAK = /[\r\n\u2028\u2029]/g
 

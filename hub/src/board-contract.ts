@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 
 export const BoardIdSchema = z
   .string()

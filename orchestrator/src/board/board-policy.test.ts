@@ -318,7 +318,6 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
-      purpose: 'request',
       deadline: 20,
       expiresAt: 30,
       withdrawnAt: null,
@@ -330,7 +329,6 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
-      purpose: 'request',
       deadline: 20,
       expiresAt: 30,
       withdrawnAt: null,
@@ -342,7 +340,6 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
-      purpose: 'request',
       deadline: 20,
       expiresAt: 21,
       withdrawnAt: null,

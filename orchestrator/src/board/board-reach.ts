@@ -2,7 +2,7 @@
 /** Records push facts and turns them into the board noise decision surface. */
 
 import type { Database } from 'bun:sqlite'
-import { parseBoardPurpose, type BoardPurpose } from '../../../shared/board-purpose.ts'
+import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'

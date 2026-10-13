@@ -429,9 +429,9 @@ async function proofBoardNotifications(database: PGlite): Promise<void> {
     await database.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
     await database.exec(`
       INSERT INTO board_message
-        (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
+        (id, author_user_id, kind, purpose, audience, title, body, ack_required, expires_at, created_at)
       VALUES
-        ('01990000-0000-7000-8000-000000000024', '${platformOperatorId}', 'notice', 'operator',
+        ('01990000-0000-7000-8000-000000000024', '${platformOperatorId}', 'notice', 'information', 'operator',
          'Board notify proof', 'insert', false, now() + interval '1 day', now());
     `)
     await database.exec(`

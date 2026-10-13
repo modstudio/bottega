@@ -126,26 +126,30 @@ export async function claimRunBoardNotices(
   runId: number,
   all = false,
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
+  sessionStart = false,
 ) {
+  const runNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
+    ...notice,
+    text:
+      notice.purpose === 'information' ||
+      notice.purpose === undefined ||
+      (sessionStart && notice.purpose === 'standing')
+        ? notice.oneLine
+        : notice.text,
+  })
   const refreshed = await refreshHostedBoard({ budgetMs })
   const reader = runReader(runId)
   const local = claimRunPushNotices(runId, all)
   if (refreshed.status === 'local')
     return {
-      notices: local.notices.map(deliveryNotice).map((notice) => ({
-        ...notice,
-        text: notice.purpose === 'request' ? notice.text : notice.oneLine,
-      })),
+      notices: local.notices.map(deliveryNotice).map(runNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(reader, all)
   return {
     notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)].map(
-      (notice) => ({
-        ...notice,
-        text: notice.purpose === 'request' ? notice.text : notice.oneLine,
-      }),
+      runNotice,
     ),
     warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,

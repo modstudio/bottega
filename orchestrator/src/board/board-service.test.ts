@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_INFORMATION_DEFAULT_EXPIRY_MS,
   BOARD_REQUEST_DEFAULT_EXPIRY_MS,
   BOARD_STANDING_DEFAULT_EXPIRY_MS,
 } from '../../../shared/board-duration.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
 import { projectAt } from '../project/projects.ts'
@@ -560,6 +560,18 @@ test('duplicate notices require the same order-independent sender tag set', () =
     reached: 0,
     warning: 'reached no live session; re-address it or wait for a matching session',
   })
+  const request = postNotice(
+    {
+      ...input,
+      paths: ['orchestrator/src/second/**'],
+      topics: ['infra', 'gate'],
+      purpose: 'request',
+    },
+    {},
+    clock + 3,
+  )
+  expect(request.id).not.toBe(retargeted.id)
+  expect(request.dropped).toBeFalse()
 })
 
 test('plain architects duplicate identity includes the posting project', () => {

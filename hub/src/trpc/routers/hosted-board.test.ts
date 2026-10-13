@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
+  BOARD_REQUEST_DEFAULT_EXPIRY_MS,
 } from '../../../../shared/board-duration.ts'
 import {
   BoardAcceptResultSchema,
@@ -227,7 +227,7 @@ test('hosted board post applies the shared default durations', async () => {
     purpose: 'request',
   })
   expect(posted).toMatchObject({
-    expiresAt: new Date(now + BOARD_DEFAULT_EXPIRY_MS).toISOString(),
+    expiresAt: new Date(now + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString(),
     ackDeadline: new Date(now + BOARD_DEFAULT_ACK_DEADLINE_MS).toISOString(),
   })
 })

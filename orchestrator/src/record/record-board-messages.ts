@@ -283,6 +283,7 @@ async function duplicateRootId(
   tx: SQL,
   input: {
     kind: string
+    purpose: string
     userId: string
     session: string | null
     audience: string
@@ -296,7 +297,7 @@ async function duplicateRootId(
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
   const candidates = (await tx`
     SELECT id FROM board_message
-    WHERE kind=${input.kind} AND author_user_id=${input.userId}::uuid
+    WHERE kind=${input.kind} AND purpose=${input.purpose} AND author_user_id=${input.userId}::uuid
       AND author_session IS NOT DISTINCT FROM ${input.session}
       AND author_project_id IS NOT DISTINCT FROM ${input.authorProjectId}::uuid
       AND audience IS NOT DISTINCT FROM ${input.audience}
@@ -451,6 +452,7 @@ export async function postHostedBoardMessage(
       tx,
       {
         kind: input.kind,
+        purpose,
         userId: input.userId,
         session,
         audience: input.audience,

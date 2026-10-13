@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { hostname } from 'node:os'
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'

@@ -492,12 +492,13 @@ export function insertRootMessage(
   const duplicateCandidates = database
     .query(
       `SELECT id FROM board_message
-       WHERE kind=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
+       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
          AND author_project IS ? AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
       kind,
+      purpose,
       actor.kind,
       actor.session,
       input.suggestingRunId ?? null,

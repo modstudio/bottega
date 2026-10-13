@@ -1,5 +1,5 @@
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
 
 export const BOARD_POST_RATE_LIMIT = 10
