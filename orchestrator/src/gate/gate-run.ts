@@ -2,8 +2,16 @@
 /** Runs a project's registered gate as an architect invocation and records the finished row. */
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
+import { readFileSync, unlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import {
+  CHECK_EXECUTION_FILE_ENV,
+  type CheckExecutionRecord,
+  parseCheckExecutionLines,
+} from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -35,6 +43,7 @@ type ArchitectGateResult = {
 export type ArchitectGateRunner = (input: {
   command: string
   cwd: string
+  env: NodeJS.ProcessEnv
   write: (chunk: string) => void
 }) => ArchitectGateResult | Promise<ArchitectGateResult>
 
@@ -51,13 +60,13 @@ export function architectGateProcessExitCode(recordedExitCode: number): number {
   return recordedExitCode >= 0 ? recordedExitCode : 1
 }
 
-const defaultRunner: ArchitectGateRunner = ({ command, cwd, write }) =>
+const defaultRunner: ArchitectGateRunner = ({ command, cwd, env, write }) =>
   new Promise((resolve, reject) => {
     const started = Date.now()
     const startedAt = nowIso()
     const child = spawn('sh', ['-c', command], {
       cwd,
-      env: process.env,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
@@ -109,6 +118,35 @@ function gateHeadCommit(cwd: string, observe: ArchitectGateGitState): string | n
   return decideGateHeadCommit(observe(cwd))
 }
 
+function checkExecutionPath(): string {
+  return join(
+    dirname(resolveOrchestratorDatabase(process.env)),
+    `check-execution-${crypto.randomUUID()}.jsonl`,
+  )
+}
+
+function readCheckExecutions(path: string, write: (chunk: string) => void): CheckExecutionRecord[] {
+  let records: CheckExecutionRecord[] = []
+  try {
+    const parsed = parseCheckExecutionLines(readFileSync(path, 'utf8'))
+    records = parsed.records
+    if (parsed.rejected) write(`check execution records rejected ${parsed.rejected} line(s)\n`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      write(`check execution records could not be read: ${String(error)}\n`)
+    }
+  } finally {
+    try {
+      unlinkSync(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        write(`check execution records could not be removed: ${String(error)}\n`)
+      }
+    }
+  }
+  return records
+}
+
 export async function runArchitectGate(input: {
   cwd?: string
   d?: Database
@@ -151,7 +189,14 @@ export async function runArchitectGate(input: {
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
   const before = gateHeadCommit(checkoutTopLevel, observe)
-  const ran = await (input.runner ?? defaultRunner)({ command, cwd: checkoutTopLevel, write })
+  const executionPath = checkExecutionPath()
+  const ran = await (input.runner ?? defaultRunner)({
+    command,
+    cwd: checkoutTopLevel,
+    env: { ...process.env, [CHECK_EXECUTION_FILE_ENV]: executionPath },
+    write,
+  })
+  const checkExecutions = readCheckExecutions(executionPath, write)
   // A gate that rewrites the tree while it runs tested something other than HEAD.
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
@@ -181,6 +226,22 @@ export async function runArchitectGate(input: {
         checkoutTopLevel,
       )
     if (!row) throw new Error('gate_execution row was not inserted')
+    const insertCheck = d.query(
+      `INSERT INTO check_execution
+        (gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
+       VALUES (?,?,?,?,?,?,?)`,
+    )
+    for (const check of checkExecutions) {
+      insertCheck.run(
+        row.id,
+        check.check,
+        check.category ?? null,
+        check.wallMs,
+        check.cpuMs ?? null,
+        check.exitCode,
+        check.remaining ?? null,
+      )
+    }
     return { id: row.id, exitCode: ran.exitCode }
   }, d)
 }

@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
 import { passingGateForCommit } from './gate-passed.ts'
@@ -107,6 +109,85 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     output_artifact: null,
   })
   expect(passingGateForCommit(headCommit, repositoryPath, d).gateId).toBeNull()
+  expect(d.query('SELECT COUNT(*) count FROM check_execution').get()).toEqual({ count: 0 })
+})
+
+test('inserts valid check records in the transaction with the gate row', async () => {
+  const d = database()
+  await runArchitectGate({
+    cwd: repositoryPath,
+    d,
+    topLevel: () => repositoryPath,
+    gitState: cleanGitState,
+    write: () => {},
+    runner: ({ env }) => {
+      writeFileSync(
+        env[CHECK_EXECUTION_FILE_ENV]!,
+        `${JSON.stringify({
+          check: 'scripts/check-file-ceiling.ts',
+          category: 'file-length',
+          wallMs: 12.5,
+          cpuMs: 8,
+          exitCode: 0,
+          remaining: 2,
+        })}\n`,
+      )
+      return {
+        exitCode: 0,
+        output: '',
+        startedAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:00:01.000Z',
+        elapsedMs: 1000,
+      }
+    },
+  })
+  expect(
+    d
+      .query(
+        `SELECT gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
+           FROM check_execution`,
+      )
+      .get(),
+  ).toEqual({
+    gate_execution_id: 1,
+    check_name: 'scripts/check-file-ceiling.ts',
+    category: 'file-length',
+    wall_ms: 12.5,
+    cpu_ms: 8,
+    exit_code: 0,
+    remaining_count: 2,
+  })
+})
+
+test('rolls back the gate row when its check records cannot be inserted', async () => {
+  const d = database()
+  d.exec(
+    `CREATE TRIGGER refuse_check_execution BEFORE INSERT ON check_execution
+     BEGIN SELECT RAISE(ABORT, 'refuse check execution'); END`,
+  )
+  await expect(
+    runArchitectGate({
+      cwd: repositoryPath,
+      d,
+      topLevel: () => repositoryPath,
+      gitState: cleanGitState,
+      write: () => {},
+      runner: ({ env }) => {
+        writeFileSync(
+          env[CHECK_EXECUTION_FILE_ENV]!,
+          `${JSON.stringify({ check: 'lint', wallMs: 12, exitCode: 0 })}\n`,
+        )
+        return {
+          exitCode: 0,
+          output: '',
+          startedAt: '2026-09-01T00:00:00.000Z',
+          finishedAt: '2026-09-01T00:00:01.000Z',
+          elapsedMs: 1000,
+        }
+      },
+    }),
+  ).rejects.toThrow('refuse check execution')
+  expect(d.query('SELECT COUNT(*) count FROM gate_execution').get()).toEqual({ count: 0 })
 })
 
 test('bounds the recorded tail', async () => {

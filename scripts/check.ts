@@ -1,4 +1,8 @@
+import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CHECK_EXECUTION_FILE_ENV, type CheckExecutionRecord } from '../shared/check-execution'
 import { decideGateOutcome, type GateStepResult } from './check-outcome'
 import {
   attributeCommandCpu,
@@ -9,19 +13,27 @@ import {
   SUITE_RUNTIME_BUDGET_MS,
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
+import { readRemainingReport } from './remaining-report'
 
 type Command = { cwd: string; argv: string[] }
 type Leg = { name: string; commands: Command[] }
 type LegResult = GateStepResult & { tail: string[] }
-type StaticCheck = { name: string; argv: string[] }
+type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }
+type ExecutionObservation = Pick<StaticCheck, 'category' | 'reportPath'> & { check?: string }
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
+const executionFile = process.env[CHECK_EXECUTION_FILE_ENV]
+const reportDirectory = executionFile ? mkdtempSync(join(tmpdir(), 'check-reports-')) : undefined
 
 const activeChildren = new Set<Bun.Subprocess>()
 const trackedExits = new Map<Bun.Subprocess, Promise<void>>()
 const collectedChildren = new WeakSet<Bun.Subprocess>()
+const childMeasurements = new WeakMap<
+  Bun.Subprocess,
+  ExecutionObservation & { name: string; startedAt: number }
+>()
 const commandCpu: CommandCpuSample[] = []
 let excludedGateWaitMs = 0
 let runtimeDeadline: ReturnType<typeof setTimeout>
@@ -45,10 +57,31 @@ function collectCpu(
   })
 }
 
-function collectChildCpu(child: Bun.Subprocess, name: string) {
+function appendExecution(record: CheckExecutionRecord) {
+  if (!executionFile) return
+  try {
+    appendFileSync(executionFile, `${JSON.stringify(record)}\n`)
+  } catch (error) {
+    console.warn(`check execution record could not be written: ${String(error)}`)
+  }
+}
+
+function collectChild(child: Bun.Subprocess, exitCode: number) {
   if (collectedChildren.has(child)) return
   collectedChildren.add(child)
-  collectCpu(name, child.resourceUsage()?.cpuTime)
+  const measurement = childMeasurements.get(child)
+  if (!measurement) throw new Error('child measurement was not registered')
+  const cpuTime = child.resourceUsage()?.cpuTime
+  collectCpu(measurement.name, cpuTime)
+  const remaining = readRemainingReport(measurement.reportPath)
+  appendExecution({
+    check: measurement.check ?? measurement.name,
+    ...(measurement.category ? { category: measurement.category } : {}),
+    wallMs: performance.now() - measurement.startedAt,
+    ...(cpuTime ? { cpuMs: (Number(cpuTime.user) + Number(cpuTime.system)) / 1_000 } : {}),
+    exitCode,
+    ...(remaining === undefined ? {} : { remaining }),
+  })
   activeChildren.delete(child)
 }
 
@@ -74,7 +107,10 @@ function printSummary(): { elapsedMs: number; cpuMs: number } | undefined {
   return { elapsedMs, cpuMs: attributed.totalMs }
 }
 
-process.on('exit', printSummary)
+process.on('exit', () => {
+  if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true })
+  printSummary()
+})
 
 async function expireRuntimeBudget() {
   console.error(
@@ -99,11 +135,17 @@ function armRuntimeDeadline() {
 
 armRuntimeDeadline()
 
-function track(child: Bun.Subprocess, name: string) {
+function track(
+  child: Bun.Subprocess,
+  name: string,
+  observation: ExecutionObservation = {},
+  startedAt = performance.now(),
+) {
   activeChildren.add(child)
+  childMeasurements.set(child, { name, startedAt, ...observation })
   const trackedExit = child.exited.then(
-    () => collectChildCpu(child, name),
-    () => collectChildCpu(child, name),
+    (exitCode) => collectChild(child, exitCode),
+    () => collectChild(child, -1),
   )
   trackedExits.set(child, trackedExit)
   return child
@@ -149,20 +191,44 @@ const legs: Leg[] = [
   },
 ]
 
-async function inherit(argv: string[], cwd = root) {
+async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
+  const startedAt = performance.now()
   const child = track(
     Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' }),
     describeCommand(argv, cwd),
+    observation,
+    startedAt,
   )
   return child.exited
 }
 
-function staticCheck(name: string, extra: string[] = []): StaticCheck {
-  return { name, argv: ['bun', `${root}${name}`, ...extra] }
+function staticCheck(
+  name: string,
+  extra: string[] = [],
+  category?: string,
+  reportsRemaining = false,
+): StaticCheck {
+  const reportPath =
+    reportsRemaining && reportDirectory
+      ? join(reportDirectory, `${crypto.randomUUID()}.json`)
+      : undefined
+  return {
+    name,
+    argv: ['bun', `${root}${name}`, ...extra, ...(reportPath ? [`--report=${reportPath}`] : [])],
+    category,
+    reportPath,
+  }
 }
 
 async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
-  return { name: check.name, exitCode: await inherit(check.argv) }
+  return {
+    name: check.name,
+    exitCode: await inherit(check.argv, root, {
+      check: check.name,
+      category: check.category,
+      reportPath: check.reportPath,
+    }),
+  }
 }
 
 function qualityBaseArgument() {
@@ -210,9 +276,12 @@ async function pump(
 async function runLeg(leg: Leg): Promise<LegResult> {
   const tail: string[] = []
   for (const command of leg.commands) {
+    const startedAt = performance.now()
     const child = track(
       Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' }),
       describeCommand(command.argv, command.cwd),
+      {},
+      startedAt,
     )
     const readers = [
       pump(child.stdout, leg.name, tail, false),
@@ -275,6 +344,7 @@ if (
     './shared/test-substance/test-substance-php.test.ts',
     './shared/test-substance/self-comparison.test.ts',
     './shared/ratchet.test.ts',
+    './shared/check-execution.test.ts',
     './scripts/quality/test-timing-decision.test.ts',
     './shared/file-kind.test.ts',
     './shared/git.test.ts',
@@ -322,12 +392,12 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-launchd-templates.ts'),
   staticCheck('scripts/check-gitleaks.ts'),
   staticCheck('scripts/check-write-transaction-site.ts'),
-  staticCheck('scripts/check-file-ceiling.ts'),
-  staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode]),
+  staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),
+  staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode], 'cognitive-complexity', true),
   staticCheck('scripts/check-test-fixtures.ts'),
   staticCheck('scripts/check-test-placement.ts'),
   staticCheck('scripts/check-test-spawns.ts'),
-  staticCheck('scripts/check-dead-code.ts', [qualityMode]),
+  staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
   staticCheck('scripts/check-brand.ts'),
   staticCheck('scripts/check-harness-mirror.ts'),
   staticCheck('scripts/check-canon-drift.ts'),
@@ -338,8 +408,12 @@ const staticChecks: StaticCheck[] = [
 for (const check of staticChecks) gateSteps.push(await recordGateStep(check))
 
 gateSteps.push(
-  await recordGateStep(staticCheck('scripts/quality/check-test-substance.ts', [qualityMode])),
+  await recordGateStep(
+    staticCheck('scripts/quality/check-test-substance.ts', [qualityMode], 'test-substance'),
+  ),
 )
+
+if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true })
 
 clearTimeout(runtimeDeadline)
 const summary = printSummary()

@@ -6,6 +6,7 @@ import ts from 'typescript'
 import { type Finding, ratchetDecision } from '../shared/ratchet'
 import { openChangeView } from './change-view'
 import { measuredSourceFiles } from './check-file-ceiling'
+import { reportPathFromArguments, reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CEILING = 15
@@ -210,10 +211,15 @@ export async function changedComplexityViolations(
   }).map(violationLine)
 }
 
-async function checkCognitiveCeiling(base: string, reporter: Reporter = console) {
+async function checkCognitiveCeiling(
+  base: string,
+  reportPath?: string,
+  reporter: Reporter = console,
+) {
   const eslint = new ESLint({ cwd: ROOT })
   const wholeTree = await wholeTreeMeasurements(eslint)
   reporter.log(`cognitive complexity: ${wholeTree.remaining} functions over ${CEILING} remain`)
+  reportRemaining(reportPath, wholeTree.remaining)
   const view = openChangeView({ cwd: ROOT, base, mode: 'worktree' })
   const measuredPaths = new Set(measuredSourceFiles().map((file) => file.path))
   const violations = [
@@ -226,16 +232,21 @@ async function checkCognitiveCeiling(base: string, reporter: Reporter = console)
   return true
 }
 
-function parseBase(argv: string[]) {
-  if (argv.length === 1 && argv[0]!.startsWith('--base=') && argv[0]!.length > 7) {
-    return argv[0]!.slice(7)
-  }
+function parseArguments(argv: string[]) {
+  const base = argv.find((argument) => argument.startsWith('--base='))?.slice(7)
+  const report = reportPathFromArguments(argv)
+  if (
+    base &&
+    argv.every((argument) => argument.startsWith('--base=') || argument.startsWith('--report='))
+  )
+    return { base, report }
   throw new Error('usage: check-cognitive-ceiling.ts --base=<ref>')
 }
 
 if (import.meta.main) {
   try {
-    if (!(await checkCognitiveCeiling(parseBase(Bun.argv.slice(2))))) process.exit(1)
+    const { base, report } = parseArguments(Bun.argv.slice(2))
+    if (!(await checkCognitiveCeiling(base, report))) process.exit(1)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
