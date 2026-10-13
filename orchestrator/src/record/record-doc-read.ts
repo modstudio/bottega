@@ -13,6 +13,17 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
+
+function hostedDocList(
+  value: unknown,
+  input: { document: string; column: string; optional?: boolean },
+): unknown[] {
+  const decoded = recordDocList(value, input)
+  if (decoded.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${input.document} ${input.column}`)
+  return decoded.values
+}
+
 import {
   type RecordDoc,
   type RecordDocRevision,
@@ -143,7 +154,7 @@ export async function listRecordDocRevisions(
     for (const row of rows) {
       relatedIds.set(
         String(row.id),
-        recordDocList(row.related_subject_ids, {
+        hostedDocList(row.related_subject_ids, {
           document: `revision ${String(row.id)} of document ${input.id}`,
           column: 'doc_revision.related_subject_ids',
         }).map(String),

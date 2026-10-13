@@ -377,6 +377,99 @@ async function proveCachePull(
   }
 }
 
+async function proveStringShapedSourceFileMutations(
+  origin: string,
+  headers: Record<string, string>,
+  spaceId: string,
+): Promise<void> {
+  const create = async (slug: string, body: string) => {
+    const response = await fetch(`${origin}/v1/docs`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        scope: 'machine',
+        subject: null,
+        slug,
+        title: slug,
+        body,
+        delivery: 'inject',
+        sourceFiles: [`src/${slug}.ts`],
+        reason: 'source-file mutation proof',
+        author: 'proof',
+      }),
+    })
+    expect(response.status).toBe(200)
+    return (await response.json()) as { id: string }
+  }
+  const storeString = (id: string, sourceFile: string) =>
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE doc SET source_files=to_jsonb('["${sourceFile}"]'::text) WHERE space_id='${spaceId}' AND id='${id}';`,
+    )
+  const latestSourceFiles = (id: string) =>
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT source_files::text FROM doc_revision WHERE space_id='${spaceId}' AND doc_id='${id}' ORDER BY at DESC,id DESC LIMIT 1;`,
+    )
+  const revisionCount = (id: string) =>
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT count(*) FROM doc_revision WHERE space_id='${spaceId}' AND doc_id='${id}';`,
+    )
+
+  const deleted = await create('delete-string-source-files', 'Delete this document.')
+  storeString(deleted.id, 'src/delete-string-source-files.ts')
+  const deletion = await fetch(`${origin}/v1/docs/${deleted.id}`, {
+    method: 'DELETE',
+    headers,
+    body: JSON.stringify({ reason: 'delete string-shaped source files', author: 'proof' }),
+  })
+  expect(deletion.status).toBe(200)
+  expect(latestSourceFiles(deleted.id)).toBe('["src/delete-string-source-files.ts"]')
+
+  const consumed = await create(
+    'consume-string-source-files',
+    '---\nstatus: open\n---\n\nConsume this document.\n',
+  )
+  storeString(consumed.id, 'src/consume-string-source-files.ts')
+  const consumption = await fetch(`${origin}/v1/docs/${consumed.id}/consume`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ reason: 'consume string-shaped source files', author: 'proof' }),
+  })
+  expect(consumption.status).toBe(200)
+  expect(latestSourceFiles(consumed.id)).toBe('["src/consume-string-source-files.ts"]')
+
+  for (const operation of ['delete', 'consume'] as const) {
+    const wrong = await create(
+      `${operation}-wrong-source-files`,
+      '---\nstatus: open\n---\n\nWrong-shaped source files.\n',
+    )
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE doc SET source_files='{"file":"src/wrong.ts"}'::jsonb WHERE space_id='${spaceId}' AND id='${wrong.id}';`,
+    )
+    const before = revisionCount(wrong.id)
+    const response = await fetch(
+      `${origin}/v1/docs/${wrong.id}${operation === 'consume' ? '/consume' : ''}`,
+      {
+        method: operation === 'consume' ? 'POST' : 'DELETE',
+        headers,
+        body: JSON.stringify({ reason: `refuse wrong-shaped ${operation}`, author: 'proof' }),
+      },
+    )
+    expect(response.status).not.toBe(200)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('doc.source_files is not a JSON list'),
+    })
+    expect(revisionCount(wrong.id)).toBe(before)
+  }
+}
+
 async function proveRequestedProjectSpace(
   origin: string,
   headers: Record<string, string>,
@@ -549,6 +642,7 @@ export async function proveHostedDocs(input: {
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
   await proveDocumentStatus(input.origin, headers, memberSpaceId)
+  await proveStringShapedSourceFileMutations(input.origin, headers, memberSpaceId)
   const updated = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',
     headers,

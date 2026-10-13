@@ -7,7 +7,7 @@ import { Glob } from 'bun'
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['hub', 'orchestrator', 'shared']
 const DIRECT_ARRAY_CAST = /\}::[a-z_]+\[\]/g
-const SERIALIZED_JSONB_CAST = /\$\{JSON\.stringify\(.+\)\}\s*::(?:text\s*::\s*)?jsonb/g
+const SERIALIZED_JSONB_CAST = /\$\{JSON\.stringify\([\s\S]+?\)\}\s*::(?:text\s*::\s*)?jsonb/g
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 const violations: string[] = []
 
@@ -25,8 +25,19 @@ export function postgresBindingViolations(source: string, file: string): string[
       continue
     DIRECT_ARRAY_CAST.lastIndex = 0
     if (DIRECT_ARRAY_CAST.test(line)) found.push(`${file}:${index + 1}:array`)
-    SERIALIZED_JSONB_CAST.lastIndex = 0
-    if (SERIALIZED_JSONB_CAST.test(line)) found.push(`${file}:${index + 1}:jsonb`)
+  }
+  SERIALIZED_JSONB_CAST.lastIndex = 0
+  for (const match of source.matchAll(SERIALIZED_JSONB_CAST)) {
+    const line = source.slice(0, match.index).split('\n').length
+    const prefix = lines[line - 1]?.trimStart() ?? ''
+    if (
+      prefix.startsWith('//') ||
+      prefix.startsWith('*') ||
+      prefix.startsWith('/*') ||
+      prefix.startsWith('#')
+    )
+      continue
+    found.push(`${file}:${line}:jsonb`)
   }
   return found
 }

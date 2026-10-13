@@ -12,6 +12,16 @@ import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 
+function hostedDocList(
+  value: unknown,
+  input: { document: string; column: string; optional?: boolean },
+): unknown[] {
+  const decoded = recordDocList(value, input)
+  if (decoded.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${input.document} ${input.column}`)
+  return decoded.values
+}
+
 export type RecordDoc = {
   id: string
   spaceId: string
@@ -256,7 +266,7 @@ export function importedLiveArticleFields(
         : [...existingRelatedSubjectIds],
     sourceFiles:
       incoming.sourceFiles ??
-      recordDocList(existing?.source_files, {
+      hostedDocList(existing?.source_files, {
         document: existing?.id == null ? 'incoming document' : String(existing.id),
         column: 'doc.source_files',
         optional: true,
@@ -297,7 +307,7 @@ const recordDocIso = (value: unknown) =>
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {
   const document = `${String(row.scope)}/${row.subject == null ? '_' : String(row.subject)}/${String(row.slug)} (${String(row.id)})`
-  const relatedSubjects = recordDocList(row.related_subjects, {
+  const relatedSubjects = hostedDocList(row.related_subjects, {
     document,
     column: 'doc.related_subjects',
     optional: true,
@@ -328,7 +338,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
       id: String((subject as Record<string, unknown>).id),
       name: String((subject as Record<string, unknown>).name),
     })),
-    sourceFiles: recordDocList(row.source_files, {
+    sourceFiles: hostedDocList(row.source_files, {
       document,
       column: 'doc.source_files',
       optional: true,
@@ -344,7 +354,7 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
 
 export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRevision {
   const document = `revision ${String(row.id)} of document ${String(row.doc_id)}`
-  const relatedSubjects = recordDocList(row.related_subjects, {
+  const relatedSubjects = hostedDocList(row.related_subjects, {
     document,
     column: 'doc_revision.related_subject_ids',
     optional: true,
@@ -376,7 +386,7 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
       id: String((subject as Record<string, unknown>).id),
       name: String((subject as Record<string, unknown>).name),
     })),
-    sourceFiles: recordDocList(row.source_files, {
+    sourceFiles: hostedDocList(row.source_files, {
       document,
       column: 'doc_revision.source_files',
       optional: true,

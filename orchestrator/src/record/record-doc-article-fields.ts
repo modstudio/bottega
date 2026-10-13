@@ -6,6 +6,16 @@ import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 
+export function hostedDocList(
+  value: unknown,
+  input: { document: string; column: string; optional?: boolean },
+): unknown[] {
+  const decoded = recordDocList(value, input)
+  if (decoded.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${input.document} ${input.column}`)
+  return decoded.values
+}
+
 type Row = Record<string, unknown>
 type Fields = {
   form: DocForm | null
@@ -71,7 +81,7 @@ export async function resolveHostedArticleFields(
     input.relatedSubjectIds ?? existingRelated.map((row: Row) => String(row.subject_id))
   const sourceFiles =
     input.sourceFiles ??
-    recordDocList(existing?.source_files, {
+    hostedDocList(existing?.source_files, {
       document:
         existing?.id == null ? `${input.scope}/${input.subject ?? '_'}` : String(existing.id),
       column: 'doc.source_files',
@@ -118,11 +128,11 @@ export function restoredArticleFields(revision: Row): Fields {
     form: revision.form == null ? null : (String(revision.form) as DocForm),
     articleSubjectId:
       revision.article_subject_id == null ? null : String(revision.article_subject_id),
-    relatedSubjectIds: recordDocList(revision.related_subject_ids, {
+    relatedSubjectIds: hostedDocList(revision.related_subject_ids, {
       document,
       column: 'doc_revision.related_subject_ids',
     }).map(String),
-    sourceFiles: recordDocList(revision.source_files, {
+    sourceFiles: hostedDocList(revision.source_files, {
       document,
       column: 'doc_revision.source_files',
     }).map(String),

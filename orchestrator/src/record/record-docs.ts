@@ -27,6 +27,7 @@ import {
   type HostedArticleResponse,
   hostedArticleProjectId,
   hostedArticleResponse,
+  hostedDocList,
   importedArticleSubjectNames,
   replaceHostedRelatedSubjects,
   resolveHostedArticleFields,
@@ -40,6 +41,7 @@ import {
   recordDocumentLifecycle,
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
+
 import {
   importedLiveArticleFields,
   newerHostedImportRefusal,
@@ -53,6 +55,15 @@ import {
   recordCanonTreeWriteRefusal,
   recordTreeWriteRefusal,
 } from './record-doc-tree.ts'
+
+function writableHostedDocList(value: unknown, document: string, column: string): unknown[] {
+  try {
+    return hostedDocList(value, { document, column })
+  } catch (error) {
+    if (error instanceof Error) throw new RecordDocError(error.message)
+    throw error
+  }
+}
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
@@ -604,7 +615,11 @@ export async function deleteRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
+      sourceFiles: writableHostedDocList(
+        doc.source_files,
+        input.id,
+        'doc.source_files',
+      ).map(String),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -669,7 +684,11 @@ export async function consumeRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
+      sourceFiles: writableHostedDocList(
+        doc.source_files,
+        input.id,
+        'doc.source_files',
+      ).map(String),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,

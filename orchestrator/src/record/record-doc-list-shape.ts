@@ -1,14 +1,12 @@
 // concern: record-doc-list-shape
 /** Decodes hosted document list columns without hiding a persisted wrong shape. */
 
-let unwrappedStringLists = 0
-
 export function recordDocList(
   value: unknown,
   input: { document: string; column: string; optional?: boolean },
-): unknown[] {
-  if (Array.isArray(value)) return value
-  if (value == null && input.optional) return []
+): { values: unknown[]; unwrapped: boolean } {
+  if (Array.isArray(value)) return { values: value, unwrapped: false }
+  if (value == null && input.optional) return { values: [], unwrapped: false }
   if (typeof value === 'string') {
     let parsed: unknown
     try {
@@ -19,11 +17,7 @@ export function recordDocList(
       )
     }
     if (Array.isArray(parsed)) {
-      unwrappedStringLists++
-      console.warn(
-        `unwrapped hosted document JSON string list #${unwrappedStringLists}: ${input.document} ${input.column}`,
-      )
-      return parsed
+      return { values: parsed, unwrapped: true }
     }
   }
   throw new Error(`hosted document ${input.document} column ${input.column} is not a JSON list`)

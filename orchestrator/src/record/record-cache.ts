@@ -329,16 +329,24 @@ function pulledDocArticleFields(local: Database, item: Record<string, unknown>, 
       ? (item.articleSubject as Record<string, unknown>)
       : null
   const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
-  const relatedSubjectIds = recordDocList(item.relatedSubjects, {
+  const relatedSubjects = recordDocList(item.relatedSubjects, {
     document: recordId,
     column: 'doc.related_subjects',
     optional: true,
-  }).map((value) => String((value as Record<string, unknown>).id))
-  const sourceFiles = recordDocList(item.sourceFiles, {
+  })
+  if (relatedSubjects.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${recordId} doc.related_subjects`)
+  const relatedSubjectIds = relatedSubjects.values.map((value) =>
+    String((value as Record<string, unknown>).id),
+  )
+  const decodedSourceFiles = recordDocList(item.sourceFiles, {
     document: recordId,
     column: 'doc.source_files',
     optional: true,
-  }).map(String)
+  })
+  if (decodedSourceFiles.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${recordId} doc.source_files`)
+  const sourceFiles = decodedSourceFiles.values.map(String)
   for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
     Boolean(value),
   )) {
