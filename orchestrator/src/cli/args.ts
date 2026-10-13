@@ -311,6 +311,7 @@ export function seedGuidance(seeds: string[]): string {
 }
 
 export const CLI_COMMANDS = new Set([
+  'ratchet',
   'abandon',
   'agent',
   'agents',

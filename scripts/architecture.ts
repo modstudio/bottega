@@ -15,6 +15,7 @@ import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
+import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
 import { releaseModules } from './architecture-release.ts'
@@ -73,6 +74,7 @@ const concerns: ConcernManifest = {
 export const modules: ArchitectureModule[] = [
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
+  ...ratchetModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
   ...releaseModules,

@@ -13,6 +13,7 @@ import { register as registerInbox } from '../commands/inbox.ts'
 import { register as registerJudgment } from '../commands/judgment.ts'
 import { register as registerLogic } from '../commands/logic.ts'
 import { register as registerPullRequest } from '../commands/pull-request.ts'
+import { register as registerRatchet } from '../commands/ratchet.ts'
 import { register as registerRecordAuth } from '../commands/record-auth.ts'
 import { register as registerRelease } from '../commands/release.ts'
 import { register as registerReview } from '../commands/review.ts'
@@ -47,6 +48,7 @@ registerBranches(program)
 registerBoardCommands(program)
 registerRecordAuth(program)
 registerRelease(program)
+registerRatchet(program)
 registerDocs(program)
 registerSubjects(program)
 registerRunListing(program)
@@ -64,6 +66,8 @@ registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)
 
+const READ_ONLY_COMMANDS = new Set(['migrate', 'ratchet'])
+
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
@@ -71,7 +75,7 @@ function isReadOnlyInvocation(argv: string[]): boolean {
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
-  if (argv[0] === 'migrate') return true
+  if (READ_ONLY_COMMANDS.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
   if (argv[0] === 'monitor') return true
