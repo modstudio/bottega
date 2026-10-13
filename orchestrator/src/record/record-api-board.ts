@@ -166,6 +166,10 @@ function registerBoardStreamRoute(
   })
 }
 
+async function readJson(context: Context<ApiEnvironment>): Promise<unknown> {
+  return context.req.json().catch(() => null)
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: { recordUrl: string } & RecordBoardDeps,
@@ -176,7 +180,6 @@ export function registerRecordBoardRoutes(
 ): void {
   const tenantOf = (context: Context<ApiEnvironment>) =>
     boardTenant(deps.recordUrl, context.get('identity'))
-  const readJson = async (context: Context<ApiEnvironment>) => context.req.json().catch(() => null)
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
