@@ -6,6 +6,7 @@ import { applyMigrations } from '../database/migrations.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -33,9 +34,7 @@ function localScoreOutbox(): Database {
 }
 
 const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
-  recordUrl: 'postgres://record.test/database',
   local,
-  openSql: () => remote.sql,
   now: () => STAMP,
   identity: { id: MACHINE_ID, name: 'test-machine' },
   principal: {
@@ -49,6 +48,34 @@ const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
       permission: 'write',
     },
   ],
+  client: {
+    whoami: async () => ({
+      user: { id: '01990000-0000-7000-8000-000000000002' },
+      activeSpaceId: '01990000-0000-7000-8000-000000000001',
+      personalSpaceId: '01990000-0000-7000-8000-000000000001',
+      memberships: [
+        { space_id: '01990000-0000-7000-8000-000000000001', slug: 'active', permission: 'write' },
+      ],
+    }),
+    sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
+      syncHostedRecord({
+        url: 'postgres://record.test/database',
+        identity: {
+          user: { id: '01990000-0000-7000-8000-000000000002' },
+          activeSpaceId: '01990000-0000-7000-8000-000000000001',
+          personalSpaceId: '01990000-0000-7000-8000-000000000001',
+          memberships: [
+            {
+              space_id: '01990000-0000-7000-8000-000000000001',
+              slug: 'active',
+              permission: 'write',
+            },
+          ],
+        },
+        request,
+        postgres: remote.sql,
+      }),
+  },
 })
 
 test('a grade-less legacy review score replaces its hosted note when its axes are unchanged', async () => {

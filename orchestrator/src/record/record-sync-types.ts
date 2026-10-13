@@ -8,6 +8,7 @@ import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
 import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
+import type { RecordApiClient } from './record-api-client.ts'
 
 export type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
 export type Payload = Record<string, unknown>
@@ -38,12 +39,17 @@ export type RecordSyncResult = {
 
 export type RecordSyncOptions = {
   backfill?: boolean
-  recordUrl?: string
   local?: Database
-  openSql?: (url: string) => SQL
   now?: () => string
   identity?: { id: string; name: string }
+  projectSpaces?: Record<string, string>
+  client?: {
+    whoami: RecordApiClient['whoami']
+    sync: NonNullable<RecordApiClient['sync']>
+  }
+  /** Legacy test-fixture inputs; production sync ignores direct-record connections. */
+  recordUrl?: string
+  openSql?: (url: string) => SQL
   principal?: { userId: string; spaceId: string }
   memberships?: RecordSpaceMembership[]
-  projectSpaces?: Record<string, string>
 }

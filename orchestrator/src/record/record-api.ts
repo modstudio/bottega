@@ -25,6 +25,7 @@ import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './reco
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
+import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import type {
@@ -85,7 +86,7 @@ type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
-type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordApiDeps
+type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
   recordUrl: string
   allowedOrigins?: string[]
@@ -300,6 +301,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return context.json(context.get('identity'))
   })
   registerRecordInvitationRoute(app, deps)
+  registerRecordSyncRoute(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z

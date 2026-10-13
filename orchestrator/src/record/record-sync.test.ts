@@ -1,9 +1,8 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
-import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
+import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
@@ -18,7 +17,10 @@ import {
 } from './landing-outbox.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
+import { RecordApiRequestError } from './record-api-client.ts'
+import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 import { syncRecord } from './record-sync.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = machineId()
@@ -179,23 +181,53 @@ function localScoreOutbox(): Database {
   return local
 }
 
-const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
-  recordUrl: 'postgres://record.test/database',
-  local,
-  openSql: () => remote.sql,
-  now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
-  principal: {
-    userId: '01990000-0000-7000-8000-000000000002',
-    spaceId: '01990000-0000-7000-8000-000000000001',
-  },
-  memberships: [
+const options = (
+  local: Database,
+  remote: ReturnType<typeof fakePostgres>,
+  memberships = [
     {
       spaceId: '01990000-0000-7000-8000-000000000001',
       slug: 'platform',
       permission: 'write',
     },
   ],
+) => ({
+  local,
+  now: () => STAMP,
+  identity: { id: MACHINE_ID, name: 'test-machine' },
+  principal: {
+    userId: '01990000-0000-7000-8000-000000000002',
+    spaceId: '01990000-0000-7000-8000-000000000001',
+  },
+  memberships,
+  client: {
+    whoami: async () => ({
+      user: { id: '01990000-0000-7000-8000-000000000002' },
+      activeSpaceId: '01990000-0000-7000-8000-000000000001',
+      personalSpaceId: '01990000-0000-7000-8000-000000000001',
+      memberships: memberships.map((membership) => ({
+        space_id: membership.spaceId,
+        slug: membership.slug,
+        permission: membership.permission,
+      })),
+    }),
+    sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
+      syncHostedRecord({
+        url: 'postgres://record.test/database',
+        identity: {
+          user: { id: '01990000-0000-7000-8000-000000000002' },
+          activeSpaceId: '01990000-0000-7000-8000-000000000001',
+          personalSpaceId: '01990000-0000-7000-8000-000000000001',
+          memberships: memberships.map((membership) => ({
+            space_id: membership.spaceId,
+            slug: membership.slug,
+            permission: membership.permission,
+          })),
+        },
+        request,
+        postgres: remote.sql,
+      }),
+  },
 })
 
 test('sync upserts once and a second pass has no run mutation', async () => {
@@ -520,16 +552,6 @@ test.each([
   local.close()
 })
 
-test('sync refuses the migration owner before any record write', async () => {
-  const local = localOutbox(1)
-  const remote = fakePostgres(false, RECORD_OWNER_ROLE)
-  await expect(syncRecord(options(local, remote))).rejects.toThrow(
-    `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
-  )
-  expect(remote.statements).toEqual(['SELECT current_user AS principal'])
-  local.close()
-})
-
 test('a row-fatal failure is quarantined and the next independent row is pushed', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(serverError('remote run refusal', 23503))
@@ -556,43 +578,29 @@ test('a row-fatal failure is quarantined and the next independent row is pushed'
   local.close()
 })
 
-test('a pass-fatal failure records its attempt and stops before the next row', async () => {
+test('a whole-request connection failure leaves every row untouched', async () => {
   const local = localOutbox(2)
-  const remote = fakePostgres(
-    new SQL.PostgresError('connection refused', { code: 'ERR_POSTGRES_CONNECTION_REFUSED' }),
-  )
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 1,
-    pending: 2,
-    configured: true,
-    quarantined: [],
-    blocked: [],
-  })
+  const remote = fakePostgres(new Error('connection refused'))
+  await expect(syncRecord(options(local, remote))).rejects.toThrow()
   const rows = local
     .query<{ attempts: number; quarantined_at: string | null }, []>(
       'SELECT attempts,quarantined_at FROM outbox ORDER BY id',
     )
     .all()
   expect(rows).toEqual([
-    { attempts: 1, quarantined_at: null },
+    { attempts: 0, quarantined_at: null },
     { attempts: 0, quarantined_at: null },
   ])
   local.close()
 })
 
-test('a revoked table grant is pass-fatal and stops before the next row', async () => {
+test('a whole-request grant failure leaves every row untouched', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(serverError('permission denied for table run', 42501))
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 1,
-    pending: 2,
-    quarantined: [],
-  })
+  await expect(syncRecord(options(local, remote))).rejects.toThrow()
   expect(local.query('SELECT attempts FROM outbox ORDER BY id').all()).toEqual([
-    { attempts: 1 },
+    { attempts: 0 },
     { attempts: 0 },
   ])
   local.close()
@@ -710,7 +718,7 @@ test('a quarantined run defers its continuation and retry until the parent syncs
   local.close()
 })
 
-test('retiring a later row after the snapshot prevents its delivery', async () => {
+test('retiring a row after its batch is sent does not mark its local snapshot synced', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, undefined, (ordinal) => {
     if (ordinal !== 1) return
@@ -724,13 +732,13 @@ test('retiring a later row after the snapshot prevents its delivery', async () =
   })
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 1,
+    pushed: 2,
     failed: 0,
     pending: 0,
   })
   expect(
     remote.statements.filter((statement) => statement.toLowerCase().includes('insert into "run"')),
-  ).toHaveLength(1)
+  ).toHaveLength(2)
   expect(local.query('SELECT synced_at,retired_at FROM outbox WHERE id=2').get()).toEqual({
     synced_at: null,
     retired_at: STAMP,
@@ -877,13 +885,13 @@ test('declared project spaces override the active space while an unset project f
   local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
   const remote = fakePostgres()
   const declaredSpace = '01990000-0000-7000-8000-000000000003'
+  const memberships = [
+    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
+    ...options(local, remote).memberships,
+  ]
   expect(
     await syncRecord({
-      ...options(local, remote),
-      memberships: [
-        { spaceId: declaredSpace, slug: 'team', permission: 'write' },
-        ...options(local, remote).memberships,
-      ],
+      ...options(local, remote, memberships),
       projectSpaces: { declared: 'team' },
     }),
   ).toEqual({
@@ -909,14 +917,14 @@ test('two declared projects bind their own spaces in separate transactions', asy
   const remote = fakePostgres()
   const alpha = '01990000-0000-7000-8000-000000000003'
   const beta = '01990000-0000-7000-8000-000000000004'
+  const memberships = [
+    { spaceId: alpha, slug: 'alpha', permission: 'write' },
+    { spaceId: beta, slug: 'beta', permission: 'write' },
+    ...options(local, remote).memberships,
+  ]
   expect(
     await syncRecord({
-      ...options(local, remote),
-      memberships: [
-        { spaceId: alpha, slug: 'alpha', permission: 'write' },
-        { spaceId: beta, slug: 'beta', permission: 'write' },
-        ...options(local, remote).memberships,
-      ],
+      ...options(local, remote, memberships),
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0 })
@@ -935,7 +943,7 @@ test('a read-only destination is deferred per row and retried after permission c
   local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
   const remote = fakePostgres()
   const readOnlySpace = '01990000-0000-7000-8000-000000000003'
-  const base = options(local, remote)
+  const baseMemberships = options(local, remote).memberships
   const projectSpaces = {
     'read-only-project': 'read-only-space',
     'write-project': 'platform',
@@ -943,11 +951,10 @@ test('a read-only destination is deferred per row and retried after permission c
 
   expect(
     await syncRecord({
-      ...base,
-      memberships: [
+      ...options(local, remote, [
         { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'read' },
-        ...base.memberships,
-      ],
+        ...baseMemberships,
+      ]),
       projectSpaces,
     }),
   ).toMatchObject({
@@ -971,13 +978,55 @@ test('a read-only destination is deferred per row and retried after permission c
 
   expect(
     await syncRecord({
-      ...base,
-      memberships: [
+      ...options(local, remote, [
         { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'write' },
-        ...base.memberships,
-      ],
+        ...baseMemberships,
+      ]),
       projectSpaces,
     }),
   ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })
   local.close()
+})
+
+test('sync sends ordered bounded batches and applies each response before continuing', async () => {
+  const local = localOutbox(RECORD_SYNC_BATCH_SIZE + 1, null)
+  const base = options(local, fakePostgres())
+  const batches: number[][] = []
+  const client = {
+    whoami: base.client.whoami,
+    sync: async (request: Parameters<NonNullable<typeof base.client.sync>>[0]) => {
+      batches.push(request.rows.map((row) => row.id))
+      return { results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })) }
+    },
+  }
+  expect(await syncRecord({ ...base, client })).toMatchObject({
+    pushed: RECORD_SYNC_BATCH_SIZE + 1,
+    pending: 0,
+  })
+  expect(batches.map((batch) => batch.length)).toEqual([RECORD_SYNC_BATCH_SIZE, 1])
+  expect(batches.flat()).toEqual(
+    Array.from({ length: RECORD_SYNC_BATCH_SIZE + 1 }, (_, i) => i + 1),
+  )
+  local.close()
+})
+
+test('whole-request auth, server, and old-route failures leave the batch pending', async () => {
+  for (const failure of [
+    new RecordApiRequestError('credentials refused', 'refused', 401),
+    new RecordApiRequestError('server unavailable', 'unreachable', 500),
+    new RecordApiRequestError('not found', 'refused', 404),
+  ]) {
+    const local = localOutbox(1, null)
+    const base = options(local, fakePostgres())
+    const client = { whoami: base.client.whoami, sync: async () => Promise.reject(failure) }
+    await expect(syncRecord({ ...base, client })).rejects.toThrow(
+      failure.status === 404 ? 'release the hosted API' : failure.message,
+    )
+    expect(local.query('SELECT attempts,synced_at,quarantined_at FROM outbox').get()).toEqual({
+      attempts: 0,
+      synced_at: null,
+      quarantined_at: null,
+    })
+    local.close()
+  }
 })

@@ -1044,6 +1044,8 @@ realPostgres('RLS proof against real Postgres', () => {
     spaceId: PLATFORM_SPACE_ID,
     otherSpaceId: SPACE_A,
     projectName: PLATFORM_SLUG,
+    token: () => tokenA,
+    setToken: (token) => recordSession.setToken(token),
     asSpace,
   })
 

@@ -78,6 +78,7 @@ import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 import {
   addRecordSubject,
   defineRecordSubject,
@@ -173,6 +174,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),
     readRuns: listRecordRuns,
+    syncRecord: syncHostedRecord,
     readRunsWindow: viewRecordRuns,
     readRun: getRecordRun,
     readReviews: listRecordReviews,

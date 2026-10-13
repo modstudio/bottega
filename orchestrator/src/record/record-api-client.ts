@@ -37,6 +37,7 @@ import {
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
+import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -157,6 +158,7 @@ export type RecordRequestDestination = { destinationSpaceId?: string }
 
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
+  sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
   createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
   setActiveOrganization(input: {
     organizationId?: string
@@ -371,10 +373,12 @@ function injectedClient(): RecordApiClient | null {
 
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'refused'
+  readonly status: number | null
 
-  constructor(message: string, kind: 'unreachable' | 'refused') {
+  constructor(message: string, kind: 'unreachable' | 'refused', status: number | null = null) {
     super(message)
     this.kind = kind
+    this.status = status
   }
 }
 
@@ -404,11 +408,11 @@ function responseMessage(body: unknown, fallback: string): string {
 function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
   if (status === 401) return recordAuthRefusal(status, body, headers)
   const message = responseMessage(body, `record API ${status}`)
-  if (status === 429) return new RecordApiRequestError(message, 'refused')
+  if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
-    return new RecordApiRequestError(message, 'refused')
+    return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500)
-    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused')
+    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused', status)
   return recordApiUnreachable(new Error(message))
 }
 
@@ -641,6 +645,7 @@ export function recordApiClient(): RecordApiClient {
     throw new Error(TEST_REFUSAL)
   return {
     ...recordIdentityAndSpaceClient(),
+    sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),

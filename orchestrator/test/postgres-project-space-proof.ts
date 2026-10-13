@@ -37,6 +37,7 @@ export function registerProjectSpaceProofs(input: {
   })
 
   test('two projects sync into separate spaces and remain tenant-confined', async () => {
+    input.setToken(input.token())
     const ids = await proveProjectSpaceRecordSync({
       actorUrl: input.actorUrl,
       actorRole: input.actorRole,

@@ -55,22 +55,8 @@ export async function proveProjectSpaceRecordSync(input: {
   }
   expect(
     await syncRecord({
-      recordUrl: input.actorUrl,
       local,
       identity: { id: input.machineId, name: 'proof-machine' },
-      principal: { userId: input.userId, spaceId: input.firstSpaceId },
-      memberships: [
-        {
-          spaceId: input.firstSpaceId,
-          slug: 'alpha-space',
-          permission: 'write',
-        },
-        {
-          spaceId: input.secondSpaceId,
-          slug: 'beta-space',
-          permission: 'write',
-        },
-      ],
       projectSpaces: { alpha: 'alpha-space', beta: 'beta-space' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
@@ -133,14 +119,9 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
     .run(recordId, JSON.stringify(run), String(run.createdAt))
-  const sync = (recordUrl: string) =>
-    syncRecord({
-      recordUrl,
-      local,
-      identity: { id: input.machineId, name: 'proof-machine' },
-      principal: { userId: input.userId, spaceId: input.spaceId },
-    })
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  const sync = () =>
+    syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
 
   const score = Object.fromEntries(SCORE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
   Object.assign(score, {
@@ -160,7 +141,7 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (2,'score',?,?,?)")
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const select = (spaceId: string, expression: string) =>
     input.asSpace(
       input.actorRole,
@@ -176,7 +157,7 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (3,'run',?,?,?)")
     .run(unscoredId, JSON.stringify(run), String(run.createdAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const tenant = { url: input.actorUrl, userId: input.userId, spaceId: input.spaceId }
   await voidRecordRun({ ...tenant, id: recordId, reason: VOID_EXCLUSION_REASON })
   await voidRecordRun({ ...tenant, id: unscoredId, reason: VOID_EXCLUSION_REASON })
@@ -265,19 +246,20 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (4,'score',?,?,?)")
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const rescoredRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")
-  await expect(sync(input.ownerUrl)).rejects.toThrow(
-    `record sync refuses ${input.ownerRole} credentials; set ORCH_RECORD_URL to the ${input.actorRole} connection`,
-  )
   local.close()
   return { actorRead, otherSpaceRead, rescoredRead }
 }
 
 export function registerScoreRecordSyncProof(
-  input: Parameters<typeof proveScoreRecordSync>[0],
+  input: Parameters<typeof proveScoreRecordSync>[0] & {
+    token: () => string
+    setToken(token: string): void
+  },
 ): void {
   test('sync round trip writes and updates a tenant-confined score', async () => {
+    input.setToken(input.token())
     const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input)
     expect(actorRead.code, actorRead.stderr).toBe(0)
     expect(actorRead.stdout).toBe('full|right|first')
