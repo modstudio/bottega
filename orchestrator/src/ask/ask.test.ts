@@ -39,8 +39,6 @@ function resultText(result: Awaited<ReturnType<Client['callTool']>>): string {
   return (result.content as { type: 'text'; text: string }[])[0]!.text
 }
 
-const createdAt = new Date(Date.now() - 1_000).toISOString()
-
 beforeEach(() => {
   process.env.ORCH_RECORD_API_URL = 'https://record.test'
 })
@@ -137,11 +135,15 @@ describe('the live ask channel always answers', () => {
 
   test('check_orchestrator_messages emits hosted beside local once with the failed-refresh warning', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'ask-project' })
+    const startedAt = (
+      db().query('SELECT started_at FROM run WHERE id=?').get(run) as { started_at: string }
+    ).started_at
+    const pushedAt = new Date(Date.parse(startedAt) + 1).toISOString()
     db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
     const local = postNotice(
       { audience: `run:${run}`, title: 'Local ask', body: 'local ask body' },
       {},
-      Date.parse(createdAt),
+      Date.parse(pushedAt),
     )
     const hosted: HostedBoardMessage = {
       id: newRecordId(),
@@ -158,7 +160,7 @@ describe('the live ask channel always answers', () => {
         runId: null,
       },
       senderTags: [],
-      createdAt,
+      createdAt: pushedAt,
       expiresAt: '2099-01-01T00:00:00.000Z',
       withdrawnAt: null,
       state: 'open',
