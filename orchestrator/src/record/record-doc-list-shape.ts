@@ -3,10 +3,6 @@
 
 let unwrappedStringLists = 0
 
-export function recordDocUnwrappedStringListCount(): number {
-  return unwrappedStringLists
-}
-
 export function recordDocList(
   value: unknown,
   input: { document: string; column: string; optional?: boolean },
@@ -24,6 +20,9 @@ export function recordDocList(
     }
     if (Array.isArray(parsed)) {
       unwrappedStringLists++
+      console.warn(
+        `unwrapped hosted document JSON string list #${unwrappedStringLists}: ${input.document} ${input.column}`,
+      )
       return parsed
     }
   }

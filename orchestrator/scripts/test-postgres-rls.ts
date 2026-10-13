@@ -242,7 +242,13 @@ try {
       if (remigrate !== 0) process.exitCode = remigrate
       else {
         const jsonbBinding = await run(
-          ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-jsonb-binding.test.ts'],
+          [
+            'bun',
+            'test',
+            '--timeout',
+            '30000',
+            'src/postgres/postgres-migrate-jsonb-binding.test.ts',
+          ],
           {
             ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
             ORCH_RECORD_URL: actorUrl,

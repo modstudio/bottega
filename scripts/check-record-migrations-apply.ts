@@ -391,12 +391,7 @@ async function applyAndProveMigration(
   ) {
     throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
   }
-  if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
-  if (migration.name === audienceVocabularyBackfill)
-    await seedAudienceVocabularyBackfill(transaction)
-  if (migration.name === boardSharedSpacesMigration)
-    await seedBoardThreadAuthorBackfill(transaction)
-  if (migration.name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
+  await seedMigrationProof(transaction, migration.name)
   await applyMigration(transaction, migration)
   if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
     throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
@@ -417,6 +412,13 @@ async function applyAndProveMigration(
     for (const chunk of migration.sql) await transaction.exec(chunk)
     await proofDocJsonbArrayRepair(transaction)
   }
+}
+
+async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
+  if (name === brokenDocBackfill) await seedDocBackfillProof(transaction)
+  if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
+  if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
+  if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
 }
 
 async function proofBoardNotifications(database: PGlite): Promise<void> {
