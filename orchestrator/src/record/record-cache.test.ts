@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { installRecordApiClient, unusedBoardClientMethods } from '../../test/fixtures/record-api.ts'
+import {
+  installRecordApiClient,
+  unusedBoardClientMethods,
+  unusedIdentityAndSpaceClientMethods,
+} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
@@ -10,6 +14,7 @@ import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './rec
 
 function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
   return {
+    ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     whoami: async () => ({
       user: { id: newRecordId() },

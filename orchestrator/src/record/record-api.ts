@@ -3,19 +3,22 @@
 
 import type { Context } from 'hono'
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { registerRecordAccessRoutes } from './record-api-access.ts'
+import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import {
   recordCanonImportSchema,
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
+import {
+  type RecordInvitationRouteDeps,
+  registerRecordInvitationRoute,
+} from './record-api-invitations.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
@@ -83,7 +86,7 @@ type ApiEnvironment = {
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordApiDeps
-type RecordApiDeps = {
+type RecordApiDeps = RecordInvitationRouteDeps & {
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }
@@ -274,18 +277,7 @@ const noSpace = (context: Context<ApiEnvironment>) =>
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
-  if (deps.allowedOrigins?.length) {
-    const allowed = new Set(deps.allowedOrigins)
-    const options = {
-      origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
-      credentials: true,
-      allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    }
-    app.use('/v1/*', cors(options))
-    app.use('/public/v1/*', cors(options))
-    app.use('/api/auth/*', cors(options))
-  }
+  registerRecordCors(app, deps.allowedOrigins)
   registerRecordAccessRoutes(app, {
     ...deps,
     readVersion: () => builtCommitResponse(deps.readCommit()),
@@ -307,6 +299,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
+  registerRecordInvitationRoute(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z

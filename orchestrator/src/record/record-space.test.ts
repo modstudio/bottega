@@ -1,7 +1,32 @@
 import { describe, expect, test } from 'bun:test'
-import { recordSpaceRole, refuseDuplicateRecordSpaceSlug } from './record-space.ts'
+import {
+  pendingRecordInvitations,
+  recordMembershipsFromIdentity,
+  recordSpaceRole,
+  refuseDuplicateRecordSpaceSlug,
+  switchRecordSpace,
+} from './record-space.ts'
 
 describe('record space decisions', () => {
+  test('maps whoami memberships into the rows printed by space list', () => {
+    expect(
+      recordMembershipsFromIdentity({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-b',
+        personalSpaceId: 'space-a',
+        memberships: [
+          { space_id: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+          { space_id: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+        ],
+      }),
+    ).toEqual({
+      activeSpaceId: 'space-b',
+      memberships: [
+        { spaceId: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
+        { spaceId: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+      ],
+    })
+  })
   test('accepts only supported invitation roles', () => {
     expect(recordSpaceRole('member')).toBe('member')
     expect(recordSpaceRole('admin')).toBe('admin')
@@ -35,5 +60,81 @@ describe('record space decisions', () => {
     expect(() => refuseDuplicateRecordSpaceSlug(slug, [])).toThrow(
       'is shaped like a record id and would make space selection ambiguous',
     )
+  })
+
+  test('passes hosted invitations through with their ISO expiry', async () => {
+    const invitations = [
+      {
+        id: 'invitation-a',
+        spaceName: 'Team',
+        spaceSlug: 'team',
+        role: 'member',
+        inviterEmail: 'owner@example.test',
+        expiresAt: '2026-10-20T12:00:00.000Z',
+      },
+    ]
+    expect(await pendingRecordInvitations({ listInvitations: async () => invitations })).toBe(
+      invitations,
+    )
+  })
+
+  test('switches only to a listed membership and sends its id', async () => {
+    const calls: unknown[] = []
+    const selected = await switchRecordSpace('team', {
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [
+          {
+            space_id: 'space-a',
+            name: 'Team',
+            slug: 'team',
+            role: 'member',
+            permission: 'write',
+          },
+        ],
+      }),
+      setActiveOrganization: async (input) => {
+        calls.push(input)
+        return { id: 'space-a', slug: 'team' }
+      },
+    })
+    expect(selected).toEqual({
+      spaceId: 'space-a',
+      name: 'Team',
+      slug: 'team',
+      role: 'member',
+      permission: 'write',
+    })
+    expect(calls).toEqual([{ organizationId: 'space-a' }])
+  })
+
+  test('refuses a non-member without calling set-active and names the available slugs', async () => {
+    let called = false
+    const switched = switchRecordSpace('outsider', {
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-a',
+        personalSpaceId: 'space-a',
+        memberships: [
+          {
+            space_id: 'space-a',
+            name: 'Team',
+            slug: 'team',
+            role: 'owner',
+            permission: 'write',
+          },
+        ],
+      }),
+      setActiveOrganization: async () => {
+        called = true
+        return { id: 'space-a', slug: 'team' }
+      },
+    })
+    await expect(switched).rejects.toThrow(
+      "record space outsider is not one of the user's memberships; available slugs: team",
+    )
+    expect(called).toBe(false)
   })
 })

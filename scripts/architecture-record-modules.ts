@@ -12,6 +12,12 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-api-invitations.ts', [
+    'hono',
+    './record-auth.ts',
+    './record-pending-invitations.ts',
+  ]),
+  module('orchestrator/src/record/record-pending-invitations.ts', ['bun']),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
     'bun',
     '../../../shared/docs.ts',
@@ -196,7 +202,7 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
-  module('orchestrator/src/record/record-api-access.ts', ['hono']),
+  module('orchestrator/src/record/record-api-access.ts', ['hono', 'hono/cors']),
   module('orchestrator/src/record/record-api-public-docs.ts', [
     'hono',
     'hono/bun',

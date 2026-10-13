@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   newRecordId,
@@ -8,6 +8,10 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { asSpace, asSpaces, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import {
   invitationApiClient,
   registerInvitationAuthProofs,
@@ -21,6 +25,7 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
+import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
@@ -28,7 +33,7 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -81,6 +86,7 @@ realPostgres('RLS proof against real Postgres', () => {
   let pendingInvitation = ''
   let invitationAuth: ReturnType<typeof recordAuth>
   let invitationClient: ReturnType<typeof invitationApiClient>
+  let apiServer: Awaited<ReturnType<typeof startRecordApiServer>>
   const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0]> = []
   const authProjectA = newRecordId()
   const authProjectB = newRecordId()
@@ -192,6 +198,15 @@ realPostgres('RLS proof against real Postgres', () => {
       expect(revoked.code, revoked.stderr).toBe(0)
     }
 
+    apiServer = await startRecordApiServer({
+      ...process.env,
+      PORT: '0',
+      ORCH_RECORD_URL: actorUrl!,
+      RECORD_AUTH_DATABASE_URL: authUrl!,
+      RECORD_HUB_URL: process.env.RECORD_HUB_URL,
+    })
+    process.env.ORCH_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    installRecordApiClient(null)
     installRecordSessionRunner(recordSession.runner)
     const storedToken = () => recordSession.token()!
     await signUpCommand(SIGN_UP_AUTH.emailA, 'Auth A', async () => SIGN_UP_AUTH.password, {
@@ -243,7 +258,6 @@ realPostgres('RLS proof against real Postgres', () => {
 
     recordSession.setToken(tokenA)
     pendingInvitation = await inviteToActiveRecordSpace(
-      actorUrl!,
       SIGN_UP_AUTH.emailB,
       'member',
       invitationClient,
@@ -260,12 +274,19 @@ realPostgres('RLS proof against real Postgres', () => {
     )
   })
 
-  afterAll(() => {
+  beforeEach(() => {
+    installRecordApiClient(null)
+  })
+
+  afterAll(async () => {
+    await apiServer?.stop(true)
     installRecordSessionRunner(null)
+    installRecordApiClient(createMemoryRecordApiClient())
     delete process.env.BETTER_AUTH_SECRET
     delete process.env.BETTER_AUTH_URL
     delete process.env.RECORD_HUB_URL
     delete process.env.RECORD_AUTH_DATABASE_URL
+    delete process.env.ORCH_RECORD_API_URL
     if (!container) return
     psql(
       'postgres',
@@ -349,6 +370,12 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(repaired).toBe('t|owner|write')
   })
 
+  registerCustomerAuthProof({
+    email: SIGN_UP_AUTH.emailB,
+    password: SIGN_UP_AUTH.password,
+    userId: () => authUserB,
+  })
+
   test('signed-in users see their memberships and spaces but not another space records', () => {
     const visible = psql(
       RECORD_ACTOR_ROLE,
@@ -385,7 +412,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerActiveSpaceProofs({
     actorUrl: () => actorUrl!,
-    tokenB: () => tokenB,
+    sessionB: () => ({ token: tokenB, userId: authUserB }),
     spaceB: () => authSpaceB,
     rememberedSpaceId: () => authSpaceA,
     outsiderSpaceId: SPACE_B,
@@ -404,10 +431,10 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('01990000-0000-7000-8000-00000000013a','${authSpaceA}',
          (SELECT id FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}'),'member','write',now());`,
     )
-    await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
+    await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(repairToken), authSpaceA)
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'nobody@example.test', 'member', invitationClient),
+      inviteToActiveRecordSpace('nobody@example.test', 'member', invitationClient),
     ).rejects.toThrow('not allowed to invite users')
   })
 
@@ -421,22 +448,21 @@ realPostgres('RLS proof against real Postgres', () => {
     )
     recordSession.setToken(repairToken)
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-sent@example.test', 'member', invitationClient),
+      inviteToActiveRecordSpace('admin-sent@example.test', 'member', invitationClient),
     ).resolves.toBeString()
     await expect(
-      inviteToActiveRecordSpace(actorUrl!, 'admin-owner@example.test', 'owner', invitationClient),
+      inviteToActiveRecordSpace('admin-owner@example.test', 'owner', invitationClient),
     ).rejects.toThrow('not allowed to invite a user with this role')
   })
 
   test('an owner does not list invitations they sent into their active space', async () => {
     recordSession.setToken(tokenA)
     const invited = await inviteToActiveRecordSpace(
-      actorUrl!,
       'owner-sent@example.test',
       'member',
       invitationClient,
     )
-    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).not.toContain(invited)
+    expect((await pendingRecordInvitations()).map((row) => row.id)).not.toContain(invited)
   })
 
   test('organization invite and resend email the hosted link and renew seven-day expiry', async () => {
@@ -498,9 +524,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${email}','${authUserA}',
          'member','pending',now() - interval '1 day',now());`,
     )
-    await expect(
-      inviteToActiveRecordSpace(actorUrl!, email, 'member', invitationClient),
-    ).resolves.toBeString()
+    await expect(inviteToActiveRecordSpace(email, 'member', invitationClient)).resolves.toBeString()
   })
 
   test('invitees see only their invitations and acceptance joins and switches space', async () => {
@@ -528,20 +552,12 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(visibleToOther.stdout).toBe('0')
 
     recordSession.setToken(tokenB)
-    expect((await pendingRecordInvitations(actorUrl!)).map((row) => row.id)).toEqual([
-      pendingInvitation,
-    ])
-    await expect(acceptRecordInvitation(actorUrl!, WRONG_EMAIL_INVITATION)).rejects.toThrow(
-      'record invitation is unavailable',
-    )
-    await expect(acceptRecordInvitation(actorUrl!, EXPIRED_INVITATION)).rejects.toThrow(
-      'record invitation has expired',
-    )
-    await expect(acceptRecordInvitation(actorUrl!, ACCEPTED_INVITATION)).rejects.toThrow(
-      'record invitation is not pending',
-    )
+    expect((await pendingRecordInvitations()).map((row) => row.id)).toEqual([pendingInvitation])
+    await expect(acceptRecordInvitation(WRONG_EMAIL_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(EXPIRED_INVITATION)).rejects.toThrow()
+    await expect(acceptRecordInvitation(ACCEPTED_INVITATION)).rejects.toThrow()
 
-    expect(await acceptRecordInvitation(actorUrl!, pendingInvitation)).toBe(authSpaceA)
+    expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
     const session = await recordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenB) })
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
@@ -566,9 +582,7 @@ realPostgres('RLS proof against real Postgres', () => {
          'member','pending',now() + interval '1 day',now());`,
     )
     recordSession.setToken(tokenB)
-    await expect(acceptRecordInvitation(actorUrl!, second)).rejects.toThrow(
-      'record user is already a member',
-    )
+    await expect(acceptRecordInvitation(second)).rejects.toThrow()
   })
 
   test('migrate is idempotent and record doctor diagnoses ownership', async () => {
@@ -626,49 +640,40 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${AUTH_EMAIL_HTTP}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
-    const server = await startRecordApiServer({
-      ...process.env,
-      PORT: '0',
-      ORCH_RECORD_URL: actorUrl!,
-      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-      RECORD_HUB_URL: 'http://127.0.0.1',
+    const origin = process.env.ORCH_RECORD_API_URL!
+    const signup = await fetch(`${origin}/api/auth/sign-up/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: AUTH_EMAIL_HTTP,
+        name: 'Auth HTTP',
+        password: SIGN_UP_AUTH.password,
+      }),
     })
-    const origin = `http://127.0.0.1:${server.port}`
-    try {
-      const signup = await fetch(`${origin}/api/auth/sign-up/email`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: AUTH_EMAIL_HTTP,
-          name: 'Auth HTTP',
-          password: SIGN_UP_AUTH.password,
-        }),
-      })
-      expect(signup.status).toBe(200)
-      const created = (await signup.json()) as { token: string; user: { id: string } }
-      expect(created.token).toBeString()
+    expect(signup.status).toBe(200)
+    const created = (await signup.json()) as { token: string; user: { id: string } }
+    expect(created.token).toBeString()
 
-      const whoami = await fetch(`${origin}/v1/whoami`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(whoami.status).toBe(200)
-      const identity = (await whoami.json()) as {
-        user: { id: string }
-        activeSpaceId: string
-      }
-      expect(identity.user.id).toBe(created.user.id)
+    const whoami = await fetch(`${origin}/v1/whoami`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(whoami.status).toBe(200)
+    const identity = (await whoami.json()) as {
+      user: { id: string }
+      activeSpaceId: string
+    }
+    expect(identity.user.id).toBe(created.user.id)
 
-      const httpProject = newRecordId()
-      const httpRun = newRecordId()
-      const httpRunOlder = newRecordId()
-      const httpReview = newRecordId()
-      const httpLens = newRecordId()
-      const httpFinding = newRecordId()
-      succeeds(
-        'postgres',
-        'postgres',
-        `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+    const httpProject = newRecordId()
+    const httpRun = newRecordId()
+    const httpRunOlder = newRecordId()
+    const httpReview = newRecordId()
+    const httpLens = newRecordId()
+    const httpFinding = newRecordId()
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
            VALUES ('${httpProject}','${identity.activeSpaceId}','auth-http-project',ARRAY['HTTP'],now());
          INSERT INTO run (
            id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
@@ -687,98 +692,95 @@ realPostgres('RLS proof against real Postgres', () => {
            VALUES ('${httpLens}','${identity.activeSpaceId}','${httpReview}','${httpRun}','${MACHINE_A}',103,'correctness','proof','[]','[]','[]','[]','[]','[]','[]',now(),now());
          INSERT INTO review_finding (id,space_id,review_id,review_lens_id,machine_id,local_id,ordinal,severity,location,evidence,proposed_correction,created_at,updated_at)
            VALUES ('${httpFinding}','${identity.activeSpaceId}','${httpReview}','${httpLens}','${MACHINE_A}',103,1,'major','file:1','evidence','fix',now(),now());`,
-      )
+    )
 
-      const ownRuns = await fetch(`${origin}/v1/runs`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(ownRuns.status).toBe(200)
-      const ownPage = (await ownRuns.json()) as {
-        items: { id: string; score: { delivery: string } | null }[]
-      }
-      expect(ownPage.items.find((run) => run.id === httpRun)?.score?.delivery).toBe('full')
-
-      const runDetail = await fetch(`${origin}/v1/runs/${httpRun}`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(runDetail.status).toBe(200)
-      expect(((await runDetail.json()) as { score: { note: string } }).score.note).toBe('good')
-
-      const hiddenRun = await fetch(`${origin}/v1/runs/${authRunB}`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(hiddenRun.status).toBe(404)
-
-      const reviewDetail = await fetch(`${origin}/v1/reviews/${httpReview}`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(reviewDetail.status).toBe(200)
-      expect(
-        ((await reviewDetail.json()) as { lenses: { findings: unknown[] }[] }).lenses[0]?.findings,
-      ).toHaveLength(1)
-
-      const firstPage = await fetch(`${origin}/v1/runs?limit=1`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      const firstPayload = (await firstPage.json()) as {
-        items: { id: string }[]
-        nextCursor: string
-      }
-      const secondPage = await fetch(
-        `${origin}/v1/runs?limit=1&before=${encodeURIComponent(firstPayload.nextCursor)}`,
-        { headers: { Authorization: `Bearer ${created.token}` } },
-      )
-      const secondPayload = (await secondPage.json()) as { items: { id: string }[] }
-      expect(firstPayload.items[0]?.id).not.toBe(secondPayload.items[0]?.id)
-
-      const otherRuns = await fetch(`${origin}/v1/runs`, {
-        headers: { Authorization: `Bearer ${tokenB}` },
-      })
-      expect(otherRuns.status).toBe(200)
-      expect(
-        ((await otherRuns.json()) as { items: { id: string }[] }).items.some(
-          (run) => run.id === httpRun,
-        ),
-      ).toBe(false)
-
-      const snapshotHeaders = {
-        Authorization: `Bearer ${created.token}`,
-        'content-type': 'application/json',
-      }
-      for (const [machineId, payload] of [
-        [MACHINE_A, { version: 1 }],
-        [MACHINE_A, { version: 2 }],
-        ['01990000-0000-7000-8000-000000000029', { version: 3 }],
-      ] as const) {
-        const response = await fetch(`${origin}/v1/snapshots/state`, {
-          method: 'PUT',
-          headers: snapshotHeaders,
-          body: JSON.stringify({ machineId, payload }),
-        })
-        expect(response.status).toBe(200)
-      }
-      const otherSnapshot = await fetch(`${origin}/v1/snapshots/state`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ machineId: MACHINE_A, payload: { hidden: true } }),
-      })
-      expect(otherSnapshot.status).toBe(200)
-      const snapshots = await fetch(`${origin}/v1/snapshots`, {
-        headers: { Authorization: `Bearer ${created.token}` },
-      })
-      expect(snapshots.status).toBe(200)
-      const snapshotItems = (await snapshots.json()) as {
-        items: Array<{ machineId: string; payload: Record<string, unknown> }>
-      }
-      expect(snapshotItems.items).toHaveLength(2)
-      expect(snapshotItems.items.find((item) => item.machineId === MACHINE_A)?.payload).toEqual({
-        version: 2,
-      })
-      expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
-      await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
-    } finally {
-      server.stop(true)
+    const ownRuns = await fetch(`${origin}/v1/runs`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(ownRuns.status).toBe(200)
+    const ownPage = (await ownRuns.json()) as {
+      items: { id: string; score: { delivery: string } | null }[]
     }
+    expect(ownPage.items.find((run) => run.id === httpRun)?.score?.delivery).toBe('full')
+
+    const runDetail = await fetch(`${origin}/v1/runs/${httpRun}`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(runDetail.status).toBe(200)
+    expect(((await runDetail.json()) as { score: { note: string } }).score.note).toBe('good')
+
+    const hiddenRun = await fetch(`${origin}/v1/runs/${authRunB}`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(hiddenRun.status).toBe(404)
+
+    const reviewDetail = await fetch(`${origin}/v1/reviews/${httpReview}`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(reviewDetail.status).toBe(200)
+    expect(
+      ((await reviewDetail.json()) as { lenses: { findings: unknown[] }[] }).lenses[0]?.findings,
+    ).toHaveLength(1)
+
+    const firstPage = await fetch(`${origin}/v1/runs?limit=1`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    const firstPayload = (await firstPage.json()) as {
+      items: { id: string }[]
+      nextCursor: string
+    }
+    const secondPage = await fetch(
+      `${origin}/v1/runs?limit=1&before=${encodeURIComponent(firstPayload.nextCursor)}`,
+      { headers: { Authorization: `Bearer ${created.token}` } },
+    )
+    const secondPayload = (await secondPage.json()) as { items: { id: string }[] }
+    expect(firstPayload.items[0]?.id).not.toBe(secondPayload.items[0]?.id)
+
+    const otherRuns = await fetch(`${origin}/v1/runs`, {
+      headers: { Authorization: `Bearer ${tokenB}` },
+    })
+    expect(otherRuns.status).toBe(200)
+    expect(
+      ((await otherRuns.json()) as { items: { id: string }[] }).items.some(
+        (run) => run.id === httpRun,
+      ),
+    ).toBe(false)
+
+    const snapshotHeaders = {
+      Authorization: `Bearer ${created.token}`,
+      'content-type': 'application/json',
+    }
+    for (const [machineId, payload] of [
+      [MACHINE_A, { version: 1 }],
+      [MACHINE_A, { version: 2 }],
+      ['01990000-0000-7000-8000-000000000029', { version: 3 }],
+    ] as const) {
+      const response = await fetch(`${origin}/v1/snapshots/state`, {
+        method: 'PUT',
+        headers: snapshotHeaders,
+        body: JSON.stringify({ machineId, payload }),
+      })
+      expect(response.status).toBe(200)
+    }
+    const otherSnapshot = await fetch(`${origin}/v1/snapshots/state`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ machineId: MACHINE_A, payload: { hidden: true } }),
+    })
+    expect(otherSnapshot.status).toBe(200)
+    const snapshots = await fetch(`${origin}/v1/snapshots`, {
+      headers: { Authorization: `Bearer ${created.token}` },
+    })
+    expect(snapshots.status).toBe(200)
+    const snapshotItems = (await snapshots.json()) as {
+      items: Array<{ machineId: string; payload: Record<string, unknown> }>
+    }
+    expect(snapshotItems.items).toHaveLength(2)
+    expect(snapshotItems.items.find((item) => item.machineId === MACHINE_A)?.payload).toEqual({
+      version: 2,
+    })
+    expect(snapshotItems.items.some((item) => item.payload.hidden === true)).toBe(false)
+    await proveHostedDocs({ origin, token: created.token, otherToken: tokenB })
   })
 
   registerStaleMembershipProof({

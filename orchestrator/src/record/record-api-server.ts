@@ -64,6 +64,7 @@ import {
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
+import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
   getPublicRecordDoc,
@@ -170,27 +171,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
   const app = recordApi({
     recordUrl: config.recordUrl,
     allowedOrigins: config.allowedOrigins,
-    auth,
-    readSession: async (headers) => {
-      const current = await auth.api.getSession({ headers })
-      if (!current) return null
-      return recordIdentity(
-        config.recordUrl,
-        current.user,
-        current.session.activeOrganizationId ?? null,
-      )
-    },
-    setActiveSpace: (headers, spaceId) =>
-      setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
-    readHealth: async () => {
-      try {
-        await probeRecord(config.recordUrl)
-        return { ok: true, migrations }
-      } catch {
-        return { ok: false, migrations }
-      }
-    },
-    readCommit: readBuiltCommit,
+    ...recordApiAccessDependencies(config, auth, migrations),
     readRuns: listRecordRuns,
     readRunsWindow: viewRecordRuns,
     readRun: getRecordRun,
@@ -276,6 +257,37 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
   return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry)
+}
+
+function recordApiAccessDependencies(
+  config: ReturnType<typeof recordApiServerConfig>,
+  auth: ReturnType<typeof recordAuth>,
+  migrations: number,
+) {
+  return {
+    auth,
+    readSession: async (headers: Headers) => {
+      const current = await auth.api.getSession({ headers })
+      if (!current) return null
+      return recordIdentity(
+        config.recordUrl,
+        current.user,
+        current.session.activeOrganizationId ?? null,
+      )
+    },
+    setActiveSpace: (headers: Headers, spaceId: string) =>
+      setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
+    listInvitations: listPendingRecordInvitations,
+    readHealth: async () => {
+      try {
+        await probeRecord(config.recordUrl)
+        return { ok: true, migrations }
+      } catch {
+        return { ok: false, migrations }
+      }
+    },
+    readCommit: readBuiltCommit,
+  }
 }
 
 if (import.meta.main) {

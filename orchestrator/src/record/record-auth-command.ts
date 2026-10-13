@@ -2,16 +2,10 @@
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
 import { rememberHostedRecord } from './install-binding.ts'
-import { RECORD_SIGN_IN_REMEDY, recordAuth, recordIdentity } from './record-auth.ts'
-import { currentRecordSession, rememberSignedInRecordUser } from './record-session.ts'
+import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
+import { rememberSignedInRecordUser } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
-
-function recordUrl(): string {
-  const url = process.env.ORCH_RECORD_URL
-  if (!url) throw new Error('ORCH_RECORD_URL is required for record authentication')
-  return url
-}
 
 export async function recordPassword(readPassword: () => Promise<string>): Promise<string> {
   const password = process.env.ORCH_RECORD_PASSWORD ?? (await readPassword())
@@ -25,10 +19,7 @@ export async function signUpCommand(
   readPassword: () => Promise<string>,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await recordAuth(recordUrl()).api.signUpEmail({
-    body: { email, name, password: await recordPassword(readPassword) },
-  })
-  if (!result.token) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const result = await recordApiSignUp(email, name, await recordPassword(readPassword))
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
@@ -40,9 +31,7 @@ export async function signInCommand(
   readPassword: () => Promise<string>,
   presentation: Presentation,
 ): Promise<void> {
-  const result = await recordAuth(recordUrl()).api.signInEmail({
-    body: { email, password: await recordPassword(readPassword) },
-  })
+  const result = await recordApiSignIn(email, await recordPassword(readPassword))
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
@@ -50,8 +39,7 @@ export async function signInCommand(
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {
-  const url = recordUrl()
-  const current = await currentRecordSession(url)
-  rememberSignedInRecordUser(current.user)
-  presentation.log(JSON.stringify(await recordIdentity(url, current.user, current.activeSpaceId)))
+  const identity = await recordApiClient().whoami()
+  rememberSignedInRecordUser(identity.user)
+  presentation.log(JSON.stringify(identity))
 }

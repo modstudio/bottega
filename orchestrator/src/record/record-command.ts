@@ -131,7 +131,7 @@ export async function recordPublicDocClearCommand(
 }
 
 export async function recordSpaceListCommand(presentation: Presentation): Promise<void> {
-  const result = await recordMemberships(recordUrl())
+  const result = await recordMemberships()
   for (const membership of result.memberships) {
     presentation.log(
       `${membership.spaceId === result.activeSpaceId ? '* ' : '  '}${membership.slug}\t${membership.name}\t${membership.role}\t${membership.permission}`,
@@ -144,7 +144,7 @@ export async function recordSpaceCreateCommand(
   slug: string,
   presentation: Presentation,
 ): Promise<void> {
-  const created = await createRecordSpace(recordUrl(), name, slug)
+  const created = await createRecordSpace(name, slug)
   presentation.log(`${created.id}\t${created.slug}`)
 }
 
@@ -152,7 +152,7 @@ export async function recordSpaceSwitchCommand(
   value: string,
   presentation: Presentation,
 ): Promise<void> {
-  const selected = await switchRecordSpace(recordUrl(), value)
+  const selected = await switchRecordSpace(value)
   presentation.log(`active record space ${selected.slug}`)
 }
 
@@ -161,14 +161,14 @@ export async function recordSpaceInviteCommand(
   role: string,
   presentation: Presentation,
 ): Promise<void> {
-  const id = await inviteToActiveRecordSpace(recordUrl(), email, recordSpaceRole(role))
+  const id = await inviteToActiveRecordSpace(email, recordSpaceRole(role))
   presentation.log(id)
 }
 
 export async function recordSpaceInvitationsCommand(presentation: Presentation): Promise<void> {
-  for (const invitation of await pendingRecordInvitations(recordUrl())) {
+  for (const invitation of await pendingRecordInvitations()) {
     presentation.log(
-      `${invitation.id}\t${invitation.spaceName}\t${invitation.spaceSlug}\t${invitation.role}\t${invitation.inviterEmail}\t${invitation.expiresAt.toISOString()}`,
+      `${invitation.id}\t${invitation.spaceName}\t${invitation.spaceSlug}\t${invitation.role}\t${invitation.inviterEmail}\t${invitation.expiresAt}`,
     )
   }
 }
@@ -177,7 +177,7 @@ export async function recordSpaceAcceptCommand(
   invitationId: string,
   presentation: Presentation,
 ): Promise<void> {
-  const spaceId = await acceptRecordInvitation(recordUrl(), invitationId)
+  const spaceId = await acceptRecordInvitation(invitationId)
   presentation.log(`accepted record invitation ${invitationId}; active space ${spaceId}`)
 }
 

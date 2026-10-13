@@ -2,10 +2,9 @@
 /** Resolves run attribution without making dispatch depend on the hosted record. */
 
 import type { Database } from 'bun:sqlite'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
-import { currentRecordUserSession, storedRecordToken } from './record-session.ts'
+import { storedRecordToken } from './record-session.ts'
 
 const ATTRIBUTION_FAILURE_KEY = 'record_attribution_failure'
 
@@ -24,17 +23,6 @@ function writeFailure(local: Database, detail: string | null): void {
        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
     )
     .run(ATTRIBUTION_FAILURE_KEY, detail)
-}
-
-function directFailure(error: unknown, url: string): string {
-  let detail = error instanceof Error ? error.message : String(error)
-  try {
-    const password = new URL(url).password
-    if (password) detail = detail.replaceAll(password, '***')
-  } catch {
-    // The connection attempt owns reporting an invalid URL; it has no parseable password.
-  }
-  return `direct record connection: ${detail}`
 }
 
 export function recordAttributionFailure(local: Database = db()): string | null {
@@ -62,30 +50,12 @@ export async function signedInRecordUserId(local: Database = db()): Promise<stri
     return null
   }
 
-  const failures: string[] = []
-  if (resolveRecordApiUrl()) {
-    try {
-      const id = String((await recordApiClient().whoami()).user.id)
-      writeFailure(local, null)
-      return id
-    } catch (error) {
-      failures.push(`record API: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  } else {
-    failures.push('record API: ORCH_RECORD_API_URL is not set')
+  try {
+    const id = String((await recordApiClient().whoami()).user.id)
+    writeFailure(local, null)
+    return id
+  } catch (error) {
+    writeFailure(local, `record API: ${error instanceof Error ? error.message : String(error)}`)
+    return null
   }
-
-  const directUrl = process.env.ORCH_RECORD_URL
-  if (directUrl) {
-    try {
-      const id = String((await currentRecordUserSession(directUrl, local)).user.id)
-      writeFailure(local, null)
-      return id
-    } catch (error) {
-      failures.push(directFailure(error, directUrl))
-    }
-  }
-
-  writeFailure(local, failures.join('\n'))
-  return null
 }

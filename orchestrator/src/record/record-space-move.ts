@@ -5,7 +5,7 @@ import { SQL } from 'bun'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { currentRecordUserSession } from './record-session.ts'
-import { type RecordMembership, recordMemberships } from './record-space.ts'
+import type { RecordMembership } from './record-space.ts'
 
 type ProjectSpaceMoveRow = {
   tableName: string
@@ -54,8 +54,29 @@ export async function moveRecordProjectSpace(input: {
   confirm?: number
 }): Promise<ProjectSpaceMoveResult> {
   const current = await currentRecordUserSession(input.url)
-  const listed = await recordMemberships(input.url)
-  const destination = destinationOwnedByCaller(input.destination, listed.memberships)
+  const membershipClient = new SQL(input.url)
+  let membershipRows: Record<string, unknown>[]
+  try {
+    membershipRows = await membershipClient.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${current.activeSpaceId ?? ''}, true)`
+      return tx`
+        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
+        FROM membership m JOIN space s ON s.id=m.space_id
+        WHERE m.user_id=${current.user.id}::uuid ORDER BY s.slug
+      `
+    })
+  } finally {
+    await membershipClient.close()
+  }
+  const listed = membershipRows.map((row: Record<string, unknown>) => ({
+    spaceId: String(row.space_id),
+    name: String(row.name),
+    slug: String(row.slug),
+    role: String(row.role),
+    permission: String(row.permission),
+  }))
+  const destination = destinationOwnedByCaller(input.destination, listed)
   const source = input.source ?? current.activeSpaceId
   if (!source) {
     throw new Error(

@@ -21,9 +21,9 @@ export function registerProjectSpaceProofs(input: {
 }): void {
   test('space creation grants ownership and duplicate slug names the existing id', async () => {
     input.setToken(input.token())
-    const created = await createRecordSpace(input.actorUrl, 'DEV 741 Team', 'dev-741-team')
+    const created = await createRecordSpace('DEV 741 Team', 'dev-741-team')
     expect(created.slug).toBe('dev-741-team')
-    expect((await recordMemberships(input.actorUrl)).memberships).toContainEqual(
+    expect((await recordMemberships()).memberships).toContainEqual(
       expect.objectContaining({
         spaceId: created.id,
         slug: created.slug,
@@ -31,7 +31,7 @@ export function registerProjectSpaceProofs(input: {
         permission: 'write',
       }),
     )
-    await expect(createRecordSpace(input.actorUrl, 'Duplicate', created.slug)).rejects.toThrow(
+    await expect(createRecordSpace('Duplicate', created.slug)).rejects.toThrow(
       `record space slug ${created.slug} already exists: ${created.id}`,
     )
   })
@@ -74,10 +74,9 @@ export function registerProjectSpaceProofs(input: {
 
   test('project rows move together while another source project and space aggregates stay', async () => {
     input.setToken(input.token())
-    const source = (await recordMemberships(input.actorUrl)).activeSpaceId
+    const source = (await recordMemberships()).activeSpaceId
     if (!source) throw new Error('move proof has no active source space')
     const destination = await createRecordSpace(
-      input.actorUrl,
       'DEV 747 Move',
       `dev-747-${newRecordId().slice(-8)}`,
     )
@@ -206,10 +205,9 @@ export function registerProjectSpaceProofs(input: {
 
   test('a task collision is named and a mid-move failure rolls the whole move back', async () => {
     input.setToken(input.token())
-    const source = (await recordMemberships(input.actorUrl)).activeSpaceId
+    const source = (await recordMemberships()).activeSpaceId
     if (!source) throw new Error('move proof has no active source space')
     const destination = await createRecordSpace(
-      input.actorUrl,
       'DEV 747 Atomic',
       `dev-747-${newRecordId().slice(-8)}`,
     )

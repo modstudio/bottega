@@ -164,6 +164,57 @@ async function sessionSpaceForUser(client: SQL, userId: string, personalSpaceId:
   })
 }
 
+async function rememberSessionSpace(
+  client: SQL,
+  userId: string,
+  activeSpaceId: string | null,
+): Promise<void> {
+  await client.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`
+    await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
+    await tx`
+      UPDATE "user" SET last_active_space_id=${activeSpaceId}::uuid, updated_at=now()
+      WHERE id=${userId}::uuid
+    `
+  })
+}
+
+export function rememberedSessionSpaceWrite(updated: {
+  activeOrganizationId?: unknown
+}): { activeSpaceId: string } | null {
+  return typeof updated.activeOrganizationId === 'string'
+    ? { activeSpaceId: updated.activeOrganizationId }
+    : null
+}
+
+function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
+  return {
+    user: {
+      create: {
+        // Better Auth documents no personal-organization convention; the record repairs it here.
+        after: async (created: { id: string }) => {
+          await ensurePersonalSpace(created.id, personalSpaces)
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (created: { userId: string }) => {
+          const personal = await ensurePersonalSpace(created.userId, personalSpaces)
+          const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
+          return { data: { ...created, activeOrganizationId: activeSpaceId } }
+        },
+      },
+      update: {
+        after: async (updated: { userId: string; activeOrganizationId?: unknown }) => {
+          const write = rememberedSessionSpaceWrite(updated)
+          if (write) await rememberSessionSpace(client, updated.userId, write.activeSpaceId)
+        },
+      },
+    },
+  }
+}
+
 type ResetPasswordSender = typeof sendPasswordResetEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
@@ -277,25 +328,7 @@ export function recordAuth(
       }),
       bearer(),
     ],
-    databaseHooks: {
-      user: {
-        create: {
-          // Better Auth documents no personal-organization convention; the record repairs it here.
-          after: async (created) => {
-            await ensurePersonalSpace(created.id, personalSpaces)
-          },
-        },
-      },
-      session: {
-        create: {
-          before: async (created) => {
-            const personal = await ensurePersonalSpace(created.userId, personalSpaces)
-            const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
-            return { data: { ...created, activeOrganizationId: activeSpaceId } }
-          },
-        },
-      },
-    },
+    databaseHooks: recordDatabaseHooks(client, personalSpaces),
   })
 }
 
@@ -357,14 +390,6 @@ export async function recordIdentity(
 }
 
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
-
-export async function setActiveRecordSpace(
-  url: string,
-  token: string,
-  spaceId: string,
-): Promise<void> {
-  return setActiveRecordSpaceForSession(url, bearerHeaders(token), spaceId)
-}
 
 export async function setActiveRecordSpaceForSession(
   url: string,

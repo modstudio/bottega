@@ -16,7 +16,99 @@ import {
   classifyBoardStreamResponse,
   recordApiBaseUrl,
   recordApiClient,
+  recordApiSignIn,
+  recordAuthRefusal,
+  recordAuthToken,
+  recordIdentityResponse,
+  recordInvitationListResponse,
 } from './record-api-client.ts'
+
+describe('record HTTP authentication responses', () => {
+  test('sign-in posts without an Origin and prefers the bearer response header', async () => {
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    const originalFetch = globalThis.fetch
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const requests: Array<{ url: string; headers: Headers; body: unknown }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        body: JSON.parse(String(init?.body)),
+      })
+      return Response.json(
+        { token: 'body-token', user: { id: 'user-a', email: 'a@example.test' } },
+        { headers: { 'set-auth-token': 'header-token' } },
+      )
+    }) as typeof fetch
+    try {
+      expect(await recordApiSignIn('a@example.test', 'secret')).toEqual({
+        token: 'header-token',
+        user: { id: 'user-a', email: 'a@example.test' },
+      })
+      expect(requests[0]).toEqual({
+        url: 'https://api.example.test/api/auth/sign-in/email',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { email: 'a@example.test', password: 'secret' },
+      })
+      expect(requests[0]?.headers.has('origin')).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+    }
+  })
+
+  test('takes the bearer token from the response header before the JSON fallback', () => {
+    expect(
+      recordAuthToken(new Headers({ 'set-auth-token': 'header-token' }), { token: 'body-token' }),
+    ).toBe('header-token')
+    expect(recordAuthToken(new Headers(), { token: 'body-token' })).toBe('body-token')
+    expect(recordAuthToken(new Headers(), {})).toBeNull()
+  })
+
+  test('maps credential and rate-limit refusals to actionable messages', () => {
+    expect(recordAuthRefusal(401, {}, new Headers()).message).toContain(
+      'record credentials were refused',
+    )
+    expect(recordAuthRefusal(429, {}, new Headers({ 'retry-after': '12' })).message).toBe(
+      'record sign-in is rate limited; retry after 12',
+    )
+  })
+
+  test('validates and maps whoami identity at the HTTP edge', () => {
+    const mapped = recordIdentityResponse({
+      user: { id: 'user-a', email: 'a@example.test' },
+      activeSpaceId: 'space-b',
+      personalSpaceId: 'space-a',
+      memberships: [
+        {
+          space_id: 'space-b',
+          name: 'Beta',
+          slug: 'beta',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    })
+    expect(mapped.memberships.map((row) => row.space_id)).toEqual(['space-b'])
+    expect(() => recordIdentityResponse({ user: {}, memberships: [] })).toThrow('invalid identity')
+  })
+
+  test('validates the invitation fields printed by the command', () => {
+    const invitation = {
+      id: 'invitation-a',
+      spaceName: 'Alpha',
+      spaceSlug: 'alpha',
+      role: 'member',
+      inviterEmail: 'owner@example.test',
+      expiresAt: '2026-10-20T12:00:00.000Z',
+    }
+    expect(recordInvitationListResponse([invitation])).toEqual([invitation])
+    expect(() => recordInvitationListResponse([{ ...invitation, spaceSlug: null }])).toThrow(
+      'invalid invitation list',
+    )
+  })
+})
 
 test('the record API base URL resolves from configured files', () => {
   const root = mkdtempSync(join(tmpdir(), 'record-api-client-url-'))
@@ -42,7 +134,9 @@ describe('record API client test safety', () => {
   test('refuses a real base URL unless a stub is injected', () => {
     installRecordApiClient(null)
     const previous = process.env.ORCH_RECORD_API_URL
+    const previousContainer = process.env.ORCH_TEST_POSTGRES_CONTAINER
     process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    delete process.env.ORCH_TEST_POSTGRES_CONTAINER
     try {
       expect(() => recordApiClient()).toThrow(
         'record API client refuses a real base URL unless a stub is injected in tests',
@@ -50,6 +144,8 @@ describe('record API client test safety', () => {
     } finally {
       if (previous === undefined) delete process.env.ORCH_RECORD_API_URL
       else process.env.ORCH_RECORD_API_URL = previous
+      if (previousContainer === undefined) delete process.env.ORCH_TEST_POSTGRES_CONTAINER
+      else process.env.ORCH_TEST_POSTGRES_CONTAINER = previousContainer
       installRecordApiClient(createMemoryRecordApiClient())
     }
   })
@@ -197,6 +293,42 @@ describe('record API client test safety', () => {
       const posted = calls[3]?.body as Record<string, unknown>
       expect(posted).not.toHaveProperty('recipientUserIds')
       expect(posted).not.toHaveProperty('claimId')
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
+  test('board rate limits preserve the server remedy', async () => {
+    const session = memoryRecordSession()
+    session.setToken('board-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json(
+        { error: 'board post rate limit reached; retry after the ten-minute author window' },
+        { status: 429 },
+      )) as typeof fetch
+    try {
+      await expect(
+        recordApiClient().postBoardMessage({
+          id: newRecordId(),
+          kind: 'notice',
+          audience: 'operator',
+          title: 'T',
+          body: 'B',
+          expiresAt: '2026-10-06T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('board post rate limit reached; retry after the ten-minute author window')
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

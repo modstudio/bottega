@@ -39,8 +39,20 @@ export const SIGN_UP_CLI_OUTPUT = [
 export function invitationApiClient(
   auth: ReturnType<typeof recordAuth>,
   token: () => string | null,
-): Pick<RecordApiClient, 'inviteMember'> {
+): Pick<RecordApiClient, 'whoami' | 'inviteMember'> {
   return {
+    async whoami() {
+      const current = token()
+      if (!current) throw new Error('record test session has no token')
+      const session = await auth.api.getSession({ headers: bearerHeaders(current) })
+      if (!session) throw new Error('record test session is unavailable')
+      return {
+        user: session.user,
+        activeSpaceId: session.session.activeOrganizationId ?? null,
+        personalSpaceId: null,
+        memberships: [],
+      }
+    },
     inviteMember: (input) => {
       const current = token()
       if (!current) throw new Error('record test session has no token')

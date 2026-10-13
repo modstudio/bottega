@@ -26,7 +26,11 @@ export const identity: RecordIdentity = {
   ],
 }
 
-export function idleBoardDeps(): RecordBoardDeps {
+function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
+  return { listInvitations: async () => [] }
+}
+
+function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
@@ -52,6 +56,10 @@ export function idleBoardDeps(): RecordBoardDeps {
     listBoardClaims: unused,
     releaseBoardTaskClaims: unused,
   }
+}
+
+export function idleRecordApiDeps() {
+  return { ...idleIdentityAndSpaceDeps(), ...idleBoardDeps() }
 }
 
 const subject = {
@@ -114,8 +122,31 @@ function unusedBoard(): Promise<never> {
   return Promise.reject(new Error('hosted board is unused in this fixture'))
 }
 
+function unusedIdentityAndSpace(): Promise<never> {
+  return Promise.reject(new Error('hosted identity and space are unused in this fixture'))
+}
+
 function unusedSubject(): Promise<never> {
   return Promise.reject(new Error('hosted subjects are unused in this fixture'))
+}
+
+export function unusedIdentityAndSpaceClientMethods(): Pick<
+  RecordApiClient,
+  | 'whoami'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
+  | 'inviteMember'
+> {
+  return {
+    whoami: unusedIdentityAndSpace,
+    createOrganization: unusedIdentityAndSpace,
+    setActiveOrganization: unusedIdentityAndSpace,
+    listInvitations: unusedIdentityAndSpace,
+    acceptInvitation: unusedIdentityAndSpace,
+    inviteMember: unusedIdentityAndSpace,
+  }
 }
 
 export function unusedBoardClientMethods(): Pick<
@@ -209,6 +240,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     )
 
   return {
+    ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     async applySettingsPermission() {
       throw new Error('settings permission endpoint is not implemented by the memory fixture')
@@ -224,6 +256,21 @@ export function createMemoryRecordApiClient(): RecordApiClient {
         personalSpaceId: '01990000-0000-7000-8000-000000000002',
         memberships: [],
       }
+    },
+    async createOrganization(input) {
+      return { id: newRecordId(), slug: input.slug }
+    },
+    async setActiveOrganization(input) {
+      return {
+        id: input.organizationId ?? '01990000-0000-7000-8000-000000000002',
+        slug: input.organizationSlug ?? 'fixture',
+      }
+    },
+    async listInvitations() {
+      return []
+    },
+    async acceptInvitation() {
+      throw new Error('invitation not found')
     },
     async inviteMember() {
       return { id: newRecordId() }
