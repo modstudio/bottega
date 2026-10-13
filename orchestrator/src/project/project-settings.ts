@@ -138,7 +138,7 @@ export type ProjectSettings = {
    */
   workerMcpServers?: string[]
   /** A cheap plain-named read tool used to prove the MCP attachment. */
-  mcp?: { probe_tool?: string }
+  mcp?: { probe_tool?: string; reader_tools?: Record<string, string[]> }
   /** How this project's task tracker is reached and how its vocabulary maps. */
   tracker?: TrackerSettings
   /**

@@ -57,6 +57,25 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('reader MCP tool maps are strict, named, and duplicate-free', () => {
+    expect(
+      validateProjectSettings({
+        mcp: { reader_tools: { starship: ['get-task', 'search_tasks'], absent: [] } },
+      }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({ mcp: { reader_tools: [] } } as unknown as Parameters<
+        typeof validateProjectSettings
+      >[0]),
+    ).toContain('mcp.reader_tools must be a map from server names to tool-name lists')
+    expect(
+      validateProjectSettings({ mcp: { reader_tools: { server: [''] } } }).join('\n'),
+    ).toContain('plain non-empty tool names')
+    expect(
+      validateProjectSettings({ mcp: { reader_tools: { server: ['same', 'same'] } } }).join('\n'),
+    ).toContain('duplicate tool name "same"')
+  })
+
   test('code search opt-in is a boolean-only project setting', () => {
     expect(validateProjectSettings({ search: { code: true } })).toEqual([])
     expect(

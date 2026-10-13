@@ -1079,6 +1079,7 @@ export async function run(opts: {
       writes,
       usingMcp,
       mcpServerName,
+      projectName: projectAt(callerCwd)?.name ?? null,
       codexMcpScope,
       mcpTrustGranted,
       writableRoots,

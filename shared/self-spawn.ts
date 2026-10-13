@@ -7,6 +7,7 @@ export const BOTTEGA_ENTRY_PROTOCOL = {
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
   'ask-server': { compiledArguments: ['orch', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
+  'mcp-reader-proxy': { compiledArguments: ['orch', 'mcp-reader-proxy'], usage: 'hidden' },
   'retrieval-search': { compiledArguments: ['__retrieval-search'], usage: 'hidden' },
   'check-attribution': { compiledArguments: ['__check-attribution'], usage: 'hidden' },
   'schema-check': { compiledArguments: ['__schema-check'], usage: 'hidden' },
@@ -42,6 +43,13 @@ function sourceArguments(entry: BottegaEntry): string[] {
         '--no-env-file',
         assetPath('orchestrator', 'src', 'ask', 'ask-proxy.ts'),
         'ask-server',
+      ]
+    case 'mcp-reader-proxy':
+      return [
+        process.execPath,
+        '--no-env-file',
+        assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
+        'mcp-reader-proxy',
       ]
     case 'retrieval-search':
       return [assetPath('bin', 'retrieval-search')]

@@ -317,6 +317,7 @@ export const CLI_COMMANDS = new Set([
   'agents',
   'answer',
   'ask-server',
+  'mcp-reader-proxy',
   'blockers',
   'board',
   'branches',

@@ -32,6 +32,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { lensCommand } from '../lens/lens-commands.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
+import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
@@ -473,6 +474,10 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         throw error
       }
     })
+  program
+    .command('mcp-reader-proxy <project> <server>', { hidden: true })
+    .allowExcessArguments(false)
+    .action((project: string, server: string) => readerMcpProxyCommand(project, server))
   program
     .command('setup-ask')
     .allowExcessArguments(false)

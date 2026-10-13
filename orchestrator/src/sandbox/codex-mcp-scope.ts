@@ -21,6 +21,8 @@ type CodexScopeOpts = {
   mcpServer?: string
   projectServers?: Record<string, CodexMcpServer>
   home?: string
+  projectName?: string
+  writesJob?: boolean
 }
 
 export type CodexMcpServer = {
@@ -63,6 +65,11 @@ function serverOverlay(name: string, server: CodexMcpServer): string {
 
 export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
+}
+
+function readerProxyServer(project: string, server: string): CodexMcpServer {
+  const [command, ...args] = bottegaEntryArgv('mcp-reader-proxy')
+  return { command, args: [...args, project, server] }
 }
 
 /** Select project MCP launch definitions that are safe to expose on argv. */
@@ -168,16 +175,23 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   }
   args.push('-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
-    if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))
+    if (name !== 'orch-ask' && name !== 'orch') {
+      const overlay =
+        opts.writesJob === false && opts.projectName
+          ? readerProxyServer(opts.projectName, name)
+          : server
+      args.push('-c', serverOverlay(name, overlay))
+    }
   }
   if (opts.mcpServer && opts.mcpServer !== 'orch' && !opts.projectServers?.[opts.mcpServer]) {
-    args.push(
-      '-c',
-      serverOverlay(opts.mcpServer, {
-        command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
-        args: [opts.mcpServer],
-      }),
-    )
+    const fallback =
+      opts.writesJob === false && opts.projectName
+        ? readerProxyServer(opts.projectName, opts.mcpServer)
+        : {
+            command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
+            args: [opts.mcpServer],
+          }
+    args.push('-c', serverOverlay(opts.mcpServer, fallback))
   }
   return args
 }

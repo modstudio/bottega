@@ -112,6 +112,40 @@ test('project server overlay takes the place of the mcp-run definition for the s
   expect(entries.join('\n')).not.toContain('.claude/mcp/mcp-run')
 })
 
+test('reading-job project overlays all use the credential-free reader proxy', () => {
+  const entries = serverEntries(
+    codexScopeArgs({
+      mcp: true,
+      mcpServer: 'secret',
+      projectName: 'starship',
+      writesJob: false,
+      projectServers: {
+        local: { command: '/project/server', args: ['literal-secret'], cwd: '/project' },
+      },
+    }),
+  )
+  const local = entries.find((entry) => entry.startsWith('mcp_servers.local='))!
+  const fallback = entries.find((entry) => entry.startsWith('mcp_servers.secret='))!
+  for (const entry of [local, fallback]) {
+    expect(entry).toContain('mcp-reader-proxy')
+    expect(entry).toContain('starship')
+    expect(entry).not.toContain('literal-secret')
+    expect(entry).not.toContain('.claude/mcp/mcp-run')
+  }
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch-ask='))).toContain('ask-server')
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain('args=["mcp"]')
+})
+
+test('writing-job MCP overlays remain byte-for-byte unchanged', () => {
+  const options = {
+    mcp: true,
+    mcpServer: 'starship',
+    projectName: 'starship',
+    projectServers: { starship: { command: '/project/server', args: ['serve'] } },
+  }
+  expect(codexScopeArgs({ ...options, writesJob: true })).toEqual(codexScopeArgs(options))
+})
+
 test('platform-shaped MCP scope emits orch exactly once', () => {
   const entries = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch', home: '/operator' }))
   expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([

@@ -688,6 +688,37 @@ export function validateProjectSettings(
       problems.push('mcp.probe_tool must be a plain non-empty tool name')
     }
   }
+  if (settings.mcp && 'reader_tools' in settings.mcp) {
+    const readerTools = settings.mcp.reader_tools
+    if (!readerTools || typeof readerTools !== 'object' || Array.isArray(readerTools)) {
+      problems.push('mcp.reader_tools must be a map from server names to tool-name lists')
+    } else {
+      for (const [server, names] of Object.entries(readerTools)) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(server)) {
+          problems.push(
+            `mcp.reader_tools server name ${JSON.stringify(server)} must be a plain non-empty name`,
+          )
+          continue
+        }
+        if (!Array.isArray(names)) {
+          problems.push(`mcp.reader_tools.${server} must be a list of tool names`)
+          continue
+        }
+        const seen = new Set<string>()
+        for (const name of names) {
+          if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
+            problems.push(`mcp.reader_tools.${server} must contain plain non-empty tool names`)
+          } else if (seen.has(name)) {
+            problems.push(
+              `mcp.reader_tools.${server} contains duplicate tool name ${JSON.stringify(name)}`,
+            )
+          } else {
+            seen.add(name)
+          }
+        }
+      }
+    }
+  }
   const readonly = settings.worktree?.readonly_create
   if (readonly && !createHasPlaceholder(readonly, 'path')) {
     problems.push('worktree.readonly_create must contain {path}')

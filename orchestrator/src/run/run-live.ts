@@ -167,6 +167,7 @@ export type LiveInput = {
   writes: boolean
   usingMcp: boolean
   mcpServerName: string | null
+  projectName: string | null
   codexMcpScope: { servers: Record<string, CodexMcpServer> } | null
   mcpTrustGranted: boolean
   writableRoots: string[]
@@ -292,6 +293,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     writes,
     usingMcp,
     mcpServerName,
+    projectName,
     codexMcpScope,
     mcpTrustGranted,
     writableRoots,
@@ -419,6 +421,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
       projectServers: codexMcpScope?.servers,
+      projectName: projectName ?? undefined,
+      writesJob,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
       gitConfigEnvironment,
