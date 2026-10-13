@@ -22,6 +22,7 @@ import {
   setDoc,
   setDocStatus,
   signedInDocOwner,
+  storedDocWarnings,
 } from '../doc/docs.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
@@ -68,6 +69,26 @@ type DocWriteTreeSelector = (input: {
   subject: string | null
   cwd?: string
 }) => SelectedDocWriteTree | undefined
+
+function setDocToolPayload(
+  doc: Awaited<ReturnType<typeof setDoc>>,
+  body: string,
+  tree: string | undefined,
+  collectCanonLintInput: CanonLintInputCollector,
+) {
+  const root = repoRootForDoc(doc, tree)
+  return {
+    ...doc,
+    lintFindings: storedDocWarnings(doc),
+    warnings: root
+      ? checkDoc(body, {
+          repoRoot: root,
+          trackedFiles: new Set(collectCanonLintInput(root).trackedPaths),
+        })
+      : [],
+    tree,
+  }
+}
 
 export function registerDocTools(
   server: McpServer,
@@ -254,17 +275,7 @@ export function registerDocTools(
           collectCanonLintInput: ports.collectCanonLintInput,
         }),
       )
-      const root = repoRootForDoc(doc, canonTree?.root)
-      return text({
-        ...doc,
-        warnings: root
-          ? checkDoc(body, {
-              repoRoot: root,
-              trackedFiles: new Set(ports.collectCanonLintInput(root).trackedPaths),
-            })
-          : [],
-        tree: canonTree?.root,
-      })
+      return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
     },
   )
 

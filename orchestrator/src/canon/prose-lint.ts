@@ -7,6 +7,7 @@ export type ProseFinding = {
   message: string
   remedy: string
   historyCertainty?: 'certain' | 'ambiguous'
+  issueKind?: 'task-key'
 }
 
 const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
@@ -124,10 +125,12 @@ export function lintProse(text: string): ProseFinding[] {
       findings.push({
         line: lineNumber,
         rule: 'issue',
+        issueKind: 'task-key',
         message: 'contains a task key',
         remedy: 'remove the task key; tasks may link to docs, but docs do not link to tasks',
       })
-    } else if (issuePattern) {
+    }
+    if (issuePattern) {
       findings.push({
         line: lineNumber,
         rule: 'issue',

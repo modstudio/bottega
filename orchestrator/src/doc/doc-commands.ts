@@ -22,7 +22,6 @@ import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { searchDocs } from './doc-search.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
-  collectDocReferenceProjects,
   consumeDoc,
   diffDocRevisions,
   docSubjects,
@@ -41,7 +40,7 @@ import {
   setDoc,
   setDocStatus,
   signedInDocOwner,
-  storedDocsHaveRepositoryReferences,
+  storedDocWarnings,
   validateDocAddressFilter,
 } from './docs.ts'
 
@@ -86,20 +85,7 @@ export function userAddressScope(user: boolean, explicitScope: string | undefine
 }
 
 function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
-  const scope = flags.flag('scope')
-  const subject = flags.flag('subject') ?? null
-  const rows = listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) })
-  const findings = rows.flatMap((doc) =>
-    lintStoredDoc(
-      doc,
-      storedDocsHaveRepositoryReferences([doc]) ? collectDocReferenceProjects(doc) : undefined,
-    ).map((finding) => ({
-      scope: doc.scope,
-      subject: doc.subject,
-      slug: doc.slug,
-      ...finding,
-    })),
-  )
+  const findings = listedDocFindings(flags, lintStoredDoc)
   if (flags.has('json')) presentation.log(JSON.stringify(findings))
   else {
     for (const finding of findings) {
@@ -110,6 +96,49 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
     }
   }
   if (findings.some(({ level }) => level === 'error')) presentation.exitCode?.(1)
+}
+
+function listedDocFindings(
+  flags: DocFlags,
+  lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
+) {
+  const scope = flags.flag('scope')
+  const subject = flags.flag('subject') ?? null
+  return listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) }).flatMap((doc) =>
+    lint(doc).map((finding) => ({
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      ...finding,
+    })),
+  )
+}
+
+function docWarningAddress(doc: { scope: string; subject: string | null; slug: string }) {
+  return `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
+}
+
+function listDocWarnings(flags: DocFlags, presentation: DocPresentation): void {
+  const scope = flags.flag('scope')
+  if (!scope) throw new Error('orch doc warnings --scope S [--subject X] [--json]')
+  const warnings = listedDocFindings(flags, storedDocWarnings).map(
+    ({ scope: warningScope, subject, slug, line, message, remedy }) => ({
+      address: docWarningAddress({ scope: warningScope, subject, slug }),
+      line,
+      message,
+      remedy,
+    }),
+  )
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(warnings))
+    return
+  }
+  if (!warnings.length) {
+    presentation.log('warnings: none')
+    return
+  }
+  for (const warning of warnings)
+    presentation.log(`${warning.address}:${warning.line} ${warning.message}; ${warning.remedy}`)
 }
 
 function docDelivery(value: string | undefined): 'inject' | 'demand' | undefined {
@@ -216,6 +245,7 @@ async function handledEarlyDocCommand(
   presentation: DocPresentation,
 ): Promise<boolean> {
   if (sub === 'lint') lintDocs(flags, presentation)
+  else if (sub === 'warnings') listDocWarnings(flags, presentation)
   else if (sub === 'search') await semanticSearch(argv, flags, presentation)
   else return false
   return true
@@ -447,7 +477,7 @@ async function handleSetDocCommand(
   })
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-  const lintWarnings = lintStoredDoc(doc).filter(({ level }) => level === 'warning')
+  const lintWarnings = storedDocWarnings(doc)
   if (has('json'))
     presentation.log(
       JSON.stringify({ ...doc, lintFindings: lintWarnings, warnings, tree: canonTree?.root }),
@@ -724,6 +754,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
+    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }

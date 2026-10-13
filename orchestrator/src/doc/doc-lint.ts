@@ -2,7 +2,7 @@
 /** Pure lint rules for stored documents. */
 import type { DocKind, DocScope } from '../../../shared/docs.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
-import { lintProse } from '../canon/prose-lint.ts'
+import { lintProse, type ProseFinding } from '../canon/prose-lint.ts'
 
 export type DocLintFinding = {
   rule: string
@@ -26,6 +26,7 @@ type DocLintLevel = 'error' | 'warning'
 export type DocLintProfile = {
   rules: Readonly<Partial<Record<DocLintRule, DocLintLevel>>>
   ambiguousHistory: DocLintLevel
+  taskKey: DocLintLevel
 }
 
 /** Selects prose rules and their levels without store or environment access. */
@@ -38,6 +39,7 @@ export function docLintProfile(kind: DocKind): DocLintProfile {
       date: 'error',
     },
     ambiguousHistory: 'warning',
+    taskKey: kind === 'article' ? 'warning' : 'error',
   }
 }
 
@@ -181,6 +183,14 @@ function designHeadingFindings(body: string): DocLintFinding[] {
   ]
 }
 
+function proseFindingLevel(finding: ProseFinding, profile: DocLintProfile): DocLintLevel {
+  if (finding.rule === 'history' && finding.historyCertainty === 'ambiguous') {
+    return profile.ambiguousHistory
+  }
+  if (finding.rule === 'issue' && finding.issueKind === 'task-key') return profile.taskKey
+  return profile.rules[finding.rule]!
+}
+
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   if (doc.scope === 'resume' || doc.scope === 'canon' || doc.scope === 'settings') return []
   const profile = docLintProfile(doc.kind)
@@ -188,10 +198,7 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
     .filter((finding) => profile.rules[finding.rule] !== undefined)
     .map((finding) => ({
       rule: `doc/${finding.rule}`,
-      level:
-        finding.rule === 'history' && finding.historyCertainty === 'ambiguous'
-          ? profile.ambiguousHistory
-          : profile.rules[finding.rule]!,
+      level: proseFindingLevel(finding, profile),
       line: finding.line,
       message: finding.message,
       remedy: finding.remedy,
@@ -203,13 +210,14 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   )
 }
 
-/** A doc update may keep legacy findings, but may not add another rule/message pair. */
+/** A doc update may keep legacy findings, but may not add another rule/level/message tuple. */
 export function introducedDocFindings(
   baseline: DocLintFinding[],
   findings: DocLintFinding[],
 ): DocLintFinding[] {
   const remaining = new Map<string, number>()
-  const key = (finding: DocLintFinding) => JSON.stringify([finding.rule, finding.message])
+  const key = (finding: DocLintFinding) =>
+    JSON.stringify([finding.rule, finding.level, finding.message])
   for (const finding of baseline) {
     const fingerprint = key(finding)
     remaining.set(fingerprint, (remaining.get(fingerprint) ?? 0) + 1)

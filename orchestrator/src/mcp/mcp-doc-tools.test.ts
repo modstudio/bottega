@@ -83,6 +83,36 @@ test('set_doc stores the next revision against the selected canon tree', async (
   })
 })
 
+test('set_doc returns standing document warnings', async () => {
+  await withDocClient(async (client) => {
+    const result = await client.callTool({
+      name: 'set_doc',
+      arguments: {
+        scope: 'machine',
+        slug: 'mcp-article-warning',
+        title: 'MCP article warning',
+        body: 'Catalog entry DEV-880 is current.',
+        delivery: 'demand',
+        kind: 'article',
+        audiences: ['technical'],
+        reason: 'exercise MCP article warning payload',
+      },
+    })
+
+    expect(result.isError).not.toBe(true)
+    const written = JSON.parse((result.content as { text: string }[])[0]!.text) as {
+      lintFindings: unknown[]
+    }
+    expect(written.lintFindings).toEqual([
+      expect.objectContaining({
+        rule: 'doc/issue',
+        level: 'warning',
+        message: 'contains a task key',
+      }),
+    ])
+  })
+})
+
 test('set_doc refuses an existing canon row without expected_revision', async () => {
   const current = await canonFixture()
 

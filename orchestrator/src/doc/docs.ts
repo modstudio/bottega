@@ -316,9 +316,8 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
 }
 
 export {
-  collectDocReferenceProjects,
   lintStoredDoc,
-  storedDocsHaveRepositoryReferences,
+  storedDocWarnings,
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
