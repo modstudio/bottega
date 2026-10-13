@@ -402,8 +402,9 @@ function responseMessage(body: unknown, fallback: string): string {
 }
 
 function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
-  if (status === 401 || status === 429) return recordAuthRefusal(status, body, headers)
+  if (status === 401) return recordAuthRefusal(status, body, headers)
   const message = responseMessage(body, `record API ${status}`)
+  if (status === 429) return new RecordApiRequestError(message, 'refused')
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused')
   if (status >= 400 && status < 500)

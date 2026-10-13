@@ -303,6 +303,42 @@ describe('record API client test safety', () => {
     }
   })
 
+  test('board rate limits preserve the server remedy', async () => {
+    const session = memoryRecordSession()
+    session.setToken('board-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      Response.json(
+        { error: 'board post rate limit reached; retry after the ten-minute author window' },
+        { status: 429 },
+      )) as typeof fetch
+    try {
+      await expect(
+        recordApiClient().postBoardMessage({
+          id: newRecordId(),
+          kind: 'notice',
+          audience: 'operator',
+          title: 'T',
+          body: 'B',
+          expiresAt: '2026-10-06T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('board post rate limit reached; retry after the ten-minute author window')
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('openBoardStream releases a refused or bodiless response', async () => {
     const session = memoryRecordSession()
     session.setToken('stream-token')
