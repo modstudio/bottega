@@ -118,6 +118,15 @@ export function implicitHubDatabaseCreationRefusal(
   return authorized ? null : unauthorizedHubMigrationMessage(path)
 }
 
+/** Decide whether an existing default store may be migrated. */
+export function existingDefaultStoreMigrationRefusal(
+  explicitPath: boolean,
+  authorized: boolean,
+  path = DB_PATH,
+): string | null {
+  return explicitPath || authorized ? null : unauthorizedHubMigrationMessage(path)
+}
+
 let handle: Database | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
@@ -232,9 +241,10 @@ export function migrateDatabase(): {
     ? implicitHubDatabaseCreationRefusal(Boolean(process.env.HUB_DB), authorizedHubInstallation())
     : null
   if (creationRefusal) throw new Error(creationRefusal)
-  if (!create && !process.env.HUB_DB && !authorizedHubInstallation()) {
-    throw new Error(unauthorizedHubMigrationMessage())
-  }
+  const authorizationRefusal = !create
+    ? existingDefaultStoreMigrationRefusal(Boolean(process.env.HUB_DB), authorizedHubInstallation())
+    : null
+  if (authorizationRefusal) throw new Error(authorizationRefusal)
   if (create) mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { readwrite: true, create })
   try {
