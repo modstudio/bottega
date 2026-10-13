@@ -1,11 +1,11 @@
 // concern: record-sync
 /** Batches local outbox rows for the hosted API and applies authoritative per-row results. */
 import type { Database } from 'bun:sqlite'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { db, nowIso } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
@@ -21,10 +21,14 @@ import {
   outboxRowIsEligible,
   outboxRowWaitsForParent,
 } from './outbox-dependency.ts'
-import { quarantineOutboxRow, quarantinedOutboxRows } from './outbox-quarantine.ts'
-import { pullRecordCache } from './record-cache.ts'
+import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
-import { RECORD_SYNC_BATCH_SIZE, type RecordSyncRequestRow } from './record-sync-contract.ts'
+import { pullRecordCache } from './record-cache.ts'
+import {
+  RECORD_SYNC_BATCH_SIZE,
+  type RecordSyncRequestRow,
+  type RecordSyncResponse,
+} from './record-sync-contract.ts'
 import type {
   BlockedOutboxRow,
   OutboxRow,
@@ -196,7 +200,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       if (batch.length === RECORD_SYNC_BATCH_SIZE) break
     }
     if (!batch.length) break
-    let response
+    let response: RecordSyncResponse
     try {
       response = await client.sync({
         machine: { ...identity, seenAt: (options.now ?? nowIso)() },

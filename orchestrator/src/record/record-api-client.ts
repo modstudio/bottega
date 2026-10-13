@@ -37,7 +37,6 @@ import {
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
-import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -50,6 +49,7 @@ import type {
 } from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 

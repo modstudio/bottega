@@ -1,8 +1,6 @@
 // concern: record-sync
 /** Plain local types for hosted-record synchronization. */
 import type { Database } from 'bun:sqlite'
-import type { SQL } from 'bun'
-import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import type { backfillReleaseRecords } from '../release/release-outbox.ts'
 import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
@@ -47,9 +45,4 @@ export type RecordSyncOptions = {
     whoami: RecordApiClient['whoami']
     sync: NonNullable<RecordApiClient['sync']>
   }
-  /** Legacy test-fixture inputs; production sync ignores direct-record connections. */
-  recordUrl?: string
-  openSql?: (url: string) => SQL
-  principal?: { userId: string; spaceId: string }
-  memberships?: RecordSpaceMembership[]
 }

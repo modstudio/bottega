@@ -32,11 +32,11 @@ import { recordSpaceAccessDecision } from '../../../shared/record-space-request.
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import type {
   RecordSyncRequest,
   RecordSyncResponse,
@@ -111,27 +111,6 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
     throw new OutboxRowError(`${kind} outbox payload has an unexpected column set`, 'payload')
   }
   return parsed as Payload
-}
-
-async function outboxProjectName(
-  postgres: SQL,
-  kind: string,
-  record: Payload,
-  principal: RecordPrincipal,
-): Promise<string | null> {
-  const direct = nullableString(record.projectName)
-  if (direct) return direct
-  if (kind !== 'score' && kind !== 'review_lens' && kind !== 'review_finding') return null
-  return postgres.begin(async (tx) => {
-    await bindPrincipal(tx, principal)
-    const rows =
-      kind === 'score'
-        ? await tx`SELECT p.name FROM run r JOIN project p ON p.id=r.project_id
-            WHERE r.id=${String(record.id)}::uuid AND r.space_id=${principal.spaceId}::uuid`
-        : await tx`SELECT p.name FROM review rv JOIN project p ON p.id=rv.project_id
-            WHERE rv.id=${String(record.reviewId)}::uuid AND rv.space_id=${principal.spaceId}::uuid`
-    return rows[0]?.name == null ? null : String(rows[0].name)
-  })
 }
 
 const date = (value: unknown) => new Date(String(value))
@@ -796,14 +775,17 @@ async function pushHostedRow(input: {
       return { id: row.id, ...authorization }
     }
     const rowPrincipal = authorization.principal
-    const record: Payload = { ...parsed, spaceId: rowPrincipal.spaceId }
+    const record: Payload = {
+      ...parsed,
+      spaceId: rowPrincipal.spaceId,
+      ...(kind === 'run' ? { startedByUserId: identity.user.id } : {}),
+    }
     if (String(record.machineId) !== input.machineId) {
       throw new OutboxRowError(
         `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${input.machineId}`,
         'row-validation',
       )
     }
-    await outboxProjectName(postgres, row.kind, record, rowPrincipal)
     await recordKinds[kind].push(postgres, record, rowPrincipal)
     return { id: row.id, status: 'synced' }
   } catch (error) {

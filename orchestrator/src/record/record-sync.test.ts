@@ -18,8 +18,8 @@ import {
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
-import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 import { syncRecord } from './record-sync.ts'
+import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
@@ -490,16 +490,17 @@ test('an old-shape score payload without review grades syncs with nulls', async 
   local.close()
 })
 
-test('a pre-attribution run payload stays null instead of borrowing the pushing user', async () => {
+test('a run payload cannot assert another user as its starter', async () => {
   const local = localOutbox(1)
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
-  delete payload.startedByUserId
-  delete payload.taskKey
+  const assertedUser = '01990000-0000-7000-8000-000000000099'
+  payload.startedByUserId = assertedUser
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
-  expect(remote.parameters.flat()).toContain(null)
+  expect(remote.parameters.flat()).not.toContain(assertedUser)
+  expect(remote.parameters.flat()).toContain('01990000-0000-7000-8000-000000000002')
   local.close()
 })
 

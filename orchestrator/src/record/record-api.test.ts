@@ -4,15 +4,15 @@ import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import {
-  RECORD_SYNC_MAX_PAYLOAD_BYTES,
-  RECORD_SYNC_MAX_REQUEST_BYTES,
-} from './record-sync-contract.ts'
 import { RecordDocError } from './record-docs.ts'
 import {
   applyRecordSettingsPermission,
   type RecordSettingsPermissionInput,
 } from './record-settings.ts'
+import {
+  RECORD_SYNC_MAX_PAYLOAD_BYTES,
+  RECORD_SYNC_MAX_REQUEST_BYTES,
+} from './record-sync-contract.ts'
 
 const notImplemented = () => Promise.reject(new Error('not implemented'))
 

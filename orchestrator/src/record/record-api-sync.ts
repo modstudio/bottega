@@ -42,8 +42,9 @@ const syncSchema = z.object({
     .max(RECORD_SYNC_BATCH_SIZE),
 })
 
-const releaseRemedy =
-  'release the hosted record API with matching sync limits, then retry `orch sync`'
+const requestRemedy = 'send a batch within the hosted sync limits, then retry `orch sync`'
+const payloadRemedy =
+  'repair the oversized local payload or retire its row with `orch record outbox retire <row-id> --reason <text>`, then retry `orch sync`'
 
 export function registerRecordSyncRoute(
   app: Hono<SyncEnvironment>,
@@ -57,7 +58,7 @@ export function registerRecordSyncRoute(
       return context.json(
         {
           error: `record sync request exceeds ${RECORD_SYNC_MAX_REQUEST_BYTES} bytes`,
-          remedy: releaseRemedy,
+          remedy: requestRemedy,
         },
         413,
       )
@@ -66,7 +67,7 @@ export function registerRecordSyncRoute(
     try {
       parsed = JSON.parse(source || 'null')
     } catch {
-      return context.json({ error: 'invalid record sync request', remedy: releaseRemedy }, 400)
+      return context.json({ error: 'invalid record sync request', remedy: requestRemedy }, 400)
     }
     const body = syncSchema.safeParse(parsed)
     if (!body.success) {
@@ -76,7 +77,7 @@ export function registerRecordSyncRoute(
           error: oversized
             ? `record sync payload exceeds ${RECORD_SYNC_MAX_PAYLOAD_BYTES} bytes`
             : 'invalid record sync request',
-          remedy: releaseRemedy,
+          remedy: oversized ? payloadRemedy : requestRemedy,
         },
         oversized ? 413 : 400,
       )
