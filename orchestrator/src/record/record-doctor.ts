@@ -22,7 +22,15 @@ import { recordAttributionFailure } from './record-attribution.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
-import { refuseOwnerConnection } from './record-sync.ts'
+
+async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<void> {
+  const principals = await postgres`SELECT current_user AS principal`
+  if (principals[0]?.principal === RECORD_OWNER_ROLE) {
+    throw new Error(
+      `record ${operation} refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
+    )
+  }
+}
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
 export type RecordDoctorCheck = {

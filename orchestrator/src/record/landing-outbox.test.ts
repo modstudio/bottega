@@ -1,14 +1,15 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
-import {
-  backfillLandingEvidenceRecords,
-  CONTENTION_RECORD_PAYLOAD_COLUMNS,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_RECORD_PAYLOAD_COLUMNS,
-  LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
-  TEST_FLAKE_RECORD_PAYLOAD_COLUMNS,
-} from './landing-outbox.ts'
+import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
+
+const LANDING_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing.columns
+const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
+const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS =
+  OUTBOX_PAYLOAD_CONTRACTS.landing_review_carry.columns
+const CONTENTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.contention.columns
+const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.test_flake.columns
 
 test('landing evidence backfill mints references in order, maps every column, and is idempotent', () => {
   const database = new Database(':memory:')

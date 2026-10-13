@@ -6,6 +6,7 @@ import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from '../release/release-ledger.ts'
 import { syncRecord } from './record-sync.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 
 const MACHINE_ID = machineId()
 const SPACE_ID = '01990000-0000-7000-8000-000000000001'
@@ -48,9 +49,7 @@ test('release sender upserts the finished state by record id in the project spac
   const local = senderStore(started)
   const remote = fakePostgres()
   const options = {
-    recordUrl: 'postgres://record.test/database',
     local,
-    openSql: () => remote.sql,
     now: () => '2026-10-12T00:05:00.000Z',
     identity: { id: MACHINE_ID, name: 'test-machine' },
     principal: {
@@ -58,6 +57,26 @@ test('release sender upserts the finished state by record id in the project spac
       spaceId: SPACE_ID,
     },
     memberships: [{ spaceId: SPACE_ID, slug: 'platform', permission: 'write' as const }],
+    client: {
+      whoami: async () => ({
+        user: { id: '01990000-0000-7000-8000-000000000002' },
+        activeSpaceId: SPACE_ID,
+        personalSpaceId: SPACE_ID,
+        memberships: [{ space_id: SPACE_ID, slug: 'platform', permission: 'write' }],
+      }),
+      sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
+        syncHostedRecord({
+          url: 'postgres://record.test/database',
+          identity: {
+            user: { id: '01990000-0000-7000-8000-000000000002' },
+            activeSpaceId: SPACE_ID,
+            personalSpaceId: SPACE_ID,
+            memberships: [{ space_id: SPACE_ID, slug: 'platform', permission: 'write' }],
+          },
+          request,
+          postgres: remote.sql,
+        }),
+    },
   }
 
   expect(await syncRecord(options)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })

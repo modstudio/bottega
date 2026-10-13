@@ -1,17 +1,15 @@
 // concern: record-sync
 /** Plain local types for hosted-record synchronization. */
 import type { Database } from 'bun:sqlite'
-import type { SQL } from 'bun'
-import type { RecordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import type { backfillReleaseRecords } from '../release/release-outbox.ts'
 import type { ReviewRecordBackfillResult } from '../review/review-outbox.ts'
 import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
 import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
+import type { RecordApiClient } from './record-api-client.ts'
 
 export type OutboxRow = { id: number; kind: string; record_id: string; payload: string }
-export type Payload = Record<string, unknown>
-export type RecordPrincipal = { userId: string; spaceId: string }
+export type { RecordPayload as Payload } from './record-sync-contract.ts'
 export type BlockedOutboxRow = {
   id: number
   kind: string
@@ -38,12 +36,12 @@ export type RecordSyncResult = {
 
 export type RecordSyncOptions = {
   backfill?: boolean
-  recordUrl?: string
   local?: Database
-  openSql?: (url: string) => SQL
   now?: () => string
   identity?: { id: string; name: string }
-  principal?: { userId: string; spaceId: string }
-  memberships?: RecordSpaceMembership[]
   projectSpaces?: Record<string, string>
+  client?: {
+    whoami: RecordApiClient['whoami']
+    sync: NonNullable<RecordApiClient['sync']>
+  }
 }

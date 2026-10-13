@@ -127,10 +127,12 @@ export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow
 function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
+  plannedParents?: ReadonlySet<string>,
 ): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string; reason?: string } {
   const unique = new Map(parents.map((parent) => [`${parent.kind}:${parent.recordId}`, parent]))
   let deferred = false
   for (const { kind, recordId: parentRecordId, blockedReason } of unique.values()) {
+    if (plannedParents?.has(`${kind}:${parentRecordId}`)) continue
     const rows = database
       .query<ParentState, [string, string]>(
         `SELECT synced_at,quarantined_at,retired_at FROM outbox
@@ -148,8 +150,17 @@ function outboxDependencyState(
   return { disposition: deferred ? 'deferred' : 'ready' }
 }
 
-function outboxDependency(row: OutboxRow, payload: Payload, database: Database) {
-  return outboxDependencyState(database, outboxParentRecordIds(row, payload, database))
+function outboxDependency(
+  row: OutboxRow,
+  payload: Payload,
+  database: Database,
+  plannedParents?: ReadonlySet<string>,
+) {
+  return outboxDependencyState(
+    database,
+    outboxParentRecordIds(row, payload, database),
+    plannedParents,
+  )
 }
 
 function blockedByRetiredParent(
@@ -193,8 +204,9 @@ export function deferOutboxRow(
   row: OutboxRow,
   payload: Payload,
   blocked: BlockedOutboxRow[],
+  plannedParents?: ReadonlySet<string>,
 ): boolean {
-  const dependency = outboxDependency(row, payload, database)
+  const dependency = outboxDependency(row, payload, database, plannedParents)
   if (dependency.disposition === 'ready') return false
   if (dependency.disposition === 'blocked') {
     blocked.push({
@@ -205,6 +217,14 @@ export function deferOutboxRow(
     })
   }
   return true
+}
+
+export function outboxRowWaitsForParent(
+  database: Database,
+  row: OutboxRow,
+  payload: Payload,
+): boolean {
+  return outboxDependency(row, payload, database).disposition === 'deferred'
 }
 
 export function outboxRowIsEligible(database: Database, row: OutboxRow): boolean {

@@ -49,7 +49,6 @@ import {
   recordMigrationCount,
 } from './postgres-migrate.ts'
 
-const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 const recordSession = memoryRecordSession()
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -276,6 +275,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   beforeEach(() => {
     installRecordApiClient(null)
+    recordSession.setToken(tokenA)
   })
 
   afterAll(async () => {
@@ -338,11 +338,11 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: USER_A,
+    userId: () => authUserA,
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
-    token: () => tokenA,
+    token: (user = 'a') => (user === 'a' ? tokenA : tokenB),
     setToken: (token) => recordSession.setToken(token),
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
@@ -1034,18 +1034,17 @@ realPostgres('RLS proof against real Postgres', () => {
     }
   })
 
-  registerScoreRecordSyncProof({
+  registerScoreRecordSyncProof(() => ({
     actorUrl: actorUrl!,
-    ownerUrl: ownerUrl!,
     actorRole: RECORD_ACTOR_ROLE,
-    ownerRole: RECORD_OWNER_ROLE,
     machineId: MACHINE_A,
-    userId: OPERATOR_USER_ID,
-    spaceId: PLATFORM_SPACE_ID,
-    otherSpaceId: SPACE_A,
-    projectName: PLATFORM_SLUG,
+    userId: authUserA,
+    spaceId: authSpaceA,
+    otherSpaceId: authSpaceB,
+    projectName: 'auth-a-project',
+    projectSpace: authSpaceA,
     asSpace,
-  })
+  }))
 
   test('same prefix is allowed in separate projects', () => {
     const rows = asSpace(

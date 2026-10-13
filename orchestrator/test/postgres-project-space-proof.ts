@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
-import { proveProjectSpaceRecordSync } from './postgres-score-proof.ts'
+import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
+import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -10,11 +11,11 @@ export function registerProjectSpaceProofs(input: {
   actorUrl: string
   actorRole: string
   machineId: string
-  userId: string
+  userId: () => string
   firstSpaceId: string
   secondSpaceId: string
   otherRunId: string
-  token: () => string
+  token: (user?: 'a' | 'b') => string
   setToken(token: string): void
   asSpace(user: string, password: string, spaceId: string, statement: string): PsqlResult
   admin(statement: string): string
@@ -37,11 +38,18 @@ export function registerProjectSpaceProofs(input: {
   })
 
   test('two projects sync into separate spaces and remain tenant-confined', async () => {
+    input.setToken(input.token())
+    input.admin(
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+       ('${newRecordId()}','${input.firstSpaceId}','${input.userId()}','member','write',now()),
+       ('${newRecordId()}','${input.secondSpaceId}','${input.userId()}','member','write',now())
+       ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';`,
+    )
     const ids = await proveProjectSpaceRecordSync({
       actorUrl: input.actorUrl,
       actorRole: input.actorRole,
-      machineId: input.machineId,
-      userId: input.userId,
+      machineId: SYNC_PROOF_MACHINE,
+      userId: input.userId(),
       firstSpaceId: input.firstSpaceId,
       secondSpaceId: input.secondSpaceId,
       asSpace: input.asSpace,
@@ -70,6 +78,20 @@ export function registerProjectSpaceProofs(input: {
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  registerHostedSyncAuthorizationProofs({
+    machineId: SYNC_PROOF_MACHINE,
+    // The suite fills the signed-in user in during setup, after registration.
+    get userId() {
+      return input.userId()
+    },
+    writeSpaceId: input.firstSpaceId,
+    writeProjectName: 'alpha',
+    token: input.token,
+    otherToken: () => input.token('b'),
+    setToken: input.setToken,
+    admin: input.admin,
   })
 
   test('project rows move together while another source project and space aggregates stay', async () => {
@@ -119,7 +141,7 @@ export function registerProjectSpaceProofs(input: {
           now(),'proof','${subscription}',now() - interval '1 day',now());
        INSERT INTO hub_send_recipient
          (id,space_id,send_id,user_id,name,email,created_at)
-         VALUES ('${sendRecipient}','${source}','${send}','${input.userId}',
+         VALUES ('${sendRecipient}','${source}','${send}','${input.userId()}',
           'Operator','operator@example.test',now());`,
     )
     expect(inserted.code, inserted.stderr).toBe(0)

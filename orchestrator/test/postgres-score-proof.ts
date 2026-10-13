@@ -2,15 +2,23 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { listRecordScores, unvoidRecordRun, voidRecordRun } from '../src/record/record-verdicts.ts'
-import { RUN_RECORD_PAYLOAD_COLUMNS } from '../src/run/run-outbox.ts'
-import { SCORE_RECORD_PAYLOAD_COLUMNS } from '../src/score/score-outbox.ts'
 import { VOID_EXCLUSION_REASON } from '../src/verdict/verdict-rules.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/record-api.ts'
 
 export { proveHostedDocs } from './postgres-docs-proof.ts'
+
+/**
+ * The machine the sync proofs upload as. A machine keeps its first owner, so
+ * the proofs cannot reuse the fixture machine, which another fixture user owns.
+ */
+export const SYNC_PROOF_MACHINE = newRecordId()
+
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+const SCORE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.score.columns
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -55,23 +63,9 @@ export async function proveProjectSpaceRecordSync(input: {
   }
   expect(
     await syncRecord({
-      recordUrl: input.actorUrl,
       local,
       identity: { id: input.machineId, name: 'proof-machine' },
-      principal: { userId: input.userId, spaceId: input.firstSpaceId },
-      memberships: [
-        {
-          spaceId: input.firstSpaceId,
-          slug: 'alpha-space',
-          permission: 'write',
-        },
-        {
-          spaceId: input.secondSpaceId,
-          slug: 'beta-space',
-          permission: 'write',
-        },
-      ],
-      projectSpaces: { alpha: 'alpha-space', beta: 'beta-space' },
+      projectSpaces: { alpha: 'space-a', beta: 'space-b' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
   const first = input.asSpace(
@@ -94,14 +88,13 @@ export async function proveProjectSpaceRecordSync(input: {
 
 export async function proveScoreRecordSync(input: {
   actorUrl: string
-  ownerUrl: string
   actorRole: string
-  ownerRole: string
   machineId: string
   userId: string
   spaceId: string
   otherSpaceId: string
   projectName: string
+  projectSpace: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<{ actorRead: PsqlResult; otherSpaceRead: PsqlResult; rescoredRead: PsqlResult }> {
   const local = new Database(':memory:')
@@ -133,14 +126,13 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
     .run(recordId, JSON.stringify(run), String(run.createdAt))
-  const sync = (recordUrl: string) =>
+  const sync = () =>
     syncRecord({
-      recordUrl,
       local,
       identity: { id: input.machineId, name: 'proof-machine' },
-      principal: { userId: input.userId, spaceId: input.spaceId },
+      projectSpaces: { [input.projectName]: input.projectSpace },
     })
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
 
   const score = Object.fromEntries(SCORE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
   Object.assign(score, {
@@ -160,7 +152,7 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (2,'score',?,?,?)")
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const select = (spaceId: string, expression: string) =>
     input.asSpace(
       input.actorRole,
@@ -176,7 +168,7 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (3,'run',?,?,?)")
     .run(unscoredId, JSON.stringify(run), String(run.createdAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const tenant = { url: input.actorUrl, userId: input.userId, spaceId: input.spaceId }
   await voidRecordRun({ ...tenant, id: recordId, reason: VOID_EXCLUSION_REASON })
   await voidRecordRun({ ...tenant, id: unscoredId, reason: VOID_EXCLUSION_REASON })
@@ -251,7 +243,8 @@ export async function proveScoreRecordSync(input: {
     ])
     expect(cache.query('SELECT run_id FROM score ORDER BY run_id').all()).toEqual([{ run_id: 991 }])
   } finally {
-    installRecordApiClient(memoryClient)
+    // The later sync in this proof uploads through the real hosted route.
+    installRecordApiClient(null)
     cache.close()
   }
 
@@ -265,20 +258,20 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (4,'score',?,?,?)")
     .run(recordId, JSON.stringify(score), String(score.scoredAt))
-  expect(await sync(input.actorUrl)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+  expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
   const rescoredRead = select(input.spaceId, "delivery || '|' || quality || '|' || note")
-  await expect(sync(input.ownerUrl)).rejects.toThrow(
-    `record sync refuses ${input.ownerRole} credentials; set ORCH_RECORD_URL to the ${input.actorRole} connection`,
-  )
   local.close()
   return { actorRead, otherSpaceRead, rescoredRead }
 }
 
 export function registerScoreRecordSyncProof(
-  input: Parameters<typeof proveScoreRecordSync>[0],
+  input: () => Parameters<typeof proveScoreRecordSync>[0],
 ): void {
   test('sync round trip writes and updates a tenant-confined score', async () => {
-    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input)
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
+      ...input(),
+      machineId: SYNC_PROOF_MACHINE,
+    })
     expect(actorRead.code, actorRead.stderr).toBe(0)
     expect(actorRead.stdout).toBe('full|right|first')
     expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)

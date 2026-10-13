@@ -9,6 +9,7 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
@@ -49,6 +50,7 @@ import type {
 } from './record-settings.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
@@ -157,6 +159,7 @@ export type RecordRequestDestination = { destinationSpaceId?: string }
 
 export type RecordApiClient = {
   whoami(): Promise<RecordIdentity>
+  sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
   createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
   setActiveOrganization(input: {
     organizationId?: string
@@ -371,10 +374,12 @@ function injectedClient(): RecordApiClient | null {
 
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'refused'
+  readonly status: number | null
 
-  constructor(message: string, kind: 'unreachable' | 'refused') {
+  constructor(message: string, kind: 'unreachable' | 'refused', status: number | null = null) {
     super(message)
     this.kind = kind
+    this.status = status
   }
 }
 
@@ -404,11 +409,13 @@ function responseMessage(body: unknown, fallback: string): string {
 function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
   if (status === 401) return recordAuthRefusal(status, body, headers)
   const message = responseMessage(body, `record API ${status}`)
-  if (status === 429) return new RecordApiRequestError(message, 'refused')
+  if (status === 429) return new RecordApiRequestError(message, 'refused', status)
+  if (message === RECORD_ACTIVE_SPACE_REMEDY)
+    return new RecordApiRequestError(message, 'refused', status)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
-    return new RecordApiRequestError(message, 'refused')
+    return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500)
-    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused')
+    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused', status)
   return recordApiUnreachable(new Error(message))
 }
 
@@ -845,6 +852,7 @@ export function recordApiClient(): RecordApiClient {
 function recordIdentityAndSpaceClient(): Pick<
   RecordApiClient,
   | 'whoami'
+  | 'sync'
   | 'createOrganization'
   | 'setActiveOrganization'
   | 'listInvitations'
@@ -853,6 +861,7 @@ function recordIdentityAndSpaceClient(): Pick<
 > {
   return {
     whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
+    sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
     createOrganization: (input) =>
       request('/api/auth/organization/create', {
         method: 'POST',

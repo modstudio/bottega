@@ -1,15 +1,17 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
+import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
   bearerHeaders,
   RECORD_SESSION_KEY,
@@ -90,6 +92,7 @@ realPostgres('project import against copied live SQLite data', () => {
   const recordSession = memoryRecordSession()
   let recordToken = ''
   let recordUserId = ''
+  let apiServer: Awaited<ReturnType<typeof startRecordApiServer>>
 
   beforeAll(async () => {
     installRecordSessionRunner(recordSession.runner)
@@ -118,10 +121,24 @@ realPostgres('project import against copied live SQLite data', () => {
       VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
     `
     await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(recordToken), PLATFORM_SPACE_ID)
+    apiServer = await startRecordApiServer({
+      ...process.env,
+      PORT: '0',
+      ORCH_RECORD_URL: actorUrl!,
+      RECORD_AUTH_DATABASE_URL: process.env.RECORD_AUTH_DATABASE_URL ?? actorUrl!,
+      BETTER_AUTH_URL: 'http://127.0.0.1',
+      RECORD_HUB_URL: 'http://127.0.0.1',
+    })
+    process.env.ORCH_RECORD_API_URL = `http://127.0.0.1:${apiServer.port}`
+    installRecordApiClient(null)
   })
 
+  beforeEach(() => installRecordApiClient(null))
+
   afterAll(async () => {
+    await apiServer?.stop(true)
     installRecordSessionRunner(null)
+    delete process.env.ORCH_RECORD_API_URL
     delete process.env.BETTER_AUTH_SECRET
     await sql.unsafe(
       'DROP TABLE IF EXISTS run_exclusion, run_score, doc_revision, doc, membership, machine, seq, project, "user", space CASCADE',
@@ -369,7 +386,6 @@ realPostgres('project import against copied live SQLite data', () => {
     while (true) {
       replayPasses++
       const synced = await syncRecord({
-        recordUrl: actorUrl!,
         local: source,
         identity: {
           id: sourceMachineId,

@@ -1,24 +1,26 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
-import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
+import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { enqueueRunRecord, RUN_RECORD_PAYLOAD_COLUMNS } from '../run/run-outbox.ts'
+import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
-import {
-  enqueueContention,
-  LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS,
-  LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-} from './landing-outbox.ts'
+import { enqueueContention } from './landing-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
+
+const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns
+const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS =
+  OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = machineId()
@@ -179,23 +181,53 @@ function localScoreOutbox(): Database {
   return local
 }
 
-const options = (local: Database, remote: ReturnType<typeof fakePostgres>) => ({
-  recordUrl: 'postgres://record.test/database',
-  local,
-  openSql: () => remote.sql,
-  now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
-  principal: {
-    userId: '01990000-0000-7000-8000-000000000002',
-    spaceId: '01990000-0000-7000-8000-000000000001',
-  },
-  memberships: [
+const options = (
+  local: Database,
+  remote: ReturnType<typeof fakePostgres>,
+  memberships = [
     {
       spaceId: '01990000-0000-7000-8000-000000000001',
       slug: 'platform',
       permission: 'write',
     },
   ],
+) => ({
+  local,
+  now: () => STAMP,
+  identity: { id: MACHINE_ID, name: 'test-machine' },
+  principal: {
+    userId: '01990000-0000-7000-8000-000000000002',
+    spaceId: '01990000-0000-7000-8000-000000000001',
+  },
+  memberships,
+  client: {
+    whoami: async () => ({
+      user: { id: '01990000-0000-7000-8000-000000000002' },
+      activeSpaceId: '01990000-0000-7000-8000-000000000001',
+      personalSpaceId: '01990000-0000-7000-8000-000000000001',
+      memberships: memberships.map((membership) => ({
+        space_id: membership.spaceId,
+        slug: membership.slug,
+        permission: membership.permission,
+      })),
+    }),
+    sync: (request: Parameters<typeof syncHostedRecord>[0]['request']) =>
+      syncHostedRecord({
+        url: 'postgres://record.test/database',
+        identity: {
+          user: { id: '01990000-0000-7000-8000-000000000002' },
+          activeSpaceId: '01990000-0000-7000-8000-000000000001',
+          personalSpaceId: '01990000-0000-7000-8000-000000000001',
+          memberships: memberships.map((membership) => ({
+            space_id: membership.spaceId,
+            slug: membership.slug,
+            permission: membership.permission,
+          })),
+        },
+        request,
+        postgres: remote.sql,
+      }),
+  },
 })
 
 test('sync upserts once and a second pass has no run mutation', async () => {
@@ -284,7 +316,10 @@ test('sync supersedes the hosted void before pushing an unvoided run', async () 
     evidenceUnvoid: { note: 'mistaken void' },
   })
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(true)
   expect(remote.statements.some((sql) => sql.includes('supersede_note'))).toBe(true)
 })
@@ -299,7 +334,10 @@ test('sync clears a hosted run-row void when no exclusion row exists', async () 
     supersededAt: null,
     runReason: 'voided with orch score --void',
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(
     remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
   ).toBe(true)
@@ -315,7 +353,10 @@ test('sync accepts an unvoid as a no-op when the hosted run has no exclusion', a
     supersededAt: null,
     runReason: null,
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(false)
   expect(
     remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
@@ -332,7 +373,10 @@ test('sync refuses an unvoid when the effective hosted exclusion has another rea
     supersededAt: null,
     runReason: 'unjudged: owner gone',
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+  })
   expect(
     local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
   ).toContain("actual exclusion is 'unjudged: owner gone'")
@@ -438,7 +482,10 @@ test('an old-shape run payload without withheldFields still syncs', async () => 
   delete payload.withheldFields
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.parameters.flat()).toContain(null)
   local.close()
 })
@@ -454,20 +501,27 @@ test('an old-shape score payload without review grades syncs with nulls', async 
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   local.close()
 })
 
-test('a pre-attribution run payload stays null instead of borrowing the pushing user', async () => {
+test('a run payload cannot assert another user as its starter', async () => {
   const local = localOutbox(1)
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
-  delete payload.startedByUserId
-  delete payload.taskKey
+  const assertedUser = '01990000-0000-7000-8000-000000000099'
+  payload.startedByUserId = assertedUser
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
-  expect(remote.parameters.flat()).toContain(null)
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
+  expect(remote.parameters.flat()).not.toContain(assertedUser)
+  expect(remote.parameters.flat()).toContain('01990000-0000-7000-8000-000000000002')
   local.close()
 })
 
@@ -478,8 +532,13 @@ test('an old-shape triage snapshot syncs with declared fills and keeps its overr
   })
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
-  const values = remote.parameters.find((parameters) => parameters.includes('override-record'))
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
+  const values = remote.parameters.find(
+    (parameters) => parameters.includes('override-record') && parameters.includes('exact_review'),
+  )
   expect(values).toContain('exact_review')
   expect(values).toContain(null)
   local.close()
@@ -492,7 +551,10 @@ test('an old-shape landing override syncs with a null change group', async () =>
   })
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
   expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
@@ -513,20 +575,13 @@ test.each([
   const local = localTriageSnapshotOutbox(mutate)
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+  })
   expect(
     local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
   ).toBe('landing_triage_snapshot outbox payload has an unexpected column set')
-  local.close()
-})
-
-test('sync refuses the migration owner before any record write', async () => {
-  const local = localOutbox(1)
-  const remote = fakePostgres(false, RECORD_OWNER_ROLE)
-  await expect(syncRecord(options(local, remote))).rejects.toThrow(
-    `record sync refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
-  )
-  expect(remote.statements).toEqual(['SELECT current_user AS principal'])
   local.close()
 })
 
@@ -556,43 +611,29 @@ test('a row-fatal failure is quarantined and the next independent row is pushed'
   local.close()
 })
 
-test('a pass-fatal failure records its attempt and stops before the next row', async () => {
+test('a whole-request connection failure leaves every row untouched', async () => {
   const local = localOutbox(2)
-  const remote = fakePostgres(
-    new SQL.PostgresError('connection refused', { code: 'ERR_POSTGRES_CONNECTION_REFUSED' }),
-  )
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 1,
-    pending: 2,
-    configured: true,
-    quarantined: [],
-    blocked: [],
-  })
+  const remote = fakePostgres(new Error('connection refused'))
+  await expect(syncRecord(options(local, remote))).rejects.toThrow()
   const rows = local
     .query<{ attempts: number; quarantined_at: string | null }, []>(
       'SELECT attempts,quarantined_at FROM outbox ORDER BY id',
     )
     .all()
   expect(rows).toEqual([
-    { attempts: 1, quarantined_at: null },
+    { attempts: 0, quarantined_at: null },
     { attempts: 0, quarantined_at: null },
   ])
   local.close()
 })
 
-test('a revoked table grant is pass-fatal and stops before the next row', async () => {
+test('a whole-request grant failure leaves every row untouched', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(serverError('permission denied for table run', 42501))
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 1,
-    pending: 2,
-    quarantined: [],
-  })
+  await expect(syncRecord(options(local, remote))).rejects.toThrow()
   expect(local.query('SELECT attempts FROM outbox ORDER BY id').all()).toEqual([
-    { attempts: 1 },
+    { attempts: 0 },
     { attempts: 0 },
   ])
   local.close()
@@ -710,7 +751,7 @@ test('a quarantined run defers its continuation and retry until the parent syncs
   local.close()
 })
 
-test('retiring a later row after the snapshot prevents its delivery', async () => {
+test('retiring a row after its batch is sent does not mark its local snapshot synced', async () => {
   const local = localOutbox(2)
   const remote = fakePostgres(false, RECORD_ACTOR_ROLE, undefined, undefined, (ordinal) => {
     if (ordinal !== 1) return
@@ -724,13 +765,13 @@ test('retiring a later row after the snapshot prevents its delivery', async () =
   })
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 1,
+    pushed: 2,
     failed: 0,
     pending: 0,
   })
   expect(
     remote.statements.filter((statement) => statement.toLowerCase().includes('insert into "run"')),
-  ).toHaveLength(1)
+  ).toHaveLength(2)
   expect(local.query('SELECT synced_at,retired_at FROM outbox WHERE id=2').get()).toEqual({
     synced_at: null,
     retired_at: STAMP,
@@ -791,9 +832,12 @@ test('a synced parent lets its child flow after a later re-enqueue is retired', 
       `UPDATE outbox SET record_id=?,retired_at=?,retirement_reason='later snapshot' WHERE id=2`,
     )
     .run(parent.record_id, STAMP)
-  local
-    .query('UPDATE outbox SET payload=? WHERE id=3')
-    .run(JSON.stringify({ ...JSON.parse(child.payload), parentRunId: parent.record_id }))
+  local.query('UPDATE outbox SET payload=? WHERE id=3').run(
+    JSON.stringify({
+      ...JSON.parse(child.payload),
+      parentRunId: parent.record_id,
+    }),
+  )
   const remote = fakePostgres()
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -830,9 +874,17 @@ test('a payload from another machine is refused before a record write', async ()
   const remote = fakePostgres()
   const result = await syncRecord({
     ...options(local, remote),
-    identity: { id: '01990000-0000-7000-8000-000000000077', name: 'other-machine' },
+    identity: {
+      id: '01990000-0000-7000-8000-000000000077',
+      name: 'other-machine',
+    },
   })
-  expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0, configured: true })
+  expect(result).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 0,
+    configured: true,
+  })
   const failure = local
     .query<{ attempts: number; last_error: string }, []>(
       'SELECT attempts, last_error FROM outbox WHERE id=1',
@@ -877,13 +929,13 @@ test('declared project spaces override the active space while an unset project f
   local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
   const remote = fakePostgres()
   const declaredSpace = '01990000-0000-7000-8000-000000000003'
+  const memberships = [
+    { spaceId: declaredSpace, slug: 'team', permission: 'write' },
+    ...options(local, remote).memberships,
+  ]
   expect(
     await syncRecord({
-      ...options(local, remote),
-      memberships: [
-        { spaceId: declaredSpace, slug: 'team', permission: 'write' },
-        ...options(local, remote).memberships,
-      ],
+      ...options(local, remote, memberships),
       projectSpaces: { declared: 'team' },
     }),
   ).toEqual({
@@ -909,14 +961,14 @@ test('two declared projects bind their own spaces in separate transactions', asy
   const remote = fakePostgres()
   const alpha = '01990000-0000-7000-8000-000000000003'
   const beta = '01990000-0000-7000-8000-000000000004'
+  const memberships = [
+    { spaceId: alpha, slug: 'alpha', permission: 'write' },
+    { spaceId: beta, slug: 'beta', permission: 'write' },
+    ...options(local, remote).memberships,
+  ]
   expect(
     await syncRecord({
-      ...options(local, remote),
-      memberships: [
-        { spaceId: alpha, slug: 'alpha', permission: 'write' },
-        { spaceId: beta, slug: 'beta', permission: 'write' },
-        ...options(local, remote).memberships,
-      ],
+      ...options(local, remote, memberships),
       projectSpaces: { alpha: 'alpha', beta: 'beta' },
     }),
   ).toMatchObject({ pushed: 2, failed: 0 })
@@ -935,7 +987,7 @@ test('a read-only destination is deferred per row and retried after permission c
   local.query('UPDATE outbox SET payload=? WHERE id=2').run(JSON.stringify(second))
   const remote = fakePostgres()
   const readOnlySpace = '01990000-0000-7000-8000-000000000003'
-  const base = options(local, remote)
+  const baseMemberships = options(local, remote).memberships
   const projectSpaces = {
     'read-only-project': 'read-only-space',
     'write-project': 'platform',
@@ -943,11 +995,10 @@ test('a read-only destination is deferred per row and retried after permission c
 
   expect(
     await syncRecord({
-      ...base,
-      memberships: [
+      ...options(local, remote, [
         { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'read' },
-        ...base.memberships,
-      ],
+        ...baseMemberships,
+      ]),
       projectSpaces,
     }),
   ).toMatchObject({
@@ -971,11 +1022,14 @@ test('a read-only destination is deferred per row and retried after permission c
 
   expect(
     await syncRecord({
-      ...base,
-      memberships: [
-        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'write' },
-        ...base.memberships,
-      ],
+      ...options(local, remote, [
+        {
+          spaceId: readOnlySpace,
+          slug: 'read-only-space',
+          permission: 'write',
+        },
+        ...baseMemberships,
+      ]),
       projectSpaces,
     }),
   ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })

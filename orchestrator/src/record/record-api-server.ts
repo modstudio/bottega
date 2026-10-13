@@ -86,6 +86,7 @@ import {
   reorderRecordSubjects,
   retireRecordSubject,
 } from './record-subjects.ts'
+import { syncHostedRecord } from './record-sync-service.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -265,6 +266,7 @@ function recordApiAccessDependencies(
   migrations: number,
 ) {
   return {
+    syncRecord: syncHostedRecord,
     auth,
     readSession: async (headers: Headers) => {
       const current = await auth.api.getSession({ headers })

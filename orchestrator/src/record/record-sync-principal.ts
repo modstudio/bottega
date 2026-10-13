@@ -2,7 +2,7 @@
 /** Binds a hosted-record transaction to the principal selected by sync. */
 
 import type { SQL } from 'bun'
-import type { RecordPrincipal } from './record-sync-types.ts'
+import type { RecordPrincipal } from './record-sync-contract.ts'
 
 export async function bindPrincipal(tx: SQL, principal: RecordPrincipal): Promise<void> {
   await tx`SELECT set_config('app.user_id', ${principal.userId}, true)`

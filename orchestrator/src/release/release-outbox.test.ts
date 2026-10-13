@@ -2,13 +2,12 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
-import {
-  backfillReleaseRecords,
-  enqueueReleaseRecord,
-  RELEASE_RECORD_PAYLOAD_CONTRACT,
-} from './release-outbox.ts'
+import { backfillReleaseRecords, enqueueReleaseRecord } from './release-outbox.ts'
+
+const RELEASE_RECORD_PAYLOAD_CONTRACT = OUTBOX_PAYLOAD_CONTRACTS.release
 
 function fixture(): Database {
   const database = new Database(':memory:')

@@ -3,13 +3,12 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeTransaction } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
-import {
-  backfillQuestionRecords,
-  enqueueQuestionRecord,
-  QUESTION_RECORD_PAYLOAD_COLUMNS,
-} from './question-outbox.ts'
+import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+
+const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
 
 const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
 
