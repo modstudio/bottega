@@ -56,7 +56,10 @@ async function proveCliSwitchIsRemembered(input: {
   password: string
   executeAsOwner: (sql: string) => string
   setToken: (token: string) => void
-  memberships: () => Promise<{ activeSpaceId: string | null }>
+  memberships: () => Promise<{
+    activeSpaceId: string | null
+    memberships: { spaceId: string }[]
+  }>
   switchSpace: (value: string) => Promise<{ spaceId: string }>
 }) {
   const email = 'auth-cli-remembered@example.test'
@@ -79,12 +82,19 @@ async function proveCliSwitchIsRemembered(input: {
   const signedIn = await auth.api.signInEmail({ body: { email, password: input.password } })
   if (!signedIn.token) throw new Error('CLI remembered-space sign-in has no bearer token')
   input.setToken(signedIn.token)
-  expect((await input.switchSpace(input.rememberedSpaceId)).spaceId).toBe(input.rememberedSpaceId)
+  // A new session defaults to the shared space, so only a switch to the other
+  // membership, the personal space, shows that the switch was remembered.
+  const listed = await input.memberships()
+  expect(listed.activeSpaceId).toBe(input.rememberedSpaceId)
+  const personal = listed.memberships.find((row) => row.spaceId !== input.rememberedSpaceId)
+  if (!personal) throw new Error('CLI remembered-space user has no personal space')
+  expect((await input.switchSpace(personal.spaceId)).spaceId).toBe(personal.spaceId)
 
   const signedInAgain = await auth.api.signInEmail({ body: { email, password: input.password } })
-  if (!signedInAgain.token) throw new Error('CLI remembered-space second sign-in has no bearer token')
+  if (!signedInAgain.token)
+    throw new Error('CLI remembered-space second sign-in has no bearer token')
   input.setToken(signedInAgain.token)
-  expect((await input.memberships()).activeSpaceId).toBe(input.rememberedSpaceId)
+  expect((await input.memberships()).activeSpaceId).toBe(personal.spaceId)
 
   const beforeRefusal = (await input.memberships()).activeSpaceId
   expect(beforeRefusal).not.toBeNull()
