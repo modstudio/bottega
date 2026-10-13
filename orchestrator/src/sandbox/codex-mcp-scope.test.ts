@@ -137,6 +137,7 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
   for (const entry of [local, fallback]) {
     expect(entry).toContain('mcp-reader-proxy')
     expect(entry).toContain('starship')
+    expect(entry).toContain('/project')
     expect(entry).not.toContain('literal-secret')
     expect(entry).not.toContain('.claude/mcp/mcp-run')
   }
@@ -144,15 +145,21 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
   expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain('args=["mcp"]')
 })
 
-test('writing-job MCP overlays remain byte-for-byte unchanged', () => {
-  const config = { starship: { name: 'starship', command: '/project/server', args: ['serve'] } }
-  const project = { name: 'starship', path: '/project', settings: {} }
-  const before = codexProjectServers(config, undefined, '/project')
-  const writer = codexProjectServersForRun('codex', 'cli', 'writer', config, project, '/project')
-  expect(writer).toEqual(before)
-  expect(codexScopeArgs({ mcp: true, projectServers: writer!.servers })).toEqual(
-    codexScopeArgs({ mcp: true, projectServers: before.servers }),
-  )
+test('reading job without a registered project receives no project servers', () => {
+  const scope = codexProjectServersForRun(
+    'codex',
+    'cli',
+    'reader',
+    { tracker: { name: 'tracker', command: '/project/server', args: ['write'] } },
+    null,
+    '/unregistered',
+  )!
+  expect(scope).toEqual({ servers: {}, withheld: [] })
+  const entries = serverEntries(codexScopeArgs({ mcp: true, projectServers: scope.servers }))
+  expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
+    'orch-ask',
+    'orch',
+  ])
 })
 
 test('platform-shaped MCP scope emits orch exactly once', () => {

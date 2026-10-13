@@ -211,6 +211,7 @@ export const project = pgTable.withRLS(
     workerMcpServers: text('worker_mcp_servers').array(),
     secretPaths: text('secret_paths').array(),
     mcpProbeTool: text('mcp_probe_tool'),
+    mcpReaderTools: jsonb('mcp_reader_tools'),
     docs: jsonb(),
     signals: jsonb(),
     review: jsonb(),

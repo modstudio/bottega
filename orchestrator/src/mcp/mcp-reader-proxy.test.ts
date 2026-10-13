@@ -1,33 +1,38 @@
 import { expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Client, InMemoryTransport, type Tool } from '@modelcontextprotocol/client'
 import {
   createReaderMcpProxy,
+  MCP_UPSTREAM_INHERITED_ENV,
   type ReaderMcpUpstream,
-  readerMayCallTool,
+  readerMcpProxyCommand,
+  readerMcpUpstreamEnvironment,
 } from './mcp-reader-proxy.ts'
 
-const decision = (overrides: Partial<Parameters<typeof readerMayCallTool>[0]> = {}) =>
-  readerMayCallTool({
-    name: 'read',
-    readOnlyHint: undefined,
-    server: 'project',
-    projectServer: 'project',
-    registeredTools: [],
-    ...overrides,
+test('upstream environment contains only declared and allowlisted values', () => {
+  const environment = {
+    PATH: '/bin',
+    HOME: '/reader',
+    LANG: 'en_US.UTF-8',
+    TMPDIR: '/tmp/reader',
+    USER: 'reader',
+    SHELL: '/bin/zsh',
+    ORCH_RUN_TOKEN: 'run-token-secret',
+    SSH_AUTH_SOCK: '/tmp/agent.sock',
+    OPENAI_API_KEY: 'harness-key',
+  }
+  expect(readerMcpUpstreamEnvironment(environment, { TRACKER_TOKEN: 'declared-secret' })).toEqual({
+    PATH: '/bin',
+    HOME: '/reader',
+    LANG: 'en_US.UTF-8',
+    TMPDIR: '/tmp/reader',
+    USER: 'reader',
+    SHELL: '/bin/zsh',
+    TRACKER_TOKEN: 'declared-secret',
   })
-
-test('reader tool decision accepts register names on any server', () => {
-  expect(decision({ server: 'other', registeredTools: ['read'] })).toBeTrue()
-})
-
-test('reader tool decision accepts annotations only from the project own server', () => {
-  expect(decision({ readOnlyHint: true })).toBeTrue()
-  expect(decision({ server: 'other', readOnlyHint: true })).toBeFalse()
-})
-
-test('reader tool decision refuses absent and false annotations', () => {
-  expect(decision()).toBeFalse()
-  expect(decision({ readOnlyHint: false })).toBeFalse()
+  expect(MCP_UPSTREAM_INHERITED_ENV).toEqual(['PATH', 'HOME', 'LANG', 'TMPDIR', 'USER', 'SHELL'])
 })
 
 test('proxy exhausts listing pages, refuses guessed names, and forwards allowed calls unchanged', async () => {
@@ -81,5 +86,96 @@ test('proxy exhausts listing pages, refuses guessed names, and forwards allowed 
   } finally {
     await client.close()
     await proxy.close()
+  }
+})
+
+test('command sanitizes a configured credential from an upstream startup failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-command-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const errors: string[] = []
+  const exitCodes: number[] = []
+  try {
+    await readerMcpProxyCommand('project', 'tracker', tree, {
+      projectByName: () => ({ name: 'project', path: main, settings: {} }),
+      retiredProjectByName: () => null,
+      readMcpConfigResult: () => ({
+        ok: true,
+        path: join(main, '.mcp.json'),
+        config: {
+          tracker: {
+            name: 'tracker',
+            command: '/missing/server',
+            env: { TRACKER_TOKEN: 'credential-value-123' },
+          },
+        },
+      }),
+      connectMcpToolClient: async () => {
+        throw new Error('upstream rejected credential-value-123 during authentication')
+      },
+      environment: { ORCH_RUN_TOKEN: 'run-token-secret', PATH: '/bin' },
+      error: (line) => errors.push(line),
+      setExitCode: (code) => exitCodes.push(code),
+    })
+    expect(errors).toEqual([
+      'MCP reader proxy for tracker could not start: upstream rejected [redacted] during authentication',
+    ])
+    expect(errors.join('\n')).not.toContain('credential-value-123')
+    expect(exitCodes).toEqual([1])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('command distinguishes unavailable launch files and refuses the registered checkout', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-paths-'))
+  const errors: string[] = []
+  try {
+    const project = { name: 'project', path: root, settings: {} }
+    const common = {
+      projectByName: () => project,
+      retiredProjectByName: () => null,
+      environment: {},
+      error: (line: string) => errors.push(line),
+      setExitCode: () => {},
+    }
+    await readerMcpProxyCommand('project', 'tracker', root, {
+      ...common,
+      readMcpConfigResult: () => ({
+        ok: true,
+        path: join(root, '.mcp.json'),
+        config: {},
+      }),
+    })
+    expect(errors.pop()).toContain(
+      `run tree ${JSON.stringify(root)} is the registered main checkout`,
+    )
+
+    const tree = join(root, 'tree')
+    mkdirSync(tree)
+    await Bun.write(join(tree, '.keep'), '')
+    for (const result of [
+      { ok: false as const, path: join(root, '.mcp.json'), reason: 'missing' as const },
+      { ok: false as const, path: join(root, '.mcp.json'), reason: 'invalid' as const },
+      { ok: true as const, path: join(root, '.mcp.json'), config: {} },
+    ]) {
+      await readerMcpProxyCommand('project', 'tracker', tree, {
+        ...common,
+        readMcpConfigResult: () => result,
+      })
+    }
+    expect(errors).toEqual([
+      expect.stringContaining(`MCP configuration is missing at ${join(root, '.mcp.json')}`),
+      expect.stringContaining(`MCP configuration is not valid JSON at ${join(root, '.mcp.json')}`),
+      expect.stringContaining(
+        `server "tracker" is not configured in ${join(root, '.mcp.json')}; add its launch definition there`,
+      ),
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

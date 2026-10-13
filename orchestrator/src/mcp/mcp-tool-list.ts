@@ -83,7 +83,8 @@ export async function connectMcpToolClient(
           args: launch.args ?? [],
           cwd: launch.cwd,
           env: { ...env, ...launch.env },
-          stderr: 'pipe',
+          // Upstream diagnostics must neither reach the agent nor fill an unread pipe.
+          stderr: 'ignore',
         })
       : null
   if (!transport) throw new Error('MCP server has no stored launch definition')

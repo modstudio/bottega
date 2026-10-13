@@ -65,9 +65,9 @@ export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
 }
 
-function readerProxyServer(project: string, server: string): CodexMcpServer {
+function readerProxyServer(project: string, server: string, cwd: string): CodexMcpServer {
   const [command, ...args] = bottegaEntryArgv('mcp-reader-proxy')
-  return { command, args: [...args, project, server] }
+  return { command, args: [...args, project, server, cwd] }
 }
 
 /** Select project MCP launch definitions that are safe to expose on argv. */
@@ -119,7 +119,8 @@ export function codexProjectServersForRun(
   const config =
     Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
   const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
-  if (mcp === 'writer' || !project) return scope
+  if (mcp === 'writer') return scope
+  if (!project) return { servers: {}, withheld: [] }
   const names = new Set([
     ...Object.keys(scope.servers),
     ...scope.withheld,
@@ -127,7 +128,7 @@ export function codexProjectServersForRun(
   ])
   return {
     servers: Object.fromEntries(
-      [...names].map((server) => [server, readerProxyServer(project.name, server)]),
+      [...names].map((server) => [server, readerProxyServer(project.name, server, cwd)]),
     ),
     withheld: [],
   }

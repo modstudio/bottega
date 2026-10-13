@@ -32,6 +32,7 @@ export type HostedProjectColumns = {
   workerMcpServers: string[] | null
   secretPaths: string[] | null
   mcpProbeTool: string | null
+  mcpReaderTools: string | null
   docs: string | null
   signals: string | null
   review: string | null
@@ -104,13 +105,32 @@ function optionalStringArray(
 function mcpProbeTool(settings: JsonObject, project: string): string | null {
   if (settings.mcp === undefined || settings.mcp === null) return null
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
-  const unknown = Object.keys(mcp).filter((key) => key !== 'probe_tool')
+  const unknown = Object.keys(mcp).filter((key) => key !== 'probe_tool' && key !== 'reader_tools')
   if (unknown.length) {
     throw new Error(
       `project ${project} has unmapped settings.mcp keys: ${unknown.sort().join(', ')}`,
     )
   }
   return optionalString(mcp.probe_tool, `project ${project} settings.mcp.probe_tool`)
+}
+
+function mcpReaderTools(settings: JsonObject, project: string): string | null {
+  if (settings.mcp === undefined || settings.mcp === null) return null
+  const mcp = object(settings.mcp, `project ${project} settings.mcp`)
+  return document(mcp.reader_tools, `project ${project} settings.mcp.reader_tools`)
+}
+
+/** Reconstruct the hosted MCP setting from its scalar and JSON columns. */
+export function hostedMcpSettings(
+  columns: Pick<HostedProjectColumns, 'mcpProbeTool' | 'mcpReaderTools'>,
+): JsonObject | undefined {
+  const readerTools =
+    columns.mcpReaderTools === null ? undefined : JSON.parse(columns.mcpReaderTools)
+  if (columns.mcpProbeTool === null && readerTools === undefined) return undefined
+  return {
+    ...(columns.mcpProbeTool === null ? {} : { probe_tool: columns.mcpProbeTool }),
+    ...(readerTools === undefined ? {} : { reader_tools: readerTools }),
+  }
 }
 
 function document(value: unknown, location: string): string | null {
@@ -169,6 +189,7 @@ export function hostedProjectColumns(
     ),
     [PROJECT_SETTING_COLUMNS.secretPaths]: optionalStringArray(settings, 'secretPaths', project),
     [PROJECT_SETTING_COLUMNS.mcp]: mcpProbeTool(settings, project),
+    mcpReaderTools: mcpReaderTools(settings, project),
     [PROJECT_SETTING_COLUMNS.docs]: document(settings.docs, `project ${project} settings.docs`),
     [PROJECT_SETTING_COLUMNS.signals]: document(
       settings.signals,

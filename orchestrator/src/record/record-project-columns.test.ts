@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type HostedProjectColumns,
+  hostedMcpSettings,
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
   PROJECT_SETTINGS_NOT_IMPORTED,
@@ -86,5 +87,25 @@ describe('hostedProjectColumns', () => {
       requireCleanMain: true,
       keyPrefixes: [],
     })
+  })
+
+  test('round trips probe and reader MCP settings through separate hosted columns', () => {
+    const mcp = {
+      probe_tool: 'ping',
+      reader_tools: { starship: ['get-task', 'list-tasks'], hosted: ['search'] },
+    }
+    const columns = hostedProjectColumns({ mcp }, 'round-trip')
+    expect(columns.mcpProbeTool).toBe('ping')
+    expect(columns.mcpReaderTools).toBe(
+      '{"starship":["get-task","list-tasks"],"hosted":["search"]}',
+    )
+    expect(hostedMcpSettings(columns)).toEqual(mcp)
+  })
+
+  test('absent MCP settings keep both hosted columns null', () => {
+    const columns = hostedProjectColumns({}, 'absent')
+    expect(columns.mcpProbeTool).toBeNull()
+    expect(columns.mcpReaderTools).toBeNull()
+    expect(hostedMcpSettings(columns)).toBeUndefined()
   })
 })

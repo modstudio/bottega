@@ -137,7 +137,7 @@ export type ProjectSettings = {
    * can also list other projects' servers, as bottega's does.
    */
   workerMcpServers?: string[]
-  /** A cheap plain-named read tool used to prove the MCP attachment. */
+  /** A cheap probe tool and per-server tool names reading jobs may call through the MCP proxy. */
   mcp?: { probe_tool?: string; reader_tools?: Record<string, string[]> }
   /** How this project's task tracker is reached and how its vocabulary maps. */
   tracker?: TrackerSettings

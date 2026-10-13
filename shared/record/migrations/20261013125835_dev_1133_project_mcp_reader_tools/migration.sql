@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "mcp_reader_tools" jsonb;

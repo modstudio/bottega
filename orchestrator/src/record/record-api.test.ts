@@ -856,6 +856,7 @@ describe('record API presentation routes', () => {
       'mcpServer',
       'workerMcpServers',
       'mcpProbeTool',
+      'mcpReaderTools',
       'envPrefix',
       'gate',
     ])

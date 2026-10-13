@@ -1,29 +1,49 @@
 // concern: mcp-reader-proxy
 /** Filters one project MCP server down to tools a reading job may call. */
 
+import { realpathSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client'
 import { Server } from '@modelcontextprotocol/server'
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
-import { projectByName } from '../project/projects.ts'
-import { probeSecrets, readMcpConfig, sanitizeProbeError } from './mcp-probe.ts'
+import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import {
+  type Project,
+  projectByName,
+  retiredProjectByName,
+  retiredProjectRefusal,
+} from '../project/projects.ts'
+import {
+  type McpConfigReadResult,
+  probeSecrets,
+  readMcpConfigResult,
+  sanitizeProbeError,
+} from './mcp-probe.ts'
+import { type ReaderToolDecision, readerMayCallTool } from './mcp-reader-policy.ts'
 import { connectMcpToolClient, type McpToolListLaunch } from './mcp-tool-list.ts'
 
-const MCP_PROXY_TIMEOUT_MS = 8_000
+const MCP_PROXY_LIST_TIMEOUT_MS = 8_000
+const MCP_PROXY_CALL_TIMEOUT_MS = 2 * 60_000
 
-export type ReaderToolDecision = {
-  name: string
-  readOnlyHint: boolean | undefined
-  server: string
-  projectServer: string
-  registeredTools: readonly string[]
-}
+export const MCP_UPSTREAM_INHERITED_ENV = [
+  'PATH',
+  'HOME',
+  'LANG',
+  'TMPDIR',
+  'USER',
+  'SHELL',
+] as const
 
-/** Decide reader access without knowing transports, stores, or credentials. */
-export function readerMayCallTool(input: ReaderToolDecision): boolean {
-  return (
-    input.registeredTools.includes(input.name) ||
-    (input.server === input.projectServer && input.readOnlyHint === true)
+/** Give an upstream only its declared environment and ordinary process launch variables. */
+export function readerMcpUpstreamEnvironment(
+  environment: Record<string, string | undefined>,
+  declared: Record<string, string> | undefined,
+): Record<string, string> {
+  const inherited = Object.fromEntries(
+    MCP_UPSTREAM_INHERITED_ENV.flatMap((name) =>
+      environment[name] === undefined ? [] : [[name, environment[name]!]],
+    ),
   )
+  return { ...inherited, ...declared }
 }
 
 export type ReaderMcpUpstream = {
@@ -95,27 +115,99 @@ export async function createReaderMcpProxy(
 function clientUpstream(
   client: Awaited<ReturnType<typeof connectMcpToolClient>>,
 ): ReaderMcpUpstream {
-  const options = () => ({
-    signal: AbortSignal.timeout(MCP_PROXY_TIMEOUT_MS),
-    timeout: MCP_PROXY_TIMEOUT_MS,
+  const options = (timeout: number) => ({
+    signal: AbortSignal.timeout(timeout),
+    timeout,
   })
   return {
-    listTools: (cursor) => client.client.listTools({ cursor }, options()),
-    callTool: (name, args) => client.client.callTool({ name, arguments: args }, options()),
+    listTools: (cursor) => client.client.listTools({ cursor }, options(MCP_PROXY_LIST_TIMEOUT_MS)),
+    callTool: (name, args) =>
+      client.client.callTool({ name, arguments: args }, options(MCP_PROXY_CALL_TIMEOUT_MS)),
     close: client.close,
   }
 }
 
+type ReaderProxyProject = Pick<Project, 'name' | 'path' | 'settings'>
+
+type ReaderMcpProxyDependencies = {
+  projectByName(name: string): ReaderProxyProject | null
+  retiredProjectByName(name: string): ReaderProxyProject | null
+  readMcpConfigResult(cwd: string): McpConfigReadResult
+  connectMcpToolClient: typeof connectMcpToolClient
+  environment: Record<string, string | undefined>
+}
+
+const readerMcpProxyDependencies: ReaderMcpProxyDependencies = {
+  projectByName,
+  retiredProjectByName,
+  readMcpConfigResult,
+  connectMcpToolClient,
+  environment: process.env,
+}
+
+function runTreePath(runTree: string, mainCheckout: string): string {
+  const tree = resolve(runTree)
+  const main = resolve(mainCheckout)
+  if (tree === main)
+    throw new Error(`run tree ${JSON.stringify(tree)} is the registered main checkout`)
+  try {
+    if (!statSync(tree).isDirectory()) throw new Error('not a directory')
+  } catch {
+    throw new Error(`run tree ${JSON.stringify(tree)} is not an existing directory`)
+  }
+  try {
+    if (realpathSync(tree) === realpathSync(main)) {
+      throw new Error(`run tree ${JSON.stringify(tree)} is the registered main checkout`)
+    }
+  } catch (error) {
+    if (String((error as Error)?.message ?? error).includes('registered main checkout')) throw error
+  }
+  return tree
+}
+
+function configuredUpstream(result: McpConfigReadResult, serverName: string): McpToolListLaunch {
+  if (!result.ok) {
+    if (result.reason === 'missing')
+      throw new Error(`MCP configuration is missing at ${result.path}`)
+    if (result.reason === 'invalid')
+      throw new Error(`MCP configuration is not valid JSON at ${result.path}`)
+    throw new Error(
+      `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`,
+    )
+  }
+  const config = result.config[serverName]
+  if (!config) {
+    throw new Error(
+      `server ${JSON.stringify(serverName)} is not configured in ${result.path}; add its launch definition there`,
+    )
+  }
+  return config
+}
+
 /** Resolve credentials in-process, connect upstream, then serve only the filtered tool surface. */
-async function serveReaderMcpProxy(projectName: string, serverName: string): Promise<void> {
-  const project = projectByName(projectName)
-  if (!project) throw new Error(`project ${JSON.stringify(projectName)} is not registered`)
-  const config = readMcpConfig(project.path)[serverName]
-  if (!config) throw new Error('upstream definition is missing')
-  const launch: McpToolListLaunch = { ...config, cwd: project.path }
+async function serveReaderMcpProxy(
+  projectName: string,
+  serverName: string,
+  runTree: string,
+  dependencies: ReaderMcpProxyDependencies,
+): Promise<void> {
+  const project = dependencies.projectByName(projectName)
+  if (!project) {
+    if (dependencies.retiredProjectByName(projectName))
+      throw new Error(retiredProjectRefusal(projectName))
+    throw new Error(
+      `project ${JSON.stringify(projectName)} is not registered; run orch project add <path> --name ${JSON.stringify(projectName)}`,
+    )
+  }
+  const cwd = runTreePath(runTree, project.path)
+  const config = configuredUpstream(dependencies.readMcpConfigResult(project.path), serverName)
+  const launch: McpToolListLaunch = { ...config, cwd }
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>
   try {
-    connected = await connectMcpToolClient(launch, process.env as Record<string, string>)
+    connected = await dependencies.connectMcpToolClient(
+      launch,
+      readerMcpUpstreamEnvironment(dependencies.environment, config.env),
+    )
   } catch (error) {
     throw new Error(
       sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
@@ -135,22 +227,30 @@ async function serveReaderMcpProxy(projectName: string, serverName: string): Pro
       sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
     )
   }
-  try {
-    await proxy.server.connect(new StdioServerTransport())
-  } catch (error) {
-    await proxy.close()
-    throw error
-  }
+  serveStdio(() => proxy.server)
+}
+
+type ReaderMcpProxyCommandDependencies = Partial<ReaderMcpProxyDependencies> & {
+  error?(line: string): void
+  setExitCode?(code: number): void
 }
 
 /** Thin command boundary: one credential-sanitized line and a failing exit status. */
-export async function readerMcpProxyCommand(project: string, server: string): Promise<void> {
+export async function readerMcpProxyCommand(
+  project: string,
+  server: string,
+  runTree: string,
+  overrides: ReaderMcpProxyCommandDependencies = {},
+): Promise<void> {
+  const dependencies = { ...readerMcpProxyDependencies, ...overrides }
+  const writeError = overrides.error ?? ((line: string) => console.error(line))
+  const setExitCode = overrides.setExitCode ?? ((code: number) => (process.exitCode = code))
   try {
-    await serveReaderMcpProxy(project, server)
+    await serveReaderMcpProxy(project, server, runTree, dependencies)
   } catch (error) {
-    console.error(
+    writeError(
       `MCP reader proxy for ${server} could not start: ${String((error as Error)?.message ?? error).replaceAll(/\s+/g, ' ')}`,
     )
-    process.exitCode = 1
+    setExitCode(1)
   }
 }
