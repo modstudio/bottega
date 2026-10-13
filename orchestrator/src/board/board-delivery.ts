@@ -67,7 +67,7 @@ export async function claimBoardNotices(
     budgetMs: input.budgetMs ?? BOARD_READ_REFRESH_BUDGET_MS,
     env,
   })
-  return refreshed === 'local'
+  return refreshed.status === 'local'
     ? { notices: claimNotices(all, env).map(deliveryNotice), warning: null }
     : {
         notices: [
@@ -88,7 +88,7 @@ export async function readBoardNotices(
     env,
   })
   const local = readNotices(all, env).map(deliveryNotice)
-  if (refreshed === 'local') return { notices: local, warning: null }
+  if (refreshed.status === 'local') return { notices: local, warning: null }
   const hosted = claimCachedHosted(sessionReader(env), all)
   await markCachedHostedDelivered(
     sessionReader(env),
@@ -107,7 +107,7 @@ export async function claimRunBoardNotices(
 ) {
   const refreshed = await refreshHostedBoard({ budgetMs })
   const reader = runReader(runId)
-  return refreshed === 'local'
+  return refreshed.status === 'local'
     ? { notices: claimRunNotices(runId, all).map(deliveryNotice), warning: null }
     : {
         notices: [

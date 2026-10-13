@@ -189,7 +189,7 @@ export function registerBoardApiProofs(input: {
           client: clientA,
           database: storeA,
         }),
-      ).toBe('success')
+      ).toMatchObject({ status: 'success' })
       expect(
         await refreshHostedBoard({
           budgetMs: 2_000,
@@ -197,7 +197,7 @@ export function registerBoardApiProofs(input: {
           client: clientB,
           database: storeB,
         }),
-      ).toBe('success')
+      ).toMatchObject({ status: 'success' })
       const delivered = claimCachedHosted(
         sessionB,
         false,
@@ -265,7 +265,7 @@ export function registerBoardApiProofs(input: {
           client: cacheClient(tokenA),
           database: store,
         }),
-      ).toBe('success')
+      ).toMatchObject({ status: 'success' })
       expect(
         store.query('SELECT 1 FROM hosted_board_message_cache WHERE id=?').get(operatorA),
       ).not.toBeNull()
@@ -277,7 +277,7 @@ export function registerBoardApiProofs(input: {
           client: cacheClient(tokenB),
           database: store,
         }),
-      ).toBe('success')
+      ).toMatchObject({ status: 'success' })
       const cached = (
         store.query('SELECT id FROM hosted_board_message_cache ORDER BY id').all() as Array<{
           id: string

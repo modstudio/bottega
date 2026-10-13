@@ -43,6 +43,18 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
     './board-thread-render.ts',
   ]),
+  module('orchestrator/src/board/board-watch-decision.ts', []),
+  module('orchestrator/src/board/board-watch-frames.ts', ['../record/record-board-stream.ts']),
+  module('orchestrator/src/board/board-watch.ts', [
+    '../../../shared/install-root.ts',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-remedies.ts',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    './board-hosted-cache.ts',
+    './board-watch-decision.ts',
+    './board-watch-frames.ts',
+  ]),
   module('orchestrator/src/board/board-delivery.ts', [
     '../../../shared/board-mode.ts',
     './board-hosted-cache.ts',
@@ -186,6 +198,7 @@ export const boardModules: BoardModule[] = [
     './board-delivery.ts',
     './board-service.ts',
     './board-suggestions.ts',
+    './board-watch.ts',
   ]),
   module('orchestrator/src/ask/ask-board-tools.ts', [
     '@modelcontextprotocol/server',

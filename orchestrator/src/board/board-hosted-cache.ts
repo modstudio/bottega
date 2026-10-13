@@ -49,6 +49,12 @@ type RefreshInput = {
   now?: () => number
 }
 
+export type HostedBoardRefresh = {
+  status: 'local' | 'success' | 'failed' | 'incomplete'
+  applied: number
+  reason?: string
+}
+
 const meta = (database: Database, key: string) =>
   (database.query('SELECT value FROM schema_meta WHERE key=?').get(key) as { value: string } | null)
     ?.value ?? null
@@ -87,8 +93,22 @@ async function within<T>(operation: Promise<T>, remainingMs: number): Promise<T>
   }
 }
 
-function replacePage(database: Database, page: HostedBoardChanges): void {
-  writeTransaction(() => {
+function cachedRevision(database: Database, id: string): string | null {
+  return (
+    (
+      database.query('SELECT revision FROM hosted_board_message_cache WHERE id=?').get(id) as {
+        revision: string
+      } | null
+    )?.revision ?? null
+  )
+}
+
+function incomingIsStale(cached: string | null, incoming: string): boolean {
+  return cached !== null && BigInt(incoming) < BigInt(cached)
+}
+
+function replacePage(database: Database, page: HostedBoardChanges): number {
+  return writeTransaction(() => {
     const putMessage = database.query(
       `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
        VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,
@@ -109,8 +129,10 @@ function replacePage(database: Database, page: HostedBoardChanges): void {
        acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
        pending_sync=0,sync_error=NULL`,
     )
+    let applied = 0
     for (const change of page.items) {
       const message = change.message
+      if (incomingIsStale(cachedRevision(database, message.id), message.revision)) continue
       putMessage.run(
         message.id,
         message.kind,
@@ -128,10 +150,21 @@ function replacePage(database: Database, page: HostedBoardChanges): void {
           receipt.deliveredAt,
           receipt.acknowledgedAt,
         )
+      applied += 1
     }
-    if (page.highestRevision !== null)
-      setMeta(database, BOARD_REFRESH_CURSOR_KEY, page.highestRevision)
+    if (page.highestRevision !== null) advanceHostedBoardCursor(database, page.highestRevision)
+    return applied
   }, database)
+}
+
+function advanceHostedBoardCursor(database: Database, highestRevision: string): void {
+  const current = meta(database, BOARD_REFRESH_CURSOR_KEY)
+  if (current === null || BigInt(highestRevision) > BigInt(current))
+    setMeta(database, BOARD_REFRESH_CURSOR_KEY, highestRevision)
+}
+
+export function hostedBoardCursor(database: Database = db()): string {
+  return meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
 }
 
 const CACHE_VERIFICATION_KEYS = [
@@ -213,50 +246,98 @@ async function flushReceipts(
   }
 }
 
-export async function refreshHostedBoard(
-  input: RefreshInput,
-): Promise<'local' | 'success' | 'failed'> {
+function refreshFailure(
+  database: Database,
+  now: () => number,
+  error: unknown,
+  applied: number,
+): HostedBoardRefresh {
+  const reason = error instanceof Error ? error.message : String(error)
+  recordRefresh(database, now(), `failed: ${reason}`)
+  if (reason === 'hosted board refresh budget spent') {
+    return { status: 'incomplete', applied }
+  }
+  return { status: 'failed', applied, reason }
+}
+
+async function withinPage(
+  client: RecordApiClient,
+  query: { after: string; limit: number },
+  remainingMs: number,
+): Promise<HostedBoardChanges> {
+  if (remainingMs <= 0) throw new Error('hosted board refresh budget spent')
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const operation = client.listBoardChanges({ ...query, signal: controller.signal })
+  try {
+    return await Promise.race([
+      operation.catch((error: unknown) => {
+        if (controller.signal.aborted) throw new Error('hosted board refresh budget spent')
+        throw error
+      }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('hosted board refresh budget spent'))
+        }, remainingMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function fetchHostedPages(
+  client: RecordApiClient,
+  database: Database,
+  deadline: number,
+  now: () => number,
+  tally: { applied: number },
+): Promise<boolean> {
+  let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
+  while (now() < deadline) {
+    const page = await withinPage(
+      client,
+      { after, limit: BOARD_CHANGES_PAGE_LIMIT },
+      deadline - now(),
+    )
+    if (establishCacheOwner(database, page.userId)) {
+      after = '0'
+      continue
+    }
+    tally.applied += replacePage(database, page)
+    if (page.highestRevision !== null) after = page.highestRevision
+    if (page.items.length >= BOARD_CHANGES_PAGE_LIMIT) continue
+    await flushReceipts(client, database, deadline, now)
+    return true
+  }
+  await flushReceipts(client, database, deadline, now)
+  return false
+}
+
+export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoardRefresh> {
   const database = input.database ?? writableDb()
   const env = input.env ?? process.env
   const now = input.now ?? Date.now
-  const started = now()
-  const deadline = started + input.budgetMs
+  const deadline = now() + input.budgetMs
   try {
-    if (boardMode('shared', env, database) === 'local') return 'local'
+    if (boardMode('shared', env, database) === 'local') return { status: 'local', applied: 0 }
   } catch (error) {
-    recordRefresh(
-      database,
-      now(),
-      `failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-    return 'failed'
+    return refreshFailure(database, now, error, 0)
   }
+  const tally = { applied: 0 }
   try {
-    const client = input.client ?? recordApiClient()
-    let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
-    while (now() < deadline) {
-      const page = await within(
-        client.listBoardChanges({ after, limit: BOARD_CHANGES_PAGE_LIMIT }),
-        deadline - now(),
-      )
-      if (establishCacheOwner(database, page.userId)) {
-        after = '0'
-        continue
-      }
-      replacePage(database, page)
-      if (page.highestRevision !== null) after = page.highestRevision
-      if (page.items.length < BOARD_CHANGES_PAGE_LIMIT) break
-    }
-    await flushReceipts(client, database, deadline, now)
-    recordRefresh(database, now(), 'success')
-    return 'success'
-  } catch (error) {
-    recordRefresh(
+    const caughtUp = await fetchHostedPages(
+      input.client ?? recordApiClient(),
       database,
-      now(),
-      `failed: ${error instanceof Error ? error.message : String(error)}`,
+      deadline,
+      now,
+      tally,
     )
-    return 'failed'
+    recordRefresh(database, now(), 'success')
+    return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }
+  } catch (error) {
+    return refreshFailure(database, now, error, tally.applied)
   }
 }
 

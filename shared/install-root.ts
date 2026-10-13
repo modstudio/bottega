@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import { parseBuiltCommit } from './built-commit.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
 
 export type InstallEnvironment = Record<string, string | undefined>
@@ -171,6 +172,69 @@ export function installationVersionText(fromDirectory: string, env: InstallEnvir
   return identity.kind === 'distribution'
     ? `${identity.manifest.name} ${identity.manifest.version} (${identity.manifest.commit.slice(0, 7)})`
     : `${PLATFORM_NAME} ${identity.version} (development checkout)`
+}
+
+function gitCommonDir(root: string): string | null {
+  const dotGit = join(root, '.git')
+  if (!existsSync(dotGit)) return null
+  try {
+    if (statSync(dotGit).isDirectory()) return dotGit
+    const pointer = readFileSync(dotGit, 'utf8').trim()
+    if (!pointer.startsWith('gitdir: ')) return null
+    const gitDir = resolve(root, pointer.slice('gitdir: '.length).trim())
+    return resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim())
+  } catch {
+    return null
+  }
+}
+
+function commitFromPackedRefs(gitDir: string, ref: string): string | undefined {
+  let packed: string
+  try {
+    packed = readFileSync(join(gitDir, 'packed-refs'), 'utf8')
+  } catch {
+    return undefined
+  }
+  for (const line of packed.split('\n')) {
+    if (line.startsWith('#') || line.startsWith('^')) continue
+    const space = line.indexOf(' ')
+    if (space <= 0) continue
+    if (line.slice(space + 1).trim() === ref) return parseBuiltCommit(line.slice(0, space))
+  }
+  return undefined
+}
+
+function commitAtRef(gitDir: string, ref: string): string | undefined {
+  try {
+    const loose = parseBuiltCommit(readFileSync(join(gitDir, ref), 'utf8'))
+    if (loose) return loose
+  } catch {
+    // packed-refs is the remaining source for this name
+  }
+  return commitFromPackedRefs(gitDir, ref)
+}
+
+/** Main checkout HEAD, read from git files without spawning a process. */
+export function checkoutHeadCommit(root: string): string | undefined {
+  const gitDir = gitCommonDir(root)
+  if (!gitDir) return undefined
+  let head: string
+  try {
+    head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
+  } catch {
+    return undefined
+  }
+  const detached = parseBuiltCommit(head)
+  if (detached) return detached
+  if (!head.startsWith('ref: ')) return undefined
+  return commitAtRef(gitDir, head.slice('ref: '.length).trim())
+}
+
+/** Installed build identity: distribution commit, or the main checkout's current commit. */
+export function installationBuildId(fromDirectory: string, env: InstallEnvironment): string | null {
+  const identity = installationIdentity(fromDirectory, env)
+  if (identity.kind === 'distribution') return identity.manifest.commit
+  return checkoutHeadCommit(identity.root) ?? null
 }
 
 /** The root of the running distribution or checkout. */

@@ -6,8 +6,10 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import {
   assetPath,
+  checkoutHeadCommit,
   DIST_MANIFEST,
   INSTALL_HOME_ENV,
+  installationBuildId,
   installationVersionText,
   installRoot,
   isAuthorizedPlatformInstallation,
@@ -147,6 +149,58 @@ describe('installation identity', () => {
     expect(installationVersionText(checkout, {})).toBe(
       `${PLATFORM_NAME} 0.1.0 (development checkout)`,
     )
+  })
+
+  test('a development checkout build is the main checkout commit, a distribution keeps its recorded commit', () => {
+    const commit = '0123456789abcdef0123456789abcdef01234567'
+    const checkout = scratch()
+    writeFileSync(
+      join(checkout, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '0.1.0' }),
+    )
+    mkdirSync(join(checkout, '.git'))
+    writeFileSync(join(checkout, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    mkdirSync(join(checkout, '.git', 'refs', 'heads'), { recursive: true })
+    writeFileSync(join(checkout, '.git', 'refs', 'heads', 'main'), `${commit}\n`)
+    expect(installationBuildId(checkout, {})).toBe(commit)
+    expect(checkoutHeadCommit(checkout)).toBe(commit)
+
+    const unreadable = scratch()
+    writeFileSync(
+      join(unreadable, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '0.1.0' }),
+    )
+    mkdirSync(join(unreadable, '.git'))
+    writeFileSync(join(unreadable, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    expect(installationBuildId(unreadable, {})).toBeNull()
+    expect(checkoutHeadCommit(unreadable)).toBeUndefined()
+
+    const packed = scratch()
+    writeFileSync(
+      join(packed, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '0.1.0' }),
+    )
+    mkdirSync(join(packed, '.git'))
+    writeFileSync(join(packed, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    writeFileSync(join(packed, '.git', 'packed-refs'), `# pack\n${commit} refs/heads/main\n`)
+    expect(checkoutHeadCommit(packed)).toBe(commit)
+
+    const worktree = scratch()
+    const mainGit = join(checkout, '.git')
+    const linked = join(mainGit, 'worktrees', 'run')
+    mkdirSync(linked, { recursive: true })
+    writeFileSync(
+      join(worktree, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '0.1.0' }),
+    )
+    writeFileSync(join(worktree, '.git'), `gitdir: ${linked}\n`)
+    writeFileSync(join(linked, 'commondir'), '../..\n')
+    writeFileSync(join(linked, 'HEAD'), 'ref: refs/heads/other\n')
+    expect(checkoutHeadCommit(worktree)).toBe(commit)
+
+    const release = scratch()
+    writeFileSync(join(release, DIST_MANIFEST), JSON.stringify(manifest))
+    expect(installationBuildId(release, {})).toBe(manifest.commit)
   })
 
   test('an embedded manifest renders the same identity without an installation on disk', () => {

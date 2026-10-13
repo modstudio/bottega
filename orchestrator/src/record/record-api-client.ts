@@ -318,7 +318,11 @@ export type RecordApiClient = {
   getBoardThread(id: string): Promise<HostedBoardThread>
   getBoardStatus(id: string): Promise<HostedBoardStatus>
   putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
-  listBoardChanges(query: { after?: string; limit?: number }): Promise<HostedBoardChanges>
+  listBoardChanges(query: {
+    after?: string
+    limit?: number
+    signal?: AbortSignal
+  }): Promise<HostedBoardChanges>
   takeBoardClaim(
     input: HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -329,7 +333,17 @@ export type RecordApiClient = {
   ): Promise<HostedBoardClaim>
   listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
+  openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
 }
+
+type RecordBoardStreamSource = {
+  read(): Promise<Uint8Array | null>
+}
+
+export type RecordBoardStreamOpen =
+  | { kind: 'stream'; source: RecordBoardStreamSource; close: () => void }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; reason: string }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
 type InjectSlot = { current: RecordApiClient | null }
@@ -663,13 +677,7 @@ export function recordApiClient(): RecordApiClient {
     getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
     putBoardReceipt: (input) =>
       request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input) }),
-    listBoardChanges: (query) => {
-      const search = new URLSearchParams()
-      if (query.after) search.set('after', query.after)
-      if (query.limit) search.set('limit', String(query.limit))
-      const suffix = search.toString()
-      return request(`/v1/board/changes${suffix ? `?${suffix}` : ''}`)
-    },
+    listBoardChanges: listBoardChangesRequest,
     takeBoardClaim: (input) =>
       request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
     renewBoardClaim: (id, input) =>
@@ -684,7 +692,99 @@ export function recordApiClient(): RecordApiClient {
       }),
     listBoardClaims: (project) =>
       request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
+    ...recordApiBoardWatchClient(),
+  }
+}
+
+function listBoardChangesRequest(query: {
+  after?: string
+  limit?: number
+  signal?: AbortSignal
+}): Promise<HostedBoardChanges> {
+  const search = new URLSearchParams()
+  if (query.after) search.set('after', query.after)
+  if (query.limit) search.set('limit', String(query.limit))
+  const suffix = search.toString()
+  return request(
+    `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
+    query.signal ? { signal: query.signal } : {},
+  )
+}
+
+function recordApiBoardWatchClient(): Pick<
+  RecordApiClient,
+  'releaseBoardTaskClaims' | 'openBoardStream'
+> {
+  return {
     releaseBoardTaskClaims: (input) =>
       request('/v1/board/claims/release-task', { method: 'POST', body: JSON.stringify(input) }),
+    openBoardStream: (signal) => fetchBoardStream(signal),
   }
+}
+
+function sourceFromBody(body: ReadableStream<Uint8Array>): RecordBoardStreamSource {
+  const reader = body.getReader()
+  return {
+    async read() {
+      const result = await reader.read()
+      return result.done ? null : (result.value ?? new Uint8Array())
+    },
+  }
+}
+
+export function classifyBoardStreamResponse(
+  status: number,
+  body: ReadableStream<Uint8Array> | null,
+  close: () => void,
+): RecordBoardStreamOpen {
+  if (status === 401 || status === 403) return { kind: 'unauthorized' }
+  if (status !== 200 || !body) return { kind: 'error', reason: `record API ${status}` }
+  return { kind: 'stream', source: sourceFromBody(body), close }
+}
+
+function releaseUnopenedStream(response: Response, connection: AbortController): void {
+  try {
+    if (response.body) void response.body.cancel()
+  } finally {
+    connection.abort()
+  }
+}
+
+async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
+  if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
+  const token = storedRecordToken()
+  if (!token) return { kind: 'unauthorized' }
+  const connection = new AbortController()
+  const stop = () => connection.abort()
+  signal?.addEventListener('abort', stop)
+  const drop = () => signal?.removeEventListener('abort', stop)
+  const close = () => {
+    drop()
+    connection.abort()
+  }
+  try {
+    const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
+      method: 'GET',
+      headers: boardStreamHeaders(token),
+      signal: connection.signal,
+    })
+    const opened = classifyBoardStreamResponse(response.status, response.body, close)
+    if (opened.kind !== 'stream') {
+      releaseUnopenedStream(response, connection)
+      drop()
+    }
+    return opened
+  } catch (error) {
+    connection.abort()
+    drop()
+    if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
+    return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function boardStreamHeaders(token: string): Headers {
+  const headers = new Headers()
+  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
+  headers.set('accept', 'text/event-stream')
+  return headers
 }

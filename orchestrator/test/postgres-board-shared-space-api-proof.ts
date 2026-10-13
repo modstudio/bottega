@@ -77,7 +77,7 @@ export function registerBoardSharedSpaceApiProof(
           client: postgresBoardCacheClient(origin(), sharedToken()),
           database: store,
         }),
-      ).toBe('success')
+      ).toMatchObject({ status: 'success' })
       const claimed = claimCachedHosted(
         session,
         false,

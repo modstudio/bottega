@@ -185,9 +185,10 @@ export async function listBoardOverview(
     client: input.client,
   })
   const rows = await localEntries(clock)
-  if (refreshed !== 'local') rows.push(...hostedEntries(cachedHostedBoardMessages(db()), clock))
+  if (refreshed.status !== 'local')
+    rows.push(...hostedEntries(cachedHostedBoardMessages(db()), clock))
   return {
     messages: boardOverview(rows, filters),
-    warning: refreshed === 'local' ? null : hostedBoardVerificationWarning(),
+    warning: refreshed.status === 'local' ? null : hostedBoardVerificationWarning(),
   }
 }
