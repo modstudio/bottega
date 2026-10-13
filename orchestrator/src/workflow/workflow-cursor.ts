@@ -32,7 +32,6 @@ import {
   type CursorTrailEntry,
   completedWorkflowSummary,
   currentStepActivatedAt,
-  withSelfRuling,
 } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
@@ -57,7 +56,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
-import { renderWorkflowStep } from './workflow-render.ts'
+import { renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
@@ -685,9 +684,8 @@ function nextWorkflowStepImpl(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.id)
-    return completedWorkflowSummary(
-      cursorName(slug, mode, row.workflow_key, true),
-      closed,
+    return withSelfRuling(
+      completedWorkflowSummary(cursorName(slug, mode, row.workflow_key, true), closed),
       selfRuling,
     )
   }

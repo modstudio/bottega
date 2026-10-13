@@ -24,28 +24,15 @@ export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 
 const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
-export function withSelfRuling(
-  result: string,
-  selfRuling?: { ruling: string; basis: string },
-): string {
-  return selfRuling
-    ? `${result}\nSelf-ruling: ${selfRuling.ruling.trim()}\nBasis: ${selfRuling.basis.trim()}`
-    : result
-}
-
 export function completedWorkflowSummary(
   name: string,
   entries: CursorTrailEntry[],
-  selfRuling?: { ruling: string; basis: string },
 ): string {
   const closed = entries.filter(isClosedStep)
   const reviews = closed
     .filter((step) => step.review)
     .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
-  return withSelfRuling(
-    [`${name} is finished: ${closed.length} steps closed.`, ...reviews].join('\n'),
-    selfRuling,
-  )
+  return [`${name} is finished: ${closed.length} steps closed.`, ...reviews].join('\n')
 }
 
 export const hasClosedStep = (trail: string): boolean =>

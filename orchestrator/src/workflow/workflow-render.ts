@@ -18,6 +18,15 @@ type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
 }
 type WorkflowStep = ReturnType<typeof getWorkflowStep> & { cursor?: number; notice?: string }
 
+export function withSelfRuling(
+  result: string,
+  selfRuling?: { ruling: string; basis: string },
+): string {
+  return selfRuling
+    ? `${result}\nSelf-ruling: ${selfRuling.ruling.trim()}\nBasis: ${selfRuling.basis.trim()}`
+    : result
+}
+
 const legend =
   "Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with `orch workflow await` and stop."
 
