@@ -206,20 +206,12 @@ function nextBatch(input: {
   return { rows, localRows }
 }
 
-function applyBatchResults(input: {
-  local: Database
-  batch: RecordSyncRequestRow[]
-  localRows: Map<number, OutboxRow>
-  response: RecordSyncResponse
-  attempted: Set<number>
-  readOnlyDeferred: Map<string, number>
-  now: () => string
-}): { pushed: number; failed: number } {
-  if (input.response.results.length !== input.batch.length)
+function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyncResponse): void {
+  if (response.results.length !== batch.length)
     throw new Error('record sync response did not contain one result per requested row')
-  for (let index = 0; index < input.batch.length; index++) {
-    const row = input.batch[index]!
-    const result = input.response.results[index]!
+  for (let index = 0; index < batch.length; index++) {
+    const row = batch[index]!
+    const result = response.results[index]!
     if (result === null || typeof result !== 'object')
       throw new Error('record sync response contained an invalid row result')
     if (result.id !== row.id)
@@ -239,6 +231,18 @@ function applyBatchResults(input: {
       throw new Error('record sync response contained an invalid deferred space')
     }
   }
+}
+
+function applyBatchResults(input: {
+  local: Database
+  batch: RecordSyncRequestRow[]
+  localRows: Map<number, OutboxRow>
+  response: RecordSyncResponse
+  attempted: Set<number>
+  readOnlyDeferred: Map<string, number>
+  now: () => string
+}): { pushed: number; failed: number } {
+  validateBatchResults(input.batch, input.response)
   let pushed = 0
   let failed = 0
   for (let index = 0; index < input.batch.length; index++) {
@@ -265,6 +269,10 @@ function applyBatchResults(input: {
     }
   }
   return { pushed, failed }
+}
+
+function noBatchRemaining(rowCount: number, sentBatch: boolean): boolean {
+  return rowCount === 0 && sentBatch
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -311,7 +319,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       blocked,
       projectSpaces: options.projectSpaces,
     })
-    if (!batch.rows.length && sentBatch) break
+    if (noBatchRemaining(batch.rows.length, sentBatch)) break
     let response: RecordSyncResponse
     try {
       response = await client.sync({
@@ -333,7 +341,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     })
     pushed += applied.pushed
     failed += applied.failed
-    if (!batch.rows.length) break
   }
   if (!options.client) await pullRecordCache(writableLocal)
   rememberHostedRecord(writableLocal)
