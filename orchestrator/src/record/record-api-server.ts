@@ -162,17 +162,14 @@ function serveRecordApi(
   return server
 }
 
-export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
-  const config = recordApiServerConfig(environment)
-  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
-  const boardWakeSource = await createBoardWakeSource(config.recordUrl)
-  const boardStreamRegistry = createBoardStreamRegistry()
-  const migrations = recordMigrationCount()
-  const app = recordApi({
-    recordUrl: config.recordUrl,
-    allowedOrigins: config.allowedOrigins,
+function recordApiAccessDependencies(
+  config: ReturnType<typeof recordApiServerConfig>,
+  auth: ReturnType<typeof recordAuth>,
+  migrations: number,
+) {
+  return {
     auth,
-    readSession: async (headers) => {
+    readSession: async (headers: Headers) => {
       const current = await auth.api.getSession({ headers })
       if (!current) return null
       return recordIdentity(
@@ -181,7 +178,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
         current.session.activeOrganizationId ?? null,
       )
     },
-    setActiveSpace: (headers, spaceId) =>
+    setActiveSpace: (headers: Headers, spaceId: string) =>
       setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
     listInvitations: listPendingRecordInvitations,
     readHealth: async () => {
@@ -193,6 +190,19 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
       }
     },
     readCommit: readBuiltCommit,
+  }
+}
+
+export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
+  const config = recordApiServerConfig(environment)
+  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
+  const boardWakeSource = await createBoardWakeSource(config.recordUrl)
+  const boardStreamRegistry = createBoardStreamRegistry()
+  const migrations = recordMigrationCount()
+  const app = recordApi({
+    recordUrl: config.recordUrl,
+    allowedOrigins: config.allowedOrigins,
+    ...recordApiAccessDependencies(config, auth, migrations),
     readRuns: listRecordRuns,
     readRunsWindow: viewRecordRuns,
     readRun: getRecordRun,

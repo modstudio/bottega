@@ -33,7 +33,11 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../record/record-auth.ts'
+import {
+  bearerHeaders,
+  recordAuth,
+  setActiveRecordSpaceForSession,
+} from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -427,7 +431,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('01990000-0000-7000-8000-00000000013a','${authSpaceA}',
          (SELECT id FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}'),'member','write',now());`,
     )
-    await setActiveRecordSpace(actorUrl!, repairToken, authSpaceA)
+    await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(repairToken), authSpaceA)
     recordSession.setToken(repairToken)
     await expect(
       inviteToActiveRecordSpace('nobody@example.test', 'member', invitationClient),

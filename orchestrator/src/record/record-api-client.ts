@@ -633,11 +633,15 @@ function acceptedInvitationResponse(
   return { invitation: { organizationId: invitation.organizationId } }
 }
 
-export function recordApiClient(): RecordApiClient {
-  const injected = injectedClient()
-  if (injected) return injected
-  if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
-    throw new Error(TEST_REFUSAL)
+function recordIdentityAndSpaceClient(): Pick<
+  RecordApiClient,
+  | 'whoami'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
+  | 'inviteMember'
+> {
   return {
     whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
     createOrganization: (input) =>
@@ -667,6 +671,16 @@ export function recordApiClient(): RecordApiClient {
         method: 'POST',
         body: JSON.stringify(input),
       }),
+  }
+}
+
+export function recordApiClient(): RecordApiClient {
+  const injected = injectedClient()
+  if (injected) return injected
+  if (process.env.NODE_ENV === 'test' && !process.env.ORCH_TEST_POSTGRES_CONTAINER)
+    throw new Error(TEST_REFUSAL)
+  return {
+    ...recordIdentityAndSpaceClient(),
     putSnapshot: (kind, input) =>
       request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
     listSnapshots: () => request('/v1/snapshots'),

@@ -358,14 +358,6 @@ export async function recordIdentity(
 
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
 
-export async function setActiveRecordSpace(
-  url: string,
-  token: string,
-  spaceId: string,
-): Promise<void> {
-  return setActiveRecordSpaceForSession(url, bearerHeaders(token), spaceId)
-}
-
 export async function setActiveRecordSpaceForSession(
   url: string,
   headers: Headers,

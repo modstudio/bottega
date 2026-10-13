@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bearerHeaders, recordAuth, setActiveRecordSpace } from '../src/record/record-auth.ts'
+import {
+  bearerHeaders,
+  recordAuth,
+  setActiveRecordSpaceForSession,
+} from '../src/record/record-auth.ts'
 
 async function proveRememberedSpace(input: {
   actorUrl: string
@@ -26,14 +30,22 @@ async function proveRememberedSpace(input: {
     `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
      VALUES ('${newRecordId()}','${input.rememberedSpaceId}','${signup.user.id}','member','write',now());`,
   )
-  await setActiveRecordSpace(input.actorUrl, signup.token, input.rememberedSpaceId)
+  await setActiveRecordSpaceForSession(
+    input.actorUrl,
+    bearerHeaders(signup.token),
+    input.rememberedSpaceId,
+  )
 
   const signedIn = await auth.api.signInEmail({ body: { email, password: input.password } })
   if (!signedIn.token) throw new Error('remembered-space sign-in has no bearer token')
   const resumed = await auth.api.getSession({ headers: bearerHeaders(signedIn.token) })
   expect(resumed?.session.activeOrganizationId).toBe(input.rememberedSpaceId)
   await expect(
-    setActiveRecordSpace(input.actorUrl, signedIn.token, input.outsiderSpaceId),
+    setActiveRecordSpaceForSession(
+      input.actorUrl,
+      bearerHeaders(signedIn.token),
+      input.outsiderSpaceId,
+    ),
   ).rejects.toThrow('is not a member of space')
 }
 

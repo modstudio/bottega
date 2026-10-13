@@ -276,20 +276,23 @@ const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an ac
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
 
+function registerRecordCors(app: Hono<ApiEnvironment>, origins: string[] | undefined): void {
+  if (!origins?.length) return
+  const allowed = new Set(origins)
+  const options = {
+    origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
+    credentials: true,
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  }
+  app.use('/v1/*', cors(options))
+  app.use('/public/v1/*', cors(options))
+  app.use('/api/auth/*', cors(options))
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
-  if (deps.allowedOrigins?.length) {
-    const allowed = new Set(deps.allowedOrigins)
-    const options = {
-      origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
-      credentials: true,
-      allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    }
-    app.use('/v1/*', cors(options))
-    app.use('/public/v1/*', cors(options))
-    app.use('/api/auth/*', cors(options))
-  }
+  registerRecordCors(app, deps.allowedOrigins)
   registerRecordAccessRoutes(app, {
     ...deps,
     readVersion: () => builtCommitResponse(deps.readCommit()),
