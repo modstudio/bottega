@@ -406,6 +406,32 @@ export function authorWindowDecision(
   return postDecision({ recentPosts, duplicate })
 }
 
+function recordRecipients(
+  messageId: number,
+  audience: string,
+  kind: 'notice' | 'question',
+  clock: number,
+  tags: BoardTag[],
+  project: string | null,
+  database: ReturnType<typeof writableDb>,
+): number {
+  const readers = recipients(
+    audience,
+    clock,
+    tags,
+    database,
+    presenceFacts(database, clock),
+    project,
+  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
+  const add = database.query(
+    `INSERT OR IGNORE INTO board_receipt
+     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,1,NULL,NULL)`,
+  )
+  for (const reader of readers) add.run(messageId, reader)
+  return readers.length
+}
+
 export function insertRootMessage(
   kind: 'notice' | 'question',
   input: PostNoticeInput,
@@ -522,21 +548,16 @@ export function insertRootMessage(
     `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin) VALUES (?,?,?,?)`,
   )
   for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
-  const add = database.query(
-    `INSERT OR IGNORE INTO board_receipt
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,1,NULL,NULL)`,
-  )
-  const postingRecipients = recipients(
+  const reached = recordRecipients(
+    id,
     audienceExpression,
+    kind,
     clock,
     tags,
-    database,
-    presenceFacts(database, clock),
     origin.project,
-  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
-  for (const reader of postingRecipients) add.run(id, reader)
-  return postNoticeResult(id, false, postingRecipients.length)
+    database,
+  )
+  return postNoticeResult(id, false, reached)
 }
 
 export function messageRows(database = db()): MessageRow[] {
