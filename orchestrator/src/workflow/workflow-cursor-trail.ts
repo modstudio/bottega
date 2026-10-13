@@ -22,7 +22,7 @@ export type ArgumentReboundEvent = {
 
 export type CursorTrailEntry = ClosedStep | ArgumentReboundEvent
 
-export const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
+const isClosedStep = (entry: CursorTrailEntry): entry is ClosedStep => !('event' in entry)
 
 export function withSelfRuling(
   result: string,
