@@ -332,7 +332,7 @@ export type RecordApiClient = {
   openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
 }
 
-export type RecordBoardStreamSource = {
+type RecordBoardStreamSource = {
   read(): Promise<Uint8Array | null>
 }
 
