@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { type CategoryExecutionRow, newestCategoryExecutions } from './enforcement-records.ts'
+import {
+  type CategoryExecutionRow,
+  newestCategoryExecutions,
+  refilledCategoryExecutions,
+} from './enforcement-records.ts'
 
 const row = (overrides: Partial<CategoryExecutionRow> = {}): CategoryExecutionRow => ({
   category: 'file-length',
@@ -29,4 +33,85 @@ test('category records prefer the newest eligible passing project gate', () => {
     remaining: 4,
     finishedAt: '2026-10-12T11:00:00.000Z',
   })
+})
+
+test('zero followed by a positive count reports the refill', () => {
+  expect(
+    refilledCategoryExecutions(
+      [row({ remaining: 0 }), row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' })],
+      '/work/project',
+    ),
+  ).toEqual([
+    {
+      category: 'file-length',
+      remaining: 4,
+      finishedAt: '2026-10-12T11:00:00.000Z',
+      lastZeroFinishedAt: '2026-10-12T10:00:00.000Z',
+    },
+  ])
+})
+
+test.each([
+  {
+    name: 'positive then zero then zero',
+    rows: [
+      row(),
+      row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z', remaining: 0 }),
+      row({ gateId: 3, finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
+    ],
+  },
+  {
+    name: 'never zero',
+    rows: [row(), row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' })],
+  },
+  {
+    name: 'zero then positive then zero',
+    rows: [
+      row({ remaining: 0 }),
+      row({ gateId: 2, finishedAt: '2026-10-12T11:00:00.000Z' }),
+      row({ gateId: 3, finishedAt: '2026-10-12T12:00:00.000Z', remaining: 0 }),
+    ],
+  },
+])('$name does not report a refill', ({ rows }) => {
+  expect(refilledCategoryExecutions(rows, '/work/project')).toEqual([])
+})
+
+test('a failed positive gate after zero is ignored', () => {
+  expect(
+    refilledCategoryExecutions(
+      [row({ remaining: 0 }), row({ gateId: 2, gateExitCode: 1 })],
+      '/work/project',
+    ),
+  ).toEqual([])
+})
+
+test('another project rows are ignored', () => {
+  expect(
+    refilledCategoryExecutions(
+      [row({ remaining: 0 }), row({ gateId: 2, cwd: '/work/other' })],
+      '/work/project',
+    ),
+  ).toEqual([])
+})
+
+test('categories are judged independently', () => {
+  const result = refilledCategoryExecutions(
+    [
+      row({ category: 'file-length', remaining: 0 }),
+      row({ category: 'dead-code', remaining: 3 }),
+      row({
+        category: 'file-length',
+        gateId: 2,
+        finishedAt: '2026-10-12T11:00:00.000Z',
+      }),
+      row({
+        category: 'dead-code',
+        gateId: 2,
+        finishedAt: '2026-10-12T11:00:00.000Z',
+        remaining: 0,
+      }),
+    ],
+    '/work/project',
+  )
+  expect(result.map(({ category }) => category)).toEqual(['file-length'])
 })
