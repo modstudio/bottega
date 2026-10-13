@@ -118,6 +118,7 @@ try {
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE doc_author_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_invalid_migration OWNER ${RECORD_OWNER_ROLE};
@@ -125,6 +126,7 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_author_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'board_shared_space_migration')
   postgres(
@@ -139,6 +141,8 @@ try {
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
+  const docAuthorMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_author_migration`
+  const docAuthorMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_author_migration`
   const publicRoleMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/public_role_migration`
   const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
   const boardSharedSpaceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_migration`
@@ -194,6 +198,21 @@ try {
     },
   )
   if (docRevisionMigration !== 0) process.exit(docRevisionMigration)
+
+  const docAuthorMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-doc-revision-author.test.ts',
+    ],
+    {
+      ORCH_TEST_DOC_AUTHOR_MIGRATION_URL: docAuthorMigrationUrl,
+      ORCH_TEST_DOC_AUTHOR_MIGRATION_SUPERUSER_URL: docAuthorMigrationSuperuserUrl,
+    },
+  )
+  if (docAuthorMigration !== 0) process.exit(docAuthorMigration)
 
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
@@ -257,6 +276,7 @@ try {
         DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS doc_author_migration WITH (FORCE);
         DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
