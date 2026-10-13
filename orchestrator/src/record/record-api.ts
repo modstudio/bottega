@@ -16,6 +16,10 @@ import {
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
+import {
+  type RecordInvitationRouteDeps,
+  registerRecordInvitationRoute,
+} from './record-api-invitations.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
@@ -50,7 +54,6 @@ import {
   type RecordDocListInput,
   type RecordDocRevision,
 } from './record-docs.ts'
-import type { HostedRecordInvitation } from './record-invitations.ts'
 import {
   type RecordProject,
   RecordProjectError,
@@ -84,7 +87,7 @@ type ApiEnvironment = {
 }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordApiDeps
-type RecordApiDeps = {
+type RecordApiDeps = RecordInvitationRouteDeps & {
   recordUrl: string
   allowedOrigins?: string[]
   auth: { handler(request: Request): Response | Promise<Response> }
@@ -92,11 +95,6 @@ type RecordApiDeps = {
   readHealth(): Promise<{ ok: boolean; migrations: number }>
   readCommit(): string | undefined
   setActiveSpace(headers: Headers, spaceId: string): Promise<void>
-  listInvitations(input: {
-    url: string
-    userId: string
-    email: string
-  }): Promise<HostedRecordInvitation[]>
   readRuns(
     input: Tenant & {
       limit: number
@@ -313,19 +311,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
-  app.get('/v1/invitations', async (context) => {
-    const identity = context.get('identity')
-    const email = identity.user.email
-    if (typeof email !== 'string' || !email)
-      return context.json({ error: 'record identity has no email' }, 500)
-    return context.json(
-      await deps.listInvitations({
-        url: deps.recordUrl,
-        userId: identity.user.id,
-        email,
-      }),
-    )
-  })
+  registerRecordInvitationRoute(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z

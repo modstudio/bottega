@@ -26,7 +26,7 @@ export const identity: RecordIdentity = {
   ],
 }
 
-export function idleBoardDeps(): RecordBoardDeps {
+export function idleBoardDeps(): RecordBoardDeps & { listInvitations: () => Promise<[]> } {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
@@ -51,6 +51,7 @@ export function idleBoardDeps(): RecordBoardDeps {
     releaseBoardClaim: unused,
     listBoardClaims: unused,
     releaseBoardTaskClaims: unused,
+    listInvitations: async () => [],
   }
 }
 

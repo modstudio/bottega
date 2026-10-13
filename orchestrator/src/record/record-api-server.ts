@@ -162,18 +162,9 @@ function serveRecordApi(
   return server
 }
 
-export async function startRecordApiServer(
-  environment: ServerEnvironment = process.env,
-  testDependencies?: { sendInvitation: NonNullable<Parameters<typeof recordAuth>[4]> },
-) {
+export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
-  const auth = recordAuth(
-    config.recordUrl,
-    environment,
-    config.authDatabaseUrl,
-    undefined,
-    testDependencies?.sendInvitation,
-  )
+  const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()

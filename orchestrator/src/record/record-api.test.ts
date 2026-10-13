@@ -18,7 +18,6 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
     setActiveSpace: async () => undefined,
-    listInvitations: async () => [],
     readHealth: async () => ({ ok: true, migrations: 14 }),
     readCommit: () => undefined,
     readRuns: async () => [],
@@ -92,24 +91,6 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
-  test('the invitations route derives its user and email from the authenticated identity', async () => {
-    const calls: Array<{ url: string; userId: string; email: string }> = []
-    const app = appWith(identity, {
-      listInvitations: async (input: { url: string; userId: string; email: string }) => {
-        calls.push(input)
-        return []
-      },
-    })
-    expect((await app.request('/v1/invitations')).status).toBe(200)
-    expect(calls).toEqual([
-      {
-        url: 'postgres://record.test/record',
-        userId: identity.user.id,
-        email: String(identity.user.email),
-      },
-    ])
-  })
-
   test('the revisions route forwards its audience to the record service', async () => {
     const listDocRevisions = mock(async () => [])
     const app = appWith(identity, { listDocRevisions })
