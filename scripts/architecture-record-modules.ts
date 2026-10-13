@@ -46,9 +46,11 @@ export const recordModules: RecordModule[] = [
     './record-review-values.ts',
     './record-sync-contract.ts',
     './record-sync-decision.ts',
+    './record-sync-evidence-lookup.ts',
     './record-sync-principal.ts',
     './score-sync.ts',
   ]),
+  module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',
     './record-auth.ts',
