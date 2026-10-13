@@ -14,20 +14,20 @@ const OWN_SUBJECT_ID = '01990000-0000-7000-8000-000000001306'
 const RELATED_SUBJECT_ID = '01990000-0000-7000-8000-000000001307'
 
 realPostgres('Bun SQL jsonb binding', () => {
-  test('stores a raw structured value as an array and a serialised value as a string', async () => {
+  test('stores a raw structured value as an array and a serialized value as a string', async () => {
     const sql = new SQL(adminUrl!)
     try {
       await sql`CREATE TEMP TABLE jsonb_binding_proof (name text PRIMARY KEY, value jsonb NOT NULL)`
       const value = ['src/article.ts']
       await sql`INSERT INTO jsonb_binding_proof VALUES ('raw', ${value}::jsonb)`
-      await sql`INSERT INTO jsonb_binding_proof VALUES ('serialised', ${JSON.stringify(value)}::jsonb)`
+      await sql`INSERT INTO jsonb_binding_proof VALUES ('serialized', ${JSON.stringify(value)}::jsonb)`
       await sql`INSERT INTO jsonb_binding_proof VALUES ('helper', ${bindJsonb(sql, value)})`
       const rows =
         await sql`SELECT name,jsonb_typeof(value) AS type FROM jsonb_binding_proof ORDER BY name`
       expect([...rows]).toEqual([
         { name: 'helper', type: 'array' },
         { name: 'raw', type: 'array' },
-        { name: 'serialised', type: 'string' },
+        { name: 'serialized', type: 'string' },
       ])
     } finally {
       await sql.close()
