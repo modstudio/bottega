@@ -100,7 +100,7 @@ const NAME_GAP = 4
 /**
  * A box's first line is its name. Its line positions are in ems, which would follow
  * each line's own smaller size, so they are fixed in pixels at the drawing's text size
- * and the description is moved down by the gap, keeping the block centred.
+ * and the description is moved down by the gap, keeping the block centered.
  */
 function spaceBoxDescriptions(drawing: SVGSVGElement) {
   const size = Number.parseFloat(cssToken('--docs-diagram-text')) || 14
@@ -122,7 +122,7 @@ const GROUP_LABEL_INSET = 12
 /** The backing behind a group's title, so a connector crossing it does not strike through the words. */
 const GROUP_LABEL_BACKING = 4
 
-/** A group's title sits in its top-left corner on a backing of the group's own colour. */
+/** A group's title sits in its top-left corner on a backing of the group's own color. */
 function cornerGroupLabels(drawing: SVGSVGElement) {
   for (const group of drawing.querySelectorAll('.cluster')) {
     const box = group.querySelector('rect')
