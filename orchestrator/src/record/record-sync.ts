@@ -460,6 +460,7 @@ function questionValues(row: Payload, projectId: string | null) {
     why: nullableString(row.why),
     askedVia: nullableString(row.askedVia),
     answer: nullableString(row.answer),
+    answerBasis: nullableString(row.answerBasis),
     answeredAt: nullableDate(row.answeredAt),
     answeredBy: nullableString(row.answeredBy),
     answererKind: nullableString(row.answererKind),

@@ -25,7 +25,7 @@ export function listRulings(options: {
       `SELECT q.id,q.run_id,q.workflow_cursor_id,q.workflow_key,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
-              q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,q.asked_via,
+              q.asked_at,q.question,q.answer,q.answer_basis,q.answered_at,q.answered_by,q.asked_via,
               q.answerer_kind,q.answer_channel,q.closed_at,q.close_reason,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
               q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at

@@ -93,14 +93,16 @@ function selfRule(d: Database, question?: string): string {
     {},
     ports,
     undefined,
-    { ruling: 'Proceed.', question, channel: 'mcp' },
+    { ruling: 'Proceed.', basis: 'specification line 4', question, channel: 'mcp' },
   )
 }
 
 test('self-ruling records the answered question and closes the step atomically', () => {
   const d = database()
   openAtRuling(d)
-  expect(selfRule(d)).toContain('Complete the review.')
+  const result = selfRule(d)
+  expect(result).toContain('Complete the review.')
+  expect(result).toContain('Self-ruling: Proceed.\nBasis: specification line 4')
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual({
     ordinal: 4,
     step_slug: 'complete',
@@ -109,7 +111,7 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(
     d
       .query(
-        `SELECT workflow_cursor_id,workflow_step_ordinal,workflow_step_slug,question,answer,
+        `SELECT workflow_cursor_id,workflow_step_ordinal,workflow_step_slug,question,answer,answer_basis,
                 answerer_kind,answer_channel,answered_by
            FROM question`,
       )
@@ -120,6 +122,7 @@ test('self-ruling records the answered question and closes the step atomically',
     workflow_step_slug: 'ship-triage',
     question: 'Triage every finding',
     answer: 'Proceed.',
+    answer_basis: 'specification line 4',
     answerer_kind: 'agent',
     answer_channel: 'mcp',
     answered_by: expect.stringMatching(/^operator:/),

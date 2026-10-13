@@ -31,6 +31,7 @@ describe('run ingest', () => {
           asked_at: '2026-09-24T12:00:00.000Z',
           question: 'Proceed?',
           answer: 'Yes',
+          answer_basis: 'specification line 4',
           answered_at: '2026-09-24T12:01:00.000Z',
           answered_by: 'owner',
           asked_via: 'workflow',

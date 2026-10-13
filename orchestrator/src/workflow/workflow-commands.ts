@@ -475,6 +475,10 @@ async function stepCommand(
 }
 
 function nextCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+  const selfRuling = flagValue(argv, 'self-ruling')
+  const basis = flagValue(argv, 'basis')
+  if (basis !== undefined && selfRuling === undefined)
+    throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -506,10 +510,11 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     evidenceFromArgv(argv),
     productionFloorPorts() as FloorEvidencePorts,
     cursor,
-    flagValue(argv, 'self-ruling') === undefined
+    selfRuling === undefined
       ? undefined
       : {
-          ruling: flagValue(argv, 'self-ruling')!,
+          ruling: selfRuling,
+          basis: basis ?? '',
           question: flagValue(argv, 'question'),
           channel: 'cli',
         },

@@ -11,6 +11,7 @@ function yamlLiteral(value: string): string {
 export function renderRulingFileText(input: {
   question: string
   ruling: string
+  basis?: string | null
   answererKind: string | null
   runId: number | null
   workflow?: { slug: string; mode: string; cursorId: number } | null
@@ -33,6 +34,7 @@ export function renderRulingFileText(input: {
     `answerer: ${input.answererKind ?? 'unknown'}`,
     `question: ${yamlLiteral(input.question)}`,
     `ruling: ${yamlLiteral(input.ruling)}`,
+    ...(input.basis ? [`basis: ${yamlLiteral(input.basis)}`] : []),
     '---',
     '',
     'The recorded ruling is filed for demand delivery.',

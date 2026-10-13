@@ -125,14 +125,14 @@ function autonomyInstruction(
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
   if (resolved === 'auto' && declared === 'ask')
     return maySelfRule
-      ? 'rule this step yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+      ? 'rule this step yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
       : 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
   if (resolved === 'review')
     return maySelfRule
-      ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+      ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
       : 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
   return maySelfRule
-    ? 'rule yourself and record it while closing with `next_workflow_step` input `self_ruling` or `orch workflow next --self-ruling`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
     : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
 }
 

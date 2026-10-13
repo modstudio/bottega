@@ -140,6 +140,7 @@ export function answerWorkflowQuestion(
     questionId: number
     cursorId: number
     ruling: string
+    basis?: string | null
     at: string
     actor: string | null
     fromOperator: boolean
@@ -150,12 +151,13 @@ export function answerWorkflowQuestion(
 ): void {
   const changed = database
     .query(
-      `UPDATE question SET answer=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
+      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
         revision=revision+1
        WHERE id=? AND workflow_cursor_id=? AND ${questionOpenSql('question')}`,
     )
     .run(
       input.ruling,
+      input.basis ?? null,
       input.at,
       rulingActor(input.fromOperator, input.actor),
       input.fromOperator ? 'operator' : 'agent',

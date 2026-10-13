@@ -79,6 +79,7 @@ type QuestionRow = {
   workflow_updated_at: string | null
   question: string
   answer: string | null
+  answer_basis: string | null
   answered_at: string | null
   answered_by: string | null
   answerer_kind: string | null
@@ -205,7 +206,7 @@ function loadQuestion(questionId: number): QuestionRow {
       `SELECT q.id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
-              q.question, q.answer,
+              q.question, q.answer, q.answer_basis,
               q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
               q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
@@ -372,6 +373,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   const body = renderRulingFileText({
     question: row.question,
     ruling,
+    basis: row.replacement === null ? row.answer_basis : null,
     answererKind: answererKind(row),
     runId: row.run_id,
     workflow:

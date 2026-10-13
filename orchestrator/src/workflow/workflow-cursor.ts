@@ -627,7 +627,7 @@ function nextWorkflowStepImpl(
       throw new Error('--self-ruling and --ruling are mutually exclusive')
     const step = composition.steps[row.ordinal]!
     const floors = catalogueFloorsFor(step)
-    const questionId = recordWorkflowSelfRuling(
+    const recorded = recordWorkflowSelfRuling(
       {
         cursorId: row.id,
         workflowKey: row.workflow_key,
@@ -640,7 +640,7 @@ function nextWorkflowStepImpl(
       },
       d,
     )
-    effectiveEvidence = { ...evidence, ruling: questionId }
+    effectiveEvidence = { ...evidence, ruling: recorded.questionId }
   }
   const next = composition.steps[row.ordinal + 1] ?? null
   const decision = decideCursorTransition(cursorValue(row.ordinal, row.step_slug, row.state), {
@@ -688,10 +688,11 @@ function nextWorkflowStepImpl(
     const reviews = closedSteps
       .filter((step) => step.review)
       .map((step) => `For your review: ${step.n}. ${step.slug} — ${step.note}`)
-    return [
+    const result = [
       `${cursorName(slug, mode, row.workflow_key, true)} is finished: ${closedSteps.length} steps closed.`,
       ...reviews,
     ].join('\n')
+    return selfRuling ? `${result}\nSelf-ruling: ${recordedSelfRulingText(selfRuling)}` : result
   }
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
@@ -704,7 +705,7 @@ function nextWorkflowStepImpl(
     at,
     row.id,
   )
-  return renderWorkflowStep({
+  const rendered = renderWorkflowStep({
     ...withWorkflowTextFacts(
       getWorkflowStep(
         slug,
@@ -724,6 +725,11 @@ function nextWorkflowStepImpl(
     ),
     cursor: row.id,
   })
+  return selfRuling ? `${rendered}\nSelf-ruling: ${recordedSelfRulingText(selfRuling)}` : rendered
+}
+
+function recordedSelfRulingText(input: WorkflowSelfRulingInput): string {
+  return `${input.ruling.trim()}\nBasis: ${input.basis.trim()}`
 }
 
 export function nextWorkflowStep(

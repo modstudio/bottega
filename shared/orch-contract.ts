@@ -266,6 +266,7 @@ const RulingListRowSchema = z
     asked_at: z.string(),
     question: z.string(),
     answer: nullableString,
+    answer_basis: nullableString,
     answered_at: nullableString,
     answered_by: nullableString,
     asked_via: z.enum(ASKED_VIA_VALUES).nullable(),

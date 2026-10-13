@@ -10,6 +10,7 @@ import { selfRulingRefusal } from './workflow-self-ruling.ts'
 
 export type WorkflowSelfRulingInput = {
   ruling: string
+  basis: string
   question?: string
   channel: 'cli' | 'mcp'
 }
@@ -26,10 +27,11 @@ export function recordWorkflowSelfRuling(
     selfRuling: WorkflowSelfRulingInput
   },
   database: Database,
-): number {
+): { questionId: number } {
   const ruling = input.selfRuling.ruling.trim()
   if (!ruling) throw new Error('--self-ruling is required')
-  const refusal = selfRulingRefusal(input.resolvedAutonomy, input.floors)
+  const basis = input.selfRuling.basis.trim()
+  const refusal = selfRulingRefusal(input.resolvedAutonomy, input.floors, basis)
   if (refusal) throw new Error(refusal)
   const at = nowIso()
   const questionId = upsertWorkflowQuestion(
@@ -48,6 +50,7 @@ export function recordWorkflowSelfRuling(
       questionId,
       cursorId: input.cursorId,
       ruling,
+      basis,
       at,
       actor: sessionId(),
       fromOperator: false,
@@ -55,5 +58,5 @@ export function recordWorkflowSelfRuling(
     },
     database,
   )
-  return questionId
+  return { questionId }
 }

@@ -120,6 +120,15 @@ test('workflow probe refuses a missing command', async () => {
   )
 })
 
+test('workflow next refuses --basis without --self-ruling at the command edge', async () => {
+  expect(
+    workflowCommand(
+      ['workflow', 'next', 'fixture', '--basis', 'specification line 4'],
+      presentation([]),
+    ),
+  ).rejects.toThrow('--basis requires --self-ruling')
+})
+
 test('workflow exec refuses a missing command', async () => {
   expect(workflowCommand(['workflow', 'exec', '--'], presentation([]))).rejects.toThrow(
     'orch workflow exec needs a command after --',

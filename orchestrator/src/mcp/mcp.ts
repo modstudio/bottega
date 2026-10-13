@@ -515,6 +515,7 @@ export function createDocsMcpServer(): McpServer {
         note: z.string().trim().min(1),
         ruling: z.number().int().positive().optional(),
         self_ruling: z.string().trim().min(1).optional(),
+        self_ruling_basis: z.string().optional(),
         question: z.string().trim().min(1).optional(),
         review: z.number().int().positive().optional(),
         gate: z.number().int().positive().optional(),
@@ -534,6 +535,7 @@ export function createDocsMcpServer(): McpServer {
       note,
       ruling,
       self_ruling,
+      self_ruling_basis,
       question,
       review,
       gate,
@@ -544,6 +546,10 @@ export function createDocsMcpServer(): McpServer {
       satisfies,
       cursor,
     }) => {
+      if (self_ruling_basis !== undefined && self_ruling === undefined)
+        throw new Error(
+          'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
+        )
       const workflowArgs = args ?? {}
       const context = mcpWorkflowCursorContext()
       return text(
@@ -568,7 +574,14 @@ export function createDocsMcpServer(): McpServer {
           { ruling, review, gate, run, artifact, task, defer, satisfies },
           undefined,
           cursor,
-          self_ruling === undefined ? undefined : { ruling: self_ruling, question, channel: 'mcp' },
+          self_ruling === undefined
+            ? undefined
+            : {
+                ruling: self_ruling,
+                basis: self_ruling_basis ?? '',
+                question,
+                channel: 'mcp',
+              },
         ),
       )
     },
