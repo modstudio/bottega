@@ -103,12 +103,10 @@ export function boardWatchPullEvent(
 ): BoardWatchEvent | null {
   if (result.kind === 'failed') return { kind: 'pull-failed', reason: result.reason ?? 'failed' }
   const behind = target !== null && BigInt(cursor) < BigInt(target)
-  const progressed = (result.applied ?? 0) > 0 || (target !== null && !behind)
   if (behind || (result.kind === 'incomplete' && target === null)) {
     return { kind: 'pull-incomplete', progressed: (result.applied ?? 0) > 0 }
   }
-  if (progressed || result.kind === 'ok') return { kind: 'pull-progressed' }
-  return null
+  return { kind: 'pull-progressed' }
 }
 
 /** Adopt an unknown started commit; exit only for two different concrete commits. */
@@ -219,14 +217,9 @@ function decidePullFailed(
   jitter: number,
   reason: string,
 ): BoardWatchDecision {
-  return decidePullRetry(
-    { ...state, pullFailedReason: reason },
-    jitter,
-    {
-      announce:
-        state.pullFailedReason === reason ? null : { kind: 'pull-failed', detail: reason },
-    },
-  )
+  return decidePullRetry({ ...state, pullFailedReason: reason }, jitter, {
+    announce: state.pullFailedReason === reason ? null : { kind: 'pull-failed', detail: reason },
+  })
 }
 
 function decidePullProgressed(state: BoardWatchState): BoardWatchDecision {

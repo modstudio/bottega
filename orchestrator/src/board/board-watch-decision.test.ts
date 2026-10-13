@@ -142,6 +142,32 @@ test('a failed pull stays on the stream, announces, and retries on backoff', () 
   })
 })
 
+test('a failed pull is announced once until a different reason or a success', () => {
+  const first = decideBoardWatch(
+    initialBoardWatchState(),
+    { kind: 'pull-failed', reason: 'record API 500' },
+    fullJitter,
+  )
+  expect(first.announce).toEqual({ kind: 'pull-failed', detail: 'record API 500' })
+  const same = decideBoardWatch(
+    first.state,
+    { kind: 'pull-failed', reason: 'record API 500' },
+    fullJitter,
+  )
+  expect(same.announce).toBeNull()
+  expect(same.pull).toBe(true)
+  const different = decideBoardWatch(
+    same.state,
+    { kind: 'pull-failed', reason: 'offline' },
+    fullJitter,
+  )
+  expect(different.announce).toEqual({ kind: 'pull-failed', detail: 'offline' })
+  const recovered = decideBoardWatch(different.state, { kind: 'pull-progressed' }, fullJitter)
+  expect(recovered.announce).toEqual({ kind: 'pulling-again' })
+  const later = decideBoardWatch(recovered.state, { kind: 'pull-progressed' }, fullJitter)
+  expect(later.announce).toBeNull()
+})
+
 test('an incomplete pull retries on the failed-pull backoff and resets on progress', () => {
   const first = decideBoardWatch(
     initialBoardWatchState(),
@@ -222,7 +248,7 @@ test('timer due events prefer silence, then the build check, then the slow pull'
   ).toBe(BOARD_WATCH_SILENCE_MS)
 })
 
-test('a pull result becomes failed, incomplete with progress, progressed, or nothing', () => {
+test('a pull result becomes failed, incomplete with progress, or progressed', () => {
   expect(boardWatchPullEvent({ kind: 'failed', reason: 'offline' }, '5', '9')).toEqual({
     kind: 'pull-failed',
     reason: 'offline',
@@ -245,7 +271,9 @@ test('a pull result becomes failed, incomplete with progress, progressed, or not
   expect(boardWatchPullEvent({ kind: 'incomplete', applied: 0 }, '9', '9')).toEqual({
     kind: 'pull-progressed',
   })
-  expect(boardWatchPullEvent({ kind: 'ok', applied: 0 }, '5', null)).toBeNull()
+  expect(boardWatchPullEvent({ kind: 'ok', applied: 0 }, '5', null)).toEqual({
+    kind: 'pull-progressed',
+  })
 })
 
 test('an unreadable commit is not a newer build; a later concrete one can be', () => {

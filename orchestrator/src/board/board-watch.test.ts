@@ -25,29 +25,50 @@ import { BOARD_WATCH_FRAME_BUFFER_MAX } from './board-watch-frames.ts'
 const eventFrame = (revision: string) =>
   `id: ${revision}\nevent: ${BOARD_STREAM_EVENT.name}\ndata: ${JSON.stringify({ revision })}\n\n`
 
+const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
+
 class ScriptedSource {
-  #queue: Array<Uint8Array | null> = []
-  #wait: ((value: Uint8Array | null) => void) | null = null
+  #queue: Uint8Array[] = []
+  #wait: {
+    resolve: (value: Uint8Array | null) => void
+    reject: (error: unknown) => void
+  } | null = null
+  #aborted = false
+
+  constructor(signal?: AbortSignal) {
+    if (signal?.aborted) this.#abort()
+    else signal?.addEventListener('abort', () => this.#abort(), { once: true })
+  }
 
   push(text: string) {
+    if (this.#aborted) return
     this.#deliver(new TextEncoder().encode(text))
   }
   close() {
-    this.#deliver(null)
+    this.#abort()
   }
-  #deliver(value: Uint8Array | null) {
+  #abort() {
+    if (this.#aborted) return
+    this.#aborted = true
+    if (!this.#wait) return
+    const wait = this.#wait
+    this.#wait = null
+    wait.reject(abortError())
+  }
+  #deliver(value: Uint8Array) {
     if (this.#wait) {
       const wait = this.#wait
       this.#wait = null
-      wait(value)
+      wait.resolve(value)
       return
     }
     this.#queue.push(value)
   }
   read() {
+    if (this.#aborted) return Promise.reject(abortError())
     if (this.#queue.length > 0) return Promise.resolve(this.#queue.shift()!)
-    return new Promise<Uint8Array | null>((resolve) => {
-      this.#wait = resolve
+    return new Promise<Uint8Array | null>((resolve, reject) => {
+      this.#wait = { resolve, reject }
     })
   }
 }
@@ -142,11 +163,11 @@ async function startLoop(
   const input: BoardWatchLoopInput = {
     now: () => clock.now(),
     wait: clock.wait,
-    openStream: async () => {
+    openStream: async (signal) => {
       opens += 1
       if (openKind === 'unauthorized') return { kind: 'unauthorized' }
       if (openKind) return { kind: 'error', reason: 'denied' }
-      const current = new ScriptedSource()
+      const current = new ScriptedSource(signal)
       source = current
       return { kind: 'stream', source: current, close: () => current.close() }
     },
@@ -155,7 +176,18 @@ async function startLoop(
       (async () => {
         pullCount += 1
         if (hangingPull) {
-          await new Promise<void>((resolve) => pulls.push(resolve))
+          await new Promise<void>((resolve, reject) => {
+            const onAbort = () => reject(abortError())
+            if (ac.signal.aborted) {
+              onAbort()
+              return
+            }
+            ac.signal.addEventListener('abort', onAbort, { once: true })
+            pulls.push(() => {
+              ac.signal.removeEventListener('abort', onAbort)
+              resolve()
+            })
+          })
           return { kind: 'ok', applied: 1 }
         }
         if (overrides.pullResults && overrides.pullResults.length > 0)
@@ -197,6 +229,7 @@ async function startLoop(
 }
 
 const ended = (line: string, suffix: string) => line.endsWith(suffix)
+const loggedAbort = (logs: string[]) => logs.some((line) => /abort/i.test(line))
 
 test('an unconfigured machine prints the remedy and exits zero', async () => {
   const run = await startLoop({ configured: false })
@@ -399,10 +432,64 @@ test('the launchd template restarts only after an unsuccessful exit', () => {
   )
 })
 
-test('a stop signal exits zero', async () => {
+test('a stop signal during a pending read exits zero and prints nothing for the abort', async () => {
   const run = await startLoop()
   run.ac.abort()
   expect(await run.done).toBe(0)
+  await run.clock.flush()
+  expect(loggedAbort(run.logs)).toBe(false)
+})
+
+test('a stop signal during a pull in flight exits zero and prints nothing for the abort', async () => {
+  const run = await startLoop({ hangingPull: true })
+  expect(run.pullCount()).toBe(1)
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+  await run.clock.flush()
+  expect(loggedAbort(run.logs)).toBe(false)
+})
+
+test('a pull abort that is not the watcher shutdown is still a failed pull', async () => {
+  const run = await startLoop({
+    pull: async () => {
+      throw abortError()
+    },
+  })
+  expect(run.logs.some((line) => line.includes('pull failed The operation was aborted.'))).toBe(
+    true,
+  )
+  expect(run.opens()).toBe(1)
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('a failing pull is announced once until the reason changes or it succeeds', async () => {
+  const run = await startLoop({
+    pullResults: [
+      { kind: 'failed', reason: 'record API 500' },
+      { kind: 'failed', reason: 'record API 500' },
+      { kind: 'failed', reason: 'offline' },
+      { kind: 'ok', applied: 2 },
+    ],
+  })
+  expect(run.logs.filter((line) => line.includes('pull failed')).length).toBe(1)
+  expect(run.logs.some((line) => line.includes('pull failed record API 500'))).toBe(true)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  expect(run.logs.filter((line) => line.includes('pull failed')).length).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS * 2)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(3)
+  expect(run.logs.filter((line) => line.includes('pull failed')).length).toBe(2)
+  expect(run.logs.some((line) => line.includes('pull failed offline'))).toBe(true)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS * 4)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(4)
+  expect(run.logs.filter((line) => ended(line, ' pulling again')).length).toBe(1)
+  expect(run.logs.some((line) => ended(line, ' pulled 2'))).toBe(true)
+  run.ac.abort()
+  await run.done
 })
 
 test('the loop takes no action the decision did not return', async () => {
