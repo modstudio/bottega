@@ -377,7 +377,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/machine-config.ts', [
-    '@decimalturn/toml-patch',
     'node:fs',
     'node:path',
     'zod',
@@ -580,7 +579,6 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',
-    './mcp-reader-scope.ts',
     './sandbox-runtime.ts',
   ]),
   ...confinementModules,
