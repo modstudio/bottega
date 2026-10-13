@@ -1,7 +1,7 @@
 // concern: monitor-notices
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { randomUUID } from 'node:crypto'
 import {
   hostedBoardVerificationWarning,
   takeHostedBoardVerificationTransition,
@@ -320,6 +320,6 @@ export async function markMonitorNoticesDeliveredWithHosted(
       ids: board,
       clock: Date.parse(deliveredAt),
       deliveryPoint: 'heartbeat-monitor',
-      emissionId: newRecordId(),
+      emissionId: randomUUID(),
     })
 }

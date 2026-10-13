@@ -452,17 +452,7 @@ export async function postHostedBoardMessage(
     authorProjectId: null,
   }
   return withBoardTenant(input, true, async (tx) => {
-    const projectName = hostedProjectNameForAudience(audience, input.project)
-    const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-    requested.authorProjectId = input.project
-      ? await resolveVisibleProjectId(tx, input.project)
-      : null
-    if (audience.kind === 'architects' && audience.value)
-      await resolveVisibleProjectId(tx, audience.value)
-    const derived = hostedBoardScope(audience, projectId)
-    requested.scopeProjectIds = derived.scopeProjectIds
-    requested.recipientUserIds = derived.recipientUserIds
-    requested.sharedSpaceReach = derived.sharedSpaceReach
+    await prepareHostedPostScope(tx, audience, input.project, requested)
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const duplicateId = await duplicateRootId(
@@ -492,6 +482,25 @@ export async function postHostedBoardMessage(
     )
     return viewById(tx, input.id, clock)
   })
+}
+
+async function prepareHostedPostScope(
+  tx: SQL,
+  audience: Audience,
+  postingProject: string | undefined,
+  requested: HostedBoardCreateContent,
+): Promise<void> {
+  const projectName = hostedProjectNameForAudience(audience, postingProject)
+  const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
+  requested.authorProjectId = postingProject
+    ? await resolveVisibleProjectId(tx, postingProject)
+    : null
+  if (audience.kind === 'architects' && audience.value)
+    await resolveVisibleProjectId(tx, audience.value)
+  const derived = hostedBoardScope(audience, projectId)
+  requested.scopeProjectIds = derived.scopeProjectIds
+  requested.recipientUserIds = derived.recipientUserIds
+  requested.sharedSpaceReach = derived.sharedSpaceReach
 }
 
 export async function postHostedBoardNoticeInTransaction(

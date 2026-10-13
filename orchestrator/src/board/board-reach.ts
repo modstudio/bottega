@@ -74,28 +74,37 @@ export function boardReachConcern(
   resolvedTaskProject: string | null,
   postingProject: string | null = null,
 ): BoardReachConcern {
-  if (audience.kind === 'architects') {
-    const project = audience.all ? null : (audience.value ?? postingProject)
-    return project === null
-      ? 'unqualified'
-      : project === readerProject
-        ? 'concerned'
-        : 'not-concerned'
-  }
-  if (audience.kind === 'project' || audience.kind === 'workers')
-    return audience.value === readerProject ? 'concerned' : 'not-concerned'
-  if (audience.kind === 'task') {
-    return resolvedTaskProject === null
-      ? 'unqualified'
-      : resolvedTaskProject === readerProject
-        ? 'concerned'
-        : 'not-concerned'
-  }
+  const byProject = audienceProjectConcern(
+    audience,
+    readerProject,
+    resolvedTaskProject,
+    postingProject,
+  )
+  if (byProject) return byProject
   if (audience.kind === 'session')
     return audience.value === readerSession ? 'concerned' : 'not-concerned'
   if (audience.kind === 'run')
     return readerSession === `run:${audience.value}` ? 'concerned' : 'not-concerned'
   return 'unqualified'
+}
+
+function audienceProjectConcern(
+  audience: Audience,
+  readerProject: string,
+  resolvedTaskProject: string | null,
+  postingProject: string | null,
+): BoardReachConcern | null {
+  if (audience.kind === 'architects')
+    return projectConcern(audience.all ? null : (audience.value ?? postingProject), readerProject)
+  if (audience.kind === 'project' || audience.kind === 'workers')
+    return projectConcern(audience.value, readerProject)
+  if (audience.kind === 'task') return projectConcern(resolvedTaskProject, readerProject)
+  return null
+}
+
+function projectConcern(project: string | null, readerProject: string): BoardReachConcern {
+  if (project === null) return 'unqualified'
+  return project === readerProject ? 'concerned' : 'not-concerned'
 }
 
 function localMessageFacts(id: string, database: Database): MessageFacts | null {

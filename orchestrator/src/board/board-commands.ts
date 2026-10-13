@@ -27,6 +27,9 @@ import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 import { watchHostedBoard } from './board-watch.ts'
 
+const ARCHITECTS_AUDIENCE_HELP =
+  'recipient; architects means this project, architects:all means every project, architects:<project> names one project'
+
 function registerBoardWatchCommand(board: Command): void {
   board
     .command('presence')
@@ -181,10 +184,7 @@ export function registerBoardCommands(program: Command): void {
     })
   board
     .command('post')
-    .requiredOption(
-      '--audience <expr>',
-      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
-    )
+    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
     .option('--task <key>')
@@ -211,10 +211,7 @@ export function registerBoardCommands(program: Command): void {
     })
   board
     .command('ask')
-    .requiredOption(
-      '--audience <expr>',
-      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
-    )
+    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
     .option('--task <key>')
@@ -279,10 +276,7 @@ export function registerBoardCommands(program: Command): void {
   const suggestion = board.command('suggestion')
   suggestion
     .command('post <id>')
-    .requiredOption(
-      '--audience <expr>',
-      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
-    )
+    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
     .option('--title <text>')
     .option('--body <text>')
     .option('--task <key>')

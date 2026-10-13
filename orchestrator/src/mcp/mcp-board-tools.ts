@@ -16,6 +16,9 @@ import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-poli
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
 
+const ARCHITECTS_AUDIENCE_HELP =
+  'Audience architects means this project; architects:all means every project; architects:<project> names one project.'
+
 const result = (value: unknown) => ({
   content: [
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
@@ -27,8 +30,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_ask',
     {
-      description:
-        'Ask an architect-board question. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
+      description: `Ask an architect-board question. ${ARCHITECTS_AUDIENCE_HELP}`,
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -94,8 +96,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_post',
     {
-      description:
-        'Post an architect-board notice. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
+      description: `Post an architect-board notice. ${ARCHITECTS_AUDIENCE_HELP}`,
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -169,8 +170,7 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_suggestion_post',
     {
-      description:
-        'Post an addressed worker suggestion as a new architect notice. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
+      description: `Post an addressed worker suggestion as a new architect notice. ${ARCHITECTS_AUDIENCE_HELP}`,
       inputSchema: z.object({
         id: z.string().regex(/^[1-9]\d*$/),
         audience: z.string().min(1),

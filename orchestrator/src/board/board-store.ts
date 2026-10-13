@@ -313,6 +313,28 @@ function resolvePostOrigin(actor: BoardActor, env: Environment, cwd: string) {
   }
 }
 
+function validateArchitectAudience(
+  actor: BoardActor,
+  audience: Audience,
+  project: string | null,
+  cwd: string,
+  database: ReturnType<typeof writableDb>,
+): void {
+  if (actor.kind === 'architect' && !project && audience.kind !== 'architects')
+    throw new Error(
+      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
+    )
+  if (audience.kind !== 'architects') return
+  if (!audience.all && !audience.value && !project)
+    throw new Error(
+      'plain architects requires a posting project; use architects:all or architects:<project>',
+    )
+  if (audience.value && !projects(undefined, database).some((item) => item.name === audience.value))
+    throw new Error(
+      `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
+    )
+}
+
 function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
   const row = database
     .query(
@@ -408,22 +430,7 @@ export function insertRootMessage(
   )
   if (runRefusal) throw new Error(runRefusal)
   const origin = resolvePostOrigin(actor, env, cwd)
-  if (actor.kind === 'architect' && !origin.project && audience.kind !== 'architects')
-    throw new Error(
-      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
-    )
-  if (audience.kind === 'architects' && !audience.all && !audience.value && !origin.project)
-    throw new Error(
-      'plain architects requires a posting project; use architects:all or architects:<project>',
-    )
-  if (
-    audience.kind === 'architects' &&
-    audience.value &&
-    !projects(undefined, database).some((project) => project.name === audience.value)
-  )
-    throw new Error(
-      `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
-    )
+  validateArchitectAudience(actor, audience, origin.project, cwd, database)
   const ackRefusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
     audience,
