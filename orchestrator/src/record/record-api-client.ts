@@ -677,16 +677,7 @@ export function recordApiClient(): RecordApiClient {
     getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
     putBoardReceipt: (input) =>
       request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input) }),
-    listBoardChanges: (query) => {
-      const search = new URLSearchParams()
-      if (query.after) search.set('after', query.after)
-      if (query.limit) search.set('limit', String(query.limit))
-      const suffix = search.toString()
-      return request(
-        `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
-        query.signal ? { signal: query.signal } : {},
-      )
-    },
+    listBoardChanges: listBoardChangesRequest,
     takeBoardClaim: (input) =>
       request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
     renewBoardClaim: (id, input) =>
@@ -703,6 +694,21 @@ export function recordApiClient(): RecordApiClient {
       request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
     ...recordApiBoardWatchClient(),
   }
+}
+
+function listBoardChangesRequest(query: {
+  after?: string
+  limit?: number
+  signal?: AbortSignal
+}): Promise<HostedBoardChanges> {
+  const search = new URLSearchParams()
+  if (query.after) search.set('after', query.after)
+  if (query.limit) search.set('limit', String(query.limit))
+  const suffix = search.toString()
+  return request(
+    `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
+    query.signal ? { signal: query.signal } : {},
+  )
 }
 
 function recordApiBoardWatchClient(): Pick<
