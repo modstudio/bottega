@@ -127,16 +127,19 @@ export async function runBoardWatchLoop(input: BoardWatchLoopInput): Promise<num
     lastBuild: input.now(),
     startedBuild: input.startedBuild,
   }
-  try {
-    while (!input.signal.aborted) {
+  while (!input.signal.aborted) {
+    try {
       const ended = await oneConnection(input, live, gate)
       if (ended !== null) return ended
+    } catch (error) {
+      if (isWatchShutdownAbort(input.signal, error)) return 0
+      const ended = connectionResult(
+        await applyReconnect(input, live, decide(input, live.state, { kind: 'error' })),
+      )
+      if (ended !== null) return ended
     }
-    return 0
-  } catch (error) {
-    if (isWatchShutdownAbort(input.signal, error)) return 0
-    throw error
   }
+  return 0
 }
 
 async function oneConnection(
