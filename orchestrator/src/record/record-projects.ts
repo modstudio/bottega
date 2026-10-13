@@ -1,6 +1,7 @@
 // concern: record-projects
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
+import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type HostedProjectColumns, hostedProjectColumns } from './record-project-columns.ts'
@@ -112,16 +113,16 @@ export async function upsertHostedProjectRow(
       ${columns.requireCleanMain}, ${columns.color}, ${columns.colorDark}, ${columns.envPrefix},
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
       ${postgresTextArray(tx, columns.secretPaths)}, ${columns.mcpProbeTool},
-      (${columns.mcpReaderTools}::jsonb #>> '{}')::jsonb,
-      (${columns.docs}::jsonb #>> '{}')::jsonb,
-      (${columns.signals}::jsonb #>> '{}')::jsonb,
-      (${columns.review}::jsonb #>> '{}')::jsonb,
-      (${columns.testSubstance}::jsonb #>> '{}')::jsonb,
-      (${columns.mechanicalChecks}::jsonb #>> '{}')::jsonb,
-      (${columns.release}::jsonb #>> '{}')::jsonb,
-      (${columns.states}::jsonb #>> '{}')::jsonb,
-      (${columns.tracker}::jsonb #>> '{}')::jsonb,
-      (${columns.worktree}::jsonb #>> '{}')::jsonb,
+      ${bindJsonb(tx, columns.mcpReaderTools)},
+      ${bindJsonb(tx, columns.docs)},
+      ${bindJsonb(tx, columns.signals)},
+      ${bindJsonb(tx, columns.review)},
+      ${bindJsonb(tx, columns.testSubstance)},
+      ${bindJsonb(tx, columns.mechanicalChecks)},
+      ${bindJsonb(tx, columns.release)},
+      ${bindJsonb(tx, columns.states)},
+      ${bindJsonb(tx, columns.tracker)},
+      ${bindJsonb(tx, columns.worktree)},
       ${input.retiredAt},
       now()
     )

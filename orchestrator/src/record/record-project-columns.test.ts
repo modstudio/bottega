@@ -9,7 +9,7 @@ import {
 const samples = {
   color: { setting: '#fff', column: 'color', value: '#fff' },
   colorDark: { setting: '#000', column: 'colorDark', value: '#000' },
-  docs: { setting: { path: 'docs' }, column: 'docs', value: '{"path":"docs"}' },
+  docs: { setting: { path: 'docs' }, column: 'docs', value: { path: 'docs' } },
   envPrefix: { setting: 'PROBE', column: 'envPrefix', value: 'PROBE' },
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
   keyPrefixes: { setting: ['DEV'], column: 'keyPrefixes', value: ['DEV'] },
@@ -17,33 +17,37 @@ const samples = {
   mcp: { setting: { probe_tool: 'ping' }, column: 'mcpProbeTool', value: 'ping' },
   mcpServer: { setting: 'orch', column: 'mcpServer', value: 'orch' },
   productionBranch: { setting: 'production', column: 'productionBranch', value: 'production' },
-  release: { setting: { depth: 'pr' }, column: 'release', value: '{"depth":"pr"}' },
+  release: { setting: { depth: 'pr' }, column: 'release', value: { depth: 'pr' } },
   requireCleanMain: { setting: false, column: 'requireCleanMain', value: false },
   secretPaths: { setting: ['secret'], column: 'secretPaths', value: ['secret'] },
   signals: {
     setting: { sources: [{ name: 'errors', list: 'error_list' }] },
     column: 'signals',
-    value: '{"sources":[{"name":"errors","list":"error_list"}]}',
+    value: { sources: [{ name: 'errors', list: 'error_list' }] },
   },
   review: {
     setting: { lenses: [{ lens: 'correctness' }] },
     column: 'review',
-    value: '{"lenses":[{"lens":"correctness"}]}',
+    value: { lenses: [{ lens: 'correctness' }] },
   },
   testSubstance: {
     setting: { phpPolicyRules: ['createMock'] },
     column: 'testSubstance',
-    value: '{"phpPolicyRules":["createMock"]}',
+    value: { phpPolicyRules: ['createMock'] },
   },
   mechanicalChecks: {
     setting: { naming: { tool: 'custom names' } },
     column: 'mechanicalChecks',
-    value: '{"naming":{"tool":"custom names"}}',
+    value: { naming: { tool: 'custom names' } },
   },
-  states: { setting: { todo: 'open' }, column: 'states', value: '{"todo":"open"}' },
-  tracker: { setting: { kind: 'hub' }, column: 'tracker', value: '{"kind":"hub"}' },
+  states: { setting: { todo: 'open' }, column: 'states', value: { todo: 'open' } },
+  tracker: { setting: { kind: 'hub' }, column: 'tracker', value: { kind: 'hub' } },
   trunk: { setting: 'develop', column: 'landingBranch', value: 'develop' },
-  worktree: { setting: { notes: 'plain git' }, column: 'worktree', value: '{"notes":"plain git"}' },
+  worktree: {
+    setting: { notes: 'plain git' },
+    column: 'worktree',
+    value: { notes: 'plain git' },
+  },
   workerMcpServers: { setting: ['orch'], column: 'workerMcpServers', value: ['orch'] },
 } satisfies Record<
   keyof typeof PROJECT_SETTING_COLUMNS,
@@ -95,12 +99,13 @@ describe('hostedProjectColumns', () => {
     }
     const columns = hostedProjectColumns({ mcp }, 'round-trip')
     expect(columns.mcpProbeTool).toBe('ping')
-    expect(columns.mcpReaderTools).toBe(
-      '{"starship":["get-task","list-tasks"],"hosted":["search"]}',
-    )
+    expect(columns.mcpReaderTools).toEqual({
+      starship: ['get-task', 'list-tasks'],
+      hosted: ['search'],
+    })
     expect({
       probe_tool: columns.mcpProbeTool,
-      reader_tools: JSON.parse(columns.mcpReaderTools!),
+      reader_tools: columns.mcpReaderTools,
     }).toEqual(mcp)
   })
 

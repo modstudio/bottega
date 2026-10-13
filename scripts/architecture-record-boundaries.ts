@@ -131,6 +131,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-projects.ts',
     [
       'bun',
+      '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       './record-project-columns.ts',

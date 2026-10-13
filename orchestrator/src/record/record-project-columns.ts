@@ -32,16 +32,16 @@ export type HostedProjectColumns = {
   workerMcpServers: string[] | null
   secretPaths: string[] | null
   mcpProbeTool: string | null
-  mcpReaderTools: string | null
-  docs: string | null
-  signals: string | null
-  review: string | null
-  testSubstance: string | null
-  mechanicalChecks: string | null
-  release: string | null
-  states: string | null
-  tracker: string | null
-  worktree: string | null
+  mcpReaderTools: JsonObject | null
+  docs: JsonObject | null
+  signals: JsonObject | null
+  review: JsonObject | null
+  testSubstance: JsonObject | null
+  mechanicalChecks: JsonObject | null
+  release: JsonObject | null
+  states: JsonObject | null
+  tracker: JsonObject | null
+  worktree: JsonObject | null
 }
 
 type HostedSettingKey = Exclude<
@@ -114,15 +114,15 @@ function mcpProbeTool(settings: JsonObject, project: string): string | null {
   return optionalString(mcp.probe_tool, `project ${project} settings.mcp.probe_tool`)
 }
 
-function mcpReaderTools(settings: JsonObject, project: string): string | null {
+function mcpReaderTools(settings: JsonObject, project: string): JsonObject | null {
   if (settings.mcp === undefined || settings.mcp === null) return null
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
   return document(mcp.reader_tools, `project ${project} settings.mcp.reader_tools`)
 }
 
-function document(value: unknown, location: string): string | null {
+function document(value: unknown, location: string): JsonObject | null {
   if (value === undefined || value === null) return null
-  return JSON.stringify(object(value, location))
+  return object(value, location)
 }
 
 export function hostedProjectColumns(
