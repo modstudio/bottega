@@ -25,10 +25,6 @@ type StoredDoc = {
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
 
-export function storedDocsHaveRepositoryReferences(docs: Pick<StoredDoc, 'body'>[]): boolean {
-  return docs.some((doc) => docHasRepositoryReferences(doc.body))
-}
-
 function targetProjects(
   doc: Pick<StoredDoc, 'scope' | 'subject'> & { owner?: string | null },
 ): Project[] {
@@ -95,6 +91,14 @@ export function lintStoredDoc(
       ? { referenceProjects: referenceProjects ?? collectDocReferenceProjects(doc) }
       : {}),
   })
+}
+
+/** The non-refusing findings that remain on a stored document after a successful write. */
+export function storedDocWarnings(
+  doc: StoredDoc,
+  referenceProjects?: DocReferenceProject[],
+): DocLintFinding[] {
+  return lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
 }
 
 export function storedDocLintRefusal(

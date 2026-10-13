@@ -535,6 +535,38 @@ describe('scoped operator docs', () => {
     expect(result.out).toContain('doc/history warning')
   })
 
+  test('orch doc warnings lists standing warnings and says so when none', async () => {
+    const empty = await command(['doc', 'warnings', '--scope', 'global'])
+    expect(empty.code).toBe(0)
+    expect(empty.out).toBe('warnings: none')
+    expect(
+      JSON.parse((await command(['doc', 'warnings', '--scope', 'global', '--json'])).out),
+    ).toEqual([])
+    await setDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'standing-warning',
+      title: 'Standing warning',
+      body: 'This is no longer required.',
+      delivery: 'demand',
+    })
+    const listed = await command(['doc', 'warnings', '--scope', 'global'])
+    expect(listed.code).toBe(0)
+    expect(listed.out).toContain('global/_/standing-warning:1 matches banned history pattern')
+    expect(listed.out).toContain('state only the current rule, constraint, behavior, or reason')
+    expect(
+      JSON.parse((await command(['doc', 'warnings', '--scope', 'global', '--json'])).out),
+    ).toEqual([
+      expect.objectContaining({
+        address: 'global/_/standing-warning',
+        line: 1,
+        message: expect.stringContaining('matches banned history pattern'),
+        remedy: 'state only the current rule, constraint, behavior, or reason',
+      }),
+    ])
+    expect((await command(['doc', 'warnings', '--scope', 'machine'])).out).toBe('warnings: none')
+  })
+
   test('orch doc history, diff, and restore operate on revisions without rewinding', async () => {
     await writeDoc({
       scope: 'global',

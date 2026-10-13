@@ -96,10 +96,46 @@ describe('stored document lint', () => {
     ])
   })
 
-  test('article keeps the date and issue rules', () => {
-    expect(lintDoc(doc('DEV-880 applies on 2026-09-23.', { kind: 'article' }))).toEqual([
+  test('article keeps the date and banned-issue rules', () => {
+    expect(lintDoc(doc('workaround applies on 2026-09-23.', { kind: 'article' }))).toEqual([
       expect.objectContaining({ rule: 'doc/date', level: 'error' }),
       expect.objectContaining({ rule: 'doc/issue', level: 'error' }),
+    ])
+  })
+
+  test('article warns for a task-key match while working refuses it', () => {
+    expect(docLintProfile('article').taskKey).toBe('warning')
+    expect(docLintProfile('article').rules.issue).toBe('error')
+    expect(docLintProfile('working').taskKey).toBe('error')
+    expect(docLintProfile('working').rules.issue).toBe('error')
+    expect(lintDoc(doc('See catalog number `AB-123`.', { kind: 'article' }))).toEqual([
+      expect.objectContaining({
+        rule: 'doc/issue',
+        level: 'warning',
+        message: 'contains a task key',
+      }),
+    ])
+    expect(lintDoc(doc('See catalog number `AB-123`.'))).toEqual([
+      expect.objectContaining({
+        rule: 'doc/issue',
+        level: 'error',
+        message: 'contains a task key',
+      }),
+    ])
+  })
+
+  test('a task key does not hide a banned issue pattern on the same line', () => {
+    expect(lintDoc(doc('DEV-880 is a workaround.', { kind: 'article' }))).toEqual([
+      expect.objectContaining({
+        rule: 'doc/issue',
+        level: 'warning',
+        message: 'contains a task key',
+      }),
+      expect.objectContaining({
+        rule: 'doc/issue',
+        level: 'error',
+        message: expect.stringContaining('workaround'),
+      }),
     ])
   })
   test('resume documents are exempt', () => {
@@ -199,12 +235,17 @@ describe('stored document lint', () => {
     ])
   })
 
-  test('the update ratchet compares rule and message without line numbers', () => {
+  test('the update ratchet compares rule, level, and message without line numbers', () => {
     const baseline = lintDoc(doc('This was formerly different.'))
     const moved = lintDoc(doc('\nThis was formerly different.'))
     expect(introducedDocFindings(baseline, moved)).toEqual([])
     expect(
       introducedDocFindings(baseline, lintDoc(doc('This was formerly different.\nDEV-880.'))),
     ).toEqual([expect.objectContaining({ rule: 'doc/issue', message: 'contains a task key' })])
+    const articleWarning = lintDoc(doc('DEV-880.', { kind: 'article' }))
+    const workingError = lintDoc(doc('DEV-880.'))
+    expect(introducedDocFindings(articleWarning, workingError)).toEqual([
+      expect.objectContaining({ rule: 'doc/issue', level: 'error' }),
+    ])
   })
 })

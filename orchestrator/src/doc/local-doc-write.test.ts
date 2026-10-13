@@ -60,6 +60,49 @@ test('used-to warnings store for both document kinds', async () => {
   }
 })
 
+test('changing an article task-key warning into a working error is refused', async () => {
+  const article = await setDoc({
+    scope: 'machine',
+    subject: null,
+    slug: 'task-key-level-change',
+    title: 'Task key level change',
+    body: 'Catalog entry DEV-880 is current.',
+    delivery: 'demand',
+    kind: 'article',
+    audiences: ['technical'],
+    reason: 'create article warning fixture',
+  })
+
+  await expect(
+    setDoc({
+      scope: article.scope,
+      subject: article.subject,
+      slug: article.slug,
+      title: article.title,
+      body: article.body,
+      kind: 'working',
+      reason: 'prove warning cannot pay for an error',
+      expectedRevision: article.revision!,
+    }),
+  ).rejects.toThrow(/working profile[\s\S]*contains a task key/)
+})
+
+test('an article task key does not hide a banned issue pattern', async () => {
+  await expect(
+    setDoc({
+      scope: 'machine',
+      subject: null,
+      slug: 'task-key-with-issue',
+      title: 'Task key with issue',
+      body: 'DEV-880 is a workaround.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      reason: 'prove the issue pattern still refuses the article',
+    }),
+  ).rejects.toThrow(/article profile[\s\S]*matches banned issue pattern.*workaround/)
+})
+
 test('an article cannot be created or changed to effective inject delivery', async () => {
   await expect(
     setDoc({
