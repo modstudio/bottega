@@ -243,11 +243,8 @@ export function registerBoardCommands(program: Command): void {
         : await readBoardNotices(Boolean(options.all))
       console.log(
         JSON.stringify({
+          ...delivery,
           notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
-          warning: delivery.warning,
-          ...('withheldOlderCount' in delivery
-            ? { withheldOlderCount: delivery.withheldOlderCount }
-            : {}),
         }),
       )
     })
