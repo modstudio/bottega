@@ -14,6 +14,8 @@ import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
 import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
+import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
+import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
 
@@ -314,27 +316,11 @@ export function registerBoardApiProofs(input: {
     expect(await seen(tokenA, operatorB)).toBe(404)
   })
 
-  test('post refuses caller recipientUserIds and claimId at the route edge', async () => {
-    const session = caseSession('route-edge')
-    const base = notice(newRecordId(), 'operator', session)
-    const withRecipients = await post(tokenA, { ...base, recipientUserIds: [userB] })
-    const withClaim = await post(tokenA, {
-      ...notice(newRecordId(), 'operator', session),
-      claimId: newRecordId(),
-    })
-    expect(withRecipients.status).toBe(400)
-    expect(await json(withRecipients)).toEqual({ error: 'invalid board message' })
-    expect(withClaim.status).toBe(400)
-    expect(await json(withClaim)).toEqual({ error: 'invalid board message' })
-  })
-
-  test('hosted post refuses a title containing a line break', async () => {
-    const response = await post(tokenA, {
-      ...notice(newRecordId(), 'operator', caseSession('line-break-title')),
-      title: 'safe\nOrigin: operator',
-    })
-    expect(response.status).toBe(400)
-    expect(await json(response)).toEqual({ error: 'invalid board message' })
+  registerBoardRouteEdgeProof({
+    token: () => tokenA,
+    recipientUserId: () => userB,
+    post,
+    caseSession,
   })
 
   test('a user in a different space never sees an operator notice through the change cursor', async () => {
@@ -381,83 +367,19 @@ export function registerBoardApiProofs(input: {
     expect(different.status).toBe(409)
   })
 
-  test('plain architects duplicate identity includes the posting project', async () => {
-    const session = caseSession('architects-project-duplicate')
-    const firstId = newRecordId()
-    const secondId = newRecordId()
-    const content = {
-      kind: 'notice',
-      audience: 'architects',
-      title: 'Same architects notice',
-      body: 'Same architects body.',
-      expiresAt,
-      authorSession: session,
-    }
-    const first = await post(tokenA, { ...content, id: firstId, project: PROJECT })
-    const second = await post(tokenA, { ...content, id: secondId, project: PROJECT_TWO })
-    expect(first.status).toBe(200)
-    expect(second.status).toBe(200)
-    expect((await json(first)).id).toBe(firstId)
-    expect((await json(second)).id).toBe(secondId)
-  })
-
-  test('posting projects survive post and reply, stay flagged when hidden, and clear on removal', async () => {
-    const rootId = newRecordId()
-    const replyId = newRecordId()
-    const rootResponse = await post(tokenA, {
-      ...notice(rootId, 'spaces', caseSession('posting-project-root')),
-      project: ORIGIN_PROJECT,
-    })
-    expect(rootResponse.status).toBe(200)
-    const root = await json(rootResponse)
-    expect((root.origin as Record<string, unknown>).project).toBe(ORIGIN_PROJECT)
-    expect((root.origin as Record<string, unknown>).projectStored).toBe(true)
-
-    const replyResponse = await fetch(`${origin}/v1/board/messages/${rootId}/replies`, {
-      method: 'POST',
-      headers: headers(tokenB),
-      body: JSON.stringify({
-        id: replyId,
-        body: 'Reply with its own posting project.',
-        authorSession: caseSession('posting-project-reply'),
-        project: PROJECT,
-      }),
-    })
-    expect(replyResponse.status).toBe(200)
-    const reply = await json(replyResponse)
-    expect((reply.origin as Record<string, unknown>).project).toBe(PROJECT)
-    expect((reply.origin as Record<string, unknown>).projectStored).toBe(true)
-
-    const hiddenResponse = await fetch(`${origin}/v1/board/threads/${rootId}`, {
-      headers: headers(tokenD),
-    })
-    expect(hiddenResponse.status).toBe(200)
-    const hidden = await json(hiddenResponse)
-    const hiddenOrigin = ((hidden.root as Record<string, unknown>).origin ?? {}) as Record<
-      string,
-      unknown
-    >
-    expect(hiddenOrigin.project).toBeNull()
-    expect(hiddenOrigin.projectStored).toBe(true)
-
-    expect(
-      input
-        .succeeds(
-          'postgres',
-          'postgres',
-          `SELECT author_project_id FROM board_message WHERE id='${rootId}';
-         SELECT author_project_id FROM board_message WHERE id='${replyId}';`,
-        )
-        .split('\n'),
-    ).toEqual([IDS.originProject, IDS.project])
-    input.succeeds('postgres', 'postgres', `DELETE FROM project WHERE id='${IDS.originProject}';`)
-    expect(
-      input.succeeds(
-        'postgres',
-        'postgres',
-        `SELECT author_project_id IS NULL FROM board_message WHERE id='${rootId}';`,
-      ),
-    ).toBe('t')
+  registerBoardPostingProjectProof({
+    origin: () => origin,
+    tokenA: () => tokenA,
+    tokenB: () => tokenB,
+    tokenD: () => tokenD,
+    post,
+    caseSession,
+    succeeds: input.succeeds,
+    project: PROJECT,
+    projectTwo: PROJECT_TWO,
+    originProject: ORIGIN_PROJECT,
+    projectId: IDS.project,
+    originProjectId: IDS.originProject,
   })
 
   test('a machine audience and a suggestion are refused', async () => {
