@@ -1,19 +1,19 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { inspectionGitEnv } from '../shared/git'
-import type { ChangeFacts, LineRange } from '../shared/ratchet'
+import { inspectionGitEnv } from './git'
+import type { ChangeFacts, LineRange } from './ratchet'
 
-type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
+export type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
 
-type ChangeEntry = {
+export type ChangeEntry = {
   status: ChangeStatus
   path: string
   sourcePath?: string
 }
 
-type ContentResult = { status: 'present'; text: string } | { status: 'absent' }
+export type ContentResult = { status: 'present'; text: string } | { status: 'absent' }
 
-type ChangeViewMode = 'worktree' | 'staged'
+export type ChangeViewMode = 'worktree' | 'staged'
 
 function parseStatus(value: string): ChangeStatus {
   const status = value[0]
