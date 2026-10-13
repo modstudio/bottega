@@ -24,9 +24,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
 const executionFile = process.env[CHECK_EXECUTION_FILE_ENV]
-const reportDirectory = executionFile
-  ? mkdtempSync(join(tmpdir(), 'bottega-check-reports-'))
-  : undefined
+const reportDirectory = executionFile ? mkdtempSync(join(tmpdir(), 'check-reports-')) : undefined
 
 const activeChildren = new Set<Bun.Subprocess>()
 const trackedExits = new Map<Bun.Subprocess, Promise<void>>()

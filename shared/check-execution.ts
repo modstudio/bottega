@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 
 export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EXECUTION_FILE`
 
-export const CheckExecutionRecordSchema = z
+const CheckExecutionRecordSchema = z
   .object({
     check: z.string().min(1),
     category: z.string().min(1).optional(),

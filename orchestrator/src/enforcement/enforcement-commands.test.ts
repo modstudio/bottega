@@ -91,13 +91,28 @@ describe('enforcementCommand', () => {
       projects: () => [project('fixture')],
       projectByName: (name) => (name === 'fixture' ? project(name) : null),
       projectAt: () => null,
+      categoryExecutionsForProject: () =>
+        new Map([
+          [
+            'file-length',
+            {
+              category: 'file-length',
+              remaining: 3,
+              wallMs: 149.6,
+              finishedAt: '2026-10-12T12:00:00.000Z',
+            },
+          ],
+        ]),
     })
 
     const heading = result.output.find((line) => line.startsWith('category'))
     const functionLength = result.output.find((line) => line.startsWith('function-length'))
+    const fileLength = result.output.find((line) => line.startsWith('file-length'))
     const testSubstance = result.output.find((line) => line.startsWith('test-substance'))
     const filePlacement = result.output.find((line) => line.startsWith('file-placement'))
     expect(heading?.split(/\s{2,}/).slice(0, 2)).toEqual(['category', 'enforced'])
+    expect(heading).toContain('remaining')
+    expect(heading).toContain('time')
     expect(functionLength?.split(/\s{2,}/).slice(0, 3)).toEqual([
       'function-length',
       'no',
@@ -109,6 +124,8 @@ describe('enforcementCommand', () => {
     expect(functionLength).toContain('[commit, gate]')
     expect(functionLength).toContain('[yes]')
     expect(functionLength).toContain('[80]')
+    expect(fileLength?.split(/\s{2,}/)).toContain('3')
+    expect(fileLength?.split(/\s{2,}/)).toContain('150ms')
     expect(testSubstance?.split(/\s{2,}/).slice(0, 3)).toEqual([
       'test-substance',
       'yes',
