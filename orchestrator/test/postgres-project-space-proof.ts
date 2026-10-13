@@ -11,7 +11,7 @@ export function registerProjectSpaceProofs(input: {
   actorUrl: string
   actorRole: string
   machineId: string
-  userId: string
+  userId: () => string
   firstSpaceId: string
   secondSpaceId: string
   otherRunId: string
@@ -41,15 +41,15 @@ export function registerProjectSpaceProofs(input: {
     input.setToken(input.token())
     input.admin(
       `INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
-       ('${newRecordId()}','${input.firstSpaceId}','${input.userId}','member','write',now()),
-       ('${newRecordId()}','${input.secondSpaceId}','${input.userId}','member','write',now())
+       ('${newRecordId()}','${input.firstSpaceId}','${input.userId()}','member','write',now()),
+       ('${newRecordId()}','${input.secondSpaceId}','${input.userId()}','member','write',now())
        ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';`,
     )
     const ids = await proveProjectSpaceRecordSync({
       actorUrl: input.actorUrl,
       actorRole: input.actorRole,
       machineId: input.machineId,
-      userId: input.userId,
+      userId: input.userId(),
       firstSpaceId: input.firstSpaceId,
       secondSpaceId: input.secondSpaceId,
       asSpace: input.asSpace,
@@ -84,7 +84,7 @@ export function registerProjectSpaceProofs(input: {
     machineId: input.machineId,
     // The suite fills the signed-in user in during setup, after registration.
     get userId() {
-      return input.userId
+      return input.userId()
     },
     writeSpaceId: input.firstSpaceId,
     writeProjectName: 'alpha',
@@ -140,7 +140,7 @@ export function registerProjectSpaceProofs(input: {
           now(),'proof','${subscription}',now() - interval '1 day',now());
        INSERT INTO hub_send_recipient
          (id,space_id,send_id,user_id,name,email,created_at)
-         VALUES ('${sendRecipient}','${source}','${send}','${input.userId}',
+         VALUES ('${sendRecipient}','${source}','${send}','${input.userId()}',
           'Operator','operator@example.test',now());`,
     )
     expect(inserted.code, inserted.stderr).toBe(0)

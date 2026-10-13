@@ -338,9 +338,7 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    get userId() {
-      return authUserA
-    },
+    userId: () => authUserA,
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
@@ -1036,25 +1034,17 @@ realPostgres('RLS proof against real Postgres', () => {
     }
   })
 
-  registerScoreRecordSyncProof({
+  registerScoreRecordSyncProof(() => ({
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    get userId() {
-      return authUserA
-    },
-    get spaceId() {
-      return authSpaceA
-    },
-    get otherSpaceId() {
-      return authSpaceB
-    },
+    userId: authUserA,
+    spaceId: authSpaceA,
+    otherSpaceId: authSpaceB,
     projectName: 'auth-a-project',
-    get projectSpace() {
-      return authSpaceA
-    },
+    projectSpace: authSpaceA,
     asSpace,
-  })
+  }))
 
   test('same prefix is allowed in separate projects', () => {
     const rows = asSpace(

@@ -259,10 +259,10 @@ export async function proveScoreRecordSync(input: {
 }
 
 export function registerScoreRecordSyncProof(
-  input: Parameters<typeof proveScoreRecordSync>[0],
+  input: () => Parameters<typeof proveScoreRecordSync>[0],
 ): void {
   test('sync round trip writes and updates a tenant-confined score', async () => {
-    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input)
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input())
     expect(actorRead.code, actorRead.stderr).toBe(0)
     expect(actorRead.stdout).toBe('full|right|first')
     expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
