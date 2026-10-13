@@ -32,6 +32,13 @@ test('sync authorization derives user and fallback space only from the session i
     status: 'deferred',
     spaceId: '01990000-0000-7000-8000-000000000003',
   })
+  expect(recordSyncAuthorizationDecision(identity, 'active')).toEqual({
+    status: 'allowed',
+    principal: {
+      userId: identity.user.id,
+      spaceId: '01990000-0000-7000-8000-000000000002',
+    },
+  })
   expect(recordSyncAuthorizationDecision(identity, 'other')).toMatchObject({
     status: 'refused',
     reason: expect.stringContaining('not a member'),

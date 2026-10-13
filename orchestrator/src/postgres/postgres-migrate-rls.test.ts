@@ -28,6 +28,7 @@ import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
 import { registerOwnedCanonPrivacyProof } from '../../test/postgres-owned-canon-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
+import { registerHostedSyncAuthorizationProofs } from '../../test/postgres-sync-authorization-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
@@ -247,6 +248,10 @@ realPostgres('RLS proof against real Postgres', () => {
        INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
+       INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+        ('${newRecordId()}','${SPACE_A}','${authUserA}','member','write',now()),
+        ('${newRecordId()}','${SPACE_B}','${authUserA}','member','write',now()),
+        ('${newRecordId()}','${PLATFORM_SPACE_ID}','${authUserA}','member','write',now());
        INSERT INTO run (
          id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
@@ -1043,7 +1048,21 @@ realPostgres('RLS proof against real Postgres', () => {
     spaceId: PLATFORM_SPACE_ID,
     otherSpaceId: SPACE_A,
     projectName: PLATFORM_SLUG,
+    projectSpace: PLATFORM_SPACE_ID,
     asSpace,
+  })
+
+  registerHostedSyncAuthorizationProofs({
+    machineId: MACHINE_A,
+    userId: authUserA,
+    otherUserId: authUserB,
+    writeSpaceId: authSpaceA,
+    deniedSpaceId: authSpaceB,
+    writeProjectName: 'auth-a-project',
+    deniedProjectName: 'auth-b-project',
+    token: () => tokenA,
+    setToken: (token) => recordSession.setToken(token),
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
   test('same prefix is allowed in separate projects', () => {

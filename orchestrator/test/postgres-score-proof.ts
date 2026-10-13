@@ -88,6 +88,7 @@ export async function proveScoreRecordSync(input: {
   spaceId: string
   otherSpaceId: string
   projectName: string
+  projectSpace: string
   asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
 }): Promise<{ actorRead: PsqlResult; otherSpaceRead: PsqlResult; rescoredRead: PsqlResult }> {
   const local = new Database(':memory:')
@@ -119,7 +120,12 @@ export async function proveScoreRecordSync(input: {
   local
     .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
     .run(recordId, JSON.stringify(run), String(run.createdAt))
-  const sync = () => syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } })
+  const sync = () =>
+    syncRecord({
+      local,
+      identity: { id: input.machineId, name: 'proof-machine' },
+      projectSpaces: { [input.projectName]: input.projectSpace },
+    })
   expect(await sync()).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
 
   const score = Object.fromEntries(SCORE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
