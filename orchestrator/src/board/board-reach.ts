@@ -205,8 +205,7 @@ export function countBoardReach(rows: BoardReachRow[]) {
   const worstMessages = [...messages.values()]
     .map((message) => ({
       ...message,
-      pushesNotShownToConcernReader:
-        message.pushesNotConcerned + message.pushesUnqualified,
+      pushesNotShownToConcernReader: message.pushesNotConcerned + message.pushesUnqualified,
       readerProjects: [...message.readerProjects].sort(),
     }))
     .filter((message) => message.pushesNotShownToConcernReader > 0)
@@ -242,10 +241,12 @@ function boardMessageTitle(
     if (row.title) return row.title
     if (row.thread_root_id === null) return null
     return (
-      database.query('SELECT title FROM board_message WHERE id=?').get(row.thread_root_id) as {
-        title: string | null
-      } | null
-    )?.title ?? null
+      (
+        database.query('SELECT title FROM board_message WHERE id=?').get(row.thread_root_id) as {
+          title: string | null
+        } | null
+      )?.title ?? null
+    )
   }
   const cached = database
     .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
