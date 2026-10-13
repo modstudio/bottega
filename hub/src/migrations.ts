@@ -431,21 +431,32 @@ export function stripSqlComments(source: string): string {
 
 type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
 
+function sqlQuoteState(
+  source: string,
+  index: number,
+  inString: boolean,
+): { index: number; inString: boolean } {
+  if (source[index] !== "'") return { index, inString }
+  if (inString && source[index + 1] === "'") return { index: index + 1, inString }
+  return { index, inString: !inString }
+}
+
 function sqlStatementCount(source: string): number {
   let count = 0
   let hasSql = false
   let inString = false
   for (let index = 0; index < source.length; index++) {
     const char = source[index]!
-    if (inString) {
-      if (char === "'") {
-        if (source[index + 1] === "'") index++
-        else inString = false
-      }
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
       continue
     }
-    if (char === "'") inString = true
-    else if (char === ';') {
+    if (inString) {
+      continue
+    }
+    if (char === ';') {
       if (hasSql) count++
       hasSql = false
     } else if (!/\s/.test(char)) hasSql = true
