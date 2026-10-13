@@ -58,6 +58,10 @@ export function idleBoardDeps(): RecordBoardDeps {
   }
 }
 
+export function idleRecordApiDeps() {
+  return { ...idleIdentityAndSpaceDeps(), ...idleBoardDeps() }
+}
+
 const subject = {
   id: '01990000-0000-7000-8000-000000000001',
   project: 'one',

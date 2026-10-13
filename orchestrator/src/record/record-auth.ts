@@ -179,6 +179,37 @@ async function rememberSessionSpace(
   })
 }
 
+function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
+  return {
+    user: {
+      create: {
+        // Better Auth documents no personal-organization convention; the record repairs it here.
+        after: async (created: { id: string }) => {
+          await ensurePersonalSpace(created.id, personalSpaces)
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (created: { userId: string }) => {
+          const personal = await ensurePersonalSpace(created.userId, personalSpaces)
+          const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
+          return { data: { ...created, activeOrganizationId: activeSpaceId } }
+        },
+      },
+      update: {
+        after: async (updated: { userId: string; activeOrganizationId?: unknown }) => {
+          await rememberSessionSpace(
+            client,
+            updated.userId,
+            typeof updated.activeOrganizationId === 'string' ? updated.activeOrganizationId : null,
+          )
+        },
+      },
+    },
+  }
+}
+
 type ResetPasswordSender = typeof sendPasswordResetEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
@@ -292,36 +323,7 @@ export function recordAuth(
       }),
       bearer(),
     ],
-    databaseHooks: {
-      user: {
-        create: {
-          // Better Auth documents no personal-organization convention; the record repairs it here.
-          after: async (created) => {
-            await ensurePersonalSpace(created.id, personalSpaces)
-          },
-        },
-      },
-      session: {
-        create: {
-          before: async (created) => {
-            const personal = await ensurePersonalSpace(created.userId, personalSpaces)
-            const activeSpaceId = await sessionSpaceForUser(client, created.userId, personal.id)
-            return { data: { ...created, activeOrganizationId: activeSpaceId } }
-          },
-        },
-        update: {
-          after: async (updated) => {
-            await rememberSessionSpace(
-              client,
-              updated.userId,
-              typeof updated.activeOrganizationId === 'string'
-                ? updated.activeOrganizationId
-                : null,
-            )
-          },
-        },
-      },
-    },
+    databaseHooks: recordDatabaseHooks(client, personalSpaces),
   })
 }
 

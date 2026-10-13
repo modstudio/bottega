@@ -5,7 +5,6 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { HostedRecordInvitation } from './record-invitations.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -143,7 +142,7 @@ export async function inviteToActiveRecordSpace(
 
 export async function pendingRecordInvitations(
   client: Pick<RecordApiClient, 'listInvitations'> = recordApiClient(),
-): Promise<HostedRecordInvitation[]> {
+) {
   return client.listInvitations()
 }
 
