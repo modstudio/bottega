@@ -109,7 +109,6 @@ export async function settingsPermissionCommand(
     delivery: 'demand',
     reason: flags.flag('reason')?.trim() || 'updated permission rule',
     expectedRevision,
-    author: 'hub-dashboard',
   })
   return {
     revision: written.revision!,

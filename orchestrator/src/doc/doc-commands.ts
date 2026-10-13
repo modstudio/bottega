@@ -18,6 +18,7 @@ import {
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
+import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { searchDocs } from './doc-search.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
@@ -70,6 +71,10 @@ type DocCommandPorts = {
     cwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
+}
+
+function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {
+  return author === user?.id ? (user.name ?? user.email) : null
 }
 
 export function validateUserAddress(user: boolean, hasSubject: boolean): void {
@@ -519,7 +524,12 @@ function handledRevisionDocCommand(
     owner,
     docReadAudience(flags.flag('audience')),
   )
-  presentation.log(flags.has('json') ? JSON.stringify(revision) : revision.body)
+  if (flags.has('json')) {
+    const user = cachedSignedInRecordUser()
+    presentation.log(
+      JSON.stringify({ ...revision, authorName: revisionAuthorName(revision.author, user) }),
+    )
+  } else presentation.log(revision.body)
   return true
 }
 
@@ -642,8 +652,17 @@ export async function docCommand(
     }
     const revisions = listDocRevisions(addressScope, addressSubject, slug, owner)
     if (sub === 'history') {
-      if (has('json')) presentation.log(JSON.stringify(revisions))
-      else
+      if (has('json')) {
+        const user = cachedSignedInRecordUser()
+        presentation.log(
+          JSON.stringify(
+            revisions.map((revision) => ({
+              ...revision,
+              authorName: revisionAuthorName(revision.author, user),
+            })),
+          ),
+        )
+      } else
         for (const revision of revisions) {
           presentation.log(
             `${revision.id}  ${revision.op.padEnd(8)} ${revision.kind.padEnd(8)} ${(revision.form ?? '-').padEnd(10)} ${revision.articleSubject?.name ?? '-'}  related:${revision.relatedSubjects.length} sources:${revision.sourceFiles.length}  ${revision.status.padEnd(11)} ${revision.replacement_slug ?? '-'}  ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`,

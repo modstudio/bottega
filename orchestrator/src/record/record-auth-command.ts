@@ -3,7 +3,7 @@
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
 import { rememberHostedRecord } from './install-binding.ts'
 import { RECORD_SIGN_IN_REMEDY, recordAuth, recordIdentity } from './record-auth.ts'
-import { currentRecordSession } from './record-session.ts'
+import { currentRecordSession, rememberSignedInRecordUser } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -30,6 +30,7 @@ export async function signUpCommand(
   })
   if (!result.token) throw new Error(RECORD_SIGN_IN_REMEDY)
   writeRecordSessionToken(result.token)
+  rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
   presentation.log(`signed up ${result.user.email}`)
 }
@@ -43,6 +44,7 @@ export async function signInCommand(
     body: { email, password: await recordPassword(readPassword) },
   })
   writeRecordSessionToken(result.token)
+  rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
   presentation.log(`signed in ${result.user.email}`)
 }
@@ -50,5 +52,6 @@ export async function signInCommand(
 export async function whoamiCommand(presentation: Presentation): Promise<void> {
   const url = recordUrl()
   const current = await currentRecordSession(url)
+  rememberSignedInRecordUser(current.user)
   presentation.log(JSON.stringify(await recordIdentity(url, current.user, current.activeSpaceId)))
 }

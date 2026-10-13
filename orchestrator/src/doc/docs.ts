@@ -77,7 +77,6 @@ import {
   assertLocalRevisionWrite,
   currentDocRevision,
   diffStoredDocRevisions,
-  docWriteIdentity,
   getStoredDocRevision,
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
@@ -97,6 +96,7 @@ import {
   refuseSettingsBody,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
 
@@ -333,7 +333,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
     refuseSettingsAddress(input.scope, input.subject, input.owner)
   if (ownedAddress) throw new Error(ownedAddress)
   validate(input.scope, input.subject, input.slug)
-  const identity = docWriteIdentity(input)
+  const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
@@ -505,7 +505,7 @@ export async function removeDoc(
   assertWorkerDocStoreWriteAllowed('removeDoc')
   writableDb()
   validScope(scope)
-  const identity = docWriteIdentity(context)
+  const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
   assertLocalRevisionWrite(
@@ -581,7 +581,7 @@ export async function consumeDoc(
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
-  const identity = docWriteIdentity(context)
+  const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   const consumedAt = nowIso()
@@ -834,7 +834,7 @@ export function exportDocs(dir: string): number {
 export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
   assertWorkerDocStoreWriteAllowed('importDocs')
   writableDb()
-  docWriteIdentity(context)
+  resolvedDocWriteIdentity(context)
   return importDocFiles(dir, async (doc) => {
     await setDocWithOp(
       {
@@ -892,7 +892,7 @@ export async function restoreDoc(
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
-  const identity = docWriteIdentity(context)
+  const identity = resolvedDocWriteIdentity(context)
   const revision = getDocRevision(revisionId, owner)
   if (
     !revision ||

@@ -10,11 +10,8 @@ import { nonCurrentCanonCollisionRefusal } from './canon-import-collision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { getDocStore, listDocsStore } from './doc-read-store.ts'
-import {
-  assertLocalRevisionWrite,
-  docWriteIdentity,
-  insertLocalRevision,
-} from './doc-revision-store.ts'
+import { assertLocalRevisionWrite, insertLocalRevision } from './doc-revision-store.ts'
+import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type CanonImportRow = { slug: string; title: string; body: string }
 export type LocalCanonImportAddress =
@@ -43,7 +40,7 @@ export async function importCanon(input: {
   const refusal = workerStoreWriteRefusal('document', 'importCanon', process.env)
   if (refusal) throw new Error(refusal)
   writableDb()
-  const identity = docWriteIdentity(input)
+  const identity = resolvedDocWriteIdentity(input)
   const subject = input.address.kind === 'project' ? input.address.subject : null
   const owner = input.address.kind === 'user' ? input.address.owner : null
   const projectId = input.address.kind === 'project' ? input.address.projectId : null

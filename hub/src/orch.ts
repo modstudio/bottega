@@ -884,6 +884,7 @@ export type DocRevisionMetadata = {
   id: number
   op: 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
   author: string
+  authorName?: string | null
   reason: string
   at: string
   bytes: number
@@ -976,8 +977,6 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         input.title!,
         '--reason',
         input.reason!,
-        '--author',
-        'hub-dashboard',
         ...docSetFlags(input),
         '--json',
       ]
@@ -989,8 +988,6 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         ...docAddressFlags(input),
         '--reason',
         input.reason!,
-        '--author',
-        'hub-dashboard',
         ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
         '--json',
       ]

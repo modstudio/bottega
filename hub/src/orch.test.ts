@@ -304,8 +304,6 @@ test('owner-scoped doc wrappers never send an owner id', () => {
     'settings',
     '--reason',
     'change rule',
-    '--author',
-    'hub-dashboard',
     '--expect',
     'revision-1',
     '--json',
@@ -646,8 +644,6 @@ describe('docArgv', () => {
       'Hi',
       '--reason',
       'why',
-      '--author',
-      'hub-dashboard',
       '--json',
     ])
     expect(argv).not.toContain(body)
@@ -674,8 +670,6 @@ describe('docArgv', () => {
       'Notes',
       '--reason',
       'why',
-      '--author',
-      'hub-dashboard',
       '--json',
     ])
   })
@@ -697,18 +691,7 @@ describe('docArgv', () => {
   test('remove without subject', () => {
     expect(
       docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),
-    ).toEqual([
-      'doc',
-      'rm',
-      'host',
-      '--scope',
-      'machine',
-      '--reason',
-      'why',
-      '--author',
-      'hub-dashboard',
-      '--json',
-    ])
+    ).toEqual(['doc', 'rm', 'host', '--scope', 'machine', '--reason', 'why', '--json'])
   })
 
   test('remove with subject', () => {
@@ -724,8 +707,6 @@ describe('docArgv', () => {
       'implement',
       '--reason',
       'obsolete',
-      '--author',
-      'hub-dashboard',
       '--json',
     ])
   })
