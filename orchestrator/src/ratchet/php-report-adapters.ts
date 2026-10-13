@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { Finding } from '../../../shared/ratchet.ts'
 
-export const PHPSTAN_UNIDENTIFIED_RULE = 'phpstan'
+const PHPSTAN_UNIDENTIFIED_RULE = 'phpstan'
 
 export type MeasurePattern = { rule: string; pattern: string }
 
@@ -56,36 +56,26 @@ function messagesFor(raw: unknown, format: string, file: string): ReportMessage[
   return messages
 }
 
+type PatternScan = { count: number; escaped: boolean; inCharacterClass: boolean }
+
+function scanPatternCharacter(source: string, index: number, state: PatternScan): PatternScan {
+  const character = source[index]
+  if (state.escaped) return { ...state, escaped: false }
+  if (character === '\\') return { ...state, escaped: true }
+  if (character === '[') return { ...state, inCharacterClass: true }
+  if (character === ']' && state.inCharacterClass) return { ...state, inCharacterClass: false }
+  if (character !== '(' || state.inCharacterClass) return state
+  const plainCapture = source[index + 1] !== '?'
+  const namedCapture = source[index + 2] === '<' && !['=', '!'].includes(source[index + 3] ?? '')
+  return plainCapture || namedCapture ? { ...state, count: state.count + 1 } : state
+}
+
 function captureGroupCount(source: string): number {
-  let count = 0
-  let escaped = false
-  let inCharacterClass = false
+  let state: PatternScan = { count: 0, escaped: false, inCharacterClass: false }
   for (let index = 0; index < source.length; index++) {
-    const character = source[index]
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (character === '\\') {
-      escaped = true
-      continue
-    }
-    if (character === '[') {
-      inCharacterClass = true
-      continue
-    }
-    if (character === ']' && inCharacterClass) {
-      inCharacterClass = false
-      continue
-    }
-    if (character !== '(' || inCharacterClass) continue
-    if (source[index + 1] !== '?') {
-      count++
-      continue
-    }
-    if (source[index + 2] === '<' && !['=', '!'].includes(source[index + 3] ?? '')) count++
+    state = scanPatternCharacter(source, index, state)
   }
-  return count
+  return state.count
 }
 
 function compiledMeasures(patterns: MeasurePattern[]) {

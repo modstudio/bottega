@@ -174,56 +174,59 @@ function refusalReason(finding: ReturnType<typeof ratchetDecision>[number]) {
   return 'finding count increased'
 }
 
-export async function runRatchet(options: RatchetOptions, reporter: Reporter = console) {
-  const root = checkoutRoot(options.cwd)
-  const reportsMode = Boolean(options.headReport && options.baseReport)
-  let parse: ((text: string) => Finding[]) | undefined
-  let command: string[] = []
-  if (!reportsMode) {
-    validatedSupport(root, options.support)
-    command = options.command ?? []
-    if (!command.includes('{files}')) throw new Error('linter command must contain {files}')
-    parse = adapter(options.format)
-  }
-  const base = comparisonBase(root, options)
-  const mode: ChangeViewMode = options.staged ? 'staged' : 'worktree'
-  const view = openChangeView({ cwd: root, base, mode })
-  if (reportsMode) {
-    let headFindings: Finding[]
-    try {
-      headFindings = reportFindings(
-        options.headReport!,
-        options.format,
-        options.reportRoot ?? root,
-        options.measures ?? [],
-      )
-    } catch (error) {
-      throw new Error(
-        `head report ${options.headReport} failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-    reporter.log(`ratchet remaining: ${headFindings.length} findings on changed files only`)
-    let baseFindings: Finding[] = []
-    const unanalysedBase = new Set<string>()
-    try {
-      baseFindings = reportFindings(
-        options.baseReport!,
-        options.format,
-        options.reportRoot ?? root,
-        options.measures ?? [],
-        view.facts.renames,
-      )
-    } catch (error) {
-      reporter.error(
-        `ratchet base report ${options.baseReport} failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      for (const entry of view.entries) {
-        if (entry.status !== 'D') unanalysedBase.add(entry.path)
-      }
-    }
-    return reportDecision(baseFindings, headFindings, view.facts, unanalysedBase, reporter)
-  }
+type RatchetView = ReturnType<typeof openChangeView>
 
+function runReportsMode(
+  options: RatchetOptions,
+  root: string,
+  view: RatchetView,
+  headReport: string,
+  baseReport: string,
+  reporter: Reporter,
+) {
+  let headFindings: Finding[]
+  try {
+    headFindings = reportFindings(
+      headReport,
+      options.format,
+      options.reportRoot ?? root,
+      options.measures ?? [],
+    )
+  } catch (error) {
+    throw new Error(
+      `head report ${headReport} failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  reporter.log(`ratchet remaining: ${headFindings.length} findings on changed files only`)
+  let baseFindings: Finding[] = []
+  const unanalysedBase = new Set<string>()
+  try {
+    baseFindings = reportFindings(
+      baseReport,
+      options.format,
+      options.reportRoot ?? root,
+      options.measures ?? [],
+      view.facts.renames,
+    )
+  } catch (error) {
+    reporter.error(
+      `ratchet base report ${baseReport} failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    for (const entry of view.entries) {
+      if (entry.status !== 'D') unanalysedBase.add(entry.path)
+    }
+  }
+  return reportDecision(baseFindings, headFindings, view.facts, unanalysedBase, reporter)
+}
+
+function runCommandMode(
+  options: RatchetOptions,
+  root: string,
+  view: RatchetView,
+  command: string[],
+  parse: (text: string) => Finding[],
+  reporter: Reporter,
+) {
   const lintEntries = view.entries.filter(
     (entry) =>
       !options.support.some((path) => entry.path === path || entry.path.startsWith(`${path}/`)),
@@ -239,7 +242,7 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
       baseMirror,
       command,
       baseFiles.map(({ path }) => path),
-      parse!,
+      parse,
     )
     if (options.staged) headMirror = materializeFiles(root, headFiles, options.support)
     const headRoot = headMirror ?? root
@@ -248,7 +251,7 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
       headRoot,
       command,
       headFiles.map(({ path }) => path),
-      parse!,
+      parse,
     )
     if (!headResult.ok) throw new Error(`current side failed: ${headResult.reason}`)
     reporter.log(`ratchet remaining: ${headResult.findings.length} findings on changed files only`)
@@ -263,6 +266,25 @@ export async function runRatchet(options: RatchetOptions, reporter: Reporter = c
     if (baseMirror) rmSync(baseMirror, { recursive: true, force: true })
     if (headMirror) rmSync(headMirror, { recursive: true, force: true })
   }
+}
+
+export async function runRatchet(options: RatchetOptions, reporter: Reporter = console) {
+  const root = checkoutRoot(options.cwd)
+  const headReport = options.headReport
+  const baseReport = options.baseReport
+  const reportsMode = headReport && baseReport
+  const command = options.command ?? []
+  if (!reportsMode) {
+    validatedSupport(root, options.support)
+    if (!command.includes('{files}')) throw new Error('linter command must contain {files}')
+  }
+  const base = comparisonBase(root, options)
+  const mode: ChangeViewMode = options.staged ? 'staged' : 'worktree'
+  const view = openChangeView({ cwd: root, base, mode })
+  if (reportsMode) {
+    return runReportsMode(options, root, view, headReport, baseReport, reporter)
+  }
+  return runCommandMode(options, root, view, command, adapter(options.format), reporter)
 }
 
 function reportDecision(

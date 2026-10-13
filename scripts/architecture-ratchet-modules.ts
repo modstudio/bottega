@@ -17,6 +17,7 @@ export const ratchetModules = [
       '../../../shared/ratchet.ts',
       '../project/projects.ts',
       './biome-adapter.ts',
+      './php-report-adapters.ts',
       './ratchet-plan.ts',
     ],
   },
@@ -27,6 +28,18 @@ export const ratchetModules = [
   {
     file: 'orchestrator/src/ratchet/biome-adapter.test.ts',
     allowed: ['bun:test', './biome-adapter.ts'],
+  },
+  {
+    file: 'orchestrator/src/ratchet/php-report-adapters.ts',
+    allowed: ['node:path', '../../../shared/ratchet.ts'],
+  },
+  {
+    file: 'orchestrator/src/ratchet/php-report-adapters.test.ts',
+    allowed: ['bun:test', '../../../shared/ratchet.ts', './php-report-adapters.ts'],
+  },
+  {
+    file: 'orchestrator/src/commands/ratchet.test.ts',
+    allowed: ['bun:test', 'commander', './ratchet.ts'],
   },
   {
     file: 'orchestrator/src/ratchet/ratchet-plan.ts',
