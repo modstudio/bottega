@@ -1,18 +1,24 @@
 // concern: board-watch
 /** Holds the hosted board stream and pulls the cache. Must not know SQL or the hosted stream server. */
 
-import { installationVersionText } from '../../../shared/install-root.ts'
+import { installationBuildId } from '../../../shared/install-root.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { enableSchemaReload } from '../database/db.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordBoardStreamOpen,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import { hostedBoardCursor, refreshHostedBoard } from './board-hosted-cache.ts'
 import {
-  BOARD_WATCH_SILENCE_MS,
-  BOARD_WATCH_SLOW_INTERVAL_MS,
+  type BoardWatchAnnounce,
   type BoardWatchDecision,
+  type BoardWatchEvent,
   type BoardWatchState,
-  boardWatchShouldPull,
+  BOARD_WATCH_BUILD_CHECK_MS,
+  boardWatchDueEvent,
+  boardWatchPullEvent,
+  boardWatchWaitMs,
   decideBoardWatch,
   initialBoardWatchState,
 } from './board-watch-decision.ts'
@@ -22,22 +28,20 @@ const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
 export const BOARD_WATCH_UNCONFIGURED_REMEDY =
   'ORCH_RECORD_API_URL is not set; cleared by: orch record doctor'
 
-type BoardWatchChunkSource = {
-  read(): Promise<Uint8Array | null>
-}
-
-export type BoardWatchOpen =
-  | { kind: 'stream'; source: BoardWatchChunkSource; close: () => void }
-  | { kind: 'unauthorized' }
-  | { kind: 'error' }
+export type BoardWatchOpen = RecordBoardStreamOpen
 
 type PullGate = { pulling: boolean; queued: boolean }
+
+export type BoardWatchPullResult =
+  | { kind: 'ok'; applied: number }
+  | { kind: 'incomplete'; applied: number }
+  | { kind: 'failed'; reason: string }
 
 export type BoardWatchLoopInput = {
   now: () => number
   wait: (ms: number, signal: AbortSignal) => Promise<'elapsed' | 'aborted'>
   openStream: (signal: AbortSignal) => Promise<BoardWatchOpen>
-  pull: () => Promise<number>
+  pull: () => Promise<BoardWatchPullResult>
   readCursor: () => string
   readBuild: () => string
   startedBuild: string
@@ -45,6 +49,13 @@ export type BoardWatchLoopInput = {
   random: () => number
   log: (line: string) => void
   signal: AbortSignal
+  decide?: typeof decideBoardWatch
+}
+
+type LiveWatch = {
+  state: BoardWatchState
+  target: string | null
+  lastBuild: number
 }
 
 const iso = (now: number) => new Date(now).toISOString()
@@ -65,63 +76,119 @@ async function waitFor(ms: number, signal: AbortSignal): Promise<'elapsed' | 'ab
   })
 }
 
+function decide(
+  input: BoardWatchLoopInput,
+  state: BoardWatchState,
+  event: BoardWatchEvent,
+): BoardWatchDecision {
+  return (input.decide ?? decideBoardWatch)(state, event, input.random())
+}
+
+function announceLine(at: string, announce: BoardWatchAnnounce): string {
+  switch (announce.kind) {
+    case 'connected':
+      return `${at} connected`
+    case 'signed-out':
+      return `${at} signed out; ${RECORD_SIGN_IN_REMEDY}`
+    case 'disconnected':
+      return `${at} disconnected ${announce.reason}`
+    case 'unconfigured':
+      return `${at} ${BOARD_WATCH_UNCONFIGURED_REMEDY}`
+    case 'newer-build':
+      return `${at} exiting for a newer build`
+    case 'pull-failed':
+      return `${at} pull failed ${announce.detail}`
+  }
+}
+
+function announce(input: BoardWatchLoopInput, decision: BoardWatchDecision): void {
+  if (decision.announce) input.log(announceLine(iso(input.now()), decision.announce))
+}
+
 export async function runBoardWatchLoop(input: BoardWatchLoopInput): Promise<number> {
   if (!input.configured) {
-    input.log(`${iso(input.now())} ${BOARD_WATCH_UNCONFIGURED_REMEDY}`)
-    return 1
+    const decision = decide(input, initialBoardWatchState(), { kind: 'unconfigured' })
+    announce(input, decision)
+    return decision.exitCode ?? 0
   }
   const gate: PullGate = { pulling: false, queued: false }
-  let state = initialBoardWatchState()
+  const live: LiveWatch = {
+    state: initialBoardWatchState(),
+    target: null,
+    lastBuild: input.now(),
+  }
   while (!input.signal.aborted) {
-    const step = await oneConnection(input, state, gate)
-    state = step.state
-    if (step.exit !== null) return step.exit
-    if (step.delayMs !== null && (await input.wait(step.delayMs, input.signal)) === 'aborted')
-      return 0
+    const ended = await oneConnection(input, live, gate)
+    if (ended !== null) return ended
   }
   return 0
 }
 
 async function oneConnection(
   input: BoardWatchLoopInput,
-  state: BoardWatchState,
+  live: LiveWatch,
   gate: PullGate,
-): Promise<{ state: BoardWatchState; exit: number | null; delayMs: number | null }> {
-  if (input.readBuild() !== input.startedBuild) {
-    input.log(`${iso(input.now())} exiting for a newer build`)
-    return { state, exit: 0, delayMs: null }
-  }
+): Promise<number | null> {
+  const build = checkBuild(input, live)
+  if (build !== null) return build
   const opened = await input.openStream(input.signal)
-  if (input.signal.aborted) return { state, exit: 0, delayMs: null }
+  if (input.signal.aborted) return 0
   if (opened.kind !== 'stream') {
-    const event = opened.kind === 'unauthorized' ? 'unauthorized' : 'ended-error'
-    const decision = decideBoardWatch(state, { kind: event }, input.random())
-    announce(input, decision)
-    return { state: decision.state, exit: null, delayMs: decision.delayMs ?? 0 }
+    const event: BoardWatchEvent =
+      opened.kind === 'unauthorized' ? { kind: 'unauthorized' } : { kind: 'error' }
+    return await applyReconnect(input, live, decide(input, live.state, event))
   }
-  input.log(`${iso(input.now())} connected`)
-  const afterOpen = decideBoardWatch(state, { kind: 'opened' }, input.random())
-  void requestPull(input, gate)
+  const openedDecision = decide(input, live.state, { kind: 'opened' })
+  live.state = openedDecision.state
+  announce(input, openedDecision)
+  if (openedDecision.pull) queuePull(input, live, gate)
   try {
-    const held = await holdStream(input, opened.source, afterOpen.state, gate)
-    announce(input, held.decision)
-    if (held.decision.action === 'exit') return { state: held.state, exit: 0, delayMs: null }
-    return { state: held.state, exit: null, delayMs: held.decision.delayMs ?? 0 }
+    return await holdStream(input, opened.source, live, gate)
   } finally {
     opened.close()
   }
 }
 
-function announce(input: BoardWatchLoopInput, decision: BoardWatchDecision): void {
-  const at = iso(input.now())
-  if (decision.announce === 'signed-out') input.log(`${at} signed out; ${RECORD_SIGN_IN_REMEDY}`)
-  if (decision.action === 'reconnect' && decision.reason && decision.reason !== 'unauthorized')
-    input.log(`${at} disconnected ${decision.reason}`)
-  if (decision.action === 'exit' && decision.reason === 'newer-build')
-    input.log(`${at} exiting for a newer build`)
+function checkBuild(input: BoardWatchLoopInput, live: LiveWatch): number | null {
+  if (input.now() - live.lastBuild < BOARD_WATCH_BUILD_CHECK_MS) return null
+  return dueBuildExit(input, live)
 }
 
-async function requestPull(input: BoardWatchLoopInput, gate: PullGate): Promise<void> {
+function dueBuildExit(input: BoardWatchLoopInput, live: LiveWatch): number | null {
+  live.lastBuild = input.now()
+  if (input.readBuild() === input.startedBuild) return null
+  const decision = decide(input, live.state, { kind: 'build-changed' })
+  announce(input, decision)
+  return decision.exitCode ?? 0
+}
+
+async function applyReconnect(
+  input: BoardWatchLoopInput,
+  live: LiveWatch,
+  decision: BoardWatchDecision,
+): Promise<number | null> {
+  live.state = decision.state
+  announce(input, decision)
+  if (decision.action === 'exit') return decision.exitCode ?? 0
+  if (decision.action !== 'reconnect') return null
+  if ((await input.wait(decision.delayMs, input.signal)) === 'aborted') return 0
+  return null
+}
+
+function queuePull(input: BoardWatchLoopInput, live: LiveWatch, gate: PullGate): void {
+  void requestPull(input, live, gate).catch((error) => {
+    const reason = error instanceof Error ? error.message : String(error)
+    const decision = decide(input, live.state, { kind: 'pull-failed', reason })
+    live.state = decision.state
+    announce(input, decision)
+  })
+}
+
+async function requestPull(
+  input: BoardWatchLoopInput,
+  live: LiveWatch,
+  gate: PullGate,
+): Promise<void> {
   if (gate.pulling) {
     gate.queued = true
     return
@@ -130,37 +197,74 @@ async function requestPull(input: BoardWatchLoopInput, gate: PullGate): Promise<
   try {
     do {
       gate.queued = false
-      const applied = await input.pull()
-      input.log(`${iso(input.now())} pulled ${applied}`)
-    } while (gate.queued)
+      await runOnePull(input, live, gate)
+    } while (gate.queued && !input.signal.aborted)
   } finally {
     gate.pulling = false
   }
 }
 
+async function runOnePull(
+  input: BoardWatchLoopInput,
+  live: LiveWatch,
+  gate: PullGate,
+): Promise<void> {
+  let result: BoardWatchPullResult
+  try {
+    result = await input.pull()
+  } catch (error) {
+    result = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) }
+  }
+  if (result.kind !== 'failed' && result.applied > 0)
+    input.log(`${iso(input.now())} pulled ${result.applied}`)
+  const event = boardWatchPullEvent(result, input.readCursor(), live.target)
+  if (event === null) {
+    live.target = null
+    return
+  }
+  const decision = decide(input, live.state, event)
+  live.state = decision.state
+  announce(input, decision)
+  if (decision.action === 'exit' || !decision.pull) return
+  if (decision.delayMs > 0 && (await input.wait(decision.delayMs, input.signal)) === 'aborted')
+    return
+  gate.queued = true
+}
+
 function consumeFrames(
+  input: BoardWatchLoopInput,
   frames: BoardStreamFrame[],
-  state: BoardWatchState,
-  cursor: string,
+  live: LiveWatch,
   sawEvent: boolean,
-): { state: BoardWatchState; sawEvent: boolean; pull: boolean } {
-  let next = state
+): { sawEvent: boolean; pull: boolean } {
   let seen = sawEvent
   let pull = false
   for (const frame of frames) {
     if (frame.kind !== 'event') continue
     if (!seen) {
       seen = true
-      next = decideBoardWatch(next, { kind: 'first-event' }, 0).state
+      live.state = decide(input, live.state, { kind: 'first-event' }).state
     }
-    if (boardWatchShouldPull({ reason: 'event', revision: frame.revision, cursor })) pull = true
+    const decision = decide(input, live.state, {
+      kind: 'event',
+      revision: frame.revision,
+      cursor: input.readCursor(),
+    })
+    live.state = decision.state
+    if (decision.pull) {
+      pull = true
+      live.target =
+        live.target === null || BigInt(frame.revision) > BigInt(live.target)
+          ? frame.revision
+          : live.target
+    }
   }
-  return { state: next, sawEvent: seen, pull }
+  return { sawEvent: seen, pull }
 }
 
 async function readOrWait(
   pending: { read: Promise<Uint8Array | null> | null },
-  source: BoardWatchChunkSource,
+  source: { read(): Promise<Uint8Array | null> },
   waitMs: number,
   wait: BoardWatchLoopInput['wait'],
   signal: AbortSignal,
@@ -180,114 +284,92 @@ async function readOrWait(
 
 async function holdStream(
   input: BoardWatchLoopInput,
-  source: BoardWatchChunkSource,
-  startState: BoardWatchState,
+  source: { read(): Promise<Uint8Array | null> },
+  live: LiveWatch,
   gate: PullGate,
-): Promise<{ state: BoardWatchState; decision: BoardWatchDecision }> {
+): Promise<number | null> {
   const decoder = new TextDecoder()
   const parser = createBoardStreamParser()
   const pending: { read: Promise<Uint8Array | null> | null } = { read: null }
   let lastByte = input.now()
   let lastSlow = input.now()
   let sawEvent = false
-  let state = startState
   while (!input.signal.aborted) {
-    if (input.readBuild() !== input.startedBuild) {
-      const decision = decideBoardWatch(state, { kind: 'build-changed' }, 0)
-      return { state: decision.state, decision }
-    }
-    const waitMs = Math.max(
-      0,
-      Math.min(
-        BOARD_WATCH_SILENCE_MS - (input.now() - lastByte),
-        BOARD_WATCH_SLOW_INTERVAL_MS - (input.now() - lastSlow),
-      ),
+    const raced = await readOrWait(
+      pending,
+      source,
+      boardWatchWaitMs({
+        now: input.now(),
+        lastByte,
+        lastSlow,
+        lastBuild: live.lastBuild,
+      }),
+      input.wait,
+      input.signal,
     )
-    const raced = await readOrWait(pending, source, waitMs, input.wait, input.signal)
-    if (raced.kind === 'aborted') return { state, decision: { state, action: 'stay' } }
+    if (raced.kind === 'aborted') return 0
     if (raced.kind === 'timer') {
-      if (input.now() - lastByte >= BOARD_WATCH_SILENCE_MS) {
-        const decision = decideBoardWatch(state, { kind: 'silence' }, input.random())
-        return { state: decision.state, decision }
-      }
-      lastSlow = input.now()
-      await requestPull(input, gate)
+      const due = boardWatchDueEvent({
+        now: input.now(),
+        lastByte,
+        lastSlow,
+        lastBuild: live.lastBuild,
+      })
+      const timer = await applyTimer(input, live, gate, due)
+      if (timer.exit !== null) return timer.exit
+      if (timer.reconnect) return null
+      lastSlow = timer.lastSlow ?? lastSlow
       continue
     }
     if (raced.value === null) {
-      const decision = decideBoardWatch(state, { kind: 'ended-normal' }, input.random())
-      return { state: decision.state, decision }
+      return await applyReconnect(input, live, decide(input, live.state, { kind: 'ended' }))
     }
     lastByte = input.now()
-    const consumed = consumeFrames(
-      parser.push(decoder.decode(raced.value, { stream: true })),
-      state,
-      input.readCursor(),
-      sawEvent,
-    )
-    state = consumed.state
+    const parsed = parser.push(decoder.decode(raced.value, { stream: true }))
+    if (parsed.protocolError) {
+      return await applyReconnect(input, live, decide(input, live.state, { kind: 'error' }))
+    }
+    const consumed = consumeFrames(input, parsed.frames, live, sawEvent)
     sawEvent = consumed.sawEvent
-    if (consumed.pull) await requestPull(input, gate)
+    if (consumed.pull) queuePull(input, live, gate)
   }
-  return { state, decision: { state, action: 'stay' } }
+  return 0
 }
 
-function sourceFromBody(body: ReadableStream<Uint8Array>): BoardWatchChunkSource {
-  const reader = body.getReader()
-  return {
-    async read() {
-      const result = await reader.read()
-      return result.done ? null : (result.value ?? new Uint8Array())
-    },
+async function applyTimer(
+  input: BoardWatchLoopInput,
+  live: LiveWatch,
+  gate: PullGate,
+  due: ReturnType<typeof boardWatchDueEvent>,
+): Promise<{ exit: number | null; reconnect: boolean; lastSlow?: number }> {
+  if (due === 'silence') {
+    const code = await applyReconnect(input, live, decide(input, live.state, { kind: 'silence' }))
+    return { exit: code, reconnect: code === null }
   }
+  if (due === 'build-check') {
+    const exit = dueBuildExit(input, live)
+    return { exit, reconnect: false }
+  }
+  if (due === 'slow-timer') {
+    const decision = decide(input, live.state, { kind: 'slow-timer' })
+    live.state = decision.state
+    announce(input, decision)
+    if (decision.pull) queuePull(input, live, gate)
+    return { exit: null, reconnect: false, lastSlow: input.now() }
+  }
+  return { exit: null, reconnect: false }
 }
 
-async function openProductionStream(signal: AbortSignal): Promise<BoardWatchOpen> {
-  const connection = new AbortController()
-  const stop = () => connection.abort()
-  signal.addEventListener('abort', stop)
-  const drop = () => signal.removeEventListener('abort', stop)
+async function pullProduction(): Promise<BoardWatchPullResult> {
   try {
-    const response = await recordApiClient().openBoardStream(connection.signal)
-    if (response.status === 401 || response.status === 403) {
-      drop()
-      return { kind: 'unauthorized' }
-    }
-    if (!response.ok || !response.body) {
-      drop()
-      return { kind: 'error' }
-    }
-    return {
-      kind: 'stream',
-      source: sourceFromBody(response.body),
-      close: () => {
-        drop()
-        connection.abort()
-      },
-    }
+    const result = await refreshHostedBoard({ budgetMs: BOARD_WATCH_REFRESH_BUDGET_MS })
+    if (result.status === 'failed')
+      return { kind: 'failed', reason: result.reason ?? 'failed' }
+    if (result.status === 'incomplete') return { kind: 'incomplete', applied: result.applied }
+    return { kind: 'ok', applied: result.applied }
   } catch (error) {
-    drop()
-    if (signal.aborted) return { kind: 'error' }
-    const message = error instanceof Error ? error.message : String(error)
-    return { kind: message.includes(RECORD_SIGN_IN_REMEDY) ? 'unauthorized' : 'error' }
+    return { kind: 'failed', reason: error instanceof Error ? error.message : String(error) }
   }
-}
-
-async function pullProduction(): Promise<number> {
-  let applied = 0
-  const inner = recordApiClient()
-  await refreshHostedBoard({
-    budgetMs: BOARD_WATCH_REFRESH_BUDGET_MS,
-    client: {
-      ...inner,
-      listBoardChanges: async (query) => {
-        const page = await inner.listBoardChanges(query)
-        applied += page.items.length
-        return page
-      },
-    },
-  })
-  return applied
 }
 
 export async function watchHostedBoard(): Promise<number> {
@@ -297,14 +379,14 @@ export async function watchHostedBoard(): Promise<number> {
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
   try {
-    const startedBuild = installationVersionText(import.meta.dir, process.env)
+    const startedBuild = installationBuildId(import.meta.dir, process.env)
     return await runBoardWatchLoop({
       now: Date.now,
       wait: waitFor,
-      openStream: openProductionStream,
+      openStream: (signal) => recordApiClient().openBoardStream(signal),
       pull: pullProduction,
       readCursor: () => hostedBoardCursor(),
-      readBuild: () => installationVersionText(import.meta.dir, process.env),
+      readBuild: () => installationBuildId(import.meta.dir, process.env),
       startedBuild,
       configured: Boolean(resolveRecordApiUrl()?.trim()),
       random: Math.random,

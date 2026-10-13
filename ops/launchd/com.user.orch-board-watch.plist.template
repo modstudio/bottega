@@ -10,7 +10,11 @@
     <string>watch</string>
   </array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>ThrottleInterval</key><integer>30</integer>
   <key>WorkingDirectory</key><string>__INSTALL_ROOT__</string>
   <key>EnvironmentVariables</key>

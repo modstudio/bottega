@@ -92,7 +92,7 @@ test('an unadopted refresh touches neither the hosted client nor the cache', asy
       env: { ORCH_RECORD_API_URL: 'https://record.test' },
       client,
     }),
-  ).toBe('local')
+  ).toMatchObject({ status: 'local' })
   expect(calls).toBe(0)
   expect(
     (db().query('SELECT COUNT(*) count FROM hosted_board_message_cache').get() as { count: number })
@@ -123,7 +123,7 @@ test('refresh pages to completion, advances with each page, and replaces an upda
   }
   expect(
     await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
-  ).toBe('success')
+  ).toMatchObject({ status: 'success' })
   expect(calls).toEqual(['0', '100'])
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY),
@@ -170,7 +170,7 @@ test('refresh records an unreachable service without throwing and exposes verifi
       env: { ORCH_RECORD_API_URL: 'x' },
       client: failed,
     }),
-  ).toBe('failed')
+  ).toMatchObject({ status: 'failed' })
   expect(
     (
       db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_OUTCOME_KEY) as {
@@ -374,7 +374,9 @@ test('a local delivery stamp suppresses a repeat and its failed hosted write ret
 
 test('an adopted install without record configuration records a failed refresh with the remedy', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  expect(await refreshHostedBoard({ budgetMs: 50, env: noRecordEnv })).toBe('failed')
+  expect(await refreshHostedBoard({ budgetMs: 50, env: noRecordEnv })).toMatchObject({
+    status: 'failed',
+  })
   expect(hostedBoardVerificationWarning()).toContain('ORCH_RECORD_API_URL is not configured')
   expect(hostedBoardVerificationWarning()).toContain('orch record sign-in')
 })
@@ -395,7 +397,9 @@ test('refresh stops at its budget, keeps the last page cursor, and resumes from 
     },
   }
   const now = () => (resumed ? 20 : clockCalls++ < 3 ? 0 : 10)
-  await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now })
+  expect(
+    await refreshHostedBoard({ budgetMs: 5, env: { ORCH_RECORD_API_URL: 'x' }, client, now }),
+  ).toMatchObject({ status: 'incomplete' })
   expect(calls).toEqual(['0'])
   expect(
     db().query('SELECT value FROM schema_meta WHERE key=?').get(BOARD_REFRESH_CURSOR_KEY),
@@ -526,7 +530,7 @@ test('a changes response without identity serves no prior cached rows and warns 
       env: { ORCH_RECORD_API_URL: 'x' },
       client: malformed,
     }),
-  ).toBe('failed')
+  ).toMatchObject({ status: 'failed' })
   expect(claimCachedHosted('cache-reader')).toEqual([])
   expect(hostedBoardVerificationWarning(database)).toContain('identity is unverified')
 })
@@ -618,12 +622,101 @@ test('applying an older page after a newer one leaves the cursor where it was', 
   }
   expect(
     await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
-  ).toBe('success')
+  ).toMatchObject({ status: 'success' })
   expect(hostedBoardCursor()).toBe('20')
   expect(
     await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client }),
-  ).toBe('success')
+  ).toMatchObject({ status: 'success' })
   expect(hostedBoardCursor()).toBe('20')
+})
+
+test('an older snapshot applied after a newer one leaves payload, tags, receipts, and cursor', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const id = newRecordId()
+  const newer = message({
+    id,
+    revision: '20',
+    body: 'newer-body',
+  })
+  const older = message({
+    id,
+    revision: '10',
+    body: 'older-body',
+  })
+  let calls = 0
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => {
+      calls += 1
+      return calls === 1
+        ? {
+            userId,
+            items: [
+              {
+                message: newer,
+                tags: [{ kind: 'task' as const, value: 'DEV-newer', origin: 'sender' as const }],
+                receipts: [
+                  {
+                    messageId: id,
+                    readerUserId: userId,
+                    readerSession: 'cache-reader',
+                    audienceAtPosting: true,
+                    deliveredAt: '2026-10-05T12:02:00.000Z',
+                    acknowledgedAt: null,
+                  },
+                ],
+              },
+            ],
+            highestRevision: '20',
+          }
+        : {
+            userId,
+            items: [
+              {
+                message: older,
+                tags: [{ kind: 'task' as const, value: 'DEV-older', origin: 'sender' as const }],
+                receipts: [
+                  {
+                    messageId: id,
+                    readerUserId: userId,
+                    readerSession: 'cache-reader',
+                    audienceAtPosting: false,
+                    deliveredAt: '2026-10-05T12:01:00.000Z',
+                    acknowledgedAt: null,
+                  },
+                ],
+              },
+            ],
+            highestRevision: '10',
+          }
+    },
+  }
+  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  expect(hostedBoardCursor()).toBe('20')
+  expect(
+    (
+      JSON.parse(
+        (
+          db().query('SELECT payload FROM hosted_board_message_cache WHERE id=?').get(id) as {
+            payload: string
+          }
+        ).payload,
+      ) as { body: string; revision: string }
+    ).body,
+  ).toBe('newer-body')
+  expect(
+    db()
+      .query('SELECT value FROM hosted_board_message_tag_cache WHERE message_id=?')
+      .all(id),
+  ).toEqual([{ value: 'DEV-newer' }])
+  expect(
+    db()
+      .query(
+        'SELECT delivered_at,audience_at_posting FROM hosted_board_receipt_cache WHERE message_id=?',
+      )
+      .get(id),
+  ).toEqual({ delivered_at: '2026-10-05T12:02:00.000Z', audience_at_posting: 1 })
 })
 
 test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {

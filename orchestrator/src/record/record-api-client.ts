@@ -329,8 +329,17 @@ export type RecordApiClient = {
   ): Promise<HostedBoardClaim>
   listBoardClaims(project: string): Promise<{ claims: HostedBoardClaim[] }>
   releaseBoardTaskClaims(input: { project: string; key: string }): Promise<{ released: number }>
-  openBoardStream(signal?: AbortSignal): Promise<Response>
+  openBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen>
 }
+
+export type RecordBoardStreamSource = {
+  read(): Promise<Uint8Array | null>
+}
+
+export type RecordBoardStreamOpen =
+  | { kind: 'stream'; source: RecordBoardStreamSource; close: () => void }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; reason: string }
 
 const INJECT_KEY = Symbol.for('orch.record-api-client')
 type InjectSlot = { current: RecordApiClient | null }
@@ -700,16 +709,56 @@ function recordApiBoardWatchClient(): Pick<
   }
 }
 
-async function fetchBoardStream(signal?: AbortSignal): Promise<Response> {
+function sourceFromBody(body: ReadableStream<Uint8Array>): RecordBoardStreamSource {
+  const reader = body.getReader()
+  return {
+    async read() {
+      const result = await reader.read()
+      return result.done ? null : (result.value ?? new Uint8Array())
+    },
+  }
+}
+
+export function classifyBoardStreamResponse(
+  status: number,
+  body: ReadableStream<Uint8Array> | null,
+  close: () => void,
+): RecordBoardStreamOpen {
+  if (status === 401 || status === 403) return { kind: 'unauthorized' }
+  if (status !== 200 || !body) return { kind: 'error', reason: `record API ${status}` }
+  return { kind: 'stream', source: sourceFromBody(body), close }
+}
+
+async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStreamOpen> {
   const token = storedRecordToken()
-  if (!token) throw recordApiUnreachable(new Error(RECORD_SIGN_IN_REMEDY))
+  if (!token) return { kind: 'unauthorized' }
+  const connection = new AbortController()
+  const stop = () => connection.abort()
+  signal?.addEventListener('abort', stop)
+  const drop = () => signal?.removeEventListener('abort', stop)
+  const close = () => {
+    drop()
+    connection.abort()
+  }
+  try {
+    const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
+      method: 'GET',
+      headers: boardStreamHeaders(token),
+      signal: connection.signal,
+    })
+    const opened = classifyBoardStreamResponse(response.status, response.body, close)
+    if (opened.kind !== 'stream') drop()
+    return opened
+  } catch (error) {
+    drop()
+    if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
+    return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function boardStreamHeaders(token: string): Headers {
   const headers = new Headers()
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
   headers.set('accept', 'text/event-stream')
-  try {
-    return await fetch(`${recordApiBaseUrl()}/v1/board/stream`, { method: 'GET', headers, signal })
-  } catch (error) {
-    if (signal?.aborted) throw error
-    throw recordApiUnreachable(error)
-  }
+  return headers
 }
