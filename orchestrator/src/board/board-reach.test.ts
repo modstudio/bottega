@@ -71,6 +71,16 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
     stopsBlockedWithoutAcknowledgement: 1,
     worstMessages: [{ messageId: 'one', audience: 'project:alpha', pushes: 2, unrelated: 1 }],
   })
+  expect(
+    countBoardReach([
+      row({ id: 1, messageId: 'info', blockedStop: true, acknowledgementRequired: false }),
+    ]).stopsBlockedWithoutAcknowledgement,
+  ).toBe(1)
+  expect(
+    countBoardReach([
+      row({ id: 1, messageId: 'ack', blockedStop: true, acknowledgementRequired: true }),
+    ]).stopsBlockedWithoutAcknowledgement,
+  ).toBe(0)
 })
 
 test('an empty reach window has no pushes or worst messages', () => {
