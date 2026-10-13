@@ -84,6 +84,7 @@ describe('review instructions', () => {
     })
     const initial = reviewLensPrompt({
       lens: { question, excludes: 'Other questions.' },
+      mechanicallyEnforced: [],
       supplied: 'Inspect the change.',
     })
     const prompt = bindReviewInstructions({

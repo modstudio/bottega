@@ -1,10 +1,15 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync } from 'node:fs'
+import {
+  mechanicallyEnforcedChecks,
+  resolveMechanicalChecks,
+} from '../enforcement/enforcement-resolution.ts'
 import { isReaderJob, job, reclaimsTreeByDefault, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import {
+  type Project,
   projectAt,
   projectByName,
   projectRepositoryRefusal,
@@ -73,6 +78,26 @@ function reportDefaultSeed(
   if (!porcelain && requested === undefined && effective !== undefined) {
     report(`! using tracked recipe default seed ${JSON.stringify(effective)}`)
   }
+}
+
+function projectMechanicalChecks(project: Project | null) {
+  if (!project) return []
+  return mechanicallyEnforcedChecks(
+    resolveMechanicalChecks({ stack: project.stack, settings: project.settings }),
+  )
+}
+
+function lensPromptFor(
+  project: Project | null,
+  findings: boolean | undefined,
+  lensId: string | undefined,
+  supplied: string,
+): string {
+  return reviewLensPrompt({
+    lens: resolvedFindingsLens(findings, lensId, project?.name ?? null),
+    mechanicallyEnforced: projectMechanicalChecks(project),
+    supplied,
+  })
 }
 
 type DispatchOptions = {
@@ -305,8 +330,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(caller.notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  // Project-required inputs are knowable before the prompt is read. Checking
-  // them afterwards made a missing key pay for stdin and run setup first.
+  // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const requestedBase = flag('base')
   let base = requestedBase
   const reviewRef = flag('review')
@@ -402,10 +426,7 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = reviewLensPrompt({
-    lens: resolvedFindingsLens(requested.findings, lens, dispatchProjectName),
-    supplied: await readPrompt(),
-  })
+  const prompt = lensPromptFor(dispatchProject, requested.findings, lens, await readPrompt())
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),

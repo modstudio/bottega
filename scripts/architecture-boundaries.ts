@@ -237,6 +237,7 @@ export const importBoundaries: ImportBoundary[] = [
       './dispatch-preflight.ts',
       './execution-requirement.ts',
       './review-lens-prompt.ts',
+      '../enforcement/enforcement-resolution.ts',
       '../jobs/jobs.ts',
       '../lens/lenses.ts',
       '../worktree/keep-tree-hold.ts',

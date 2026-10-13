@@ -32,6 +32,11 @@ export type ResolvedMechanicalCheck = {
   reason: string | null
 }
 
+export type MechanicallyEnforcedCheck = Pick<
+  ResolvedMechanicalCheck,
+  'category' | 'title' | 'tool'
+> & { tool: string }
+
 type EffectiveOverride = MechanicalCheckOverride
 type EnforcementProjectSettings = Pick<
   ProjectSettings,
@@ -186,4 +191,18 @@ export function resolveMechanicalChecks(input: {
     if (category.id !== 'test-substance') return row
     return { ...row, note: joinedNote(row.note, phpPolicyNote(input.settings)) ?? null }
   })
+}
+
+/** Categories a blocking commit or gate tool already refuses for this project. */
+export function mechanicallyEnforcedChecks(
+  rows: readonly ResolvedMechanicalCheck[],
+): MechanicallyEnforcedCheck[] {
+  return rows.flatMap((row) =>
+    row.enforced &&
+    row.blocking &&
+    row.tool !== null &&
+    row.points.some((point) => point === 'commit' || point === 'gate')
+      ? [{ category: row.category, title: row.title, tool: row.tool }]
+      : [],
+  )
 }
