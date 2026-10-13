@@ -200,11 +200,24 @@ async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoard
   return hostedBoardMessageView(loaded.row, loaded.tags, clock)
 }
 
-export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
+async function visibleProjectIds(tx: SQL, name: string): Promise<string[]> {
   const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
-  if (rows.length !== 1)
-    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-  return String(rows[0]!.id)
+  return (rows as Array<{ id: unknown }>).map((row) => String(row.id))
+}
+
+/** A project name stands for a project only when exactly one readable row carries it. */
+export function uniqueProjectId(ids: string[]): string | null {
+  return ids.length === 1 ? ids[0]! : null
+}
+
+export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
+  const id = uniqueProjectId(await visibleProjectIds(tx, name))
+  if (id === null) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+  return id
+}
+
+async function resolvePostingProjectId(tx: SQL, name: string): Promise<string | null> {
+  return uniqueProjectId(await visibleProjectIds(tx, name))
 }
 
 function sessionOrNull(value: string | null | undefined): string | null {
@@ -480,7 +493,7 @@ async function prepareHostedPost(
       400,
     )
   const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const authorProjectId = postingProject ? await resolveVisibleProjectId(tx, postingProject) : null
+  const authorProjectId = postingProject ? await resolvePostingProjectId(tx, postingProject) : null
   if (audience.kind === 'architects' && audience.value)
     await resolveVisibleProjectId(tx, audience.value)
   const derived = hostedBoardScope(audience, projectId)
@@ -594,7 +607,7 @@ async function insertReplyCopyingRoot(
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-      ${input.project ? await resolveVisibleProjectId(tx, input.project) : null}::uuid,
+      ${input.project ? await resolvePostingProjectId(tx, input.project) : null}::uuid,
       'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
@@ -638,7 +651,7 @@ export async function replyHostedBoardMessage(
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
     requested.authorProjectId = input.project
-      ? await resolveVisibleProjectId(tx, input.project)
+      ? await resolvePostingProjectId(tx, input.project)
       : null
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId

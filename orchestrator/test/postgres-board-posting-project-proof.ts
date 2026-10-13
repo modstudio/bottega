@@ -2,6 +2,10 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
 
+const AMBIGUOUS_PROJECT = 'board-api-ambiguous'
+const AMBIGUOUS_PROJECT_A = '03990000-0000-7000-8000-000000000017'
+const AMBIGUOUS_PROJECT_B = '03990000-0000-7000-8000-000000000018'
+
 export function registerBoardPostingProjectProof(input: {
   origin: () => string
   tokenA: () => string
@@ -105,5 +109,91 @@ export function registerBoardPostingProjectProof(input: {
         `SELECT author_project_id IS NULL FROM board_message WHERE id='${rootId}';`,
       ),
     ).toBe('t')
+  })
+
+  test('an ambiguous posting project is omitted without weakening project-scoped audiences', async () => {
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+       ('${AMBIGUOUS_PROJECT_A}',(SELECT space_id FROM project WHERE id='${input.projectId}'),
+        '${AMBIGUOUS_PROJECT}',ARRAY['BAPI3'],now()),
+       ('${AMBIGUOUS_PROJECT_B}',(SELECT space_id FROM project WHERE name='${input.projectTwo}'),
+        '${AMBIGUOUS_PROJECT}',ARRAY['BAPI4'],now());`,
+    )
+    const rootId = newRecordId()
+    const replyId = newRecordId()
+    const sessionResponse = await input.post(input.tokenA(), {
+      ...notice(
+        rootId,
+        `session:${input.caseSession('ambiguous-recipient')}`,
+        input.caseSession('ambiguous-root'),
+      ),
+      project: AMBIGUOUS_PROJECT,
+    })
+    expect(sessionResponse.status).toBe(200)
+    const root = await json(sessionResponse)
+    expect((root.origin as Record<string, unknown>).project).toBeNull()
+    expect((root.origin as Record<string, unknown>).projectStored).toBe(false)
+    const resent = await input.post(input.tokenA(), {
+      ...notice(
+        rootId,
+        `session:${input.caseSession('ambiguous-recipient')}`,
+        input.caseSession('ambiguous-root'),
+      ),
+      project: AMBIGUOUS_PROJECT,
+    })
+    expect(resent.status).toBe(200)
+    expect((await json(resent)).id).toBe(rootId)
+
+    const replyResponse = await fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      headers: headers(input.tokenA()),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'Reply from an ambiguous posting project.',
+        authorSession: input.caseSession('ambiguous-reply'),
+        project: AMBIGUOUS_PROJECT,
+      }),
+    })
+    expect(replyResponse.status).toBe(200)
+    const reply = await json(replyResponse)
+    expect((reply.origin as Record<string, unknown>).project).toBeNull()
+    expect((reply.origin as Record<string, unknown>).projectStored).toBe(false)
+
+    const architectsResponse = await input.post(input.tokenA(), {
+      ...notice(newRecordId(), 'architects', input.caseSession('ambiguous-architects')),
+      project: AMBIGUOUS_PROJECT,
+    })
+    expect(architectsResponse.status).toBe(200)
+    const architects = await json(architectsResponse)
+    expect((architects.origin as Record<string, unknown>).project).toBeNull()
+    expect((architects.origin as Record<string, unknown>).projectStored).toBe(false)
+
+    for (const audience of [`project:${AMBIGUOUS_PROJECT}`, `architects:${AMBIGUOUS_PROJECT}`]) {
+      const scoped = await input.post(input.tokenA(), {
+        ...notice(
+          newRecordId(),
+          audience,
+          input.caseSession(`ambiguous-${audience.split(':')[0]}`),
+        ),
+        project: AMBIGUOUS_PROJECT,
+      })
+      expect(scoped.status).toBe(400)
+      expect(JSON.stringify(await scoped.json())).toContain(
+        `unknown or invisible board project ${AMBIGUOUS_PROJECT}`,
+      )
+    }
+
+    expect(
+      input
+        .succeeds(
+          'postgres',
+          'postgres',
+          `SELECT author_project_id IS NULL FROM board_message
+         WHERE id IN ('${rootId}','${replyId}') ORDER BY id;`,
+        )
+        .split('\n'),
+    ).toEqual(['t', 't'])
   })
 }
