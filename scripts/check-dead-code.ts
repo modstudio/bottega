@@ -15,10 +15,10 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../shared/brand'
+import { openChangeView } from '../shared/change-view'
 import { inspectionGitEnv } from '../shared/git'
 import { ratchetDecision } from '../shared/ratchet'
 import { concernStateDirectory } from '../shared/state-directory'
-import { openChangeView } from './change-view'
 import {
   cacheConfigurationHash,
   type DeadCodeFinding,

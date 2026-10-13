@@ -2,8 +2,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChangeView } from '../shared/change-view'
 import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
-import { openChangeView } from './change-view'
 import { resolveLandingBase } from './landing-base'
 import { reportPathFromArguments, reportRemaining } from './remaining-report'
 

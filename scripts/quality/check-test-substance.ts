@@ -5,6 +5,7 @@ import {
   resolvePhpPolicyRules,
   unreadPhpPolicyRulesLine,
 } from '../../orchestrator/src/test-substance-project-policy'
+import { openChangeView } from '../../shared/change-view'
 import {
   isTestFile,
   judgeTestSubstance,
@@ -17,7 +18,6 @@ import {
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
 import { phpTestSubstanceReport } from '../../shared/test-substance/test-substance-php'
-import { openChangeView } from '../change-view'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }
 
