@@ -2,11 +2,22 @@
 /** Owns tenant-bound hosted document reads and audience projection. */
 import { SQL } from 'bun'
 import { docAudienceRefusal, docBodyForAudience } from '../../../shared/doc-sections.ts'
-import { type DocAudience, type DocKind, type DocStatus, docSummary } from '../../../shared/docs.ts'
+import {
+  type DocAudience,
+  type DocAudiences,
+  type DocKind,
+  type DocStatus,
+  docSummary,
+} from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { RecordDocError } from './record-doc-errors.ts'
-import { type RecordDoc, recordDocRow } from './record-doc-mapping.ts'
+import {
+  type RecordDoc,
+  type RecordDocRevision,
+  recordDocRevisionRow,
+  recordDocRow,
+} from './record-doc-mapping.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -98,10 +109,66 @@ export async function getRecordDoc(
     `
     if (!rows[0]) return null
     const doc = recordDocRow(rows[0] as Record<string, unknown>)
-    if (!input.audience) return doc
-    const address = `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`
-    const refusal = docAudienceRefusal(address, doc.audiences, input.audience)
-    if (refusal) throw new RecordDocError(refusal)
-    return { ...doc, body: docBodyForAudience(doc.body, input.audience) }
+    return { ...doc, body: hostedDocBodyForAudience(doc, input.audience) }
+  })
+}
+
+export async function listRecordDocRevisions(
+  input: Tenant & { id: string; audience?: DocAudience },
+): Promise<RecordDocRevision[] | null> {
+  return tenant(input, async (tx) => {
+    const docs = await tx`
+      SELECT id,space_id,scope,subject,slug,audiences,body FROM doc WHERE id=${input.id}::uuid
+    `
+    if (!docs.length) return null
+    const live = docs[0] as Record<string, unknown>
+    const liveDocument = {
+      scope: String(live.scope),
+      subject: live.subject == null ? null : String(live.subject),
+      slug: String(live.slug),
+      audiences: live.audiences as DocAudiences,
+      body: String(live.body),
+    }
+    const rows = await tx`
+      SELECT r.*, own.name AS article_subject_name,
+        COALESCE(NULLIF(author_user.name,''),author_user.email) AS author_name,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(r.related_subject_ids)='array' THEN r.related_subject_ids ELSE '[]'::jsonb END) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
+      FROM doc_revision r
+      LEFT JOIN subject own ON own.id=r.article_subject_id
+      LEFT JOIN "user" author_user ON author_user.id::text=r.author
+      WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
+      ORDER BY at DESC, id DESC
+    `
+    return recordDocRevisionHistoryForAudience(
+      liveDocument,
+      rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row)),
+      input.audience,
+    )
+  })
+}
+
+/** Apply the hosted audience contract to one document body. */
+export function hostedDocBodyForAudience(
+  document: Pick<RecordDoc, 'scope' | 'subject' | 'slug' | 'audiences' | 'body'>,
+  audience?: DocAudience,
+): string {
+  if (!audience) return document.body
+  const address = `${document.scope}/${document.subject ?? '_'}/${document.slug}`
+  const refusal = docAudienceRefusal(address, document.audiences, audience)
+  if (refusal) throw new RecordDocError(refusal)
+  return docBodyForAudience(document.body, audience)
+}
+
+export function recordDocRevisionHistoryForAudience(
+  liveDocument: Pick<RecordDoc, 'scope' | 'subject' | 'slug' | 'audiences' | 'body'>,
+  revisions: readonly RecordDocRevision[],
+  audience?: DocAudience,
+): RecordDocRevision[] {
+  hostedDocBodyForAudience(liveDocument, audience)
+  return revisions.map((revision) => {
+    if (audience && !revision.audiences.includes(audience)) {
+      return { ...revision, body: '', withheldForAudience: true }
+    }
+    return { ...revision, body: hostedDocBodyForAudience(revision, audience) }
   })
 }

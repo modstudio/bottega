@@ -321,6 +321,7 @@ const docRevisionSchema = z
     op: z.enum(['create', 'set', 'consume', 'delete', 'restore', 'import', 'backfill']),
     title: z.string(),
     body: z.string(),
+    withheldForAudience: z.boolean(),
     delivery: z.enum(['inject', 'demand']),
     audiences: hostedDocAudiencesSchema,
     parentId: z.string().uuid().nullable().default(null),
@@ -329,6 +330,7 @@ const docRevisionSchema = z
     kind: z.enum(DOC_KINDS).default('working'),
     replacementSlug: z.string().nullable().default(null),
     author: z.string(),
+    authorName: z.string().nullable(),
     reason: z.string(),
     sessionId: z.string().nullable(),
     at: z.string().datetime({ offset: true }),
@@ -633,30 +635,47 @@ export function createRecordClient(options: RecordClientOptions) {
         }),
         hostedDocSearchSchema,
       ),
-    docRevisions: (id: string) =>
-      request(options, `/v1/docs/${encodeURIComponent(id)}/revisions`, docRevisionsSchema),
-    putDoc: (input: {
-      scope: string
-      subject: string | null
-      owner?: string | null
-      slug: string
-      title: string
-      body: string
-      delivery: 'inject' | 'demand'
-      audiences?: DocAudiences
-      reason: string
-      author: string
-      expectedRevision?: string
-    }) =>
+    docRevisions: (id: string, audience?: DocAudience) =>
+      request(
+        options,
+        query(`/v1/docs/${encodeURIComponent(id)}/revisions`, { audience }),
+        docRevisionsSchema,
+      ),
+    putDoc: (
+      input: {
+        scope: string
+        subject: string | null
+        owner?: string | null
+        slug: string
+        title: string
+        body: string
+        delivery: 'inject' | 'demand'
+        audiences?: DocAudiences
+        reason: string
+        author: string
+        expectedRevision?: string
+      },
+      destinationSpaceId?: string,
+    ) =>
       request(options, '/v1/docs', docWriteResultSchema, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+        },
         body: JSON.stringify(input),
       }),
-    deleteDoc: (id: string, input: { reason: string; author: string; expectedRevision?: string }) =>
+    deleteDoc: (
+      id: string,
+      input: { reason: string; author: string; expectedRevision?: string },
+      destinationSpaceId?: string,
+    ) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}`, deletedResultSchema, {
         method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+        },
         body: JSON.stringify(input),
       }),
     configEntries: () =>

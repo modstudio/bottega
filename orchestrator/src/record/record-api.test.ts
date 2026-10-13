@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { identity, idleBoardDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
@@ -10,8 +10,10 @@ import {
   type RecordSettingsPermissionInput,
 } from './record-settings.ts'
 
-function appWith(session: typeof identity | null, overrides: Record<string, unknown> = {}) {
-  return recordApi({
+const notImplemented = () => Promise.reject(new Error('not implemented'))
+
+const appWith = (session: typeof identity | null, overrides: Record<string, unknown> = {}) =>
+  recordApi({
     recordUrl: 'postgres://record.test/record',
     auth: { handler: () => Response.json({ handled: true }) },
     readSession: async () => session,
@@ -66,15 +68,11 @@ function appWith(session: typeof identity | null, overrides: Record<string, unkn
     listSnapshots: async () => [],
     listConfigEntries: async () => [],
     getConfigEntry: async () => null,
-    putConfigEntry: async () => {
-      throw new Error('not implemented')
-    },
+    putConfigEntry: notImplemented,
     deleteConfigEntry: async () => undefined,
     listConfigSecrets: async () => [],
     getConfigSecret: async () => null,
-    putConfigSecret: async () => {
-      throw new Error('not implemented')
-    },
+    putConfigSecret: notImplemented,
     deleteConfigSecret: async () => undefined,
     currentDataKey: async () => null,
     listDataKeys: async () => [],
@@ -84,18 +82,24 @@ function appWith(session: typeof identity | null, overrides: Record<string, unkn
     retireDataKey: async () => undefined,
     deleteDataKeyWraps: async () => undefined,
     listMachineKeys: async () => [],
-    registerMachineKey: async () => {
-      throw new Error('not implemented')
-    },
+    registerMachineKey: notImplemented,
     revokeMachineKey: async () => undefined,
     ...idleSubjectDeps(),
     ...idleBoardDeps(),
     ...overrides,
   })
-}
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
+  test('the revisions route forwards its audience to the record service', async () => {
+    const listDocRevisions = mock(async () => [])
+    const app = appWith(identity, { listDocRevisions })
+    expect((await app.request(`/v1/docs/${id}/revisions?audience=internal`)).status).toBe(200)
+    expect(listDocRevisions).toHaveBeenCalledWith(
+      expect.objectContaining({ id, audience: 'internal' }),
+    )
+  })
+
   test('a document destination binds a member space while no header keeps the active space', async () => {
     const calls: Array<{ spaceId: string; spaceIds: string[] }> = []
     const session = {
@@ -343,12 +347,14 @@ describe('record API', () => {
                 op: 'set',
                 title: 'settings',
                 body: '{}',
+                withheldForAudience: false,
                 delivery: 'demand',
                 audiences: ['technical'],
                 parentId: null,
                 position: 0,
                 reason: 'fixture',
                 author: 'fixture',
+                authorName: null,
                 sessionId: null,
                 at: '2026-09-28T12:00:00.000Z',
               },

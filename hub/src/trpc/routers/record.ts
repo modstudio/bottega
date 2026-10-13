@@ -309,8 +309,46 @@ export const recordRouter = t.router({
     )
     .query(({ ctx, input }) => recordClient(ctx).docSearch(input)),
   docRevisions: t.procedure
-    .input(z.object({ id: uuid }))
-    .query(({ ctx, input }) => recordClient(ctx).docRevisions(input.id)),
+    .input(z.object({ id: uuid, audience: z.enum(DOC_AUDIENCES).optional() }))
+    .query(({ ctx, input }) => recordClient(ctx).docRevisions(input.id, input.audience)),
+  saveDoc: t.procedure
+    .input(
+      z.object({
+        spaceId: uuid,
+        scope: z.string().min(1),
+        subject: z.string().nullable(),
+        slug: z.string().min(1),
+        title: z.string(),
+        body: z.string(),
+        delivery: z.enum(['inject', 'demand']),
+        reason: z.string().trim().min(1, 'Reason is required'),
+        expectedRevision: uuid,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const client = recordClient(ctx)
+      const who = await client.whoami()
+      const { spaceId, ...doc } = input
+      return client.putDoc({ ...doc, author: who.user.id }, spaceId)
+    }),
+  deleteDoc: t.procedure
+    .input(
+      z.object({
+        id: uuid,
+        spaceId: uuid,
+        reason: z.string().trim().min(1, 'Reason is required'),
+        expectedRevision: uuid,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const client = recordClient(ctx)
+      const who = await client.whoami()
+      return client.deleteDoc(
+        input.id,
+        { reason: input.reason, expectedRevision: input.expectedRevision, author: who.user.id },
+        input.spaceId,
+      )
+    }),
   flight: t.procedure.input(workInput).query(async ({ ctx, input }) => {
     const { client, identity } = await hostedIdentity(ctx)
     return hostedFlightDone(recordDatabaseUrl(), identity, {

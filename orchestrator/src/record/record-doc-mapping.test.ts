@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   importedLiveArticleFields,
   normalizeRecordDocImport,
+  recordDocRevisionRow,
   recordDocRow,
 } from './record-doc-mapping.ts'
 
@@ -100,4 +101,29 @@ test('document row timestamps keep milliseconds when the driver returns Dates', 
     relatedSubjects: mapped.relatedSubjects,
     sourceFiles: mapped.sourceFiles,
   }).toEqual({ form: null, articleSubject: null, relatedSubjects: [], sourceFiles: [] })
+})
+
+test('revision rows carry the batched author display name', () => {
+  const mapped = recordDocRevisionRow({
+    id: newRecordId(),
+    doc_id: newRecordId(),
+    scope: 'global',
+    subject: null,
+    owner_user_id: null,
+    slug: 'named-author',
+    op: 'set',
+    title: 'Named author',
+    body: 'Body',
+    delivery: 'demand',
+    audiences: ['technical'],
+    parent_id: null,
+    position: 0,
+    author: newRecordId(),
+    author_name: 'Avery Editor',
+    reason: 'Revise',
+    session_id: null,
+    at: new Date('2026-10-12T12:00:00.000Z'),
+  })
+
+  expect(mapped).toMatchObject({ authorName: 'Avery Editor', withheldForAudience: false })
 })

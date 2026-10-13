@@ -12,6 +12,8 @@ type DocsDelivery = 'inject' | 'demand'
 /** Shared tree item, matching `hub/src/doc-contract.ts`, plus delivery when the source has it. */
 export type DocsTreeItem = {
   id: string
+  /** Hosted record space that owns this document. */
+  spaceId?: string
   slug: string
   title: string
   parentId: string | null

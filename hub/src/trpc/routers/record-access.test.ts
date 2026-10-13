@@ -1,9 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { recordRouter } from './record.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000000001'
 const userId = '01990000-0000-7000-8000-000000000002'
 const subscriptionId = '01990000-0000-7000-8000-000000000003'
+const revisionId = '01990000-0000-7000-8000-000000000004'
 const originalFetch = globalThis.fetch
 const originalRecordApiUrl = process.env.HUB_RECORD_API_URL
 const originalRecordDatabaseUrl = process.env.HUB_RECORD_DATABASE_URL
@@ -28,6 +30,48 @@ function caller(permission: 'read' | 'write') {
     })) as unknown as typeof fetch
   return recordRouter.createCaller({ authorization: 'Bearer token' })
 }
+
+test('hosted document mutations bind the destination, authenticated author, and revision', async () => {
+  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  const requests: Array<{ path: string; init: RequestInit }> = []
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname
+    if (path === '/v1/whoami') {
+      return Response.json({
+        user: { id: userId },
+        activeSpaceId: spaceId,
+        personalSpaceId: null,
+        memberships: [{ space_id: spaceId, slug: 'acme', permission: 'write' }],
+      })
+    }
+    requests.push({ path, init: init ?? {} })
+    return Response.json({ id: spaceId, revisionId })
+  }) as typeof fetch
+  const api = recordRouter.createCaller({ authorization: 'Bearer token' })
+
+  await api.saveDoc({
+    spaceId,
+    scope: 'project',
+    subject: PLATFORM_NAME,
+    slug: 'guide',
+    title: 'Guide',
+    body: 'Body',
+    delivery: 'demand',
+    reason: 'save it',
+    expectedRevision: revisionId,
+  })
+  await api.deleteDoc({ id: spaceId, spaceId, reason: 'remove it', expectedRevision: revisionId })
+
+  expect(requests).toHaveLength(2)
+  expect(requests.map(({ init }) => new Headers(init.headers).get('x-record-space'))).toEqual([
+    spaceId,
+    spaceId,
+  ])
+  expect(requests.map(({ init }) => JSON.parse(String(init.body)))).toEqual([
+    expect.objectContaining({ author: userId, expectedRevision: revisionId }),
+    { author: userId, expectedRevision: revisionId, reason: 'remove it' },
+  ])
+})
 
 const mutations = [
   {

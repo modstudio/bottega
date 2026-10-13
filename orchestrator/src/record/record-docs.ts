@@ -44,9 +44,7 @@ import {
   newerHostedImportRefusal,
   normalizeRecordDocImport,
   type RecordDocImportInput,
-  type RecordDocRevision,
   recordDocRevisionIdentityRefusal,
-  recordDocRevisionRow,
 } from './record-doc-mapping.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
@@ -59,6 +57,7 @@ export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 export {
   getRecordDoc,
+  listRecordDocRevisions,
   listRecordDocs,
   type RecordDocListInput,
 } from './record-doc-read.ts'
@@ -113,23 +112,6 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   } finally {
     await client.close()
   }
-}
-
-export async function listRecordDocRevisions(
-  input: Tenant & { id: string },
-): Promise<RecordDocRevision[] | null> {
-  return tenant(input, async (tx) => {
-    const docs = await tx`SELECT id,space_id FROM doc WHERE id=${input.id}::uuid`
-    if (!docs.length) return null
-    const rows = await tx`
-      SELECT r.*, own.name AS article_subject_name,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name) ORDER BY ids.ordinality) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(r.related_subject_ids)='array' THEN r.related_subject_ids ELSE '[]'::jsonb END) WITH ORDINALITY ids(id, ordinality) JOIN subject s ON s.id=ids.id::uuid),'[]'::jsonb) AS related_subjects
-      FROM doc_revision r LEFT JOIN subject own ON own.id=r.article_subject_id
-      WHERE r.space_id=${String(docs[0]!.space_id)}::uuid AND r.doc_id=${input.id}::uuid
-      ORDER BY at DESC, id DESC
-    `
-    return rows.map((row: Record<string, unknown>) => recordDocRevisionRow(row))
-  })
 }
 
 export async function upsertRecordDoc(

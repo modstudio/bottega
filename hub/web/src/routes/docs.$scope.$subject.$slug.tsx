@@ -28,7 +28,6 @@ export const Route = createFileRoute('/docs/$scope/$subject/$slug')({
 
 function DocRoute() {
   const { edit } = Route.useSearch()
-  if (isHostedMode()) return null
   if (!edit) return null
   return <DocPage />
 }
@@ -37,20 +36,52 @@ function subjectFromParam(param: string): string | null {
   return param === '_' ? null : param
 }
 
+function editorSearch(hosted: boolean, id: string | undefined): { id?: string } {
+  return hosted && id ? { id } : {}
+}
+
+function selectedMutationState(
+  hosted: boolean,
+  local: { isPending: boolean; error: { message: string } | null },
+  remote: { isPending: boolean; error: { message: string } | null },
+) {
+  return hosted ? remote : local
+}
+
+function missingHostedRevision(hosted: boolean, expectedRevision: string | null | undefined) {
+  return hosted && !expectedRevision
+}
+
 function DocPage() {
   const navigate = useNavigate()
+  const hosted = isHostedMode()
+  const { id } = Route.useSearch()
   const { scope, subject: subjectParam, slug } = Route.useParams()
   const subject = subjectFromParam(subjectParam)
   const scoped = isScope(scope)
 
-  const doc = useQuery({
+  const localDoc = useQuery({
     ...trpc.doc.get.queryOptions({
       scope: (scoped ? scope : 'global') as DocScope,
       subject,
       slug,
     }),
-    enabled: scoped,
+    enabled: !hosted && scoped,
   })
+  const hostedDoc = useQuery({
+    ...trpc.record.doc.queryOptions({
+      id: id ?? '00000000-0000-4000-8000-000000000000',
+    }),
+    enabled: hosted && Boolean(id),
+  })
+  const hostedRevisions = useQuery({
+    ...trpc.record.docRevisions.queryOptions({
+      id: id ?? '00000000-0000-4000-8000-000000000000',
+    }),
+    enabled: hosted && Boolean(id),
+  })
+  const doc = hosted ? hostedDoc : localDoc
+  const expectedRevision = hosted ? hostedRevisions.data?.items[0]?.id : localDoc.data?.revision
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [delivery, setDelivery] = useState<'inject' | 'demand'>('inject')
@@ -65,28 +96,44 @@ function DocPage() {
     }
   }, [doc.data])
 
-  const save = useMutation({
+  async function onSaved() {
+    await queryClient.invalidateQueries()
+    setReason('')
+    setConfirmingDelete(false)
+    await navigate({
+      to: '/docs/$scope/$subject/$slug',
+      params: { scope, subject: subjectParam, slug },
+      search: editorSearch(hosted, id),
+      replace: true,
+    })
+  }
+
+  const localSave = useMutation({
     ...trpc.doc.set.mutationOptions(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries()
-      setReason('')
-      setConfirmingDelete(false)
-      await navigate({
-        to: '/docs/$scope/$subject/$slug',
-        params: { scope, subject: subjectParam, slug },
-        search: {},
-        replace: true,
-      })
-    },
+    onSuccess: onSaved,
+  })
+  const hostedSave = useMutation({
+    ...trpc.record.saveDoc.mutationOptions(),
+    onSuccess: onSaved,
   })
 
-  const remove = useMutation({
+  const localRemove = useMutation({
     ...trpc.doc.remove.mutationOptions(),
     onSuccess: async () => {
       await queryClient.invalidateQueries()
       await navigate({ to: '/docs' })
     },
   })
+  const hostedRemove = useMutation({
+    ...trpc.record.deleteDoc.mutationOptions(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries()
+      await navigate({ to: '/docs' })
+    },
+  })
+  const saveState = selectedMutationState(hosted, localSave, hostedSave)
+  const removeState = selectedMutationState(hosted, localRemove, hostedRemove)
+  const hostedRevisionMissing = missingHostedRevision(hosted, expectedRevision)
 
   function cancelEdit() {
     if (doc.data) {
@@ -99,7 +146,7 @@ function DocPage() {
     void navigate({
       to: '/docs/$scope/$subject/$slug',
       params: { scope, subject: subjectParam, slug },
-      search: {},
+      search: editorSearch(hosted, id),
       replace: true,
     })
   }
@@ -111,20 +158,30 @@ function DocPage() {
     }
     if (!scoped) return
     if (!reason.trim()) return
-    remove.mutate({
-      scope,
-      subject,
-      slug,
-      reason,
-      expectedRevision: doc.data?.revision ?? undefined,
-    })
+    if (hosted) {
+      if (!id || !hostedDoc.data?.spaceId || !expectedRevision) return
+      hostedRemove.mutate({
+        id,
+        spaceId: hostedDoc.data.spaceId,
+        reason,
+        expectedRevision,
+      })
+    } else {
+      localRemove.mutate({
+        scope,
+        subject,
+        slug,
+        reason,
+        expectedRevision: expectedRevision ?? undefined,
+      })
+    }
   }
 
   function closeSheet() {
     void navigate({
       to: '/docs/$scope/$subject/$slug',
       params: { scope, subject: subjectParam, slug },
-      search: {},
+      search: editorSearch(hosted, id),
       replace: true,
     })
   }
@@ -158,19 +215,34 @@ function DocPage() {
           <Button
             variant="primary"
             size="sm"
-            onClick={() =>
-              save.mutate({
-                scope,
-                subject,
-                slug,
-                title,
-                body,
-                delivery,
-                reason,
-                expectedRevision: doc.data?.revision ?? undefined,
-              })
-            }
-            disabled={save.isPending || !title || !reason.trim()}
+            onClick={() => {
+              if (hosted) {
+                if (!hostedDoc.data?.spaceId || !expectedRevision) return
+                hostedSave.mutate({
+                  spaceId: hostedDoc.data.spaceId,
+                  scope: hostedDoc.data.scope,
+                  subject: hostedDoc.data.subject,
+                  slug: hostedDoc.data.slug,
+                  title,
+                  body,
+                  delivery,
+                  reason,
+                  expectedRevision,
+                })
+              } else {
+                localSave.mutate({
+                  scope,
+                  subject,
+                  slug,
+                  title,
+                  body,
+                  delivery,
+                  reason,
+                  expectedRevision: expectedRevision ?? undefined,
+                })
+              }
+            }}
+            disabled={saveState.isPending || !title || !reason.trim() || hostedRevisionMissing}
           >
             <Save size={14} />
             Save
@@ -184,7 +256,12 @@ function DocPage() {
             size="sm"
             variant="danger"
             onClick={onDelete}
-            disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}
+            disabled={
+              removeState.isPending ||
+              !doc.data ||
+              hostedRevisionMissing ||
+              (confirmingDelete && !reason.trim())
+            }
           >
             <Trash2 size={14} />
             {confirmingDelete ? 'Confirm delete' : 'Delete'}
@@ -198,14 +275,14 @@ function DocPage() {
           {doc.error.message}
         </p>
       ) : null}
-      {save.error ? (
+      {saveState.error ? (
         <p data-tone="error" className="text-status-text">
-          {save.error.message}
+          {saveState.error.message}
         </p>
       ) : null}
-      {remove.error ? (
+      {removeState.error ? (
         <p data-tone="error" className="text-status-text">
-          {remove.error.message}
+          {removeState.error.message}
         </p>
       ) : null}
 

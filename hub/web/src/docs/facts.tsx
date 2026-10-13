@@ -9,7 +9,7 @@ import type { DocScope } from '../../../../shared/docs.ts'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
 import { savedVersionAuthor } from './reading.tsx'
-import type { DocsDoc, DocsSource } from './types.ts'
+import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -44,24 +44,40 @@ function Contents({ headings }: { headings: readonly DocHeading[] }) {
 
 function DocHistory({
   doc,
+  source,
+  audience,
   revisionId,
   onRevision,
 }: {
   doc: DocsDoc
+  source: DocsSource
+  audience: DocsAudience | null
   revisionId?: string
-  onRevision: (id: number) => void
+  onRevision: (id: number | string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const history = useQuery(
-    trpc.doc.history.queryOptions({
+  const localHistory = useQuery({
+    ...trpc.doc.history.queryOptions({
       scope: doc.scope as DocScope,
       subject: doc.subject,
       slug: doc.slug,
     }),
-  )
-  const revisions = [...(history.data ?? [])].sort(
+    enabled: source === 'local',
+  })
+  const hostedHistory = useQuery({
+    ...trpc.record.docRevisions.queryOptions({
+      id: doc.id,
+      audience: audience ?? undefined,
+    }),
+    enabled: source === 'hosted',
+  })
+  const history = source === 'hosted' ? hostedHistory : localHistory
+  const revisions = [
+    ...(source === 'hosted' ? (hostedHistory.data?.items ?? []) : (localHistory.data ?? [])),
+  ].sort(
     (left, right) =>
-      new Date(right.at).getTime() - new Date(left.at).getTime() || right.id - left.id,
+      new Date(right.at).getTime() - new Date(left.at).getTime() ||
+      String(right.id).localeCompare(String(left.id)),
   )
   return (
     <section className="mt-7 border-border-default border-t pt-3">
@@ -113,14 +129,18 @@ function Details({
   doc,
   signedIn,
   showHistory,
+  source,
+  audience,
   revisionId,
   onRevision,
 }: {
   doc: DocsDoc | null
   signedIn: boolean
   showHistory: boolean
+  source: DocsSource
+  audience: DocsAudience | null
   revisionId?: string
-  onRevision: (id: number) => void
+  onRevision: (id: number | string) => void
 }) {
   if (!doc) return null
   return (
@@ -155,7 +175,14 @@ function Details({
         </dl>
       </section>
       {showHistory ? (
-        <DocHistory key={doc.id} doc={doc} revisionId={revisionId} onRevision={onRevision} />
+        <DocHistory
+          key={doc.id}
+          doc={doc}
+          source={source}
+          audience={audience}
+          revisionId={revisionId}
+          onRevision={onRevision}
+        />
       ) : null}
     </>
   )
@@ -166,6 +193,7 @@ export function DocsFacts({
   headings,
   signedIn,
   source,
+  audience,
   revisionId,
   onRevision = () => {},
 }: {
@@ -173,8 +201,9 @@ export function DocsFacts({
   headings: readonly DocHeading[]
   signedIn: boolean
   source: DocsSource
+  audience: DocsAudience | null
   revisionId?: string
-  onRevision?: (id: number) => void
+  onRevision?: (id: number | string) => void
 }) {
   const panel = useRef<HTMLElement>(null)
   useHeldPanel(panel)
@@ -205,7 +234,9 @@ export function DocsFacts({
           <Details
             doc={doc}
             signedIn={signedIn}
-            showHistory={signedIn && source === 'local'}
+            showHistory={signedIn && source !== 'public'}
+            source={source}
+            audience={audience}
             revisionId={revisionId}
             onRevision={onRevision}
           />
