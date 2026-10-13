@@ -101,6 +101,15 @@ realPostgres('Bun SQL jsonb binding', () => {
       expect(read?.sourceFiles).toEqual(['src/article.ts'])
       expect(read?.relatedSubjects).toEqual([{ id: RELATED_SUBJECT_ID, name: 'Related' }])
     } finally {
+      await admin`UPDATE doc SET latest_revision_id=NULL WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM doc_revision WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM doc WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM subject WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM seq WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM project WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM membership WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM "user" WHERE id=${USER_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
       await admin.close()
     }
   })
