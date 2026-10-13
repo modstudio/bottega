@@ -10,7 +10,7 @@ import type { MessageRow } from './board-store.ts'
 export const BOARD_REACH_DEFAULT_HOURS = 24
 
 export type BoardDeliveryPoint = 'session-start' | 'after-tool-call' | 'stop'
-export type BoardReachConcern = 'concerned' | 'not-concerned' | 'unqualified'
+type BoardReachConcern = 'concerned' | 'not-concerned' | 'unqualified'
 
 export type BoardReachRow = {
   id: number
@@ -55,7 +55,7 @@ function taskProject(key: string, database: Database): string | null {
   )
 }
 
-export function boardReachConcern(
+function boardReachConcern(
   audience: string,
   readerSession: string,
   readerProject: string,

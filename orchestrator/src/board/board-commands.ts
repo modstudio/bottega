@@ -41,10 +41,34 @@ const deliveryPoint = (value: string): BoardDeliveryPoint => {
   return value as BoardDeliveryPoint
 }
 
+function registerBoardDeliveredCommand(board: Command): void {
+  board
+    .command('delivered <ids>')
+    .option('--session <id>', 'session whose hook emitted the messages')
+    .option('--point <point>', 'hook delivery point', deliveryPoint)
+    .option('--blocked-stop', 'the emitted delivery blocked Stop')
+    .action(async (ids, options) => {
+      const parsed = String(ids).split(',')
+      if (!parsed.length) throw new Error('board delivered ids are required')
+      if (options.point && !options.session) throw new Error('--point requires --session')
+      if (options.blockedStop && options.point !== 'stop')
+        throw new Error('--blocked-stop requires --point stop')
+      if (options.session)
+        await markBoardDeliveryDelivered({
+          session: options.session,
+          ids: parsed,
+          deliveryPoint: options.point,
+          blockedStop: Boolean(options.blockedStop),
+        })
+      else await markBoardNoticesDelivered(parsed)
+    })
+}
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
   registerBoardClaimCommands(board, parseBoardDuration)
   registerBoardReachCommand(board)
+  registerBoardDeliveredCommand(board)
   board
     .command('adopt')
     .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
@@ -208,26 +232,6 @@ export function registerBoardCommands(program: Command): void {
           warning: delivery.warning,
         }),
       )
-    })
-  board
-    .command('delivered <ids>')
-    .option('--session <id>', 'session whose hook emitted the messages')
-    .option('--point <point>', 'hook delivery point', deliveryPoint)
-    .option('--blocked-stop', 'the emitted delivery blocked Stop')
-    .action(async (ids, options) => {
-      const parsed = String(ids).split(',')
-      if (!parsed.length) throw new Error('board delivered ids are required')
-      if (options.point && !options.session) throw new Error('--point requires --session')
-      if (options.blockedStop && options.point !== 'stop')
-        throw new Error('--blocked-stop requires --point stop')
-      if (options.session)
-        await markBoardDeliveryDelivered({
-          session: options.session,
-          ids: parsed,
-          deliveryPoint: options.point,
-          blockedStop: Boolean(options.blockedStop),
-        })
-      else await markBoardNoticesDelivered(parsed)
     })
   board
     .command('ack <id>')
