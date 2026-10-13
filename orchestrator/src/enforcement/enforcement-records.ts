@@ -18,10 +18,33 @@ export type CategoryExecutionRow = {
 
 export type CategoryExecution = Pick<CategoryExecutionRow, 'wallMs' | 'remaining' | 'finishedAt'>
 
+export type RefilledCategoryExecution = {
+  category: string
+  remaining: number
+  finishedAt: string
+  lastZeroFinishedAt: string
+}
+
 function isInProject(projectPath: string, cwd: string | null): boolean {
   if (!cwd) return false
   const fromProject = relative(projectPath, cwd)
   return fromProject === '' || (!fromProject.startsWith('..') && !isAbsolute(fromProject))
+}
+
+function eligibleCategoryExecutionRows(
+  rows: readonly CategoryExecutionRow[],
+  projectPath: string,
+): CategoryExecutionRow[] {
+  return rows.filter(
+    (row) => row.gateExitCode === 0 && row.headCommit !== null && isInProject(projectPath, row.cwd),
+  )
+}
+
+function compareCategoryExecutionRecency(
+  left: CategoryExecutionRow,
+  right: CategoryExecutionRow,
+): number {
+  return left.finishedAt.localeCompare(right.finishedAt) || left.gateId - right.gateId
 }
 
 export function newestCategoryExecutions(
@@ -29,16 +52,9 @@ export function newestCategoryExecutions(
   projectPath: string,
 ): Map<string, CategoryExecution> {
   const selected = new Map<string, CategoryExecutionRow>()
-  for (const row of rows) {
-    if (row.gateExitCode !== 0 || row.headCommit === null || !isInProject(projectPath, row.cwd)) {
-      continue
-    }
+  for (const row of eligibleCategoryExecutionRows(rows, projectPath)) {
     const current = selected.get(row.category)
-    if (
-      !current ||
-      row.finishedAt > current.finishedAt ||
-      (row.finishedAt === current.finishedAt && row.gateId > current.gateId)
-    ) {
+    if (!current || compareCategoryExecutionRecency(row, current) > 0) {
       selected.set(row.category, row)
     }
   }
@@ -54,18 +70,53 @@ export function newestCategoryExecutions(
   )
 }
 
-export function categoryExecutionsForProject(
+/** Find categories whose newest eligible count is positive after an earlier zero. */
+export function refilledCategoryExecutions(
+  rows: readonly CategoryExecutionRow[],
   projectPath: string,
-  database: Database = db(),
-): Map<string, CategoryExecution> {
-  const rows = database
+): RefilledCategoryExecution[] {
+  const histories = new Map<string, CategoryExecutionRow[]>()
+  for (const row of eligibleCategoryExecutionRows(rows, projectPath)) {
+    if (row.remaining === null) continue
+    const history = histories.get(row.category) ?? []
+    history.push(row)
+    histories.set(row.category, history)
+  }
+  return [...histories].flatMap(([category, history]) => {
+    history.sort(compareCategoryExecutionRecency)
+    const newest = history.at(-1)!
+    const remaining = newest.remaining
+    if (remaining === null || remaining === 0) return []
+    const lastZero = history.findLast((row) => row !== newest && row.remaining === 0)
+    if (!lastZero) return []
+    return [
+      {
+        category,
+        remaining,
+        finishedAt: newest.finishedAt,
+        lastZeroFinishedAt: lastZero.finishedAt,
+      },
+    ]
+  })
+}
+
+/** Read category records with the fields needed by eligibility and history decisions. */
+export function categoryExecutionRows(database: Database = db()): CategoryExecutionRow[] {
+  return database
     .query(
       `SELECT c.category,c.wall_ms wallMs,c.remaining_count remaining,
               g.finished_at finishedAt,g.id gateId,g.exit_code gateExitCode,
               g.head_commit headCommit,g.cwd
          FROM check_execution c JOIN gate_execution g ON g.id=c.gate_execution_id
-        WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL`,
+        WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL
+        ORDER BY g.finished_at,g.id`,
     )
     .all() as CategoryExecutionRow[]
-  return newestCategoryExecutions(rows, projectPath)
+}
+
+export function categoryExecutionsForProject(
+  projectPath: string,
+  database: Database = db(),
+): Map<string, CategoryExecution> {
+  return newestCategoryExecutions(categoryExecutionRows(database), projectPath)
 }

@@ -79,6 +79,7 @@ import type {
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
+import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -489,6 +490,13 @@ export async function monitor(
       ageMs: condition.ageMs ?? age(condition.since, clock),
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
+
+  const ratchetedRuleRefills = observeRatchetedRuleRefills(
+    projects().filter(isProjectRepository),
+    database,
+  )
+  conditions.push(...ratchetedRuleRefills.conditions)
+  errors.push(...ratchetedRuleRefills.errors)
 
   const strayWorktrees = strayWorktreeConditions({
     projects: projects().filter(isProjectRepository),
