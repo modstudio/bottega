@@ -23,6 +23,7 @@ import {
 import { type BoardStreamFrame, createBoardStreamParser } from './board-watch-frames.ts'
 
 const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
+export const BOARD_WATCH_ERROR_DETAIL_MAX = 240
 export const BOARD_WATCH_UNCONFIGURED_REMEDY =
   'ORCH_RECORD_API_URL is not set; cleared by: orch record doctor'
 
@@ -90,7 +91,7 @@ function announceLine(at: string, announce: BoardWatchAnnounce): string {
     case 'signed-out':
       return `${at} signed out; ${RECORD_SIGN_IN_REMEDY}`
     case 'disconnected':
-      return `${at} disconnected ${announce.reason}`
+      return `${at} disconnected ${announce.reason}${announce.reason === 'error' ? ` ${announce.detail}` : ''}`
     case 'unconfigured':
       return `${at} ${BOARD_WATCH_UNCONFIGURED_REMEDY}`
     case 'newer-build':
@@ -110,6 +111,14 @@ function isWatchShutdownAbort(signal: AbortSignal, error: unknown): boolean {
   return signal.aborted && isAbortError(error)
 }
 
+function errorDetail(error: unknown): string {
+  const name = error instanceof Error ? error.name : typeof error
+  const message = error instanceof Error ? error.message : String(error)
+  const firstNameLine = name.split(/\r?\n/, 1)[0]
+  const firstMessageLine = message.split(/\r?\n/, 1)[0]
+  return `${firstNameLine}: ${firstMessageLine}`.slice(0, BOARD_WATCH_ERROR_DETAIL_MAX)
+}
+
 function announce(input: BoardWatchLoopInput, decision: BoardWatchDecision): void {
   if (decision.announce) input.log(announceLine(iso(input.now()), decision.announce))
 }
@@ -127,16 +136,23 @@ export async function runBoardWatchLoop(input: BoardWatchLoopInput): Promise<num
     lastBuild: input.now(),
     startedBuild: input.startedBuild,
   }
-  try {
-    while (!input.signal.aborted) {
+  while (!input.signal.aborted) {
+    try {
       const ended = await oneConnection(input, live, gate)
       if (ended !== null) return ended
+    } catch (error) {
+      if (isWatchShutdownAbort(input.signal, error)) return 0
+      const ended = connectionResult(
+        await applyReconnect(
+          input,
+          live,
+          decide(input, live.state, { kind: 'error', detail: errorDetail(error) }),
+        ),
+      )
+      if (ended !== null) return ended
     }
-    return 0
-  } catch (error) {
-    if (isWatchShutdownAbort(input.signal, error)) return 0
-    throw error
   }
+  return 0
 }
 
 async function oneConnection(
@@ -150,7 +166,9 @@ async function oneConnection(
   if (input.signal.aborted) return 0
   if (opened.kind !== 'stream') {
     const event: BoardWatchEvent =
-      opened.kind === 'unauthorized' ? { kind: 'unauthorized' } : { kind: 'error' }
+      opened.kind === 'unauthorized'
+        ? { kind: 'unauthorized' }
+        : { kind: 'error', detail: opened.reason }
     const result = await applyReconnect(input, live, decide(input, live.state, event))
     return typeof result === 'number' ? result : null
   }
@@ -370,7 +388,14 @@ async function holdTurn(
   const parsed = parser.push(decoder.decode(raced.value, { stream: true }))
   if (parsed.protocolError) {
     return connectionResult(
-      await applyReconnect(input, live, decide(input, live.state, { kind: 'error' })),
+      await applyReconnect(
+        input,
+        live,
+        decide(input, live.state, {
+          kind: 'error',
+          detail: 'Error: invalid board stream frame',
+        }),
+      ),
     )
   }
   const consumed = consumeFrames(input, parsed.frames, live, clock.sawEvent)

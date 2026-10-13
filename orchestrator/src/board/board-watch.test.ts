@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BOARD_STREAM_EVENT } from '../record/record-board-stream.ts'
 import {
+  BOARD_WATCH_ERROR_DETAIL_MAX,
   BOARD_WATCH_UNCONFIGURED_REMEDY,
   type BoardWatchLoopInput,
   type BoardWatchOpen,
@@ -29,6 +30,7 @@ const abortError = () => new DOMException('The operation was aborted.', 'AbortEr
 
 class ScriptedSource {
   #queue: Uint8Array[] = []
+  #failures: unknown[] = []
   #wait: {
     resolve: (value: Uint8Array | null) => void
     reject: (error: unknown) => void
@@ -46,6 +48,16 @@ class ScriptedSource {
   }
   close() {
     this.#abort()
+  }
+  reject(error: unknown) {
+    if (this.#aborted) return
+    if (this.#wait) {
+      const wait = this.#wait
+      this.#wait = null
+      wait.reject(error)
+      return
+    }
+    this.#failures.push(error)
   }
   #abort() {
     if (this.#aborted) return
@@ -66,6 +78,7 @@ class ScriptedSource {
   }
   read() {
     if (this.#aborted) return Promise.reject(abortError())
+    if (this.#failures.length > 0) return Promise.reject(this.#failures.shift())
     if (this.#queue.length > 0) return Promise.resolve(this.#queue.shift()!)
     return new Promise<Uint8Array | null>((resolve, reject) => {
       this.#wait = { resolve, reject }
@@ -230,6 +243,10 @@ async function startLoop(
 
 const ended = (line: string, suffix: string) => line.endsWith(suffix)
 const loggedAbort = (logs: string[]) => logs.some((line) => /abort/i.test(line))
+const connectionResetError = () =>
+  new Error(
+    'ECONNRESET: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()',
+  )
 
 test('an unconfigured machine prints the remedy and exits zero', async () => {
   const run = await startLoop({ configured: false })
@@ -463,6 +480,63 @@ test('a pull abort that is not the watcher shutdown is still a failed pull', asy
   expect(await run.done).toBe(0)
 })
 
+test('a rejected stream read after an event logs one error and reconnects', async () => {
+  const run = await startLoop()
+  run.source().push(eventFrame('0'))
+  await run.clock.flush()
+  run.source().reject(connectionResetError())
+  await run.clock.flush()
+  await run.clock.flush()
+  expect(
+    run.logs.filter((line) => line.includes(' disconnected error Error: ECONNRESET:')),
+  ).toHaveLength(1)
+  expect(run.opens()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.opens()).toBe(2)
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('a rejected stream read while a pull is in flight logs one error and reconnects', async () => {
+  const run = await startLoop({ hangingPull: true })
+  expect(run.pullCount()).toBe(1)
+  run.source().push(eventFrame('0'))
+  await run.clock.flush()
+  run.source().reject(connectionResetError())
+  await run.clock.flush()
+  await run.clock.flush()
+  expect(
+    run.logs.filter((line) => line.includes(' disconnected error Error: ECONNRESET:')),
+  ).toHaveLength(1)
+  expect(run.opens()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.opens()).toBe(2)
+  expect(run.pullCount()).toBe(1)
+  run.releasePull()
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  run.releasePull()
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('an error detail is one bounded line', async () => {
+  const run = await startLoop()
+  run.source().reject(new TypeError(`${'x'.repeat(BOARD_WATCH_ERROR_DETAIL_MAX * 2)}\nnot logged`))
+  await run.clock.flush()
+  await run.clock.flush()
+  const line = run.logs.find((candidate) => candidate.includes(' disconnected error '))!
+  const detail = line.split(' disconnected error ')[1] ?? ''
+  expect(detail).toHaveLength(BOARD_WATCH_ERROR_DETAIL_MAX)
+  expect(detail.startsWith('TypeError: ')).toBe(true)
+  expect(detail.includes('\n')).toBe(false)
+  expect(detail.includes('not logged')).toBe(false)
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
 test('a failing pull is announced once until the reason changes or it succeeds', async () => {
   const run = await startLoop({
     pullResults: [
@@ -542,7 +616,7 @@ test('an oversized frame reconnects on the error path', async () => {
   const run = await startLoop()
   run.source().push('x'.repeat(BOARD_WATCH_FRAME_BUFFER_MAX + 1))
   await run.clock.flush()
-  expect(run.logs.some((line) => ended(line, ' disconnected error'))).toBe(true)
+  expect(run.logs.some((line) => line.includes(' disconnected error Error: '))).toBe(true)
   await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
   await run.clock.flush()
   expect(run.opens()).toBe(2)
