@@ -66,7 +66,13 @@ export function fakePostgres(
       transactionSpaceIds[transaction] = String(values[0])
     }
     if (source.includes('SELECT job, failure_kind, machine_id FROM run')) {
-      return [{ job: score?.job ?? 'file-question', failure_kind: null, machine_id: MACHINE_ID }]
+      return [
+        {
+          job: score?.job ?? 'file-question',
+          failure_kind: null,
+          machine_id: MACHINE_ID,
+        },
+      ]
     }
     if (source.includes('SELECT delivery, quality, fidelity FROM run_score')) {
       return score?.hostedAxes ? [score.hostedAxes] : []
@@ -99,22 +105,35 @@ export function fakePostgres(
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
   tx.options = {} as SQL['options']
-  tx.unsafe = (async (source: string, values?: unknown[]) => {
-    statements.push(source)
-    parameters.push(values ?? [])
-    if (source.toLowerCase().includes('insert into "run"')) {
-      runWrites++
-      await onRunWrite?.(runWrites)
+  tx.unsafe = ((source: string, values?: unknown[]) => {
+    const operation = (async (): Promise<Record<string, unknown>[]> => {
+      statements.push(source)
+      parameters.push(values ?? [])
+      if (source.includes('owned_reference')) return [{ id: values?.[0] }]
+      if (source.toLowerCase().includes('insert into "run"')) {
+        runWrites++
+        await onRunWrite?.(runWrites)
+      }
+      if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
+        failed = true
+        throw failFirstRun
+      }
+      if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
+        scoreWritten = true
+        score?.onWrite?.()
+      }
+      if (
+        source.toLowerCase().includes('insert into') &&
+        source.toLowerCase().includes('returning')
+      ) {
+        return [{ id: values?.[0] }]
+      }
+      return []
+    })() as Promise<Record<string, unknown>[]> & {
+      values(): Promise<unknown[][]>
     }
-    if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
-      failed = true
-      throw failFirstRun
-    }
-    if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
-      scoreWritten = true
-      score?.onWrite?.()
-    }
-    return []
+    operation.values = async () => (await operation).map((row) => Object.values(row))
+    return operation
   }) as SQL['unsafe']
   const sql = Object.assign(
     async (parts: TemplateStringsArray) => {

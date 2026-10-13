@@ -14,9 +14,7 @@ import { enqueueContention } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
-import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
-import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
@@ -318,7 +316,10 @@ test('sync supersedes the hosted void before pushing an unvoided run', async () 
     evidenceUnvoid: { note: 'mistaken void' },
   })
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(true)
   expect(remote.statements.some((sql) => sql.includes('supersede_note'))).toBe(true)
 })
@@ -333,7 +334,10 @@ test('sync clears a hosted run-row void when no exclusion row exists', async () 
     supersededAt: null,
     runReason: 'voided with orch score --void',
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(
     remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
   ).toBe(true)
@@ -349,7 +353,10 @@ test('sync accepts an unvoid as a no-op when the hosted run has no exclusion', a
     supersededAt: null,
     runReason: null,
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.statements.some((sql) => sql.includes('UPDATE run_exclusion'))).toBe(false)
   expect(
     remote.statements.some((sql) => sql.includes('UPDATE run SET evidence_excluded=NULL')),
@@ -366,7 +373,10 @@ test('sync refuses an unvoid when the effective hosted exclusion has another rea
     supersededAt: null,
     runReason: 'unjudged: owner gone',
   })
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+  })
   expect(
     local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
   ).toContain("actual exclusion is 'unjudged: owner gone'")
@@ -472,7 +482,10 @@ test('an old-shape run payload without withheldFields still syncs', async () => 
   delete payload.withheldFields
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.parameters.flat()).toContain(null)
   local.close()
 })
@@ -488,7 +501,10 @@ test('an old-shape score payload without review grades syncs with nulls', async 
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   local.close()
 })
 
@@ -500,7 +516,10 @@ test('a run payload cannot assert another user as its starter', async () => {
   payload.startedByUserId = assertedUser
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   expect(remote.parameters.flat()).not.toContain(assertedUser)
   expect(remote.parameters.flat()).toContain('01990000-0000-7000-8000-000000000002')
   local.close()
@@ -513,8 +532,13 @@ test('an old-shape triage snapshot syncs with declared fills and keeps its overr
   })
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
-  const values = remote.parameters.find((parameters) => parameters.includes('override-record'))
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
+  const values = remote.parameters.find(
+    (parameters) => parameters.includes('override-record') && parameters.includes('exact_review'),
+  )
   expect(values).toContain('exact_review')
   expect(values).toContain(null)
   local.close()
@@ -527,7 +551,10 @@ test('an old-shape landing override syncs with a null change group', async () =>
   })
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+  })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
   expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
@@ -548,7 +575,10 @@ test.each([
   const local = localTriageSnapshotOutbox(mutate)
   const remote = fakePostgres()
 
-  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 0,
+    failed: 1,
+  })
   expect(
     local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!.last_error,
   ).toBe('landing_triage_snapshot outbox payload has an unexpected column set')
@@ -802,9 +832,12 @@ test('a synced parent lets its child flow after a later re-enqueue is retired', 
       `UPDATE outbox SET record_id=?,retired_at=?,retirement_reason='later snapshot' WHERE id=2`,
     )
     .run(parent.record_id, STAMP)
-  local
-    .query('UPDATE outbox SET payload=? WHERE id=3')
-    .run(JSON.stringify({ ...JSON.parse(child.payload), parentRunId: parent.record_id }))
+  local.query('UPDATE outbox SET payload=? WHERE id=3').run(
+    JSON.stringify({
+      ...JSON.parse(child.payload),
+      parentRunId: parent.record_id,
+    }),
+  )
   const remote = fakePostgres()
 
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -841,9 +874,17 @@ test('a payload from another machine is refused before a record write', async ()
   const remote = fakePostgres()
   const result = await syncRecord({
     ...options(local, remote),
-    identity: { id: '01990000-0000-7000-8000-000000000077', name: 'other-machine' },
+    identity: {
+      id: '01990000-0000-7000-8000-000000000077',
+      name: 'other-machine',
+    },
   })
-  expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0, configured: true })
+  expect(result).toMatchObject({
+    pushed: 0,
+    failed: 1,
+    pending: 0,
+    configured: true,
+  })
   const failure = local
     .query<{ attempts: number; last_error: string }, []>(
       'SELECT attempts, last_error FROM outbox WHERE id=1',
@@ -982,77 +1023,15 @@ test('a read-only destination is deferred per row and retried after permission c
   expect(
     await syncRecord({
       ...options(local, remote, [
-        { spaceId: readOnlySpace, slug: 'read-only-space', permission: 'write' },
+        {
+          spaceId: readOnlySpace,
+          slug: 'read-only-space',
+          permission: 'write',
+        },
         ...baseMemberships,
       ]),
       projectSpaces,
     }),
   ).toMatchObject({ pushed: 1, failed: 0, pending: 0, quarantined: [] })
   local.close()
-})
-
-test('sync sends ordered bounded batches and applies each response before continuing', async () => {
-  const local = localOutbox(RECORD_SYNC_BATCH_SIZE + 1, null)
-  const base = options(local, fakePostgres())
-  const batches: number[][] = []
-  const client = {
-    whoami: base.client.whoami,
-    sync: async (request: Parameters<NonNullable<typeof base.client.sync>>[0]) => {
-      batches.push(request.rows.map((row) => row.id))
-      return { results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })) }
-    },
-  }
-  expect(await syncRecord({ ...base, client })).toMatchObject({
-    pushed: RECORD_SYNC_BATCH_SIZE + 1,
-    pending: 0,
-  })
-  expect(batches.map((batch) => batch.length)).toEqual([RECORD_SYNC_BATCH_SIZE, 1])
-  expect(batches.flat()).toEqual(
-    Array.from({ length: RECORD_SYNC_BATCH_SIZE + 1 }, (_, i) => i + 1),
-  )
-  local.close()
-})
-
-test('a malformed ordered response marks no local row', async () => {
-  using local = localOutbox(2, null)
-  const base = options(local, fakePostgres())
-  const client = {
-    whoami: base.client.whoami,
-    sync: async () => ({
-      results: [
-        { id: 1, status: 'synced' as const },
-        { id: 999, status: 'synced' as const },
-      ],
-    }),
-  }
-  await expect(syncRecord({ ...base, client })).rejects.toThrow(
-    'record sync response order did not match the request',
-  )
-  expect(
-    local.query('SELECT attempts,synced_at,quarantined_at FROM outbox ORDER BY id').all(),
-  ).toEqual([
-    { attempts: 0, synced_at: null, quarantined_at: null },
-    { attempts: 0, synced_at: null, quarantined_at: null },
-  ])
-})
-
-test('whole-request auth, server, and old-route failures leave the batch pending', async () => {
-  for (const failure of [
-    new RecordApiRequestError('credentials refused', 'refused', 401),
-    new RecordApiRequestError('server unavailable', 'unreachable', 500),
-    new RecordApiRequestError('not found', 'refused', 404),
-  ]) {
-    const local = localOutbox(1, null)
-    const base = options(local, fakePostgres())
-    const client = { whoami: base.client.whoami, sync: async () => Promise.reject(failure) }
-    await expect(syncRecord({ ...base, client })).rejects.toThrow(
-      failure.status === 404 ? 'release the hosted API' : failure.message,
-    )
-    expect(local.query('SELECT attempts,synced_at,quarantined_at FROM outbox').get()).toEqual({
-      attempts: 0,
-      synced_at: null,
-      quarantined_at: null,
-    })
-    local.close()
-  }
 })

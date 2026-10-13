@@ -1,7 +1,7 @@
 // concern: record-sync-service
 /** Validates and writes ordered evidence batches under the hosted session's authority. */
 import { SQL } from 'bun'
-import { sql as drizzleSql } from 'drizzle-orm'
+import { and, eq, sql as drizzleSql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import {
   contention as contentionRecord,
@@ -142,6 +142,135 @@ function runValues(row: Payload, projectId: string | null) {
   }
 }
 
+type MachineEvidenceTable =
+  | 'run'
+  | 'question'
+  | 'review'
+  | 'review_lens'
+  | 'review_finding'
+  | 'review_read'
+  | 'landing'
+  | 'landing_override'
+  | 'landing_review_carry'
+  | 'landing_triage_snapshot'
+  | 'contention'
+  | 'test_flake'
+
+function evidenceCollision(kind: string, id: string): OutboxRowError {
+  return new OutboxRowError(
+    `${kind} record ${id} is already owned by another machine or user`,
+    'row-validation',
+  )
+}
+
+async function existingEvidenceOwned(
+  tx: SQL,
+  table: MachineEvidenceTable,
+  id: string,
+  machineId: string,
+  principal: RecordPrincipal,
+): Promise<boolean> {
+  const userClause = table === 'run' ? ' AND started_by_user_id=$4::uuid' : ''
+  const rows = await tx.unsafe(
+    `SELECT id FROM ${table}
+     WHERE id=$1::uuid AND space_id=$2::uuid AND machine_id=$3::uuid${userClause}
+     FOR UPDATE`,
+    [id, principal.spaceId, machineId, principal.userId],
+  )
+  if (rows.length > 0) return true
+  const collision = await tx.unsafe(`SELECT id FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])
+  if (collision.length > 0) throw evidenceCollision(table, id)
+  return false
+}
+
+function requireOwnedUpsert(
+  rows: readonly unknown[],
+  kind: string,
+  id: string,
+  existingOwned = false,
+): void {
+  if (rows.length === 0 && !existingOwned) throw evidenceCollision(kind, id)
+}
+
+type EvidenceReference = {
+  table: MachineEvidenceTable
+  id: string
+  kind: string
+}
+
+function evidenceReferences(kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS, row: Payload) {
+  const reference = (
+    table: MachineEvidenceTable,
+    id: unknown,
+    label: string = table,
+  ): EvidenceReference[] =>
+    id == null || String(id) === '' ? [] : [{ table, id: String(id), kind: label }]
+  switch (kind) {
+    case 'run':
+      return [
+        ...reference('run', row.retryOf, 'retry run'),
+        ...reference('run', row.parentRunId, 'parent run'),
+      ]
+    case 'score':
+      return reference('run', row.id, 'scored run')
+    case 'question':
+      return reference('run', row.runId, 'question run')
+    case 'review_lens':
+      return [
+        ...reference('review', row.reviewId, 'lens review'),
+        ...reference('run', row.runId, 'lens run'),
+      ]
+    case 'review_finding':
+      return [
+        ...reference('review', row.reviewId, 'finding review'),
+        ...reference('review_lens', row.reviewLensId, 'finding lens'),
+      ]
+    case 'landing':
+      return reference('landing', row.causingLandingId, 'causing landing')
+    case 'landing_review_carry':
+      return reference('review', row.reviewId, 'carried review')
+    case 'landing_triage_snapshot':
+      return [
+        ...(Array.isArray(row.reviewIds)
+          ? row.reviewIds.flatMap((id) => reference('review', id, 'triaged review'))
+          : []),
+        ...reference('review_read', row.readId, 'triage read'),
+        ...reference('landing_override', row.overrideId, 'triage override'),
+      ]
+    case 'contention':
+      return [
+        ...reference('run', row.runId, 'contended run'),
+        ...reference('landing', row.landingId, 'contended landing'),
+      ]
+    default:
+      return []
+  }
+}
+
+async function assertEvidenceReferencesOwned(input: {
+  postgres: SQL
+  kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS
+  row: Payload
+  machineId: string
+  principal: RecordPrincipal
+}): Promise<void> {
+  const references = evidenceReferences(input.kind, input.row)
+  if (references.length === 0) return
+  await input.postgres.begin(async (tx) => {
+    await bindPrincipal(tx, input.principal)
+    for (const reference of references) {
+      const userClause = reference.table === 'run' ? ' AND started_by_user_id=$4::uuid' : ''
+      const rows = await tx.unsafe(
+        `SELECT id FROM ${reference.table}
+         WHERE id=$1::uuid AND space_id=$2::uuid AND machine_id=$3::uuid${userClause}
+         /* owned_reference */`,
+        [reference.id, input.principal.spaceId, input.machineId, input.principal.userId],
+      )
+      if (rows.length === 0) throw evidenceCollision(reference.kind, reference.id)
+    }
+  })
+}
+
 async function upsertMachine(
   postgres: SQL,
   seenAt: string,
@@ -248,6 +377,13 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
       projectId = String(projects[0]!.id)
     }
     const values = runValues(row, projectId)
+    const existingOwned = await existingEvidenceOwned(
+      tx,
+      'run',
+      values.id,
+      values.machineId,
+      principal,
+    )
     const evidenceUnvoid = row.evidenceUnvoid
     if (evidenceUnvoid !== null) {
       await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
@@ -258,10 +394,19 @@ async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal):
     `
     if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
     const { id: _id, createdAt: _createdAt, ...updates } = values
-    await drizzle({ client: tx })
+    const written = await drizzle({ client: tx })
       .insert(runRecord)
       .values(values)
-      .onConflictDoUpdate({ target: runRecord.id, set: updates })
+      .onConflictDoUpdate({
+        target: runRecord.id,
+        set: updates,
+        setWhere: and(
+          eq(runRecord.machineId, values.machineId),
+          eq(runRecord.startedByUserId, principal.userId),
+        ),
+      })
+      .returning({ id: runRecord.id })
+    requireOwnedUpsert(written, 'run', values.id, existingOwned)
   })
 }
 
@@ -534,16 +679,28 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = questionValues(row, await projectRecordId(tx, row, principal))
+        const existingOwned = await existingEvidenceOwned(
+          tx,
+          'question',
+          values.id,
+          values.machineId,
+          principal,
+        )
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const incomingQuestionWins = hostedQuestionWins(
           drizzleSql`excluded.revision`,
           questionRecord.revision,
         )
-        await drizzle({ client: tx }).insert(questionRecord).values(values).onConflictDoUpdate({
-          target: questionRecord.id,
-          set: updates,
-          setWhere: incomingQuestionWins,
-        })
+        const written = await drizzle({ client: tx })
+          .insert(questionRecord)
+          .values(values)
+          .onConflictDoUpdate({
+            target: questionRecord.id,
+            set: updates,
+            setWhere: and(eq(questionRecord.machineId, values.machineId), incomingQuestionWins),
+          })
+          .returning({ id: questionRecord.id })
+        requireOwnedUpsert(written, 'question', values.id, existingOwned)
         for (const audit of questionAudits(row)) {
           await drizzle({ client: tx })
             .insert(questionMutationAuditRecord)
@@ -565,11 +722,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewValues(row, await projectRecordId(tx, row, principal))
+        await existingEvidenceOwned(tx, 'review', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(reviewRecord)
           .values(values)
-          .onConflictDoUpdate({ target: reviewRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: reviewRecord.id,
+            set: updates,
+            setWhere: eq(reviewRecord.machineId, values.machineId),
+          })
+          .returning({ id: reviewRecord.id })
+        requireOwnedUpsert(written, 'review', values.id)
       }),
   },
   review_lens: {
@@ -578,11 +742,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewLensValues(row)
+        await existingEvidenceOwned(tx, 'review_lens', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(reviewLensRecord)
           .values(values)
-          .onConflictDoUpdate({ target: reviewLensRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: reviewLensRecord.id,
+            set: updates,
+            setWhere: eq(reviewLensRecord.machineId, values.machineId),
+          })
+          .returning({ id: reviewLensRecord.id })
+        requireOwnedUpsert(written, 'review_lens', values.id)
       }),
   },
   review_finding: {
@@ -591,11 +762,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewFindingValues(row)
+        await existingEvidenceOwned(tx, 'review_finding', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(reviewFindingRecord)
           .values(values)
-          .onConflictDoUpdate({ target: reviewFindingRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: reviewFindingRecord.id,
+            set: updates,
+            setWhere: eq(reviewFindingRecord.machineId, values.machineId),
+          })
+          .returning({ id: reviewFindingRecord.id })
+        requireOwnedUpsert(written, 'review_finding', values.id)
       }),
   },
   review_read: {
@@ -608,17 +786,24 @@ const recordKinds = {
           await projectRecordId(tx, row, principal),
           commonReviewRecordValues(row),
         )
+        await existingEvidenceOwned(tx, 'review_read', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(reviewReadRecord)
           .values(values)
-          .onConflictDoUpdate({ target: reviewReadRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: reviewReadRecord.id,
+            set: updates,
+            setWhere: eq(reviewReadRecord.machineId, values.machineId),
+          })
+          .returning({ id: reviewReadRecord.id })
+        requireOwnedUpsert(written, 'review_read', values.id)
       }),
   },
   release: {
     ...OUTBOX_PAYLOAD_CONTRACTS.release,
     push: (postgres: SQL, row: Payload, principal: RecordPrincipal) =>
-      pushReleaseRecord(postgres, row, principal, projectRecordId),
+      pushReleaseRecord(postgres, row, principal, projectRecordId, evidenceCollision),
   },
   landing: {
     ...OUTBOX_PAYLOAD_CONTRACTS.landing,
@@ -626,11 +811,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = landingValues(row, await projectRecordId(tx, row, principal))
+        await existingEvidenceOwned(tx, 'landing', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(landingRecord)
           .values(values)
-          .onConflictDoUpdate({ target: landingRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: landingRecord.id,
+            set: updates,
+            setWhere: eq(landingRecord.machineId, values.machineId),
+          })
+          .returning({ id: landingRecord.id })
+        requireOwnedUpsert(written, 'landing', values.id)
       }),
   },
   landing_override: {
@@ -639,11 +831,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = landingOverrideValues(row, await projectRecordId(tx, row, principal))
+        await existingEvidenceOwned(tx, 'landing_override', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(landingOverrideRecord)
           .values(values)
-          .onConflictDoUpdate({ target: landingOverrideRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: landingOverrideRecord.id,
+            set: updates,
+            setWhere: eq(landingOverrideRecord.machineId, values.machineId),
+          })
+          .returning({ id: landingOverrideRecord.id })
+        requireOwnedUpsert(written, 'landing_override', values.id)
       }),
   },
   landing_review_carry: {
@@ -652,11 +851,24 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = landingReviewCarryValues(row, await projectRecordId(tx, row, principal))
+        await existingEvidenceOwned(
+          tx,
+          'landing_review_carry',
+          values.id,
+          values.machineId,
+          principal,
+        )
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(landingReviewCarryRecord)
           .values(values)
-          .onConflictDoUpdate({ target: landingReviewCarryRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: landingReviewCarryRecord.id,
+            set: updates,
+            setWhere: eq(landingReviewCarryRecord.machineId, values.machineId),
+          })
+          .returning({ id: landingReviewCarryRecord.id })
+        requireOwnedUpsert(written, 'landing_review_carry', values.id)
       }),
   },
   landing_triage_snapshot: {
@@ -665,11 +877,24 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = landingTriageSnapshotValues(row, await projectRecordId(tx, row, principal))
+        await existingEvidenceOwned(
+          tx,
+          'landing_triage_snapshot',
+          values.id,
+          values.machineId,
+          principal,
+        )
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(landingTriageSnapshotRecord)
           .values(values)
-          .onConflictDoUpdate({ target: landingTriageSnapshotRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: landingTriageSnapshotRecord.id,
+            set: updates,
+            setWhere: eq(landingTriageSnapshotRecord.machineId, values.machineId),
+          })
+          .returning({ id: landingTriageSnapshotRecord.id })
+        requireOwnedUpsert(written, 'landing_triage_snapshot', values.id)
       }),
   },
   contention: {
@@ -678,11 +903,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = contentionValues(row)
+        await existingEvidenceOwned(tx, 'contention', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(contentionRecord)
           .values(values)
-          .onConflictDoUpdate({ target: contentionRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: contentionRecord.id,
+            set: updates,
+            setWhere: eq(contentionRecord.machineId, values.machineId),
+          })
+          .returning({ id: contentionRecord.id })
+        requireOwnedUpsert(written, 'contention', values.id)
       }),
   },
   test_flake: {
@@ -691,11 +923,18 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = testFlakeValues(row)
+        await existingEvidenceOwned(tx, 'test_flake', values.id, values.machineId, principal)
         const { id: _id, createdAt: _createdAt, ...updates } = values
-        await drizzle({ client: tx })
+        const written = await drizzle({ client: tx })
           .insert(testFlakeRecord)
           .values(values)
-          .onConflictDoUpdate({ target: testFlakeRecord.id, set: updates })
+          .onConflictDoUpdate({
+            target: testFlakeRecord.id,
+            set: updates,
+            setWhere: eq(testFlakeRecord.machineId, values.machineId),
+          })
+          .returning({ id: testFlakeRecord.id })
+        requireOwnedUpsert(written, 'test_flake', values.id)
       }),
   },
 } as const satisfies Record<
@@ -743,6 +982,13 @@ async function pushHostedRow(input: {
         'row-validation',
       )
     }
+    await assertEvidenceReferencesOwned({
+      postgres,
+      kind,
+      row: record,
+      machineId: input.machineId,
+      principal: rowPrincipal,
+    })
     await recordKinds[kind].push(postgres, record, rowPrincipal)
     return { id: row.id, status: 'synced' }
   } catch (error) {

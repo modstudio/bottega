@@ -151,7 +151,11 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       expect(
         local
           .query<
-            { synced_at: string | null; quarantined_at: string | null; last_error: string | null },
+            {
+              synced_at: string | null
+              quarantined_at: string | null
+              last_error: string | null
+            },
             []
           >('SELECT synced_at,quarantined_at,last_error FROM outbox WHERE id=1')
           .get(),
@@ -195,13 +199,17 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     }
     await withoutDirectRecordCredentials(async () => {
       const client = recordApiClient()
-      expect(await client.sync!(request)).toEqual({ results: [{ id: 1, status: 'synced' }] })
+      expect(await client.sync!(request)).toEqual({
+        results: [{ id: 1, status: 'synced' }],
+      })
       const before = input.admin(
         `SELECT space_id || '|' || started_by_user_id || '|' || updated_at
          FROM run WHERE id='${id}';`,
       )
       expect(before.split('|').slice(0, 2)).toEqual([input.writeSpaceId, input.userId])
-      expect(await client.sync!(request)).toEqual({ results: [{ id: 1, status: 'synced' }] })
+      expect(await client.sync!(request)).toEqual({
+        results: [{ id: 1, status: 'synced' }],
+      })
       expect(
         input.admin(
           `SELECT space_id || '|' || started_by_user_id || '|' || updated_at
@@ -296,6 +304,71 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       ).toBe(`${input.userId}|returning-owner|${returningSeen}`)
     } finally {
       returning.close()
+    }
+  })
+
+  test('hosted sync cannot replace another machine run in a shared writable space', async () => {
+    const victimMachineId = newRecordId()
+    const attackerMachineId = newRecordId()
+    const runId = newRecordId()
+    const otherUserId = input.admin(
+      `SELECT id FROM "user" WHERE id <> '${input.userId}' ORDER BY id LIMIT 1;`,
+    )
+    input.admin(
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('${newRecordId()}','${input.writeSpaceId}','${otherUserId}','member','write',now())
+       ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';`,
+    )
+    const victim = localOutbox(
+      runPayload({
+        id: runId,
+        machineId: victimMachineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+    )
+    try {
+      expect(
+        await withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local: victim,
+            identity: { id: victimMachineId, name: 'victim-machine' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+          }),
+        ),
+      ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    } finally {
+      victim.close()
+    }
+    const before = input.admin(`SELECT row_to_json(run)::text FROM run WHERE id='${runId}';`)
+
+    input.setToken(input.otherToken())
+    const attacker = localOutbox(
+      runPayload({
+        id: runId,
+        machineId: attackerMachineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+    )
+    try {
+      const result = await withoutDirectRecordCredentials(() =>
+        syncRecord({
+          local: attacker,
+          identity: { id: attackerMachineId, name: 'attacker-machine' },
+          projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+        }),
+      )
+      expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
+      expect(result.quarantined[0]?.error).toContain('already owned by another machine or user')
+      expect(input.admin(`SELECT row_to_json(run)::text FROM run WHERE id='${runId}';`)).toBe(
+        before,
+      )
+      expect(
+        input.admin(`SELECT machine_id || '|' || started_by_user_id FROM run WHERE id='${runId}';`),
+      ).toBe(`${victimMachineId}|${input.userId}`)
+    } finally {
+      attacker.close()
     }
   })
 }
