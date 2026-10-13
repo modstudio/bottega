@@ -20,7 +20,7 @@ export type BoardStreamClock = {
 
 /** Decides whether a visible head advances one caller's stream. */
 export function boardStreamAdvance(lastSent: string | null, visibleHead: string) {
-  const advances = lastSent === null || BigInt(visibleHead) >= BigInt(lastSent)
+  const advances = lastSent === null || BigInt(visibleHead) > BigInt(lastSent)
   return { send: advances, lastSent: advances ? visibleHead : lastSent }
 }
 
