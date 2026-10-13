@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
-import { proveProjectSpaceRecordSync } from './postgres-score-proof.ts'
+import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
 import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
@@ -48,7 +48,7 @@ export function registerProjectSpaceProofs(input: {
     const ids = await proveProjectSpaceRecordSync({
       actorUrl: input.actorUrl,
       actorRole: input.actorRole,
-      machineId: input.machineId,
+      machineId: SYNC_PROOF_MACHINE,
       userId: input.userId(),
       firstSpaceId: input.firstSpaceId,
       secondSpaceId: input.secondSpaceId,
@@ -81,7 +81,7 @@ export function registerProjectSpaceProofs(input: {
   })
 
   registerHostedSyncAuthorizationProofs({
-    machineId: input.machineId,
+    machineId: SYNC_PROOF_MACHINE,
     // The suite fills the signed-in user in during setup, after registration.
     get userId() {
       return input.userId()

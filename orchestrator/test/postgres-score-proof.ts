@@ -11,6 +11,12 @@ import { createMemoryRecordApiClient, installRecordApiClient } from './fixtures/
 
 export { proveHostedDocs } from './postgres-docs-proof.ts'
 
+/**
+ * The machine the sync proofs upload as. A machine keeps its first owner, so
+ * the proofs cannot reuse the fixture machine, which another fixture user owns.
+ */
+export const SYNC_PROOF_MACHINE = newRecordId()
+
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
 const SCORE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.score.columns
 
@@ -262,7 +268,10 @@ export function registerScoreRecordSyncProof(
   input: () => Parameters<typeof proveScoreRecordSync>[0],
 ): void {
   test('sync round trip writes and updates a tenant-confined score', async () => {
-    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync(input())
+    const { actorRead, otherSpaceRead, rescoredRead } = await proveScoreRecordSync({
+      ...input(),
+      machineId: SYNC_PROOF_MACHINE,
+    })
     expect(actorRead.code, actorRead.stderr).toBe(0)
     expect(actorRead.stdout).toBe('full|right|first')
     expect(otherSpaceRead.code, otherSpaceRead.stderr).toBe(0)
