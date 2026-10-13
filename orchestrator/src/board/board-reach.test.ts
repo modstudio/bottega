@@ -67,9 +67,35 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
     messagesPushed: 5,
     pushes: 6,
     pushesNotConcerned: 1,
+    pushesUnqualified: 1,
     pushesOlderThanSession: 1,
     stopsBlockedWithoutAcknowledgement: 1,
-    worstMessages: [{ messageId: 'one', audience: 'project:alpha', pushes: 2, unrelated: 1 }],
+    worstMessages: [
+      {
+        messageSource: 'local',
+        messageId: 'one',
+        audience: 'project:alpha',
+        pushes: 2,
+        pushesNotConcerned: 1,
+        pushesUnqualified: 0,
+        pushesOlderThanSession: 0,
+        stopsBlocked: 0,
+        pushesNotShownToConcernReader: 1,
+        readerProjects: ['alpha', 'beta'],
+      },
+      {
+        messageSource: 'local',
+        messageId: 'unqualified',
+        audience: 'architects',
+        pushes: 1,
+        pushesNotConcerned: 0,
+        pushesUnqualified: 1,
+        pushesOlderThanSession: 0,
+        stopsBlocked: 0,
+        pushesNotShownToConcernReader: 1,
+        readerProjects: ['alpha'],
+      },
+    ],
   })
   expect(
     countBoardReach([
@@ -84,10 +110,12 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
 })
 
 test('an empty reach window has no pushes or worst messages', () => {
-  expect(countBoardReach([])).toEqual({
+  const totals = countBoardReach([])
+  expect(totals).toEqual({
     messagesPushed: 0,
     pushes: 0,
     pushesNotConcerned: 0,
+    pushesUnqualified: 0,
     pushesOlderThanSession: 0,
     stopsBlockedWithoutAcknowledgement: 0,
     worstMessages: [],
@@ -98,11 +126,77 @@ test('an empty reach window has no pushes or worst messages', () => {
       windowStart: '2026-10-12T12:00:00.000Z',
       recordingStartedAt: '2026-10-13T12:00:00.000Z',
       recordingFailures: 0,
-      totals: countBoardReach([]),
+      totals: {
+        ...totals,
+        worstMessages: totals.worstMessages.map((message) => ({
+          ...message,
+          title: null,
+        })),
+      },
       rows: [],
     }),
   ).toBe(
     'No board pushes recorded in this window. Recording has existed since 2026-10-13T12:00:00.000Z.',
+  )
+})
+
+test('an unqualified message reports every way its pushes failed to show concern', () => {
+  const result = countBoardReach([
+    row({
+      id: 1,
+      messageId: 'plain-architects',
+      audience: 'architects',
+      readerProject: 'beta',
+      concern: 'unqualified',
+      postingTiming: 'before-session',
+    }),
+    row({
+      id: 2,
+      messageId: 'plain-architects',
+      audience: 'architects',
+      readerProject: 'alpha',
+      concern: 'unqualified',
+      deliveryPoint: 'stop',
+      blockedStop: true,
+    }),
+  ])
+
+  expect(result.pushesUnqualified).toBe(2)
+  expect(result.worstMessages).toEqual([
+    {
+      messageSource: 'local',
+      messageId: 'plain-architects',
+      audience: 'architects',
+      pushes: 2,
+      pushesNotConcerned: 0,
+      pushesUnqualified: 2,
+      pushesOlderThanSession: 1,
+      stopsBlocked: 1,
+      pushesNotShownToConcernReader: 2,
+      readerProjects: ['alpha', 'beta'],
+    },
+  ])
+})
+
+test('rendering identifies a removed message by id alone', () => {
+  const totals = countBoardReach([
+    row({ id: 1, messageId: 'gone', audience: 'architects', concern: 'unqualified' }),
+  ])
+
+  expect(
+    renderBoardReach({
+      windowHours: 24,
+      windowStart: '2026-10-12T12:00:00.000Z',
+      recordingStartedAt: '2026-10-13T12:00:00.000Z',
+      recordingFailures: 0,
+      totals: {
+        ...totals,
+        worstMessages: totals.worstMessages.map((message) => ({ ...message, title: null })),
+      },
+      rows: [row({ id: 1, messageId: 'gone' })],
+    }),
+  ).toContain(
+    'gone [architects]: 1 not shown to concern (0 not concerning, 1 unqualified); 0 older than the session; 0 blocked stops; projects: alpha',
   )
 })
 

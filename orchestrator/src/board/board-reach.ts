@@ -169,33 +169,95 @@ export function noteBoardReachRecordingFailure(database: Database, recordedAt: s
 export function countBoardReach(rows: BoardReachRow[]) {
   const messages = new Map<
     string,
-    { messageId: string; audience: string; pushes: number; unrelated: number }
+    {
+      messageSource: 'local' | 'hosted'
+      messageId: string
+      audience: string
+      pushes: number
+      pushesNotConcerned: number
+      pushesUnqualified: number
+      pushesOlderThanSession: number
+      stopsBlocked: number
+      readerProjects: Set<string>
+    }
   >()
   for (const row of rows) {
     const key = `${row.messageSource}:${row.messageId}`
     const current = messages.get(key) ?? {
+      messageSource: row.messageSource,
       messageId: row.messageId,
       audience: row.audience,
       pushes: 0,
-      unrelated: 0,
+      pushesNotConcerned: 0,
+      pushesUnqualified: 0,
+      pushesOlderThanSession: 0,
+      stopsBlocked: 0,
+      readerProjects: new Set<string>(),
     }
     current.pushes++
-    if (row.concern === 'not-concerned') current.unrelated++
+    if (row.concern === 'not-concerned') current.pushesNotConcerned++
+    if (row.concern === 'unqualified') current.pushesUnqualified++
+    if (row.postingTiming === 'before-session') current.pushesOlderThanSession++
+    if (row.blockedStop) current.stopsBlocked++
+    current.readerProjects.add(row.readerProject)
     messages.set(key, current)
   }
+  const worstMessages = [...messages.values()]
+    .map((message) => ({
+      ...message,
+      pushesNotShownToConcernReader:
+        message.pushesNotConcerned + message.pushesUnqualified,
+      readerProjects: [...message.readerProjects].sort(),
+    }))
+    .filter((message) => message.pushesNotShownToConcernReader > 0)
+    .sort(
+      (left, right) =>
+        right.pushesNotShownToConcernReader - left.pushesNotShownToConcernReader ||
+        right.pushes - left.pushes,
+    )
+    .slice(0, 10)
   return {
     messagesPushed: messages.size,
     pushes: rows.length,
     pushesNotConcerned: rows.filter((row) => row.concern === 'not-concerned').length,
+    pushesUnqualified: rows.filter((row) => row.concern === 'unqualified').length,
     pushesOlderThanSession: rows.filter((row) => row.postingTiming === 'before-session').length,
     stopsBlockedWithoutAcknowledgement: rows.filter(
       (row) => row.blockedStop && !row.acknowledgementRequired,
     ).length,
-    worstMessages: [...messages.values()]
-      .filter((message) => message.unrelated > 0)
-      .sort((left, right) => right.unrelated - left.unrelated || right.pushes - left.pushes)
-      .slice(0, 10),
+    worstMessages,
   }
+}
+
+function boardMessageTitle(
+  source: 'local' | 'hosted',
+  id: string,
+  database: Database,
+): string | null {
+  if (source === 'local') {
+    const row = database
+      .query('SELECT title,thread_root_id FROM board_message WHERE id=?')
+      .get(Number(id)) as { title: string | null; thread_root_id: number | null } | null
+    if (!row) return null
+    if (row.title) return row.title
+    if (row.thread_root_id === null) return null
+    return (
+      database.query('SELECT title FROM board_message WHERE id=?').get(row.thread_root_id) as {
+        title: string | null
+      } | null
+    )?.title ?? null
+  }
+  const cached = database
+    .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
+    .get(id) as { payload: string } | null
+  if (!cached) return null
+  const message = JSON.parse(cached.payload) as HostedBoardMessage
+  if (message.title) return message.title
+  if (!message.threadRootId) return null
+  const root = database
+    .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
+    .get(message.threadRootId) as { payload: string } | null
+  return root ? (JSON.parse(root.payload) as HostedBoardMessage).title : null
 }
 
 const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
@@ -233,12 +295,19 @@ export function boardReachReport(
       .query('SELECT * FROM board_reach_delivery WHERE recorded_at>=? ORDER BY recorded_at,id')
       .all(windowStart) as Record<string, unknown>[]
   ).map(reachRow)
+  const totals = countBoardReach(rows)
   return {
     windowHours: hours,
     windowStart,
     recordingStartedAt: recording.started_at,
     recordingFailures: failures.count,
-    totals: countBoardReach(rows),
+    totals: {
+      ...totals,
+      worstMessages: totals.worstMessages.map((message) => ({
+        ...message,
+        title: boardMessageTitle(message.messageSource, message.messageId, database),
+      })),
+    },
     rows,
   }
 }
@@ -251,15 +320,16 @@ export function renderBoardReach(report: ReturnType<typeof boardReachReport>): s
     `Messages pushed: ${totals.messagesPushed}`,
     `Pushes: ${totals.pushes}`,
     `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
+    `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
     `Pushes older than the session: ${totals.pushesOlderThanSession}`,
     `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
     `Recording failures: ${report.recordingFailures}`,
   ]
   if (totals.worstMessages.length) {
-    lines.push('Worst messages by pushes not concerning the reader:')
+    lines.push('Worst messages by pushes not shown to concern the reader:')
     for (const message of totals.worstMessages)
       lines.push(
-        `${message.messageId} [${message.audience}]: ${message.unrelated} of ${message.pushes}`,
+        `${message.messageId}${message.title ? ` — ${message.title}` : ''} [${message.audience}]: ${message.pushesNotShownToConcernReader} not shown to concern (${message.pushesNotConcerned} not concerning, ${message.pushesUnqualified} unqualified); ${message.pushesOlderThanSession} older than the session; ${message.stopsBlocked} blocked stops; projects: ${message.readerProjects.join(', ')}`,
       )
   }
   return lines.join('\n')
