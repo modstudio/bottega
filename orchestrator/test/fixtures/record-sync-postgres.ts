@@ -94,6 +94,8 @@ export function fakePostgres(
     const exclusionResult = hostedExclusionResult(source, hostedExclusion)
     if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
+    if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
+    if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
     return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
   }) as unknown as SQL
   tx.options = {} as SQL['options']

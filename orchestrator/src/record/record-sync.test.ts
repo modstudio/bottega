@@ -1013,6 +1013,30 @@ test('sync sends ordered bounded batches and applies each response before contin
   local.close()
 })
 
+test('a malformed ordered response marks no local row', async () => {
+  const local = localOutbox(2, null)
+  const base = options(local, fakePostgres())
+  const client = {
+    whoami: base.client.whoami,
+    sync: async () => ({
+      results: [
+        { id: 1, status: 'synced' as const },
+        { id: 999, status: 'synced' as const },
+      ],
+    }),
+  }
+  await expect(syncRecord({ ...base, client })).rejects.toThrow(
+    'record sync response order did not match the request',
+  )
+  expect(
+    local.query('SELECT attempts,synced_at,quarantined_at FROM outbox ORDER BY id').all(),
+  ).toEqual([
+    { attempts: 0, synced_at: null, quarantined_at: null },
+    { attempts: 0, synced_at: null, quarantined_at: null },
+  ])
+  local.close()
+})
+
 test('whole-request auth, server, and old-route failures leave the batch pending', async () => {
   for (const failure of [
     new RecordApiRequestError('credentials refused', 'refused', 401),

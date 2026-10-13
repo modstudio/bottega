@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import type { RecordIdentity } from './record-auth.ts'
-import { recordSyncAuthorizationDecision } from './record-sync-service.ts'
+import {
+  recordSyncAuthorizationDecision,
+  recordSyncMachineOwnershipDecision,
+} from './record-sync-decision.ts'
 
 const identity: RecordIdentity = {
   user: { id: '01990000-0000-7000-8000-000000000001' },
@@ -42,5 +45,25 @@ test('sync authorization derives user and fallback space only from the session i
   expect(recordSyncAuthorizationDecision(identity, 'other')).toMatchObject({
     status: 'refused',
     reason: expect.stringContaining('not a member'),
+  })
+})
+
+test('sync machine ownership permits registration and the owner but refuses another user', () => {
+  const machineId = '01990000-0000-7000-8000-000000000004'
+  expect(recordSyncMachineOwnershipDecision(machineId, null, identity.user.id)).toEqual({
+    status: 'allowed',
+  })
+  expect(recordSyncMachineOwnershipDecision(machineId, identity.user.id, identity.user.id)).toEqual(
+    { status: 'allowed' },
+  )
+  expect(
+    recordSyncMachineOwnershipDecision(
+      machineId,
+      '01990000-0000-7000-8000-000000000005',
+      identity.user.id,
+    ),
+  ).toEqual({
+    status: 'refused',
+    reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`orch sync\``,
   })
 })

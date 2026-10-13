@@ -13,6 +13,7 @@ type Input = {
   writeSpaceId: string
   writeProjectName: string
   token(): string
+  otherToken(): string
   setToken(token: string): void
   admin(statement: string): string
 }
@@ -209,5 +210,92 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       ).toBe(before)
       expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('1')
     })
+  })
+
+  test('hosted sync refuses machine takeover before writing and preserves the owner', async () => {
+    const machineId = newRecordId()
+    const firstRunId = newRecordId()
+    const refusedRunId = newRecordId()
+    const returningRunId = newRecordId()
+    const firstSeen = '2026-10-13T02:00:00.000Z'
+    const returningSeen = '2026-10-13T03:00:00.000Z'
+    input.admin(
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+       VALUES ('${newRecordId()}','${input.writeSpaceId}','${input.userId}','member','write',now())
+       ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';`,
+    )
+    const localFor = (id: string) =>
+      localOutbox(
+        runPayload({
+          id,
+          machineId,
+          projectName: input.writeProjectName,
+          spaceId: input.writeSpaceId,
+        }),
+      )
+    const first = localFor(firstRunId)
+    try {
+      expect(
+        await withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local: first,
+            identity: { id: machineId, name: 'first-owner' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            now: () => firstSeen,
+          }),
+        ),
+      ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+      expect(
+        input.admin(`SELECT user_id || '|' || name FROM machine WHERE id='${machineId}';`),
+      ).toBe(`${input.userId}|first-owner`)
+    } finally {
+      first.close()
+    }
+
+    input.setToken(input.otherToken())
+    const refused = localFor(refusedRunId)
+    try {
+      await expect(
+        withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local: refused,
+            identity: { id: machineId, name: 'takeover' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+          }),
+        ),
+      ).rejects.toThrow('is registered to another user')
+      expect(refused.query('SELECT attempts,synced_at,quarantined_at FROM outbox').get()).toEqual({
+        attempts: 0,
+        synced_at: null,
+        quarantined_at: null,
+      })
+      expect(input.admin(`SELECT user_id FROM machine WHERE id='${machineId}';`)).toBe(input.userId)
+      expect(input.admin(`SELECT count(*) FROM run WHERE id='${refusedRunId}';`)).toBe('0')
+    } finally {
+      refused.close()
+    }
+
+    input.setToken(input.token())
+    const returning = localFor(returningRunId)
+    try {
+      expect(
+        await withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local: returning,
+            identity: { id: machineId, name: 'returning-owner' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            now: () => returningSeen,
+          }),
+        ),
+      ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+      expect(
+        input.admin(
+          `SELECT user_id || '|' || name || '|' || to_char(last_seen AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+           FROM machine WHERE id='${machineId}';`,
+        ),
+      ).toBe(`${input.userId}|returning-owner|${returningSeen}`)
+    } finally {
+      returning.close()
+    }
   })
 }

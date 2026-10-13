@@ -131,6 +131,44 @@ test('the record API base URL resolves from configured files', () => {
 })
 
 describe('record API client test safety', () => {
+  test('sync preserves the active-space remedy from a client refusal', async () => {
+    const session = memoryRecordSession()
+    session.setToken('sync-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      Response.json(
+        { error: 'record session has no active space; run `orch record space switch <slug>`' },
+        { status: 409 },
+      )) as typeof fetch
+    try {
+      let refusal: unknown
+      try {
+        await recordApiClient().sync!({
+          machine: { id: newRecordId(), name: 'fixture', seenAt: '2026-10-13T12:00:00.000Z' },
+          rows: [],
+        })
+      } catch (error) {
+        refusal = error
+      }
+      expect(refusal).toBeInstanceOf(Error)
+      expect((refusal as Error).message).toBe(
+        'record session has no active space; run `orch record space switch <slug>`',
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('refuses a real base URL unless a stub is injected', () => {
     installRecordApiClient(null)
     const previous = process.env.ORCH_RECORD_API_URL

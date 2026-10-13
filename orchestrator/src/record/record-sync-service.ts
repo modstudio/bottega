@@ -3,7 +3,6 @@
 import { SQL } from 'bun'
 import { sql as drizzleSql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
-import { machine } from '../../../shared/record/schema.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -24,16 +23,10 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
-import {
-  parseRecordSpaceMemberships,
-  recordSpaceMembership,
-} from '../../../shared/record-space-membership.ts'
-import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -44,38 +37,13 @@ import type {
   RecordSyncResponse,
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
+import {
+  RecordSyncRequestRefusal,
+  recordSyncAuthorizationDecision,
+  recordSyncMachineOwnershipDecision,
+} from './record-sync-decision.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { pushScore } from './score-sync.ts'
-
-export type RecordSyncAuthorizationDecision =
-  | { status: 'allowed'; principal: RecordPrincipal }
-  | { status: 'deferred'; reason: string; spaceId: string }
-  | { status: 'refused'; reason: string }
-
-export function recordSyncAuthorizationDecision(
-  identity: RecordIdentity,
-  spaceHint: string | null,
-): RecordSyncAuthorizationDecision {
-  const memberships = parseRecordSpaceMemberships(identity.memberships)
-  const destination = spaceHint ?? identity.activeSpaceId
-  if (!destination) return { status: 'refused', reason: 'record session has no active space' }
-  const membership = recordSpaceMembership(destination, memberships)
-  if (!membership) {
-    return { status: 'refused', reason: recordSpaceMembershipRefusal(destination) }
-  }
-  const access = recordSpaceAccessDecision('write', membership.spaceId, memberships)
-  if (!access.allowed) {
-    return {
-      status: 'deferred',
-      reason: `${access.error}; ${access.remedy}`,
-      spaceId: membership.spaceId,
-    }
-  }
-  return {
-    status: 'allowed',
-    principal: { userId: identity.user.id, spaceId: membership.spaceId },
-  }
-}
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   let parsed: unknown
@@ -182,20 +150,24 @@ async function upsertMachine(
 ): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const record = drizzle({ client: tx })
-    await record
-      .insert(machine)
-      .values({
-        id: identity.id,
-        userId: principal.userId,
-        name: identity.name,
-        registeredAt: date(seenAt),
-        lastSeen: date(seenAt),
-      })
-      .onConflictDoUpdate({
-        target: machine.id,
-        set: { userId: principal.userId, name: identity.name, lastSeen: date(seenAt) },
-      })
+    const owned = await tx`
+      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${identity.name},${seenAt}::timestamptz,
+        ${seenAt}::timestamptz)
+      ON CONFLICT (id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen
+      WHERE machine.user_id=excluded.user_id
+      RETURNING user_id
+    `
+    if (owned.length === 0) {
+      const owners = await tx`SELECT user_id FROM machine WHERE id=${identity.id}::uuid`
+      const decision = recordSyncMachineOwnershipDecision(
+        identity.id,
+        owners[0]?.user_id == null ? null : String(owners[0].user_id),
+        principal.userId,
+      )
+      if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
+      throw new Error(`machine ownership changed while registering ${identity.id}`)
+    }
   })
 }
 

@@ -526,7 +526,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       './machine-identity.ts',
       './outbox-sanitize.ts',
-      './outbox-payload-contracts.ts',
       'bun:sqlite',
     ],
     'Enforce the landing-outbox concern boundary.',
@@ -706,6 +705,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       '../../../shared/docs.ts',
       '../../../shared/record-api-url.ts',
+      '../../../shared/record-remedies.ts',
       '../doc/doc-write-allowed.ts',
       '../verdict/verdict-payload.ts',
       './record-auth.ts',

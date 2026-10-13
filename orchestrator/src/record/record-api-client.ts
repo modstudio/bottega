@@ -9,6 +9,7 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
@@ -409,6 +410,8 @@ function recordApiError(body: unknown, status: number, headers: Headers = new He
   if (status === 401) return recordAuthRefusal(status, body, headers)
   const message = responseMessage(body, `record API ${status}`)
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
+  if (message === RECORD_ACTIVE_SPACE_REMEDY)
+    return new RecordApiRequestError(message, 'refused', status)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500)

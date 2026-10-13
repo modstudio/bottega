@@ -342,7 +342,7 @@ realPostgres('RLS proof against real Postgres', () => {
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
-    token: () => tokenA,
+    token: (user = 'a') => (user === 'a' ? tokenA : tokenB),
     setToken: (token) => recordSession.setToken(token),
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),

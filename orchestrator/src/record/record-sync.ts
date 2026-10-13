@@ -214,14 +214,20 @@ function applyBatchResults(input: {
 }): { pushed: number; failed: number } {
   if (input.response.results.length !== input.batch.length)
     throw new Error('record sync response did not contain one result per requested row')
+  for (let index = 0; index < input.batch.length; index++) {
+    const row = input.batch[index]!
+    const result = input.response.results[index]!
+    if (result.id !== row.id)
+      throw new Error('record sync response order did not match the request')
+    if (!['synced', 'quarantined', 'deferred'].includes(result.status))
+      throw new Error('record sync response contained an invalid row status')
+  }
   let pushed = 0
   let failed = 0
   for (let index = 0; index < input.batch.length; index++) {
     const row = input.batch[index]!
     const result = input.response.results[index]!
     input.attempted.add(row.id)
-    if (result.id !== row.id)
-      throw new Error('record sync response order did not match the request')
     if (result.status === 'synced') {
       markOutboxRowSynced(input.local, input.localRows.get(row.id)!, input.now())
       pushed++

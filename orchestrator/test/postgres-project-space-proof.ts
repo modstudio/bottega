@@ -15,7 +15,7 @@ export function registerProjectSpaceProofs(input: {
   firstSpaceId: string
   secondSpaceId: string
   otherRunId: string
-  token: () => string
+  token: (user?: 'a' | 'b') => string
   setToken(token: string): void
   asSpace(user: string, password: string, spaceId: string, statement: string): PsqlResult
   admin(statement: string): string
@@ -89,6 +89,7 @@ export function registerProjectSpaceProofs(input: {
     writeSpaceId: input.firstSpaceId,
     writeProjectName: 'alpha',
     token: input.token,
+    otherToken: () => input.token('b'),
     setToken: input.setToken,
     admin: input.admin,
   })

@@ -6,6 +6,7 @@ import {
   RECORD_SYNC_MAX_PAYLOAD_BYTES,
   RECORD_SYNC_MAX_REQUEST_BYTES,
 } from './record-sync-contract.ts'
+import { RecordSyncRequestRefusal } from './record-sync-decision.ts'
 
 const id = '01990000-0000-7000-8000-000000000001'
 
@@ -47,4 +48,46 @@ test('sync forwards raw payloads with the authenticated identity and enforces by
       })
     ).status,
   ).toBe(413)
+  expect(syncRecord).toHaveBeenCalledTimes(1)
+})
+
+test('sync returns request refusals and the active-space remedy as client errors', async () => {
+  const request = {
+    machine: { id, name: 'fixture', seenAt: '2026-10-13T12:00:00.000Z' },
+    rows: [],
+  }
+  const app = new Hono<{
+    Variables: { identity: typeof identity; destinationSpaceId?: string }
+  }>()
+  let currentIdentity = identity
+  app.use('*', async (context, next) => {
+    context.set('identity', currentIdentity)
+    await next()
+  })
+  const syncRecord = mock(async () => {
+    throw new RecordSyncRequestRefusal(
+      'machine is registered to another user; sign in as its owner',
+    )
+  })
+  registerRecordSyncRoute(app, { recordUrl: 'postgres://record.test/record', syncRecord })
+
+  const refused = await app.request('/v1/sync', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+  expect(refused.status).toBe(409)
+  expect(await refused.json()).toEqual({
+    error: 'machine is registered to another user; sign in as its owner',
+  })
+
+  currentIdentity = { ...identity, activeSpaceId: null }
+  const noSpace = await app.request('/v1/sync', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+  expect(noSpace.status).toBe(409)
+  expect(await noSpace.json()).toEqual({
+    error: 'record session has no active space; run `orch record space switch <slug>`',
+  })
+  expect(syncRecord).toHaveBeenCalledTimes(1)
 })
