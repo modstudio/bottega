@@ -85,36 +85,33 @@ export function registerBoardApiProofs(input: {
       RECORD_HUB_URL: 'http://127.0.0.1',
     })
     origin = `http://127.0.0.1:${server.port}`
+    const auth = recordAuth(input.actorUrl)
     const signUp = async (email: string, name: string) => {
-      const response = await fetch(`${origin}/api/auth/sign-up/email`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, name, password: SIGN_UP_AUTH.password }),
+      const created = await auth.api.signUpEmail({
+        body: { email, name, password: SIGN_UP_AUTH.password },
       })
-      expect(response.status).toBe(200)
-      const body = (await response.json()) as { token: string; user: { id: string } }
-      const whoami = await fetch(`${origin}/v1/whoami`, { headers: headers(body.token) })
-      const identity = (await whoami.json()) as {
-        user: { id: string }
-        activeSpaceId: string
+      if (!created.token) throw new Error(`board API ${email} has no bearer token`)
+      const session = await auth.api.getSession({ headers: headers(created.token) })
+      if (!session?.session.activeOrganizationId)
+        throw new Error(`board API ${email} has no active space`)
+      return {
+        token: created.token,
+        userId: created.user.id,
+        spaceId: session.session.activeOrganizationId,
       }
-      return { token: body.token, userId: identity.user.id, spaceId: identity.activeSpaceId }
     }
     const a = await signUp(EMAIL.a, 'Board API A')
     const b = await signUp(EMAIL.b, 'Board API B')
     const c = await signUp(EMAIL.c, 'Board API C')
-    const signedD = await recordAuth(input.actorUrl).api.signUpEmail({
-      body: { email: EMAIL.d, name: 'Board API D', password: SIGN_UP_AUTH.password },
-    })
-    if (!signedD.token) throw new Error('board API D has no bearer token')
+    const d = await signUp(EMAIL.d, 'Board API D')
     tokenA = a.token
     tokenB = b.token
     tokenC = c.token
-    tokenD = signedD.token
+    tokenD = d.token
     userA = a.userId
     userB = b.userId
     userC = c.userId
-    userD = signedD.user.id
+    userD = d.userId
     spaceA = a.spaceId
     spaceB = b.spaceId
     spaceC = c.spaceId
