@@ -317,8 +317,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(caller.notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  // Project-required inputs are knowable before the prompt is read. Checking
-  // them afterwards made a missing key pay for stdin and run setup first.
+  // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const requestedBase = flag('base')
   let base = requestedBase
   const reviewRef = flag('review')
