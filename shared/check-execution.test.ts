@@ -16,3 +16,8 @@ test('check execution lines retain valid records around malformed and wrong-shap
     ),
   ).toEqual({ records: [first, second], rejected: 2 })
 })
+
+test('an empty check execution file holds no records and rejects nothing', () => {
+  expect(parseCheckExecutionLines('')).toEqual({ records: [], rejected: 0 })
+  expect(parseCheckExecutionLines('\n\n')).toEqual({ records: [], rejected: 0 })
+})

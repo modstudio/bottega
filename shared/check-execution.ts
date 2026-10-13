@@ -20,10 +20,10 @@ export function parseCheckExecutionLines(text: string): {
   records: CheckExecutionRecord[]
   rejected: number
 } {
-  const lines = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n')
   const records: CheckExecutionRecord[] = []
   let rejected = 0
-  for (const line of lines) {
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue
     let value: unknown
     try {
       value = JSON.parse(line)
