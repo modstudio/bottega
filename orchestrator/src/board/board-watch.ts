@@ -5,17 +5,14 @@ import { installationBuildId } from '../../../shared/install-root.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { enableSchemaReload } from '../database/db.ts'
-import {
-  type RecordBoardStreamOpen,
-  recordApiClient,
-} from '../record/record-api-client.ts'
+import { type RecordBoardStreamOpen, recordApiClient } from '../record/record-api-client.ts'
 import { hostedBoardCursor, refreshHostedBoard } from './board-hosted-cache.ts'
 import {
+  BOARD_WATCH_BUILD_CHECK_MS,
   type BoardWatchAnnounce,
   type BoardWatchDecision,
   type BoardWatchEvent,
   type BoardWatchState,
-  BOARD_WATCH_BUILD_CHECK_MS,
   boardWatchDueEvent,
   boardWatchPullEvent,
   boardWatchWaitMs,
@@ -136,7 +133,8 @@ async function oneConnection(
   if (opened.kind !== 'stream') {
     const event: BoardWatchEvent =
       opened.kind === 'unauthorized' ? { kind: 'unauthorized' } : { kind: 'error' }
-    return await applyReconnect(input, live, decide(input, live.state, event))
+    const result = await applyReconnect(input, live, decide(input, live.state, event))
+    return typeof result === 'number' ? result : null
   }
   const openedDecision = decide(input, live.state, { kind: 'opened' })
   live.state = openedDecision.state
@@ -166,13 +164,17 @@ async function applyReconnect(
   input: BoardWatchLoopInput,
   live: LiveWatch,
   decision: BoardWatchDecision,
-): Promise<number | null> {
+): Promise<number | 'reconnect' | 'stay'> {
   live.state = decision.state
   announce(input, decision)
   if (decision.action === 'exit') return decision.exitCode ?? 0
-  if (decision.action !== 'reconnect') return null
+  if (decision.action !== 'reconnect') return 'stay'
   if ((await input.wait(decision.delayMs, input.signal)) === 'aborted') return 0
-  return null
+  return 'reconnect'
+}
+
+function connectionResult(result: number | 'reconnect' | 'stay'): number | null {
+  return typeof result === 'number' ? result : null
 }
 
 function queuePull(input: BoardWatchLoopInput, live: LiveWatch, gate: PullGate): void {
@@ -282,6 +284,8 @@ async function readOrWait(
   return raced
 }
 
+type HoldClock = { lastByte: number; lastSlow: number; sawEvent: boolean }
+
 async function holdStream(
   input: BoardWatchLoopInput,
   source: { read(): Promise<Uint8Array | null> },
@@ -291,49 +295,77 @@ async function holdStream(
   const decoder = new TextDecoder()
   const parser = createBoardStreamParser()
   const pending: { read: Promise<Uint8Array | null> | null } = { read: null }
-  let lastByte = input.now()
-  let lastSlow = input.now()
-  let sawEvent = false
+  const clock: HoldClock = { lastByte: input.now(), lastSlow: input.now(), sawEvent: false }
   while (!input.signal.aborted) {
-    const raced = await readOrWait(
-      pending,
-      source,
-      boardWatchWaitMs({
-        now: input.now(),
-        lastByte,
-        lastSlow,
-        lastBuild: live.lastBuild,
-      }),
-      input.wait,
-      input.signal,
-    )
-    if (raced.kind === 'aborted') return 0
-    if (raced.kind === 'timer') {
-      const due = boardWatchDueEvent({
-        now: input.now(),
-        lastByte,
-        lastSlow,
-        lastBuild: live.lastBuild,
-      })
-      const timer = await applyTimer(input, live, gate, due)
-      if (timer.exit !== null) return timer.exit
-      if (timer.reconnect) return null
-      lastSlow = timer.lastSlow ?? lastSlow
-      continue
-    }
-    if (raced.value === null) {
-      return await applyReconnect(input, live, decide(input, live.state, { kind: 'ended' }))
-    }
-    lastByte = input.now()
-    const parsed = parser.push(decoder.decode(raced.value, { stream: true }))
-    if (parsed.protocolError) {
-      return await applyReconnect(input, live, decide(input, live.state, { kind: 'error' }))
-    }
-    const consumed = consumeFrames(input, parsed.frames, live, sawEvent)
-    sawEvent = consumed.sawEvent
-    if (consumed.pull) queuePull(input, live, gate)
+    const ended = await holdTurn(input, source, live, gate, decoder, parser, pending, clock)
+    if (ended !== 'continue') return ended
   }
   return 0
+}
+
+async function holdTurn(
+  input: BoardWatchLoopInput,
+  source: { read(): Promise<Uint8Array | null> },
+  live: LiveWatch,
+  gate: PullGate,
+  decoder: TextDecoder,
+  parser: ReturnType<typeof createBoardStreamParser>,
+  pending: { read: Promise<Uint8Array | null> | null },
+  clock: HoldClock,
+): Promise<number | null | 'continue'> {
+  const raced = await readOrWait(
+    pending,
+    source,
+    boardWatchWaitMs({
+      now: input.now(),
+      lastByte: clock.lastByte,
+      lastSlow: clock.lastSlow,
+      lastBuild: live.lastBuild,
+    }),
+    input.wait,
+    input.signal,
+  )
+  if (raced.kind === 'aborted') return 0
+  if (raced.kind === 'timer') return await holdTimer(input, live, gate, clock)
+  if (raced.value === null) {
+    return connectionResult(
+      await applyReconnect(input, live, decide(input, live.state, { kind: 'ended' })),
+    )
+  }
+  clock.lastByte = input.now()
+  const parsed = parser.push(decoder.decode(raced.value, { stream: true }))
+  if (parsed.protocolError) {
+    return connectionResult(
+      await applyReconnect(input, live, decide(input, live.state, { kind: 'error' })),
+    )
+  }
+  const consumed = consumeFrames(input, parsed.frames, live, clock.sawEvent)
+  clock.sawEvent = consumed.sawEvent
+  if (consumed.pull) queuePull(input, live, gate)
+  return 'continue'
+}
+
+async function holdTimer(
+  input: BoardWatchLoopInput,
+  live: LiveWatch,
+  gate: PullGate,
+  clock: HoldClock,
+): Promise<number | null | 'continue'> {
+  const timer = await applyTimer(
+    input,
+    live,
+    gate,
+    boardWatchDueEvent({
+      now: input.now(),
+      lastByte: clock.lastByte,
+      lastSlow: clock.lastSlow,
+      lastBuild: live.lastBuild,
+    }),
+  )
+  if (timer.exit !== null) return timer.exit
+  if (timer.reconnect) return null
+  clock.lastSlow = timer.lastSlow ?? clock.lastSlow
+  return 'continue'
 }
 
 async function applyTimer(
@@ -343,8 +375,9 @@ async function applyTimer(
   due: ReturnType<typeof boardWatchDueEvent>,
 ): Promise<{ exit: number | null; reconnect: boolean; lastSlow?: number }> {
   if (due === 'silence') {
-    const code = await applyReconnect(input, live, decide(input, live.state, { kind: 'silence' }))
-    return { exit: code, reconnect: code === null }
+    const result = await applyReconnect(input, live, decide(input, live.state, { kind: 'silence' }))
+    if (typeof result === 'number') return { exit: result, reconnect: false }
+    return { exit: null, reconnect: result === 'reconnect' }
   }
   if (due === 'build-check') {
     const exit = dueBuildExit(input, live)
@@ -363,8 +396,7 @@ async function applyTimer(
 async function pullProduction(): Promise<BoardWatchPullResult> {
   try {
     const result = await refreshHostedBoard({ budgetMs: BOARD_WATCH_REFRESH_BUDGET_MS })
-    if (result.status === 'failed')
-      return { kind: 'failed', reason: result.reason ?? 'failed' }
+    if (result.status === 'failed') return { kind: 'failed', reason: result.reason ?? 'failed' }
     if (result.status === 'incomplete') return { kind: 'incomplete', applied: result.applied }
     return { kind: 'ok', applied: result.applied }
   } catch (error) {

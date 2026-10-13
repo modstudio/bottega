@@ -38,7 +38,6 @@ function takeFrame(pending: string): { raw: string; rest: string } | null {
       index = next
       continue
     }
-    if (pending[next] === '\r' && next + 1 === pending.length) return null
     return { raw: pending.slice(0, index), rest: pending.slice(next + second) }
   }
   return null

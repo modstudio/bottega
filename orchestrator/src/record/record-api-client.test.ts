@@ -12,7 +12,11 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { recordApiBaseUrl, recordApiClient } from './record-api-client.ts'
+import {
+  classifyBoardStreamResponse,
+  recordApiBaseUrl,
+  recordApiClient,
+} from './record-api-client.ts'
 
 test('the record API base URL resolves from configured files', () => {
   const root = mkdtempSync(join(tmpdir(), 'record-api-client-url-'))
@@ -203,7 +207,7 @@ describe('record API client test safety', () => {
     }
   })
 
-  test('openBoardStream returns the response body without reading JSON', async () => {
+  test('openBoardStream classifies 200, 401, 403, 500, and a thrown fetch', async () => {
     const session = memoryRecordSession()
     session.setToken('stream-token')
     installRecordSessionRunner(session.runner)
@@ -213,27 +217,28 @@ describe('record API client test safety', () => {
     process.env.NODE_ENV = 'development'
     process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
     const originalFetch = globalThis.fetch
-    let jsonReads = 0
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = new Response(': heartbeat\n\n', {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      })
-      const json = response.json.bind(response)
-      response.json = async () => {
-        jsonReads += 1
-        return json()
-      }
-      expect(String(input)).toBe('https://api.example.test/v1/board/stream')
-      expect(init?.method ?? 'GET').toBe('GET')
-      expect(new Headers(init?.headers).get('accept')).toBe('text/event-stream')
-      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer stream-token')
-      return response
-    }) as typeof fetch
+    const run = async (status: number | 'throw') => {
+      globalThis.fetch = (async () => {
+        if (status === 'throw') throw new Error('connect reset')
+        return new Response(': heartbeat\n\n', {
+          status,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      }) as unknown as typeof fetch
+      return await recordApiClient().openBoardStream()
+    }
     try {
-      const response = await recordApiClient().openBoardStream()
-      expect(jsonReads).toBe(0)
-      expect(await response.text()).toBe(': heartbeat\n\n')
+      const ok = await run(200)
+      expect(ok.kind).toBe('stream')
+      if (ok.kind === 'stream') {
+        const chunk = await ok.source.read()
+        expect(new TextDecoder().decode(chunk ?? new Uint8Array())).toBe(': heartbeat\n\n')
+        ok.close()
+      }
+      expect(await run(401)).toEqual({ kind: 'unauthorized' })
+      expect(await run(403)).toEqual({ kind: 'unauthorized' })
+      expect(await run(500)).toEqual({ kind: 'error', reason: 'record API 500' })
+      expect(await run('throw')).toEqual({ kind: 'error', reason: 'connect reset' })
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv
@@ -242,5 +247,17 @@ describe('record API client test safety', () => {
       installRecordSessionRunner(null)
       installRecordApiClient(createMemoryRecordApiClient())
     }
+  })
+})
+
+test('classifyBoardStreamResponse maps status without the board module', () => {
+  const close = () => undefined
+  const body = new Response('ok').body
+  expect(classifyBoardStreamResponse(200, body, close).kind).toBe('stream')
+  expect(classifyBoardStreamResponse(401, body, close)).toEqual({ kind: 'unauthorized' })
+  expect(classifyBoardStreamResponse(403, body, close)).toEqual({ kind: 'unauthorized' })
+  expect(classifyBoardStreamResponse(500, body, close)).toEqual({
+    kind: 'error',
+    reason: 'record API 500',
   })
 })

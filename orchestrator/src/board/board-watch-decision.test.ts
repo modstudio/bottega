@@ -142,7 +142,11 @@ test('a failed pull stays on the stream, announces, and retries on backoff', () 
 })
 
 test('an incomplete pull queues another immediately', () => {
-  const decision = decideBoardWatch(initialBoardWatchState(), { kind: 'pull-incomplete' }, fullJitter)
+  const decision = decideBoardWatch(
+    initialBoardWatchState(),
+    { kind: 'pull-incomplete' },
+    fullJitter,
+  )
   expect(decision).toMatchObject({ action: 'stay', pull: true, delayMs: 0 })
 })
 
@@ -163,9 +167,9 @@ test('every observed input has a decision', () => {
   ]
   for (const event of kinds) {
     const decision = decideBoardWatch(initialBoardWatchState(), event, fullJitter)
-    expect(decision.action === 'exit' || decision.action === 'stay' || decision.action === 'reconnect').toBe(
-      true,
-    )
+    expect(
+      decision.action === 'exit' || decision.action === 'stay' || decision.action === 'reconnect',
+    ).toBe(true)
   }
 })
 
@@ -182,7 +186,7 @@ test('timer due events prefer silence, then the build check, then the slow pull'
   expect(
     boardWatchDueEvent({
       now: origin + BOARD_WATCH_BUILD_CHECK_MS,
-      lastByte: origin,
+      lastByte: origin + BOARD_WATCH_BUILD_CHECK_MS,
       lastSlow: origin,
       lastBuild: origin,
     }),
@@ -190,14 +194,14 @@ test('timer due events prefer silence, then the build check, then the slow pull'
   expect(
     boardWatchDueEvent({
       now: origin + BOARD_WATCH_SLOW_INTERVAL_MS,
-      lastByte: origin,
+      lastByte: origin + BOARD_WATCH_SLOW_INTERVAL_MS,
       lastSlow: origin,
       lastBuild: origin + BOARD_WATCH_SLOW_INTERVAL_MS,
     }),
   ).toBe('slow-timer')
-  expect(boardWatchWaitMs({ now: origin, lastByte: origin, lastSlow: origin, lastBuild: origin })).toBe(
-    BOARD_WATCH_BUILD_CHECK_MS,
-  )
+  expect(
+    boardWatchWaitMs({ now: origin, lastByte: origin, lastSlow: origin, lastBuild: origin }),
+  ).toBe(BOARD_WATCH_SILENCE_MS)
 })
 
 test('a pull result becomes failed, incomplete, or nothing', () => {

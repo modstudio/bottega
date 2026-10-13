@@ -6,7 +6,7 @@ export const BOARD_WATCH_SILENCE_MS = 60_000
 /** Slow pull while connected, covering a wake-up that never arrived. */
 export const BOARD_WATCH_SLOW_INTERVAL_MS = 5 * 60_000
 /** How often a long-lived watcher compares its started build to the installed one. */
-export const BOARD_WATCH_BUILD_CHECK_MS = 60_000
+export const BOARD_WATCH_BUILD_CHECK_MS = 2 * 60_000
 export const BOARD_WATCH_BACKOFF_BASE_MS = 1_000
 export const BOARD_WATCH_BACKOFF_CAP_MS = 60_000
 /** Unsuccessful exit so the service manager replaces a watcher whose build is no longer installed. */
@@ -141,10 +141,7 @@ function reconnect(
 }
 
 function decideOpened(state: BoardWatchState): BoardWatchDecision {
-  return stay(
-    { ...state, signedOut: false },
-    { pull: true, announce: { kind: 'connected' } },
-  )
+  return stay({ ...state, signedOut: false }, { pull: true, announce: { kind: 'connected' } })
 }
 
 function decideFirstEvent(state: BoardWatchState): BoardWatchDecision {

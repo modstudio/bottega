@@ -32,10 +32,7 @@ test('a frame split across two chunks is held until it is complete', () => {
 
 test('two frames in one chunk both parse', () => {
   expect(createBoardStreamParser().push(`${eventFrame('1')}: heartbeat\n\n`)).toEqual({
-    frames: [
-      { kind: 'event', revision: '1' },
-      { kind: 'heartbeat' },
-    ],
+    frames: [{ kind: 'event', revision: '1' }, { kind: 'heartbeat' }],
     protocolError: false,
   })
 })

@@ -1,16 +1,26 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { BOARD_STREAM_EVENT } from '../record/record-board-stream.ts'
 import {
   BOARD_WATCH_UNCONFIGURED_REMEDY,
   type BoardWatchLoopInput,
   type BoardWatchOpen,
+  type BoardWatchPullResult,
   runBoardWatchLoop,
 } from './board-watch.ts'
 import {
   BOARD_WATCH_BACKOFF_BASE_MS,
+  BOARD_WATCH_BUILD_CHECK_MS,
+  BOARD_WATCH_NEWER_BUILD_EXIT_CODE,
   BOARD_WATCH_SILENCE_MS,
   BOARD_WATCH_SLOW_INTERVAL_MS,
+  type BoardWatchDecision,
+  type BoardWatchEvent,
+  type BoardWatchState,
+  decideBoardWatch,
 } from './board-watch-decision.ts'
+import { BOARD_WATCH_FRAME_BUFFER_MAX } from './board-watch-frames.ts'
 
 const eventFrame = (revision: string) =>
   `id: ${revision}\nevent: ${BOARD_STREAM_EVENT.name}\ndata: ${JSON.stringify({ revision })}\n\n`
@@ -106,42 +116,62 @@ async function startLoop(
   overrides: Partial<BoardWatchLoopInput> & {
     hangingPull?: boolean
     openKind?: Exclude<BoardWatchOpen['kind'], 'stream'>
+    pullResult?: BoardWatchPullResult
+    pullResults?: BoardWatchPullResult[]
   } = {},
 ) {
   const clock = new ManualClock()
   const ac = new AbortController()
   const logs: string[] = []
   const pulls: Array<() => void> = []
+  const decisions: BoardWatchDecision[] = []
   let cursor = '0'
   let build = 'build-a'
   let source = new ScriptedSource()
   let opens = 0
   let pullCount = 0
+  let buildReads = 0
   const hangingPull = Boolean(overrides.hangingPull)
   const openKind = overrides.openKind
+  const decide: NonNullable<BoardWatchLoopInput['decide']> = (state, event, jitter) => {
+    const decision = (overrides.decide ?? decideBoardWatch)(state, event, jitter)
+    decisions.push(decision)
+    return decision
+  }
   const input: BoardWatchLoopInput = {
     now: () => clock.now(),
     wait: clock.wait,
     openStream: async () => {
       opens += 1
-      if (openKind) return { kind: openKind }
+      if (openKind === 'unauthorized') return { kind: 'unauthorized' }
+      if (openKind) return { kind: 'error', reason: 'denied' }
       const current = new ScriptedSource()
       source = current
       return { kind: 'stream', source: current, close: () => current.close() }
     },
-    pull: async () => {
-      pullCount += 1
-      if (!hangingPull) return 1
-      await new Promise<void>((resolve) => pulls.push(resolve))
-      return 1
-    },
+    pull:
+      overrides.pull ??
+      (async () => {
+        pullCount += 1
+        if (hangingPull) {
+          await new Promise<void>((resolve) => pulls.push(resolve))
+          return { kind: 'ok', applied: 1 }
+        }
+        if (overrides.pullResults && overrides.pullResults.length > 0)
+          return overrides.pullResults.shift()!
+        return overrides.pullResult ?? { kind: 'ok', applied: 1 }
+      }),
     readCursor: () => cursor,
-    readBuild: () => build,
+    readBuild: () => {
+      buildReads += 1
+      return build
+    },
     startedBuild: 'build-a',
     configured: overrides.configured ?? true,
     random: () => 1,
     log: (line) => logs.push(line),
     signal: ac.signal,
+    decide,
   }
   const done = runBoardWatchLoop(input)
   await clock.flush()
@@ -152,6 +182,8 @@ async function startLoop(
     source: () => source,
     opens: () => opens,
     pullCount: () => pullCount,
+    buildReads: () => buildReads,
+    decisions: () => decisions,
     releasePull: () => pulls.shift()?.(),
     setCursor: (value: string) => {
       cursor = value
@@ -165,9 +197,9 @@ async function startLoop(
 
 const ended = (line: string, suffix: string) => line.endsWith(suffix)
 
-test('an unconfigured machine exits with the remedy', async () => {
+test('an unconfigured machine prints the remedy and exits zero', async () => {
   const run = await startLoop({ configured: false })
-  expect(await run.done).toBe(1)
+  expect(await run.done).toBe(0)
   expect(run.logs.some((line) => line.includes(BOARD_WATCH_UNCONFIGURED_REMEDY))).toBe(true)
   expect(run.pullCount()).toBe(0)
 })
@@ -179,6 +211,14 @@ test('a successful connect pulls', async () => {
   expect(run.logs.some((line) => ended(line, ' pulled 1'))).toBe(true)
   run.ac.abort()
   expect(await run.done).toBe(0)
+})
+
+test('a pull that applied nothing prints nothing', async () => {
+  const run = await startLoop({ pullResult: { kind: 'ok', applied: 0 } })
+  expect(run.pullCount()).toBe(1)
+  expect(run.logs.some((line) => line.includes('pulled'))).toBe(false)
+  run.ac.abort()
+  await run.done
 })
 
 test('an event ahead of the cursor pulls; one at or behind it does not', async () => {
@@ -240,12 +280,20 @@ test('silence reconnects after backoff', async () => {
   await run.done
 })
 
-test('a changed build exits cleanly', async () => {
+test('a changed build exits with the named unsuccessful code after the check interval', async () => {
   const run = await startLoop()
+  const readsAtConnect = run.buildReads()
   run.setBuild('build-b')
-  run.source().push(': heartbeat\n\n')
+  const deadline = run.clock.nowMs + BOARD_WATCH_BUILD_CHECK_MS
+  while (run.clock.nowMs < deadline) {
+    run.source().push(': heartbeat\n\n')
+    await run.clock.flush()
+    const step = Math.min(BOARD_WATCH_SILENCE_MS / 2, deadline - run.clock.nowMs)
+    await run.clock.advance(step)
+  }
   await run.clock.flush()
-  expect(await run.done).toBe(0)
+  expect(run.buildReads()).toBeGreaterThan(readsAtConnect)
+  expect(await run.done).toBe(BOARD_WATCH_NEWER_BUILD_EXIT_CODE)
   expect(run.logs.some((line) => ended(line, ' exiting for a newer build'))).toBe(true)
 })
 
@@ -257,6 +305,115 @@ test('unauthorized retries on the slowest step and says the sign-in remedy once'
   await run.clock.flush()
   expect(run.opens()).toBe(2)
   expect(run.logs.filter((line) => line.includes('signed out')).length).toBe(1)
+  run.ac.abort()
+  await run.done
+})
+
+test('an API refusal is logged and retried without ending the stream', async () => {
+  const run = await startLoop({
+    pullResults: [
+      { kind: 'failed', reason: 'record API 500' },
+      { kind: 'ok', applied: 2 },
+    ],
+  })
+  expect(run.logs.some((line) => line.includes('pull failed record API 500'))).toBe(true)
+  expect(run.opens()).toBe(1)
+  expect(run.pullCount()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  expect(run.opens()).toBe(1)
+  expect(run.logs.some((line) => ended(line, ' pulled 2'))).toBe(true)
+  run.ac.abort()
+  await run.done
+})
+
+test('a multi-page deadline expiry queues another pull at once', async () => {
+  const run = await startLoop({
+    pullResults: [
+      { kind: 'incomplete', applied: 3 },
+      { kind: 'ok', applied: 1 },
+    ],
+  })
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(2)
+  expect(run.logs.some((line) => ended(line, ' pulled 3'))).toBe(true)
+  expect(run.logs.some((line) => ended(line, ' pulled 1'))).toBe(true)
+  expect(run.opens()).toBe(1)
+  run.ac.abort()
+  await run.done
+})
+
+test('the launchd template restarts only after an unsuccessful exit', () => {
+  const text = readFileSync(
+    join(import.meta.dir, '../../../../ops/launchd/com.user.orch-board-watch.plist.template'),
+    'utf8',
+  )
+  expect(text).toMatch(
+    /<key>KeepAlive<\/key>\s*<dict>\s*<key>SuccessfulExit<\/key>\s*<false\/>\s*<\/dict>/,
+  )
+})
+
+test('a stop signal exits zero', async () => {
+  const run = await startLoop()
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('the loop takes no action the decision did not return', async () => {
+  const decide = (
+    state: BoardWatchState,
+    event: BoardWatchEvent,
+    jitter: number,
+  ): BoardWatchDecision => {
+    const real = decideBoardWatch(state, event, jitter)
+    return { ...real, pull: false, announce: null, action: 'stay', exitCode: null, delayMs: 0 }
+  }
+  const run = await startLoop({ decide })
+  run.source().push(eventFrame('9'))
+  await run.clock.flush()
+  const deadline = run.clock.nowMs + BOARD_WATCH_SLOW_INTERVAL_MS
+  while (run.clock.nowMs < deadline) {
+    run.source().push(': heartbeat\n\n')
+    await run.clock.flush()
+    const step = Math.min(BOARD_WATCH_SILENCE_MS / 2, deadline - run.clock.nowMs)
+    await run.clock.advance(step)
+  }
+  await run.clock.flush()
+  expect(run.pullCount()).toBe(0)
+  expect(run.logs).toEqual([])
+  expect(run.opens()).toBe(1)
+  run.ac.abort()
+  await run.done
+})
+
+test('a throwing pull is handled and does not end the process or the stream', async () => {
+  let calls = 0
+  const run = await startLoop({
+    pull: async () => {
+      calls += 1
+      if (calls === 1) throw new Error('boom')
+      return { kind: 'ok', applied: 0 }
+    },
+  })
+  expect(run.logs.some((line) => line.includes('pull failed boom'))).toBe(true)
+  expect(run.opens()).toBe(1)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(calls).toBe(2)
+  expect(run.opens()).toBe(1)
+  run.ac.abort()
+  expect(await run.done).toBe(0)
+})
+
+test('an oversized frame reconnects on the error path', async () => {
+  const run = await startLoop()
+  run.source().push('x'.repeat(BOARD_WATCH_FRAME_BUFFER_MAX + 1))
+  await run.clock.flush()
+  expect(run.logs.some((line) => ended(line, ' disconnected error'))).toBe(true)
+  await run.clock.advance(BOARD_WATCH_BACKOFF_BASE_MS)
+  await run.clock.flush()
+  expect(run.opens()).toBe(2)
   run.ac.abort()
   await run.done
 })

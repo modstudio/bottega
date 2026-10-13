@@ -95,9 +95,11 @@ async function within<T>(operation: Promise<T>, remainingMs: number): Promise<T>
 
 function cachedRevision(database: Database, id: string): string | null {
   return (
-    (database.query('SELECT revision FROM hosted_board_message_cache WHERE id=?').get(id) as {
-      revision: string
-    } | null)?.revision ?? null
+    (
+      database.query('SELECT revision FROM hosted_board_message_cache WHERE id=?').get(id) as {
+        revision: string
+      } | null
+    )?.revision ?? null
   )
 }
 
@@ -244,51 +246,71 @@ async function flushReceipts(
   }
 }
 
+function refreshFailure(
+  database: Database,
+  now: () => number,
+  error: unknown,
+  applied: number,
+): HostedBoardRefresh {
+  const reason = error instanceof Error ? error.message : String(error)
+  if (reason === 'hosted board refresh budget spent') {
+    recordRefresh(database, now(), 'success')
+    return { status: 'incomplete', applied }
+  }
+  recordRefresh(database, now(), `failed: ${reason}`)
+  return { status: 'failed', applied, reason }
+}
+
+async function fetchHostedPages(
+  client: RecordApiClient,
+  database: Database,
+  deadline: number,
+  now: () => number,
+  tally: { applied: number },
+): Promise<boolean> {
+  let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
+  while (now() < deadline) {
+    const page = await within(
+      client.listBoardChanges({ after, limit: BOARD_CHANGES_PAGE_LIMIT }),
+      deadline - now(),
+    )
+    if (establishCacheOwner(database, page.userId)) {
+      after = '0'
+      continue
+    }
+    tally.applied += replacePage(database, page)
+    if (page.highestRevision !== null) after = page.highestRevision
+    if (page.items.length >= BOARD_CHANGES_PAGE_LIMIT) continue
+    await flushReceipts(client, database, deadline, now)
+    return true
+  }
+  await flushReceipts(client, database, deadline, now)
+  return false
+}
+
 export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoardRefresh> {
   const database = input.database ?? writableDb()
   const env = input.env ?? process.env
   const now = input.now ?? Date.now
-  const started = now()
-  const deadline = started + input.budgetMs
+  const deadline = now() + input.budgetMs
   try {
     if (boardMode('shared', env, database) === 'local') return { status: 'local', applied: 0 }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    recordRefresh(database, now(), `failed: ${reason}`)
-    return { status: 'failed', applied: 0, reason }
+    return refreshFailure(database, now, error, 0)
   }
-  let applied = 0
+  const tally = { applied: 0 }
   try {
-    const client = input.client ?? recordApiClient()
-    let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
-    let caughtUp = false
-    while (now() < deadline) {
-      const page = await within(
-        client.listBoardChanges({ after, limit: BOARD_CHANGES_PAGE_LIMIT }),
-        deadline - now(),
-      )
-      if (establishCacheOwner(database, page.userId)) {
-        after = '0'
-        continue
-      }
-      applied += replacePage(database, page)
-      if (page.highestRevision !== null) after = page.highestRevision
-      if (page.items.length < BOARD_CHANGES_PAGE_LIMIT) {
-        caughtUp = true
-        break
-      }
-    }
-    await flushReceipts(client, database, deadline, now)
+    const caughtUp = await fetchHostedPages(
+      input.client ?? recordApiClient(),
+      database,
+      deadline,
+      now,
+      tally,
+    )
     recordRefresh(database, now(), 'success')
-    return { status: caughtUp ? 'success' : 'incomplete', applied }
+    return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    if (reason === 'hosted board refresh budget spent') {
-      recordRefresh(database, now(), 'success')
-      return { status: 'incomplete', applied }
-    }
-    recordRefresh(database, now(), `failed: ${reason}`)
-    return { status: 'failed', applied, reason }
+    return refreshFailure(database, now, error, tally.applied)
   }
 }
 

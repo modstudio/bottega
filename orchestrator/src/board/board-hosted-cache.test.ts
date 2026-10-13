@@ -706,9 +706,7 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
     ).body,
   ).toBe('newer-body')
   expect(
-    db()
-      .query('SELECT value FROM hosted_board_message_tag_cache WHERE message_id=?')
-      .all(id),
+    db().query('SELECT value FROM hosted_board_message_tag_cache WHERE message_id=?').all(id),
   ).toEqual([{ value: 'DEV-newer' }])
   expect(
     db()
