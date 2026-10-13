@@ -23,6 +23,7 @@ import {
 } from './board-reach.ts'
 import {
   type BoardDelivery,
+  boardDeliveryForm,
   boundedBoardDelivery,
   renderPendingAcknowledgement,
 } from './board-render.ts'
@@ -149,7 +150,8 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   const unread: BoardDelivery[] = [
     ...localPush.notices.map((message) => ({
       id: String(message.id),
-      text: message.purpose === 'information' ? message.oneLine : message.text,
+      text:
+        boardDeliveryForm(message.purpose, 'running') === 'full' ? message.text : message.oneLine,
       requiresAcknowledgement: message.ackRequired,
       createdAt: message.createdAt,
       deliveredAt: null,
@@ -159,7 +161,8 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
       .filter((message) => message.text.length > 0)
       .map((message) => ({
         id: message.id,
-        text: message.purpose === 'information' ? message.oneLine : message.text,
+        text:
+          boardDeliveryForm(message.purpose, 'running') === 'full' ? message.text : message.oneLine,
         requiresAcknowledgement: message.ackRequired,
         createdAt: message.createdAt,
         deliveredAt: null,

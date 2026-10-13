@@ -1,3 +1,5 @@
 ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-UPDATE board_message SET purpose = 'information' WHERE kind <> 'reply' AND purpose IS NULL;--> statement-breakpoint
+UPDATE board_message
+SET purpose = CASE WHEN kind = 'question' THEN 'request' ELSE 'information' END
+WHERE kind <> 'reply' AND purpose IS NULL;--> statement-breakpoint
 ALTER TABLE board_message FORCE ROW LEVEL SECURITY;

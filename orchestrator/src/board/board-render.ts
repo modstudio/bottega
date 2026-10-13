@@ -32,6 +32,17 @@ export type BoardDelivery = {
   purpose?: BoardPurpose
 }
 
+export type BoardDeliveryMoment = 'session-start' | 'running'
+
+export function boardDeliveryForm(
+  purpose: BoardPurpose | undefined,
+  moment: BoardDeliveryMoment,
+): 'one-line' | 'full' {
+  if (purpose === 'request') return 'full'
+  if (purpose === 'standing' && moment === 'running') return 'full'
+  return 'one-line'
+}
+
 const BOARD_DELIVERY_TRUNCATED = '\n\n[Message cut to fit; orch board read shows it whole.]'
 
 function truncateBoardDelivery(message: BoardDelivery, maxChars: number): BoardDelivery {

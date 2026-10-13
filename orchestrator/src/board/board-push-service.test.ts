@@ -258,6 +258,17 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     {},
     clock - 2_000,
   )
+  const olderStandingLocal = postNotice(
+    {
+      audience: 'project:push-project',
+      title: 'Older standing local',
+      body: 'Acknowledge this standing rule.',
+      ackRequired: true,
+      purpose: 'standing',
+    },
+    {},
+    clock - 2_000,
+  )
   const acknowledged = postNotice(
     {
       audience: 'project:push-project',
@@ -325,6 +336,23 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
     )
     .run(olderHosted.id, olderHosted.kind, null, olderHosted.revision, JSON.stringify(olderHosted))
+  const olderStandingHosted = {
+    ...olderHosted,
+    id: '01990000-0000-7000-8000-000000000113',
+    title: 'Older standing hosted',
+    purpose: 'standing',
+  }
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(
+      olderStandingHosted.id,
+      olderStandingHosted.kind,
+      null,
+      olderStandingHosted.revision,
+      JSON.stringify(olderStandingHosted),
+    )
 
   const pending = await pendingBoardDelivery({
     session: 'push-reader',
@@ -332,10 +360,10 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     clock: clock + 3,
   })
   expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
+    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
   )
   expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
+    [String(local.id), String(olderStandingLocal.id), hosted.id, olderStandingHosted.id].sort(),
   )
   expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
   expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)

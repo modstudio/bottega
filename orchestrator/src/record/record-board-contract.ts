@@ -184,7 +184,7 @@ export type HostedBoardCreateContent = {
 export type HostedBoardPostInput = {
   id: string
   kind: 'notice' | 'question'
-  purpose?: BoardPurpose | string
+  purpose?: BoardPurpose
   audience: string
   title: string
   body: string

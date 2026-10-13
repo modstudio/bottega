@@ -88,6 +88,39 @@ test('a fresh database seeds discoverable agents without machine probe claims', 
   }
 })
 
+test('board purpose migration backfills existing questions as requests and notices as information', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'orch-board-purpose-'))
+  mkdirSync(join(folder, 'meta'))
+  const journal = migrationJournal()
+  const migration = journal.findIndex((entry) => entry.tag === '0103_board_message_purpose')
+  const prior = journal.slice(0, migration)
+  for (const entry of prior)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries: prior }),
+  )
+  const database = new Database(':memory:')
+  try {
+    applyMigrations(database, folder)
+    const insert = database.query(
+      `INSERT INTO board_message
+       (kind,author_kind,audience,title,body,ack_required,expires_at,created_at)
+       VALUES (?, 'operator', 'operator', ?, 'Body', 0, '2026-10-14', '2026-10-13')`,
+    )
+    insert.run('notice', 'Notice')
+    insert.run('question', 'Question')
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0103_board_message_purpose'))
+    expect(database.query('SELECT kind,purpose FROM board_message ORDER BY id').all()).toEqual([
+      { kind: 'notice', purpose: 'information' },
+      { kind: 'question', purpose: 'request' },
+    ])
+  } finally {
+    database.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('document identity migration backfills UUIDs and makes record_id required and fully unique', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-doc-identity-'))
   mkdirSync(join(folder, 'meta'))

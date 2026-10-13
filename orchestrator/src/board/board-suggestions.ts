@@ -1,5 +1,5 @@
 // concern: board-suggestions
-import { BOARD_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
+import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
@@ -98,7 +98,7 @@ export function suggestBoardPost(
   if (decision === 'rate-limited')
     throw new Error('board suggestion rate limit reached; retry after the ten-minute author window')
   const createdAt = new Date(clock).toISOString()
-  const expiresAt = new Date(clock + BOARD_DEFAULT_EXPIRY_MS).toISOString()
+  const expiresAt = new Date(clock + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString()
   const database = writableDb()
   let id = 0
   writeTransaction(() => {
@@ -106,9 +106,9 @@ export function suggestBoardPost(
       database
         .query(
           `INSERT INTO board_message
-           (kind,author_kind,author_session,author_run_id,author_harness,author_project,
+           (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
             audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-           VALUES ('suggestion','worker',NULL,?,NULL,?,?,?, ?,0,NULL,?,?,NULL)`,
+           VALUES ('suggestion','request','worker',NULL,?,NULL,?,?,?, ?,0,NULL,?,?,NULL)`,
         )
         .run(run.id, run.repo, audience, input.title, input.body, expiresAt, createdAt)
         .lastInsertRowid,

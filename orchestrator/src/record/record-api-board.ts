@@ -3,6 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { BOARD_PURPOSES } from '../../../shared/board-purpose.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
@@ -41,6 +42,7 @@ const postSchema = z
   .object({
     id: idSchema,
     kind: z.enum(['notice', 'question']),
+    purpose: z.enum(BOARD_PURPOSES).default('information'),
     audience: z.string().min(1),
     title: headerValueSchema,
     body: z.string(),

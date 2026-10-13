@@ -43,6 +43,12 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
     clock,
   )
   expect(
+    db().query('SELECT purpose,expires_at FROM board_message WHERE id=?').get(suggested.id),
+  ).toEqual({
+    purpose: 'request',
+    expires_at: new Date(clock + 4 * 60 * 60 * 1000).toISOString(),
+  })
+  expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'owning-architect' }, clock + 1)[0]!.text,
   ).toContain(
     `Acknowledgement: dispose with orch board suggestion post ${suggested.id} --audience <expr> or orch board suggestion decline ${suggested.id}`,

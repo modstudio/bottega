@@ -136,7 +136,7 @@ function registerBoardPostCommand(board: Command): void {
     .requiredOption('--body <text>')
     .option(
       '--purpose <purpose>',
-      'information sends one line, request sends the full body, standing also reaches later sessions',
+      'information sends one line, request sends the full body and lives four hours by default (set --expires for longer), standing also reaches later sessions',
     )
     .option('--task <key>')
     .option('--path <glob>', 'add a repository-relative path glob', collect, [])

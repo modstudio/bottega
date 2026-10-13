@@ -293,7 +293,12 @@ test('delivery records its point and the reader project in the reach window', as
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
-    { audience: 'project:reach-project', title: 'Measured', body: 'A measured push' },
+    {
+      audience: 'project:reach-project',
+      title: 'Measured',
+      body: 'A measured push',
+      purpose: 'request',
+    },
     {},
     clock,
   )
@@ -317,6 +322,7 @@ test('delivery records its point and the reader project in the reach window', as
     blockedStop: true,
     audience: 'project:reach-project',
     acknowledgementRequired: false,
+    purpose: 'request',
     postingTiming: 'after-session',
     concern: 'concerned',
   })

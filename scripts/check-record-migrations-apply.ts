@@ -24,6 +24,7 @@ const audienceSetBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
 const audienceVocabularyBackfill = '20261009210001_dev_1238_doc_audience_vocabulary_backfill'
 const boardSharedSpacesMigration = '20261012210147_dev_1217_board_shared_spaces'
 const boardNotifyMigration = '20261013170000_dev_1217_board_notify'
+const boardPurposeBackfillMigration = '20261013225840_dev_1217_board_purpose_backfill'
 const docJsonbArrayRepair = '20261013190000_dev_1303_doc_jsonb_array_repair'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
@@ -37,6 +38,7 @@ const internalAudienceDocId = '01990000-0000-7000-8000-000000000018'
 const boardBackfillRootId = '01990000-0000-7000-8000-000000000021'
 const boardBackfillReplyId = '01990000-0000-7000-8000-000000000022'
 const boardBackfillReplyAuthorId = '01990000-0000-7000-8000-000000000023'
+const boardBackfillQuestionId = '01990000-0000-7000-8000-000000000027'
 const jsonbStringDocId = '01990000-0000-7000-8000-000000000025'
 const jsonbArrayDocId = '01990000-0000-7000-8000-000000000026'
 const jsonbInvalidDocId = '01990000-0000-7000-8000-000000000027'
@@ -254,12 +256,37 @@ async function seedBoardThreadAuthorBackfill(transaction: Transaction): Promise<
       ('${boardBackfillRootId}', '${platformOperatorId}', 'notice', 'operator',
        'Board backfill root', 'root', false, now() + interval '1 day', now());
     INSERT INTO board_message
+      (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
+    VALUES
+      ('${boardBackfillQuestionId}', '${platformOperatorId}', 'question', 'operator',
+       'Board backfill question', 'question', false, now() + interval '1 day', now());
+    INSERT INTO board_message
       (id, author_user_id, kind, thread_root_id, body, ack_required, created_at)
     VALUES
       ('${boardBackfillReplyId}', '${boardBackfillReplyAuthorId}', 'reply',
        '${boardBackfillRootId}', 'reply', false, now());
     ALTER TABLE board_message FORCE ROW LEVEL SECURITY;
   `)
+}
+
+async function proofBoardPurposeBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
+  const result = await transaction.query<{ kind: string; purpose: string | null }>(`
+    SELECT kind,purpose FROM board_message
+    WHERE id IN ('${boardBackfillRootId}','${boardBackfillQuestionId}','${boardBackfillReplyId}')
+    ORDER BY kind
+  `)
+  await transaction.exec('ALTER TABLE board_message FORCE ROW LEVEL SECURITY;')
+  const expected = [
+    { kind: 'notice', purpose: 'information' },
+    { kind: 'question', purpose: 'request' },
+    { kind: 'reply', purpose: null },
+  ]
+  if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
+    throw new CheckFailure(
+      `DEV-1217 board purpose backfill produced ${JSON.stringify(result.rows)}`,
+    )
+  }
 }
 
 async function proofBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
@@ -406,6 +433,7 @@ async function applyAndProveMigration(
     await proofAudienceVocabularyBackfill(transaction)
   if (migration.name === boardSharedSpacesMigration)
     await proofBoardThreadAuthorBackfill(transaction)
+  if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
   if (migration.name === docJsonbArrayRepair) {
     await proofDocJsonbArrayRepair(transaction)
     for (const chunk of migration.sql) await transaction.exec(chunk)

@@ -206,8 +206,8 @@ export const boardMessage = pgTable.withRLS(
       check(
         'board_message_purpose_check',
         sql`(${table.kind} = 'reply' AND ${table.purpose} IS NULL) OR
-          (${table.kind} <> 'reply' AND ${table.purpose} IS NOT NULL
-            AND ${table.purpose} IN ('information','request','standing'))`,
+          (${table.kind} <> 'reply' AND
+            (${table.purpose} IS NULL OR ${table.purpose} IN ('information','request','standing')))`,
       ),
       check(
         'board_message_reply_shape_check',

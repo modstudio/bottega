@@ -72,6 +72,7 @@ function hostedMessage(
   return {
     id: input.id,
     kind: input.kind,
+    purpose: input.purpose ?? 'information',
     threadRootId: null,
     title: input.title,
     body: input.body,
@@ -103,6 +104,57 @@ function hostedMessage(
     ackDeadline: input.ackDeadline ?? null,
   }
 }
+
+test('adoption preserves request and acknowledgement-required standing purposes', async () => {
+  const request = postNotice(
+    { audience: 'operator', title: 'Request to adopt', body: 'Request body', purpose: 'request' },
+    {},
+    NOW - 2_000,
+  )
+  const standing = postNotice(
+    {
+      audience: 'operator',
+      title: 'Standing to adopt',
+      body: 'Standing body',
+      purpose: 'standing',
+      ackRequired: true,
+    },
+    {},
+    NOW - 1_000,
+  )
+  const inputs: Parameters<RecordApiClient['postBoardMessage']>[0][] = []
+  const base = createMemoryRecordApiClient()
+  const client: RecordApiClient = {
+    ...base,
+    async listBoardChanges() {
+      return { userId: '01990000-0000-7000-8000-000000000001', items: [], highestRevision: null }
+    },
+    async postBoardMessage(input) {
+      inputs.push(input)
+      return hostedMessage(input)
+    },
+  }
+
+  const result = await adoptHostedBoard({ confirm: 2, clock: () => NOW, client })
+
+  expect(result.status).toBe('adopted')
+  expect(
+    inputs.map(({ title, purpose, ackRequired }) => ({ title, purpose, ackRequired })),
+  ).toEqual([
+    { title: 'Request to adopt', purpose: 'request', ackRequired: false },
+    { title: 'Standing to adopt', purpose: 'standing', ackRequired: true },
+  ])
+  expect(
+    db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(request.id),
+  ).not.toEqual({
+    withdrawn_at: null,
+  })
+  expect(
+    db().query('SELECT withdrawn_at FROM board_message WHERE id=?').get(standing.id),
+  ).not.toEqual({
+    withdrawn_at: null,
+  })
+})
 
 function capturingClient(calls: string[], failTitle?: string) {
   const base = createMemoryRecordApiClient()

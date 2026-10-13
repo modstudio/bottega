@@ -12,6 +12,7 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
+import { boardDeliveryForm } from './board-render.ts'
 import {
   claimPushNotices,
   claimRunPushNotices,
@@ -81,7 +82,8 @@ export async function claimBoardNotices(
   const local = claimPushNotices(all, env)
   const sessionStartNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
     ...notice,
-    text: notice.purpose === 'request' ? notice.text : notice.oneLine,
+    text:
+      boardDeliveryForm(notice.purpose, 'session-start') === 'full' ? notice.text : notice.oneLine,
   })
   if (refreshed.status === 'local')
     return {
@@ -131,11 +133,9 @@ export async function claimRunBoardNotices(
   const runNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
     ...notice,
     text:
-      notice.purpose === 'information' ||
-      notice.purpose === undefined ||
-      (sessionStart && notice.purpose === 'standing')
-        ? notice.oneLine
-        : notice.text,
+      boardDeliveryForm(notice.purpose, sessionStart ? 'session-start' : 'running') === 'full'
+        ? notice.text
+        : notice.oneLine,
   })
   const refreshed = await refreshHostedBoard({ budgetMs })
   const reader = runReader(runId)

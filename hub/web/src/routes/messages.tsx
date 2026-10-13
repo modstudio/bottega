@@ -18,6 +18,7 @@ import { SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
+import { BOARD_PURPOSES, type BoardPurpose } from '../../../../shared/board-purpose.ts'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type BoardOutputs = inferRouterOutputs<AppRouter>['board']
@@ -236,14 +237,12 @@ function splitValues(value: string) {
   return values.length ? values : undefined
 }
 
-type MessagePurpose = 'information' | 'request' | 'standing'
-
 function PurposeSetting({
   value,
   onChange,
 }: {
-  value: MessagePurpose
-  onChange: (value: MessagePurpose) => void
+  value: BoardPurpose
+  onChange: (value: BoardPurpose) => void
 }) {
   return (
     <SettingBlock
@@ -253,11 +252,11 @@ function PurposeSetting({
         <Select
           label="Purpose"
           value={value}
-          options={['information', 'request', 'standing'].map((purpose) => ({
+          options={BOARD_PURPOSES.map((purpose) => ({
             value: purpose,
             label: `${purpose[0]!.toUpperCase()}${purpose.slice(1)}`,
           }))}
-          onChange={(purpose) => onChange(purpose as MessagePurpose)}
+          onChange={(purpose) => onChange(purpose as BoardPurpose)}
         />
       }
     />
@@ -316,7 +315,7 @@ function NewMessageDialog({
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [purpose, setPurpose] = useState<MessagePurpose>('information')
+  const [purpose, setPurpose] = useState<BoardPurpose>('information')
   const [ackRequired, setAckRequired] = useState(false)
   const [deadline, setDeadline] = useState('')
   const [expires, setExpires] = useState('')

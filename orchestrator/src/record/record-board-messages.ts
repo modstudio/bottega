@@ -354,7 +354,7 @@ async function insertRoot(
     ) VALUES (
       ${input.id}::uuid, ${userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid, ${prepared.authorProjectId}::uuid,
-      ${input.kind}, ${input.kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
+      ${input.kind}, ${input.kind === 'question' ? 'request' : (input.purpose ?? 'information')}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
       ${createdAt}::timestamptz, ${prepared.claimId}::uuid,
       COALESCE(${boardUuidArray(tx, prepared.scopeProjectIds)}, ARRAY[]::uuid[]),
@@ -403,7 +403,7 @@ export async function postHostedBoardMessage(
     throw new RecordBoardError('hosted board post kind must be notice or question', 400)
   }
   const audience = parseHostedAudience(input.audience)
-  const purpose = input.kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)
+  const purpose = input.kind === 'question' ? 'request' : (input.purpose ?? 'information')
   const refusal = hostedBoardPostRefusal(input.kind, audience)
   if (refusal) throw new RecordBoardError(refusal, 400)
   asBoardError(() => validatePostNoticeInput(input))
