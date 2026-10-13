@@ -274,8 +274,6 @@ function mermaidTokens() {
     tertiaryColor: page,
     mainBkg: page,
     nodeBorder: strong,
-    clusterBkg: sunken,
-    clusterBorder: strong,
     titleColor: text,
     edgeLabelBackground: sunken,
     nodeTextColor: text,

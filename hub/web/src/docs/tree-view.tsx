@@ -1,13 +1,10 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
+import { treePath } from './tree.ts'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
-
-function holds(node: TreeNode, id: string): boolean {
-  return node.children.some((child) => child.id === id || holds(child, id))
-}
 
 function TreeDocumentRow({
   node,
@@ -79,7 +76,7 @@ function TreeRow({
   onSelect: (item: DocsTreeItem) => void
 }) {
   const current = node.id === selectedId
-  const ancestor = !current && selectedId !== null && holds(node, selectedId)
+  const ancestor = !current && selectedId !== null && treePath(node.children, selectedId).length > 0
   const open = !collapsed.has(node.id)
   const { children, ...item } = node
   const rowRef = useRef<HTMLElement>(null)

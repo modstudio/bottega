@@ -166,7 +166,7 @@
   font-weight: 600;
   fill: var(--text-primary);
 }
-/* A group is a tinted region a shade darker than the canvas, with a dashed edge and a quiet label. */
+/* A group is a tinted region a shade darker than the canvas, with a dashed edge. This rule alone sets a group's fill and edge; the diagram theme does not. */
 .markdown .doc-mermaid .cluster rect {
   filter: none !important;
   fill: color-mix(in srgb, var(--text-primary) 6%, transparent) !important;
