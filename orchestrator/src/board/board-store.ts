@@ -90,6 +90,26 @@ export type MessageRow = {
   claim_id: number | null
 }
 
+function rootPurpose(
+  kind: 'notice' | 'question',
+  input: PostNoticeInput,
+  audience: Audience,
+  actor: BoardActor,
+  authorProject: string | null,
+): BoardPurpose {
+  const purpose = kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)
+  const refusal =
+    acknowledgementRefusal({
+      ackRequired: Boolean(input.ackRequired),
+      purpose,
+      audience,
+      authorKind: actor.kind,
+      authorProject,
+    }) ?? standingPostingRefusal({ purpose, audience, authorKind: actor.kind, authorProject })
+  if (refusal) throw new Error(refusal)
+  return purpose
+}
+
 export function boardReaderBeganAt(reader: string, database = db()): string | null {
   const run = /^run:(\d+)$/.exec(reader)
   if (run)
@@ -466,22 +486,7 @@ export function insertRootMessage(
   validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
-  const purpose = kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)
-  const ackRefusal = acknowledgementRefusal({
-    ackRequired: Boolean(input.ackRequired),
-    purpose,
-    audience,
-    authorKind: actor.kind,
-    authorProject: origin.project,
-  })
-  if (ackRefusal) throw new Error(ackRefusal)
-  const standingRefusal = standingPostingRefusal({
-    purpose,
-    audience,
-    authorKind: actor.kind,
-    authorProject: origin.project,
-  })
-  if (standingRefusal) throw new Error(standingRefusal)
+  const purpose = rootPurpose(kind, input, audience, actor, origin.project)
   const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
   const expiresMs = input.expiresMs ?? boardDefaultExpiryMs(purpose)

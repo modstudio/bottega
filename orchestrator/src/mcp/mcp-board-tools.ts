@@ -26,8 +26,45 @@ const result = (value: unknown) => ({
   ],
 })
 
+function registerBoardPostTool(server: McpServer): void {
+  server.registerTool(
+    'board_post',
+    {
+      description: `Post an architect-board notice. Purpose information sends one line, request sends the full body, and standing also reaches later sessions. Requests that outlive the four-hour default should set expires_ms. ${ARCHITECTS_AUDIENCE_HELP}`,
+      inputSchema: z.object({
+        audience: z.string().min(1),
+        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        purpose: z.enum(BOARD_PURPOSES).optional(),
+        task: z.string().min(1).optional(),
+        path: z.array(z.string()).optional(),
+        topic: z.array(z.string()).optional(),
+        ack_required: z.boolean().optional(),
+        deadline_ms: z.number().int().positive().optional(),
+        expires_ms: z.number().int().positive().optional(),
+      }),
+    },
+    async (input) =>
+      result(
+        await boardPost({
+          audience: input.audience,
+          title: input.title,
+          body: input.body,
+          purpose: input.purpose,
+          task: input.task,
+          paths: input.path,
+          topics: input.topic,
+          ackRequired: input.ack_required,
+          deadlineMs: input.deadline_ms,
+          expiresMs: input.expires_ms,
+        }),
+      ),
+  )
+}
+
 export function registerBoardTools(server: McpServer): void {
   registerBoardClaimTools(server)
+  registerBoardPostTool(server)
   server.registerTool(
     'board_ask',
     {
@@ -93,39 +130,6 @@ export function registerBoardTools(server: McpServer): void {
       inputSchema: z.object({ question_id: z.string().min(1) }),
     },
     async ({ question_id }) => result(await boardFileNote(question_id)),
-  )
-  server.registerTool(
-    'board_post',
-    {
-      description: `Post an architect-board notice. Purpose information sends one line, request sends the full body, and standing also reaches later sessions. Requests that outlive the four-hour default should set expires_ms. ${ARCHITECTS_AUDIENCE_HELP}`,
-      inputSchema: z.object({
-        audience: z.string().min(1),
-        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
-        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
-        purpose: z.enum(BOARD_PURPOSES).optional(),
-        task: z.string().min(1).optional(),
-        path: z.array(z.string()).optional(),
-        topic: z.array(z.string()).optional(),
-        ack_required: z.boolean().optional(),
-        deadline_ms: z.number().int().positive().optional(),
-        expires_ms: z.number().int().positive().optional(),
-      }),
-    },
-    async (input) => {
-      const posted = await boardPost({
-        audience: input.audience,
-        title: input.title,
-        body: input.body,
-        purpose: input.purpose,
-        task: input.task,
-        paths: input.path,
-        topics: input.topic,
-        ackRequired: input.ack_required,
-        deadlineMs: input.deadline_ms,
-        expiresMs: input.expires_ms,
-      })
-      return result(posted)
-    },
   )
   server.registerTool(
     'board_read',

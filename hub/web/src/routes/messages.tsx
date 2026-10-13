@@ -236,6 +236,75 @@ function splitValues(value: string) {
   return values.length ? values : undefined
 }
 
+type MessagePurpose = 'information' | 'request' | 'standing'
+
+function PurposeSetting({
+  value,
+  onChange,
+}: {
+  value: MessagePurpose
+  onChange: (value: MessagePurpose) => void
+}) {
+  return (
+    <SettingBlock
+      label="Purpose"
+      hint="Information sends one line; request sends the full body; standing also reaches sessions that start later. Requests lasting over four hours should set an expiry."
+      control={
+        <Select
+          label="Purpose"
+          value={value}
+          options={['information', 'request', 'standing'].map((purpose) => ({
+            value: purpose,
+            label: `${purpose[0]!.toUpperCase()}${purpose.slice(1)}`,
+          }))}
+          onChange={(purpose) => onChange(purpose as MessagePurpose)}
+        />
+      }
+    />
+  )
+}
+
+function MessageDialogFooter({
+  close,
+  submit,
+  disabled,
+  pending,
+}: {
+  close: () => void
+  submit: () => void
+  disabled: boolean
+  pending: boolean
+}) {
+  return (
+    <>
+      <Button onClick={close}>Close</Button>
+      <Button variant="primary" disabled={disabled} onClick={submit}>
+        {pending ? 'Posting...' : 'Post message'}
+      </Button>
+    </>
+  )
+}
+
+function MessageResult({
+  error,
+  result,
+}: {
+  error?: { message: string } | null
+  result: string | null
+}) {
+  if (error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        {error.message}
+      </p>
+    )
+  return result ? (
+    <p data-tone="success" className="text-status-text">
+      {result}
+    </p>
+  ) : null
+}
+
 function NewMessageDialog({
   open,
   onOpenChange,
@@ -247,7 +316,7 @@ function NewMessageDialog({
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [purpose, setPurpose] = useState<'information' | 'request' | 'standing'>('information')
+  const [purpose, setPurpose] = useState<MessagePurpose>('information')
   const [ackRequired, setAckRequired] = useState(false)
   const [deadline, setDeadline] = useState('')
   const [expires, setExpires] = useState('')
@@ -303,16 +372,12 @@ function NewMessageDialog({
       title="New message"
       description="Post a notice from the operator."
       footer={
-        <>
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-          <Button
-            variant="primary"
-            disabled={post.isPending || !audience || !title.trim() || !body.trim()}
-            onClick={submit}
-          >
-            {post.isPending ? 'Posting...' : 'Post message'}
-          </Button>
-        </>
+        <MessageDialogFooter
+          close={() => onOpenChange(false)}
+          submit={submit}
+          disabled={post.isPending || !audience || !title.trim() || !body.trim()}
+          pending={post.isPending}
+        />
       }
     >
       <div className="grid gap-4">
@@ -339,22 +404,7 @@ function NewMessageDialog({
           label="Body"
           control={<Textarea value={body} onChange={(event) => setBody(event.target.value)} />}
         />
-        <SettingBlock
-          label="Purpose"
-          hint="Information sends one line; request sends the full body; standing also reaches sessions that start later. Requests lasting over four hours should set an expiry."
-          control={
-            <Select
-              label="Purpose"
-              value={purpose}
-              options={[
-                { value: 'information', label: 'Information' },
-                { value: 'request', label: 'Request' },
-                { value: 'standing', label: 'Standing' },
-              ]}
-              onChange={(value) => setPurpose(value as typeof purpose)}
-            />
-          }
-        />
+        <PurposeSetting value={purpose} onChange={setPurpose} />
         <label
           htmlFor="ack-required"
           className="flex items-center gap-2 text-sm text-text-secondary"
@@ -390,16 +440,7 @@ function NewMessageDialog({
           label="Topics (optional, comma separated)"
           control={<Input value={topics} onChange={(event) => setTopics(event.target.value)} />}
         />
-        {post.error ? (
-          <p data-tone="error" className="text-status-text">
-            {post.error.message}
-          </p>
-        ) : null}
-        {result ? (
-          <p data-tone="success" className="text-status-text">
-            {result}
-          </p>
-        ) : null}
+        <MessageResult error={post.error} result={result} />
       </div>
     </Dialog>
   )

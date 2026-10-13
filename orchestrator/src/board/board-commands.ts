@@ -128,12 +128,51 @@ function registerBoardPendingCommand(board: Command): void {
     })
 }
 
+function registerBoardPostCommand(board: Command): void {
+  board
+    .command('post')
+    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
+    .requiredOption('--title <text>')
+    .requiredOption('--body <text>')
+    .option(
+      '--purpose <purpose>',
+      'information sends one line, request sends the full body, standing also reaches later sessions',
+    )
+    .option('--task <key>')
+    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
+    .option('--topic <name>', 'add a controlled board topic', collect, [])
+    .option('--ack-required')
+    .option('--deadline <duration>')
+    .option('--expires <duration>')
+    .action(async (options) => {
+      if (options.deadline && !options.ackRequired)
+        throw new Error('--deadline requires --ack-required')
+      console.log(
+        JSON.stringify(
+          await boardPost({
+            audience: options.audience,
+            title: options.title,
+            body: options.body,
+            purpose: options.purpose,
+            task: options.task,
+            paths: options.path,
+            topics: options.topic,
+            ackRequired: Boolean(options.ackRequired),
+            deadlineMs: options.deadline ? parseBoardDuration(options.deadline) : undefined,
+            expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
+          }),
+        ),
+      )
+    })
+}
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board')
   registerBoardClaimCommands(board, parseBoardDuration)
   registerBoardReachCommand(board)
   registerBoardDeliveredCommand(board)
   registerBoardPendingCommand(board)
+  registerBoardPostCommand(board)
   board
     .command('adopt')
     .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
@@ -181,38 +220,6 @@ export function registerBoardCommands(program: Command): void {
           }),
         ),
       )
-    })
-  board
-    .command('post')
-    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
-    .requiredOption('--title <text>')
-    .requiredOption('--body <text>')
-    .option(
-      '--purpose <purpose>',
-      'information sends one line, request sends the full body, standing also reaches later sessions',
-    )
-    .option('--task <key>')
-    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
-    .option('--topic <name>', 'add a controlled board topic', collect, [])
-    .option('--ack-required')
-    .option('--deadline <duration>')
-    .option('--expires <duration>')
-    .action(async (options) => {
-      if (options.deadline && !options.ackRequired)
-        throw new Error('--deadline requires --ack-required')
-      const posted = await boardPost({
-        audience: options.audience,
-        title: options.title,
-        body: options.body,
-        purpose: options.purpose,
-        task: options.task,
-        paths: options.path,
-        topics: options.topic,
-        ackRequired: Boolean(options.ackRequired),
-        deadlineMs: options.deadline ? parseBoardDuration(options.deadline) : undefined,
-        expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
-      })
-      console.log(JSON.stringify(posted))
     })
   board
     .command('ask')

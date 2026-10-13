@@ -419,26 +419,12 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     {},
     clock,
   )
-  const request = postNotice(
-    {
-      audience: 'session:delivery-reader',
-      title: 'Requested action',
-      body: 'request body',
-      purpose: 'request',
-    },
-    {},
-    clock + 1,
-  )
-  const standing = postNotice(
-    {
-      audience: 'session:delivery-reader',
-      title: 'Standing rule',
-      body: 'standing body',
-      purpose: 'standing',
-    },
-    {},
-    clock + 1,
-  )
+  const purposeMessages = [
+    { title: 'Requested action', body: 'request body', purpose: 'request' as const },
+    { title: 'Standing rule', body: 'standing body', purpose: 'standing' as const },
+  ].map((input) => postNotice({ audience: 'session:delivery-reader', ...input }, {}, clock + 1))
+  const request = purposeMessages[0]!
+  const standing = purposeMessages[1]!
   const question = askQuestion(
     {
       audience: 'session:delivery-reader',
@@ -460,15 +446,10 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     String(standing.id),
     String(question.id),
   ])
-  expect(first.delivery.find((message) => message.id === String(ordinary.id))!.text).not.toContain(
-    'notice body',
-  )
-  expect(first.delivery.find((message) => message.id === String(request.id))!.text).toContain(
-    'request body',
-  )
-  expect(first.delivery.find((message) => message.id === String(standing.id))!.text).toContain(
-    'standing body',
-  )
+  const text = (id: number) => first.delivery.find((message) => message.id === String(id))!.text
+  expect(text(ordinary.id)).not.toContain('notice body')
+  expect(text(request.id)).toContain('request body')
+  expect(text(standing.id)).toContain('standing body')
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
     ids: first.delivery.map((message) => message.id),

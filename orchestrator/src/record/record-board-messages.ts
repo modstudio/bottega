@@ -2,7 +2,7 @@
 /** Owns hosted board message writes and thread reads. Must not know HTTP or local stores. */
 
 import type { SQL } from 'bun'
-import { parseBoardPurpose } from '../../../shared/board-purpose.ts'
+import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
@@ -381,6 +381,21 @@ async function existingOrConflict(
   return hostedBoardMessageView(loaded.row, loaded.tags)
 }
 
+function purposeRefusal(
+  input: BoardTenant & HostedBoardPostInput,
+  audience: Audience,
+  purpose: BoardPurpose,
+  ackRequired: boolean,
+  session: string | null,
+): void {
+  const authorKind = session ? 'architect' : 'operator'
+  const authorProject = input.project?.trim() || null
+  const refusal =
+    acknowledgementRefusal({ ackRequired, purpose, audience, authorKind, authorProject }) ??
+    standingPostingRefusal({ purpose, audience, authorKind, authorProject })
+  if (refusal) throw new RecordBoardError(refusal, 400)
+}
+
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
 ): Promise<HostedBoardMessage> {
@@ -410,21 +425,7 @@ export async function postHostedBoardMessage(
     )
   }
   const session = sessionOrNull(input.authorSession)
-  const ackRefusal = acknowledgementRefusal({
-    ackRequired,
-    purpose,
-    audience,
-    authorKind: session ? 'architect' : 'operator',
-    authorProject: input.project?.trim() || null,
-  })
-  if (ackRefusal) throw new RecordBoardError(ackRefusal, 400)
-  const standingRefusal = standingPostingRefusal({
-    purpose,
-    audience,
-    authorKind: session ? 'architect' : 'operator',
-    authorProject: input.project?.trim() || null,
-  })
-  if (standingRefusal) throw new RecordBoardError(standingRefusal, 400)
+  purposeRefusal(input, audience, purpose, ackRequired, session)
   const senderTags = asBoardError(() => senderBoardTags(input))
   const tags = [
     ...senderTags,
