@@ -65,6 +65,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../record/record-board-contract.ts',
+    './board-policy.ts',
     './board-store.ts',
   ]),
   module('orchestrator/src/board/board-reach-command.ts', ['commander', './board-reach.ts']),

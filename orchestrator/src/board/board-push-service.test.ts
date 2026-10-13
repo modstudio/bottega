@@ -951,21 +951,6 @@ test('Stop keeps its acknowledgement budget while carrying fresh ordinary delive
   ])
 })
 
-test('Stop recovery reuses the emission identity stored beside emitted ids', () => {
-  const item = createHookFixture(hookOutput)
-  const ordinary = { id: '8', text: 'ordinary', requiresAcknowledgement: false }
-  const result = runHookRepeatedResult(
-    guardHook,
-    JSON.stringify({ session_id: 'reader' }),
-    item,
-    2,
-    [[ordinary], [ordinary]],
-    'once',
-  )
-  expect(result.delivered).toHaveLength(2)
-  expect(result.delivered[0]![2]).toBe(result.delivered[1]![2])
-})
-
 test('Stop records and bounds emitted ids, blocks once per message, and preserves markers atomically', () => {
   const item = createHookFixture(hookOutput)
   const first = { id: '1', text: 'first', requiresAcknowledgement: false }
@@ -991,6 +976,7 @@ test('Stop records and bounds emitted ids, blocks once per message, and preserve
   const value = JSON.parse(readFileSync(marker, 'utf8'))
 
   expect(hook.emittedLimit).toBeGreaterThan(0)
+  expect(hook.delivered[0]![2]).toBe(hook.delivered[1]![2])
   expect(value.emitted_ids).toHaveLength(hook.emittedLimit!)
   expect(value.emitted_ids.at(-1)).toBe('101')
   expect(hook.atomicWritten).toBeFalse()

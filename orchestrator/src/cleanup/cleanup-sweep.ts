@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
+import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
 import { closeOutRun, releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -60,6 +61,7 @@ function reapExpiredBoardMessages(dryRun: boolean): void {
   if (!dryRun) {
     stampEndedClaims()
     reapBoardMessages()
+    reapBoardReach(Date.now(), writableDb())
   }
 }
 

@@ -12,7 +12,6 @@ import {
   parseAudience,
   requireRealSession,
 } from './board-policy.ts'
-import { reapBoardReach } from './board-reach.ts'
 import { renderBoardNotice } from './board-render.ts'
 import {
   addressed,
@@ -424,7 +423,6 @@ export function boardEscalations(clock = Date.now()) {
 }
 
 export function reapBoardMessages(clock = Date.now()): number {
-  reapBoardReach(clock, writableDb())
   const rows = messageRows()
   const acceptedRoots = new Set(
     rows
