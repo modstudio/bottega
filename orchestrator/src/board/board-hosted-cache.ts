@@ -432,6 +432,7 @@ export function cachedMessageAddressed(
     tags,
     database,
     presenceFacts(database, clock),
+    message.origin.project,
   ).includes(reader)
   if (!addressed) return false
   if (message.kind === 'question' && reader.startsWith('run:')) return false

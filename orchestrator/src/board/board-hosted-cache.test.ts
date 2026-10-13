@@ -295,6 +295,22 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   expect(addressed('session:nobody-on-this-machine', 'cache-reader')).toBe(false)
   expect(addressed('operator', 'operator')).toBe(true)
   expect(addressed('architects', 'cache-reader')).toBe(true)
+  expect(addressed('architects:all', 'cache-reader')).toBe(true)
+  expect(addressed('architects:cache-project', 'cache-reader')).toBe(true)
+  expect(
+    cachedMessageAddressed(
+      {
+        message: message({
+          audience: 'architects',
+          origin: { ...message().origin, project: null },
+        }),
+        tags: [],
+      },
+      'cache-reader',
+      clock,
+      database,
+    ),
+  ).toBe(true)
   expect(
     cachedMessageAddressed(
       { message: message({ audience: 'architects', authorUserId: newRecordId() }), tags: [] },

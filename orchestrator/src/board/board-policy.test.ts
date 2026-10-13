@@ -7,6 +7,7 @@ import {
   messageCanBeReaped,
   messageIsLive,
   needsAckEscalation,
+  type PresenceFact,
   parseAudience,
   postDecision,
   resolveAudience,
@@ -174,8 +175,22 @@ test('task-only facts contribute only to task audiences and every audience is di
 
 test('unsupported audience refusal lists every accepted form', () => {
   expect(() => parseAudience('everyone')).toThrow(
-    'unsupported board audience everyone; use operator, architects, spaces, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
+    'unsupported board audience everyone; use operator, architects, architects:all, architects:<project>, spaces, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>',
   )
+})
+
+test('architect audiences distinguish posting project, all projects, and a named project', () => {
+  const facts: PresenceFact[] = [
+    { reader: 'a', role: 'architect', project: 'A', machine: 'host', live: true },
+    { reader: 'b', role: 'architect', project: 'B', machine: 'host', live: true },
+  ]
+  expect(resolveAudience(parseAudience('architects'), facts, 1_000, 200, 'A')).toEqual(['a'])
+  expect(resolveAudience(parseAudience('architects:all'), facts, 1_000, 200, 'A')).toEqual([
+    'a',
+    'b',
+  ])
+  expect(resolveAudience(parseAudience('architects:B'), facts, 1_000, 200, 'A')).toEqual(['b'])
+  expect(resolveAudience(parseAudience('architects'), facts, 1_000, 200, null)).toEqual(['a', 'b'])
 })
 
 test('spaces audience parses and reaches every live local session after hosted visibility', () => {

@@ -34,7 +34,7 @@ export type PresenceFact = {
 }
 export type Audience =
   | { kind: 'operator' }
-  | { kind: 'architects' }
+  | { kind: 'architects'; value?: string; all?: true }
   | { kind: 'spaces' }
   | { kind: 'project'; value: string }
   | { kind: 'workers'; value: string }
@@ -46,11 +46,14 @@ export type Audience =
 export function parseAudience(expression: string): Audience {
   if (expression === 'operator') return { kind: 'operator' }
   if (expression === 'architects') return { kind: 'architects' }
+  if (expression === 'architects:all') return { kind: 'architects', all: true }
+  if (expression.startsWith('architects:') && expression.slice('architects:'.length).trim())
+    return { kind: 'architects', value: expression.slice('architects:'.length) }
   if (expression === 'spaces') return { kind: 'spaces' }
   const match = /^(project|workers|task|run|machine|session):(.+)$/.exec(expression)
   if (!match?.[2]?.trim())
     throw new Error(
-      `unsupported board audience ${expression}; use operator, architects, spaces, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>`,
+      `unsupported board audience ${expression}; use operator, architects, architects:all, architects:<project>, spaces, project:<name>, task:<KEY>, workers:<project>, run:<id>, machine:<name>, or session:<id>`,
     )
   if (match[1] === 'session' && (match[2] === OPERATOR_READER || match[2].startsWith('run:')))
     throw new Error(`session:${match[2]} is reserved; use audience ${match[2]}`)
@@ -94,6 +97,7 @@ export function resolveAudience(
   presence: PresenceFact[],
   now: number,
   liveWindowMs: number,
+  postingProject: string | null = null,
 ): string[] {
   if (audience.kind === 'operator') return [OPERATOR_READER]
   const live = presence.filter(
@@ -105,7 +109,14 @@ export function resolveAudience(
   )
   const readers = (facts: PresenceFact[]) => [...new Set(facts.map((row) => row.reader))]
   if (audience.kind === 'spaces') return readers(live)
-  if (audience.kind === 'architects') return readers(live.filter((row) => row.role === 'architect'))
+  if (audience.kind === 'architects') {
+    const project = audience.all ? null : (audience.value ?? postingProject)
+    return readers(
+      live.filter(
+        (row) => row.role === 'architect' && (project === null || row.project === project),
+      ),
+    )
+  }
   if (audience.kind === 'project')
     return readers(live.filter((row) => row.project === audience.value))
   if (audience.kind === 'workers')

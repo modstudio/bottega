@@ -359,10 +359,18 @@ function hostedPostInput(
   }
 }
 
+function validateArchitectAudience(audience: Audience, project: string | undefined): void {
+  if (audience.kind === 'architects' && !audience.all && !audience.value && !project)
+    throw new Error(
+      'plain architects requires a posting project; use architects:all or architects:<project>',
+    )
+}
+
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
   const actor = boardActor(c.env)
   const audience = parseAudience(input.audience)
+  validateArchitectAudience(audience, projectAt(c.cwd)?.name)
   const refusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
     audience,
@@ -385,6 +393,7 @@ export async function boardAsk(
 ) {
   const c = context(inputContext)
   const audience = parseAudience(input.audience)
+  validateArchitectAudience(audience, projectAt(c.cwd)?.name)
   if (boardMode(locality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
     if (localRefusal) throw new Error(localRefusal)
@@ -416,6 +425,7 @@ export async function boardReply(id: string, body: string, inputContext?: Contex
     authorHarness: actor.harness,
     authorMachineId: actor.machine,
     authorRunId: actor.runId,
+    project: projectAt(c.cwd)?.name,
   })
   return {
     id: row.id,

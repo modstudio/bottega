@@ -173,6 +173,7 @@ export type HostedBoardCreateContent = {
   sharedSpaceReach: boolean
   claimId: string | null
   senderTags: HostedBoardSenderTag[]
+  authorProjectId?: string | null
 }
 
 export type HostedBoardPostInput = {
@@ -202,6 +203,7 @@ export type HostedBoardReplyInput = {
   authorHarness?: string | null
   authorMachineId?: string | null
   authorRunId?: string | null
+  project?: string
 }
 
 export type HostedBoardSessionInput = { authorSession?: string | null }

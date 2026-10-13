@@ -58,8 +58,8 @@ const localBoardId = (value: string): number => {
   return id
 }
 const deliveryPoint = (value: string): BoardDeliveryPoint => {
-  if (!['session-start', 'after-tool-call', 'stop'].includes(value))
-    throw new Error('--point must be session-start, after-tool-call, or stop')
+  if (!['session-start', 'after-tool-call', 'stop', 'heartbeat-monitor'].includes(value))
+    throw new Error('--point must be session-start, after-tool-call, stop, or heartbeat-monitor')
   return value as BoardDeliveryPoint
 }
 
@@ -181,7 +181,10 @@ export function registerBoardCommands(program: Command): void {
     })
   board
     .command('post')
-    .requiredOption('--audience <expr>')
+    .requiredOption(
+      '--audience <expr>',
+      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
+    )
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
     .option('--task <key>')
@@ -208,7 +211,10 @@ export function registerBoardCommands(program: Command): void {
     })
   board
     .command('ask')
-    .requiredOption('--audience <expr>')
+    .requiredOption(
+      '--audience <expr>',
+      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
+    )
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
     .option('--task <key>')
@@ -273,7 +279,10 @@ export function registerBoardCommands(program: Command): void {
   const suggestion = board.command('suggestion')
   suggestion
     .command('post <id>')
-    .requiredOption('--audience <expr>')
+    .requiredOption(
+      '--audience <expr>',
+      'recipient; architects means this project, architects:all means every project, architects:<project> names one project',
+    )
     .option('--title <text>')
     .option('--body <text>')
     .option('--task <key>')

@@ -5,7 +5,7 @@ import {
 } from '../../../shared/board-duration.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
+import { projectAt, projects } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
@@ -284,9 +284,10 @@ export function recipients(
   tags: BoardTag[],
   database = db(),
   facts = presenceFacts(database, at),
+  postingProject: string | null = null,
 ): string[] {
   const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS)
+  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
     const run = /^run:(\d+)$/.exec(reader)
@@ -305,13 +306,11 @@ function resolvePostAudience(expression: string, machine: string) {
 }
 
 function resolvePostOrigin(actor: BoardActor, env: Environment, cwd: string) {
-  if (actor.kind === 'operator') return { harness: null, project: null }
   const project = projectAt(cwd)
-  if (!project)
-    throw new Error(
-      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
-    )
-  return { harness: architectIdentity(env)!.harness, project: project.name }
+  return {
+    harness: actor.kind === 'operator' ? null : architectIdentity(env)!.harness,
+    project: project?.name ?? null,
+  }
 }
 
 function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
@@ -337,7 +336,7 @@ function refreshPostingPresence(
   cwd: string,
   at: string,
 ): void {
-  if (actor.kind !== 'architect') return
+  if (actor.kind !== 'architect' || !origin.project) return
   const current = database
     .query(
       `SELECT launch_key FROM run
@@ -409,6 +408,22 @@ export function insertRootMessage(
   )
   if (runRefusal) throw new Error(runRefusal)
   const origin = resolvePostOrigin(actor, env, cwd)
+  if (actor.kind === 'architect' && !origin.project && audience.kind !== 'architects')
+    throw new Error(
+      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
+    )
+  if (audience.kind === 'architects' && !audience.all && !audience.value && !origin.project)
+    throw new Error(
+      'plain architects requires a posting project; use architects:all or architects:<project>',
+    )
+  if (
+    audience.kind === 'architects' &&
+    audience.value &&
+    !projects(undefined, database).some((project) => project.name === audience.value)
+  )
+    throw new Error(
+      `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
+    )
   const ackRefusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
     audience,
@@ -504,9 +519,14 @@ export function insertRootMessage(
      (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
      VALUES (?,?,1,NULL,NULL)`,
   )
-  const postingRecipients = recipients(audienceExpression, clock, tags, database).filter(
-    (reader) => kind !== 'question' || !reader.startsWith('run:'),
-  )
+  const postingRecipients = recipients(
+    audienceExpression,
+    clock,
+    tags,
+    database,
+    presenceFacts(database, clock),
+    origin.project,
+  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
   for (const reader of postingRecipients) add.run(id, reader)
   return postNoticeResult(id, false, postingRecipients.length)
 }
@@ -535,6 +555,7 @@ export function addressed(
       messageTags(message.id, database),
       database,
       presenceFacts(database, clock),
+      message.author_project,
     ).includes(reader)
   )
 }

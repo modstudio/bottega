@@ -27,7 +27,8 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_ask',
     {
-      description: 'Ask an architect-board question.',
+      description:
+        'Ask an architect-board question. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -93,7 +94,8 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_post',
     {
-      description: 'Post an architect-board notice.',
+      description:
+        'Post an architect-board notice. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
@@ -167,7 +169,8 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_suggestion_post',
     {
-      description: 'Post an addressed worker suggestion as a new architect notice.',
+      description:
+        'Post an addressed worker suggestion as a new architect notice. Audience architects means this project; use architects:all or architects:<project> explicitly for other projects.',
       inputSchema: z.object({
         id: z.string().regex(/^[1-9]\d*$/),
         audience: z.string().min(1),

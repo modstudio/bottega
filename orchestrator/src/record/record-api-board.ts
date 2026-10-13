@@ -66,6 +66,7 @@ const replySchema = z
     authorHarness: z.string().min(1).nullable().optional(),
     authorMachineId: idSchema.nullable().optional(),
     authorRunId: idSchema.nullable().optional(),
+    project: z.string().min(1).optional(),
   })
   .strict()
 const sessionBody = z.object({ authorSession: sessionSchema }).strict()

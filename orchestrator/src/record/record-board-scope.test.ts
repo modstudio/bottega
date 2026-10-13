@@ -118,6 +118,15 @@ test('idempotent create content ignores author identity and treats equal timesta
   ).toBeTrue()
 })
 
+test('idempotent create content includes the posting project', () => {
+  expect(
+    sameHostedBoardCreateContent(
+      { ...empty, authorProjectId: '03990000-0000-7000-8000-000000000001' },
+      { ...empty, authorProjectId: '03990000-0000-7000-8000-000000000002' },
+    ),
+  ).toBe(false)
+})
+
 test('hosted uuid lists decode Postgres array literals the JS array check misses', () => {
   const id = '03990000-0000-7000-8000-000000000011'
   expect(hostedUuidList(`{${id}}`)).toEqual([id])
