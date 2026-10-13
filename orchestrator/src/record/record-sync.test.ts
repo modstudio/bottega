@@ -1014,7 +1014,7 @@ test('sync sends ordered bounded batches and applies each response before contin
 })
 
 test('a malformed ordered response marks no local row', async () => {
-  const local = localOutbox(2, null)
+  using local = localOutbox(2, null)
   const base = options(local, fakePostgres())
   const client = {
     whoami: base.client.whoami,
@@ -1034,7 +1034,6 @@ test('a malformed ordered response marks no local row', async () => {
     { attempts: 0, synced_at: null, quarantined_at: null },
     { attempts: 0, synced_at: null, quarantined_at: null },
   ])
-  local.close()
 })
 
 test('whole-request auth, server, and old-route failures leave the batch pending', async () => {

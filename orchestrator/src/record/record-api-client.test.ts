@@ -145,7 +145,7 @@ describe('record API client test safety', () => {
       Response.json(
         { error: 'record session has no active space; run `orch record space switch <slug>`' },
         { status: 409 },
-      )) as typeof fetch
+      )) as unknown as typeof fetch
     try {
       let refusal: unknown
       try {
