@@ -346,7 +346,7 @@ test('a multi-page deadline expiry queues another pull at once', async () => {
 
 test('the launchd template restarts only after an unsuccessful exit', () => {
   const text = readFileSync(
-    join(import.meta.dir, '../../../../ops/launchd/com.user.orch-board-watch.plist.template'),
+    join(import.meta.dir, '../../../ops/launchd/com.user.orch-board-watch.plist.template'),
     'utf8',
   )
   expect(text).toMatch(
