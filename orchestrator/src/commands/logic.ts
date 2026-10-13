@@ -87,7 +87,18 @@ type LogicDependencies = {
   continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
 }
 
-function registerReaderMcpProxy(program: Command): void {
+function registerMcpServers(program: Command): void {
+  program
+    .command('ask-server')
+    .allowExcessArguments(false)
+    .action(async () => {
+      try {
+        await serveAsk()
+      } catch (error) {
+        writeAskServerFailure(error)
+        throw error
+      }
+    })
   program
     .command('mcp-reader-proxy <project> <server>', { hidden: true })
     .allowExcessArguments(false)
@@ -470,18 +481,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         cwd: process.cwd,
       }),
     )
-  program
-    .command('ask-server')
-    .allowExcessArguments(false)
-    .action(async () => {
-      try {
-        await serveAsk()
-      } catch (error) {
-        writeAskServerFailure(error)
-        throw error
-      }
-    })
-  registerReaderMcpProxy(program)
+  registerMcpServers(program)
   program
     .command('setup-ask')
     .allowExcessArguments(false)
