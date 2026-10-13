@@ -214,6 +214,13 @@ function DocsRail({
   )
 }
 
+function toggled(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
 function useSearchHotkey(open: () => void) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -344,9 +351,7 @@ export function DocsView({
       subjects={model.subjects}
       offered={model.offered}
       chosen={model.stale}
-      onFilters={(next) => {
-        onFilters(next)
-      }}
+      onFilters={onFilters}
       inView={model.inView}
       active={model.active}
       createAction={createAction}
@@ -388,14 +393,7 @@ export function DocsView({
           groups={model.groups}
           selectedId={selectedId}
           collapsed={collapsed}
-          onToggle={(id) =>
-            setCollapsed((current) => {
-              const next = new Set(current)
-              if (next.has(id)) next.delete(id)
-              else next.add(id)
-              return next
-            })
-          }
+          onToggle={(id) => setCollapsed((current) => toggled(current, id))}
           onSelect={onSelect}
           onSearch={() => setSearchOpen(true)}
           loading={loading}
