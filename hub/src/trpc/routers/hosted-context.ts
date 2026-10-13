@@ -83,7 +83,7 @@ async function userCanonRows(client: RecordClient) {
     client.whoami(),
     allDocs(client, { scope: 'canon', subject: '' }),
   ])
-  return rows.filter((row) => row.subject === null && row.owner === user.id)
+  return { user, rows: rows.filter((row) => row.subject === null && row.owner === user.id) }
 }
 
 const leaf = (entry: RecordConfigEntry | undefined) =>
@@ -222,11 +222,13 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     userCanon: t.router({
       list: t.procedure.query(async ({ ctx }) => {
         const client = clientFor(ctx)
-        return Promise.all((await userCanonRows(client)).map((row) => canonRow(client, row)))
+        const { rows } = await userCanonRows(client)
+        return Promise.all(rows.map((row) => canonRow(client, row)))
       }),
       get: t.procedure.input(z.object({ slug })).query(async ({ ctx, input }) => {
         const client = clientFor(ctx)
-        const row = (await userCanonRows(client)).find((candidate) => candidate.slug === input.slug)
+        const { rows } = await userCanonRows(client)
+        const row = rows.find((candidate) => candidate.slug === input.slug)
         if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'canon doc not found' })
         return canonRow(client, row)
       }),
@@ -252,7 +254,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             body: input.body,
             delivery: 'inject',
             reason: input.reason,
-            author: 'hub-dashboard',
+            author: user.id,
             expectedRevision: input.expectedRevision,
           })
           return canonRow(client, await client.doc(written.id))
@@ -261,13 +263,12 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
         .input(z.object({ slug, reason, expectedRevision }))
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          const row = (await userCanonRows(client)).find(
-            (candidate) => candidate.slug === input.slug,
-          )
+          const { user, rows } = await userCanonRows(client)
+          const row = rows.find((candidate) => candidate.slug === input.slug)
           if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'canon doc not found' })
           await client.deleteDoc(row.id, {
             reason: input.reason,
-            author: 'hub-dashboard',
+            author: user.id,
             expectedRevision: input.expectedRevision,
           })
           return { removed: true }

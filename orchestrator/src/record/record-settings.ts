@@ -89,7 +89,7 @@ export async function applyRecordSettingsPermission(
     body: serializeOwnedSettings(edit.settings),
     delivery: 'demand',
     projectName: subject,
-    author: 'hub-dashboard',
+    author: input.userId,
     expectedRevision: input.expectedRevision,
   })
   return { revision: written.revisionId, permissions: edit.permissions }

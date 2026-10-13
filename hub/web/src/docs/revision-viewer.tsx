@@ -182,7 +182,7 @@ export function RevisionViewer({
     () => (replacementBody === null ? null : shapeRevisionDiff(revision.body, replacementBody)),
     [revision.body, replacementBody],
   )
-  const author = savedVersionAuthor(revision.author)
+  const author = savedVersionAuthor(revision.author, revision.authorName)
   return (
     <div className="mt-6">
       <Callout

@@ -13,7 +13,9 @@ const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
 const LONG_TITLE = 40
 
-export function savedVersionAuthor(author: string): string {
+export function savedVersionAuthor(author: string, authorName?: string | null): string {
+  const name = authorName?.trim()
+  if (name) return name
   const label = author.trim()
   return !label || label === 'unknown' ? 'System' : label
 }

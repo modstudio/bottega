@@ -3,9 +3,23 @@ import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import {
   currentRecordSession,
+  parseCachedRecordUser,
   recordUserSessionFromMemberships,
   storedRecordToken,
 } from './record-session.ts'
+
+test('cached record users require trimmed ids and emails and normalize names', () => {
+  expect(
+    parseCachedRecordUser({ id: ' user-one ', email: ' one@example.test ', name: ' Ada ' }),
+  ).toEqual({ id: 'user-one', email: 'one@example.test', name: 'Ada' })
+  expect(parseCachedRecordUser({ id: 'user-one', email: 'one@example.test', name: ' ' })).toEqual({
+    id: 'user-one',
+    email: 'one@example.test',
+    name: null,
+  })
+  expect(parseCachedRecordUser({ id: 'user-one', email: '' })).toBeNull()
+  expect(parseCachedRecordUser('invalid')).toBeNull()
+})
 
 const missingKeychain = () => ({
   exitCode: 44,

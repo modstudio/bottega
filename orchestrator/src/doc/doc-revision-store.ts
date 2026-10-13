@@ -31,7 +31,19 @@ type RevisionDoc = {
   replacement_slug: string | null
 }
 
-export function docWriteIdentity(context: { author?: string; reason: string }): {
+export function decideDocRevisionAuthor(input: {
+  explicitAuthor?: string
+  signedInUserId?: string | null
+  session: string | null
+}): string {
+  if (input.explicitAuthor !== undefined) return input.explicitAuthor.trim()
+  return input.signedInUserId ?? input.session ?? 'unknown'
+}
+
+export function docWriteIdentity(
+  context: { author?: string; reason: string },
+  signedInUserId?: string | null,
+): {
   author: string
   reason: string
   session: string | null
@@ -43,7 +55,11 @@ export function docWriteIdentity(context: { author?: string; reason: string }): 
     )
   }
   const session = sessionId()
-  const author = (context.author ?? session ?? 'unknown').trim()
+  const author = decideDocRevisionAuthor({
+    explicitAuthor: context.author,
+    signedInUserId,
+    session,
+  })
   if (!author) {
     throw new Error('doc write author must not be empty; omit it to use the session or unknown')
   }

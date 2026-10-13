@@ -22,6 +22,7 @@ import {
   noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from './record-project-destination.ts'
+import { rememberSignedInRecordUser } from './record-session.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
@@ -222,6 +223,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   const client = recordApiClient()
   const identity = await client.whoami()
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  rememberSignedInRecordUser(identity.user, local)
   const cache = recordCacheSpaces(identity)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)

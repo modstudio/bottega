@@ -11,8 +11,14 @@ test('source files are shown only to private technical or unfiltered readers', (
   expect(showSourceFiles(true, null, [])).toBe(false)
 })
 
-test('saved version authors use one trimmed system fallback', () => {
+test('saved version authors prefer a supplied name', () => {
+  expect(savedVersionAuthor('user-1', '  Ada Lovelace  ')).toBe('Ada Lovelace')
+})
+
+test('saved version authors preserve a stored author when no name is supplied', () => {
   expect(savedVersionAuthor('  Editor  ')).toBe('Editor')
-  expect(savedVersionAuthor('')).toBe('System')
+})
+
+test('saved version authors use the system fallback for unknown', () => {
   expect(savedVersionAuthor(' unknown ')).toBe('System')
 })
