@@ -26,11 +26,11 @@ export const identity: RecordIdentity = {
   ],
 }
 
-export function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
+function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
   return { listInvitations: async () => [] }
 }
 
-export function idleBoardDeps(): RecordBoardDeps {
+function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
