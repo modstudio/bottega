@@ -8,7 +8,6 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { boardEscalations } from '../board/board-service.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import { categoryExecutionRowsWithRemaining } from '../enforcement/enforcement-records.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import { projectLockState } from '../project/project-lock.ts'
 import {
@@ -80,7 +79,7 @@ import type {
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
-import { ratchetedRuleRefillConditions } from './ratcheted-rule-conditions.ts'
+import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 
 const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
@@ -492,16 +491,12 @@ export async function monitor(
     } as MonitorCondition)
   const reclaimProject = projectAt(process.cwd())
 
-  try {
-    conditions.push(
-      ...ratchetedRuleRefillConditions(
-        projects().filter(isProjectRepository),
-        categoryExecutionRowsWithRemaining(database),
-      ),
-    )
-  } catch (cause) {
-    errors.push(`ratcheted rule history unavailable: ${String((cause as Error).message ?? cause)}`)
-  }
+  const ratchetedRuleRefills = observeRatchetedRuleRefills(
+    projects().filter(isProjectRepository),
+    database,
+  )
+  conditions.push(...ratchetedRuleRefills.conditions)
+  errors.push(...ratchetedRuleRefills.errors)
 
   const strayWorktrees = strayWorktreeConditions({
     projects: projects().filter(isProjectRepository),

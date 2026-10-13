@@ -1,8 +1,10 @@
 // concern: monitor-ratcheted-rule-conditions
 /** Builds report-only conditions for mechanical-rule debt that drained and refilled. */
 
+import type { Database } from 'bun:sqlite'
 import {
   type CategoryExecutionRow,
+  categoryExecutionRowsWithRemaining,
   refilledCategoryExecutions,
 } from '../enforcement/enforcement-records.ts'
 import type { Project } from '../project/projects.ts'
@@ -24,4 +26,25 @@ export function ratchetedRuleRefillConditions(
       affectedProject: project.name,
     })),
   )
+}
+
+/** Read refill history without letting an unavailable local observation imply no conditions. */
+export function observeRatchetedRuleRefills(
+  projects: readonly Pick<Project, 'name' | 'path'>[],
+  database: Database,
+): { conditions: MonitorCondition[]; errors: string[] } {
+  try {
+    return {
+      conditions: ratchetedRuleRefillConditions(
+        projects,
+        categoryExecutionRowsWithRemaining(database),
+      ),
+      errors: [],
+    }
+  } catch (cause) {
+    return {
+      conditions: [],
+      errors: [`ratcheted rule history unavailable: ${String((cause as Error).message ?? cause)}`],
+    }
+  }
 }

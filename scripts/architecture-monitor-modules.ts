@@ -34,7 +34,6 @@ export const monitorModules: MonitorModule[] = [
     './monitor-gate-tooling.ts',
     './monitor-record-tunnel.ts',
     './monitor-retrieval-pins.ts',
-    '../enforcement/enforcement-records.ts',
     './ratcheted-rule-conditions.ts',
     './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',
@@ -64,6 +63,7 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/release-live-conditions.ts', ['./monitor-types.ts']),
   module('orchestrator/src/monitor/ratcheted-rule-conditions.ts', [
+    'bun:sqlite',
     '../enforcement/enforcement-records.ts',
     '../project/projects.ts',
     './monitor-types.ts',
