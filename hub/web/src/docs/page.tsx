@@ -7,7 +7,7 @@ import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { CreateDocDialog } from './create-dialog.tsx'
-import { canEditHostedDoc } from './edit-permission.ts'
+import { canEditDoc } from './edit-permission.ts'
 import {
   chooserProject,
   EMPTY_FILTERS,
@@ -204,10 +204,7 @@ export function DocsPage() {
           ) : null
         }
         headerAction={
-          selected &&
-          (source === 'local' ||
-            (source === 'hosted' &&
-              canEditHostedDoc(whoami.data?.memberships, selected.spaceId))) ? (
+          selected && canEditDoc(source, whoami.data?.memberships, selected.spaceId) ? (
             <Button
               size="sm"
               variant="secondary"

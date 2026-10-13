@@ -36,6 +36,22 @@ function subjectFromParam(param: string): string | null {
   return param === '_' ? null : param
 }
 
+function editorSearch(hosted: boolean, id: string | undefined): { id?: string } {
+  return hosted && id ? { id } : {}
+}
+
+function selectedMutationState(
+  hosted: boolean,
+  local: { isPending: boolean; error: { message: string } | null },
+  remote: { isPending: boolean; error: { message: string } | null },
+) {
+  return hosted ? remote : local
+}
+
+function missingHostedRevision(hosted: boolean, expectedRevision: string | null | undefined) {
+  return hosted && !expectedRevision
+}
+
 function DocPage() {
   const navigate = useNavigate()
   const hosted = isHostedMode()
@@ -87,7 +103,7 @@ function DocPage() {
     await navigate({
       to: '/docs/$scope/$subject/$slug',
       params: { scope, subject: subjectParam, slug },
-      search: hosted && id ? { id } : {},
+      search: editorSearch(hosted, id),
       replace: true,
     })
   }
@@ -115,10 +131,9 @@ function DocPage() {
       await navigate({ to: '/docs' })
     },
   })
-  const savePending = hosted ? hostedSave.isPending : localSave.isPending
-  const saveError = hosted ? hostedSave.error : localSave.error
-  const removePending = hosted ? hostedRemove.isPending : localRemove.isPending
-  const removeError = hosted ? hostedRemove.error : localRemove.error
+  const saveState = selectedMutationState(hosted, localSave, hostedSave)
+  const removeState = selectedMutationState(hosted, localRemove, hostedRemove)
+  const hostedRevisionMissing = missingHostedRevision(hosted, expectedRevision)
 
   function cancelEdit() {
     if (doc.data) {
@@ -131,7 +146,7 @@ function DocPage() {
     void navigate({
       to: '/docs/$scope/$subject/$slug',
       params: { scope, subject: subjectParam, slug },
-      search: hosted && id ? { id } : {},
+      search: editorSearch(hosted, id),
       replace: true,
     })
   }
@@ -166,7 +181,7 @@ function DocPage() {
     void navigate({
       to: '/docs/$scope/$subject/$slug',
       params: { scope, subject: subjectParam, slug },
-      search: hosted && id ? { id } : {},
+      search: editorSearch(hosted, id),
       replace: true,
     })
   }
@@ -227,7 +242,7 @@ function DocPage() {
                 })
               }
             }}
-            disabled={savePending || !title || !reason.trim() || (hosted && !expectedRevision)}
+            disabled={saveState.isPending || !title || !reason.trim() || hostedRevisionMissing}
           >
             <Save size={14} />
             Save
@@ -242,9 +257,9 @@ function DocPage() {
             variant="danger"
             onClick={onDelete}
             disabled={
-              removePending ||
+              removeState.isPending ||
               !doc.data ||
-              (hosted && !expectedRevision) ||
+              hostedRevisionMissing ||
               (confirmingDelete && !reason.trim())
             }
           >
@@ -260,14 +275,14 @@ function DocPage() {
           {doc.error.message}
         </p>
       ) : null}
-      {saveError ? (
+      {saveState.error ? (
         <p data-tone="error" className="text-status-text">
-          {saveError.message}
+          {saveState.error.message}
         </p>
       ) : null}
-      {removeError ? (
+      {removeState.error ? (
         <p data-tone="error" className="text-status-text">
-          {removeError.message}
+          {removeState.error.message}
         </p>
       ) : null}
 

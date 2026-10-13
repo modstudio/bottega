@@ -45,6 +45,40 @@ export function revisionIdForSource(
   return null
 }
 
+function hostedRevisionSelection<T extends { id: string; body: string }>(
+  revisions: readonly T[] | undefined,
+  revisionId: number | string | null,
+  currentBody: string | null,
+): { selected: T | null; replacementBody: string | null; ids: string[] | undefined } {
+  const index =
+    typeof revisionId === 'string'
+      ? (revisions?.findIndex(({ id }) => id === revisionId) ?? -1)
+      : -1
+  return {
+    selected: index >= 0 ? (revisions?.[index] ?? null) : null,
+    replacementBody:
+      index === 0 ? currentBody : index > 0 ? (revisions?.[index - 1]?.body ?? null) : null,
+    ids: revisions?.map(({ id }) => id),
+  }
+}
+
+function revisionReadFailed(
+  source: DocsSource,
+  hostedError: unknown,
+  localErrors: readonly unknown[],
+): boolean {
+  return source === 'hosted' ? Boolean(hostedError) : localErrors.some(Boolean)
+}
+
+function localReplacementBody(
+  comparison: ReturnType<typeof revisionComparison> | null,
+  currentBody: string | null,
+  newerBody: string | undefined,
+): string | null {
+  if (comparison?.kind === 'current') return currentBody
+  return comparison?.kind === 'revision' ? (newerBody ?? null) : null
+}
+
 function savedAt(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -97,42 +131,24 @@ export function useRevisionView(
     }),
     enabled: source === 'local' && Boolean(doc && revisionParam && comparison?.kind === 'revision'),
   })
-  const hostedRevisions = hostedHistory.data?.items
-  const hostedIndex =
-    typeof revisionId === 'string'
-      ? (hostedRevisions?.findIndex(({ id }) => id === revisionId) ?? -1)
-      : -1
-  const hostedSelected = hostedIndex >= 0 ? hostedRevisions?.[hostedIndex] : undefined
-  const hostedReplacementBody =
-    hostedIndex === 0
-      ? (doc?.body ?? null)
-      : hostedIndex > 0
-        ? (hostedRevisions?.[hostedIndex - 1]?.body ?? null)
-        : null
-  const historyIds =
-    source === 'hosted'
-      ? hostedRevisions?.map(({ id }) => id)
-      : localHistory.data?.map(({ id }) => id)
+  const hosted = hostedRevisionSelection(hostedHistory.data?.items, revisionId, doc?.body ?? null)
+  const localIds = localHistory.data?.map(({ id }) => id)
   const error = revisionViewError({
     param: revisionParam,
     id: revisionId,
-    historyIds,
-    readFailed: Boolean(
-      source === 'hosted'
-        ? hostedHistory.error
-        : selected.error || localHistory.error || newer.error,
-    ),
+    historyIds: source === 'hosted' ? hosted.ids : localIds,
+    readFailed: revisionReadFailed(source, hostedHistory.error, [
+      selected.error,
+      localHistory.error,
+      newer.error,
+    ]),
   })
+  if (source === 'hosted') {
+    return { revision: hosted.selected, replacementBody: hosted.replacementBody, error }
+  }
   return {
-    revision: source === 'hosted' ? (hostedSelected ?? null) : (selected.data ?? null),
-    replacementBody:
-      source === 'hosted'
-        ? hostedReplacementBody
-        : comparison?.kind === 'current'
-          ? (doc?.body ?? null)
-          : comparison?.kind === 'revision'
-            ? (newer.data?.body ?? null)
-            : null,
+    revision: selected.data ?? null,
+    replacementBody: localReplacementBody(comparison, doc?.body ?? null, newer.data?.body),
     error,
   }
 }

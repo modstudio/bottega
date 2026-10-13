@@ -10,3 +10,12 @@ export function canEditHostedDoc(
     ),
   )
 }
+
+export function canEditDoc(
+  source: 'local' | 'hosted' | 'public',
+  memberships: readonly Record<string, unknown>[] | undefined,
+  documentSpaceId: string | undefined,
+): boolean {
+  if (source === 'local') return true
+  return source === 'hosted' && canEditHostedDoc(memberships, documentSpaceId)
+}
