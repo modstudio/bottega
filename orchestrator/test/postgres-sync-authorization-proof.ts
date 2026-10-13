@@ -10,11 +10,8 @@ import { installRecordApiClient } from './fixtures/record-api.ts'
 type Input = {
   machineId: string
   userId: string
-  otherUserId: string
   writeSpaceId: string
-  deniedSpaceId: string
   writeProjectName: string
-  deniedProjectName: string
   token(): string
   setToken(token: string): void
   admin(statement: string): string
@@ -82,12 +79,21 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
   })
 
   test('hosted sync refuses a space outside the bearer memberships without writing', async () => {
+    const deniedSpaceId = newRecordId()
+    const deniedProjectId = newRecordId()
+    const deniedProjectName = `sync-denied-${deniedSpaceId.slice(-8)}`
+    input.admin(
+      `INSERT INTO space (id,name,slug,created_at)
+       VALUES ('${deniedSpaceId}','Sync denied proof','${deniedProjectName}',now());
+       INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('${deniedProjectId}','${deniedSpaceId}','${deniedProjectName}',now());`,
+    )
     const id = newRecordId()
     const local = localOutbox(
       runPayload({
         id,
         machineId: input.machineId,
-        projectName: input.deniedProjectName,
+        projectName: deniedProjectName,
         spaceId: input.writeSpaceId,
       }),
     )
@@ -96,7 +102,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         syncRecord({
           local,
           identity: { id: input.machineId, name: 'proof-machine' },
-          projectSpaces: { [input.deniedProjectName]: input.deniedSpaceId },
+          projectSpaces: { [deniedProjectName]: deniedSpaceId },
         }),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
@@ -125,7 +131,7 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         id,
         machineId: input.machineId,
         projectName: readProjectName,
-        spaceId: input.deniedSpaceId,
+        spaceId: input.writeSpaceId,
       }),
     )
     try {
@@ -158,12 +164,15 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
 
   test('hosted sync binds user and space to the bearer and replays idempotently', async () => {
     const id = newRecordId()
+    const otherUserId = input.admin(
+      `SELECT id FROM "user" WHERE id <> '${input.userId}' ORDER BY id LIMIT 1;`,
+    )
     const payload = runPayload({
       id,
       machineId: input.machineId,
       projectName: input.writeProjectName,
-      spaceId: input.deniedSpaceId,
-      startedByUserId: input.otherUserId,
+      spaceId: newRecordId(),
+      startedByUserId: otherUserId,
     })
     const request = {
       machine: {

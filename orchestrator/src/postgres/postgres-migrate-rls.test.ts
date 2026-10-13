@@ -32,7 +32,6 @@ import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
-import { registerHostedSyncAuthorizationProofs } from '../../test/postgres-sync-authorization-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import { bearerHeaders, recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
@@ -50,7 +49,6 @@ import {
   recordMigrationCount,
 } from './postgres-migrate.ts'
 
-const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 const recordSession = memoryRecordSession()
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -248,10 +246,6 @@ realPostgres('RLS proof against real Postgres', () => {
        INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
-       INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
-        ('${newRecordId()}','${SPACE_A}','${authUserA}','member','write',now()),
-        ('${newRecordId()}','${SPACE_B}','${authUserA}','member','write',now()),
-        ('${newRecordId()}','${PLATFORM_SPACE_ID}','${authUserA}','member','write',now());
        INSERT INTO run (
          id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
@@ -344,7 +338,7 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: USER_A,
+    userId: authUserA,
     firstSpaceId: SPACE_A,
     secondSpaceId: SPACE_B,
     otherRunId: RUN_B,
@@ -1044,25 +1038,12 @@ realPostgres('RLS proof against real Postgres', () => {
     actorUrl: actorUrl!,
     actorRole: RECORD_ACTOR_ROLE,
     machineId: MACHINE_A,
-    userId: OPERATOR_USER_ID,
-    spaceId: PLATFORM_SPACE_ID,
-    otherSpaceId: SPACE_A,
-    projectName: PLATFORM_SLUG,
-    projectSpace: PLATFORM_SPACE_ID,
-    asSpace,
-  })
-
-  registerHostedSyncAuthorizationProofs({
-    machineId: MACHINE_A,
     userId: authUserA,
-    otherUserId: authUserB,
-    writeSpaceId: authSpaceA,
-    deniedSpaceId: authSpaceB,
-    writeProjectName: 'auth-a-project',
-    deniedProjectName: 'auth-b-project',
-    token: () => tokenA,
-    setToken: (token) => recordSession.setToken(token),
-    admin: (statement) => succeeds('postgres', 'postgres', statement),
+    spaceId: authSpaceA,
+    otherSpaceId: authSpaceB,
+    projectName: 'auth-a-project',
+    projectSpace: authSpaceA,
+    asSpace,
   })
 
   test('same prefix is allowed in separate projects', () => {

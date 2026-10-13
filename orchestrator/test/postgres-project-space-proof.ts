@@ -3,6 +3,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
 import { proveProjectSpaceRecordSync } from './postgres-score-proof.ts'
+import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -38,6 +39,12 @@ export function registerProjectSpaceProofs(input: {
 
   test('two projects sync into separate spaces and remain tenant-confined', async () => {
     input.setToken(input.token())
+    input.admin(
+      `INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+       ('${newRecordId()}','${input.firstSpaceId}','${input.userId}','member','write',now()),
+       ('${newRecordId()}','${input.secondSpaceId}','${input.userId}','member','write',now())
+       ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';`,
+    )
     const ids = await proveProjectSpaceRecordSync({
       actorUrl: input.actorUrl,
       actorRole: input.actorRole,
@@ -71,6 +78,16 @@ export function registerProjectSpaceProofs(input: {
     )
     expect(result.code).not.toBe(0)
     expect(result.stderr).toContain('violates row-level security policy')
+  })
+
+  registerHostedSyncAuthorizationProofs({
+    machineId: input.machineId,
+    userId: input.userId,
+    writeSpaceId: input.firstSpaceId,
+    writeProjectName: 'alpha',
+    token: input.token,
+    setToken: input.setToken,
+    admin: input.admin,
   })
 
   test('project rows move together while another source project and space aggregates stay', async () => {
