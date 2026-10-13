@@ -336,6 +336,19 @@ function validateArchitectAudience(
     )
 }
 
+function validateRunAudience(
+  audience: Audience,
+  actor: BoardActor,
+  database: ReturnType<typeof writableDb>,
+): void {
+  const owner =
+    audience.kind === 'run' && typeof audience.value === 'number'
+      ? runOwnerSession(audience.value, database)
+      : null
+  const refusal = runAudienceRefusal(audience, actor.kind, actor.session, owner)
+  if (refusal) throw new Error(refusal)
+}
+
 function runOwnerSession(runId: number, database: ReturnType<typeof writableDb>): string | null {
   const row = database
     .query(
@@ -447,15 +460,7 @@ export function insertRootMessage(
     input.audience,
     postingMachine,
   )
-  const runRefusal = runAudienceRefusal(
-    audience,
-    actor.kind,
-    actor.session,
-    audience.kind === 'run' && typeof audience.value === 'number'
-      ? runOwnerSession(audience.value, database)
-      : null,
-  )
-  if (runRefusal) throw new Error(runRefusal)
+  validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
   const ackRefusal = acknowledgementRefusal({
