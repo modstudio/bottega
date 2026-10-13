@@ -58,6 +58,9 @@ test('a stale orchestrator identity is removed in favor of shared configuration'
 })
 
 test('all evidence enqueue paths use the shared id without recreating its legacy key', () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-enqueue-'))
+  const prior = process.env[CONFIG_HOME_ENV]
+  process.env[CONFIG_HOME_ENV] = join(root, 'config')
   const database = new Database(':memory:')
   applyMigrations(database)
   try {
@@ -107,5 +110,8 @@ test('all evidence enqueue paths use the shared id without recreating its legacy
     expect(machineIdStored(database)).toBeNull()
   } finally {
     database.close()
+    if (prior === undefined) delete process.env[CONFIG_HOME_ENV]
+    else process.env[CONFIG_HOME_ENV] = prior
+    rmSync(root, { recursive: true, force: true })
   }
 })
