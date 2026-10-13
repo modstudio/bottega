@@ -5,16 +5,23 @@ import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 
+function holds(node: TreeNode, id: string): boolean {
+  return node.children.some((child) => child.id === id || holds(child, id))
+}
+
 function TreeDocumentRow({
   node,
   item,
   current,
+  ancestor,
   rowRef,
   onSelect,
 }: {
   node: TreeNode
   item: DocsTreeItem
   current: boolean
+  /** The open article sits somewhere beneath this row. */
+  ancestor: boolean
   rowRef: MutableRefObject<HTMLElement | null>
   onSelect: (item: DocsTreeItem) => void
 }) {
@@ -28,7 +35,10 @@ function TreeDocumentRow({
         aria-current={current ? 'page' : undefined}
         aria-disabled="true"
         title={node.title}
-        className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-text-secondary"
+        className={classes(
+          'min-w-0 flex-1 rounded-sm px-2 py-1 text-left',
+          ancestor ? 'font-medium text-text-primary' : 'text-text-secondary',
+        )}
       >
         <span className="line-clamp-2 text-pretty">{node.title}</span>
       </span>
@@ -45,7 +55,9 @@ function TreeDocumentRow({
         'min-w-0 flex-1 rounded-sm px-2 py-1 text-left',
         current
           ? 'bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover'
-          : 'text-text-secondary hover:bg-control-hover',
+          : ancestor
+            ? 'font-medium text-text-primary hover:bg-control-hover'
+            : 'text-text-secondary hover:bg-control-hover',
       )}
     >
       <span className="line-clamp-2 text-pretty">{node.title}</span>
@@ -55,21 +67,19 @@ function TreeDocumentRow({
 
 function TreeRow({
   node,
-  depth,
   selectedId,
   collapsed,
   onToggle,
   onSelect,
 }: {
   node: TreeNode
-  /** How far below the top of the tree this row sits; the top level is zero. */
-  depth: number
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
 }) {
   const current = node.id === selectedId
+  const ancestor = !current && selectedId !== null && holds(node, selectedId)
   const open = !collapsed.has(node.id)
   const { children, ...item } = node
   const rowRef = useRef<HTMLElement>(null)
@@ -84,6 +94,7 @@ function TreeRow({
           node={node}
           item={item}
           current={current}
+          ancestor={ancestor}
           rowRef={rowRef}
           onSelect={onSelect}
         />
@@ -104,11 +115,10 @@ function TreeRow({
         ) : null}
       </div>
       {children.length && open ? (
-        // The top level indents without a rule; a rule marks nesting only from the second level down.
-        <div className={depth === 0 ? 'pl-3' : 'ml-2 border-border-default border-l pl-2'}>
+        // An open level draws a rule beneath the start of its row's title, with a gap before its children.
+        <div className="my-1 ml-2 border-border-default border-l pl-2">
           <TreeList
             nodes={children}
-            depth={depth + 1}
             selectedId={selectedId}
             collapsed={collapsed}
             onToggle={onToggle}
@@ -122,14 +132,12 @@ function TreeRow({
 
 export function TreeList({
   nodes,
-  depth = 0,
   selectedId,
   collapsed,
   onToggle,
   onSelect,
 }: {
   nodes: readonly TreeNode[]
-  depth?: number
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
@@ -141,7 +149,6 @@ export function TreeList({
         <TreeRow
           key={node.id}
           node={node}
-          depth={depth}
           selectedId={selectedId}
           collapsed={collapsed}
           onToggle={onToggle}

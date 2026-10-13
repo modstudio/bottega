@@ -274,6 +274,8 @@
   --docs-rail: clamp(15.5rem, 17vw, 20rem);
   /* The article text, held at one reading width whatever the rails take. */
   --docs-measure: 47.5rem;
+  /* A diagram's box labels, at the article body's size. */
+  --docs-diagram-text: 14px;
   /* The docs tab row, which the side panels and article header stick beneath. */
   --docs-chrome-h: 2.8125rem;
   --sheet-w: min(34rem, 100vw);
