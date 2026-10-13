@@ -615,11 +615,9 @@ export async function deleteRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: writableHostedDocList(
-        doc.source_files,
-        input.id,
-        'doc.source_files',
-      ).map(String),
+      sourceFiles: writableHostedDocList(doc.source_files, input.id, 'doc.source_files').map(
+        String,
+      ),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -684,11 +682,9 @@ export async function consumeRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: writableHostedDocList(
-        doc.source_files,
-        input.id,
-        'doc.source_files',
-      ).map(String),
+      sourceFiles: writableHostedDocList(doc.source_files, input.id, 'doc.source_files').map(
+        String,
+      ),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
