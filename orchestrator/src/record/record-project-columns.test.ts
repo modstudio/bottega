@@ -87,4 +87,26 @@ describe('hostedProjectColumns', () => {
       keyPrefixes: [],
     })
   })
+
+  test('round trips probe and reader MCP settings through separate hosted columns', () => {
+    const mcp = {
+      probe_tool: 'ping',
+      reader_tools: { starship: ['get-task', 'list-tasks'], hosted: ['search'] },
+    }
+    const columns = hostedProjectColumns({ mcp }, 'round-trip')
+    expect(columns.mcpProbeTool).toBe('ping')
+    expect(columns.mcpReaderTools).toBe(
+      '{"starship":["get-task","list-tasks"],"hosted":["search"]}',
+    )
+    expect({
+      probe_tool: columns.mcpProbeTool,
+      reader_tools: JSON.parse(columns.mcpReaderTools!),
+    }).toEqual(mcp)
+  })
+
+  test('absent MCP settings keep both hosted columns null', () => {
+    const columns = hostedProjectColumns({}, 'absent')
+    expect(columns.mcpProbeTool).toBeNull()
+    expect(columns.mcpReaderTools).toBeNull()
+  })
 })

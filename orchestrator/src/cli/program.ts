@@ -66,7 +66,7 @@ registerSetup(program)
 registerSync(program)
 registerTestSubstance(program)
 
-const READ_ONLY_COMMANDS = new Set(['migrate', 'ratchet'])
+const READ_ONLY_COMMANDS = new Set(['mcp-reader-proxy', 'migrate', 'ratchet'])
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {

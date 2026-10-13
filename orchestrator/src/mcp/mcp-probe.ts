@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 export function mcpToolCallsObservable(
@@ -104,20 +104,16 @@ export function probeSecrets(config: McpServerConfig | undefined): string[] {
     value.split(/\s+/).filter((token) => token.length >= 8),
   )
   const env = Object.values(config?.env ?? {}).filter((value) => value.length >= 8)
-  return [...headers.filter(Boolean), ...headerTokens, ...env]
+  // A launch argument can carry a credential as readily as an environment value.
+  const args = (config?.args ?? []).filter((value) => value.length >= 8)
+  return [...headers.filter(Boolean), ...headerTokens, ...env, ...args]
 }
 
 export function namesSeenAt(cwd: string): string[] {
   return [...new Set([...Object.keys(readMcpConfig(cwd)), ...ALLOWED_EXTRA_SERVERS])]
 }
 
-function parseMcpConfig(source: string): Record<string, McpServerConfig> {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(source)
-  } catch {
-    return {}
-  }
+function parsedMcpConfig(parsed: unknown): Record<string, McpServerConfig> {
   if (!parsed || typeof parsed !== 'object') return {}
   const root = parsed as Record<string, unknown>
   const servers = (root.mcpServers ?? root.servers ?? {}) as Record<string, unknown>
@@ -154,14 +150,35 @@ function parseMcpConfig(source: string): Record<string, McpServerConfig> {
   return out
 }
 
-export function readMcpConfig(cwd: string): Record<string, McpServerConfig> {
-  const path = join(cwd, '.mcp.json')
-  if (!existsSync(path)) return {}
+export type McpConfigReadResult =
+  | { ok: true; path: string; config: Record<string, McpServerConfig> }
+  | { ok: false; path: string; reason: 'missing' | 'unreadable' | 'invalid'; detail?: string }
+
+/** Read a launch file while preserving why a proxy could not inspect it. */
+export function readMcpConfigResult(cwd: string): McpConfigReadResult {
+  const path = resolve(cwd, '.mcp.json')
+  if (!existsSync(path)) return { ok: false, path, reason: 'missing' }
+  let source: string
   try {
-    return parseMcpConfig(readFileSync(path, 'utf8'))
-  } catch {
-    return {}
+    source = readFileSync(path, 'utf8')
+  } catch (error) {
+    return {
+      ok: false,
+      path,
+      reason: 'unreadable',
+      detail: String((error as Error)?.message ?? error).replaceAll(/\s+/g, ' '),
+    }
   }
+  try {
+    return { ok: true, path, config: parsedMcpConfig(JSON.parse(source)) }
+  } catch {
+    return { ok: false, path, reason: 'invalid' }
+  }
+}
+
+export function readMcpConfig(cwd: string): Record<string, McpServerConfig> {
+  const result = readMcpConfigResult(cwd)
+  return result.ok ? result.config : {}
 }
 
 function mcpEndpointAllowlist(url: string | null | undefined): string[] {

@@ -65,6 +65,11 @@ export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
 }
 
+function readerProxyServer(project: string, server: string, cwd: string): CodexMcpServer {
+  const [command, ...args] = bottegaEntryArgv('mcp-reader-proxy')
+  return { command, args: [...args, project, server, cwd] }
+}
+
 /** Select project MCP launch definitions that are safe to expose on argv. */
 export function codexProjectServers(
   config: Record<string, McpServerConfig>,
@@ -101,15 +106,32 @@ export function codexProjectServers(
 export function codexProjectServersForRun(
   agent: string,
   transport: string,
-  mcp: boolean,
+  mcp: false | 'reader' | 'writer',
   treeConfig: Record<string, McpServerConfig>,
-  project: { path: string; settings: { workerMcpServers?: string[] } } | null,
+  project: {
+    name: string
+    path: string
+    settings: { workerMcpServers?: string[]; mcpServer?: string }
+  } | null,
   cwd: string,
 ): ReturnType<typeof codexProjectServers> | null {
-  if (agent !== 'codex' || transport !== 'cli' || !mcp) return null
+  if (agent !== 'codex' || transport !== 'cli' || mcp === false) return null
   const config =
     Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
-  return codexProjectServers(config, project?.settings.workerMcpServers, cwd)
+  const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
+  if (mcp === 'writer') return scope
+  if (!project) return { servers: {}, withheld: [] }
+  const names = new Set([
+    ...Object.keys(scope.servers),
+    ...scope.withheld,
+    project.settings.mcpServer ?? project.name,
+  ])
+  return {
+    servers: Object.fromEntries(
+      [...names].map((server) => [server, readerProxyServer(project.name, server, cwd)]),
+    ),
+    withheld: [],
+  }
 }
 
 /** Append the visible reason when project MCP definitions cannot enter argv. */
@@ -168,16 +190,16 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   }
   args.push('-c', serverOverlay('orch', orchServer))
   for (const [name, server] of Object.entries(opts.projectServers ?? {})) {
-    if (name !== 'orch-ask' && name !== 'orch') args.push('-c', serverOverlay(name, server))
+    if (name !== 'orch-ask' && name !== 'orch') {
+      args.push('-c', serverOverlay(name, server))
+    }
   }
   if (opts.mcpServer && opts.mcpServer !== 'orch' && !opts.projectServers?.[opts.mcpServer]) {
-    args.push(
-      '-c',
-      serverOverlay(opts.mcpServer, {
-        command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
-        args: [opts.mcpServer],
-      }),
-    )
+    const fallback = {
+      command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),
+      args: [opts.mcpServer],
+    }
+    args.push('-c', serverOverlay(opts.mcpServer, fallback))
   }
   return args
 }

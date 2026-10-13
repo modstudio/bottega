@@ -32,6 +32,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { lensCommand } from '../lens/lens-commands.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
+import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
 import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
@@ -84,6 +85,26 @@ const runFlags = (options: OptionValues) => ({
 type LogicDependencies = {
   continuationFindingsForRun?: typeof continuationFindingsForRun
   continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
+}
+
+function registerMcpServers(program: Command): void {
+  program
+    .command('ask-server')
+    .allowExcessArguments(false)
+    .action(async () => {
+      try {
+        await serveAsk()
+      } catch (error) {
+        writeAskServerFailure(error)
+        throw error
+      }
+    })
+  program
+    .command('mcp-reader-proxy <project> <server> <tree>', { hidden: true })
+    .allowExcessArguments(false)
+    .action((project: string, server: string, tree: string) =>
+      readerMcpProxyCommand(project, server, tree),
+    )
 }
 
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
@@ -462,17 +483,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         cwd: process.cwd,
       }),
     )
-  program
-    .command('ask-server')
-    .allowExcessArguments(false)
-    .action(async () => {
-      try {
-        await serveAsk()
-      } catch (error) {
-        writeAskServerFailure(error)
-        throw error
-      }
-    })
+  registerMcpServers(program)
   program
     .command('setup-ask')
     .allowExcessArguments(false)

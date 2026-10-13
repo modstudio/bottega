@@ -67,7 +67,7 @@ async function targetState(sql: SQL): Promise<unknown> {
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, docs, signals, review, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, mcp_reader_tools, docs, signals, review, release, states, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -177,6 +177,7 @@ realPostgres('project import against copied live SQLite data', () => {
       keyPrefixes: 'key_prefixes',
       managedContext: 'managed_context',
       mcp: 'mcp_probe_tool',
+      'mcp.reader_tools': 'mcp_reader_tools',
       mcpServer: 'mcp_server',
       mechanicalChecks: 'mechanical_checks',
       productionBranch: 'production_branch',
@@ -206,8 +207,13 @@ realPostgres('project import against copied live SQLite data', () => {
         if (notImported.has(key)) continue
         expect(columnForSetting[key], `source setting ${key} has a target column`).toBeDefined()
         const expected =
-          key === 'mcp' ? (settings.mcp as { probe_tool: string }).probe_tool : settings[key]
+          key === 'mcp' ? (settings.mcp as { probe_tool?: string }).probe_tool : settings[key]
         expect(target[columnForSetting[key]!] as unknown, `${source.name}.${key}`).toEqual(expected)
+        if (key === 'mcp') {
+          expect(target[columnForSetting['mcp.reader_tools']!] as unknown).toEqual(
+            (settings.mcp as { reader_tools?: Record<string, string[]> }).reader_tools ?? null,
+          )
+        }
       }
     }
 

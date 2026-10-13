@@ -1205,7 +1205,7 @@ review — a broken tool, a wrong doc, a failure in another path. A finding abou
 the artifact goes in your findings array and nowhere else: the architect fixes
 it in the next round, and a task for it outlives the fix. When you do file,
 do not leave it only as a mailbox note, where it depends on somebody reading
-this run to be discovered.
+this run to be discovered. When file_issue is not available, report an outside-artifact defect in the reply and stop there; never file it through another server's tool.
 `.trim()
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */

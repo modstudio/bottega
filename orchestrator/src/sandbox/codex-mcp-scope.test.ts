@@ -9,6 +9,7 @@ import {
   CODEX_REASONING_EFFORT,
   codexMcpSetupHeader,
   codexProjectServers,
+  codexProjectServersForRun,
   codexScopeArgs,
   codexWithheldTools,
 } from './codex-mcp-scope.ts'
@@ -110,6 +111,55 @@ test('project server overlay takes the place of the mcp-run definition for the s
   )
   expect(entries.filter((entry) => entry.startsWith('mcp_servers.starship='))).toHaveLength(1)
   expect(entries.join('\n')).not.toContain('.claude/mcp/mcp-run')
+})
+
+test('reading-job project overlays all use the credential-free reader proxy', () => {
+  const scope = codexProjectServersForRun(
+    'codex',
+    'cli',
+    'reader',
+    {
+      local: { name: 'local', command: '/project/server', args: ['literal-secret'] },
+      secret: { name: 'secret', command: '/project/secret', env: { TOKEN: 'literal-secret' } },
+    },
+    { name: 'starship', path: '/project', settings: { mcpServer: 'secret' } },
+    '/project',
+  )!
+  const entries = serverEntries(
+    codexScopeArgs({
+      mcp: true,
+      mcpServer: 'secret',
+      projectServers: scope.servers,
+    }),
+  )
+  const local = entries.find((entry) => entry.startsWith('mcp_servers.local='))!
+  const fallback = entries.find((entry) => entry.startsWith('mcp_servers.secret='))!
+  for (const entry of [local, fallback]) {
+    expect(entry).toContain('mcp-reader-proxy')
+    expect(entry).toContain('starship')
+    expect(entry).toContain('/project')
+    expect(entry).not.toContain('literal-secret')
+    expect(entry).not.toContain('.claude/mcp/mcp-run')
+  }
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch-ask='))).toContain('ask-server')
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain('args=["mcp"]')
+})
+
+test('reading job without a registered project receives no project servers', () => {
+  const scope = codexProjectServersForRun(
+    'codex',
+    'cli',
+    'reader',
+    { tracker: { name: 'tracker', command: '/project/server', args: ['write'] } },
+    null,
+    '/unregistered',
+  )!
+  expect(scope).toEqual({ servers: {}, withheld: [] })
+  const entries = serverEntries(codexScopeArgs({ mcp: true, projectServers: scope.servers }))
+  expect(entries.map((entry) => entry.match(/^mcp_servers\.([^=]+)/)![1])).toEqual([
+    'orch-ask',
+    'orch',
+  ])
 })
 
 test('platform-shaped MCP scope emits orch exactly once', () => {

@@ -63,11 +63,16 @@ export function unwrapMcpToolResult(result: McpToolResult, name: string): unknow
   }
 }
 
-async function withMcpClient<T>(
+export type ConnectedMcpToolClient = {
+  client: Client
+  close(): Promise<void>
+}
+
+/** Connect once so a caller can proxy a complete upstream MCP session. */
+export async function connectMcpToolClient(
   launch: McpToolListLaunch,
   env: Record<string, string>,
-  use: (client: Client, request: { signal: AbortSignal; timeout: number }) => Promise<T>,
-): Promise<T> {
+): Promise<ConnectedMcpToolClient> {
   const transport = launch.url
     ? new StreamableHTTPClientTransport(new URL(launch.url), {
         requestInit: { headers: launch.headers },
@@ -78,7 +83,8 @@ async function withMcpClient<T>(
           args: launch.args ?? [],
           cwd: launch.cwd,
           env: { ...env, ...launch.env },
-          stderr: 'pipe',
+          // Upstream diagnostics must neither reach the agent nor fill an unread pipe.
+          stderr: 'ignore',
         })
       : null
   if (!transport) throw new Error('MCP server has no stored launch definition')
@@ -90,9 +96,27 @@ async function withMcpClient<T>(
   }
   try {
     await client.connect(transport, request)
-    return await use(client, request)
-  } finally {
+    return { client, close: () => client.close() }
+  } catch (error) {
     await client.close().catch(() => undefined)
+    throw error
+  }
+}
+
+async function withMcpClient<T>(
+  launch: McpToolListLaunch,
+  env: Record<string, string>,
+  use: (client: Client, request: { signal: AbortSignal; timeout: number }) => Promise<T>,
+): Promise<T> {
+  const connected = await connectMcpToolClient(launch, env)
+  const request = {
+    signal: AbortSignal.timeout(MCP_TOOL_LIST_TIMEOUT_MS),
+    timeout: MCP_TOOL_LIST_TIMEOUT_MS,
+  }
+  try {
+    return await use(connected.client, request)
+  } finally {
+    await connected.close().catch(() => undefined)
   }
 }
 

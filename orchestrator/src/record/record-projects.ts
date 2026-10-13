@@ -104,7 +104,7 @@ export async function upsertHostedProjectRow(
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, docs, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, mcp_reader_tools, docs, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
@@ -112,6 +112,7 @@ export async function upsertHostedProjectRow(
       ${columns.requireCleanMain}, ${columns.color}, ${columns.colorDark}, ${columns.envPrefix},
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
       ${postgresTextArray(tx, columns.secretPaths)}, ${columns.mcpProbeTool},
+      (${columns.mcpReaderTools}::jsonb #>> '{}')::jsonb,
       (${columns.docs}::jsonb #>> '{}')::jsonb,
       (${columns.signals}::jsonb #>> '{}')::jsonb,
       (${columns.review}::jsonb #>> '{}')::jsonb,
@@ -141,6 +142,7 @@ export async function upsertHostedProjectRow(
       worker_mcp_servers = EXCLUDED.worker_mcp_servers,
       secret_paths = EXCLUDED.secret_paths,
       mcp_probe_tool = EXCLUDED.mcp_probe_tool,
+      mcp_reader_tools = EXCLUDED.mcp_reader_tools,
       docs = EXCLUDED.docs,
       signals = EXCLUDED.signals,
       review = EXCLUDED.review,

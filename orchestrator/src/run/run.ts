@@ -148,6 +148,11 @@ function requiredRunLease(
   }
 }
 
+function codexMcpMode(usingMcp: boolean, writesJob: boolean): false | 'reader' | 'writer' {
+  if (!usingMcp) return false
+  return writesJob ? 'writer' : 'reader'
+}
+
 const CANON_SOURCE_PROMPT_RESERVE_BYTES =
   Math.max(
     ...(['live database', 'mirror', 'unknown'] as CanonSource[]).map((source) =>
@@ -754,7 +759,7 @@ export async function run(opts: {
   const codexMcpScope = codexProjectServersForRun(
     name,
     transportName,
-    usingMcp,
+    codexMcpMode(usingMcp, writesJob),
     mcpConfig,
     projectAt(callerCwd),
     cwd,
