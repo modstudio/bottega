@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import {
+  BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
   cachedRows,
@@ -259,8 +260,9 @@ export async function markBoardDeliveryDelivered(input: {
         noteBoardReachRecordingFailure(database, deliveredAt)
       } catch {}
   }, database)
+  const deadline = Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
   for (const row of hosted)
     try {
-      await syncCachedHostedReceipt(input.session, row.id, row.posting, { database })
+      await syncCachedHostedReceipt(input.session, row.id, row.posting, { database, deadline })
     } catch {}
 }
