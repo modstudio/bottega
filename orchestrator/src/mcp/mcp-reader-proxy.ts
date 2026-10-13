@@ -14,6 +14,7 @@ import {
 } from '../project/projects.ts'
 import {
   type McpConfigReadResult,
+  type McpServerConfig,
   probeSecrets,
   readMcpConfigResult,
   sanitizeProbeError,
@@ -165,7 +166,7 @@ function runTreePath(runTree: string, mainCheckout: string): string {
   return tree
 }
 
-function configuredUpstream(result: McpConfigReadResult, serverName: string): McpToolListLaunch {
+function configuredUpstream(result: McpConfigReadResult, serverName: string): McpServerConfig {
   if (!result.ok) {
     if (result.reason === 'missing')
       throw new Error(`MCP configuration is missing at ${result.path}`)

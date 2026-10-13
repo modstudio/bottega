@@ -120,19 +120,6 @@ function mcpReaderTools(settings: JsonObject, project: string): string | null {
   return document(mcp.reader_tools, `project ${project} settings.mcp.reader_tools`)
 }
 
-/** Reconstruct the hosted MCP setting from its scalar and JSON columns. */
-export function hostedMcpSettings(
-  columns: Pick<HostedProjectColumns, 'mcpProbeTool' | 'mcpReaderTools'>,
-): JsonObject | undefined {
-  const readerTools =
-    columns.mcpReaderTools === null ? undefined : JSON.parse(columns.mcpReaderTools)
-  if (columns.mcpProbeTool === null && readerTools === undefined) return undefined
-  return {
-    ...(columns.mcpProbeTool === null ? {} : { probe_tool: columns.mcpProbeTool }),
-    ...(readerTools === undefined ? {} : { reader_tools: readerTools }),
-  }
-}
-
 function document(value: unknown, location: string): string | null {
   if (value === undefined || value === null) return null
   return JSON.stringify(object(value, location))
