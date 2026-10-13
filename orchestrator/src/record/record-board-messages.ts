@@ -200,16 +200,24 @@ async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoard
   return hostedBoardMessageView(loaded.row, loaded.tags, clock)
 }
 
-export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
+async function visibleProjectIds(tx: SQL, name: string): Promise<string[]> {
   const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
-  if (rows.length !== 1)
-    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-  return String(rows[0]!.id)
+  return (rows as Array<{ id: unknown }>).map((row) => String(row.id))
 }
 
-export async function resolvePostingProjectId(tx: SQL, name: string): Promise<string | null> {
-  const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
-  return rows.length === 1 ? String(rows[0]!.id) : null
+/** A project name stands for a project only when exactly one readable row carries it. */
+export function uniqueProjectId(ids: string[]): string | null {
+  return ids.length === 1 ? ids[0]! : null
+}
+
+export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
+  const id = uniqueProjectId(await visibleProjectIds(tx, name))
+  if (id === null) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+  return id
+}
+
+async function resolvePostingProjectId(tx: SQL, name: string): Promise<string | null> {
+  return uniqueProjectId(await visibleProjectIds(tx, name))
 }
 
 function sessionOrNull(value: string | null | undefined): string | null {

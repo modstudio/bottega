@@ -135,6 +135,16 @@ export function registerBoardPostingProjectProof(input: {
     const root = await json(sessionResponse)
     expect((root.origin as Record<string, unknown>).project).toBeNull()
     expect((root.origin as Record<string, unknown>).projectStored).toBe(false)
+    const resent = await input.post(input.tokenA(), {
+      ...notice(
+        rootId,
+        `session:${input.caseSession('ambiguous-recipient')}`,
+        input.caseSession('ambiguous-root'),
+      ),
+      project: AMBIGUOUS_PROJECT,
+    })
+    expect(resent.status).toBe(200)
+    expect((await json(resent)).id).toBe(rootId)
 
     const replyResponse = await fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
       method: 'POST',
