@@ -87,6 +87,19 @@ function projectMechanicalChecks(project: Project | null) {
   )
 }
 
+function lensPromptFor(
+  project: Project | null,
+  findings: boolean | undefined,
+  lensId: string | undefined,
+  supplied: string,
+): string {
+  return reviewLensPrompt({
+    lens: resolvedFindingsLens(findings, lensId, project?.name ?? null),
+    mechanicallyEnforced: projectMechanicalChecks(project),
+    supplied,
+  })
+}
+
 type DispatchOptions = {
   agent: string | undefined
   transport: TransportName
@@ -413,11 +426,7 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = reviewLensPrompt({
-    lens: resolvedFindingsLens(requested.findings, lens, dispatchProjectName),
-    mechanicallyEnforced: projectMechanicalChecks(dispatchProject),
-    supplied: await readPrompt(),
-  })
+  const prompt = lensPromptFor(dispatchProject, requested.findings, lens, await readPrompt())
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),
