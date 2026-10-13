@@ -32,7 +32,6 @@ import {
   type ResumeTreePlan,
   resumeTreePlan,
 } from './resume-tree.ts'
-import { packedResumePrompt } from './run.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -42,6 +41,7 @@ import {
 import { detach } from './run-dispatch.ts'
 import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
 
 export type RunControlPresentation = {

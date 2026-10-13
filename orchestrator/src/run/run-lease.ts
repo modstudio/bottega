@@ -19,6 +19,16 @@ export function acquireRunLease(runId: number): KernelLease {
   return acquireKernelLease(runLeasePath(runId))
 }
 
+/** Acquire a required coordinator lease while reporting launch failure to its caller. */
+export function requiredRunLease(runId: number, failed: (cause: unknown) => void): KernelLease {
+  try {
+    return acquireRunLease(runId)
+  } catch (cause) {
+    failed(cause)
+    throw cause
+  }
+}
+
 /** Observe a run lease without deleting or otherwise changing its file. */
 export function runLeaseState(runId: number): RunLeaseState {
   const path = runLeasePath(runId)

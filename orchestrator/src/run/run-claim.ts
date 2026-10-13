@@ -59,7 +59,10 @@ import {
   resolveReadOnlyBase,
   shouldAssertCallerAncestry,
 } from '../worktree/worktree-caller.ts'
-import { createIsolatedWorkerDirectory, prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
+import {
+  createIsolatedWorkerDirectory,
+  type prepareWorkerMcpConfig,
+} from '../worktree/worktree-mcp.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { type Changes, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -90,7 +93,11 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-import { prepareClaimedGrokMcpScope } from './run-worker-home.ts'
+import {
+  grokReaderServersForRun,
+  prepareClaimedGrokMcpScope,
+  prepareClaimedWorkerMcpConfig,
+} from './run-worker-home.ts'
 
 type ClaimOptions = {
   reserveId?: number
@@ -154,32 +161,21 @@ export type ClaimInput = {
   carriedQuestionIds: number[]
 }
 
-export type ClaimResult = {
-  promptPath: string
-  originalSchemaPath: string | undefined
-  textReplyContract: boolean
-  schemaPath: string | undefined
-  started: number
-  launchKey: string | null
-  runToken: string
-  claim: { id: number }
-  keepTree: KeepTreeExemption | undefined
-  scratchDir: string
-  worktree: Worktree | null
-  changes: Changes | null
-  isolatedCwd: string | null
-  removeIsolatedCwd: (() => void) | null
-  provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null
-  retargetDiagnostic: string | null
-  mcpSetupHeader: string | null
-  mcpTrustGranted: boolean
-  grokMcpEnvironment: Record<string, string>
-  sandboxRunDir: string
-  sandboxRunDirExisted: boolean
-  cwd: string
-  prompt: string
-  mcpConnection: McpConnection | null
-  usingMcp: boolean
+import type { ClaimResult } from './run-claim-types.ts'
+
+export type { ClaimResult } from './run-claim-types.ts'
+
+function claimedGrokReaderConfig(
+  agent: Agent,
+  writesRepository: boolean,
+  cwd: string,
+  project: NonNullable<ReturnType<typeof projectAt>>,
+) {
+  const treeConfig = readMcpConfig(cwd)
+  return {
+    treeConfig,
+    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
+  }
 }
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
@@ -927,40 +923,40 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       ensureProjectMainStack(project, 'mcp')
-      const config = prepareWorkerMcpConfig(
-        cwd,
-        project.path,
-        resume.workspaceSource === 'retained',
+      const grokScope = prepareClaimedGrokMcpScope(
+        {
+          agent: a,
+          runDir: sandboxRunDir,
+          runDirExisted: sandboxRunDirExisted,
+          cwd,
+          project,
+          config: prepareClaimedWorkerMcpConfig({
+            cwd,
+            checkout: project.path,
+            inherited: resume.workspaceSource === 'retained',
+            writesRepository: writesJob,
+          }),
+          ...claimedGrokReaderConfig(a, writesJob, cwd, project),
+        },
+        () =>
+          writeTransaction(() => {
+            recordSandboxDirectoryClaim(db(), {
+              rootRunId: sandboxRoot,
+              runId: claim.id,
+              projectId: runProjectId,
+              path: sandboxRunDir,
+              claimedAt: nowIso(),
+            })
+          }),
       )
-      mcpSetupHeader = config.header
-      provisionedMcpConfig = config
-      const server = project.settings.mcpServer ?? project.name
-      if (config.error) {
-        mcpConnection = { server, connected: false, error: config.error }
+      provisionedMcpConfig = grokScope.config
+      mcpSetupHeader = grokScope.header
+      const server = grokScope.server
+      if (grokScope.error) {
+        mcpConnection = { server, connected: false, error: grokScope.error }
       } else {
         const grokTrust = name === 'grok'
-        const grokScope = prepareClaimedGrokMcpScope(
-          {
-            agent: name,
-            runDir: sandboxRunDir,
-            runDirExisted: sandboxRunDirExisted,
-            names: Object.keys(readMcpConfig(cwd)),
-            allowed: project.settings.workerMcpServers,
-            header: mcpSetupHeader,
-          },
-          () =>
-            writeTransaction(() => {
-              recordSandboxDirectoryClaim(db(), {
-                rootRunId: sandboxRoot,
-                runId: claim.id,
-                projectId: runProjectId,
-                path: sandboxRunDir,
-                claimedAt: nowIso(),
-              })
-            }),
-        )
         grokMcpEnvironment = grokScope.environment
-        mcpSetupHeader = grokScope.header
         const recorded = db()
           .query('SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?')
           .get(claim.id) as {

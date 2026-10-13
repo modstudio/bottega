@@ -5,8 +5,9 @@
  */
 import { isAbsolute, join, resolve } from 'node:path'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
+import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
+import { mcpConfigForRun, projectReaderProxyServers } from './mcp-reader-scope.ts'
 
 /** Parent environment names Codex may forward into the orch-ask subprocess. */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
@@ -65,11 +66,6 @@ export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
 }
 
-function readerProxyServer(project: string, server: string, cwd: string): CodexMcpServer {
-  const [command, ...args] = bottegaEntryArgv('mcp-reader-proxy')
-  return { command, args: [...args, project, server, cwd] }
-}
-
 /** Select project MCP launch definitions that are safe to expose on argv. */
 export function codexProjectServers(
   config: Record<string, McpServerConfig>,
@@ -116,20 +112,11 @@ export function codexProjectServersForRun(
   cwd: string,
 ): ReturnType<typeof codexProjectServers> | null {
   if (agent !== 'codex' || transport !== 'cli' || mcp === false) return null
-  const config =
-    Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+  const config = mcpConfigForRun(treeConfig, project)
   const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
   if (mcp === 'writer') return scope
-  if (!project) return { servers: {}, withheld: [] }
-  const names = new Set([
-    ...Object.keys(scope.servers),
-    ...scope.withheld,
-    project.settings.mcpServer ?? project.name,
-  ])
   return {
-    servers: Object.fromEntries(
-      [...names].map((server) => [server, readerProxyServer(project.name, server, cwd)]),
-    ),
+    servers: projectReaderProxyServers(config, project, cwd),
     withheld: [],
   }
 }

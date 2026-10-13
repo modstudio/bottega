@@ -251,6 +251,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
     '../mcp/mcp-tool-list.ts',
+    './mcp-reader-scope.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
   ...recipeModules,

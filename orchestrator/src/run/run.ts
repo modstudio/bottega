@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { basename } from 'node:path'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { minimumCliVersionRefusal } from '../agent/agents.ts'
+import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
@@ -15,7 +15,6 @@ import {
 import {
   type CanonSource,
   NO_REPO_PREAMBLE,
-  packResumePrompt,
   READONLY_PREAMBLE,
   type realQuestions,
   replyFileBytes,
@@ -108,7 +107,7 @@ import {
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
-import { acquireRunLease } from './run-lease.ts'
+import { type acquireRunLease, requiredRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -122,30 +121,54 @@ import {
 } from './run-pack-prompt.ts'
 import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
+import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
+import { packedResumePrompt } from './run-resume-prompt.ts'
 import { finishRun } from './run-terminal.ts'
 import type { RunResult } from './run-types.ts'
-import { prepareWorkerHomeLaunch, trackedWorkerEnvironment } from './run-worker-home.ts'
+import * as workerHome from './run-worker-home.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
+
+function workerMcpLaunchScope(input: {
+  agent: Agent
+  transport: string
+  usingMcp: boolean
+  writesJob: boolean
+  callerCwd: string
+  cwd: string
+  connection: { server: string } | null
+}) {
+  const config = readMcpConfig(input.cwd)
+  const project = projectAt(input.callerCwd)
+  return {
+    config,
+    codex: codexProjectServersForRun(
+      input.agent.name,
+      input.transport,
+      codexMcpMode(input.usingMcp, input.writesJob),
+      config,
+      project,
+      input.cwd,
+    ),
+    grok: workerHome.grokReaderServersForRun(
+      input.agent,
+      input.usingMcp,
+      input.writesJob,
+      config,
+      project,
+      input.cwd,
+    ),
+    serverName: workerHome.projectMcpServerName(input.connection, project),
+    allowlist: mcpConfigAllowlist(config),
+  }
+}
 
 async function startedByForRun(reserveId: number | undefined): Promise<string | null> {
   if (reserveId !== undefined) return null
   return signedInRecordUserId()
-}
-
-function requiredRunLease(
-  runId: number,
-  failed: (cause: unknown) => void,
-): ReturnType<typeof acquireRunLease> {
-  try {
-    return acquireRunLease(runId)
-  } catch (cause) {
-    failed(cause)
-    throw cause
-  }
 }
 
 function codexMcpMode(usingMcp: boolean, writesJob: boolean): false | 'reader' | 'writer' {
@@ -159,64 +182,6 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES =
       Buffer.byteLength(canonSourceInstruction(source)),
     ),
   ) + 2
-
-/**
- * Which project a directory belongs to, ASKED rather than inferred.
- *
- * This was `/Users/<someone>/Projects/<name>`, which is a fact about one
- * laptop written into the router. It worked, and it is also the single line
- * that made this tool unadoptable: nobody else's machine looks like that, and
- * the failure would be silent — an unrecognized layout yields `null`, which
- * reads as "no project" rather than as "this tool has never been told where
- * anything is".
- *
- * The register answers it now, by containment, so a worktree under
- * `<repo>/.claude/worktrees/orch-123` resolves to its project with no special
- * case at all — which the regex never did.
- */
-export function repoOf(cwd: string): string | null {
-  return projectAt(cwd)?.name ?? null
-}
-
-function readOnlyBaseProjectPath(repo: string | undefined, callerCwd: string): string | null {
-  return ((repo ? projectByName(repo) : null) ?? projectAt(callerCwd))?.path ?? null
-}
-
-/**
- * A pack is written before its disposable worktree exists, so callers naturally
- * name the checkout they are standing in. That path is an address, not review
- * content: once the tree has been copied, every occurrence must point at the
- * copy or an agent following the pack escapes the isolation boundary.
- */
-/** Present reply.json is accepted by the same lenient parsers as a missing-file fallback. */
-/**
- * The prompt a resumed turn actually puts on argv — reminder, separators,
- * resume guard, and the turn body — so the bound can be checked against the
- * same bytes the agent will receive.
- */
-export function packedResumePrompt(job: string, turnPrompt: string, parentId: number): string {
-  const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(parentId) as {
-    prompt_path: string | null
-  } | null
-  // A root whose prompt has aged out of runs/ (30 days) is still
-  // resumable: the reminder is a courtesy to the worker, not a
-  // precondition, and refusing here would strand the chain.
-  if (!root?.prompt_path || !existsSync(root.prompt_path)) {
-    return packResumePrompt(job, turnPrompt, null)
-  }
-  return packResumePrompt(job, turnPrompt, readFileSync(root.prompt_path, 'utf8'))
-}
-
-function codexPrivateTempEnvironment(
-  harness: string,
-  repoJob: boolean,
-  scratchDir: string,
-): Record<string, string> {
-  if (harness !== 'codex' || repoJob) return {}
-  const privateTemp = join(scratchDir, 'tmp')
-  mkdirSync(privateTemp, { recursive: true, mode: 0o700 })
-  return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
-}
 
 export async function run(opts: {
   job: string
@@ -749,27 +714,25 @@ export async function run(opts: {
   ]
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
-    ...trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
+    ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
+    ...workerHome.codexPrivateTempEnvironment(harnessName, repoJob, scratchDir),
   }
   if (gitConfigEnvironment) {
     assertWorkerGitGuardOutsideWritableRoots(gitConfigEnvironment, writableRoots)
   }
-  const mcpConfig = readMcpConfig(cwd)
-  const codexMcpScope = codexProjectServersForRun(
-    name,
-    transportName,
-    codexMcpMode(usingMcp, writesJob),
-    mcpConfig,
-    projectAt(callerCwd),
+  const mcpLaunch = workerMcpLaunchScope({
+    agent: a,
+    transport: transportName,
+    usingMcp,
+    writesJob,
+    callerCwd,
     cwd,
-  )
-  const mcpServerName =
-    mcpConnection?.server ??
-    projectAt(callerCwd)?.settings.mcpServer ??
-    projectAt(callerCwd)?.name ??
-    null
-  const mcpAllowlist = mcpConfigAllowlist(mcpConfig)
+    connection: mcpConnection,
+  })
+  const codexMcpScope = mcpLaunch.codex
+  const grokReaderServers = mcpLaunch.grok
+  const mcpServerName = mcpLaunch.serverName
+  const mcpAllowlist = mcpLaunch.allowlist
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
@@ -790,9 +753,8 @@ export async function run(opts: {
       mcp: Boolean(mcpMode),
       mcpAllowlist: mcpMode ? mcpAllowlist : [],
     })
-    const home = await prepareWorkerHomeLaunch({
+    const home = await workerHome.prepareWorkerHomeLaunch({
       agent: a,
-      harness: harnessName,
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
       runId: claim.id,
@@ -801,6 +763,7 @@ export async function run(opts: {
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
+      grokReaderServers,
     })
     ;({
       codexMcpCatalogues,
@@ -851,7 +814,7 @@ export async function run(opts: {
   }
 
   if (mcpMode && mcpServerName) {
-    const probeConfig = mcpConfig[mcpServerName]
+    const probeConfig = mcpLaunch.config[mcpServerName]
     if (probeConfig?.url || probeConfig?.command) {
       try {
         const projectSettings = projectAt(callerCwd)?.settings as

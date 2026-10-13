@@ -15,12 +15,12 @@ import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from '../mcp/mcp-
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { repoOf } from './run.ts'
 import { runAlive } from './run-alive.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
+import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 
 /**
