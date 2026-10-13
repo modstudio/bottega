@@ -9,6 +9,7 @@ import { projectAt, projects } from '../project/projects.ts'
 import { claimIsLive } from './board-claim-policy.ts'
 import { boardContext, boardRunContext } from './board-context.ts'
 import {
+  type Audience,
   acknowledgementRefusal,
   architectIdentity,
   BOARD_DUPLICATE_WINDOW_MS,
