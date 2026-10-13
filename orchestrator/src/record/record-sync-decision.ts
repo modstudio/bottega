@@ -55,4 +55,12 @@ export function recordSyncMachineOwnershipDecision(
   }
 }
 
+/**
+ * Row policies hide another space's rows, so a reference that is absent and one
+ * that belongs to someone else look the same to the service.
+ */
+export function recordSyncReferenceRefusal(reference: { kind: string; id: string }): string {
+  return `${reference.kind} ${reference.id} is absent from this space or belongs to another machine or user; sync the record it refers to from this machine first, then retry \`orch sync\``
+}
+
 export class RecordSyncRequestRefusal extends Error {}

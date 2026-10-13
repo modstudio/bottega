@@ -41,6 +41,7 @@ import {
   RecordSyncRequestRefusal,
   recordSyncAuthorizationDecision,
   recordSyncMachineOwnershipDecision,
+  recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { pushScore } from './score-sync.ts'
@@ -266,13 +267,7 @@ async function assertEvidenceReferencesOwned(input: {
          /* owned_reference */`,
         [reference.id, input.principal.spaceId, input.machineId, input.principal.userId],
       )
-      if (rows.length === 0) {
-        // Row policies hide another space's rows, so absent and foreign look alike here.
-        throw new OutboxRowError(
-          `${reference.kind} ${reference.id} is absent from this space or belongs to another machine or user; sync the record it refers to from this machine first, then retry \`orch sync\``,
-          'row-validation',
-        )
-      }
+      if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')
     }
   })
 }
