@@ -3,6 +3,7 @@
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { planCanonImport } from '../canon/canon-import-policy.ts'
@@ -26,6 +27,7 @@ import {
   type HostedArticleResponse,
   hostedArticleProjectId,
   hostedArticleResponse,
+  hostedDocList,
   importedArticleSubjectNames,
   replaceHostedRelatedSubjects,
   resolveHostedArticleFields,
@@ -39,6 +41,7 @@ import {
   recordDocumentLifecycle,
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
+
 import {
   importedLiveArticleFields,
   newerHostedImportRefusal,
@@ -52,6 +55,15 @@ import {
   recordCanonTreeWriteRefusal,
   recordTreeWriteRefusal,
 } from './record-doc-tree.ts'
+
+function writableHostedDocList(value: unknown, document: string, column: string): unknown[] {
+  try {
+    return hostedDocList(value, { document, column })
+  } catch (error) {
+    if (error instanceof Error) throw new RecordDocError(error.message)
+    throw error
+  }
+}
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
@@ -247,7 +259,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
-            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -258,7 +270,7 @@ export async function upsertRecordDoc(
           id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${JSON.stringify(sourceFiles)}::jsonb, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${bindJsonb(tx, sourceFiles)}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -603,7 +615,9 @@ export async function deleteRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
+      sourceFiles: writableHostedDocList(doc.source_files, input.id, 'doc.source_files').map(
+        String,
+      ),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -668,7 +682,9 @@ export async function consumeRecordDoc(
       form: doc.form == null ? null : (String(doc.form) as DocForm),
       articleSubjectId: doc.article_subject_id == null ? null : String(doc.article_subject_id),
       relatedSubjectIds,
-      sourceFiles: Array.isArray(doc.source_files) ? doc.source_files.map(String) : [],
+      sourceFiles: writableHostedDocList(doc.source_files, input.id, 'doc.source_files').map(
+        String,
+      ),
       replacementSlug: doc.replacement_slug == null ? null : String(doc.replacement_slug),
       author: input.author,
       reason: input.reason,
@@ -780,7 +796,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${JSON.stringify(sourceFiles)}::jsonb, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid

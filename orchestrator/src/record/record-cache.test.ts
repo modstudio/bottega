@@ -72,6 +72,77 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
 }
 
 describe('record cache pull', () => {
+  test('unwraps a source-file string while applying a hosted document', async () => {
+    const recordId = newRecordId()
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => ({
+          items: [
+            {
+              id: recordId,
+              scope: 'global',
+              subject: null,
+              owner: null,
+              slug: 'string-list',
+              title: 'String list',
+              body: 'Body',
+              delivery: 'demand',
+              audiences: ['technical'],
+              parentId: null,
+              position: 0,
+              relatedSubjects: [],
+              sourceFiles: '["src/article.ts"]',
+              createdAt: '2026-10-13T12:00:00.000Z',
+              updatedAt: '2026-10-13T12:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          nextCursor: null,
+        }),
+      }),
+    )
+    await pullRecordCache(db())
+    expect(
+      db()
+        .query<{ source_files: string }, [string]>('SELECT source_files FROM doc WHERE record_id=?')
+        .get(recordId)?.source_files,
+    ).toBe('["src/article.ts"]')
+  })
+
+  test('refuses a wrong source-file shape while applying a hosted document', async () => {
+    const recordId = newRecordId()
+    installRecordApiClient(
+      clientWith({
+        listDocs: async () => ({
+          items: [
+            {
+              id: recordId,
+              scope: 'global',
+              subject: null,
+              owner: null,
+              slug: 'wrong-list',
+              title: 'Wrong list',
+              body: 'Body',
+              delivery: 'demand',
+              audiences: ['technical'],
+              parentId: null,
+              position: 0,
+              relatedSubjects: [],
+              sourceFiles: { file: 'src/article.ts' },
+              createdAt: '2026-10-13T12:00:00.000Z',
+              updatedAt: '2026-10-13T12:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          nextCursor: null,
+        }),
+      }),
+    )
+    await expect(pullRecordCache(db())).rejects.toThrow(
+      new RegExp(`${recordId}.*doc\\.source_files`),
+    )
+  })
+
   test('routes a subject write to the project destination instead of the active space', async () => {
     upsertProject({ name: 'alpha', path: '/w/alpha', settings: { space: 'alpha' } })
     let destination: string | undefined

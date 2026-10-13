@@ -2,6 +2,7 @@
 /** Persists retryable email intents and outcomes and renders operator-waiting mail. */
 
 import type { SQL } from 'bun'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { withHostedTenant } from './hosted-tasks.ts'
 import type {
@@ -155,7 +156,7 @@ async function claimOperatorWaitingEmail(
          recommendation,why,waiting_since,link,status,reason,attempts,created_at,updated_at,sent_at)
       SELECT ${id}::uuid,${caller.spaceId}::uuid,${caller.userId}::uuid,${input.kind},
         ${input.item_id},${input.episode},${input.project},${input.task_key},${input.question},
-        ${JSON.stringify(input.options)}::jsonb,${input.recommendation},${input.why},
+        ${bindJsonb(tx, input.options)},${input.recommendation},${input.why},
         ${input.waiting_since}::timestamptz,${input.link},'intent',NULL,1,
         ${now.toISOString()}::timestamptz,${now.toISOString()}::timestamptz,NULL
       FROM "user" WHERE id=${caller.userId}::uuid RETURNING id,user_id,status,reason

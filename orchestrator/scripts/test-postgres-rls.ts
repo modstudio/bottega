@@ -241,31 +241,47 @@ try {
       })
       if (remigrate !== 0) process.exitCode = remigrate
       else {
-        const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
-          ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-          ORCH_RECORD_URL: actorUrl,
-          RECORD_AUTH_DATABASE_URL: authUrl,
-        })
-        if (evidence !== 0) process.exitCode = evidence
-        else
-          process.exitCode = await run(
-            [
-              'bun',
-              'test',
-              '--timeout',
-              String(LIVE_COPY_PHASE_TIMEOUT_MS),
-              'src/postgres/postgres-import.test.ts',
-            ],
-            {
-              ORCH_TEST_POSTGRES_CONTAINER: container,
-              ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
-              ORCH_RECORD_MIGRATE_URL: ownerUrl,
-              ORCH_RECORD_URL: actorUrl,
-              RECORD_AUTH_DATABASE_URL: authUrl,
-              ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
-              ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
-            },
-          )
+        const jsonbBinding = await run(
+          [
+            'bun',
+            'test',
+            '--timeout',
+            '30000',
+            'src/postgres/postgres-migrate-jsonb-binding.test.ts',
+          ],
+          {
+            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            ORCH_RECORD_URL: actorUrl,
+          },
+        )
+        if (jsonbBinding !== 0) process.exitCode = jsonbBinding
+        else {
+          const evidence = await run(['bun', 'run', '--cwd', '../hub', 'test:postgres'], {
+            ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            ORCH_RECORD_URL: actorUrl,
+            RECORD_AUTH_DATABASE_URL: authUrl,
+          })
+          if (evidence !== 0) process.exitCode = evidence
+          else
+            process.exitCode = await run(
+              [
+                'bun',
+                'test',
+                '--timeout',
+                String(LIVE_COPY_PHASE_TIMEOUT_MS),
+                'src/postgres/postgres-import.test.ts',
+              ],
+              {
+                ORCH_TEST_POSTGRES_CONTAINER: container,
+                ORCH_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+                ORCH_RECORD_MIGRATE_URL: ownerUrl,
+                ORCH_RECORD_URL: actorUrl,
+                RECORD_AUTH_DATABASE_URL: authUrl,
+                ORCH_TEST_SOURCE_ORCH_DB: sourceOrchDb,
+                ORCH_TEST_SOURCE_HUB_DB: sourceHubDb,
+              },
+            )
+        }
       }
     }
   }

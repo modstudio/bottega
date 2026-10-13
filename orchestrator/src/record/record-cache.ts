@@ -17,6 +17,7 @@ import {
   parseStoredRecordCursor,
   type RecordCursor,
 } from './record-cursor.ts'
+import { recordDocList } from './record-doc-list-shape.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
@@ -328,10 +329,24 @@ function pulledDocArticleFields(local: Database, item: Record<string, unknown>, 
       ? (item.articleSubject as Record<string, unknown>)
       : null
   const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
-  const relatedSubjectIds = Array.isArray(item.relatedSubjects)
-    ? item.relatedSubjects.map((value) => String((value as Record<string, unknown>).id))
-    : []
-  const sourceFiles = Array.isArray(item.sourceFiles) ? item.sourceFiles.map(String) : []
+  const relatedSubjects = recordDocList(item.relatedSubjects, {
+    document: recordId,
+    column: 'doc.related_subjects',
+    optional: true,
+  })
+  if (relatedSubjects.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${recordId} doc.related_subjects`)
+  const relatedSubjectIds = relatedSubjects.values.map((value) =>
+    String((value as Record<string, unknown>).id),
+  )
+  const decodedSourceFiles = recordDocList(item.sourceFiles, {
+    document: recordId,
+    column: 'doc.source_files',
+    optional: true,
+  })
+  if (decodedSourceFiles.unwrapped)
+    console.warn(`unwrapped hosted document JSON string list: ${recordId} doc.source_files`)
+  const sourceFiles = decodedSourceFiles.values.map(String)
   for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
     Boolean(value),
   )) {

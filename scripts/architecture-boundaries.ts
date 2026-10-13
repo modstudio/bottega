@@ -773,6 +773,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-client.ts',
       './record-auth.ts',
       './record-cache-ownership.ts',
+      './record-doc-list-shape.ts',
       './record-cursor.ts',
       './record-project-destination.ts',
       './record-session.ts',
