@@ -165,6 +165,19 @@ import type { ClaimResult } from './run-claim-types.ts'
 
 export type { ClaimResult } from './run-claim-types.ts'
 
+function claimedGrokReaderConfig(
+  agent: Agent,
+  writesRepository: boolean,
+  cwd: string,
+  project: NonNullable<ReturnType<typeof projectAt>>,
+) {
+  const treeConfig = readMcpConfig(cwd)
+  return {
+    treeConfig,
+    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
+  }
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -910,7 +923,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       ensureProjectMainStack(project, 'mcp')
-      const treeConfig = readMcpConfig(cwd)
       const grokScope = prepareClaimedGrokMcpScope(
         {
           agent: a,
@@ -924,8 +936,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             inherited: resume.workspaceSource === 'retained',
             writesRepository: writesJob,
           }),
-          treeConfig,
-          readerServers: grokReaderServersForRun(a, true, writesJob, treeConfig, project, cwd),
+          ...claimedGrokReaderConfig(a, writesJob, cwd, project),
         },
         () =>
           writeTransaction(() => {

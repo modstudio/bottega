@@ -36,7 +36,7 @@ export function codexPrivateTempEnvironment(
   return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
 }
 
-export function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
+function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
   return harness === 'grok' && usingMcp
 }
 
@@ -134,7 +134,7 @@ export async function prepareWorkerHomeLaunch(input: {
 }
 
 /** Apply the one run-home rewrite and launch-environment change for a Grok reader. */
-export function applyGrokReaderMcpScope(
+function applyGrokReaderMcpScope(
   harness: string,
   runDir: string,
   sandbox: RunSandbox,
