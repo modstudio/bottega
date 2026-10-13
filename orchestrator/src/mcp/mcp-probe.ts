@@ -104,7 +104,9 @@ export function probeSecrets(config: McpServerConfig | undefined): string[] {
     value.split(/\s+/).filter((token) => token.length >= 8),
   )
   const env = Object.values(config?.env ?? {}).filter((value) => value.length >= 8)
-  return [...headers.filter(Boolean), ...headerTokens, ...env]
+  // A launch argument can carry a credential as readily as an environment value.
+  const args = (config?.args ?? []).filter((value) => value.length >= 8)
+  return [...headers.filter(Boolean), ...headerTokens, ...env, ...args]
 }
 
 export function namesSeenAt(cwd: string): string[] {

@@ -110,21 +110,25 @@ test('command sanitizes a configured credential from an upstream startup failure
           tracker: {
             name: 'tracker',
             command: '/missing/server',
+            args: ['--token', 'argument-credential-456'],
             env: { TRACKER_TOKEN: 'credential-value-123' },
           },
         },
       }),
       connectMcpToolClient: async () => {
-        throw new Error('upstream rejected credential-value-123 during authentication')
+        throw new Error(
+          'upstream rejected credential-value-123 after spawn --token argument-credential-456',
+        )
       },
       environment: { ORCH_RUN_TOKEN: 'run-token-secret', PATH: '/bin' },
       error: (line) => errors.push(line),
       setExitCode: (code) => exitCodes.push(code),
     })
     expect(errors).toEqual([
-      'MCP reader proxy for tracker could not start: upstream rejected [redacted] during authentication',
+      'MCP reader proxy for tracker could not start: upstream rejected [redacted] after spawn --token [redacted]',
     ])
     expect(errors.join('\n')).not.toContain('credential-value-123')
+    expect(errors.join('\n')).not.toContain('argument-credential-456')
     expect(exitCodes).toEqual([1])
   } finally {
     rmSync(root, { recursive: true, force: true })
