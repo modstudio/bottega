@@ -22,6 +22,8 @@ export function registerBoardStreamProof(input: {
   visibleSpaceId: () => string
   invisibleSpaceId: () => string
   writerSpaceIds: () => string[]
+  streamUserHomeSpaceId: () => string
+  postVisibleNotice(): Promise<string>
   admin(statement: string): string
 }): void {
   test('board notification waits for commit and the production stream follows current membership', async () => {
@@ -31,15 +33,16 @@ export function registerBoardStreamProof(input: {
        VALUES ('${membershipId}','${input.visibleSpaceId()}','${input.streamUserId()}',
          'member','write',now());`,
     )
-    const selected = await fetch(`${input.origin()}/v1/active-space`, {
-      method: 'PUT',
-      headers: {
-        authorization: `Bearer ${input.streamToken()}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ spaceId: input.visibleSpaceId() }),
-    })
-    expect(selected.status).toBe(200)
+    const select = (spaceId: string) =>
+      fetch(`${input.origin()}/v1/active-space`, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${input.streamToken()}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ spaceId }),
+      })
+    expect((await select(input.visibleSpaceId())).status).toBe(200)
 
     const stream = await fetch(`${input.origin()}/v1/board/stream`, {
       headers: { authorization: `Bearer ${input.streamToken()}` },
@@ -78,23 +81,6 @@ export function registerBoardStreamProof(input: {
     const subscription = await listener.listen(BOARD_MESSAGE_NOTIFY_CHANNEL, () => {
       notifications++
     })
-    const insert = (spaceId: string, title: string) =>
-      writer.begin(async (tx) => {
-        await bindTenant(tx, {
-          userId: input.writerUserId(),
-          spaceId,
-          spaceIds: input.writerSpaceIds(),
-        })
-        const rows = await tx`
-          INSERT INTO board_message
-            (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
-          VALUES
-            (${newRecordId()}::uuid, ${input.writerUserId()}::uuid, 'notice', 'operator', ${title},
-             'proof', false, now() + interval '1 day', now())
-          RETURNING revision
-        `
-        return String(rows[0]!.revision)
-      })
     try {
       let invisibleRevision = ''
       await writer.begin(async (tx) => {
@@ -119,12 +105,12 @@ export function registerBoardStreamProof(input: {
       await Bun.sleep(300)
       expect(revisions).not.toContain(invisibleRevision)
 
-      const visibleRevision = await insert(input.visibleSpaceId(), 'visible stream proof')
+      const visibleRevision = await input.postVisibleNotice()
       expect(await waitFor(() => revisions.includes(visibleRevision))).toBe(true)
       expect(BigInt(visibleRevision)).toBeGreaterThan(BigInt(initialRevision))
 
       input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
-      const revokedRevision = await insert(input.visibleSpaceId(), 'revoked stream proof')
+      const revokedRevision = await input.postVisibleNotice()
       expect(await waitFor(() => ended)).toBe(true)
       expect(revisions).not.toContain(revokedRevision)
     } finally {
@@ -134,6 +120,7 @@ export function registerBoardStreamProof(input: {
       await listener.close()
       await writer.close()
       input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
+      await select(input.streamUserHomeSpaceId())
     }
   })
 }

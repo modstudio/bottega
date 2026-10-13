@@ -59,6 +59,7 @@ export function registerBoardApiProofs(input: {
   let userC = ''
   let userD = ''
   let spaceA = ''
+  let spaceC = ''
   let spaceB = ''
 
   beforeAll(async () => {
@@ -112,6 +113,7 @@ export function registerBoardApiProofs(input: {
     userD = signedD.user.id
     spaceA = a.spaceId
     spaceB = b.spaceId
+    spaceC = c.spaceId
     input.succeeds(
       'postgres',
       'postgres',
@@ -143,18 +145,6 @@ export function registerBoardApiProofs(input: {
   const cacheStore = (session: string) => postgresBoardCacheStore(session, PROJECT)
 
   const cacheClient = (token: string): RecordApiClient => postgresBoardCacheClient(origin, token)
-
-  registerBoardStreamProof({
-    actorUrl: input.actorUrl,
-    origin: () => origin,
-    streamToken: () => tokenC,
-    streamUserId: () => userC,
-    writerUserId: () => userA,
-    visibleSpaceId: () => spaceA,
-    invisibleSpaceId: () => spaceB,
-    writerSpaceIds: () => [spaceA, spaceB],
-    admin: (statement) => input.succeeds('postgres', 'postgres', statement),
-  })
 
   registerBoardAdoptionProof({
     origin: () => origin,
@@ -1034,5 +1024,26 @@ export function registerBoardApiProofs(input: {
       }),
     })
     expect(taken.status).toBe(200)
+  })
+
+  registerBoardStreamProof({
+    actorUrl: input.actorUrl,
+    origin: () => origin,
+    streamToken: () => tokenC,
+    streamUserId: () => userC,
+    writerUserId: () => userA,
+    visibleSpaceId: () => spaceA,
+    invisibleSpaceId: () => spaceB,
+    writerSpaceIds: () => [spaceA, spaceB],
+    streamUserHomeSpaceId: () => spaceC,
+    postVisibleNotice: async () => {
+      const response = await post(
+        tokenA,
+        notice(newRecordId(), `project:${PROJECT}`, caseSession('stream')),
+      )
+      expect(response.status).toBe(200)
+      return String(((await response.json()) as { revision: string }).revision)
+    },
+    admin: (statement) => input.succeeds('postgres', 'postgres', statement),
   })
 }
