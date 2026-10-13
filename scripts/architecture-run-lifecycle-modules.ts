@@ -181,6 +181,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../recipe/tracked-recipe.ts',
     '../sandbox/codex-mcp-preflight.ts',
     '../sandbox/codex-mcp-scope.ts',
+    '../sandbox/grok-reader-mcp-home.ts',
     '../sandbox/mcp-reader-scope.ts',
     '../sandbox/sandbox.ts',
     '../worktree/worktree-mcp.ts',

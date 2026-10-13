@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { grokAskCommandFromConfig, grokAskServerCommand } from './sandbox.ts'
 import { scopeGrokReaderMcpHome } from './grok-reader-mcp-home.ts'
+import { grokAskCommandFromConfig, grokAskServerCommand } from './sandbox.ts'
 
 test('Grok reader home replaces project routes with credential-free proxies', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-grok-reader-home-'))

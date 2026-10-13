@@ -26,7 +26,9 @@ export function projectReaderProxyServers(
     ...Object.keys(config).filter((name) => !disabled.has(name)),
     project.settings.mcpServer ?? project.name,
   ])
-  const [command, ...baseArgs] = bottegaEntryArgv('mcp-reader-proxy')
+  const argv = bottegaEntryArgv('mcp-reader-proxy')
+  const command = argv[0]!
+  const baseArgs = argv.slice(1)
   return Object.fromEntries(
     [...names].map((server) => [
       server,
@@ -38,6 +40,7 @@ export function projectReaderProxyServers(
 /** Resolve ignored checkout configuration before selecting a reading run's proxy servers. */
 export function projectReaderProxyServersForRun(
   enabled: boolean,
+  writesRepository: boolean,
   treeConfig: Record<string, McpServerConfig>,
   project: {
     name: string
@@ -46,7 +49,7 @@ export function projectReaderProxyServersForRun(
   } | null,
   cwd: string,
 ): Record<string, ReaderProxyServer> | null {
-  if (!enabled) return null
+  if (!enabled || writesRepository) return null
   const config =
     Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
   return projectReaderProxyServers(config, project, cwd)

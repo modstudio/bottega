@@ -76,6 +76,13 @@ export const mcpModules: McpModule[] = [
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
   ]),
+  module('orchestrator/src/sandbox/grok-reader-mcp-home.ts', [
+    'node:fs',
+    'node:path',
+    '@decimalturn/toml-patch',
+    './mcp-reader-scope.ts',
+    './sandbox.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [

@@ -5,12 +5,12 @@ import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
+import { scopeGrokReaderMcpHome } from '../sandbox/grok-reader-mcp-home.ts'
 import {
   projectReaderProxyServers,
   projectReaderProxyServersForRun,
 } from '../sandbox/mcp-reader-scope.ts'
 import {
-  prepareGrokMcpHome,
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
   type RunSandbox,
@@ -47,7 +47,6 @@ export function trackedWorkerEnvironment(
 
 export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
-  harness: string
   sandbox: RunSandbox
   runDir: string
   runId: number
@@ -56,16 +55,22 @@ export async function prepareWorkerHomeLaunch(input: {
   grokEnvironment: Record<string, string>
   includeStore: boolean
   codexMcpScope: CodexMcpScope | null
-  grokReaderScope: readonly [boolean, Record<string, McpServerConfig>, Project | null, string]
+  grokReaderScope: readonly [
+    boolean,
+    boolean,
+    Record<string, McpServerConfig>,
+    Project | null,
+    string,
+  ]
 }) {
-  const hasRunScopedHome =
-    input.harness === 'codex' || input.harness === 'grok' || input.sandbox === 'srt'
+  const harness = input.agent.harness ?? input.agent.name
+  const hasRunScopedHome = harness === 'codex' || harness === 'grok' || input.sandbox === 'srt'
   const home = hasRunScopedHome
-    ? prepareSandboxHome(input.harness, input.runDir, process.env, input.sandbox)
+    ? prepareSandboxHome(harness, input.runDir, process.env, input.sandbox)
     : {}
   const grokReaderServers = projectReaderProxyServersForRun(...input.grokReaderScope)
-  if (input.harness === 'grok' && grokReaderServers) {
-    prepareGrokMcpHome(input.runDir, [], input.runDir, input.sandbox, grokReaderServers)
+  if (harness === 'grok' && grokReaderServers) {
+    scopeGrokReaderMcpHome(input.runDir, input.sandbox, grokReaderServers)
   }
   const environment = childEnv(
     input.agent,
@@ -118,8 +123,10 @@ export function prepareClaimedGrokMcpScope(
       input.project.settings.workerMcpServers,
       config?.header ?? null,
       'host',
-      readerServers,
     )
+    if (input.agent === 'grok' && readerServers) {
+      scopeGrokReaderMcpHome(input.runDir, 'host', readerServers)
+    }
     if (input.agent === 'grok') recordClaim()
     return {
       ...scope,

@@ -792,7 +792,6 @@ export async function run(opts: {
     })
     const home = await prepareWorkerHomeLaunch({
       agent: a,
-      harness: harnessName,
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
       runId: claim.id,
@@ -801,7 +800,7 @@ export async function run(opts: {
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
-      grokReaderScope: [usingMcp && !writesJob, mcpConfig, projectAt(callerCwd), cwd],
+      grokReaderScope: [usingMcp, writesJob, mcpConfig, projectAt(callerCwd), cwd],
     })
     ;({
       codexMcpCatalogues,
