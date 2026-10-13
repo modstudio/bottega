@@ -37,9 +37,7 @@ export function grokReaderMcpInspectionError(
   const layers = report.configSources?.layers
   if (!layers) return 'Grok reader MCP inspection did not report config source layers'
   if (layers.length === 0) return 'Grok reader MCP inspection reported no config source layers'
-  const unexpectedLayer = layers.find(
-    (layer, index) => index !== 0 || layer.path !== runConfigPath,
-  )
+  const unexpectedLayer = layers.find((layer, index) => index !== 0 || layer.path !== runConfigPath)
   if (unexpectedLayer) {
     return `Grok reader MCP inspection found config layer '${unexpectedLayer.role ?? '<unknown>'}' at ${JSON.stringify(unexpectedLayer.path ?? '<missing>')} instead of only the run home`
   }

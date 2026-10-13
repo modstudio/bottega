@@ -101,9 +101,7 @@ test('Grok reader inspection rejects missing proxies and platform servers', () =
     ),
   ).toBe("Grok reader MCP inspection did not find expected server 'project'")
   expect(
-    grokReaderMcpInspectionError({ configSources, mcpServers: [] }, proxy, runConfig, [
-      'orch-ask',
-    ]),
+    grokReaderMcpInspectionError({ configSources, mcpServers: [] }, proxy, runConfig, ['orch-ask']),
   ).toBe("Grok reader MCP inspection did not find expected server 'orch-ask'")
 })
 
