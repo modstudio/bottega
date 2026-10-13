@@ -34,7 +34,6 @@ export function biomeFindings(text: string): Finding[] {
       throw new Error('Biome diagnostic has no file, line, or rule')
     }
     if (typeof message !== 'string') throw new Error('Biome diagnostic has no message')
-    if (rule === 'lint/style/useNamingConvention' && message.includes('property name')) return []
     return [
       {
         file,

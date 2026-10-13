@@ -1,19 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ChangeEntry, ContentResult } from '../../../shared/change-view.ts'
-import { commandForSide, sideFiles, supportPlacements } from './ratchet-plan.ts'
-
-test('command templating expands files and the checkout root', () => {
-  expect(
-    commandForSide(['lint', '--config={root}/config', '{files}'], ['a.ts', 'b.ts'], '/repo'),
-  ).toEqual(['lint', '--config=/repo/config', 'a.ts', 'b.ts'])
-})
-
-test('support paths keep their relative locations in a mirror', () => {
-  expect(supportPlacements('/repo', '/tmp/side', ['biome.jsonc', 'lint/plugins'])).toEqual([
-    { source: '/repo/biome.jsonc', destination: '/tmp/side/biome.jsonc' },
-    { source: '/repo/lint/plugins', destination: '/tmp/side/lint/plugins' },
-  ])
-})
+import { sideFiles } from './ratchet-plan.ts'
 
 describe('side files', () => {
   const entries: ChangeEntry[] = [

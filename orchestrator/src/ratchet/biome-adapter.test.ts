@@ -23,19 +23,6 @@ describe('Biome finding adapter', () => {
     ])
   })
 
-  test('leaves property names unchecked', () => {
-    expect(
-      biomeFindings(
-        output([
-          diagnostic(
-            'lint/style/useNamingConvention',
-            'This object property name should be in camelCase.',
-          ),
-        ]),
-      ),
-    ).toEqual([])
-  })
-
   test('reads the function line measure', () => {
     expect(
       biomeFindings(

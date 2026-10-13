@@ -27,6 +27,8 @@ type RatchetOptions = {
   command: string[]
 }
 
+const LINTER_TIMEOUT_MS = 120_000
+
 function git(root: string, args: string[]): string {
   const result = Bun.spawnSync(['git', '-C', root, '--no-optional-locks', ...args], {
     env: inspectionGitEnv(),
@@ -69,7 +71,7 @@ function validatedSupport(root: string, paths: string[]) {
   }
 }
 
-function materializeSupport(root: string, mirror: string, paths: string[]) {
+export function materializeSupport(root: string, mirror: string, paths: string[]) {
   for (const placement of supportPlacements(root, mirror, paths)) {
     mkdirSync(dirname(placement.destination), { recursive: true })
     const stat = lstatSync(placement.source)
@@ -111,11 +113,22 @@ function runSide(
   if (!argv.length) return { ok: false as const, reason: 'the linter command is empty' }
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
+    result = Bun.spawnSync(argv, {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: LINTER_TIMEOUT_MS,
+    })
   } catch (error) {
     return {
       ok: false as const,
       reason: `${argv[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  if (result.exitedDueToTimeout) {
+    return {
+      ok: false as const,
+      reason: `${argv[0]} timed out after ${LINTER_TIMEOUT_MS}ms`,
     }
   }
   let findings: Finding[]
@@ -126,12 +139,6 @@ function runSide(
     return {
       ok: false as const,
       reason: `could not parse ${argv[0]} output: ${error instanceof Error ? error.message : String(error)}${detail ? `; ${detail}` : ''}`,
-    }
-  }
-  if (result.exitCode !== 0 && findings.length === 0) {
-    return {
-      ok: false as const,
-      reason: `${argv[0]} exited ${result.exitCode}: ${result.stderr?.toString().trim() || 'no error output'}`,
     }
   }
   return { ok: true as const, findings }

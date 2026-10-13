@@ -79,15 +79,15 @@
               { "selector": { "kind": "typeParameter" }, "formats": ["PascalCase"] },
               {
                 "selector": { "kind": "objectLiteralProperty" },
-                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+                "match": ".*"
               },
               {
                 "selector": { "kind": "classProperty" },
-                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+                "match": ".*"
               },
               {
                 "selector": { "kind": "typeProperty" },
-                "formats": ["camelCase", "PascalCase", "CONSTANT_CASE", "snake_case"]
+                "match": ".*"
               }
             ]
           }
