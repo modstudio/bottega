@@ -13,6 +13,7 @@ import {
   codexScopeArgs,
   codexWithheldTools,
 } from './codex-mcp-scope.ts'
+import { projectReaderProxyServers } from './mcp-reader-scope.ts'
 
 const page = (...names: string[]) => ({ tools: names.map((name) => ({ name })) })
 
@@ -143,6 +144,23 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
   }
   expect(entries.find((entry) => entry.startsWith('mcp_servers.orch-ask='))).toContain('ask-server')
   expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain('args=["mcp"]')
+})
+
+test('Codex readers use the shared project proxy server set', () => {
+  const config = {
+    allowed: { name: 'allowed', command: '/project/allowed' },
+    excluded: { name: 'excluded', command: '/project/excluded' },
+  }
+  const project = {
+    name: 'fixture',
+    path: '/project',
+    settings: { workerMcpServers: ['allowed'], mcpServer: 'primary' },
+  }
+  const shared = projectReaderProxyServers(config, project, '/run/tree')
+  const codex = codexProjectServersForRun('codex', 'cli', 'reader', config, project, '/run/tree')
+  expect(codex?.servers).toEqual(shared)
+  expect(Object.keys(shared)).toEqual(['allowed', 'primary'])
+  expect(projectReaderProxyServers(config, null, '/run/tree')).toEqual({})
 })
 
 test('reading job without a registered project receives no project servers', () => {

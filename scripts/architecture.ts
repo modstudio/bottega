@@ -251,6 +251,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
     '../mcp/mcp-tool-list.ts',
+    './mcp-reader-scope.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
   ...recipeModules,
@@ -571,6 +572,7 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
+    '@decimalturn/toml-patch',
     '../../../shared/embedded-assets.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
@@ -578,6 +580,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',
+    './mcp-reader-scope.ts',
     './sandbox-runtime.ts',
   ]),
   ...confinementModules,

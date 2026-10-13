@@ -20,6 +20,7 @@ import {
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { parse as parseToml, stringify as stringifyToml } from '@decimalturn/toml-patch'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -30,6 +31,7 @@ import {
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
+import type { ReaderProxyServer } from './mcp-reader-scope.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 
 export type SandboxRuntimeConfig = {
@@ -539,6 +541,24 @@ export function withoutRegisteredOrchAskServer(config: string): string {
   return kept.join('')
 }
 
+function withGrokReaderProxyServers(
+  config: string,
+  servers: Record<string, ReaderProxyServer>,
+): string {
+  const parsed = parseToml(config) as Record<string, unknown>
+  const userServers = parsed.mcp_servers as Record<string, unknown> | undefined
+  parsed.disabled_mcp_servers = []
+  parsed.mcp_servers = {
+    ...(userServers?.orch ? { orch: userServers.orch } : {}),
+    ...Object.fromEntries(
+      Object.entries(servers)
+        .filter(([name]) => name !== 'orch' && name !== 'orch-ask')
+        .map(([name, server]) => [name, { ...server, enabled: true }]),
+    ),
+  }
+  return stringifyToml(parsed)
+}
+
 /** Read the argv from the same Grok table that the run-home writer owns. */
 export function grokAskCommandFromConfig(config: string): string[] {
   const lines = config.split(/\r?\n/)
@@ -598,14 +618,21 @@ export function prepareProjectGrokMcpScope(
   allowed: string[] | undefined,
   header: string | null,
   sandbox: RunSandbox,
+  readerServers: Record<string, ReaderProxyServer> | null = null,
 ): { environment: Record<string, string>; header: string | null } {
   if (agent !== 'grok') return { environment: {}, header }
-  const disabled = disabledProjectMcpServers(names, allowed)
+  const disabled = readerServers ? [] : disabledProjectMcpServers(names, allowed)
   const line = disabled.length
     ? `MCP scope: withheld ${disabled.join(', ')} (not in workerMcpServers)`
     : null
   return {
-    environment: prepareGrokMcpHome(runDir, disabled, join(homedir(), '.grok'), sandbox),
+    environment: prepareGrokMcpHome(
+      runDir,
+      disabled,
+      join(homedir(), '.grok'),
+      sandbox,
+      readerServers,
+    ),
     header: header && line ? `${header}\n${line}` : (header ?? line),
   }
 }
@@ -616,6 +643,7 @@ export function prepareGrokMcpHome(
   disabled: string[],
   source: string,
   sandbox: RunSandbox,
+  readerServers: Record<string, ReaderProxyServer> | null = null,
 ): Record<string, string> {
   ensurePrivateDirectory(runDir)
   const authSource = join(source, 'auth.json')
@@ -627,14 +655,17 @@ export function prepareGrokMcpHome(
   if (!existsSync(configTarget)) {
     const configSource = join(source, 'config.toml')
     config = existsSync(configSource) ? readFileSync(configSource, 'utf8') : ''
-    const topLevel = config.split(/^\s*\[/m, 1)[0] ?? ''
-    if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
-      throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
+    if (!readerServers) {
+      const topLevel = config.split(/^\s*\[/m, 1)[0] ?? ''
+      if (/^\s*disabled_mcp_servers\s*=/m.test(topLevel)) {
+        throw new Error(`disabled_mcp_servers is already declared in ${configSource}`)
+      }
+      config = `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${config}`
     }
-    config = `disabled_mcp_servers = ${JSON.stringify(disabled)}\n\n${config}`
   } else {
     config = readFileSync(configTarget, 'utf8')
   }
+  if (readerServers) config = withGrokReaderProxyServers(config, readerServers)
   writeFileSync(configTarget, grokSandboxConfig(config, sandbox), {
     mode: 0o600,
   })

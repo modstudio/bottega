@@ -124,6 +124,56 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
   }
 })
 
+test('Grok reader home replaces project routes with credential-free proxies', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-grok-reader-home-'))
+  try {
+    const source = join(fixture, 'source')
+    const runDir = join(fixture, 'run')
+    mkdirSync(source)
+    writeFileSync(
+      join(source, 'config.toml'),
+      'disabled_mcp_servers = ["stale"]\n' +
+        '[mcp_servers.project]\ncommand = "direct"\nargs = ["credential"]\n' +
+        '[mcp_servers.alias]\ncommand = "same-project-under-another-name"\n' +
+        '[mcp_servers.orch]\ncommand = "orch"\n' +
+        '[mcp_servers.orch-ask]\ncommand = "stale-ask"\n',
+    )
+    const proxies = {
+      project: {
+        command: '/bin/orch',
+        args: ['mcp-reader-proxy', 'fixture', 'project', '/run/tree'],
+      },
+      secondary: {
+        command: '/bin/orch',
+        args: ['mcp-reader-proxy', 'fixture', 'secondary', '/run/tree'],
+      },
+    }
+    prepareGrokMcpHome(runDir, [], source, 'host', proxies)
+    const written = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(written.match(/^disabled_mcp_servers\s*=/gm)).toEqual(['disabled_mcp_servers ='])
+    expect(written).not.toContain('credential')
+    expect(written).not.toContain('same-project-under-another-name')
+    expect(written).toContain('project = { command = "/bin/orch"')
+    expect(written).toContain('secondary = { command = "/bin/orch"')
+    expect(written).toContain('args = [ "mcp-reader-proxy", "fixture", "project", "/run/tree" ]')
+    expect(written).toContain('orch = { command = "orch" }')
+    expect(grokAskCommandFromConfig(written)).toEqual(grokAskServerCommand('host'))
+
+    prepareGrokMcpHome(runDir, [], source, 'host', proxies)
+    const resumed = readFileSync(join(runDir, 'config.toml'), 'utf8')
+    expect(resumed.match(/^project\s*=/gm)).toHaveLength(1)
+
+    const emptyRun = join(fixture, 'empty-run')
+    prepareGrokMcpHome(emptyRun, [], source, 'host', {})
+    const empty = readFileSync(join(emptyRun, 'config.toml'), 'utf8')
+    expect(empty).not.toContain('project =')
+    expect(empty).not.toContain('alias =')
+    expect(empty).toContain('orch = { command = "orch" }')
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
 test('prepares one persistent Codex home per chain without operator canon or sessions', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-home-'))
   try {

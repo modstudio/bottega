@@ -72,6 +72,10 @@ export const mcpModules: McpModule[] = [
     './mcp-tool-list.ts',
   ]),
   module('orchestrator/src/mcp/mcp-reader-policy.ts', []),
+  module('orchestrator/src/sandbox/mcp-reader-scope.ts', [
+    '../../../shared/self-spawn.ts',
+    '../mcp/mcp-probe.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [

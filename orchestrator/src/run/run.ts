@@ -801,6 +801,7 @@ export async function run(opts: {
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
+      grokReaderScope: [usingMcp && !writesJob, mcpConfig, projectAt(callerCwd), cwd],
     })
     ;({
       codexMcpCatalogues,
