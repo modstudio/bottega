@@ -93,9 +93,7 @@ describe('reports mode failure policy', () => {
         }),
       ).toBe(false)
       expect(errors).toHaveLength(2)
-      expect(errors[0]).toStartWith(
-        `ratchet base report ${baseReport} failed: invalid PHPCS JSON:`,
-      )
+      expect(errors[0]).toStartWith(`ratchet base report ${baseReport} failed: invalid PHPCS JSON:`)
       expect(errors[1]).toBe('changed.php:5 New.Debt Added.; finding is on an added line')
     } finally {
       rmSync(directory, { recursive: true, force: true })
