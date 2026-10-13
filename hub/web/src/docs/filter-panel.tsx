@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { TextButton } from '@/ui/button/button'
-import { Switch } from '@/ui/switch/switch'
 import { RadioIndicator } from '@/ui/radio-rows/radio-rows'
+import { Switch } from '@/ui/switch/switch'
 import { classes } from '@/ui/text/classes'
 import {
   EMPTY_FILTERS,
