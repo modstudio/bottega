@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import type { BoardWakeSource } from './record-board-stream.ts'
 import {
   BOARD_STREAM_EVENT,
   BOARD_STREAM_HEARTBEAT_INTERVAL_MS,
@@ -8,7 +9,6 @@ import {
   boardStreamResponse,
   createBoardStreamRegistry,
 } from './record-board-stream.ts'
-import type { BoardWakeSource } from './record-board-stream.ts'
 
 class FakeClock implements BoardStreamClock {
   intervals = new Map<number, () => void>()

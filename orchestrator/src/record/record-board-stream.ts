@@ -13,7 +13,7 @@ export const BOARD_STREAM_EVENT = {
   data: z.object({ revision: z.string().regex(/^\d+$/) }).strict(),
 } as const
 
-export type BoardStreamEventData = z.infer<(typeof BOARD_STREAM_EVENT)['data']>
+type BoardStreamEventData = z.infer<(typeof BOARD_STREAM_EVENT)['data']>
 
 export type BoardWakeSource = {
   subscribe(listener: () => void): () => void

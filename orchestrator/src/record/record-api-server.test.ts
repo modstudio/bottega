@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 import { stopRecordApiServer } from './record-api-server.ts'
 import {
+  type BoardWakeSource,
   boardStreamResponse,
   createBoardStreamRegistry,
-  type BoardWakeSource,
 } from './record-board-stream.ts'
 
 test('stopping the server ends an open board stream before closing its wake source', async () => {

@@ -159,7 +159,6 @@ function registerBoardStreamRoute(
     recordUrl: string
     readSession(headers: Headers): Promise<RecordIdentity | null>
   } & RecordBoardDeps,
-  noSpace: (context: Context<ApiEnvironment>) => Response,
 ): void {
   app.get('/v1/board/stream', (context) => {
     return boardStreamResponse({
@@ -196,7 +195,7 @@ export function registerRecordBoardRoutes(
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
-  registerBoardStreamRoute(app, deps, helpers.noSpace)
+  registerBoardStreamRoute(app, deps)
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
