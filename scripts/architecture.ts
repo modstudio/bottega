@@ -377,6 +377,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/machine-config.ts', [
+    '@decimalturn/toml-patch',
     'node:fs',
     'node:path',
     'zod',
