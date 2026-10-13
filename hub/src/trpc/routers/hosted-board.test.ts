@@ -132,6 +132,7 @@ test('hosted board procedures map record responses to the shared browser contrac
     title: 'Notice',
     body: 'Body',
     ackRequired: true,
+    purpose: 'request',
     deadline: '10m',
     expires: '6h',
   })
@@ -223,6 +224,7 @@ test('hosted board post applies the shared default durations', async () => {
     title: 'Notice',
     body: 'Body',
     ackRequired: true,
+    purpose: 'request',
   })
   expect(posted).toMatchObject({
     expiresAt: new Date(now + BOARD_DEFAULT_EXPIRY_MS).toISOString(),

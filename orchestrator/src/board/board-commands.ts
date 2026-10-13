@@ -187,6 +187,10 @@ export function registerBoardCommands(program: Command): void {
     .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
     .requiredOption('--title <text>')
     .requiredOption('--body <text>')
+    .option(
+      '--purpose <purpose>',
+      'information sends one line, request sends the full body, standing also reaches later sessions',
+    )
     .option('--task <key>')
     .option('--path <glob>', 'add a repository-relative path glob', collect, [])
     .option('--topic <name>', 'add a controlled board topic', collect, [])
@@ -200,6 +204,7 @@ export function registerBoardCommands(program: Command): void {
         audience: options.audience,
         title: options.title,
         body: options.body,
+        purpose: options.purpose,
         task: options.task,
         paths: options.path,
         topics: options.topic,

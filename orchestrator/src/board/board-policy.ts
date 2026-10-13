@@ -1,4 +1,5 @@
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { classifyCaller } from '../caller-classification.ts'
 
 export const BOARD_POST_RATE_LIMIT = 10
@@ -71,13 +72,34 @@ export function parseAudience(expression: string): Audience {
 
 export function acknowledgementRefusal(input: {
   ackRequired: boolean
+  purpose?: BoardPurpose
   audience: Audience
   authorKind: 'operator' | 'architect'
   authorProject: string | null
 }): string | null {
+  if (input.ackRequired && input.purpose === 'information')
+    return 'an information message cannot require acknowledgement; use purpose request or standing, or post without acknowledgement'
   if (!input.ackRequired || input.authorKind === 'operator') return null
   if (input.audience.kind === 'project' && input.audience.value === input.authorProject) return null
   return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, or post without acknowledgement'
+}
+
+export function standingPostingRefusal(input: {
+  purpose: BoardPurpose
+  audience: Audience
+  authorKind: 'operator' | 'architect'
+  authorProject: string | null
+}): string | null {
+  if (input.purpose !== 'standing' || input.authorKind === 'operator') return null
+  const ownProject = input.authorProject
+  if (input.audience.kind === 'architects' && !input.audience.all && !input.audience.value)
+    return null
+  if (
+    (input.audience.kind === 'project' || input.audience.kind === 'workers') &&
+    input.audience.value === ownProject
+  )
+    return null
+  return 'an architect may post a standing message only to its own project; use architects, project:<your project>, or workers:<your project>, or post as request or information'
 }
 
 export function architectsPostingRefusal(

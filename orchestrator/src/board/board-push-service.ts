@@ -83,6 +83,7 @@ function localPendingAcknowledgements(
       requiresAcknowledgement: true,
       createdAt: row.created_at,
       deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
+      purpose: row.purpose ?? 'information',
       text: renderPendingAcknowledgement({
         id: String(row.id),
         author: originText(boardOrigin(row)),
@@ -122,6 +123,7 @@ function hostedPendingAcknowledgements(
       createdAt: message.createdAt,
       deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
         .delivered_at,
+      purpose: message.purpose ?? 'information',
       text: renderPendingAcknowledgement({
         id: message.id,
         author: originText(message.origin),
@@ -147,19 +149,21 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   const unread: BoardDelivery[] = [
     ...localPush.notices.map((message) => ({
       id: String(message.id),
-      text: message.text,
+      text: message.purpose === 'information' ? message.oneLine : message.text,
       requiresAcknowledgement: message.ackRequired,
       createdAt: message.createdAt,
       deliveredAt: null,
+      purpose: message.purpose,
     })),
     ...hostedPush.notices
       .filter((message) => message.text.length > 0)
       .map((message) => ({
         id: message.id,
-        text: message.text,
+        text: message.purpose === 'information' ? message.oneLine : message.text,
         requiresAcknowledgement: message.ackRequired,
         createdAt: message.createdAt,
         deliveredAt: null,
+        purpose: message.purpose,
       })),
   ]
   const pendingAcknowledgements = [

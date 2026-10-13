@@ -242,6 +242,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Local',
       body: 'Local body',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,
@@ -252,6 +253,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Older local',
       body: 'Do not ask this reader to acknowledge.',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock - 2_000,
@@ -262,6 +264,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
       title: 'Done',
       body: 'Done body',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock + 1,
@@ -303,6 +306,7 @@ test('pending acknowledgement resolution combines local and hosted cache and exc
     authorUserId: 'user-1',
     authorSession: null,
     ackRequired: true,
+    purpose: 'request',
     ackDeadline: new Date(clock + 30_000).toISOString(),
   }
   db()
@@ -415,6 +419,26 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     {},
     clock,
   )
+  const request = postNotice(
+    {
+      audience: 'session:delivery-reader',
+      title: 'Requested action',
+      body: 'request body',
+      purpose: 'request',
+    },
+    {},
+    clock + 1,
+  )
+  const standing = postNotice(
+    {
+      audience: 'session:delivery-reader',
+      title: 'Standing rule',
+      body: 'standing body',
+      purpose: 'standing',
+    },
+    {},
+    clock + 1,
+  )
   const question = askQuestion(
     {
       audience: 'session:delivery-reader',
@@ -432,8 +456,19 @@ test('mid-session local delivery includes an ordinary notice, question, and part
   })
   expect(first.delivery.map((message) => message.id)).toEqual([
     String(ordinary.id),
+    String(request.id),
+    String(standing.id),
     String(question.id),
   ])
+  expect(first.delivery.find((message) => message.id === String(ordinary.id))!.text).not.toContain(
+    'notice body',
+  )
+  expect(first.delivery.find((message) => message.id === String(request.id))!.text).toContain(
+    'request body',
+  )
+  expect(first.delivery.find((message) => message.id === String(standing.id))!.text).toContain(
+    'standing body',
+  )
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
     ids: first.delivery.map((message) => message.id),
@@ -620,6 +655,7 @@ test('delivery returns every pending notice and preserves its first delivered ti
       title: 'Reminder',
       body: 'Remember',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,
@@ -681,6 +717,7 @@ test('recent reminders are removed before bounding without changing pending ackn
         title: `Reminder ${index}`,
         body: 'Remember',
         ackRequired: true,
+        purpose: 'request',
       },
       {},
       clock + index,
@@ -727,6 +764,7 @@ test('ordinary-only delivery excludes required notices before bounding', async (
         title: `Required ${index}`,
         body: 'Acknowledge me',
         ackRequired: true,
+        purpose: 'request',
       },
       {},
       clock + index,
@@ -767,6 +805,7 @@ test('recently-injected ids do not suppress messages never delivered to the sess
       title: 'Unread acknowledgement',
       body: 'Must still arrive',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,

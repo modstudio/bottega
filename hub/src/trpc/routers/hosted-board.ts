@@ -2,9 +2,10 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
+  boardDefaultExpiryMs,
   parseBoardDuration,
 } from '../../../../shared/board-duration.ts'
+import { parseBoardPurpose } from '../../../../shared/board-purpose.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
 import {
   BoardAcceptInputSchema,
@@ -111,13 +112,15 @@ export function createHostedBoardRouter(
       call(async () => {
         const id = deps.newId()
         const now = deps.clock()
+        const purpose = parseBoardPurpose(input.purpose)
         const message = await deps.clientFor(ctx).boardPost({
           id,
           kind: 'notice',
+          purpose,
           audience: input.audience,
           title: input.title,
           body: input.body,
-          expiresAt: absoluteBoardTime(now, input.expires, BOARD_DEFAULT_EXPIRY_MS),
+          expiresAt: absoluteBoardTime(now, input.expires, boardDefaultExpiryMs(purpose)),
           ...(input.ackRequired
             ? {
                 ackRequired: true,

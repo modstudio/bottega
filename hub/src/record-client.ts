@@ -402,6 +402,7 @@ const hostedBoardListSchema = z.object({
 const hostedBoardPostInputSchema = z.object({
   id: z.string().uuid(),
   kind: z.literal('notice'),
+  purpose: z.enum(['information', 'request', 'standing']).optional(),
   audience: z.string(),
   title: z.string(),
   body: z.string(),

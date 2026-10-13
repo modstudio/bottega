@@ -190,6 +190,7 @@ export function readThread(id: number, env: Environment = process.env, clock = D
     root: {
       id: root.id,
       kind: root.kind,
+      purpose: root.purpose,
       title: root.title,
       body: root.body,
       audience: root.audience,

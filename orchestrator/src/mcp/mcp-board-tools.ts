@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { BOARD_PURPOSES } from '../../../shared/board-purpose.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import {
   boardAccept,
@@ -96,11 +97,12 @@ export function registerBoardTools(server: McpServer): void {
   server.registerTool(
     'board_post',
     {
-      description: `Post an architect-board notice. ${ARCHITECTS_AUDIENCE_HELP}`,
+      description: `Post an architect-board notice. Purpose information sends one line, request sends the full body, and standing also reaches later sessions. Requests that outlive the four-hour default should set expires_ms. ${ARCHITECTS_AUDIENCE_HELP}`,
       inputSchema: z.object({
         audience: z.string().min(1),
         title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        purpose: z.enum(BOARD_PURPOSES).optional(),
         task: z.string().min(1).optional(),
         path: z.array(z.string()).optional(),
         topic: z.array(z.string()).optional(),
@@ -114,6 +116,7 @@ export function registerBoardTools(server: McpServer): void {
         audience: input.audience,
         title: input.title,
         body: input.body,
+        purpose: input.purpose,
         task: input.task,
         paths: input.path,
         topics: input.topic,

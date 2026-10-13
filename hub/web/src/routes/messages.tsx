@@ -15,6 +15,7 @@ import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { SettingBlock } from '@/ui/form-layout/form-layout'
+import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
 import type { AppRouter } from '../../../src/trpc/router.ts'
@@ -246,6 +247,7 @@ function NewMessageDialog({
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [purpose, setPurpose] = useState<'information' | 'request' | 'standing'>('information')
   const [ackRequired, setAckRequired] = useState(false)
   const [deadline, setDeadline] = useState('')
   const [expires, setExpires] = useState('')
@@ -267,6 +269,7 @@ function NewMessageDialog({
         setProject('')
         setTitle('')
         setBody('')
+        setPurpose('information')
         setAckRequired(false)
         setDeadline('')
         setExpires('')
@@ -285,6 +288,7 @@ function NewMessageDialog({
       ...(hosted && project ? { project } : {}),
       title,
       body,
+      purpose,
       ...(task ? { task } : {}),
       ...(splitValues(paths) ? { paths: splitValues(paths) } : {}),
       ...(splitValues(topics) ? { topics: splitValues(topics) } : {}),
@@ -334,6 +338,22 @@ function NewMessageDialog({
         <SettingBlock
           label="Body"
           control={<Textarea value={body} onChange={(event) => setBody(event.target.value)} />}
+        />
+        <SettingBlock
+          label="Purpose"
+          hint="Information sends one line; request sends the full body; standing also reaches sessions that start later. Requests lasting over four hours should set an expiry."
+          control={
+            <Select
+              label="Purpose"
+              value={purpose}
+              options={[
+                { value: 'information', label: 'Information' },
+                { value: 'request', label: 'Request' },
+                { value: 'standing', label: 'Standing' },
+              ]}
+              onChange={(value) => setPurpose(value as typeof purpose)}
+            />
+          }
         />
         <label
           htmlFor="ack-required"

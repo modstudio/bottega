@@ -2,6 +2,7 @@
 /** Refreshes hosted state within each caller's budget, then combines it with local delivery. */
 
 import { classifyBoardId } from '../../../shared/board-mode.ts'
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
 import {
   claimCachedHosted,
@@ -39,6 +40,7 @@ type BoardDeliveryNotice = {
   oneLine: string
   ackRequired: boolean
   createdAt: string
+  purpose?: BoardPurpose
 }
 
 const splitBoardIds = (sourceIds: Array<string | number>) => {
@@ -59,6 +61,7 @@ const deliveryNotice = (notice: {
   oneLine: string
   ackRequired: boolean
   createdAt: string
+  purpose?: BoardPurpose
 }): BoardDeliveryNotice => ({ ...notice, id: String(notice.id) })
 
 const deliveryWarning = (...warnings: Array<string | null>): string | null => {
@@ -76,15 +79,22 @@ export async function claimBoardNotices(
     env,
   })
   const local = claimPushNotices(all, env)
+  const sessionStartNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
+    ...notice,
+    text: notice.purpose === 'request' ? notice.text : notice.oneLine,
+  })
   if (refreshed.status === 'local')
     return {
-      notices: local.notices.map(deliveryNotice),
+      notices: local.notices.map(deliveryNotice).map(sessionStartNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(sessionReader(env), all)
   return {
-    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    notices: [
+      ...local.notices.map(deliveryNotice).map(sessionStartNotice),
+      ...hosted.notices.map(deliveryNotice).map(sessionStartNotice),
+    ],
     warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }
@@ -122,13 +132,21 @@ export async function claimRunBoardNotices(
   const local = claimRunPushNotices(runId, all)
   if (refreshed.status === 'local')
     return {
-      notices: local.notices.map(deliveryNotice),
+      notices: local.notices.map(deliveryNotice).map((notice) => ({
+        ...notice,
+        text: notice.purpose === 'request' ? notice.text : notice.oneLine,
+      })),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(reader, all)
   return {
-    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)].map(
+      (notice) => ({
+        ...notice,
+        text: notice.purpose === 'request' ? notice.text : notice.oneLine,
+      }),
+    ),
     warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }

@@ -12,6 +12,7 @@ import {
   postDecision,
   resolveAudience,
   runAudienceRefusal,
+  standingPostingRefusal,
   validatePostNoticeInput,
 } from './board-policy.ts'
 import { boardActor } from './board-store.ts'
@@ -229,10 +230,20 @@ test('run audience policy permits the owner and operator but identifies a foreig
 })
 
 test('acknowledgement authority is operator-wide and architect-project-local', () => {
+  expect(
+    acknowledgementRefusal({
+      ackRequired: true,
+      purpose: 'information',
+      audience: parseAudience('operator'),
+      authorKind: 'operator',
+      authorProject: null,
+    }),
+  ).toContain('use purpose request or standing')
   for (const expression of ['operator', 'architects', 'task:DEV-1', 'machine:host']) {
     expect(
       acknowledgementRefusal({
         ackRequired: true,
+        purpose: 'request',
         audience: parseAudience(expression),
         authorKind: 'operator',
         authorProject: null,
@@ -242,6 +253,7 @@ test('acknowledgement authority is operator-wide and architect-project-local', (
   expect(
     acknowledgementRefusal({
       ackRequired: true,
+      purpose: 'request',
       audience: parseAudience(`project:${PLATFORM_SLUG}`),
       authorKind: 'architect',
       authorProject: PLATFORM_SLUG,
@@ -251,12 +263,40 @@ test('acknowledgement authority is operator-wide and architect-project-local', (
     expect(
       acknowledgementRefusal({
         ackRequired: true,
+        purpose: 'request',
         audience: parseAudience(expression),
         authorKind: 'architect',
         authorProject: PLATFORM_SLUG,
       }),
     ).toContain('project:<your project>')
   }
+})
+
+test('standing messages are operator-wide and architect-project-local', () => {
+  expect(
+    standingPostingRefusal({
+      purpose: 'standing',
+      audience: parseAudience('architects'),
+      authorKind: 'architect',
+      authorProject: PLATFORM_SLUG,
+    }),
+  ).toBeNull()
+  expect(
+    standingPostingRefusal({
+      purpose: 'standing',
+      audience: parseAudience('project:other'),
+      authorKind: 'architect',
+      authorProject: PLATFORM_SLUG,
+    }),
+  ).toContain('only to its own project')
+  expect(
+    standingPostingRefusal({
+      purpose: 'standing',
+      audience: parseAudience('spaces'),
+      authorKind: 'operator',
+      authorProject: null,
+    }),
+  ).toBeNull()
 })
 
 test('expiry, withdrawal, and retention are separate decisions', () => {
@@ -278,6 +318,7 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
+      purpose: 'request',
       deadline: 20,
       expiresAt: 30,
       withdrawnAt: null,
@@ -289,6 +330,7 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
+      purpose: 'request',
       deadline: 20,
       expiresAt: 30,
       withdrawnAt: null,
@@ -300,6 +342,7 @@ test('overdue unacknowledged posting-time audience member escalates', () => {
   expect(
     needsAckEscalation({
       ackRequired: true,
+      purpose: 'request',
       deadline: 20,
       expiresAt: 21,
       withdrawnAt: null,

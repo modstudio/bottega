@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { hostname } from 'node:os'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
@@ -159,6 +160,7 @@ function render(message: MessageRow, worker = false, database = db()) {
         sender: originText(boardOrigin(message)),
         ackRequired: false,
       }),
+      purpose: 'information' as const,
     }
   }
   if (message.kind === 'question') {
@@ -180,6 +182,7 @@ function render(message: MessageRow, worker = false, database = db()) {
         sender: originText(boardOrigin(message)),
         ackRequired: false,
       }),
+      purpose: 'request' as const,
     }
   }
   return {
@@ -205,6 +208,7 @@ function render(message: MessageRow, worker = false, database = db()) {
       sender: originText(boardOrigin(message)),
       ackRequired: message.ack_required === 1,
     }),
+    purpose: message.purpose ?? 'information',
   }
 }
 
@@ -213,7 +217,14 @@ export function claimRunNotices(
   all = false,
   clock = Date.now(),
   database = db(),
-): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
+): {
+  id: number
+  text: string
+  oneLine: string
+  ackRequired: boolean
+  createdAt: string
+  purpose: BoardPurpose
+}[] {
   const reader = runReader(runId, database)
   return messageRows(database)
     .filter(
@@ -285,7 +296,14 @@ export function claimNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
-): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
+): {
+  id: number
+  text: string
+  oneLine: string
+  ackRequired: boolean
+  createdAt: string
+  purpose: BoardPurpose
+}[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
     (row) =>
@@ -351,7 +369,14 @@ export function readNotices(
   all = false,
   env: Environment = process.env,
   clock = Date.now(),
-): { id: number; text: string; oneLine: string; ackRequired: boolean; createdAt: string }[] {
+): {
+  id: number
+  text: string
+  oneLine: string
+  ackRequired: boolean
+  createdAt: string
+  purpose: BoardPurpose
+}[] {
   const notices = claimNotices(all, env, clock)
   markNoticesDelivered(
     notices.map((notice) => notice.id),

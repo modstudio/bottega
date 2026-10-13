@@ -41,6 +41,7 @@ export type HostedCacheNotice = {
   oneLine: string
   ackRequired: boolean
   createdAt: string
+  purpose: import('../../../shared/board-purpose.ts').BoardPurpose
 }
 
 type RefreshInput = {
@@ -558,6 +559,7 @@ export function claimCachedHosted(
       }),
       ackRequired: message.ackRequired,
       createdAt: message.createdAt,
+      purpose: message.purpose ?? 'information',
     }))
 }
 

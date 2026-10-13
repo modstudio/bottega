@@ -25,6 +25,7 @@ export type BoardOverviewFilters = {
 type BoardOverviewBase = {
   id: string
   kind: BoardKind
+  purpose?: import('../../../shared/board-purpose.ts').BoardPurpose
   title: string | null
   audience: string | null
   audienceDescription?: string
@@ -91,6 +92,7 @@ function statusEntry(
   const base: BoardOverviewBase = {
     id: message.id,
     kind: message.kind,
+    purpose: message.purpose ?? 'information',
     title: message.title as string,
     audience: message.audience,
     audienceDescription: message.audienceDescription,

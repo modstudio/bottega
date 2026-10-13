@@ -70,6 +70,7 @@ test('counts project concern, unqualified and older pushes, and stop acknowledge
   expect(result).toEqual({
     messagesPushed: 5,
     pushes: 6,
+    pushesByPurpose: { information: 6, request: 0, standing: 0 },
     pushesNotConcerned: 1,
     pushesUnqualified: 1,
     pushesOlderThanSession: 1,
@@ -118,6 +119,7 @@ test('an empty reach window has no pushes or worst messages', () => {
   expect(totals).toEqual({
     messagesPushed: 0,
     pushes: 0,
+    pushesByPurpose: { information: 0, request: 0, standing: 0 },
     pushesNotConcerned: 0,
     pushesUnqualified: 0,
     pushesOlderThanSession: 0,
@@ -330,7 +332,13 @@ test('an emission retry records once while a later reminder records twice', asyn
     )
     .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
   const posted = postNotice(
-    { audience: `session:${session}`, title: 'Reminder', body: 'Acknowledge', ackRequired: true },
+    {
+      audience: `session:${session}`,
+      title: 'Reminder',
+      body: 'Acknowledge',
+      ackRequired: true,
+      purpose: 'request',
+    },
     {},
     clock,
   )

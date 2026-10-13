@@ -1,5 +1,6 @@
 // concern: record-board-contract
 /** Hosted board JSON contract. Must not know SQL or local stores. */
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
 export const BOARD_CHANGES_PAGE_LIMIT = 100
 export const BOARD_MESSAGES_PAGE_LIMIT = 100
@@ -39,6 +40,7 @@ type HostedBoardTag = HostedBoardSenderTag & { origin: 'sender' | 'inferred' }
 export type HostedBoardMessage = {
   id: string
   kind: string
+  purpose?: BoardPurpose | null
   threadRootId: string | null
   title: string | null
   body: string
@@ -107,6 +109,7 @@ export type HostedBoardStatus = {
 type HostedBoardOverviewBase = {
   id: string
   kind: 'notice' | 'question'
+  purpose?: BoardPurpose
   title: string | null
   audience: string | null
   audienceDescription?: string
@@ -162,6 +165,7 @@ export type HostedBoardClaim = {
 
 export type HostedBoardCreateContent = {
   kind: string
+  purpose?: BoardPurpose | null
   audience: string | null
   title: string | null
   body: string
@@ -180,6 +184,7 @@ export type HostedBoardCreateContent = {
 export type HostedBoardPostInput = {
   id: string
   kind: 'notice' | 'question'
+  purpose?: BoardPurpose | string
   audience: string
   title: string
   body: string

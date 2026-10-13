@@ -2,6 +2,11 @@ import { expect, test } from 'bun:test'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  BOARD_INFORMATION_DEFAULT_EXPIRY_MS,
+  BOARD_REQUEST_DEFAULT_EXPIRY_MS,
+  BOARD_STANDING_DEFAULT_EXPIRY_MS,
+} from '../../../shared/board-duration.ts'
 import { db } from '../database/db.ts'
 import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
 import { projectAt } from '../project/projects.ts'
@@ -48,6 +53,7 @@ test('notice store round-trip resolves, renders, delivers, and explicitly acknow
       title: 'Wind down',
       body: 'Finish owned work.',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,
@@ -262,6 +268,18 @@ test('tagged project notices are not pushed to a late session even when acknowle
       body: 'Acknowledge the board service change.',
       paths: ['orchestrator/src/board/**'],
       ackRequired: true,
+      purpose: 'request',
+    },
+    {},
+    clock + 1,
+  )
+  const standing = postNotice(
+    {
+      audience: `project:${project}`,
+      title: 'Standing board work',
+      body: 'This remains true.',
+      paths: ['orchestrator/src/board/**'],
+      purpose: 'standing',
     },
     {},
     clock + 1,
@@ -276,15 +294,44 @@ test('tagged project notices are not pushed to a late session even when acknowle
   expect(
     claimPushNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 3),
   ).toMatchObject({
-    notices: [],
+    notices: [{ id: standing.id }],
     withheldOlderCount: 2,
   })
   expect(
     readNotices(false, { CLAUDE_CODE_SESSION_ID: 'late-reader' }, clock + 4).map(
       (notice) => notice.id,
     ),
-  ).toEqual([posted.id, required.id])
+  ).toEqual([posted.id, required.id, standing.id])
   expect(noticeStatus(posted.id, {}).reached).toBe(2)
+})
+
+test('purpose chooses the default expiry and an explicit expiry wins', () => {
+  const clock = Date.parse('2026-10-13T12:00:00.000Z')
+  const cases = [
+    ['information', BOARD_INFORMATION_DEFAULT_EXPIRY_MS],
+    ['request', BOARD_REQUEST_DEFAULT_EXPIRY_MS],
+    ['standing', BOARD_STANDING_DEFAULT_EXPIRY_MS],
+  ] as const
+  for (const [purpose, lifetime] of cases) {
+    const posted = postNotice(
+      { audience: 'operator', title: `Default ${purpose}`, body: 'Body', purpose },
+      {},
+      clock,
+    )
+    expect(Date.parse(noticeStatus(posted.id, {}, clock).row.expires_at!)).toBe(clock + lifetime)
+  }
+  const explicit = postNotice(
+    {
+      audience: 'operator',
+      title: 'Explicit standing',
+      body: 'Body',
+      purpose: 'standing',
+      expiresMs: 123_456,
+    },
+    {},
+    clock,
+  )
+  expect(Date.parse(noticeStatus(explicit.id, {}, clock).row.expires_at!)).toBe(clock + 123_456)
 })
 
 test('tagged project notice reaches a matching worker chain and withholds from another', () => {
@@ -348,6 +395,7 @@ test('a run reader is pushed only notices posted after its start', () => {
       title: 'Older required',
       body: 'Push this for acknowledgement.',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock - 1,
@@ -680,6 +728,7 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
         title: 'Impossible deadline',
         body: 'Deadline follows expiry.',
         ackRequired: true,
+        purpose: 'request',
         deadlineMs: 2_000,
         expiresMs: 1_000,
       },
@@ -693,6 +742,7 @@ test('ack deadline cannot exceed expiry and expired notices do not escalate', ()
       title: 'Expires before inspection',
       body: 'Do not escalate after expiry.',
       ackRequired: true,
+      purpose: 'request',
       deadlineMs: 500,
       expiresMs: 1_000,
     },
@@ -780,6 +830,7 @@ test('machine:this resolves to the posting machine, interrupts, and reports unac
       title: 'Machine wind-down',
       body: 'Checkpoint before restart.',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,
@@ -818,6 +869,7 @@ test('ack escalation keeps the posting-time audience snapshot across presence re
       title: 'Snapshot audience',
       body: 'Acknowledge this.',
       ackRequired: true,
+      purpose: 'request',
       deadlineMs: 1_000,
     },
     {},
