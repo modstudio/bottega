@@ -137,11 +137,11 @@ function DocsControls({
 }
 
 /** The public site's own row above the docs; the dashboard carries the controls in its page header. */
-function DocsChrome({ signedIn, controls }: { signedIn: boolean; controls: ReactNode }) {
+function DocsChrome({ controls }: { controls: ReactNode }) {
   return (
     <div className="docs-chrome-rule relative z-20 bg-inherit lg:sticky lg:top-(--docs-top)">
       <div className="mx-auto flex w-full min-h-(--docs-chrome-h) max-w-(--docs-width) flex-wrap items-center justify-between gap-3 px-5 py-2">
-        {signedIn ? null : <div className="font-serif text-lg">User guide</div>}
+        <div className="font-serif text-lg">User guide</div>
         {controls}
       </div>
     </div>
@@ -370,7 +370,7 @@ export function DocsView({
       )}
     >
       {framed ? (
-        <DocsChrome signedIn={signedIn} controls={controls} />
+        <DocsChrome controls={controls} />
       ) : (
         <div className="px-4 md:px-8">
           <PageHeader
