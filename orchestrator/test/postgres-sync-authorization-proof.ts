@@ -311,9 +311,11 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     const victimMachineId = newRecordId()
     const attackerMachineId = newRecordId()
     const runId = newRecordId()
-    const otherUserId = input.admin(
-      `SELECT id FROM "user" WHERE id <> '${input.userId}' ORDER BY id LIMIT 1;`,
-    )
+    // The second user is whoever the other token signs in as, so ask the server.
+    input.setToken(input.otherToken())
+    const otherUserId = String((await recordApiClient().whoami()).user.id)
+    input.setToken(input.token())
+    expect(otherUserId).not.toBe(input.userId)
     input.admin(
       `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
        VALUES ('${newRecordId()}','${input.writeSpaceId}','${otherUserId}','member','write',now())
@@ -369,6 +371,10 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       ).toBe(`${victimMachineId}|${input.userId}`)
     } finally {
       attacker.close()
+      // Later proofs assert the second user's memberships, so take this one back.
+      input.admin(
+        `DELETE FROM membership WHERE space_id='${input.writeSpaceId}' AND user_id='${otherUserId}';`,
+      )
     }
   })
 }
