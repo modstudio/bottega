@@ -102,4 +102,15 @@ describe('PHP report adapters', () => {
       }),
     ).toThrow('did not capture a number from message: value many')
   })
+
+  test('PHPStan errors that belong to no file fail the report, and a non-empty files array is refused', () => {
+    expect(() =>
+      phpstanFindings(JSON.stringify({ files: [], errors: ['Autoload failed.'] }), {
+        reportRoot: root,
+      }),
+    ).toThrow('PHPStan reported an analysis error: Autoload failed.')
+    expect(() => phpcsFindings(JSON.stringify({ files: [{}] }), { reportRoot: root })).toThrow(
+      'PHPCS report has no files object',
+    )
+  })
 })

@@ -18,17 +18,20 @@ type ReportMessage = {
   type?: unknown
 }
 
-function reportFiles(text: string, format: string): Record<string, unknown> {
-  let value: unknown
+function parsedReport(text: string, format: string): { files?: unknown; errors?: unknown } {
   try {
-    value = JSON.parse(text)
+    return JSON.parse(text) as { files?: unknown; errors?: unknown }
   } catch (error) {
     throw new Error(
       `invalid ${format} JSON: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  const files = (value as { files?: unknown }).files
-  if (typeof files !== 'object' || files === null) {
+}
+
+// PHP encodes an empty map as an empty array, so a clean report carries `"files": []`.
+function reportFiles(files: unknown, format: string): Record<string, unknown> {
+  if (Array.isArray(files) && files.length === 0) return {}
+  if (typeof files !== 'object' || files === null || Array.isArray(files)) {
     throw new Error(`${format} report has no files object`)
   }
   return files as Record<string, unknown>
@@ -50,26 +53,8 @@ function messagesFor(raw: unknown, format: string, file: string): ReportMessage[
   return messages
 }
 
-type PatternScan = { count: number; escaped: boolean; inCharacterClass: boolean }
-
-function scanPatternCharacter(source: string, index: number, state: PatternScan): PatternScan {
-  const character = source[index]
-  if (state.escaped) return { ...state, escaped: false }
-  if (character === '\\') return { ...state, escaped: true }
-  if (character === '[') return { ...state, inCharacterClass: true }
-  if (character === ']' && state.inCharacterClass) return { ...state, inCharacterClass: false }
-  if (character !== '(' || state.inCharacterClass) return state
-  const plainCapture = source[index + 1] !== '?'
-  const namedCapture = source[index + 2] === '<' && !['=', '!'].includes(source[index + 3] ?? '')
-  return plainCapture || namedCapture ? { ...state, count: state.count + 1 } : state
-}
-
-function captureGroupCount(source: string): number {
-  let state: PatternScan = { count: 0, escaped: false, inCharacterClass: false }
-  for (let index = 0; index < source.length; index++) {
-    state = scanPatternCharacter(source, index, state)
-  }
-  return state.count
+function captureGroupCount(pattern: string): number {
+  return new RegExp(`${pattern}|`).exec('')!.length - 1
 }
 
 function compiledMeasures(patterns: MeasurePattern[]) {
@@ -124,7 +109,8 @@ function finding(
 
 export function phpcsFindings(text: string, options: AdapterOptions): Finding[] {
   const measures = compiledMeasures(options.measures ?? [])
-  return Object.entries(reportFiles(text, 'PHPCS')).flatMap(([file, raw]) =>
+  const files = reportFiles(parsedReport(text, 'PHPCS').files, 'PHPCS')
+  return Object.entries(files).flatMap(([file, raw]) =>
     messagesFor(raw, 'PHPCS', file).flatMap((message) =>
       message.type === 'ERROR'
         ? [finding(file, message, message.source, 'PHPCS', options, measures)]
@@ -135,7 +121,12 @@ export function phpcsFindings(text: string, options: AdapterOptions): Finding[] 
 
 export function phpstanFindings(text: string, options: AdapterOptions): Finding[] {
   const measures = compiledMeasures(options.measures ?? [])
-  return Object.entries(reportFiles(text, 'PHPStan')).flatMap(([file, raw]) =>
+  const report = parsedReport(text, 'PHPStan')
+  // Errors that belong to no file mean the analysis itself failed; its findings cannot be trusted.
+  if (Array.isArray(report.errors) && report.errors.length > 0) {
+    throw new Error(`PHPStan reported an analysis error: ${String(report.errors[0])}`)
+  }
+  return Object.entries(reportFiles(report.files, 'PHPStan')).flatMap(([file, raw]) =>
     messagesFor(raw, 'PHPStan', file).map((message) =>
       finding(
         file,
