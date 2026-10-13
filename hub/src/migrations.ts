@@ -431,7 +431,34 @@ export function stripSqlComments(source: string): string {
 
 type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
 
-function executeStatements(d: Database, source: string, values: BackfillValues = {}): void {
+function sqlStatementCount(source: string): number {
+  let count = 0
+  let hasSql = false
+  let inString = false
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]!
+    if (inString) {
+      if (char === "'") {
+        if (source[index + 1] === "'") index++
+        else inString = false
+      }
+      continue
+    }
+    if (char === "'") inString = true
+    else if (char === ';') {
+      if (hasSql) count++
+      hasSql = false
+    } else if (!/\s/.test(char)) hasSql = true
+  }
+  return count + Number(hasSql)
+}
+
+function executeStatements(
+  d: Database,
+  source: string,
+  values: BackfillValues = {},
+  migration = '<unknown>',
+): void {
   for (const statement of source.split('--> statement-breakpoint')) {
     const executable = stripSqlComments(statement).trim()
     if (!executable) continue
@@ -440,6 +467,12 @@ function executeStatements(d: Database, source: string, values: BackfillValues =
       if (!(name in values)) throw new Error(`missing migration backfill value: ${name}`)
     }
     if (names.length) {
+      if (sqlStatementCount(executable) > 1) {
+        throw new Error(
+          `migration ${migration} has multiple statements in a named-value backfill block; ` +
+            'separate them with --> statement-breakpoint',
+        )
+      }
       const bindings = Object.fromEntries(names.map((name) => [`$${name}`, values[name]!]))
       d.query(executable).run(bindings)
     } else d.exec(executable)
@@ -453,7 +486,7 @@ function executeMigrationSource(d: Database, source: string): void {
 function applyBackfills(d: Database, folder: string, values: BackfillValues): void {
   for (const entry of migrationJournal(folder)) {
     const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
-    if (backfill.trim()) executeStatements(d, backfill, values)
+    if (backfill.trim()) executeStatements(d, backfill, values, entry.tag)
   }
 }
 

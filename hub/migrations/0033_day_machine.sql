@@ -23,15 +23,4 @@ END;
 --> statement-breakpoint
 -- BACKFILL
 UPDATE day SET machine_id=$machine_id WHERE machine_id IS NULL;
-INSERT INTO hosted_outbox (id,table_name,row_id,operation,queued_at)
-SELECT record_id,'hub_day',record_id,'upsert',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM day
-WHERE machine_id IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM setting WHERE key='migration.0033.day-machine-offered')
-ON CONFLICT(table_name,row_id) DO UPDATE SET
-  operation=excluded.operation,queued_at=excluded.queued_at,
-  generation=hosted_outbox.generation+1,attempts=0,last_error=NULL,
-  quarantined_at=NULL,quarantine_reason=NULL,routing_space_id=NULL,routing_project=NULL;
-INSERT OR IGNORE INTO setting(key,value)
-SELECT 'migration.0033.day-machine-offered','true'
-WHERE NOT EXISTS (SELECT 1 FROM day WHERE machine_id IS NULL);
 -- /BACKFILL

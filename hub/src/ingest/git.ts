@@ -1,5 +1,5 @@
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
-import { machineId } from '../../../shared/machine-config.ts'
+import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
@@ -145,6 +145,11 @@ function scanGit(since: string) {
  * vanish from the view entirely.
  */
 export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
+  const machine = storedMachineId()
+  if (!machine)
+    throw new Error(
+      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+    )
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
   writeTransaction((conn) => {
@@ -169,7 +174,6 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
     )
 
     for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
-    const machine = machineId()
     for (const [day, a] of days) {
       dayStmt.run(
         newRecordId(),

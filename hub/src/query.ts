@@ -1,5 +1,5 @@
 import { engagedMs } from '../../shared/interval.ts'
-import { machineId } from '../../shared/machine-config.ts'
+import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
@@ -181,6 +181,11 @@ export function estateEngagedMs(from: string, to: string): number {
  * needs.
  */
 export function rollUpDays(): number {
+  const machine = storedMachineId()
+  if (!machine)
+    throw new Error(
+      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+    )
   const d = db()
   const rows = projectRollUpDays(
     d
@@ -207,7 +212,6 @@ export function rollUpDays(): number {
        collected_at  = excluded.collected_at`,
     )
     const collectedAt = new Date().toISOString()
-    const machine = machineId()
     for (const r of rows) stmt.run(newRecordId(), machine, r.day, r.claude, r.msgs, collectedAt)
   })
   return rows.length

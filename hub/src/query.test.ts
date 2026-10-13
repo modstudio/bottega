@@ -1,6 +1,11 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { ingestGit } from './ingest/git.ts'
 import { rollUpDays } from './query.ts'
 
 beforeEach(resetFixtureStore)
@@ -37,4 +42,22 @@ test('rolling intervals into an existing date keeps its UUID', () => {
     record_id: '11111111-1111-4111-8111-111111111111',
     claude_tokens: 42,
   })
+})
+
+test('day writers refuse to mint a missing machine identity', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'hub-day-machine-'))
+  const prior = process.env[CONFIG_HOME_ENV]
+  try {
+    process.env[CONFIG_HOME_ENV] = join(root, 'config')
+    expect(() => rollUpDays()).toThrow(
+      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+    )
+    await expect(ingestGit('2026-10-01')).rejects.toThrow(
+      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+    )
+  } finally {
+    if (prior === undefined) delete process.env[CONFIG_HOME_ENV]
+    else process.env[CONFIG_HOME_ENV] = prior
+    rmSync(root, { recursive: true, force: true })
+  }
 })

@@ -34,3 +34,30 @@ test('a named backfill value must be supplied by the migration caller', () => {
   database.close()
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('a named-value backfill separates every statement with a breakpoint', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hub-backfill-statements-'))
+  mkdirSync(join(dir, 'meta'))
+  writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (value TEXT);\n')
+  writeFileSync(
+    join(dir, '0001_fill.sql'),
+    '-- BACKFILL\nINSERT INTO item(value) VALUES ($identity);\nINSERT INTO item(value) VALUES ($identity);\n-- /BACKFILL\n',
+  )
+  writeFileSync(
+    join(dir, 'meta', '_journal.json'),
+    JSON.stringify({
+      version: '7',
+      dialect: 'sqlite',
+      entries: [
+        { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
+        { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+      ],
+    }),
+  )
+  const database = new Database(':memory:')
+  expect(() => applyMigrations(database, dir, { identity: 'machine' })).toThrow(
+    'migration 0001_fill has multiple statements in a named-value backfill block; separate them with --> statement-breakpoint',
+  )
+  database.close()
+  rmSync(dir, { recursive: true, force: true })
+})

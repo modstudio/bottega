@@ -28,9 +28,36 @@ describe('machine config resolution', () => {
       expect(storedMachineId(env)).toBeNull()
       expect(() => readFileSync(join(config, 'machine.toml'), 'utf8')).toThrow()
       const legacy = '01990000-0000-7000-8000-000000001240'
+      const competing = '01990000-0000-7000-8000-000000001241'
       expect(machineId(legacy, env)).toBe(legacy)
-      expect(machineId(null, env)).toBe(legacy)
+      expect(machineId(competing, env)).toBe(legacy)
       expect(storedMachineId(env)).toBe(legacy)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('machine identity lock timeout names the stale-lock remedy', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-id-lock-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      mkdirSync(config, { recursive: true })
+      const lock = join(config, '.machine-id.lock')
+      writeFileSync(lock, '')
+      let now = 0
+      expect(() =>
+        machineId(null, env, {
+          now: () => now,
+          wait: (milliseconds) => {
+            now += milliseconds
+          },
+          timeoutMs: 20,
+          pollMs: 10,
+        }),
+      ).toThrow(
+        `timed out waiting for machine identity lock ${lock}; remove this lock file when no process is starting`,
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

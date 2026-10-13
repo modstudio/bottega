@@ -594,6 +594,20 @@ const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const MACHINE_ID_LOCK_WAIT_MS = 10_000
 const MACHINE_ID_LOCK_POLL_MS = 10
 
+type MachineIdentityLockWait = {
+  now: () => number
+  wait: (milliseconds: number) => void
+  timeoutMs: number
+  pollMs: number
+}
+
+const machineIdentityLockWait: MachineIdentityLockWait = {
+  now: Date.now,
+  wait: Bun.sleepSync,
+  timeoutMs: MACHINE_ID_LOCK_WAIT_MS,
+  pollMs: MACHINE_ID_LOCK_POLL_MS,
+}
+
 /** Read the durable machine identity without creating configuration. */
 export function storedMachineId(env: ConfigEnvironment = process.env): string | null {
   const id = readMachineValue('machine.id', env)
@@ -606,11 +620,12 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
 export function machineId(
   existing: string | null = null,
   env: ConfigEnvironment = process.env,
+  lockWait: MachineIdentityLockWait = machineIdentityLockWait,
 ): string {
   const directory = resolveConfigRoot(env)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const lock = join(directory, '.machine-id.lock')
-  const deadline = Date.now() + MACHINE_ID_LOCK_WAIT_MS
+  const deadline = lockWait.now() + lockWait.timeoutMs
   let descriptor: number
   for (;;) {
     try {
@@ -618,9 +633,12 @@ export function machineId(
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      if (Date.now() >= deadline)
-        throw new Error(`timed out waiting for machine identity lock ${lock}`)
-      Bun.sleepSync(MACHINE_ID_LOCK_POLL_MS)
+      if (lockWait.now() >= deadline)
+        throw new Error(
+          `timed out waiting for machine identity lock ${lock}; ` +
+            'remove this lock file when no process is starting',
+        )
+      lockWait.wait(lockWait.pollMs)
     }
   }
   try {
