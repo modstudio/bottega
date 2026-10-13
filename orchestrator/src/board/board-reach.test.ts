@@ -1,10 +1,14 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
+import { parseAudience } from './board-policy.ts'
 import { markBoardDeliveryDelivered } from './board-push-service.ts'
 import {
+  BOARD_REACH_RETENTION_HOURS,
   type BoardReachRow,
+  boardReachConcern,
   boardReachReport,
   countBoardReach,
+  reapBoardReach,
   renderBoardReach,
 } from './board-reach.ts'
 import { postNotice } from './board-service.ts'
@@ -124,8 +128,11 @@ test('an empty reach window has no pushes or worst messages', () => {
     renderBoardReach({
       windowHours: 24,
       windowStart: '2026-10-12T12:00:00.000Z',
+      coveredFrom: '2026-10-13T12:00:00.000Z',
+      coveredTo: '2026-10-13T13:00:00.000Z',
+      partial: true,
       recordingStartedAt: '2026-10-13T12:00:00.000Z',
-      recordingFailures: 0,
+      recordingFailures: 2,
       totals: {
         ...totals,
         worstMessages: totals.worstMessages.map((message) => ({
@@ -136,7 +143,7 @@ test('an empty reach window has no pushes or worst messages', () => {
       rows: [],
     }),
   ).toBe(
-    'No board pushes recorded in this window. Recording has existed since 2026-10-13T12:00:00.000Z.',
+    'Covered 2026-10-13T12:00:00.000Z to 2026-10-13T13:00:00.000Z (partial window). Recording failures: 2.\nNo board pushes recorded in this window. Recording has existed since 2026-10-13T12:00:00.000Z.',
   )
 })
 
@@ -178,26 +185,53 @@ test('an unqualified message reports every way its pushes failed to show concern
   ])
 })
 
-test('rendering identifies a removed message by id alone', () => {
-  const totals = countBoardReach([
-    row({ id: 1, messageId: 'gone', audience: 'architects', concern: 'unqualified' }),
-  ])
-
-  expect(
-    renderBoardReach({
-      windowHours: 24,
-      windowStart: '2026-10-12T12:00:00.000Z',
-      recordingStartedAt: '2026-10-13T12:00:00.000Z',
-      recordingFailures: 0,
-      totals: {
-        ...totals,
-        worstMessages: totals.worstMessages.map((message) => ({ ...message, title: null })),
-      },
-      rows: [row({ id: 1, messageId: 'gone' })],
-    }),
-  ).toContain(
-    'gone [architects]: 1 not shown to concern (0 not concerning, 1 unqualified); 0 older than the session; 0 blocked stops; projects: alpha',
+test('rendering identifies a removed message by id alone', async () => {
+  const clock = Date.parse('2026-10-13T13:00:00.000Z')
+  const session = 'removed-message-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const posted = postNotice({ audience: 'architects', title: 'Soon gone', body: 'body' }, {}, clock)
+  await markBoardDeliveryDelivered({
+    session,
+    ids: [String(posted.id)],
+    emissionId: 'removed-emission',
+    deliveryPoint: 'after-tool-call',
+    clock: clock + 1,
+  })
+  expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
+    `${posted.id} — Soon gone [architects]`,
   )
+  db().query('DELETE FROM board_message WHERE id=?').run(posted.id)
+  expect(renderBoardReach(boardReachReport(1, clock + 2, db()))).toContain(
+    `${posted.id} [architects]: 1 not shown to concern`,
+  )
+})
+
+test('the pure concern classifier covers every audience form', () => {
+  const classify = (
+    audience: string,
+    session = 'reader',
+    project = 'alpha',
+    taskProject: string | null = null,
+  ) => boardReachConcern(parseAudience(audience), session, project, taskProject)
+  expect(classify('operator')).toBe('unqualified')
+  expect(classify('architects')).toBe('unqualified')
+  expect(classify('spaces')).toBe('unqualified')
+  expect(classify('project:alpha')).toBe('concerned')
+  expect(classify('project:beta')).toBe('not-concerned')
+  expect(classify('workers:alpha')).toBe('concerned')
+  expect(classify('task:DEV-1', 'reader', 'alpha', 'alpha')).toBe('concerned')
+  expect(classify('task:DEV-1', 'reader', 'alpha', 'beta')).toBe('not-concerned')
+  expect(classify('task:DEV-1')).toBe('unqualified')
+  expect(classify('run:7', 'run:7')).toBe('concerned')
+  expect(classify('run:7')).toBe('not-concerned')
+  expect(classify('machine:test')).toBe('unqualified')
+  expect(classify('session:reader')).toBe('concerned')
+  expect(classify('session:other')).toBe('not-concerned')
 })
 
 test('a reach recording failure does not prevent delivery stamping', async () => {
@@ -215,14 +249,14 @@ test('a reach recording failure does not prevent delivery stamping', async () =>
     clock,
   )
 
+  db().exec(`CREATE TRIGGER fail_reach BEFORE INSERT ON board_reach_delivery
+    BEGIN SELECT RAISE(ABORT, 'injected reach recorder failure'); END`)
   await markBoardDeliveryDelivered({
     session,
     ids: [String(posted.id)],
+    emissionId: 'failed-emission',
     deliveryPoint: 'after-tool-call',
     clock: clock + 1,
-    recordReach: () => {
-      throw new Error('injected reach recorder failure')
-    },
   })
 
   expect(
@@ -253,6 +287,7 @@ test('delivery records its point and the reader project in the reach window', as
   await markBoardDeliveryDelivered({
     session,
     ids: [String(posted.id)],
+    emissionId: 'measured-emission',
     deliveryPoint: 'stop',
     blockedStop: true,
     clock: clock + 1,
@@ -271,4 +306,49 @@ test('delivery records its point and the reader project in the reach window', as
     postingTiming: 'after-session',
     concern: 'concerned',
   })
+})
+
+test('an emission retry records once while a later reminder records twice', async () => {
+  const clock = Date.parse('2026-10-13T14:00:00.000Z')
+  const session = 'emission-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','alpha','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
+  const posted = postNotice(
+    { audience: `session:${session}`, title: 'Reminder', body: 'Acknowledge', ackRequired: true },
+    {},
+    clock,
+  )
+  const stamp = (emissionId: string, at: number) =>
+    markBoardDeliveryDelivered({
+      session,
+      ids: [String(posted.id)],
+      emissionId,
+      deliveryPoint: 'after-tool-call',
+      clock: at,
+    })
+  await stamp('same-emission', clock + 1)
+  await stamp('same-emission', clock + 2)
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 1 })
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_recording_failure').get()).toEqual({
+    count: 0,
+  })
+  await stamp('later-reminder', clock + 3)
+  expect(db().query('SELECT COUNT(*) count FROM board_reach_delivery').get()).toEqual({ count: 2 })
+})
+
+test('reach retention leaves recent rows and failures in place', () => {
+  const now = Date.parse('2026-10-13T15:00:00.000Z')
+  const old = new Date(now - (BOARD_REACH_RETENTION_HOURS + 1) * 60 * 60 * 1_000).toISOString()
+  const recent = new Date(now - 60 * 60 * 1_000).toISOString()
+  db()
+    .query('INSERT INTO board_reach_recording_failure(recorded_at) VALUES (?),(?)')
+    .run(old, recent)
+  reapBoardReach(now, db())
+  expect(db().query('SELECT recorded_at FROM board_reach_recording_failure').all()).toEqual([
+    { recorded_at: recent },
+  ])
 })

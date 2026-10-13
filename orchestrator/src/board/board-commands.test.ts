@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { Command } from 'commander'
 import { db } from '../database/db.ts'
 import { registerBoardCommands } from './board-commands.ts'
+import { BOARD_REACH_MAX_HOURS } from './board-reach.ts'
 import { postNotice } from './board-service.ts'
 import { suggestBoardPost } from './board-suggestions.ts'
 
@@ -21,6 +22,21 @@ test('board status CLI refuses worker callers', async () => {
   } finally {
     delete process.env.ORCH_RUN_ID
   }
+})
+
+test('board reach refuses windows beyond retained history with a remedy', async () => {
+  const program = new Command().exitOverride()
+  registerBoardCommands(program)
+  await expect(
+    program.parseAsync([
+      'node',
+      'orch',
+      'board',
+      'reach',
+      '--hours',
+      String(BOARD_REACH_MAX_HOURS + 1),
+    ]),
+  ).rejects.toThrow(/cannot exceed .*export reports regularly/)
 })
 
 test('suggestion post CLI collects path overrides and preserves omitted suggestion tags', async () => {

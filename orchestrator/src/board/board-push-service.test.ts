@@ -120,7 +120,7 @@ function runHook(
 
 type RepeatedHookResult = {
   outputs: string[]
-  delivered: Array<[string, string[]]>
+  delivered: Array<[string, string[], string]>
   emittedLimit: number | null
   atomicWritten: boolean
   atomicValue: unknown
@@ -135,7 +135,7 @@ function runHookRepeatedResult(
   pendingValues: Array<
     Array<{ id: string; text: string; requiresAcknowledgement: boolean }>
   > | null = null,
-  markFailure = false,
+  markFailure: boolean | 'once' = false,
 ) {
   const runner = [
     'import contextlib, importlib.util, io, json, os, sys',
@@ -148,9 +148,10 @@ function runHookRepeatedResult(
     '    pending_iterator = iter(pending_values)',
     '    module.pending = lambda session, recently_injected=None, exclude_acknowledgements=False: (lambda value: ([item for item in value if not (exclude_acknowledgements and item["requiresAcknowledgement"])], None, [item for item in value if item["requiresAcknowledgement"]]))(next(pending_iterator))',
     'delivered = []',
-    'def mark_delivered(session, ids, delivery_point, blocked_stop=False):',
-    '    delivered.append([session, ids])',
-    '    if json.loads(sys.argv[5]): raise RuntimeError("delivery stamp failed")',
+    'def mark_delivered(session, ids, delivery_point, emission_id, blocked_stop=False):',
+    '    delivered.append([session, ids, emission_id])',
+    '    failure_mode = json.loads(sys.argv[5])',
+    '    if failure_mode is True or (failure_mode == "once" and len(delivered) == 1): raise RuntimeError("delivery stamp failed")',
     'module.mark_delivered = mark_delivered',
     'atomic_path = os.path.join(os.environ["ORCH_BOARD_HOOK_STATE"], "atomic-test")',
     'module.write_marker(atomic_path, {"previous": True})',
@@ -864,7 +865,9 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   )
   const invocations = readFileSync(item.invocationLog, 'utf8').trim().split('\n')
   expect(invocations[0]).toContain('--recently-injected 7')
-  expect(invocations[1]).toBe('board delivered 8 --session reader --point after-tool-call')
+  expect(invocations[1]).toMatch(
+    /^board delivered 8 --session reader --point after-tool-call --emission [0-9a-f-]+$/,
+  )
 })
 
 test('PostToolUse throttles a failed path until the retry interval', () => {
@@ -942,10 +945,25 @@ test('Stop keeps its acknowledgement budget while carrying fresh ordinary delive
   expect(values[5].decision).toBeUndefined()
   expect(values[5].systemMessage).toContain('unacknowledged board notice')
   expect(result.outputs[6]).toBe('')
-  expect(result.delivered).toEqual([
+  expect(result.delivered.map(([session, ids]) => [session, ids])).toEqual([
     ['reader', ['8']],
     ['reader', ['9']],
   ])
+})
+
+test('Stop recovery reuses the emission identity stored beside emitted ids', () => {
+  const item = createHookFixture(hookOutput)
+  const ordinary = { id: '8', text: 'ordinary', requiresAcknowledgement: false }
+  const result = runHookRepeatedResult(
+    guardHook,
+    JSON.stringify({ session_id: 'reader' }),
+    item,
+    2,
+    [[ordinary], [ordinary]],
+    'once',
+  )
+  expect(result.delivered).toHaveLength(2)
+  expect(result.delivered[0]![2]).toBe(result.delivered[1]![2])
 })
 
 test('Stop records and bounds emitted ids, blocks once per message, and preserves markers atomically', () => {

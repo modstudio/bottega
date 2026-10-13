@@ -495,7 +495,6 @@ export async function markCachedHostedDelivered(
     client?: RecordApiClient
     database?: Database
     clock?: number
-    onDelivered?: (id: string, deliveredAt: string, database: Database) => void
   } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
@@ -520,26 +519,41 @@ export async function markCachedHostedDelivered(
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
         )
         .run(id, reader, posting ? 1 : 0, at)
-      input.onDelivered?.(id, at, database)
     }, database)
-    try {
-      await within(
-        client.putBoardReceipt({
-          messageId: id,
-          readerSession: reader,
-          audienceAtPosting: posting,
-          delivered: true,
-        }),
-        deadline - Date.now(),
-      )
-      database
-        .query(
-          `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
-           WHERE message_id=? AND reader_session=?`,
-        )
-        .run(id, reader)
-    } catch {}
+    await syncCachedHostedReceipt(reader, id, posting, { client, database, deadline })
   }
+}
+
+export async function syncCachedHostedReceipt(
+  reader: string,
+  id: string,
+  posting: boolean,
+  input: {
+    client?: RecordApiClient
+    database?: Database
+    deadline?: number
+  } = {},
+): Promise<void> {
+  const database = input.database ?? writableDb()
+  const client = input.client ?? recordApiClient()
+  const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
+  try {
+    await within(
+      client.putBoardReceipt({
+        messageId: id,
+        readerSession: reader,
+        audienceAtPosting: posting,
+        delivered: true,
+      }),
+      deadline - Date.now(),
+    )
+    database
+      .query(
+        `UPDATE hosted_board_receipt_cache SET pending_sync=0,sync_error=NULL
+           WHERE message_id=? AND reader_session=?`,
+      )
+      .run(id, reader)
+  } catch {}
 }
 
 export function reapHostedBoardCache(

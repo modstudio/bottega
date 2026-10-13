@@ -5,9 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { type Audience, parseAudience } from './board-policy.ts'
 import type { MessageRow } from './board-store.ts'
 
 export const BOARD_REACH_DEFAULT_HOURS = 24
+export const BOARD_REACH_MAX_HOURS = 7 * 24
+export const BOARD_REACH_RETENTION_HOURS = 30 * 24
 
 export type BoardDeliveryPoint = 'session-start' | 'after-tool-call' | 'stop'
 type BoardReachConcern = 'concerned' | 'not-concerned' | 'unqualified'
@@ -31,6 +34,7 @@ export type BoardReachRow = {
 }
 
 export type BoardReachRecordingInput = {
+  emissionId: string
   session: string
   messageSource: 'local' | 'hosted'
   messageId: string
@@ -46,6 +50,13 @@ type MessageFacts = {
   expiresAt: string | null
 }
 
+export type PreparedBoardReach = BoardReachRecordingInput &
+  MessageFacts & {
+    readerProject: string
+    sessionStartedAt: string
+    concern: BoardReachConcern
+  }
+
 function taskProject(key: string, database: Database): string | null {
   const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1]
   if (!prefix) return null
@@ -55,27 +66,25 @@ function taskProject(key: string, database: Database): string | null {
   )
 }
 
-function boardReachConcern(
-  audience: string,
+export function boardReachConcern(
+  audience: Audience,
   readerSession: string,
   readerProject: string,
-  database: Database,
+  resolvedTaskProject: string | null,
 ): BoardReachConcern {
-  const scoped = /^(?:project|workers):(.+)$/.exec(audience)
-  if (scoped) return scoped[1] === readerProject ? 'concerned' : 'not-concerned'
-  const task = /^task:(.+)$/.exec(audience)
-  if (task) {
-    const project = taskProject(task[1]!, database)
-    return project === null
+  if (audience.kind === 'project' || audience.kind === 'workers')
+    return audience.value === readerProject ? 'concerned' : 'not-concerned'
+  if (audience.kind === 'task') {
+    return resolvedTaskProject === null
       ? 'unqualified'
-      : project === readerProject
+      : resolvedTaskProject === readerProject
         ? 'concerned'
         : 'not-concerned'
   }
-  const session = /^session:(.+)$/.exec(audience)
-  if (session) return session[1] === readerSession ? 'concerned' : 'not-concerned'
-  const run = /^run:(.+)$/.exec(audience)
-  if (run) return readerSession === `run:${run[1]}` ? 'concerned' : 'not-concerned'
+  if (audience.kind === 'session')
+    return audience.value === readerSession ? 'concerned' : 'not-concerned'
+  if (audience.kind === 'run')
+    return readerSession === `run:${audience.value}` ? 'concerned' : 'not-concerned'
   return 'unqualified'
 }
 
@@ -122,7 +131,10 @@ function hostedMessageFacts(id: string, database: Database): MessageFacts | null
     : null
 }
 
-export function recordBoardReach(input: BoardReachRecordingInput, database: Database): void {
+export function prepareBoardReach(
+  input: BoardReachRecordingInput,
+  database: Database,
+): PreparedBoardReach {
   const presence = database
     .query(
       'SELECT project,COALESCE(first_seen,last_seen) started_at FROM presence WHERE session_id=?',
@@ -134,30 +146,57 @@ export function recordBoardReach(input: BoardReachRecordingInput, database: Data
       ? localMessageFacts(input.messageId, database)
       : hostedMessageFacts(input.messageId, database)
   if (!message) throw new Error(`no ${input.messageSource} board message ${input.messageId}`)
+  const audience = parseAudience(message.audience)
+  return {
+    ...input,
+    ...message,
+    readerProject: presence.project,
+    sessionStartedAt: presence.started_at,
+    concern: boardReachConcern(
+      audience,
+      input.session,
+      presence.project,
+      audience.kind === 'task' ? taskProject(String(audience.value), database) : null,
+    ),
+  }
+}
+
+export function recordBoardReach(input: PreparedBoardReach, database: Database): void {
   database
     .query(
       `INSERT INTO board_reach_delivery
-       (message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
+       (emission_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
         audience,acknowledgement_required,posted_at,expires_at,session_started_at,posting_timing,
         concern,recorded_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(emission_id,message_source,message_id) WHERE emission_id IS NOT NULL DO NOTHING`,
     )
     .run(
+      input.emissionId,
       input.messageSource,
       input.messageId,
       input.session,
-      presence.project,
+      input.readerProject,
       input.deliveryPoint,
       input.blockedStop ? 1 : 0,
-      message.audience,
-      message.acknowledgementRequired ? 1 : 0,
-      message.postedAt,
-      message.expiresAt,
-      presence.started_at,
-      message.postedAt < presence.started_at ? 'before-session' : 'after-session',
-      boardReachConcern(message.audience, input.session, presence.project, database),
+      input.audience,
+      input.acknowledgementRequired ? 1 : 0,
+      input.postedAt,
+      input.expiresAt,
+      input.sessionStartedAt,
+      input.postedAt < input.sessionStartedAt ? 'before-session' : 'after-session',
+      input.concern,
       input.recordedAt,
     )
+}
+
+export function reapBoardReach(clock = Date.now(), database: Database = db()): number {
+  const cutoff = new Date(clock - BOARD_REACH_RETENTION_HOURS * 60 * 60 * 1_000).toISOString()
+  return (
+    database.query('DELETE FROM board_reach_delivery WHERE recorded_at<?').run(cutoff).changes +
+    database.query('DELETE FROM board_reach_recording_failure WHERE recorded_at<?').run(cutoff)
+      .changes
+  )
 }
 
 export function noteBoardReachRecordingFailure(database: Database, recordedAt: string): void {
@@ -300,6 +339,9 @@ export function boardReachReport(
   return {
     windowHours: hours,
     windowStart,
+    coveredFrom: windowStart > recording.started_at ? windowStart : recording.started_at,
+    coveredTo: new Date(clock).toISOString(),
+    partial: recording.started_at > windowStart,
     recordingStartedAt: recording.started_at,
     recordingFailures: failures.count,
     totals: {
@@ -314,17 +356,18 @@ export function boardReachReport(
 }
 
 export function renderBoardReach(report: ReturnType<typeof boardReachReport>): string {
+  const coverage = `Covered ${report.coveredFrom} to ${report.coveredTo}${report.partial ? ' (partial window)' : ''}. Recording failures: ${report.recordingFailures}.`
   if (!report.rows.length)
-    return `No board pushes recorded in this window. Recording has existed since ${report.recordingStartedAt}.`
+    return `${coverage}\nNo board pushes recorded in this window. Recording has existed since ${report.recordingStartedAt}.`
   const totals = report.totals
   const lines = [
+    coverage,
     `Messages pushed: ${totals.messagesPushed}`,
     `Pushes: ${totals.pushes}`,
     `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
     `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
     `Pushes older than the session: ${totals.pushesOlderThanSession}`,
     `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
-    `Recording failures: ${report.recordingFailures}`,
   ]
   if (totals.worstMessages.length) {
     lines.push('Worst messages by pushes not shown to concern the reader:')

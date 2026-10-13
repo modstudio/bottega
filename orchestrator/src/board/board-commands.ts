@@ -46,17 +46,20 @@ function registerBoardDeliveredCommand(board: Command): void {
     .command('delivered <ids>')
     .option('--session <id>', 'session whose hook emitted the messages')
     .option('--point <point>', 'hook delivery point', deliveryPoint)
+    .option('--emission <id>', 'identity of this hook emission')
     .option('--blocked-stop', 'the emitted delivery blocked Stop')
     .action(async (ids, options) => {
       const parsed = String(ids).split(',')
       if (!parsed.length) throw new Error('board delivered ids are required')
       if (options.point && !options.session) throw new Error('--point requires --session')
+      if (options.point && !options.emission) throw new Error('--point requires --emission')
       if (options.blockedStop && options.point !== 'stop')
         throw new Error('--blocked-stop requires --point stop')
       if (options.session)
         await markBoardDeliveryDelivered({
           session: options.session,
           ids: parsed,
+          emissionId: options.emission,
           deliveryPoint: options.point,
           blockedStop: Boolean(options.blockedStop),
         })

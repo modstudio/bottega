@@ -2,19 +2,21 @@
 /** Resolves bounded delivery and pending acknowledgement across local and hosted boards. */
 
 import type { Database } from 'bun:sqlite'
-import { writableDb } from '../database/db.ts'
+import { writableDb, writeTransaction } from '../database/db.ts'
 import {
+  cachedAudienceAtPosting,
   cachedMessageAddressed,
   cachedRows,
   claimCachedHosted,
-  markCachedHostedDelivered,
   refreshHostedBoard,
+  syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
 import { requireRealSession } from './board-policy.ts'
 import {
   type BoardDeliveryPoint,
-  type BoardReachRecordingInput,
   noteBoardReachRecordingFailure,
+  type PreparedBoardReach,
+  prepareBoardReach,
   recordBoardReach,
 } from './board-reach.ts'
 import {
@@ -22,7 +24,7 @@ import {
   boundedBoardDelivery,
   renderPendingAcknowledgement,
 } from './board-render.ts'
-import { claimNotices, markNoticesDelivered } from './board-service.ts'
+import { claimNotices, deliverableTo } from './board-service.ts'
 import { addressed, boardOrigin, messageRows, originText, rowIsLive } from './board-store.ts'
 
 type DeliveryInput = {
@@ -174,49 +176,91 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
 export async function markBoardDeliveryDelivered(input: {
   session: string
   ids: string[]
+  emissionId?: string
   deliveryPoint?: BoardDeliveryPoint
   blockedStop?: boolean
   clock?: number
   database?: Database
-  recordReach?: (input: BoardReachRecordingInput, database: Database) => void
 }): Promise<void> {
   requireRealSession(input.session, 'board delivery acknowledgement')
   const database = input.database ?? writableDb()
   const clock = input.clock ?? Date.now()
-  const local = input.ids.filter((id) => /^\d+$/.test(id)).map(Number)
-  const hosted = input.ids.filter((id) => !/^\d+$/.test(id))
-  const record = (source: 'local' | 'hosted', id: string, deliveredAt: string) => {
-    if (!input.deliveryPoint) return
-    try {
-      ;(input.recordReach ?? recordBoardReach)(
-        {
-          session: input.session,
-          messageSource: source,
-          messageId: id,
-          deliveryPoint: input.deliveryPoint,
-          blockedStop: input.blockedStop ?? false,
-          recordedAt: deliveredAt,
-        },
-        database,
-      )
-    } catch {
+  const deliveredAt = new Date(clock).toISOString()
+  if (input.deliveryPoint && !input.emissionId)
+    throw new Error('board delivery measurement requires an emission identity')
+  const requestedLocal = new Set(input.ids.filter((id) => /^\d+$/.test(id)).map(Number))
+  const local = messageRows(database)
+    .filter(
+      (row) =>
+        requestedLocal.has(row.id) &&
+        row.author_session !== input.session &&
+        rowIsLive(row, clock, database) &&
+        deliverableTo(row, input.session, clock, database),
+    )
+    .map((row) => row.id)
+  const hosted = input.ids
+    .filter((id) => !/^\d+$/.test(id))
+    .map((id) => ({ id, posting: cachedAudienceAtPosting(id, input.session, database) }))
+    .filter((row): row is { id: string; posting: boolean } => row.posting !== null)
+  const reach = [
+    ...local.map((id) => ({ source: 'local' as const, id: String(id) })),
+    ...hosted.map(({ id }) => ({ source: 'hosted' as const, id })),
+  ]
+  const prepared: PreparedBoardReach[] = []
+  let preparationFailures = 0
+  if (input.deliveryPoint)
+    for (const item of reach) {
+      try {
+        prepared.push(
+          prepareBoardReach(
+            {
+              emissionId: input.emissionId!,
+              session: input.session,
+              messageSource: item.source,
+              messageId: item.id,
+              deliveryPoint: input.deliveryPoint,
+              blockedStop: input.blockedStop ?? false,
+              recordedAt: deliveredAt,
+            },
+            database,
+          ),
+        )
+      } catch {
+        preparationFailures++
+      }
+    }
+  writeTransaction(() => {
+    const localStamp = database.query(
+      `INSERT INTO board_receipt
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
+    )
+    for (const id of local) localStamp.run(id, input.session, deliveredAt)
+    const hostedStamp = database.query(
+      `INSERT INTO hosted_board_receipt_cache
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
+    )
+    for (const row of hosted)
+      hostedStamp.run(row.id, input.session, row.posting ? 1 : 0, deliveredAt)
+    for (const row of prepared) {
+      try {
+        recordBoardReach(row, database)
+      } catch {
+        try {
+          noteBoardReachRecordingFailure(database, deliveredAt)
+        } catch {}
+      }
+    }
+    for (let index = 0; index < preparationFailures; index++)
       try {
         noteBoardReachRecordingFailure(database, deliveredAt)
       } catch {}
-    }
-  }
-  if (local.length)
-    markNoticesDelivered(
-      local,
-      { CLAUDE_CODE_SESSION_ID: input.session },
-      clock,
-      database,
-      (id, deliveredAt) => record('local', String(id), deliveredAt),
-    )
-  if (hosted.length)
-    await markCachedHostedDelivered(input.session, hosted, {
-      database,
-      clock,
-      onDelivered: (id, deliveredAt) => record('hosted', id, deliveredAt),
-    })
+  }, database)
+  for (const row of hosted)
+    try {
+      await syncCachedHostedReceipt(input.session, row.id, row.posting, { database })
+    } catch {}
 }

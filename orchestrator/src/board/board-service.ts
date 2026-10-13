@@ -12,6 +12,7 @@ import {
   parseAudience,
   requireRealSession,
 } from './board-policy.ts'
+import { reapBoardReach } from './board-reach.ts'
 import { renderBoardNotice } from './board-render.ts'
 import {
   addressed,
@@ -126,7 +127,7 @@ function wasDelivered(messageId: number, reader: string, database = db()): boole
   return Boolean(receipt?.delivered_at)
 }
 
-function deliverableTo(
+export function deliverableTo(
   message: MessageRow,
   reader: string,
   clock: number,
@@ -259,7 +260,6 @@ export function markNoticesDelivered(
   env: Environment = process.env,
   clock = Date.now(),
   database: Database = writableDb(),
-  onDelivered?: (id: number, deliveredAt: string, database: Database) => void,
 ): void {
   const reader = boardReader(env)
   const idSet = new Set(ids)
@@ -278,10 +278,7 @@ export function markNoticesDelivered(
        VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) {
-      stamp.run(row.id, reader, deliveredAt)
-      onDelivered?.(row.id, deliveredAt, database)
-    }
+    for (const row of rows) stamp.run(row.id, reader, deliveredAt)
   }, database)
 }
 
@@ -427,6 +424,7 @@ export function boardEscalations(clock = Date.now()) {
 }
 
 export function reapBoardMessages(clock = Date.now()): number {
+  reapBoardReach(clock, writableDb())
   const rows = messageRows()
   const acceptedRoots = new Set(
     rows
