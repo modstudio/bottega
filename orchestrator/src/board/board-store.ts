@@ -12,6 +12,7 @@ import {
   type Audience,
   acknowledgementRefusal,
   architectIdentity,
+  architectsPostingRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
@@ -325,11 +326,9 @@ function validateArchitectAudience(
     throw new Error(
       `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
     )
+  const refusal = architectsPostingRefusal(audience, project)
+  if (refusal) throw new Error(refusal)
   if (audience.kind !== 'architects') return
-  if (!audience.all && !audience.value && !project)
-    throw new Error(
-      'plain architects requires a posting project; use architects:all or architects:<project>',
-    )
   if (audience.value && !projects(undefined, database).some((item) => item.name === audience.value))
     throw new Error(
       `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
@@ -481,7 +480,7 @@ export function insertRootMessage(
     .query(
       `SELECT id FROM board_message
        WHERE kind=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
-         AND audience=? AND title=? AND body=?
+         AND author_project IS ? AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
@@ -489,6 +488,7 @@ export function insertRootMessage(
       actor.kind,
       actor.session,
       input.suggestingRunId ?? null,
+      origin.project,
       audienceExpression,
       input.title,
       input.body,

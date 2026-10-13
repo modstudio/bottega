@@ -514,6 +514,29 @@ test('duplicate notices require the same order-independent sender tag set', () =
   })
 })
 
+test('plain architects duplicate identity includes the posting project', () => {
+  const clock = Date.now() + 19_000
+  const firstCwd = resolve(import.meta.dir)
+  const secondCwd = resolve(import.meta.dir, '../record')
+  const project = db().query(
+    `INSERT OR IGNORE INTO project(name,path,settings) VALUES (?,?, '{}') RETURNING id`,
+  )
+  project.get('board-duplicate-a', firstCwd)
+  project.get('board-duplicate-b', secondCwd)
+  const input = { audience: 'architects', title: 'Same notice', body: 'Same body.' }
+  const env = { CLAUDE_CODE_SESSION_ID: 'duplicate-project-author' }
+  const first = postNotice(input, env, clock, firstCwd)
+  const second = postNotice(input, env, clock + 1, secondCwd)
+  expect(first.dropped).toBeFalse()
+  expect(second.dropped).toBeFalse()
+  expect(second.id).not.toBe(first.id)
+  expect(
+    db()
+      .query('SELECT author_project FROM board_message WHERE id IN (?,?) ORDER BY id')
+      .all(first.id, second.id),
+  ).toEqual([{ author_project: 'board-duplicate-a' }, { author_project: 'board-duplicate-b' }])
+})
+
 test('a session-start notice reduced to a title or count stays unread until a stamping read', () => {
   const clock = Date.now() + 20_000
   db()

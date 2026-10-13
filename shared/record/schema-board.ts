@@ -147,7 +147,9 @@ export const boardMessage = pgTable.withRLS(
     authorHarness: text('author_harness'),
     authorMachineId: uuid('author_machine_id').references(() => machine.id),
     authorRunId: uuid('author_run_id').references(() => run.id),
-    authorProjectId: uuid('author_project_id').references(() => project.id),
+    authorProjectId: uuid('author_project_id').references(() => project.id, {
+      onDelete: 'set null',
+    }),
     kind: text().notNull(),
     threadRootId: uuid('thread_root_id').references((): AnyPgColumn => boardMessage.id, {
       onDelete: 'cascade',

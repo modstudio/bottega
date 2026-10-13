@@ -28,6 +28,7 @@ type HostedBoardOrigin = {
   session: string | null
   harness: string | null
   project: string | null
+  projectStored?: boolean
   runId: string | null
 }
 

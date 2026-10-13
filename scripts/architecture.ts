@@ -328,7 +328,6 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
     'node:crypto',
-    '../board/board-delivery.ts',
     '../board/board-hosted-cache.ts',
     '../board/board-push-service.ts',
     '../board/board-service.ts',

@@ -316,8 +316,8 @@ function NewMessageDialog({
           label="Audience"
           hint={
             hosted
-              ? 'project:<name>, task:<KEY>, session:<id>, run:<id>, or architects'
-              : 'project:<name>, task:<KEY>, session:<id>, run:<id>, architects, or machine:this'
+              ? 'architects (this project), architects:all, architects:<project>, project:<name>, task:<KEY>, session:<id>, or run:<id>'
+              : 'architects (this project), architects:all, architects:<project>, project:<name>, task:<KEY>, session:<id>, run:<id>, or machine:this'
           }
           control={<Input value={audience} onChange={(event) => setAudience(event.target.value)} />}
         />

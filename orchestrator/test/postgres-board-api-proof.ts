@@ -27,6 +27,7 @@ const IDS = {
   project: '03990000-0000-7000-8000-000000000011',
   projectTwo: '03990000-0000-7000-8000-000000000012',
   adoptionProject: '03990000-0000-7000-8000-000000000013',
+  originProject: '03990000-0000-7000-8000-000000000014',
   memberB: '03990000-0000-7000-8000-000000000021',
   memberA2: '03990000-0000-7000-8000-000000000022',
   memberRead: '03990000-0000-7000-8000-000000000023',
@@ -42,6 +43,7 @@ const EMAIL = {
 const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
 const ADOPTION_PROJECT = 'board-api-adoption'
+const ORIGIN_PROJECT = 'board-api-private-origin'
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -120,7 +122,8 @@ export function registerBoardApiProofs(input: {
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${IDS.project}','${spaceA}','${PROJECT}',ARRAY['BAPI'],now()),
         ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now()),
-        ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now());
+        ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now()),
+        ('${IDS.originProject}','${spaceB}','${ORIGIN_PROJECT}',ARRAY['BAPIO'],now());
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
         ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now()),
@@ -376,6 +379,85 @@ export function registerBoardApiProofs(input: {
     expect(again.status).toBe(200)
     expect(((await again.json()) as { id: string }).id).toBe(id)
     expect(different.status).toBe(409)
+  })
+
+  test('plain architects duplicate identity includes the posting project', async () => {
+    const session = caseSession('architects-project-duplicate')
+    const firstId = newRecordId()
+    const secondId = newRecordId()
+    const content = {
+      kind: 'notice',
+      audience: 'architects',
+      title: 'Same architects notice',
+      body: 'Same architects body.',
+      expiresAt,
+      authorSession: session,
+    }
+    const first = await post(tokenA, { ...content, id: firstId, project: PROJECT })
+    const second = await post(tokenA, { ...content, id: secondId, project: PROJECT_TWO })
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect((await json(first)).id).toBe(firstId)
+    expect((await json(second)).id).toBe(secondId)
+  })
+
+  test('posting projects survive post and reply, stay flagged when hidden, and clear on removal', async () => {
+    const rootId = newRecordId()
+    const replyId = newRecordId()
+    const rootResponse = await post(tokenA, {
+      ...notice(rootId, 'spaces', caseSession('posting-project-root')),
+      project: ORIGIN_PROJECT,
+    })
+    expect(rootResponse.status).toBe(200)
+    const root = await json(rootResponse)
+    expect((root.origin as Record<string, unknown>).project).toBe(ORIGIN_PROJECT)
+    expect((root.origin as Record<string, unknown>).projectStored).toBe(true)
+
+    const replyResponse = await fetch(`${origin}/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      headers: headers(tokenB),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'Reply with its own posting project.',
+        authorSession: caseSession('posting-project-reply'),
+        project: PROJECT,
+      }),
+    })
+    expect(replyResponse.status).toBe(200)
+    const reply = await json(replyResponse)
+    expect((reply.origin as Record<string, unknown>).project).toBe(PROJECT)
+    expect((reply.origin as Record<string, unknown>).projectStored).toBe(true)
+
+    const hiddenResponse = await fetch(`${origin}/v1/board/threads/${rootId}`, {
+      headers: headers(tokenD),
+    })
+    expect(hiddenResponse.status).toBe(200)
+    const hidden = await json(hiddenResponse)
+    const hiddenOrigin = ((hidden.root as Record<string, unknown>).origin ?? {}) as Record<
+      string,
+      unknown
+    >
+    expect(hiddenOrigin.project).toBeNull()
+    expect(hiddenOrigin.projectStored).toBe(true)
+
+    expect(
+      input
+        .succeeds(
+          'postgres',
+          'postgres',
+          `SELECT author_project_id FROM board_message WHERE id='${rootId}';
+         SELECT author_project_id FROM board_message WHERE id='${replyId}';`,
+        )
+        .split('\n'),
+    ).toEqual([IDS.originProject, IDS.project])
+    input.succeeds('postgres', 'postgres', `DELETE FROM project WHERE id='${IDS.originProject}';`)
+    expect(
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `SELECT author_project_id IS NULL FROM board_message WHERE id='${rootId}';`,
+      ),
+    ).toBe('t')
   })
 
   test('a machine audience and a suggestion are refused', async () => {

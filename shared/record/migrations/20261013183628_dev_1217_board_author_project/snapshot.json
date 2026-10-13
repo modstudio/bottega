@@ -13115,7 +13115,7 @@
       "tableTo": "project",
       "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
+      "onDelete": "SET NULL",
       "name": "board_message_author_project_id_project_id_fkey",
       "entityType": "fks",
       "schema": "public",

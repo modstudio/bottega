@@ -5,6 +5,7 @@ import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
+import { hostedBoardMessageView } from '../record/record-board-messages.ts'
 import {
   BOARD_CACHE_OWNER_KEY,
   BOARD_REFRESH_CURSOR_KEY,
@@ -41,6 +42,7 @@ const message = (overrides: Partial<HostedBoardMessage> = {}): HostedBoardMessag
     session: 'author',
     harness: 'claude',
     project: 'cache-project',
+    projectStored: true,
     runId: null,
   },
   senderTags: [],
@@ -299,20 +301,6 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   expect(addressed('architects:cache-project', 'cache-reader')).toBe(true)
   expect(
     cachedMessageAddressed(
-      {
-        message: message({
-          audience: 'architects',
-          origin: { ...message().origin, project: null },
-        }),
-        tags: [],
-      },
-      'cache-reader',
-      clock,
-      database,
-    ),
-  ).toBe(true)
-  expect(
-    cachedMessageAddressed(
       { message: message({ audience: 'architects', authorUserId: newRecordId() }), tags: [] },
       'cache-reader',
       clock,
@@ -342,6 +330,81 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   expect(
     cachedMessageAddressed({ message: reply, tags: [] }, 'not-a-participant', clock, database),
   ).toBe(false)
+})
+
+test('cache refresh distinguishes legacy architects rows from a hidden stored project', async () => {
+  const database = db()
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const addPresence = database.query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude','architect','machine',?,'/tmp',NULL,?,?)`,
+  )
+  addPresence.run('cache-reader', 'cache-project', createdAt, createdAt)
+  addPresence.run('cache-reader-other', 'other-project', createdAt, createdAt)
+  const recordResponse = (authorProjectId: string | null, revision: string) =>
+    hostedBoardMessageView(
+      {
+        id: newRecordId(),
+        kind: 'notice',
+        thread_root_id: null,
+        title: 'Hosted cache',
+        body: 'cached body',
+        audience: 'architects',
+        author_user_id: userId,
+        author_session: 'author',
+        author_harness: 'claude',
+        author_run_id: null,
+        author_project_id: authorProjectId,
+        author_project_name: null,
+        created_at: createdAt,
+        expires_at: '2027-10-05T12:00:00.000Z',
+        withdrawn_at: null,
+        accepted_reply_id: null,
+        accepted_by_user_id: null,
+        accepted_at: null,
+        note_id: null,
+        note_pending_error: null,
+        revision,
+        scope_project_ids: [],
+        recipient_user_ids: [],
+        shared_space_reach: false,
+        claim_id: null,
+        ack_required: false,
+        ack_deadline: null,
+      },
+      [],
+    )
+  const legacy = recordResponse(null, '1')
+  const hidden = recordResponse(newRecordId(), '2')
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardChanges: async () => ({
+      userId,
+      items: [change(legacy), change(hidden)],
+      highestRevision: '2',
+    }),
+    putBoardReceipt: async () => {
+      throw new Error('unused')
+    },
+  }
+  await refreshHostedBoard({ budgetMs: 1_000, env: { ORCH_RECORD_API_URL: 'x' }, client })
+  for (const reader of ['cache-reader', 'cache-reader-other']) {
+    expect(claimCachedHosted(reader, false, Date.parse('2026-10-05T12:02:00.000Z'))).toEqual([
+      expect.objectContaining({ id: legacy.id }),
+    ])
+  }
+  const oldCached = recordResponse(null, '3')
+  delete oldCached.origin.projectStored
+  expect(
+    cachedMessageAddressed(
+      { message: oldCached, tags: [] },
+      'cache-reader',
+      Date.parse('2026-10-05T12:02:00.000Z'),
+      database,
+    ),
+  ).toBe(true)
 })
 
 test('a local delivery stamp suppresses a repeat and its failed hosted write retries on refresh', async () => {

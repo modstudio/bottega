@@ -80,6 +80,15 @@ export function acknowledgementRefusal(input: {
   return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, or post without acknowledgement'
 }
 
+export function architectsPostingRefusal(
+  audience: Audience,
+  postingProject: string | null | undefined,
+): string | null {
+  if (audience.kind === 'architects' && !audience.all && !audience.value && !postingProject)
+    return 'plain architects requires a posting project; use architects:all or architects:<project>'
+  return null
+}
+
 export function runAudienceRefusal(
   audience: Audience,
   author: 'operator' | 'architect',
