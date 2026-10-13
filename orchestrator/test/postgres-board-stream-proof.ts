@@ -3,6 +3,7 @@ import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../src/record/record-board-stream.ts'
+import { notice } from './postgres-board-api-values.ts'
 
 async function waitFor(probe: () => boolean, milliseconds = 2_000): Promise<boolean> {
   const deadline = Date.now() + milliseconds
@@ -11,6 +12,17 @@ async function waitFor(probe: () => boolean, milliseconds = 2_000): Promise<bool
     await Bun.sleep(25)
   }
   return probe()
+}
+
+async function postVisibleNotice(input: {
+  postNotice(body: Record<string, unknown>): Promise<Response>
+  project: string
+}): Promise<string> {
+  const response = await input.postNotice(
+    notice(newRecordId(), `project:${input.project}`, 'board-api-stream'),
+  )
+  expect(response.status).toBe(200)
+  return String(((await response.json()) as { revision: string }).revision)
 }
 
 export function registerBoardStreamProof(input: {
@@ -23,7 +35,8 @@ export function registerBoardStreamProof(input: {
   invisibleSpaceId: () => string
   writerSpaceIds: () => string[]
   streamUserHomeSpaceId: () => string
-  postVisibleNotice(): Promise<string>
+  postNotice(body: Record<string, unknown>): Promise<Response>
+  project: string
   admin(statement: string): string
 }): void {
   test('board notification waits for commit and the production stream follows current membership', async () => {
@@ -105,12 +118,12 @@ export function registerBoardStreamProof(input: {
       await Bun.sleep(300)
       expect(revisions).not.toContain(invisibleRevision)
 
-      const visibleRevision = await input.postVisibleNotice()
+      const visibleRevision = await postVisibleNotice(input)
       expect(await waitFor(() => revisions.includes(visibleRevision))).toBe(true)
       expect(BigInt(visibleRevision)).toBeGreaterThan(BigInt(initialRevision))
 
       input.admin(`DELETE FROM membership WHERE id='${membershipId}';`)
-      const revokedRevision = await input.postVisibleNotice()
+      const revokedRevision = await postVisibleNotice(input)
       expect(await waitFor(() => ended)).toBe(true)
       expect(revisions).not.toContain(revokedRevision)
     } finally {

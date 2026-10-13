@@ -1036,14 +1036,8 @@ export function registerBoardApiProofs(input: {
     invisibleSpaceId: () => spaceB,
     writerSpaceIds: () => [spaceA, spaceB],
     streamUserHomeSpaceId: () => spaceC,
-    postVisibleNotice: async () => {
-      const response = await post(
-        tokenA,
-        notice(newRecordId(), `project:${PROJECT}`, caseSession('stream')),
-      )
-      expect(response.status).toBe(200)
-      return String(((await response.json()) as { revision: string }).revision)
-    },
+    postNotice: (body) => post(tokenA, body),
+    project: PROJECT,
     admin: (statement) => input.succeeds('postgres', 'postgres', statement),
   })
 }
