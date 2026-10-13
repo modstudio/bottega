@@ -413,6 +413,7 @@ realPostgres('RLS proof against real Postgres', () => {
   registerActiveSpaceProofs({
     actorUrl: () => actorUrl!,
     tokenB: () => tokenB,
+    userB: () => authUserB,
     spaceB: () => authSpaceB,
     rememberedSpaceId: () => authSpaceA,
     outsiderSpaceId: SPACE_B,

@@ -56,6 +56,7 @@ async function proveRememberedSpace(input: {
 export function registerActiveSpaceProofs(input: {
   actorUrl: () => string
   tokenB: () => string
+  userB: () => string
   spaceB: () => string
   rememberedSpaceId: () => string
   outsiderSpaceId: string
@@ -69,7 +70,13 @@ export function registerActiveSpaceProofs(input: {
   switchSpace: (slug: string) => Promise<{ spaceId: string }>
 }) {
   test('space list and switch repair a session with no active space', async () => {
-    input.executeAsOwner(`UPDATE session SET active_space_id=NULL WHERE token='${input.tokenB()}';`)
+    const changed = input.executeAsOwner(`
+      WITH changed AS (
+        UPDATE session SET active_space_id=NULL WHERE user_id='${input.userB()}' RETURNING 1
+      )
+      SELECT count(*) FROM changed;
+    `)
+    expect(Number(changed)).toBeGreaterThanOrEqual(1)
     input.setToken(input.tokenB())
     const listed = await input.memberships()
     expect(listed.activeSpaceId).toBeNull()
