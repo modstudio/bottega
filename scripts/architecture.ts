@@ -572,7 +572,6 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
-    '@decimalturn/toml-patch',
     '../../../shared/embedded-assets.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',

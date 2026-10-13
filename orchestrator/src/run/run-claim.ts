@@ -30,7 +30,7 @@ import {
   mcpConnectionFor,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
-import { wrongProjectReason } from '../mcp/mcp-probe.ts'
+import { readMcpConfig, wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt, stackAt } from '../project/projects.ts'
 import { ensureProjectMainStack } from '../resources/main-stack.ts'
@@ -93,7 +93,7 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { resolveRunTaskRecordId } from './run-task-reference.ts'
-import { prepareClaimedGrokMcpScope } from './run-worker-home.ts'
+import { prepareClaimedGrokMcpScope, prepareClaimedWorkerMcpConfig } from './run-worker-home.ts'
 
 type ClaimOptions = {
   reserveId?: number
@@ -930,15 +930,22 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       if (!project)
         throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       ensureProjectMainStack(project, 'mcp')
+      const claimedConfig = prepareClaimedWorkerMcpConfig({
+        cwd,
+        checkout: project.path,
+        inherited: resume.workspaceSource === 'retained',
+        writesRepository: writesJob,
+      })
       const grokScope = prepareClaimedGrokMcpScope(
         {
-          agent: name,
+          agent: a,
           runDir: sandboxRunDir,
           runDirExisted: sandboxRunDirExisted,
           cwd,
           project,
-          inherited: resume.workspaceSource === 'retained',
           writesRepository: writesJob,
+          config: claimedConfig,
+          treeConfig: readMcpConfig(cwd),
         },
         () =>
           writeTransaction(() => {
@@ -951,7 +958,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             })
           }),
       )
-      provisionedMcpConfig = grokScope.config
+      provisionedMcpConfig = grokScope.config ?? grokScope.measurementScope
       mcpSetupHeader = grokScope.header
       const server = grokScope.server
       if (grokScope.config?.error) {

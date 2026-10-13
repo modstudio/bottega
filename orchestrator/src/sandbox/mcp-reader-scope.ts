@@ -9,6 +9,24 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
+/** Select project server names without consulting the filesystem or process installation. */
+export function projectReaderServerNames(
+  configuredNames: string[],
+  allowed: string[] | undefined,
+  primary: string,
+): string[] {
+  const disabled = new Set(disabledProjectMcpServers(configuredNames, allowed))
+  return [...new Set([...configuredNames.filter((name) => !disabled.has(name)), primary])]
+}
+
+/** Resolve the checkout fallback used by every harness for one run. */
+export function mcpConfigForRun(
+  treeConfig: Record<string, McpServerConfig>,
+  project: { path: string } | null,
+): Record<string, McpServerConfig> {
+  return Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+}
+
 /** Build the credential-free proxy definitions shared by every reading harness. */
 export function projectReaderProxyServers(
   config: Record<string, McpServerConfig>,
@@ -19,21 +37,16 @@ export function projectReaderProxyServers(
   cwd: string,
 ): Record<string, ReaderProxyServer> {
   if (!project) return {}
-  const disabled = new Set(
-    disabledProjectMcpServers(Object.keys(config), project.settings.workerMcpServers),
-  )
-  const names = new Set([
-    ...Object.keys(config).filter((name) => !disabled.has(name)),
+  const names = projectReaderServerNames(
+    Object.keys(config),
+    project.settings.workerMcpServers,
     project.settings.mcpServer ?? project.name,
-  ])
+  )
   const argv = bottegaEntryArgv('mcp-reader-proxy')
   const command = argv[0]!
   const baseArgs = argv.slice(1)
   return Object.fromEntries(
-    [...names].map((server) => [
-      server,
-      { command, args: [...baseArgs, project.name, server, cwd] },
-    ]),
+    names.map((server) => [server, { command, args: [...baseArgs, project.name, server, cwd] }]),
   )
 }
 
@@ -50,7 +63,6 @@ export function projectReaderProxyServersForRun(
   cwd: string,
 ): Record<string, ReaderProxyServer> | null {
   if (!enabled || writesRepository) return null
-  const config =
-    Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+  const config = mcpConfigForRun(treeConfig, project)
   return projectReaderProxyServers(config, project, cwd)
 }

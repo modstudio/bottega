@@ -9,6 +9,8 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
   const root = mkdtempSync(join(tmpdir(), 'orch-grok-reader-home-'))
   try {
     mkdirSync(root, { recursive: true })
+    const cwd = join(root, 'tree')
+    mkdirSync(cwd)
     writeFileSync(
       join(root, 'config.toml'),
       'disabled_mcp_servers = ["stale"]\n' +
@@ -27,7 +29,18 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
         args: ['mcp-reader-proxy', 'fixture', 'secondary', '/run/tree'],
       },
     }
-    scopeGrokReaderMcpHome(root, 'host', proxies)
+    mkdirSync(join(cwd, '.grok'))
+    mkdirSync(join(cwd, '.cursor'))
+    writeFileSync(
+      join(cwd, '.grok', 'config.toml'),
+      '[mcp_servers.project]\ncommand = "project-direct"\n[mcp_servers.extra]\ncommand = "extra-direct"\n',
+    )
+    writeFileSync(join(cwd, '.mcp.json'), '{"mcpServers":{"alias":{"command":"direct"}}}\n')
+    writeFileSync(
+      join(cwd, '.cursor', 'mcp.json'),
+      '{"mcpServers":{"cursor":{"command":"direct"}}}\n',
+    )
+    const scope = scopeGrokReaderMcpHome(root, cwd, 'host', proxies)
     const written = readFileSync(join(root, 'config.toml'), 'utf8')
     expect(written.match(/^disabled_mcp_servers\s*=/gm)).toEqual(['disabled_mcp_servers ='])
     expect(written).not.toContain('credential')
@@ -37,11 +50,24 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     expect(written).toContain('args = [ "mcp-reader-proxy", "fixture", "project", "/run/tree" ]')
     expect(written).toContain('orch = { command = "orch" }')
     expect(grokAskCommandFromConfig(written)).toEqual(grokAskServerCommand('host'))
+    const projectLayer = readFileSync(join(cwd, '.grok', 'config.toml'), 'utf8')
+    expect(projectLayer).toContain('project = { command = "/bin/orch"')
+    expect(projectLayer).toContain('secondary = { command = "/bin/orch"')
+    expect(projectLayer).not.toContain('project-direct')
+    expect(projectLayer).not.toContain('extra-direct')
+    expect(readFileSync(join(cwd, '.mcp.json'), 'utf8')).toBe('{"mcpServers":{}}\n')
+    expect(readFileSync(join(cwd, '.cursor', 'mcp.json'), 'utf8')).toBe('{"mcpServers":{}}\n')
 
-    scopeGrokReaderMcpHome(root, 'host', proxies)
+    scope.measure(() => {
+      expect(readFileSync(join(cwd, '.grok', 'config.toml'), 'utf8')).toContain('project-direct')
+      expect(readFileSync(join(cwd, '.mcp.json'), 'utf8')).toContain('alias')
+      expect(readFileSync(join(cwd, '.cursor', 'mcp.json'), 'utf8')).toContain('cursor')
+    })
+
+    scopeGrokReaderMcpHome(root, cwd, 'host', proxies)
     expect(readFileSync(join(root, 'config.toml'), 'utf8').match(/^project\s*=/gm)).toHaveLength(1)
 
-    scopeGrokReaderMcpHome(root, 'host', {})
+    scopeGrokReaderMcpHome(root, cwd, 'host', {})
     const empty = readFileSync(join(root, 'config.toml'), 'utf8')
     expect(empty).not.toContain('project =')
     expect(empty).not.toContain('alias =')

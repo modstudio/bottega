@@ -5,9 +5,9 @@
  */
 import { isAbsolute, join, resolve } from 'node:path'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
+import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
-import { projectReaderProxyServers } from './mcp-reader-scope.ts'
+import { mcpConfigForRun, projectReaderProxyServers } from './mcp-reader-scope.ts'
 
 /** Parent environment names Codex may forward into the orch-ask subprocess. */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
@@ -112,8 +112,7 @@ export function codexProjectServersForRun(
   cwd: string,
 ): ReturnType<typeof codexProjectServers> | null {
   if (agent !== 'codex' || transport !== 'cli' || mcp === false) return null
-  const config =
-    Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+  const config = mcpConfigForRun(treeConfig, project)
   const scope = codexProjectServers(config, project?.settings.workerMcpServers, cwd)
   if (mcp === 'writer') return scope
   return {

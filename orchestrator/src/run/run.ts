@@ -77,6 +77,7 @@ import {
   codexProjectServersForRun,
 } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
+import { projectReaderProxyServersForRun } from '../sandbox/mcp-reader-scope.ts'
 import {
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
@@ -764,6 +765,10 @@ export async function run(opts: {
     projectAt(callerCwd),
     cwd,
   )
+  const grokReaderServers =
+    harnessName === 'grok'
+      ? projectReaderProxyServersForRun(usingMcp, writesJob, mcpConfig, projectAt(callerCwd), cwd)
+      : null
   const mcpServerName =
     mcpConnection?.server ??
     projectAt(callerCwd)?.settings.mcpServer ??
@@ -792,6 +797,7 @@ export async function run(opts: {
     })
     const home = await prepareWorkerHomeLaunch({
       agent: a,
+      harnessName,
       sandbox: sandboxSelection.sandbox,
       runDir: sandboxRunDir,
       runId: claim.id,
@@ -800,7 +806,8 @@ export async function run(opts: {
       grokEnvironment: grokMcpEnvironment,
       includeStore: repoJob,
       codexMcpScope,
-      grokReaderScope: [usingMcp, writesJob, mcpConfig, projectAt(callerCwd), cwd],
+      grokReaderServers,
+      cwd,
     })
     ;({
       codexMcpCatalogues,
@@ -808,6 +815,7 @@ export async function run(opts: {
       hasRunScopedHome,
       sandboxEnvironment,
     } = home)
+    provisionedMcpConfig ??= home.measurementScope
   } catch (e) {
     removeNewSandboxHomeAfterFailure(sandboxRunDir, sandboxRunDirExisted)
     const why = String((e as Error)?.message ?? e)
