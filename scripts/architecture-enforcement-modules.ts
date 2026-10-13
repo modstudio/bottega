@@ -20,6 +20,10 @@ export const enforcementModules = [
   },
   {
     file: 'orchestrator/src/enforcement/enforcement-commands.ts',
-    allowed: ['../project/projects.ts', './enforcement-resolution.ts'],
+    allowed: ['../project/projects.ts', './enforcement-records.ts', './enforcement-resolution.ts'],
+  },
+  {
+    file: 'orchestrator/src/enforcement/enforcement-records.ts',
+    allowed: ['bun:sqlite', 'node:path', '../database/db.ts'],
   },
 ] as const

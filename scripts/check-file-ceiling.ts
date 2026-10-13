@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { type ChangeFacts, type Finding, ratchetDecision } from '../shared/ratchet'
 import { openChangeView } from './change-view'
 import { resolveLandingBase } from './landing-base'
+import { reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const CEILING = 1000
@@ -160,12 +161,15 @@ function fileLengthViolation(finding: ReturnType<typeof fileLengthDecision>[numb
   )
 }
 
-export function checkFileCeiling(options: FileCeilingOptions = {}) {
+export function checkFileCeiling(options: FileCeilingOptions = {}, reportPath?: string) {
   const reporter = options.reporter ?? console
   const measured = (options.measureSuppressions ?? measureFiles)()
   const violations = measured.flatMap(({ path, ignoresFormat }) =>
     formatSuppressionViolations(path, ignoresFormat),
   )
+  const remaining = measured.filter((measurement) => measurement.lines > CEILING).length
+  reporter.log(`file length: ${remaining} files over ${CEILING} remain`)
+  reportRemaining(reportPath, remaining)
   const change = options.change ?? changedFileMeasurements()
   violations.push(...fileLengthDecision(change).map(fileLengthViolation))
   for (const violation of violations) reporter.error(violation)
@@ -176,7 +180,11 @@ export function checkFileCeiling(options: FileCeilingOptions = {}) {
 
 if (import.meta.main) {
   try {
-    if (!checkFileCeiling()) process.exit(1)
+    const report = Bun.argv
+      .slice(2)
+      .find((argument) => argument.startsWith('--report='))
+      ?.slice(9)
+    if (!checkFileCeiling({}, report)) process.exit(1)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)

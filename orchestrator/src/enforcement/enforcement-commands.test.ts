@@ -45,6 +45,18 @@ describe('enforcementCommand', () => {
       projects: () => [project('fixture')],
       projectByName: (name) => (name === 'fixture' ? project(name) : null),
       projectAt: () => null,
+      categoryExecutionsForProject: () =>
+        new Map([
+          [
+            'naming',
+            {
+              category: 'naming',
+              remaining: 7,
+              wallMs: 125,
+              finishedAt: '2026-10-12T12:00:00.000Z',
+            },
+          ],
+        ]),
     })
     const payload = JSON.parse(result.output.join('\n'))
     expect(payload.projects[0]).toMatchObject({
@@ -52,6 +64,11 @@ describe('enforcementCommand', () => {
       remoteRequiredChecks: ['remote-gate'],
     })
     expect(payload.projects[0].rows[0].category).toBe('naming')
+    expect(payload.projects[0].rows[0]).toMatchObject({
+      remaining: 7,
+      wallMs: 125,
+      finishedAt: '2026-10-12T12:00:00.000Z',
+    })
     expect(result.exitCode()).toBe(0)
   })
 

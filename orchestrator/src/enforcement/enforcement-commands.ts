@@ -2,11 +2,18 @@
 /** Reads registered projects and presents their resolved mechanical enforcement. */
 
 import { type Project, projectAt, projectByName, projects } from '../project/projects.ts'
+import { type CategoryExecution, categoryExecutionsForProject } from './enforcement-records.ts'
 import { type ResolvedMechanicalCheck, resolveMechanicalChecks } from './enforcement-resolution.ts'
+
+type ReportRow = ResolvedMechanicalCheck & {
+  remaining: number | null
+  wallMs: number | null
+  finishedAt: string | null
+}
 
 type EnforcementReport = {
   project: string
-  rows: ResolvedMechanicalCheck[]
+  rows: ReportRow[]
   remoteRequiredChecks: string[]
 }
 
@@ -27,14 +34,36 @@ type EnforcementDependencies = {
   projects: typeof projects
   projectByName: typeof projectByName
   projectAt: typeof projectAt
+  categoryExecutionsForProject?: typeof categoryExecutionsForProject
 }
 
-const dependencies: EnforcementDependencies = { projects, projectByName, projectAt }
+const dependencies: EnforcementDependencies = {
+  projects,
+  projectByName,
+  projectAt,
+  categoryExecutionsForProject,
+}
 
-function report(project: Project): EnforcementReport {
+function observedRow(
+  row: ResolvedMechanicalCheck,
+  executions: Map<string, CategoryExecution>,
+): ReportRow {
+  const execution = executions.get(row.category)
+  return {
+    ...row,
+    remaining: execution?.remaining ?? null,
+    wallMs: execution?.wallMs ?? null,
+    finishedAt: execution?.finishedAt ?? null,
+  }
+}
+
+function report(project: Project, deps: EnforcementDependencies): EnforcementReport {
+  const executions = deps.categoryExecutionsForProject?.(project.path) ?? new Map()
   return {
     project: project.name,
-    rows: resolveMechanicalChecks({ stack: project.stack, settings: project.settings }),
+    rows: resolveMechanicalChecks({ stack: project.stack, settings: project.settings }).map((row) =>
+      observedRow(row, executions),
+    ),
     remoteRequiredChecks: project.settings.release?.requiredChecks ?? [],
   }
 }
@@ -58,7 +87,7 @@ function selectedProjects(
   return [selected]
 }
 
-function textTable(rows: ResolvedMechanicalCheck[]): string[] {
+function textTable(rows: ReportRow[]): string[] {
   const headings = [
     'category',
     'enforced',
@@ -68,6 +97,8 @@ function textTable(rows: ResolvedMechanicalCheck[]): string[] {
     'points',
     'blocking',
     'limit',
+    'remaining',
+    'time',
     'source',
     'note',
     'reason',
@@ -85,6 +116,8 @@ function textTable(rows: ResolvedMechanicalCheck[]): string[] {
       field(absent ? '—' : row.points.join(', ')),
       field(absent ? '—' : row.blocking ? 'yes' : 'no'),
       field(absent ? '—' : row.limit === null ? '—' : String(row.limit)),
+      row.remaining === null ? '—' : String(row.remaining),
+      row.wallMs === null ? '—' : `${row.wallMs.toFixed(0)}ms`,
       row.source,
       row.note ?? '—',
       row.reason ?? '—',
@@ -126,7 +159,9 @@ export function enforcementCommand(
   deps: EnforcementDependencies = dependencies,
 ): void {
   try {
-    const reports = selectedProjects(options, presentation.cwd(), deps).map(report)
+    const reports = selectedProjects(options, presentation.cwd(), deps).map((project) =>
+      report(project, deps),
+    )
     if (options.json) {
       presentation.log(JSON.stringify({ projects: reports }))
       return

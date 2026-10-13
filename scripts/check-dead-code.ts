@@ -32,6 +32,7 @@ import {
   stableFinding,
   unneededExportFindings,
 } from './quality/dead-code'
+import { reportRemaining } from './remaining-report'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const BASE_CONFIG_NAMES = ['knip.jsonc', 'knip.production.jsonc'] as const
@@ -301,10 +302,12 @@ function describeFinding(finding: DeadCodeFinding) {
   return `${finding.file}${finding.line ? `:${finding.line}` : ''} ${finding.issueType} ${finding.symbol}`
 }
 
-async function checkDeadCode(base: string) {
+async function checkDeadCode(base: string, reportPath?: string) {
+  const current = collectFindings(ROOT)
+  console.log(`dead code: ${current.findings.length} findings remain`)
+  reportRemaining(reportPath, current.findings.length)
   const commit = resolvedCommit(base)
   const view = openChangeView({ cwd: ROOT, base: commit, mode: 'worktree' })
-  const current = collectFindings(ROOT)
   const unchangedCurrentCommit = commit === resolvedCommit('HEAD') && view.entries.length === 0
   const baseFindings = unchangedCurrentCommit
     ? current.findings
@@ -332,7 +335,6 @@ async function checkDeadCode(base: string) {
         : 'delete it and any test that exists only for it'
     console.error(`${describeFinding(original)} is new; ${remedy}`)
   }
-  console.log(`dead code: ${current.findings.length} findings remain`)
   if (refused.length) return false
   console.log(
     `check-dead-code: ok (production ${current.productionMs.toFixed(0)}ms, default ${current.defaultMs.toFixed(0)}ms)`,
@@ -340,16 +342,21 @@ async function checkDeadCode(base: string) {
   return true
 }
 
-function parseBase(argv: string[]) {
-  if (argv.length === 1 && argv[0]!.startsWith('--base=') && argv[0]!.length > 7) {
-    return argv[0]!.slice(7)
-  }
+function parseArguments(argv: string[]) {
+  const base = argv.find((argument) => argument.startsWith('--base='))?.slice(7)
+  const report = argv.find((argument) => argument.startsWith('--report='))?.slice(9)
+  if (
+    base &&
+    argv.every((argument) => argument.startsWith('--base=') || argument.startsWith('--report='))
+  )
+    return { base, report }
   throw new Error('usage: check-dead-code.ts --base=<commit>')
 }
 
 if (import.meta.main) {
   try {
-    if (!(await checkDeadCode(parseBase(Bun.argv.slice(2))))) process.exit(1)
+    const { base, report } = parseArguments(Bun.argv.slice(2))
+    if (!(await checkDeadCode(base, report))) process.exit(1)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
