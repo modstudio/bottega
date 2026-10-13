@@ -162,37 +162,6 @@ function serveRecordApi(
   return server
 }
 
-function recordApiAccessDependencies(
-  config: ReturnType<typeof recordApiServerConfig>,
-  auth: ReturnType<typeof recordAuth>,
-  migrations: number,
-) {
-  return {
-    auth,
-    readSession: async (headers: Headers) => {
-      const current = await auth.api.getSession({ headers })
-      if (!current) return null
-      return recordIdentity(
-        config.recordUrl,
-        current.user,
-        current.session.activeOrganizationId ?? null,
-      )
-    },
-    setActiveSpace: (headers: Headers, spaceId: string) =>
-      setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
-    listInvitations: listPendingRecordInvitations,
-    readHealth: async () => {
-      try {
-        await probeRecord(config.recordUrl)
-        return { ok: true, migrations }
-      } catch {
-        return { ok: false, migrations }
-      }
-    },
-    readCommit: readBuiltCommit,
-  }
-}
-
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
@@ -288,6 +257,37 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
   return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry)
+}
+
+function recordApiAccessDependencies(
+  config: ReturnType<typeof recordApiServerConfig>,
+  auth: ReturnType<typeof recordAuth>,
+  migrations: number,
+) {
+  return {
+    auth,
+    readSession: async (headers: Headers) => {
+      const current = await auth.api.getSession({ headers })
+      if (!current) return null
+      return recordIdentity(
+        config.recordUrl,
+        current.user,
+        current.session.activeOrganizationId ?? null,
+      )
+    },
+    setActiveSpace: (headers: Headers, spaceId: string) =>
+      setActiveRecordSpaceForSession(config.recordUrl, headers, spaceId),
+    listInvitations: listPendingRecordInvitations,
+    readHealth: async () => {
+      try {
+        await probeRecord(config.recordUrl)
+        return { ok: true, migrations }
+      } catch {
+        return { ok: false, migrations }
+      }
+    },
+    readCommit: readBuiltCommit,
+  }
 }
 
 if (import.meta.main) {

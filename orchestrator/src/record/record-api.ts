@@ -3,13 +3,12 @@
 
 import type { Context } from 'hono'
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { z } from 'zod'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { registerRecordAccessRoutes } from './record-api-access.ts'
+import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
 import {
   recordCanonImportSchema,
@@ -275,20 +274,6 @@ const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an ac
 
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)
-
-function registerRecordCors(app: Hono<ApiEnvironment>, origins: string[] | undefined): void {
-  if (!origins?.length) return
-  const allowed = new Set(origins)
-  const options = {
-    origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
-    credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  }
-  app.use('/v1/*', cors(options))
-  app.use('/public/v1/*', cors(options))
-  app.use('/api/auth/*', cors(options))
-}
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()

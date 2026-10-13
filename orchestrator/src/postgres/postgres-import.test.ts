@@ -117,11 +117,7 @@ realPostgres('project import against copied live SQLite data', () => {
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
       VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
     `
-    await setActiveRecordSpaceForSession(
-      actorUrl!,
-      bearerHeaders(recordToken),
-      PLATFORM_SPACE_ID,
-    )
+    await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(recordToken), PLATFORM_SPACE_ID)
   })
 
   afterAll(async () => {

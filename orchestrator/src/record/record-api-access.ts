@@ -1,6 +1,21 @@
 // concern: record-api-access
 /** Registers health and authentication routes. Must not know record data services. */
 import type { Env, Hono } from 'hono'
+import { cors } from 'hono/cors'
+
+export function registerRecordCors<E extends Env>(app: Hono<E>, origins?: string[]): void {
+  if (!origins?.length) return
+  const allowed = new Set(origins)
+  const options = {
+    origin: (origin: string) => (allowed.has(origin) ? origin : undefined),
+    credentials: true,
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Record-Space'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  }
+  app.use('/v1/*', cors(options))
+  app.use('/public/v1/*', cors(options))
+  app.use('/api/auth/*', cors(options))
+}
 
 type AccessRouteDeps = {
   auth: { handler(request: Request): Response | Promise<Response> }

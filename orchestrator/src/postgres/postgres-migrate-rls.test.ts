@@ -33,11 +33,7 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import {
-  bearerHeaders,
-  recordAuth,
-  setActiveRecordSpaceForSession,
-} from '../record/record-auth.ts'
+import { bearerHeaders, recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {

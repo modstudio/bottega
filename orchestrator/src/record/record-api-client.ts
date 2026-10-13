@@ -633,47 +633,6 @@ function acceptedInvitationResponse(
   return { invitation: { organizationId: invitation.organizationId } }
 }
 
-function recordIdentityAndSpaceClient(): Pick<
-  RecordApiClient,
-  | 'whoami'
-  | 'createOrganization'
-  | 'setActiveOrganization'
-  | 'listInvitations'
-  | 'acceptInvitation'
-  | 'inviteMember'
-> {
-  return {
-    whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
-    createOrganization: (input) =>
-      request('/api/auth/organization/create', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        schema: organizationResponse,
-      }),
-    setActiveOrganization: (input) =>
-      request('/api/auth/organization/set-active', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        schema: organizationResponse,
-      }),
-    listInvitations: () =>
-      request('/v1/invitations', {
-        schema: recordInvitationListResponse,
-      }),
-    acceptInvitation: (invitationId) =>
-      request('/api/auth/organization/accept-invitation', {
-        method: 'POST',
-        body: JSON.stringify({ invitationId }),
-        schema: acceptedInvitationResponse,
-      }),
-    inviteMember: (input) =>
-      request('/api/auth/organization/invite-member', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-  }
-}
-
 export function recordApiClient(): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
@@ -879,6 +838,47 @@ export function recordApiClient(): RecordApiClient {
     listBoardClaims: (project) =>
       request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
     ...recordApiBoardWatchClient(),
+  }
+}
+
+function recordIdentityAndSpaceClient(): Pick<
+  RecordApiClient,
+  | 'whoami'
+  | 'createOrganization'
+  | 'setActiveOrganization'
+  | 'listInvitations'
+  | 'acceptInvitation'
+  | 'inviteMember'
+> {
+  return {
+    whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
+    createOrganization: (input) =>
+      request('/api/auth/organization/create', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        schema: organizationResponse,
+      }),
+    setActiveOrganization: (input) =>
+      request('/api/auth/organization/set-active', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        schema: organizationResponse,
+      }),
+    listInvitations: () =>
+      request('/v1/invitations', {
+        schema: recordInvitationListResponse,
+      }),
+    acceptInvitation: (invitationId) =>
+      request('/api/auth/organization/accept-invitation', {
+        method: 'POST',
+        body: JSON.stringify({ invitationId }),
+        schema: acceptedInvitationResponse,
+      }),
+    inviteMember: (input) =>
+      request('/api/auth/organization/invite-member', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
   }
 }
 
