@@ -12,7 +12,12 @@ type GrokInspectServer = {
   source?: { type?: string; path?: string; plugin_name?: string }
 }
 
-export type GrokInspectReport = { mcpServers?: GrokInspectServer[] }
+type GrokInspectConfigLayer = { role?: string; path?: string }
+
+export type GrokInspectReport = {
+  mcpServers?: GrokInspectServer[]
+  configSources?: { layers?: GrokInspectConfigLayer[] }
+}
 
 function sourceLabel(server: GrokInspectServer): string {
   const source = server.source
@@ -29,6 +34,16 @@ export function grokReaderMcpInspectionError(
   runConfigPath: string,
   platformServers: readonly string[],
 ): string | null {
+  const layers = report.configSources?.layers
+  if (!layers) return 'Grok reader MCP inspection did not report config source layers'
+  if (layers.length === 0) return 'Grok reader MCP inspection reported no config source layers'
+  const unexpectedLayer = layers.find(
+    (layer, index) => index !== 0 || layer.path !== runConfigPath,
+  )
+  if (unexpectedLayer) {
+    return `Grok reader MCP inspection found config layer '${unexpectedLayer.role ?? '<unknown>'}' at ${JSON.stringify(unexpectedLayer.path ?? '<missing>')} instead of only the run home`
+  }
+
   const active = (report.mcpServers ?? []).filter(
     (server) => server.disabled !== true && server.compatibilityStatus !== 'disabled',
   )
@@ -56,6 +71,15 @@ export function grokReaderMcpInspectionError(
 function canonicalInspectReport(report: GrokInspectReport): GrokInspectReport {
   return {
     ...report,
+    configSources: report.configSources
+      ? {
+          ...report.configSources,
+          layers: report.configSources.layers?.map((layer) => ({
+            ...layer,
+            path: layer.path ? canonicalPath(layer.path) : layer.path,
+          })),
+        }
+      : undefined,
     mcpServers: report.mcpServers?.map((server) => ({
       ...server,
       source: server.source?.path
