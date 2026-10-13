@@ -2,6 +2,10 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
 
+const AMBIGUOUS_PROJECT = 'board-api-ambiguous'
+const AMBIGUOUS_PROJECT_A = '03990000-0000-7000-8000-000000000017'
+const AMBIGUOUS_PROJECT_B = '03990000-0000-7000-8000-000000000018'
+
 export function registerBoardPostingProjectProof(input: {
   origin: () => string
   tokenA: () => string
@@ -15,7 +19,6 @@ export function registerBoardPostingProjectProof(input: {
   originProject: string
   projectId: string
   originProjectId: string
-  ambiguousProject: string
 }): void {
   test('plain architects duplicate identity includes the posting project', async () => {
     const session = input.caseSession('architects-project-duplicate')
@@ -109,6 +112,15 @@ export function registerBoardPostingProjectProof(input: {
   })
 
   test('an ambiguous posting project is omitted without weakening project-scoped audiences', async () => {
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+       ('${AMBIGUOUS_PROJECT_A}',(SELECT space_id FROM project WHERE id='${input.projectId}'),
+        '${AMBIGUOUS_PROJECT}',ARRAY['BAPI3'],now()),
+       ('${AMBIGUOUS_PROJECT_B}',(SELECT space_id FROM project WHERE name='${input.projectTwo}'),
+        '${AMBIGUOUS_PROJECT}',ARRAY['BAPI4'],now());`,
+    )
     const rootId = newRecordId()
     const replyId = newRecordId()
     const sessionResponse = await input.post(input.tokenA(), {
@@ -117,7 +129,7 @@ export function registerBoardPostingProjectProof(input: {
         `session:${input.caseSession('ambiguous-recipient')}`,
         input.caseSession('ambiguous-root'),
       ),
-      project: input.ambiguousProject,
+      project: AMBIGUOUS_PROJECT,
     })
     expect(sessionResponse.status).toBe(200)
     const root = await json(sessionResponse)
@@ -131,7 +143,7 @@ export function registerBoardPostingProjectProof(input: {
         id: replyId,
         body: 'Reply from an ambiguous posting project.',
         authorSession: input.caseSession('ambiguous-reply'),
-        project: input.ambiguousProject,
+        project: AMBIGUOUS_PROJECT,
       }),
     })
     expect(replyResponse.status).toBe(200)
@@ -141,28 +153,25 @@ export function registerBoardPostingProjectProof(input: {
 
     const architectsResponse = await input.post(input.tokenA(), {
       ...notice(newRecordId(), 'architects', input.caseSession('ambiguous-architects')),
-      project: input.ambiguousProject,
+      project: AMBIGUOUS_PROJECT,
     })
     expect(architectsResponse.status).toBe(200)
     const architects = await json(architectsResponse)
     expect((architects.origin as Record<string, unknown>).project).toBeNull()
     expect((architects.origin as Record<string, unknown>).projectStored).toBe(false)
 
-    for (const audience of [
-      `project:${input.ambiguousProject}`,
-      `architects:${input.ambiguousProject}`,
-    ]) {
+    for (const audience of [`project:${AMBIGUOUS_PROJECT}`, `architects:${AMBIGUOUS_PROJECT}`]) {
       const scoped = await input.post(input.tokenA(), {
         ...notice(
           newRecordId(),
           audience,
           input.caseSession(`ambiguous-${audience.split(':')[0]}`),
         ),
-        project: input.ambiguousProject,
+        project: AMBIGUOUS_PROJECT,
       })
       expect(scoped.status).toBe(400)
       expect(JSON.stringify(await scoped.json())).toContain(
-        `unknown or invisible board project ${input.ambiguousProject}`,
+        `unknown or invisible board project ${AMBIGUOUS_PROJECT}`,
       )
     }
 

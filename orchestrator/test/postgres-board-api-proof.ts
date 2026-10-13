@@ -30,8 +30,6 @@ const IDS = {
   projectTwo: '03990000-0000-7000-8000-000000000012',
   adoptionProject: '03990000-0000-7000-8000-000000000013',
   originProject: '03990000-0000-7000-8000-000000000019',
-  ambiguousProjectA: '03990000-0000-7000-8000-000000000017',
-  ambiguousProjectB: '03990000-0000-7000-8000-000000000018',
   memberB: '03990000-0000-7000-8000-000000000021',
   memberA2: '03990000-0000-7000-8000-000000000022',
   memberRead: '03990000-0000-7000-8000-000000000023',
@@ -48,7 +46,6 @@ const PROJECT = 'board-api-shared'
 const PROJECT_TWO = 'board-api-second'
 const ADOPTION_PROJECT = 'board-api-adoption'
 const ORIGIN_PROJECT = 'board-api-private-origin'
-const AMBIGUOUS_PROJECT = 'board-api-ambiguous'
 export function registerBoardApiProofs(input: {
   actorUrl: string
   spaceA: string
@@ -128,8 +125,6 @@ export function registerBoardApiProofs(input: {
         ('${IDS.project}','${spaceA}','${PROJECT}',ARRAY['BAPI'],now()),
         ('${IDS.projectTwo}','${spaceB}','${PROJECT_TWO}',ARRAY['BAPI2'],now()),
         ('${IDS.adoptionProject}','${spaceA}','${ADOPTION_PROJECT}',ARRAY['BAPIA'],now()),
-        ('${IDS.ambiguousProjectA}','${spaceA}','${AMBIGUOUS_PROJECT}',ARRAY['BAPI3'],now()),
-        ('${IDS.ambiguousProjectB}','${spaceB}','${AMBIGUOUS_PROJECT}',ARRAY['BAPI4'],now()),
         ('${IDS.originProject}','${spaceB}','${ORIGIN_PROJECT}',ARRAY['BAPIO'],now());
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
@@ -385,7 +380,6 @@ export function registerBoardApiProofs(input: {
     originProject: ORIGIN_PROJECT,
     projectId: IDS.project,
     originProjectId: IDS.originProject,
-    ambiguousProject: AMBIGUOUS_PROJECT,
   })
 
   test('a machine audience and a suggestion are refused', async () => {
