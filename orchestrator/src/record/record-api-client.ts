@@ -685,6 +685,15 @@ export function recordApiClient(): RecordApiClient {
       }),
     listBoardClaims: (project) =>
       request(`/v1/board/claims?project=${encodeURIComponent(project)}`),
+    ...recordApiBoardWatchClient(),
+  }
+}
+
+function recordApiBoardWatchClient(): Pick<
+  RecordApiClient,
+  'releaseBoardTaskClaims' | 'openBoardStream'
+> {
+  return {
     releaseBoardTaskClaims: (input) =>
       request('/v1/board/claims/release-task', { method: 'POST', body: JSON.stringify(input) }),
     openBoardStream: (signal) => fetchBoardStream(signal),

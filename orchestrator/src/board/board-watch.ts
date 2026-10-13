@@ -22,7 +22,7 @@ const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
 export const BOARD_WATCH_UNCONFIGURED_REMEDY =
   'ORCH_RECORD_API_URL is not set; cleared by: orch record doctor'
 
-export type BoardWatchChunkSource = {
+type BoardWatchChunkSource = {
   read(): Promise<Uint8Array | null>
 }
 

@@ -27,6 +27,19 @@ import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 import { watchHostedBoard } from './board-watch.ts'
 
+function registerBoardWatchCommand(board: Command): void {
+  board.command('presence').action(() => {
+    recordPresence()
+  })
+  board
+    .command('watch')
+    .description('hold the hosted board stream and refresh the local cache')
+    .action(async () => {
+      const code = await watchHostedBoard()
+      if (code !== 0) process.exitCode = code
+    })
+}
+
 const collect = (value: string, values: string[] = []) => [...values, value]
 const localBoardId = (value: string): number => {
   const id = Number(value)
@@ -100,16 +113,7 @@ export function registerBoardCommands(program: Command): void {
         if (result.message) console.log(result.message)
       }
     })
-  board.command('presence').action(() => {
-    recordPresence()
-  })
-  board
-    .command('watch')
-    .description('hold the hosted board stream and refresh the local cache')
-    .action(async () => {
-      const code = await watchHostedBoard()
-      if (code !== 0) process.exitCode = code
-    })
+  registerBoardWatchCommand(board)
   board
     .command('pending')
     .requiredOption('--session <id>')
