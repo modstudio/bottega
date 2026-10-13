@@ -626,7 +626,7 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('${newRecordId()}','${authSpaceA}','${AUTH_EMAIL_HTTP}','${authUserA}',
          'member','pending',now() + interval '1 day',now());`,
     )
-    const server = startRecordApiServer({
+    const server = await startRecordApiServer({
       ...process.env,
       PORT: '0',
       ORCH_RECORD_URL: actorUrl!,

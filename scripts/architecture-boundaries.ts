@@ -736,6 +736,8 @@ export const importBoundaries: ImportBoundary[] = [
       './record-verdicts.ts',
       './record-board-messages.ts',
       './record-board-changes.ts',
+      './record-board-stream.ts',
+      './record-board-wake.ts',
       './record-board-claims.ts',
       './record-board-overview.ts',
       './record-board-receipts.ts',

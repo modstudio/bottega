@@ -23,6 +23,12 @@ import {
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
 } from './record-board-contract.ts'
+import {
+  type BoardStreamClock,
+  type BoardStreamRegistry,
+  type BoardWakeSource,
+  boardStreamResponse,
+} from './record-board-stream.ts'
 import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
@@ -92,6 +98,10 @@ const holderBody = z.object({ holderSession: sessionSchema }).strict()
 const releaseTaskSchema = z.object({ project: z.string().min(1), key: z.string().min(1) }).strict()
 
 export type RecordBoardDeps = {
+  boardWakeSource: BoardWakeSource
+  boardStreamRegistry: BoardStreamRegistry
+  boardStreamClock?: BoardStreamClock
+  readBoardHead(input: BoardTenant): Promise<string>
   listBoardMessages(input: BoardTenant & HostedBoardOverviewFilters): Promise<HostedBoardOverview>
   postBoardMessage(input: BoardTenant & HostedBoardPostInput): Promise<HostedBoardMessage>
   replyBoardMessage(
@@ -143,9 +153,38 @@ function boardTenant(recordUrl: string, identity: RecordIdentity): BoardTenant |
   }
 }
 
+function registerBoardStreamRoute(
+  app: Hono<ApiEnvironment>,
+  deps: {
+    recordUrl: string
+    readSession(headers: Headers): Promise<RecordIdentity | null>
+  } & RecordBoardDeps,
+): void {
+  app.get('/v1/board/stream', (context) => {
+    return boardStreamResponse({
+      readTenant: async () => {
+        const identity = await deps.readSession(context.req.raw.headers)
+        return identity ? boardTenant(deps.recordUrl, identity) : null
+      },
+      wakeSource: deps.boardWakeSource,
+      registry: deps.boardStreamRegistry,
+      readHead: deps.readBoardHead,
+      signal: context.req.raw.signal,
+      clock: deps.boardStreamClock,
+    })
+  })
+}
+
+async function readJson(context: Context<ApiEnvironment>): Promise<unknown> {
+  return context.req.json().catch(() => null)
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
-  deps: { recordUrl: string } & RecordBoardDeps,
+  deps: {
+    recordUrl: string
+    readSession(headers: Headers): Promise<RecordIdentity | null>
+  } & RecordBoardDeps,
   helpers: {
     noSpace(context: Context<ApiEnvironment>): Response
     writeError(context: Context<ApiEnvironment>, error: unknown): Response | Promise<Response>
@@ -153,9 +192,10 @@ export function registerRecordBoardRoutes(
 ): void {
   const tenantOf = (context: Context<ApiEnvironment>) =>
     boardTenant(deps.recordUrl, context.get('identity'))
-  const readJson = async (context: Context<ApiEnvironment>) => context.req.json().catch(() => null)
   const writeError = (context: Context<ApiEnvironment>, error: unknown) =>
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
+
+  registerBoardStreamRoute(app, deps)
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)

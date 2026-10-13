@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../orchestrator/src/record/record-board-stream.ts'
 import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
 import {
   PLATFORM_SPACE_ID,
@@ -22,6 +23,7 @@ const repairedDocBackfill = '20260924201224_dev_917_doc_latest_revision_repair'
 const audienceSetBackfill = '20261009160001_dev_1238_doc_audiences_backfill'
 const audienceVocabularyBackfill = '20261009210001_dev_1238_doc_audience_vocabulary_backfill'
 const boardSharedSpacesMigration = '20261012210147_dev_1217_board_shared_spaces'
+const boardNotifyMigration = '20261013170000_dev_1217_board_notify'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -302,6 +304,12 @@ async function applyAndProveMigration(
   transaction: Transaction,
   migration: MigrationMeta,
 ): Promise<void> {
+  if (
+    migration.name === boardNotifyMigration &&
+    !migration.sql.join('\n').includes(`pg_notify('${BOARD_MESSAGE_NOTIFY_CHANNEL}', '')`)
+  ) {
+    throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
+  }
   if (migration.name === brokenDocBackfill) await seedDocBackfillProof(transaction)
   if (migration.name === audienceVocabularyBackfill)
     await seedAudienceVocabularyBackfill(transaction)
@@ -322,6 +330,36 @@ async function applyAndProveMigration(
     await proofAudienceVocabularyBackfill(transaction)
   if (migration.name === boardSharedSpacesMigration)
     await proofBoardThreadAuthorBackfill(transaction)
+}
+
+async function proofBoardNotifications(database: PGlite): Promise<void> {
+  const notifications: string[] = []
+  const unlisten = await database.listen(BOARD_MESSAGE_NOTIFY_CHANNEL, (payload) => {
+    notifications.push(payload)
+  })
+  try {
+    await database.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
+    await database.exec(`
+      INSERT INTO board_message
+        (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
+      VALUES
+        ('01990000-0000-7000-8000-000000000024', '${platformOperatorId}', 'notice', 'operator',
+         'Board notify proof', 'insert', false, now() + interval '1 day', now());
+    `)
+    await database.exec(`
+      UPDATE board_message SET body='update'
+      WHERE id='01990000-0000-7000-8000-000000000024';
+    `)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (notifications.length !== 2 || notifications.some((payload) => payload !== '')) {
+      throw new CheckFailure(
+        `DEV-1217 board trigger delivered ${JSON.stringify(notifications)} instead of one empty notification for insert and update`,
+      )
+    }
+  } finally {
+    await database.exec('ALTER TABLE board_message FORCE ROW LEVEL SECURITY;')
+    await unlisten()
+  }
 }
 
 async function main(): Promise<void> {
@@ -351,6 +389,7 @@ async function main(): Promise<void> {
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
       })
+      await proofBoardNotifications(database)
     } catch (error) {
       throw error instanceof CheckFailure ? error : phaseFailure('replaying migrations', error)
     }

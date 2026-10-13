@@ -15,6 +15,7 @@ import type {
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { RecordBoardError } from '../../src/record/record-board-contract.ts'
+import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 
 export const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -30,6 +31,9 @@ export function idleBoardDeps(): RecordBoardDeps {
     throw new RecordBoardError('hosted board is not configured', 400)
   }
   return {
+    boardWakeSource: { subscribe: () => () => undefined },
+    boardStreamRegistry: createBoardStreamRegistry(),
+    readBoardHead: async () => '0',
     listBoardMessages: unused,
     postBoardMessage: unused,
     replyBoardMessage: unused,

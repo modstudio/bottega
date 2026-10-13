@@ -12,6 +12,15 @@ import { hostedBoardMessageView, hostedBoardTags } from './record-board-messages
 import { hostedBoardReceiptView } from './record-board-receipts.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
+export async function readHostedBoardHead(input: BoardTenant): Promise<string> {
+  return withBoardTenant(input, false, async (tx) => {
+    const rows = (await tx`
+      SELECT COALESCE(max(revision), 0)::text AS revision FROM board_message
+    `) as { revision: string }[]
+    return rows[0]?.revision ?? '0'
+  })
+}
+
 export async function listHostedBoardChanges(
   input: BoardTenant & { after: string; limit?: number },
 ): Promise<HostedBoardChanges> {

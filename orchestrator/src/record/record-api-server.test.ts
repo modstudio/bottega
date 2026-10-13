@@ -1,28 +1,49 @@
 import { expect, test } from 'bun:test'
-import { recordApiServerConfig } from './record-api-server.ts'
+import { stopRecordApiServer } from './record-api-server.ts'
+import {
+  type BoardWakeSource,
+  boardStreamResponse,
+  createBoardStreamRegistry,
+} from './record-board-stream.ts'
 
-const complete = {
-  ORCH_RECORD_URL: 'postgres://record.test/record',
-  RECORD_AUTH_DATABASE_URL: 'postgres://record-auth.test/record',
-  BETTER_AUTH_SECRET: 'secret-at-least-thirty-two-characters',
-  BETTER_AUTH_URL: 'https://api.example.test',
-  RECORD_HUB_URL: 'https://hub.example.test',
-}
-
-for (const name of [
-  'ORCH_RECORD_URL',
-  'RECORD_AUTH_DATABASE_URL',
-  'BETTER_AUTH_SECRET',
-  'BETTER_AUTH_URL',
-  'RECORD_HUB_URL',
-]) {
-  test(`server refuses without ${name}`, () => {
-    expect(() => recordApiServerConfig({ ...complete, [name]: undefined })).toThrow(
-      `${name} is required to serve the record API`,
-    )
+test('stopping the server ends an open board stream before closing its wake source', async () => {
+  const registry = createBoardStreamRegistry()
+  const listeners = new Set<() => void>()
+  let wakeSourceClosed = false
+  const wakeSource: BoardWakeSource & { close(): Promise<void> } = {
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    async close() {
+      expect(listeners.size).toBe(0)
+      wakeSourceClosed = true
+    },
+  }
+  const response = boardStreamResponse({
+    readTenant: async () => ({
+      url: 'postgres://record.test/record',
+      userId: 'user-a',
+      spaceId: 'space-a',
+      spaceIds: ['space-a'],
+    }),
+    readHead: async () => '0',
+    wakeSource,
+    registry,
+    signal: new AbortController().signal,
   })
-}
-
-test('server defaults PORT to 3000', () => {
-  expect(recordApiServerConfig(complete).port).toBe(3000)
+  const reader = response.body!.getReader()
+  expect((await reader.read()).done).toBe(false)
+  let serverStopped = false
+  await stopRecordApiServer({
+    stop() {
+      expect(wakeSourceClosed).toBe(true)
+      serverStopped = true
+    },
+    boardWakeSource: wakeSource,
+    boardStreamRegistry: registry,
+  })
+  expect((await reader.read()).done).toBe(true)
+  expect(wakeSourceClosed).toBe(true)
+  expect(serverStopped).toBe(true)
 })

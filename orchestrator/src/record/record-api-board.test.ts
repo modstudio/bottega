@@ -214,6 +214,48 @@ test('board changes query refuses a non-integer after cursor', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board changes query' })
 })
 
+test('board stream binds the caller tenant and sends its visible head immediately', async () => {
+  const app = appWith(identity, {
+    readBoardHead: async (input: { userId: string; spaceIds: string[] }) => {
+      expect(input.userId).toBe(identity.user.id)
+      expect(input.spaceIds).toEqual(['space-a', 'space-b'])
+      return '42'
+    },
+  })
+  const response = await app.request('/v1/board/stream')
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('text/event-stream')
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain('id: 42')
+  await reader.cancel()
+})
+
+test('board stream re-resolves the caller tenant before every head read', async () => {
+  const listeners = new Set<() => void>()
+  let sessionReads = 0
+  let headReads = 0
+  const app = appWith(identity, {
+    readSession: async () => (++sessionReads <= 2 ? identity : null),
+    boardWakeSource: {
+      subscribe(listener: () => void) {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    },
+    readBoardHead: async () => {
+      headReads++
+      return '42'
+    },
+  })
+  const response = await app.request('/v1/board/stream')
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain('id: 42')
+  for (const listener of listeners) listener()
+  expect((await reader.read()).done).toBe(true)
+  expect(sessionReads).toBe(3)
+  expect(headReads).toBe(1)
+})
+
 test('a board trigger exception is a named refusal not a server error', async () => {
   const app = appWith(identity, {
     replyBoardMessage: async () => {

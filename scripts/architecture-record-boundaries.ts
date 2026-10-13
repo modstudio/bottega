@@ -236,6 +236,18 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'Keep the hosted board change cursor independent of HTTP and local stores.',
   ),
   boundary(
+    'record-board-wake-boundary',
+    'orchestrator/src/record/record-board-wake.ts',
+    ['bun', './record-board-stream.ts'],
+    'Keep the process-wide board wake adapter independent of HTTP and board visibility.',
+  ),
+  boundary(
+    'record-board-stream-boundary',
+    'orchestrator/src/record/record-board-stream.ts',
+    ['zod', './record-board-tx.ts'],
+    'Keep board stream policy and streaming independent of SQL and authentication.',
+  ),
+  boundary(
     'record-board-overview-boundary',
     'orchestrator/src/record/record-board-overview.ts',
     [
@@ -266,7 +278,14 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-api-board-boundary',
     'orchestrator/src/record/record-api-board.ts',
-    ['hono', 'zod', './record-auth.ts', './record-board-contract.ts', './record-board-tx.ts'],
+    [
+      'hono',
+      'zod',
+      './record-auth.ts',
+      './record-board-contract.ts',
+      './record-board-stream.ts',
+      './record-board-tx.ts',
+    ],
     'Keep hosted board routes independent of SQL and local execution.',
   ),
 ]
