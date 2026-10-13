@@ -62,10 +62,9 @@ function reconnect(
   state: BoardWatchState,
   reason: 'silence' | 'ended' | 'error',
   delayMs: number,
-  next: Partial<BoardWatchState> = {},
 ): BoardWatchDecision {
   return {
-    state: { ...state, attempt: state.attempt + 1, ...next },
+    state: { ...state, attempt: state.attempt + 1 },
     action: 'reconnect',
     reason,
     delayMs,
@@ -102,8 +101,14 @@ export function decideBoardWatch(
     }
   }
   if (event.kind === 'ended-normal' && !state.usedImmediateReconnect) {
-    return reconnect(state, 'ended', 0, { usedImmediateReconnect: true })
+    return {
+      state: { ...state, usedImmediateReconnect: true },
+      action: 'reconnect',
+      reason: 'ended',
+      delayMs: 0,
+    }
   }
-  const reason = event.kind === 'silence' ? 'silence' : event.kind === 'ended-normal' ? 'ended' : 'error'
+  const reason =
+    event.kind === 'silence' ? 'silence' : event.kind === 'ended-normal' ? 'ended' : 'error'
   return reconnect(state, reason, boardWatchBackoffMs(state.attempt, jitter))
 }

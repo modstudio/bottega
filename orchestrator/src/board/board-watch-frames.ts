@@ -44,7 +44,9 @@ function parseBoardStreamFrame(raw: string): BoardStreamFrame | null {
     return { kind: 'malformed' }
   try {
     const parsed = BOARD_STREAM_EVENT.data.safeParse(JSON.parse(record.data))
-    return parsed.success ? { kind: 'event', revision: parsed.data.revision } : { kind: 'malformed' }
+    return parsed.success
+      ? { kind: 'event', revision: parsed.data.revision }
+      : { kind: 'malformed' }
   } catch {
     return { kind: 'malformed' }
   }

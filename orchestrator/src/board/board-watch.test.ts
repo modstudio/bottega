@@ -1,16 +1,16 @@
 import { expect, test } from 'bun:test'
 import { BOARD_STREAM_EVENT } from '../record/record-board-stream.ts'
 import {
-  BOARD_WATCH_BACKOFF_BASE_MS,
-  BOARD_WATCH_SILENCE_MS,
-  BOARD_WATCH_SLOW_INTERVAL_MS,
-} from './board-watch-decision.ts'
-import {
   BOARD_WATCH_UNCONFIGURED_REMEDY,
   type BoardWatchLoopInput,
   type BoardWatchOpen,
   runBoardWatchLoop,
 } from './board-watch.ts'
+import {
+  BOARD_WATCH_BACKOFF_BASE_MS,
+  BOARD_WATCH_SILENCE_MS,
+  BOARD_WATCH_SLOW_INTERVAL_MS,
+} from './board-watch-decision.ts'
 
 const eventFrame = (revision: string) =>
   `id: ${revision}\nevent: ${BOARD_STREAM_EVENT.name}\ndata: ${JSON.stringify({ revision })}\n\n`
@@ -47,7 +47,12 @@ class ManualClock {
   #seq = 1
   #timers = new Map<
     number,
-    { due: number; resolve: (value: 'elapsed' | 'aborted') => void; signal: AbortSignal; onAbort: () => void }
+    {
+      due: number
+      resolve: (value: 'elapsed' | 'aborted') => void
+      signal: AbortSignal
+      onAbort: () => void
+    }
   >()
 
   now() {
@@ -80,7 +85,8 @@ class ManualClock {
       await this.flush()
       let next: { id: number; due: number } | null = null
       for (const [id, timer] of this.#timers) {
-        if (timer.due <= target && (next === null || timer.due < next.due)) next = { id, due: timer.due }
+        if (timer.due <= target && (next === null || timer.due < next.due))
+          next = { id, due: timer.due }
       }
       if (!next) {
         this.nowMs = target
@@ -237,7 +243,7 @@ test('silence reconnects after backoff', async () => {
 test('a changed build exits cleanly', async () => {
   const run = await startLoop()
   run.setBuild('build-b')
-  await run.clock.advance(BOARD_WATCH_SLOW_INTERVAL_MS)
+  run.source().push(': heartbeat\n\n')
   await run.clock.flush()
   expect(await run.done).toBe(0)
   expect(run.logs.some((line) => ended(line, ' exiting for a newer build'))).toBe(true)

@@ -18,7 +18,7 @@ import {
 } from './board-watch-decision.ts'
 import { type BoardStreamFrame, createBoardStreamParser } from './board-watch-frames.ts'
 
-export const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
+const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
 export const BOARD_WATCH_UNCONFIGURED_REMEDY =
   'ORCH_RECORD_API_URL is not set; cleared by: orch record doctor'
 
@@ -49,7 +49,7 @@ export type BoardWatchLoopInput = {
 
 const iso = (now: number) => new Date(now).toISOString()
 
-export async function waitFor(ms: number, signal: AbortSignal): Promise<'elapsed' | 'aborted'> {
+async function waitFor(ms: number, signal: AbortSignal): Promise<'elapsed' | 'aborted'> {
   if (signal.aborted) return 'aborted'
   if (ms <= 0) return 'elapsed'
   return await new Promise((resolve) => {
@@ -169,7 +169,9 @@ async function readOrWait(
   const raced = await Promise.race([
     pending.read.then((value) => ({ kind: 'chunk' as const, value })),
     wait(waitMs, signal).then((result) =>
-      result === 'aborted' ? ({ kind: 'aborted' as const } as const) : ({ kind: 'timer' as const } as const),
+      result === 'aborted'
+        ? ({ kind: 'aborted' as const } as const)
+        : ({ kind: 'timer' as const } as const),
     ),
   ])
   if (raced.kind === 'chunk') pending.read = null
