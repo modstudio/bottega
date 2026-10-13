@@ -196,7 +196,7 @@ export function runReportsMode(
       `head report ${headReport} failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  reporter.log(`ratchet remaining: ${headFindings.length} findings on changed files only`)
+  reporter.log(`ratchet remaining: ${headFindings.length} findings in the head report`)
   let baseFindings: Finding[] = []
   const unanalysedBase = new Set<string>()
   try {
