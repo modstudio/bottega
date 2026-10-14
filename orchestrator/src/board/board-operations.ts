@@ -9,7 +9,6 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type {
   HostedBoardClaim,
@@ -18,6 +17,7 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
+import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,

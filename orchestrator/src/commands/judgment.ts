@@ -11,8 +11,8 @@ import { judgeRun, scoreRun } from '../judgment.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
-import { collect, log, optionFlags, write } from './support.ts'
 import type { CliFlags } from './support.ts'
+import { collect, log, optionFlags, write } from './support.ts'
 
 const commonValueFlags = [
   '--finding',

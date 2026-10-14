@@ -4,12 +4,12 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
   recordApiClient,
 } from '../record/record-api-client.ts'
+import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   type AdoptionCandidate as Candidate,
   type AdoptionCandidateFact as CandidateFact,
