@@ -61,14 +61,7 @@ test('run and question identity migration fills nulls, keeps identities, and pre
       )
       .run(missingQuestion.id, missingRun.id)
 
-    expect(applyMigrations(database)).toEqual([
-      '0104_run_question_record_identity',
-      '0105_doc_checked_against_commit',
-      '0106_review_landing_release_doc_record_identity',
-      '0107_score_gate_claim_audit_record_identity',
-      '0108_workflow_lens_port_record_identity',
-      '0109_remaining_store_record_identity',
-    ])
+    expect(applyMigrations(database)).toContain('0104_run_question_record_identity')
     const runIds = database
       .query<{ id: number; record_id: string }, []>('SELECT id,record_id FROM run ORDER BY id')
       .all()

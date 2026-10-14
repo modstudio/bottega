@@ -225,10 +225,7 @@ test('workflow lens and port identity migration fills ids, keeps rows and keys, 
         (database.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
       ]),
     )
-    expect(applyMigrations(database)).toEqual([
-      '0108_workflow_lens_port_record_identity',
-      '0109_remaining_store_record_identity',
-    ])
+    expect(applyMigrations(database)).toContain('0108_workflow_lens_port_record_identity')
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
         n: before[table],

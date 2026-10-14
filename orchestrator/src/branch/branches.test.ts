@@ -10,7 +10,10 @@ import {
 } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { recordBranchLanding } from './branch-landing-service.ts'
+import {
+  recordAutomaticBranchLandingEvidence,
+  recordBranchLanding,
+} from './branch-landing-service.ts'
 import { pruneBranches, renderBranchPruneReport } from './branches.ts'
 
 test('landing refusal explains that only a run-minted branch can be recorded', () => {
@@ -59,13 +62,47 @@ test('dry-run previews automatic landing repair without writing, then non-dry pr
     const persisted = pruneBranches({ project, key })
     expect(persisted.recordedLandings.map((landing) => landing.branch)).toEqual([branch])
     expect(persisted.wouldRecordLandings).toEqual([])
+    const first = db()
+      .query('SELECT record_id,branch,tip,pr_number FROM branch_landing_record')
+      .get() as {
+      record_id: string
+      branch: string
+      tip: string
+      pr_number: number
+    }
+    expect(first).toEqual({ record_id: expect.any(String), branch, tip, pr_number: 1049 })
+
+    recordAutomaticBranchLandingEvidence(branch, {
+      number: 1050,
+      state: 'MERGED',
+      headRefName: branch,
+      headRefOid: 'updated-tip',
+      title: `${key} updated landing`,
+      mergeCommit: { oid: 'updated-merge' },
+      mergedAt: '2026-10-01T12:00:00Z',
+    })
     expect(
-      db().query('SELECT branch,tip,pr_number FROM branch_landing_record').get() as {
+      db()
+        .query(
+          `SELECT record_id,branch,tip,pr_number,merge_commit,merged_at
+             FROM branch_landing_record`,
+        )
+        .get() as {
+        record_id: string
         branch: string
         tip: string
         pr_number: number
+        merge_commit: string
+        merged_at: string
       },
-    ).toEqual({ branch, tip, pr_number: 1049 })
+    ).toEqual({
+      record_id: first.record_id,
+      branch,
+      tip: 'updated-tip',
+      pr_number: 1050,
+      merge_commit: 'updated-merge',
+      merged_at: '2026-10-01T12:00:00Z',
+    })
   } finally {
     if (originalPath === undefined) delete process.env.PATH
     else process.env.PATH = originalPath

@@ -105,8 +105,7 @@ def log(decision, why, inp, event, payload=None):
     writers it is competing with have.
     """
     row = (
-        # Python is the hook's language-local minter; a Bun process per event would make the gate expensive.
-        str(uuid.uuid7()),
+        None,
         time.strftime("%Y-%m-%dT%H:%M:%S"),
         session_id(payload),
         os.getcwd(),
@@ -119,6 +118,10 @@ def log(decision, why, inp, event, payload=None):
         why,
     )
     try:
+        # Python is the hook's language-local minter; a Bun process per event would make the gate expensive.
+        # Mint inside the same fail-open boundary as the write so a minter failure is recorded like any
+        # other failed spawn write, without inventing a substitute identity.
+        row = (str(uuid.uuid7()), *row[1:])
         # No CREATE TABLE here: orch owns the schema and creates it on open.
         # Taking a schema lock on every spawn only contended with the writers
         # this then had to wait for.
