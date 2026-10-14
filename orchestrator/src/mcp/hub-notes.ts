@@ -76,7 +76,7 @@ export async function fileNote(
     ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
     '--json',
   ]
-  return parseFiledNoteOutput((await spawnOutput('hub', args, cwd)).trim())
+  return parseFiledNoteOutput((await hubOutput(args, cwd)).trim())
 }
 
 export function parseFiledNoteOutput(output: string) {

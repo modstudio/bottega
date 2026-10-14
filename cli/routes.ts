@@ -86,7 +86,7 @@ export const ROUTES = (
     route('workflow', 'orch', 'workflow'),
     route('task recent', 'hub', 'tasks'),
     route('task', 'hub', 'task'),
-    route('note new', 'orch', 'note'),
+    route('note new', 'hub', 'note new'),
     route('note', 'hub', 'note'),
     route('report', 'hub', 'report'),
     route('board', 'orch', 'board'),
