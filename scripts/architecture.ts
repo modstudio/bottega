@@ -134,8 +134,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/question-open.ts', []),
   module('orchestrator/src/run/question-close.ts', [
-    '../../../shared/record-id.ts',
     '../database/db.ts',
+    './question-delivery.ts',
     './question-mutation.ts',
     './question-open.ts',
     './question-outbox.ts',

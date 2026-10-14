@@ -307,7 +307,7 @@ function recordedReviewedHead(runId: number, required: boolean): string | null {
   )
 }
 
-export function insertBlockerRows(runId: number, rows: BlockerRow[], at: string): void {
+function insertBlockerRows(runId: number, rows: BlockerRow[], at: string): void {
   if (!rows.length) return
   const q = db().query(
     `INSERT INTO blocker (record_id,run_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
