@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
-import { addAgent, type AgentRow, rowAgent } from './agent-registry.ts'
+import { type AgentRow, addAgent, rowAgent } from './agent-registry.ts'
 
 function codexRow(probeResult: unknown): AgentRow {
   const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow

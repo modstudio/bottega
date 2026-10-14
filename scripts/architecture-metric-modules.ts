@@ -14,6 +14,7 @@ export const metricModules: MetricModule[] = [
   module('orchestrator/src/metric/metric.ts', [
     '../../../shared/file-kind.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',

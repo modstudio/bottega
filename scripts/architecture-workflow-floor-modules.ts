@@ -93,6 +93,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:fs',
     'node:os',
     'node:path',
+    '../../../shared/record-id.ts',
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',
     '../database/db.ts',

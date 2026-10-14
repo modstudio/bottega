@@ -257,6 +257,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     './agents.ts',
     './capabilities.ts',
     '../database/db.ts',

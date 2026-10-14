@@ -22,6 +22,7 @@ export const monitorModules: MonitorModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../canon/canon.ts',
     '../board/board-service.ts',
     '../database/db.ts',

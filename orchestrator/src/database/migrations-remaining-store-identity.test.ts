@@ -116,7 +116,9 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     expect(database.query('SELECT invocation_id FROM monitor_condition').get()).toEqual({
       invocation_id: 1,
     })
-    expect(database.query("SELECT collected_at,canon_tokens FROM metric WHERE day='2026-10-14'").get()).toEqual({
+    expect(
+      database.query("SELECT collected_at,canon_tokens FROM metric WHERE day='2026-10-14'").get(),
+    ).toEqual({
       collected_at: '2026-10-14',
       canon_tokens: 0,
     })
