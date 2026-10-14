@@ -105,7 +105,9 @@ test('review landing release and doc identity migration fills nulls, keeps ident
       )
       .run()
     database
-      .query("INSERT INTO landing (id,project,branch,status,started_at) VALUES (1,'p','b','queued','2026-10-14')")
+      .query(
+        "INSERT INTO landing (id,project,branch,status,started_at) VALUES (1,'p','b','queued','2026-10-14')",
+      )
       .run()
     database
       .query(
@@ -201,7 +203,11 @@ test('review landing release and doc identity migration fills nulls, keeps ident
 
     expect(applyMigrations(database)).toEqual(['0106_review_landing_release_doc_record_identity'])
     const ids = (table: string) =>
-      database.query<{ id: number; record_id: string }, []>(`SELECT id,record_id FROM ${table} ORDER BY id`).all()
+      database
+        .query<{ id: number; record_id: string }, []>(
+          `SELECT id,record_id FROM ${table} ORDER BY id`,
+        )
+        .all()
     const reviewIds = ids('review')
     expect(reviewIds.find((row) => row.id === 1)?.record_id).toMatch(UUID_V4)
     expect(reviewIds.find((row) => row.id === 2)?.record_id).toBe(kept.review)
@@ -233,7 +239,9 @@ test('review landing release and doc identity migration fills nulls, keeps ident
           .get()?.notnull,
       ).toBe(1)
     }
-    expect(database.query('SELECT review_id,finding_ordinal FROM review_finding_amendment').get()).toEqual({
+    expect(
+      database.query('SELECT review_id,finding_ordinal FROM review_finding_amendment').get(),
+    ).toEqual({
       review_id: 1,
       finding_ordinal: 1,
     })

@@ -669,7 +669,9 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)
   local
-    .query("INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)")
+    .query(
+      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
+    )
     .run(STAMP)
   local
     .query(

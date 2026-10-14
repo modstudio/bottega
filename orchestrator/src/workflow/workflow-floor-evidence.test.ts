@@ -271,9 +271,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
   })
   d.query(
     `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
-  ).run(
-    projectId(d, 'other'),
-  )
+  ).run(projectId(d, 'other'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
@@ -289,9 +287,7 @@ test('a foreign review is refused and a matching review is allowed', () => {
   })
   d.query(
     `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
-  ).run(
-    projectId(d, 'fixture'),
-  )
+  ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
@@ -354,9 +350,7 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
   })
   d.query(
     `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
-  ).run(
-    projectId(d, 'fixture'),
-  )
+  ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
@@ -375,9 +369,7 @@ test('a review matches when a lens run carries the workflow key on another branc
   })
   d.query(
     `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
-  ).run(
-    projectId(d, 'fixture'),
-  )
+  ).run(projectId(d, 'fixture'))
   d.query(
     `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
      VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,

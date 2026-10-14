@@ -36,7 +36,7 @@ describe('review discipline', () => {
       { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
     ])
     const identities = db()
-      .query<{ record_id: string }, [number]>(
+      .query<{ record_id: string }, [number, number, number]>(
         `SELECT record_id FROM review WHERE id=?
          UNION ALL SELECT record_id FROM review_lens WHERE review_id=?
          UNION ALL SELECT record_id FROM review_finding WHERE review_id=?`,

@@ -131,6 +131,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'node:fs',
       'node:path',
       'zod',
+      '../../../shared/record/schema.ts',
       '../database/db.ts',
       './review-finding-restore-policy.ts',
     ],

@@ -6,11 +6,11 @@ import {
   type JSONRPCRequest,
 } from '@modelcontextprotocol/client'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'

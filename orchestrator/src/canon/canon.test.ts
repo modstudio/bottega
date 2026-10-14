@@ -461,14 +461,18 @@ describe('schema coexistence', () => {
           .get(repo, projectId) as { id: number }
       ).id
     const mixed = (
-      d.query(
-        `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
-      ).get() as { id: number }
+      d
+        .query(
+          `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+        )
+        .get() as { id: number }
     ).id
     const aliased = (
-      d.query(
-        `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
-      ).get() as { id: number }
+      d
+        .query(
+          `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+        )
+        .get() as { id: number }
     ).id
     const mixedA = insertRun('starship', starship)
     const mixedB = insertRun('alephbeis', starship)

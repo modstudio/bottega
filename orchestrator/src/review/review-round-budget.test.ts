@@ -39,7 +39,7 @@ function addEvidence(input: {
   deliveryNone?: boolean
 }): void {
   const review = db()
-    .query<{ id: number }, [string, number | null, string | null, string]>(
+    .query<{ id: number }, [string, string, number | null, string | null, string]>(
       `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
        VALUES (?,?,?,?,?) RETURNING id`,
     )
