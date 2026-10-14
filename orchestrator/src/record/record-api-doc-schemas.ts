@@ -52,7 +52,7 @@ export const recordDocUpsertSchema = z.object({
   slug: z.string().min(1),
   title: z.string(),
   body: z.string(),
-  delivery: deliverySchema,
+  delivery: deliverySchema.optional(),
   ...recordDocTreeFieldShape,
   projectName: z.string().nullable().optional(),
   reason: z.string().trim().min(1),

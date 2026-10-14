@@ -460,12 +460,58 @@ describe('record client', () => {
       ['https://api.example.test/v1/config/entries/autonomy.stage.review', 'DELETE'],
       ['https://api.example.test/v1/settings/permission', 'POST'],
     ])
+    expect(requests[0]?.body).toEqual({
+      scope: 'canon',
+      subject: null,
+      owner: id,
+      slug: 'preferences',
+      title: 'Preferences',
+      body: 'Body',
+      delivery: 'inject',
+      reason: 'updated',
+      author: 'hub-dashboard',
+      expectedRevision: revisionId,
+    })
     expect(requests[2]?.body).toEqual({
       scope: 'user',
       value: 'manual',
       expectedRowVersion: 1,
       environment: 'default',
     })
+  })
+
+  test('reads every hosted subject page from the destination space', async () => {
+    const subject = {
+      id: '01990000-0000-7000-8000-000000000010',
+      project: 'alpha',
+      name: 'Routing',
+      definition: 'How work is routed.',
+      position: 0,
+      parentId: null,
+      state: 'active',
+      retiredAt: null,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    } as const
+    const requests: Array<{ url: string; space: string | null }> = []
+    const fetch: RecordFetch = async (url, init) => {
+      requests.push({ url, space: new Headers(init?.headers).get('x-record-space') })
+      return url.includes('cursor=next')
+        ? jsonResponse({ items: [{ ...subject, name: 'Evidence' }], nextCursor: null })
+        : jsonResponse({ items: [subject], nextCursor: 'next' })
+    }
+    const got = await clientWith(fetch).subjects({ project: 'alpha' }, whoamiBody.activeSpaceId)
+    expect(got.map(({ name }) => name)).toEqual(['Routing', 'Evidence'])
+    expect(requests).toEqual([
+      {
+        url: 'https://api.example.test/v1/subjects?project=alpha&limit=500',
+        space: whoamiBody.activeSpaceId,
+      },
+      {
+        url: 'https://api.example.test/v1/subjects?project=alpha&limit=500&cursor=next',
+        space: whoamiBody.activeSpaceId,
+      },
+    ])
   })
 
   test('maps 401 to UNAUTHORIZED with the API remedy text', async () => {

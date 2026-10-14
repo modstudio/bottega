@@ -1,6 +1,13 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES } from '../../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_FORMS,
+  DOC_KINDS,
+  DOC_STATUSES,
+  normalizeDocAudiences,
+  normalizeDocSourceFiles,
+} from '../../../../shared/docs.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
@@ -36,6 +43,14 @@ const delivery = z.enum(['none', 'partial', 'full'])
 const quality = z.enum(['wrong', 'mixed', 'right'])
 const fidelity = z.enum(['drifted', 'partial', 'faithful'])
 const HOSTED_STARTED_AT = new Date().toISOString()
+const docAudiences = z
+  .array(z.enum(DOC_AUDIENCES))
+  .nonempty()
+  .refine(
+    (values) => new Set(values).size === values.length,
+    'Audiences must not contain duplicates',
+  )
+  .transform(normalizeDocAudiences)
 
 export function recordClient(ctx: Context) {
   const baseUrl = process.env.HUB_RECORD_API_URL
@@ -312,6 +327,18 @@ export const recordRouter = t.router({
   docRevisions: t.procedure
     .input(z.object({ id: uuid, audience: z.enum(DOC_AUDIENCES).optional() }))
     .query(({ ctx, input }) => recordClient(ctx).docRevisions(input.id, input.audience)),
+  subjects: t.procedure
+    .input(
+      z.object({
+        spaceId: uuid,
+        project: z.string().trim().min(1),
+        includeRetired: z.boolean().optional(),
+      }),
+    )
+    .query(({ ctx, input }) => {
+      const { spaceId, ...query } = input
+      return recordClient(ctx).subjects(query, spaceId)
+    }),
   saveDoc: t.procedure
     .input(
       z.object({
@@ -321,7 +348,14 @@ export const recordRouter = t.router({
         slug: z.string().min(1),
         title: z.string(),
         body: z.string(),
-        delivery: z.enum(['inject', 'demand']),
+        delivery: z.enum(['inject', 'demand']).optional(),
+        status: z.enum(DOC_STATUSES).optional(),
+        parentRecordId: uuid.nullable().optional(),
+        audiences: docAudiences.optional(),
+        form: z.enum(DOC_FORMS).nullable().optional(),
+        articleSubjectId: uuid.nullable().optional(),
+        relatedSubjectIds: z.array(uuid).optional(),
+        sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
         reason: z.string().trim().min(1, 'Reason is required'),
         expectedRevision: uuid,
       }),
@@ -330,7 +364,14 @@ export const recordRouter = t.router({
       const client = recordClient(ctx)
       const who = await client.whoami()
       const { spaceId, ...doc } = input
-      return client.putDoc({ ...doc, author: who.user.id }, spaceId)
+      const saved = await client.putDoc(
+        {
+          ...doc,
+          author: who.user.id,
+        },
+        spaceId,
+      )
+      return { revision: saved.revisionId }
     }),
   deleteDoc: t.procedure
     .input(

@@ -71,3 +71,17 @@ test('hosted writes reject invalid audience sets and normalize their order', () 
     recordDocUpsertSchema.parse({ ...input, audiences: ['customer', 'technical'] }).audiences,
   ).toEqual(['technical', 'customer'])
 })
+
+test('hosted updates may omit delivery so the write service can preserve it', () => {
+  const parsed = recordDocUpsertSchema.safeParse({
+    scope: 'global',
+    subject: null,
+    slug: 'body-only',
+    title: 'Body only',
+    body: 'Changed body.',
+    reason: 'edit body',
+    author: 'test',
+  })
+  expect(parsed.success).toBe(true)
+  if (parsed.success) expect('delivery' in parsed.data).toBe(false)
+})

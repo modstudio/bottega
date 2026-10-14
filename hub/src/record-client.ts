@@ -6,6 +6,7 @@ import {
   DOC_STATUSES,
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocStatus,
   hostedDocAudiences,
@@ -16,6 +17,7 @@ import {
   OrchBlockersSchema,
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
+import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {
   BoardListResultSchema,
   BoardStatusResultSchema,
@@ -296,6 +298,10 @@ const docSchema = DocSchema.extend({
 }).extend(ArticleDocFieldsSchema.shape)
 
 const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
+const subjectsSchema = z.object({
+  items: z.array(SubjectOutputSchema),
+  nextCursor: z.string().nullable(),
+})
 
 const publicDocTreeItemSchema = DocTreeItemSchema.extend({
   audiences: hostedDocAudiencesSchema,
@@ -492,6 +498,26 @@ type RecordDocSearchInput = {
   acrossReadableSpaces?: boolean
 }
 
+type RecordPutDocInput = {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+  title: string
+  body: string
+  delivery?: 'inject' | 'demand'
+  audiences?: DocAudiences
+  status?: DocStatus
+  parentRecordId?: string | null
+  form?: DocForm | null
+  articleSubjectId?: string | null
+  relatedSubjectIds?: string[]
+  sourceFiles?: string[]
+  reason: string
+  author: string
+  expectedRevision?: string
+}
+
 function recordDocSearch(options: RecordClientOptions, input: RecordDocSearchInput) {
   return request(
     options,
@@ -506,6 +532,31 @@ function recordDocSearch(options: RecordClientOptions, input: RecordDocSearchInp
     }),
     hostedDocSearchSchema,
   )
+}
+
+async function recordSubjects(
+  options: RecordClientOptions,
+  input: { project: string; includeRetired?: boolean },
+  destinationSpaceId: string,
+) {
+  const items: z.infer<typeof SubjectOutputSchema>[] = []
+  let cursor: string | undefined
+  do {
+    const page = await request(
+      options,
+      query('/v1/subjects', {
+        project: input.project,
+        includeRetired: input.includeRetired ? 'true' : undefined,
+        limit: 500,
+        cursor,
+      }),
+      subjectsSchema,
+      { headers: { 'x-record-space': destinationSpaceId } },
+    )
+    items.push(...page.items)
+    cursor = page.nextCursor ?? undefined
+  } while (cursor)
+  return items
 }
 
 export function createRecordClient(options: RecordClientOptions) {
@@ -650,22 +701,9 @@ export function createRecordClient(options: RecordClientOptions) {
         query(`/v1/docs/${encodeURIComponent(id)}/revisions`, { audience }),
         docRevisionsSchema,
       ),
-    putDoc: (
-      input: {
-        scope: string
-        subject: string | null
-        owner?: string | null
-        slug: string
-        title: string
-        body: string
-        delivery: 'inject' | 'demand'
-        audiences?: DocAudiences
-        reason: string
-        author: string
-        expectedRevision?: string
-      },
-      destinationSpaceId?: string,
-    ) =>
+    subjects: (input: { project: string; includeRetired?: boolean }, destinationSpaceId: string) =>
+      recordSubjects(options, input, destinationSpaceId),
+    putDoc: (input: RecordPutDocInput, destinationSpaceId?: string) =>
       request(options, '/v1/docs', docWriteResultSchema, {
         method: 'PUT',
         headers: {

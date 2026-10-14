@@ -26,6 +26,7 @@ import {
   DOC_STATUSES,
   type DocAudience,
   type DocAudiences,
+  type DocForm,
   type DocKind,
   type DocStatus,
   type FilingDocScope,
@@ -876,6 +877,10 @@ export type DocSetInput = {
   kind?: DocKind
   replacementSlug?: string | null
   parentSlug?: string | null
+  form?: DocForm | null
+  articleSubject?: string | null
+  relatedSubjects?: string[]
+  sourceFiles?: string[]
   position?: number
   expectedRevision?: string
 }
@@ -909,6 +914,10 @@ export type DocArgvInput = {
   match?: string
   bodyMatch?: string
   parentSlug?: string | null
+  form?: DocForm | null
+  articleSubject?: string | null
+  relatedSubjects?: string[]
+  sourceFiles?: string[]
   position?: number
   expectedRevision?: string
   user?: boolean
@@ -927,6 +936,16 @@ function docAddressFlags(input: DocArgvInput): string[] {
   ]
 }
 
+function nullableDocFlag(value: string | null | undefined, flag: string, clearFlag: string) {
+  if (value === null) return [clearFlag]
+  return value ? [flag, value] : []
+}
+
+function docListFlags(values: string[] | undefined, flag: string, clearFlag: string) {
+  if (values?.length === 0) return [clearFlag]
+  return values?.flatMap((value) => [flag, value]) ?? []
+}
+
 function docSetFlags(input: DocArgvInput): string[] {
   return [
     ...(input.delivery ? ['--delivery', input.delivery] : []),
@@ -934,11 +953,11 @@ function docSetFlags(input: DocArgvInput): string[] {
     ...(input.status ? ['--status', input.status] : []),
     ...(input.kind ? ['--kind', input.kind] : []),
     ...(input.replacementSlug ? ['--replacement', input.replacementSlug] : []),
-    ...(input.parentSlug === null
-      ? ['--no-parent']
-      : input.parentSlug
-        ? ['--parent', input.parentSlug]
-        : []),
+    ...nullableDocFlag(input.parentSlug, '--parent', '--no-parent'),
+    ...nullableDocFlag(input.form, '--form', '--no-form'),
+    ...nullableDocFlag(input.articleSubject, '--article-subject', '--no-article-subject'),
+    ...docListFlags(input.relatedSubjects, '--related-subject', '--no-related-subjects'),
+    ...docListFlags(input.sourceFiles, '--source-file', '--no-source-files'),
     ...(input.position !== undefined ? ['--position', String(input.position)] : []),
     ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
   ]

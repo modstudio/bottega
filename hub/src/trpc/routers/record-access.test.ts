@@ -49,14 +49,13 @@ test('hosted document mutations bind the destination, authenticated author, and 
   }) as typeof fetch
   const api = recordRouter.createCaller({ authorization: 'Bearer token' })
 
-  await api.saveDoc({
+  const saved = await api.saveDoc({
     spaceId,
     scope: 'project',
     subject: PLATFORM_NAME,
     slug: 'guide',
     title: 'Guide',
     body: 'Body',
-    delivery: 'demand',
     reason: 'save it',
     expectedRevision: revisionId,
   })
@@ -68,9 +67,99 @@ test('hosted document mutations bind the destination, authenticated author, and 
     spaceId,
   ])
   expect(requests.map(({ init }) => JSON.parse(String(init.body)))).toEqual([
-    expect.objectContaining({ author: userId, expectedRevision: revisionId }),
+    {
+      scope: 'project',
+      subject: PLATFORM_NAME,
+      slug: 'guide',
+      title: 'Guide',
+      body: 'Body',
+      reason: 'save it',
+      expectedRevision: revisionId,
+      author: userId,
+    },
     { author: userId, expectedRevision: revisionId, reason: 'remove it' },
   ])
+  expect(saved).toEqual({ revision: revisionId })
+})
+
+test('hosted document save sends explicit article clears and refuses invalid fields at the edge', async () => {
+  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  let savedBody: unknown
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname
+    if (path === '/v1/whoami') {
+      return Response.json({
+        user: { id: userId },
+        activeSpaceId: spaceId,
+        personalSpaceId: null,
+        memberships: [{ space_id: spaceId, slug: 'acme', permission: 'write' }],
+      })
+    }
+    savedBody = JSON.parse(String(init?.body))
+    return Response.json({ id: spaceId, revisionId })
+  }) as typeof fetch
+  const api = recordRouter.createCaller({ authorization: 'Bearer token' })
+  await api.saveDoc({
+    spaceId,
+    scope: 'project',
+    subject: PLATFORM_NAME,
+    slug: 'guide',
+    title: 'Guide',
+    body: 'Body',
+    reason: 'clear article fields',
+    expectedRevision: revisionId,
+    parentRecordId: null,
+    form: null,
+    articleSubjectId: null,
+    relatedSubjectIds: [],
+    sourceFiles: [],
+  })
+  expect(savedBody).toEqual({
+    scope: 'project',
+    subject: PLATFORM_NAME,
+    slug: 'guide',
+    title: 'Guide',
+    body: 'Body',
+    reason: 'clear article fields',
+    expectedRevision: revisionId,
+    parentRecordId: null,
+    form: null,
+    articleSubjectId: null,
+    relatedSubjectIds: [],
+    sourceFiles: [],
+    author: userId,
+  })
+  await expect(
+    api.saveDoc({
+      spaceId,
+      scope: 'project',
+      subject: PLATFORM_NAME,
+      slug: 'guide',
+      title: 'Guide',
+      body: 'Body',
+      reason: 'invalid form',
+      expectedRevision: revisionId,
+      form: 'essay' as 'feature',
+    }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('feature') })
+})
+
+test('hosted subject choices read the destination space through the record client', async () => {
+  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  let request: { url: string; space: string | null } | undefined
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    request = {
+      url: String(input),
+      space: new Headers(init?.headers).get('x-record-space'),
+    }
+    return Response.json({ items: [], nextCursor: null })
+  }) as typeof fetch
+  const api = recordRouter.createCaller({ authorization: 'Bearer token' })
+  expect(await api.subjects({ spaceId, project: PLATFORM_NAME })).toEqual([])
+  expect(request).toEqual({
+    url: `https://record.example.test/v1/subjects?project=${encodeURIComponent(PLATFORM_NAME)}&limit=500`,
+    space: spaceId,
+  })
 })
 
 const mutations = [

@@ -2,10 +2,12 @@ import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import {
   DOC_AUDIENCES,
+  DOC_FORMS,
   DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
   normalizeDocAudiences,
+  normalizeDocSourceFiles,
 } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocRevisionRead, localDocsTree } from '../../local-docs.ts'
@@ -90,6 +92,10 @@ export const docRouter = t.router({
         kind: z.enum(DOC_KINDS).optional(),
         replacementSlug: z.string().nullable().optional(),
         parentSlug: z.string().nullable().optional(),
+        form: z.enum(DOC_FORMS).nullable().optional(),
+        articleSubject: z.string().trim().min(1).nullable().optional(),
+        relatedSubjects: z.array(z.string().trim().min(1)).optional(),
+        sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
         position: z.number().int().optional(),
         expectedRevision,
       }),
