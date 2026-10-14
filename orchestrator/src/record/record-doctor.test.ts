@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   decideRecordDoctorChecks,
@@ -20,7 +21,7 @@ describe('record doctor decisions', () => {
       { spaceId: 'space-2', name: 'Library', slug: 'library', permission: 'read' },
     ],
     projects: [
-      { name: 'bottega', space: 'workshop' },
+      { name: PLATFORM_NAME, space: 'workshop' },
       { name: 'local-only', space: null },
     ],
     pendingOutboxRows: 2,
@@ -38,7 +39,7 @@ describe('record doctor decisions', () => {
       'session active space',
       'membership workshop',
       'membership library',
-      'project bottega declared space',
+      `project ${PLATFORM_NAME} declared space`,
       'local outbox pending rows',
       'local outbox quarantined rows',
     ])

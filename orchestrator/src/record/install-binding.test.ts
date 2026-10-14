@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../database/migrations.ts'
 import {
-  describeRecordInstallBinding,
   NEVER_BOUND,
   type RecordInstallBinding,
   readRecordInstallBinding,
@@ -14,12 +13,10 @@ import {
 
 test('the record install binding is monotonic and records its first binding time', () => {
   expect(readRecordInstallBinding()).toEqual(NEVER_BOUND)
-  expect(describeRecordInstallBinding(NEVER_BOUND)).toBe('never bound')
 
   rememberHostedRecord()
   const first = readRecordInstallBinding()
   expect(first.bound).toBe(true)
-  expect(describeRecordInstallBinding(first)).toMatch(/^bound since /)
 
   rememberHostedRecord()
   expect(readRecordInstallBinding()).toEqual(first)

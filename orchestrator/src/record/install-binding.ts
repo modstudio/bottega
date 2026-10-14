@@ -27,7 +27,3 @@ export function rememberHostedRecord(database: Database = db()): void {
       .run(nowIso())
   }, database)
 }
-
-export function describeRecordInstallBinding(binding: RecordInstallBinding): string {
-  return binding.bound ? `bound since ${binding.boundAt}` : 'never bound'
-}
