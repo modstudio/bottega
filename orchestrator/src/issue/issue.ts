@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
@@ -307,7 +307,7 @@ function fixSeedRejection(target: Project, reporting: Project, comments: string[
 function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
-Do not edit files. Establish whether the cause is Bottega's own code, the live register row, or this project's own tool.
+Do not edit files. Establish whether the cause is ${PLATFORM_NAME}'s own code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
 ${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
