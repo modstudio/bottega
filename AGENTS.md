@@ -27,7 +27,7 @@ code does not duplicate it.
 
 ## Bottega serves the other projects
 
-Workflow and lifecycle capability belongs here and is exposed through `orch`,
+Workflow and lifecycle capability belongs here and is exposed through `bottega`,
 the MCP surface and the project register. Do not copy a Bottega mechanism into
 a project when that project can call Bottega. A project's worktree lifecycle
 takes one of three modes. Managed with project hooks is the default: Bottega
@@ -38,7 +38,7 @@ recipe step that runs project code runs the tree's own copy, never the main
 checkout's, so the recipe and the code it calls are one version.
 
 A project may keep its own task tracker, doc store, workflows or review
-pipeline. The project register, read with `orch project list --json`, is the
+pipeline. The project register, read with `bottega project list --json`, is the
 authority on which concerns it keeps, its key prefixes, landing branch,
 worktree recipes and project notes. Read it before assuming which system
 applies or that a project lacks a capability. Pull requests target the declared
@@ -54,7 +54,7 @@ log or to a database the dashboard serves. Only whether a reference resolves
 may be reported. Gitleaks gates the repository, and its allowlist is limited to
 named fake fixture credentials in `.gitleaks.toml`.
 
-Summaries go through `orch`; do not add a metered provider key for them.
+Summaries go through `bottega`; do not add a metered provider key for them.
 
 ## This machine
 
@@ -88,12 +88,12 @@ is not a rate.
 ## Tasks
 
 Work in progress is tracked in `hub`, and every task, branch and commit subject
-carries its project task key. Use `hub task` to manage tasks. Work without a key
-cannot later be attributed to its task. `orch do` requires the key.
+carries its project task key. Use `bottega task` to manage tasks. Work without a key
+cannot later be attributed to its task. `bottega run start` requires the key.
 
 The project register is authoritative for task-key prefixes and worktree
 recipes. Its project update verbs verify declared branches and refuse a
-mismatch; `orch doctor` reports a checkout on the wrong branch as a register
+mismatch; `bottega machine doctor` reports a checkout on the wrong branch as a register
 question rather than a run failure.
 
 ## Canon
@@ -101,11 +101,11 @@ question rather than a run failure.
 Canon has four tiers. This entry and `.agents/rules/` are always on; context
 files are path-scoped; a directory `AGENTS.md` is its folder card; demand
 references live in the doc store. Canon rows use doc-store scope
-`canon` and reach the tree through `orch canon hydrate`. Research and plans
+`canon` and reach the tree through `bottega doc canon hydrate`. Research and plans
 live in the doc store, not always-on files.
 
-An architect edits canon in the store with `orch doc set` at scope `canon`,
-syncs it into a worktree with `orch canon hydrate`, then commits the files
+An architect edits canon in the store with `bottega doc set` at scope `canon`,
+syncs it into a worktree with `bottega doc canon hydrate`, then commits the files
 hydrate wrote. A worker instead writes the intended hydrated file in its tree
 and states the exact store change in its reply. After review, the architect
 applies that store change before the final gate; hydration must then reproduce
@@ -113,5 +113,5 @@ the reviewed tree file. An unreported tree edit is overwritten at the next
 hydrate and never becomes canon.
 
 Every `AGENTS.md` has a sibling `CLAUDE.md` symlink. `.claude/rules` exposes the
-always-on rules. `orch canon lint` gates tier budgets, metadata, writing rules
+always-on rules. `bottega doc canon lint` gates tier budgets, metadata, writing rules
 and citations.

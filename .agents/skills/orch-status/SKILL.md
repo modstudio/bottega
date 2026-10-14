@@ -21,15 +21,15 @@ run and therefore no session. Accept no other argument.
 Run each command once. Do not poll, start a background process, or leave a
 process behind.
 
-1. Read the board with `./bin/hub task list --project bottega --json`. Parse the
+1. Read the board with `./bin/bottega task list --project bottega --json`. Parse the
    response as one JSON array. Its `parent_key` fields establish task hierarchy;
    `opened_at` is not a filing-session identifier or a `created_at` field.
 2. Read run chains as JSON Lines with
-   `./bin/orch runs --json --limit 100000`. Parse each nonblank line as one JSON
+   `./bin/bottega run list --json --limit 100000`. Parse each nonblank line as one JSON
    object; the stream is not one JSON document.
-3. Read scoring debt with `./bin/orch pending`.
-4. Read rulings with `./bin/orch inbox --json` for the default report, or
-   `./bin/orch inbox --all --json` for `--all`.
+3. Read scoring debt with `./bin/bottega score pending`.
+4. Read rulings with `./bin/bottega question inbox --json` for the default report, or
+   `./bin/bottega question inbox --all --json` for `--all`.
 5. For every in-scope task, query trunk separately with a bounded
    `git log main -1 --format='%H%x09%s' --extended-regexp
    --grep='(^|[^[:alnum:]-])<KEY>([^[:digit:]]|$)'`. A board status is not
@@ -44,11 +44,11 @@ trunk commit is the landing evidence this report needs.
 Capture each command's exit status, stdout, and stderr. An empty response is not
 an empty category. If a command fails, prints no usable data, or returns data
 that cannot be parsed, name that interface and its result in the affected
-section and do not make the claim it would have established. `orch pending`
+section and do not make the claim it would have established. `bottega score pending`
 normally exits 1 when it finds work; that documented exit is data, not a command
 failure. Preserve its listed run IDs rather than recreating its scoring rule.
 An explicit empty collection such as `[]` is usable data, but keep its provenance
-visible in the report: say `orch inbox returned no entries`, for example, rather
+visible in the report: say `bottega question inbox returned no entries`, for example, rather
 than letting a blank field read as an independently established absence.
 
 ## Establish scope and task identity
@@ -78,7 +78,7 @@ than one running turn, show each rather than choosing one.
 
 Correlate inbox entries to chains by `answer_id`, which is the canonical root
 ID. In the default report, keep only entries whose matching root has this
-session's ID; `orch inbox --json` may also surface an orphaned question from a
+session's ID; `bottega question inbox --json` may also surface an orphaned question from a
 different session. Under `--all`, retain all entries and take the session from
 the matching run, not from an inference about who can answer it.
 
@@ -119,7 +119,7 @@ For each task print:
 - every live chain root, its agent/job, and elapsed time from its current
   running turn;
 - whether an inbox entry is waiting on that chain, including the question;
-- any run IDs that `orch pending` says need scoring; and
+- any run IDs that `bottega score pending` says need scoring; and
 - what is known to stand between the task and landing.
 
 Use only observed blockers. A waiting question needs a ruling. A live chain is
@@ -149,7 +149,7 @@ rows into a queue without proving that no run names them.
 
 List only architect actions established by the published interfaces:
 
-- every run reported by `orch pending`, with its scoring command;
+- every run reported by `bottega score pending`, with its scoring command;
 - every in-scope inbox question, with its canonical root answer ID and question;
 - any `CLAIMED DONE, NOT LANDED` task, requiring reconciliation of the board
   claim with trunk; and
@@ -160,9 +160,9 @@ Under `--all`, keep the session ID beside every run, question, and stalled task.
 Another session's work remains visibly another session's; never describe it as
 this session's.
 
-`orch pending` publishes scoring debt only for the calling session. Under
+`bottega score pending` publishes scoring debt only for the calling session. Under
 `--all`, print its results under that session and also print
-`Machine-wide scoring debt is not reported: orch pending is session-scoped.`
+`Machine-wide scoring debt is not reported: bottega score pending is session-scoped.`
 Do not derive other sessions' scoring debt from null delivery or quality fields;
 those fields are also null for work that never became judgeable.
 
@@ -204,8 +204,8 @@ Build the checklist from these six groups, in this order:
    exact `session_id` is the current session. Never infer ownership from a
    directory listing. Keep paths under a `.claude/worktrees` directory whose
    chain has no running turn, whose path still resolves as a git worktree, and
-   whose root ID is absent from the usable `orch pending` result. Print the
-   path and `orch discard <root-id>`. A terminal run named by `orch pending`
+   whose root ID is absent from the usable `bottega score pending` result. Print the
+   path and `bottega run discard <root-id>`. A terminal run named by `bottega score pending`
    stays under NEEDS ME and OUTSTANDING and is never offered here. If the run
    stream does not publish a usable ownership path, say that worktree close-out
    cannot be established; do not scan the directory to reconstruct it.
@@ -213,7 +213,7 @@ Build the checklist from these six groups, in this order:
    matching branch whose ancestor check exited 0 print
    `git branch -d <branch>`. Do not offer deletion for an unlanded or
    unverified branch. A branch still checked out in a listed worktree may need
-   its `orch discard` command run first; keep the commands in checklist order
+   its `bottega run discard` command run first; keep the commands in checklist order
    rather than claiming deletion has already become possible.
 3. `TASKS — LANDED, NOT CLOSED` — list every task named by this session's runs
    whose exact-key trunk query found a commit while its board status is not
@@ -221,19 +221,19 @@ Build the checklist from these six groups, in this order:
    the inverse of COMPLETE's `CLAIMED DONE, NOT LANDED` check. If board or git
    could not answer, report that task close-out is unavailable instead of
    treating the list as empty.
-4. `OUTSTANDING` — repeat every current-session run named by `orch pending`
+4. `OUTSTANDING` — repeat every current-session run named by `bottega score pending`
    with its scoring command, and every current-session inbox question with its
    canonical root answer ID and question. End the group with this literal line:
    `Untriaged reviews and gate state are not reported: no published interface exposes them.`
 5. `FOLLOW-UPS` — a filing time is only a heuristic, never session ownership.
    If the board publishes `created_at`, list open tasks whose `created_at` is
    at or after this session's earliest run `started_at`, and label every result
-   `heuristic: created after session began`. The current `hub task list --json`
+   `heuristic: created after session began`. The current `bottega task list --json`
    interface publishes `opened_at`, not `created_at`, so say
    `Follow-ups cannot be established: hub does not publish a filing session or created_at.`
    Never substitute `opened_at`, task-number order, prompt text, or adjacency.
 6. `HANDOFF` — recommend `/resume-brief` and
-   `orch doc resumes --cwd "$PWD"` when the checklist established any unlanded
+   `bottega doc resumes --cwd "$PWD"` when the checklist established any unlanded
    work, any open follow-up, or an in-progress epic. An epic is established by
    board hierarchy: an in-scope IN PROGRESS task is an epic when another board
    row names it in `parent_key`; do not infer one from title wording. If none of

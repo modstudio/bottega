@@ -40,23 +40,23 @@ interfaces report?
 Run these commands and capture each exit status, stdout, and stderr. Do not
 poll, start a background process, or leave a process behind.
 
-1. Run `./bin/orch monitor --json`. Parse its output as one JSON document.
+1. Run `./bin/bottega machine monitor --json`. Parse its output as one JSON document.
    This is the Docker and process inventory interface; never invoke Docker
    directly. Exit 0 means the observation completed cleanly, exit 2 means it
    completed with conditions, and exit 1 means at least one observation was
    incomplete. Preserve every `condition`, every `error`, and the action text
    exactly.
-2. Run `./bin/orch sweep --dry-run`. This command exists in this repository.
+2. Run `./bin/bottega machine sweep --dry-run`. This command exists in this repository.
    Preserve every `would reclaim` row and every kept row with its printed
    reason. A nonzero exit may still carry useful rows, but it also makes the
    failed observation unknown; do not discard either fact.
-3. Run `./bin/orch runs --json --limit 100000`. Parse each nonblank line as one
+3. Run `./bin/bottega run list --json --limit 100000`. Parse each nonblank line as one
    JSON envelope and read the run from its `data` field. The stream is not one
    JSON document. Use every turn when answering ALIVE, and every root and turn
    pointer when answering CLAIMED. If exactly 100000 envelopes return, say the
    interface reached its cap and do not claim that an unmentioned resource has
    no run owner.
-4. Run `./bin/orch branches --json`. It reports run-minted local branches by
+4. Run `./bin/bottega tree branch --json`. It reports run-minted local branches by
    project and task key, including landed, superseded, unlanded, and unknown
    states. Preserve project observation errors and truncated GitHub histories;
    neither is evidence that an unmatched branch is unlanded.
@@ -84,14 +84,14 @@ The preview question is: would the established cleanup guard accept this exact
 resource now, without changing it?
 
 For each exact worktree candidate, run
-`./bin/orch reclaim worktree <path> --dry-run`. For each exact branch candidate,
-run `./bin/orch reclaim branch <project>:<branch> --dry-run`. These previews are
+`./bin/bottega machine reclaim worktree <path> --dry-run`. For each exact branch candidate,
+run `./bin/bottega machine reclaim branch <project>:<branch> --dry-run`. These previews are
 additional published evidence; they do not replace the source pass above. Copy
 their full refusal or success text into the report.
 
 Never add `--force`. Never invent a removal command for a monitor condition
 whose action says no established verb exists. A Docker resource is actionable
-only through the exact orch lifecycle action published for it; never run
+only through the exact Bottega lifecycle action published for it; never run
 `docker rm`, `docker compose down`, or `docker volume rm` from this skill.
 
 ## Classify by disposition
@@ -114,7 +114,7 @@ For every row print:
 - `WOULD LOSE:` what removal destroys;
 - `RETAINED AT:` the branch, landing branch, remote, tag, or other exact place
   retaining the work, and which interface proved that; and
-- `COMMAND:` one exact orch command for this resource.
+- `COMMAND:` one exact `bottega` command for this resource.
 
 A clean worktree may be returned while its committed work remains on its local
 branch. That does not license deleting the branch. A recreatable worktree or
@@ -185,11 +185,11 @@ cleanup instructions, selection of one row, or approval of a category as
 approval of any other row.
 
 For selected worktrees, run the previously previewed
-`./bin/orch reclaim worktree <path>` command. For selected branches, run the
-previously previewed `./bin/orch reclaim branch <project>:<branch>` command.
-Use an exact orch lifecycle command printed by `orch monitor` only when the
+`./bin/bottega machine reclaim worktree <path>` command. For selected branches, run the
+previously previewed `./bin/bottega machine reclaim branch <project>:<branch>` command.
+Use an exact `bottega` lifecycle command printed by `bottega machine monitor` only when the
 operator selects that exact command and resource. Never execute bare
-`./bin/orch sweep`: its target set can change after the preview, so it is not
+`./bin/bottega machine sweep`: its target set can change after the preview, so it is not
 the exact consent the walkthrough obtained.
 
 Before each destructive command, repeat the resource, `WOULD LOSE`,

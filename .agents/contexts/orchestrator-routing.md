@@ -34,24 +34,24 @@ The architect owns design, the spec, every decision the spec did not settle, and
 
 # Scoring is not optional
 
-`orch score` is the only thing that measures whether delegation works.
+`bottega score` is the only thing that measures whether delegation works.
 
-- Every run records the session from `CLAUDE_CODE_SESSION_ID`. Only that session can judge it. `orch score` **refuses** another session's run. `CLAUDE_CODE_BRIDGE_SESSION_ID` is shared and is never an identity: `sessionId()` returns the primary id or nothing, and a mutation that needs an owner refuses rather than proceeding under the shared id.
-- `orch pending` lists your own unscored runs and exits nonzero while any remain.
+- Every run records the session from `CLAUDE_CODE_SESSION_ID`. Only that session can judge it. `bottega score` **refuses** another session's run. `CLAUDE_CODE_BRIDGE_SESSION_ID` is shared and is never an identity: `sessionId()` returns the primary id or nothing, and a mutation that needs an owner refuses rather than proceeding under the shared id.
+- `bottega score pending` lists your own unscored runs and exits nonzero while any remain.
 - A Stop hook raises them before a session finishes, once per turn, and stands down if it has already asked.
-- `orch answer` and `orch continue` refuse escaped and confinement-unverified chains, naming `orch confinement clear`. Unread `orch tell` messages surface at the harness checkpoint before the final parse. Every write verb prints usage on `--help` with no side effects.
+- `bottega question answer` and `bottega run continue` refuse escaped and confinement-unverified chains, naming `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before the final parse. Every write verb prints usage on `--help` with no side effects.
 
 **Never score a run you did not read.** A guessed verdict teaches the router something false. Nobody may score another session's runs. The refusal names the owning session.
 
 # The two halves of the ratio
 
-Every command here drives the numerator down. **`orch score` is the only thing that measures the denominator.** A run nobody scored and a run scored badly must stay distinguishable. Delegation that is never scored is delegation you cannot tell is working.
+Every command here drives the numerator down. **`bottega score` is the only thing that measures the denominator.** A run nobody scored and a run scored badly must stay distinguishable. Delegation that is never scored is delegation you cannot tell is working.
 
 # Routing
 
 A job declares the capabilities it needs; an agent that lacks one is excluded rather than ranked. History decides only once a job has `MIN_SAMPLE` judgments; below that the declared preference wins.
 
-Pairwise judgments are collected at score time. `orch stats` reports Bradley-Terry strengths once a job has enough duels. Routing still does not use them. An off-policy backtest cannot decide a routing change, because disagreements have no counterfactual outcome; the standing challenger draw is the online experiment that can.
+Pairwise judgments are collected at score time. `bottega agent stats` reports Bradley-Terry strengths once a job has enough duels. Routing still does not use them. An off-policy backtest cannot decide a routing change, because disagreements have no counterfactual outcome; the standing challenger draw is the online experiment that can.
 
 **A run that produced nothing counts as delivery `none`.** Failed and abandoned runs fold into the mean at that `WEIGHT`, so a failure is evidence. The threshold counts **judgments**, not verdicts.
 
@@ -61,7 +61,7 @@ Pairwise judgments are collected at score time. `orch stats` reports Bradley-Ter
 
 **Proven scores are shrunk toward the field before they are ranked:** `(points + MIN_SAMPLE * prior) / (evidence + MIN_SAMPLE)`, prior being the mean raw score of every proven agent on that job. Reports keep the raw mean beside the shrunk score.
 
-**Thompson sampling is the live ranker.** A real dispatch draws from the posterior; status surfaces use the posterior mean, so `orch pick` does not spend a draw. The standing-challenger floor decays from `STANDING_EXPLORE_RATE` with the proven leader's judgment count, bottoming at `STANDING_EXPLORE_FLOOR`. A model swapped behind an agent name starts a fresh posterior and does not inherit the old mean.
+**Thompson sampling is the live ranker.** A real dispatch draws from the posterior; status surfaces use the posterior mean, so `bottega agent pick` does not spend a draw. The standing-challenger floor decays from `STANDING_EXPLORE_RATE` with the proven leader's judgment count, bottoming at `STANDING_EXPLORE_FLOOR`. A model swapped behind an agent name starts a fresh posterior and does not inherit the old mean.
 
 For findings jobs, reviewer precision breaks a tie inside the noise band when the named lens has enough triage evidence. A measured precision outranks an unknown cell; an unknown is not zero. Precision never reaches across a real quality gap. Findings jobs route on the named lens once at least two eligible agents each have `MIN_SAMPLE` judgments in that lens cell (one eligible agent's `MIN_SAMPLE` suffices). Until then they use the job-wide cell. A lens cell never combines with a stack cell; unrecorded runs remain job-wide evidence.
 
@@ -75,21 +75,21 @@ A failing behavioral canon eval closes exploration for the default eval agent un
 
 **No answer is negative, a wrong answer is zero.** Nothing arriving should push routing away; a wrong answer stays a weaker candidate. Failed and abandoned runs score at the `none` weight.
 
-**Three levels an axis, deliberately.** Named levels score the same twice. `orch stats` reports the corpus. Ties break on cost and latency.
+**Three levels an axis, deliberately.** Named levels score the same twice. `bottega agent stats` reports the corpus. Ties break on cost and latency.
 
 ## Measuring the scorer
 
-`orch recalibrate` blindly re-scores old outputs and reports quadratic-weighted kappa per axis without changing the original score.
+`bottega score recalibrate` blindly re-scores old outputs and reports quadratic-weighted kappa per axis without changing the original score.
 
 **The vocabulary lives in `score.ts` and every prompt is generated from it.** A level that is not offered does not exist. Evidence identity is the caller prompt (`spec_sha`), the change (`patch_id` and path set), the lens, and the effective model.
 
-**Calibration runs are marked `--probe` and never count as evidence.** `orch pending` and the Stop hook skip them. A probe is excluded from every query that routes or reports.
+**Calibration runs are marked `--probe` and never count as evidence.** `bottega score pending` and the Stop hook skip them. A probe is excluded from every query that routes or reports.
 
 **A share of runs goes to challengers.** Unproven agents that might win receive the exploration draw; once proven, `STANDING_EXPLORE_RATE` keeps testing against the leader.
 
 **Prompt size is an eligibility question.** Grok and agy take the prompt on argv (`ARGV_PROMPT_BYTES`); Codex reads stdin. A pack too large for an argv agent excludes it. Every compiled project and job canon pack must fit `DEFAULT_PACK_BYTES`.
 
-**So is context.** A job declares its working set; an agent whose window cannot hold that is excluded, the same kind of fact as lacking `readsRepo`. Errand jobs sit at `ERRAND` tokens, deep jobs at `DEEP`. Eligibility requires `OUTPUT_RESERVE` on top, because a server allows window minus prompt for the reply. The declared window is the one the server reports; `orch doctor` reads it from `/v1/models`. Cloud agents declare no ceiling until one fails on window.
+**So is context.** A job declares its working set; an agent whose window cannot hold that is excluded, the same kind of fact as lacking `readsRepo`. Errand jobs sit at `ERRAND` tokens, deep jobs at `DEEP`. Eligibility requires `OUTPUT_RESERVE` on top, because a server allows window minus prompt for the reply. The declared window is the one the server reports; `bottega machine doctor` reads it from `/v1/models`. Cloud agents declare no ceiling until one fails on window.
 
 **Metered billing is a hard exclusion.**
 
@@ -119,42 +119,42 @@ No CLI here reports remaining quota, so exhaustion is caught on the failure (`FA
 
 **Escaped** means an outside change overlapped the run's own diff: classified and attributed, never failed over, and landing that chain is refused even when marked unreviewed. Non-overlapping divergence is recorded and does not fail the run. **Confinement unverified** has the same terminal and landing-blocking effect, but records an observer failure. A checkout unavailable before launch is excluded with a warning that names the stale register entry. The detector never drops findings, scores, or the review.
 
-**Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `orch doctor` prints this when anything is cooling.
+**Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `bottega machine doctor` prints this when anything is cooling.
 
 A vendor **content refusal** fails over immediately, but neither cools the agent nor counts as routing evidence. Keep it distinct from a headless `denied`.
 
 # Infrastructure and policy failures are not verdicts
 
-**`unreachable` is not evidence about the agent** and is excluded from the evidence count entirely, not weighted down. Host incidents: `orch doc show local-model-host-incidents --scope machine`. `NOT_EVIDENCE` lists the kinds that say nothing about competence.
+**`unreachable` is not evidence about the agent** and is excluded from the evidence count entirely, not weighted down. Host incidents: `bottega doc show local-model-host-incidents --scope machine`. `NOT_EVIDENCE` lists the kinds that say nothing about competence.
 
 **`unreachable` tells a person but does not cool the agent down.** A cooldown is for a condition that cannot be observed without spending a run (`COOLS_DOWN`). Reachability is measured directly before every routing decision. `NEEDS_HUMAN`, `COOLS_DOWN` and `NOT_EVIDENCE` are three separate lists.
 
-**Reachability is a routing input, not a run outcome.** `orch do` probes the local endpoint before it routes. The probe is cached per process; longer-lived processes refresh it. **`orch doctor` is where you look** — box, tunnel, server, in that order.
+**Reachability is a routing input, not a run outcome.** `bottega run start` probes the local endpoint before it routes. The probe is cached per process; longer-lived processes refresh it. **`bottega machine doctor` is where you look** — box, tunnel, server, in that order.
 
 **An agent's window must hold the working set and a reply.** Eligibility requires `OUTPUT_RESERVE` on top of the job's `contextTokens`.
 
 # Knowing what to use for what
 
-`orch guide` names two agents per job: quality and turnaround. A leader below `MIN_SAMPLE` is **provisional**, not recommended. It lists eligible agents nobody has tried. Latency is shown beside median prompt size. The guide is deterministic and does not spend the exploration draw.
+`bottega agent guide` names two agents per job: quality and turnaround. A leader below `MIN_SAMPLE` is **provisional**, not recommended. It lists eligible agents nobody has tried. Latency is shown beside median prompt size. The guide is deterministic and does not spend the exploration draw.
 
 # Agent capabilities are not interchangeable
 
 An agent is a row: harness, backend, and model. None of those is a capability declaration.
 
-**Capabilities come from `orch agent probe`, never from inference or a model card.** An unprobed row is ineligible for repository work; a row with no declared or probed window is ineligible for every job with a working set.
+**Capabilities come from `bottega agent show probe`, never from inference or a model card.** An unprobed row is ineligible for repository work; a row with no declared or probed window is ineligible for every job with a working set.
 
-- `readsRepo` — can find and open files unaided. **`agy` cannot.** Its row is disabled and retained as the referent for that history. Inline work routes to the cheapest enabled inline-capable row. **A diff is already a self-contained pack.** Packs that name sources instead of carrying them fail on an agent that cannot prompt for a read. Detail: `orch doc list --scope job`.
-- `mcp` — can call the MCP servers **that client has registered**, not this machine's. `--mcp` means this agent can use the servers it has. Grok does not start a repo-local server until the folder is trusted; for an orch-created worktree, `--mcp` passes scoped `--trust`. A healthy unrelated server such as `orch-ask` does not count. Detail: `orch doc list --scope agent`.
-  A reading job reaches a project server only through the hidden `orch mcp-reader-proxy`, never directly; a writing job reaches it directly. The proxy lists and forwards a tool only when `mcp-reader-policy.ts:readerMayCallTool` allows it: the project's register names the tool under `mcp.reader_tools`, or the project's own server marks it with the protocol's `readOnlyHint`. A Codex reader is given the proxies as its only project servers. A Grok reader gets them in its run home, and `grok-reader-mcp-inspect.ts:grokReaderMcpInspectionError` refuses the attachment when Grok reports a config layer or an active server from anywhere else, because Grok also loads MCP definitions from its working directory. Orch writes nothing into a reader's tree to prevent that; the refusal is the handling.
+- `readsRepo` — can find and open files unaided. **`agy` cannot.** Its row is disabled and retained as the referent for that history. Inline work routes to the cheapest enabled inline-capable row. **A diff is already a self-contained pack.** Packs that name sources instead of carrying them fail on an agent that cannot prompt for a read. Detail: `bottega doc list --scope job`.
+- `mcp` — can call the MCP servers **that client has registered**, not this machine's. `--mcp` means this agent can use the servers it has. Grok does not start a repo-local server until the folder is trusted; for an orch-created worktree, `--mcp` passes scoped `--trust`. A healthy unrelated server such as `orch-ask` does not count. Detail: `bottega doc list --scope agent`.
+  A reading job reaches a project server only through the hidden `bottega mcp reader-proxy`, never directly; a writing job reaches it directly. The proxy lists and forwards a tool only when `mcp-reader-policy.ts:readerMayCallTool` allows it: the project's register names the tool under `mcp.reader_tools`, or the project's own server marks it with the protocol's `readOnlyHint`. A Codex reader is given the proxies as its only project servers. A Grok reader gets them in its run home, and `grok-reader-mcp-inspect.ts:grokReaderMcpInspectionError` refuses the attachment when Grok reports a config layer or an active server from anywhere else, because Grok also loads MCP definitions from its working directory. Orch writes nothing into a reader's tree to prevent that; the refusal is the handling.
 - `schema` — can be bound to a JSON schema for the final message. Grok's `--json-schema` constrains the model; Codex's `--output-schema` is silently dropped when MCP tools are active. Prefer Grok when the contract must hold.
 
 **Grok takes its prompt on argv** (`ARGV_PROMPT_BYTES`). Codex reads stdin.
 
 # Local model
 
-`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `orch agent add`, then probe. `orch doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
+`local-acp` drives the OpenAI-compatible endpoint through Goose ACP. Register with `bottega agent show add`, then probe. `bottega machine doctor` prints the command when `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` are set and no enabled ACP row points at that endpoint. Another local model is another row, not another driver. `qwen-local` remains only as a disabled referent so its recorded runs keep their meaning.
 
-`available()` is configuration; `orch doctor` is reachability. The registration probe is the authority on file tools and structured output; `/v1/models` is the authority on the served window. `local-acp` must be served with a window of at least a deep job's `contextTokens` plus `OUTPUT_RESERVE`.
+`available()` is configuration; `bottega machine doctor` is reachability. The registration probe is the authority on file tools and structured output; `/v1/models` is the authority on the served window. `local-acp` must be served with a window of at least a deep job's `contextTokens` plus `OUTPUT_RESERVE`.
 
 The window is a serving flag. Check concurrency at the endpoint, not the model card. A starved verdict measures the serving parameter, not the agent.
 
@@ -162,4 +162,4 @@ The window is a serving flag. Check concurrency at the endpoint, not the model c
 
 **Run Codex where it can see the repository, against a tunneled endpoint.** Bind the server to localhost on the model host and forward it. Never bind it to `0.0.0.0` on a routable interface. Do not use `--oss` / `--local-provider`. Do not name the provider `oss`.
 
-Host facts: `orch doc show local-model-host-incidents --scope machine`.
+Host facts: `bottega doc show local-model-host-incidents --scope machine`.

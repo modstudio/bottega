@@ -10,7 +10,7 @@ Run lifecycle, disposable worktrees, the worker contract and escalation, routing
 
 ## Does not belong here
 
-The dashboard and cost-ratio presentation (`hub/`). Machine upkeep (`ops/`). Local-model host facts (`orch doc show local-model-host-incidents --scope machine`). Product-domain work of other projects.
+The dashboard and cost-ratio presentation (`hub/`). Machine upkeep (`ops/`). Local-model host facts (`bottega doc show local-model-host-incidents --scope machine`). Product-domain work of other projects.
 
 ## May depend on
 
