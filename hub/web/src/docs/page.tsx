@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useMatch, useNavigate } from '@tanstack/react-router'
-import { Pencil, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { recordSpaces } from '@/lib/record-spaces'
 import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
+import { editorChrome, useArticleEditor } from './article-editor.tsx'
 import { CreateDocDialog } from './create-dialog.tsx'
 import { canEditDoc } from './edit-permission.ts'
 import {
@@ -24,6 +25,38 @@ import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
 import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
 import { DocsView } from './view.tsx'
+
+function enterDocEdit(
+  navigate: ReturnType<typeof useNavigate>,
+  selected: DocsTreeItem | null,
+  source: ReturnType<typeof docsSource>,
+) {
+  if (!selected) return
+  const location = docsLocation(selected, source)
+  void navigate({ ...location, search: { ...location.search, edit: true } })
+}
+
+function canEditSelected(
+  selected: DocsTreeItem | null,
+  source: ReturnType<typeof docsSource>,
+  memberships: Parameters<typeof canEditDoc>[1],
+) {
+  return Boolean(selected && canEditDoc(source, memberships, selected.spaceId))
+}
+
+function isEditingArticle(editFlag: boolean | undefined, mayEdit: boolean, hasDocument: boolean) {
+  return Boolean(editFlag) && mayEdit && hasDocument
+}
+
+function docsWorkspaceReady(
+  catalogPending: boolean,
+  emptyChooserSet: boolean,
+  identityResolved: boolean,
+  atDocsRoot: boolean,
+  selected: boolean,
+) {
+  return !catalogPending && emptyChooserSet && identityResolved && (atDocsRoot || selected)
+}
 
 function docsSourceName(
   source: ReturnType<typeof docsSource>,
@@ -137,6 +170,18 @@ export function DocsPage() {
     if (!selected) return
     void navigate({ ...docsLocation(selected, source), replace: true })
   }, [navigate, selected, source])
+  const mayEdit = canEditSelected(selected, source, whoami.data?.memberships)
+  const editing = isEditingArticle(search?.edit, mayEdit, Boolean(reading.document))
+  const editor = useArticleEditor({
+    doc: reading.document,
+    source,
+    editing,
+    onLeave: backToCurrent,
+  })
+  const enterEdit = useCallback(
+    () => enterDocEdit(navigate, selected, source),
+    [navigate, selected, source],
+  )
 
   if (source === 'public' && identityResolved && !selected) {
     return (
@@ -176,12 +221,13 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
-        ready={
-          !catalog.isPending &&
-          emptyChooserSet &&
-          identityResolved &&
-          (atDocsRoot || Boolean(selected))
-        }
+        ready={docsWorkspaceReady(
+          catalog.isPending,
+          emptyChooserSet,
+          identityResolved,
+          atDocsRoot,
+          Boolean(selected),
+        )}
         searchQuery={searchQuery}
         onSearchQuery={setSearchQuery}
         searchResults={results.items}
@@ -196,18 +242,6 @@ export function DocsPage() {
         }
         revisionId={revisionId}
         onRevision={openRevision}
-        bodyView={
-          revision.revision ? (
-            <RevisionViewer
-              revision={revision.revision}
-              replacementBody={revision.replacementBody}
-              onCurrent={backToCurrent}
-              mode={revisionMode}
-              onMode={setRevisionMode}
-            />
-          ) : undefined
-        }
-        viewedRevision={revision.revision}
         createAction={
           source === 'local' ? (
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
@@ -216,32 +250,24 @@ export function DocsPage() {
             </Button>
           ) : null
         }
-        headerAction={
-          selected && canEditDoc(source, whoami.data?.memberships, selected.spaceId) ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() =>
-                void navigate({
-                  to: '/docs/$scope/$subject/$slug',
-                  params: {
-                    scope: selected.scope,
-                    subject: selected.subject ?? '_',
-                    slug: selected.slug,
-                  },
-                  search: {
-                    edit: true,
-                    ...(source === 'hosted' ? { id: selected.id } : {}),
-                  },
-                })
-              }
-            >
-              <Pencil size={14} />
-              Edit
-            </Button>
-          ) : null
-        }
+        {...editorChrome(
+          editor,
+          editing,
+          mayEdit,
+          enterEdit,
+          revision.revision ? (
+            <RevisionViewer
+              revision={revision.revision}
+              replacementBody={revision.replacementBody}
+              onCurrent={backToCurrent}
+              mode={revisionMode}
+              onMode={setRevisionMode}
+            />
+          ) : undefined,
+          revision.revision,
+        )}
       />
+      {editing ? editor.overlays : null}
       {source === 'local' && creating ? <CreateDocDialog open onOpenChange={setCreating} /> : null}
     </>
   )

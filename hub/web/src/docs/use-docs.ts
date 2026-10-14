@@ -108,3 +108,23 @@ export function useDocsSearch(
   )
   return { items, isPending: enabled && result.isFetching, error: result.error }
 }
+
+/** The revision a write must name to replace the document as loaded; fetched only while `enabled`. */
+export function useExpectedRevision(doc: DocsDoc | null, source: DocsSource, enabled: boolean) {
+  const scoped = Boolean(doc && isScope(doc.scope))
+  const localDoc = useQuery({
+    ...trpc.doc.get.queryOptions({
+      scope: (doc && isScope(doc.scope) ? doc.scope : 'global') as DocScope,
+      subject: doc?.subject ?? null,
+      slug: doc?.slug ?? '',
+    }),
+    enabled: enabled && source === 'local' && scoped,
+  })
+  const hostedRevisions = useQuery({
+    ...trpc.record.docRevisions.queryOptions({
+      id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
+    }),
+    enabled: enabled && source === 'hosted' && Boolean(doc?.id),
+  })
+  return source === 'hosted' ? hostedRevisions.data?.items[0]?.id : localDoc.data?.revision
+}

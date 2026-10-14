@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/ui/button/button'
 import { Kbd } from '@/ui/kbd/kbd'
 import { Select } from '@/ui/listbox/select'
@@ -56,6 +56,11 @@ export type DocsViewProps = {
   onRevision?: (id: number | string) => void
   bodyView?: ReactNode
   viewedRevision?: { title: string; body: string } | null
+  editing?: boolean
+  toolbar?: ReactNode
+  banner?: ReactNode
+  titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
+  canManage?: boolean
 }
 
 type DocsControlsProps = {
@@ -385,6 +390,44 @@ function useDocsNavigationModel(
   return { model, navigationItems, selectedItem }
 }
 
+function DocsSearchHost({
+  open,
+  onOpen,
+  query,
+  onQuery,
+  results,
+  tree,
+  onSelect,
+  signedIn,
+  audience,
+}: {
+  open: boolean
+  onOpen: (open: boolean) => void
+  query: string
+  onQuery: (query: string) => void
+  results: readonly Docs.DocsSearchMatch[]
+  tree: readonly Docs.DocsTreeItem[]
+  onSelect: (item: Docs.DocsTreeItem) => void
+  signedIn: boolean
+  audience: ReturnType<typeof selectedAudience>
+}) {
+  return (
+    <SearchDialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpen(next)
+        if (!next) onQuery('')
+      }}
+      query={query}
+      onQueryChange={onQuery}
+      results={results}
+      tree={tree}
+      onChoose={onSelect}
+      scopeLabel={searchScopeLabel(signedIn, audience)}
+    />
+  )
+}
+
 export function DocsView({
   sourceLabel,
   source,
@@ -419,6 +462,8 @@ export function DocsView({
   onRevision = () => {},
   bodyView,
   viewedRevision,
+  canManage,
+  ...readingEdit
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -539,6 +584,7 @@ export function DocsView({
           error={error}
           bodyView={bodyView}
           viewedRevision={viewedRevision}
+          {...readingEdit}
         />
         {wide ? null : (
           <DocsFacts
@@ -549,21 +595,20 @@ export function DocsView({
             audience={selectedAudience(model.stale)}
             revisionId={revisionId}
             onRevision={onRevision}
+            canManage={canManage}
           />
         )}
       </div>
-      <SearchDialog
+      <DocsSearchHost
         open={searchOpen}
-        onOpenChange={(open) => {
-          setSearchOpen(open)
-          if (!open) onSearchQuery('')
-        }}
+        onOpen={setSearchOpen}
         query={searchQuery}
-        onQueryChange={onSearchQuery}
+        onQuery={onSearchQuery}
         results={searchResults}
         tree={navigationItems}
-        onChoose={onSelect}
-        scopeLabel={searchScopeLabel(signedIn, selectedAudience(model.stale))}
+        onSelect={onSelect}
+        signedIn={signedIn}
+        audience={selectedAudience(model.stale)}
       />
     </div>
   )
