@@ -119,11 +119,11 @@ describe('resource claim decisions', () => {
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'port allocation','running',?,?)`,
+       VALUES (?,?,'codex','implement','sha',1,'port allocation','running',?,?)`,
     )
-    const root = Number(insertRun.run(nowIso(), null, 1).lastInsertRowid)
-    const turn = Number(insertRun.run(nowIso(), root, 2).lastInsertRowid)
-    const anotherRoot = Number(insertRun.run(nowIso(), null, 1).lastInsertRowid)
+    const root = Number(insertRun.run(newRecordId(), nowIso(), null, 1).lastInsertRowid)
+    const turn = Number(insertRun.run(newRecordId(), nowIso(), root, 2).lastInsertRowid)
+    const anotherRoot = Number(insertRun.run(newRecordId(), nowIso(), null, 1).lastInsertRowid)
     const allocate = (rootRunId: number, runId: number) =>
       writeTransaction(
         () =>
@@ -159,10 +159,10 @@ describe('resource claim decisions', () => {
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'full port band','running',1)`,
+       VALUES (?,?,'codex','implement','sha',1,'full port band','running',1)`,
     )
-    const first = Number(insertRun.run(nowIso()).lastInsertRowid)
-    const second = Number(insertRun.run(nowIso()).lastInsertRowid)
+    const first = Number(insertRun.run(newRecordId(), nowIso()).lastInsertRowid)
+    const second = Number(insertRun.run(newRecordId(), nowIso()).lastInsertRowid)
     const allocate = (rootRunId: number) =>
       writeTransaction(
         () =>
@@ -225,12 +225,12 @@ describe('resource claim decisions', () => {
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'index allocation','running',?,1)`,
+       VALUES (?,?,'codex','implement','sha',1,'index allocation','running',?,1)`,
     )
-    const first = Number(insertRun.run(nowIso(), projectOne).lastInsertRowid)
-    const second = Number(insertRun.run(nowIso(), projectOne).lastInsertRowid)
-    const otherProject = Number(insertRun.run(nowIso(), projectTwo).lastInsertRowid)
-    const third = Number(insertRun.run(nowIso(), projectOne).lastInsertRowid)
+    const first = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
+    const second = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
+    const otherProject = Number(insertRun.run(newRecordId(), nowIso(), projectTwo).lastInsertRowid)
+    const third = Number(insertRun.run(newRecordId(), nowIso(), projectOne).lastInsertRowid)
     const claim = (rootRunId: number, projectId: number) =>
       writeTransaction(
         () =>
@@ -262,10 +262,10 @@ describe('resource claim decisions', () => {
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'string allocation','running',?,1)`,
+       VALUES (?,?,'codex','implement','sha',1,'string allocation','running',?,1)`,
     )
-    const first = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
-    const second = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
+    const second = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
     const claim = (rootRunId: number, value: string) =>
       writeTransaction(
         () =>
@@ -297,10 +297,10 @@ describe('resource claim decisions', () => {
     const insertRun = database.query(
       `INSERT INTO run
        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'database allocation','running',?,1)`,
+       VALUES (?,?,'codex','implement','sha',1,'database allocation','running',?,1)`,
     )
-    const first = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
-    const second = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
+    const first = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
+    const second = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
     const claim = (rootRunId: number, engine: string, value: string) =>
       writeTransaction(
         () =>

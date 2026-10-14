@@ -185,9 +185,9 @@ describe('record doctor decisions', () => {
       .query(
         `INSERT INTO question (record_id,run_id,asked_at,question) VALUES
          ('${newRecordId()}',1,'2026-09-25','default'),
-         (2,'2026-09-25','unsynced'),
-         (3,'2026-09-25','other'),
-         (4,'2026-09-25','unknown')`,
+         ('${newRecordId()}',2,'2026-09-25','unsynced'),
+         ('${newRecordId()}',3,'2026-09-25','other'),
+         ('${newRecordId()}',4,'2026-09-25','unknown')`,
       )
       .run()
     database

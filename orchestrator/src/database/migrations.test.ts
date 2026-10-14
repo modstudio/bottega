@@ -313,7 +313,7 @@ test('note UUID reference migration preserves rows and turns old integers into d
       .query(
         `INSERT INTO question (record_id,run_id,asked_at,question,filed_as,filed_ref)
          VALUES ('${newRecordId()}',?,'2026-10-09','Canon?','canon-proposal','73'),
-                (?,'2026-10-09','Doc?','doc','12@rev-1')`,
+                ('${newRecordId()}',?,'2026-10-09','Doc?','doc','12@rev-1')`,
       )
       .run(run.id, run.id)
 
@@ -605,13 +605,11 @@ test('workflow question migration preserves run questions and backfills an await
       )
       .get() as { id: number }
     const question = database
-      .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES ('${newRecordId()}',?,?,?,'reply')`,
-      )
+      .query(`INSERT INTO question (run_id,asked_at,question,asked_via) VALUES (?,?,?,'reply')`)
       .run(run.id, '2026-09-20', 'Run question?').lastInsertRowid
     database
       .query(
-        `INSERT INTO question (record_id,id,run_id,asked_at,question) VALUES ('${newRecordId()}',99,?,'2026-09-20','deleted')`,
+        `INSERT INTO question (id,run_id,asked_at,question) VALUES (99,?,'2026-09-20','deleted')`,
       )
       .run(run.id)
     database.query('DELETE FROM question WHERE id=99').run()

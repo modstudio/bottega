@@ -339,10 +339,10 @@ describe('run answers', () => {
     })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
     const addQuestion = db().query(
-      `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+      `INSERT INTO question (record_id,run_id, asked_at, question) VALUES (?,?,?,?)`,
     )
-    addQuestion.run(root, new Date().toISOString(), 'root question?')
-    addQuestion.run(child, new Date().toISOString(), 'child question?')
+    addQuestion.run(newRecordId(), root, new Date().toISOString(), 'root question?')
+    addQuestion.run(newRecordId(), child, new Date().toISOString(), 'child question?')
     await expect(
       answerRun(root, { argv: ['one', 'two'], recordOnly: false, flags }, helpers),
     ).rejects.toThrow('both live and stopped turns')
@@ -538,10 +538,10 @@ test('multi-question answer mixes positional --q text with per-question --file',
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?) RETURNING id`,
+    `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (?,?,?,?) RETURNING id`,
   )
-  const first = (add.get(id, new Date().toISOString(), 'one?') as { id: number }).id
-  const second = (add.get(id, new Date().toISOString(), 'two?') as { id: number }).id
+  const first = (add.get(newRecordId(), id, new Date().toISOString(), 'one?') as { id: number }).id
+  const second = (add.get(newRecordId(), id, new Date().toISOString(), 'two?') as { id: number }).id
   const path = trackResidue(join(dir, `multi-${id}.txt`))
   writeFileSync(path, 'second ruling')
   await answerRun(
@@ -725,10 +725,10 @@ test('a partial multi-question ruling names the single-command rule', async () =
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?) RETURNING id`,
+    `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (?,?,?,?) RETURNING id`,
   )
-  const first = (add.get(id, new Date().toISOString(), 'one?') as { id: number }).id
-  add.get(id, new Date().toISOString(), 'two?')
+  const first = (add.get(newRecordId(), id, new Date().toISOString(), 'one?') as { id: number }).id
+  add.get(newRecordId(), id, new Date().toISOString(), 'two?')
   await expect(
     answerRun(id, { argv: [`--q${first}`, 'yes'], recordOnly: true, flags }, helpers),
   ).rejects.toThrow('single command')

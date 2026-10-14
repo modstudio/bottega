@@ -512,8 +512,8 @@ describe('schema coexistence', () => {
       `INSERT INTO project (name, path, canon, settings) VALUES ('widget', '/tmp/widget', 1, '{}')`,
     ).run()
     d.query(
-      `INSERT INTO run (record_id,started_at, agent, job, repo, prompt_sha, prompt_bytes, prompt_head, status)
-       VALUES ('${newRecordId()}','t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
+      `INSERT INTO run (started_at, agent, job, repo, prompt_sha, prompt_bytes, prompt_head, status)
+       VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
     expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
     expect(applyMigrations(d)).toEqual(

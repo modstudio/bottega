@@ -189,7 +189,7 @@ test('question backfill enqueues all existing rows once', () => {
     .query(
       `INSERT INTO question (record_id,run_id,asked_at,question)
        VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','One?'),
-              (42,'2026-09-25T10:02:00.000Z','Two?')`,
+              ('${newRecordId()}',42,'2026-09-25T10:02:00.000Z','Two?')`,
     )
     .run()
   expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 2 })

@@ -59,13 +59,22 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     `INSERT INTO run (record_id,
        id, started_at, last_event_at, agent, job, project_id, prompt_sha, prompt_bytes,
        prompt_head, status, retry_of, parent_run_id
-     ) VALUES ('${newRecordId()}',?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
   )
-  insert.run(1, '2026-09-15T01:00:00.000Z', '2026-09-15T01:01:00.000Z', null, 'ok', null, null)
-  insert.run(2, '2026-09-15T02:00:00.000Z', null, 1, 'failed', 1, null)
-  insert.run(3, '2026-09-15T03:00:00.000Z', null, 1, 'stale', null, 1)
-  insert.run(4, '2026-09-15T04:00:00.000Z', null, 1, 'asking', null, null)
-  insert.run(5, '2026-09-15T05:00:00.000Z', null, 1, 'running', null, null)
+  insert.run(
+    newRecordId(),
+    1,
+    '2026-09-15T01:00:00.000Z',
+    '2026-09-15T01:01:00.000Z',
+    null,
+    'ok',
+    null,
+    null,
+  )
+  insert.run(newRecordId(), 2, '2026-09-15T02:00:00.000Z', null, 1, 'failed', 1, null)
+  insert.run(newRecordId(), 3, '2026-09-15T03:00:00.000Z', null, 1, 'stale', null, 1)
+  insert.run(newRecordId(), 4, '2026-09-15T04:00:00.000Z', null, 1, 'asking', null, null)
+  insert.run(newRecordId(), 5, '2026-09-15T05:00:00.000Z', null, 1, 'running', null, null)
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     minted: 0,
