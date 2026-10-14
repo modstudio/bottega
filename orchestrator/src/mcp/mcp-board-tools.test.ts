@@ -93,8 +93,9 @@ test('board_read MCP result is the delivery envelope with one normalized notice 
       {
         id: String(posted.id),
         text: expect.stringContaining(`BOARD NOTICE ${posted.id}`),
-        oneLine: `Board message ${posted.id}: MCP read shape — from operator; acknowledgement not required.`,
+        oneLine: `Board message ${posted.id}: MCP read shape — from operator; acknowledgement not required. orch board thread ${posted.id} shows the body.`,
         ackRequired: false,
+        purpose: 'information',
         createdAt: expect.any(String),
       },
     ],

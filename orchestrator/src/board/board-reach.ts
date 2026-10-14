@@ -2,6 +2,7 @@
 /** Records push facts and turns them into the board noise decision surface. */
 
 import type { Database } from 'bun:sqlite'
+import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
@@ -25,6 +26,7 @@ export type BoardReachRow = {
   blockedStop: boolean
   audience: string
   acknowledgementRequired: boolean
+  purpose?: BoardPurpose
   postedAt: string
   expiresAt: string | null
   sessionStartedAt: string
@@ -46,6 +48,7 @@ export type BoardReachRecordingInput = {
 type MessageFacts = {
   audience: string
   acknowledgementRequired: boolean
+  purpose: BoardPurpose
   postedAt: string
   expiresAt: string | null
   postingProject: string | null
@@ -121,6 +124,7 @@ function localMessageFacts(id: string, database: Database): MessageFacts | null 
     ? {
         audience: root.audience,
         acknowledgementRequired: row.ack_required === 1,
+        purpose: root.purpose ?? 'information',
         postedAt: row.created_at,
         expiresAt: root.expires_at,
         postingProject: root.author_project,
@@ -145,6 +149,7 @@ function hostedMessageFacts(id: string, database: Database): MessageFacts | null
     ? {
         audience: audienceOwner.audience,
         acknowledgementRequired: message.ackRequired,
+        purpose: audienceOwner.purpose ?? 'information',
         postedAt: message.createdAt,
         expiresAt: audienceOwner.expiresAt,
         postingProject: audienceOwner.origin.project,
@@ -188,9 +193,9 @@ export function recordBoardReach(input: PreparedBoardReach, database: Database):
     .query(
       `INSERT INTO board_reach_delivery
        (emission_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
-        audience,acknowledgement_required,posted_at,expires_at,session_started_at,posting_timing,
+        audience,acknowledgement_required,purpose,posted_at,expires_at,session_started_at,posting_timing,
         concern,recorded_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(emission_id,message_source,message_id) WHERE emission_id IS NOT NULL DO NOTHING`,
     )
     .run(
@@ -203,6 +208,7 @@ export function recordBoardReach(input: PreparedBoardReach, database: Database):
       input.blockedStop ? 1 : 0,
       input.audience,
       input.acknowledgementRequired ? 1 : 0,
+      input.purpose,
       input.postedAt,
       input.expiresAt,
       input.sessionStartedAt,
@@ -279,6 +285,12 @@ export function countBoardReach(rows: BoardReachRow[]) {
   return {
     messagesPushed: messages.size,
     pushes: rows.length,
+    pushesByPurpose: Object.fromEntries(
+      (['information', 'request', 'standing'] as const).map((purpose) => [
+        purpose,
+        rows.filter((row) => (row.purpose ?? 'information') === purpose).length,
+      ]),
+    ),
     pushesNotConcerned: rows.filter((row) => row.concern === 'not-concerned').length,
     pushesUnqualified: rows.filter((row) => row.concern === 'unqualified').length,
     pushesOlderThanSession: rows.filter((row) => row.postingTiming === 'before-session').length,
@@ -332,6 +344,7 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
   blockedStop: row.blocked_stop === 1,
   audience: String(row.audience),
   acknowledgementRequired: row.acknowledgement_required === 1,
+  purpose: parseBoardPurpose(row.purpose === undefined ? undefined : String(row.purpose)),
   postedAt: String(row.posted_at),
   expiresAt: row.expires_at === null ? null : String(row.expires_at),
   sessionStartedAt: String(row.session_started_at),
@@ -386,6 +399,7 @@ export function renderBoardReach(report: ReturnType<typeof boardReachReport>): s
     coverage,
     `Messages pushed: ${totals.messagesPushed}`,
     `Pushes: ${totals.pushes}`,
+    `Pushes by purpose: information ${totals.pushesByPurpose.information}, request ${totals.pushesByPurpose.request}, standing ${totals.pushesByPurpose.standing}`,
     `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
     `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
     `Pushes older than the session: ${totals.pushesOlderThanSession}`,

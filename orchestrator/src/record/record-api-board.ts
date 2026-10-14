@@ -6,6 +6,8 @@ import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
+  BOARD_PURPOSES,
+  defaultBoardPurpose,
   type HostedBoardAcceptInput,
   type HostedBoardChanges,
   type HostedBoardClaim,
@@ -41,6 +43,7 @@ const postSchema = z
   .object({
     id: idSchema,
     kind: z.enum(['notice', 'question']),
+    purpose: z.enum(BOARD_PURPOSES).optional(),
     audience: z.string().min(1),
     title: headerValueSchema,
     body: z.string(),
@@ -58,6 +61,10 @@ const postSchema = z
     currentTaskKey: z.string().min(1).nullable().optional(),
   })
   .strict()
+  .transform((input) => ({
+    ...input,
+    purpose: defaultBoardPurpose(input.purpose, Boolean(input.ackRequired)),
+  }))
 const replySchema = z
   .object({
     id: idSchema,

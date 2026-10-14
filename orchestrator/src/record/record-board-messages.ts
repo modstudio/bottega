@@ -2,6 +2,11 @@
 /** Owns hosted board message writes and thread reads. Must not know HTTP or local stores. */
 
 import type { SQL } from 'bun'
+import {
+  type BoardPurpose,
+  defaultBoardPurpose,
+  parseBoardPurpose,
+} from '../../../shared/board-purpose.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
@@ -14,6 +19,7 @@ import {
   messageIsLive,
   postDecision,
   requireRealSession,
+  standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
 import {
@@ -110,6 +116,7 @@ export function hostedBoardMessageView(
   return {
     id: String(row.id),
     kind: String(row.kind),
+    purpose: row.purpose == null ? null : parseBoardPurpose(String(row.purpose)),
     threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),
     title: row.title == null ? null : String(row.title),
     body: String(row.body),
@@ -155,6 +162,7 @@ function hostedBoardReplyView(row: Record<string, unknown>): HostedBoardReply {
 function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBoardCreateContent {
   return {
     kind: String(row.kind),
+    purpose: row.purpose == null ? null : parseBoardPurpose(String(row.purpose)),
     audience: row.audience == null ? null : String(row.audience),
     title: row.title == null ? null : String(row.title),
     body: String(row.body),
@@ -279,6 +287,7 @@ async function duplicateRootId(
   tx: SQL,
   input: {
     kind: string
+    purpose: string
     userId: string
     session: string | null
     audience: string
@@ -292,7 +301,7 @@ async function duplicateRootId(
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
   const candidates = (await tx`
     SELECT id FROM board_message
-    WHERE kind=${input.kind} AND author_user_id=${input.userId}::uuid
+    WHERE kind=${input.kind} AND purpose=${input.purpose} AND author_user_id=${input.userId}::uuid
       AND author_session IS NOT DISTINCT FROM ${input.session}
       AND author_project_id IS NOT DISTINCT FROM ${input.authorProjectId}::uuid
       AND audience IS NOT DISTINCT FROM ${input.audience}
@@ -344,12 +353,12 @@ async function insertRoot(
   await tx`
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id, author_project_id,
-      kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
+      kind, purpose, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
       created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     ) VALUES (
       ${input.id}::uuid, ${userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid, ${prepared.authorProjectId}::uuid,
-      ${input.kind}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
+      ${input.kind}, ${input.kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, ackRequired)}, NULL, ${input.audience}, ${input.title}, ${input.body}, ${ackRequired},
       ${input.ackDeadline ?? null}::timestamptz, ${input.expiresAt}::timestamptz,
       ${createdAt}::timestamptz, ${prepared.claimId}::uuid,
       COALESCE(${boardUuidArray(tx, prepared.scopeProjectIds)}, ARRAY[]::uuid[]),
@@ -376,6 +385,21 @@ async function existingOrConflict(
   return hostedBoardMessageView(loaded.row, loaded.tags)
 }
 
+function purposeRefusal(
+  input: BoardTenant & HostedBoardPostInput,
+  audience: Audience,
+  purpose: BoardPurpose,
+  ackRequired: boolean,
+  session: string | null,
+): void {
+  const authorKind = session ? 'architect' : 'operator'
+  const authorProject = input.project?.trim() || null
+  const refusal =
+    acknowledgementRefusal({ ackRequired, purpose, audience, authorKind, authorProject }) ??
+    standingPostingRefusal({ purpose, audience, authorKind, authorProject })
+  if (refusal) throw new RecordBoardError(refusal, 400)
+}
+
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
 ): Promise<HostedBoardMessage> {
@@ -383,6 +407,10 @@ export async function postHostedBoardMessage(
     throw new RecordBoardError('hosted board post kind must be notice or question', 400)
   }
   const audience = parseHostedAudience(input.audience)
+  const purpose =
+    input.kind === 'question'
+      ? 'request'
+      : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const refusal = hostedBoardPostRefusal(input.kind, audience)
   if (refusal) throw new RecordBoardError(refusal, 400)
   asBoardError(() => validatePostNoticeInput(input))
@@ -404,13 +432,7 @@ export async function postHostedBoardMessage(
     )
   }
   const session = sessionOrNull(input.authorSession)
-  const ackRefusal = acknowledgementRefusal({
-    ackRequired,
-    audience,
-    authorKind: session ? 'architect' : 'operator',
-    authorProject: input.project?.trim() || null,
-  })
-  if (ackRefusal) throw new RecordBoardError(ackRefusal, 400)
+  purposeRefusal(input, audience, purpose, ackRequired, session)
   const senderTags = asBoardError(() => senderBoardTags(input))
   const tags = [
     ...senderTags,
@@ -421,6 +443,7 @@ export async function postHostedBoardMessage(
     const prepared = await prepareHostedPost(tx, audience, input.project)
     const requested: HostedBoardCreateContent = {
       kind: input.kind,
+      purpose,
       audience: input.audience,
       title: input.title,
       body: input.body,
@@ -437,6 +460,7 @@ export async function postHostedBoardMessage(
       tx,
       {
         kind: input.kind,
+        purpose,
         userId: input.userId,
         session,
         audience: input.audience,
@@ -601,14 +625,14 @@ async function insertReplyCopyingRoot(
   const inserted = await tx`
     INSERT INTO board_message (
       id, author_user_id, author_session, author_harness, author_machine_id, author_run_id, author_project_id,
-      kind, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
+      kind, purpose, thread_root_id, audience, title, body, ack_required, ack_deadline, expires_at,
       created_at, claim_id, scope_project_ids, recipient_user_ids, shared_space_reach
     )
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
       ${input.project ? await resolvePostingProjectId(tx, input.project) : null}::uuid,
-      'reply', root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
+      'reply', NULL, root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
     FROM board_message AS root
@@ -629,6 +653,7 @@ export async function replyHostedBoardMessage(
   const clock = Date.now()
   const requested: HostedBoardCreateContent = {
     kind: 'reply',
+    purpose: null,
     audience: null,
     title: null,
     body: input.body,

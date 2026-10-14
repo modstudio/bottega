@@ -61,7 +61,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/board-contract.ts',
-    allowed: ['zod', '../../shared/record-id.ts'],
+    allowed: ['zod', '../../shared/board-purpose.ts', '../../shared/record-id.ts'],
   },
   { file: 'hub/deploy/site/src/decision.ts', allowed: [] },
   {

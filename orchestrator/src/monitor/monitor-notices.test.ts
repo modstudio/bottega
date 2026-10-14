@@ -184,6 +184,7 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
       title: 'Local interrupt',
       body: 'local monitor body',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     Date.now(),

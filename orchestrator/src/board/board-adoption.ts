@@ -298,6 +298,7 @@ async function uploadMessage(
   const uploaded = await client.postBoardMessage({
     id: hostedId,
     kind: candidate.kind,
+    purpose: row.purpose ?? (candidate.kind === 'question' ? 'request' : 'information'),
     audience: row.audience!,
     title: row.title!,
     body: row.body,

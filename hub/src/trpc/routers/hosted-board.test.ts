@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
+  BOARD_REQUEST_DEFAULT_EXPIRY_MS,
 } from '../../../../shared/board-duration.ts'
 import {
   BoardAcceptResultSchema,
@@ -132,6 +132,7 @@ test('hosted board procedures map record responses to the shared browser contrac
     title: 'Notice',
     body: 'Body',
     ackRequired: true,
+    purpose: 'request',
     deadline: '10m',
     expires: '6h',
   })
@@ -223,11 +224,41 @@ test('hosted board post applies the shared default durations', async () => {
     title: 'Notice',
     body: 'Body',
     ackRequired: true,
+    purpose: 'request',
   })
   expect(posted).toMatchObject({
-    expiresAt: new Date(now + BOARD_DEFAULT_EXPIRY_MS).toISOString(),
+    expiresAt: new Date(now + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString(),
     ackDeadline: new Date(now + BOARD_DEFAULT_ACK_DEADLINE_MS).toISOString(),
   })
+})
+
+test('hosted board defaults an acknowledgement-required post to request', async () => {
+  let posted: Record<string, unknown> | undefined
+  const client = {
+    boardList: async () => ({ messages: [], truncated: false }),
+    boardThread: async () => ({ root, replies: [] }),
+    boardStatus: async () => ({ message: root, receipts: [] }),
+    boardPost: async (input: Record<string, unknown>) => {
+      posted = input
+      return { ...root, id: mintedPostId, kind: 'notice' }
+    },
+    boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
+    boardAccept: async () => ({ root, replies: [] }),
+    boardWithdraw: async () => root,
+  }
+  const caller = createHostedBoardRouter({
+    clientFor: () => client,
+    clock: () => now,
+    newId: () => mintedPostId,
+  }).createCaller({})
+
+  await caller.post({
+    audience: 'architects',
+    title: 'Required notice',
+    body: 'Body',
+    ackRequired: true,
+  })
+  expect(posted).toMatchObject({ purpose: 'request', ackRequired: true })
 })
 
 test('hosted board reports an incompatible shared response as an internal error', async () => {

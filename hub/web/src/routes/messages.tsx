@@ -15,8 +15,14 @@ import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Textarea } from '@/ui/field/textarea'
 import { SettingBlock } from '@/ui/form-layout/form-layout'
+import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
+import {
+  BOARD_PURPOSES,
+  type BoardPurpose,
+  defaultBoardPurpose,
+} from '../../../../shared/board-purpose.ts'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type BoardOutputs = inferRouterOutputs<AppRouter>['board']
@@ -235,6 +241,73 @@ function splitValues(value: string) {
   return values.length ? values : undefined
 }
 
+function PurposeSetting({
+  value,
+  onChange,
+}: {
+  value: BoardPurpose
+  onChange: (value: BoardPurpose) => void
+}) {
+  return (
+    <SettingBlock
+      label="Purpose"
+      hint="Information sends one line; request sends the full body; standing also reaches sessions that start later. Requests lasting over four hours should set an expiry."
+      control={
+        <Select
+          label="Purpose"
+          value={value}
+          options={BOARD_PURPOSES.map((purpose) => ({
+            value: purpose,
+            label: `${purpose[0]!.toUpperCase()}${purpose.slice(1)}`,
+          }))}
+          onChange={(purpose) => onChange(purpose as BoardPurpose)}
+        />
+      }
+    />
+  )
+}
+
+function MessageDialogFooter({
+  close,
+  submit,
+  disabled,
+  pending,
+}: {
+  close: () => void
+  submit: () => void
+  disabled: boolean
+  pending: boolean
+}) {
+  return (
+    <>
+      <Button onClick={close}>Close</Button>
+      <Button variant="primary" disabled={disabled} onClick={submit}>
+        {pending ? 'Posting...' : 'Post message'}
+      </Button>
+    </>
+  )
+}
+
+function MessageResult({
+  error,
+  result,
+}: {
+  error?: { message: string } | null
+  result: string | null
+}) {
+  if (error)
+    return (
+      <p data-tone="error" className="text-status-text">
+        {error.message}
+      </p>
+    )
+  return result ? (
+    <p data-tone="success" className="text-status-text">
+      {result}
+    </p>
+  ) : null
+}
+
 function NewMessageDialog({
   open,
   onOpenChange,
@@ -246,6 +319,7 @@ function NewMessageDialog({
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [purpose, setPurpose] = useState<BoardPurpose | undefined>()
   const [ackRequired, setAckRequired] = useState(false)
   const [deadline, setDeadline] = useState('')
   const [expires, setExpires] = useState('')
@@ -267,6 +341,7 @@ function NewMessageDialog({
         setProject('')
         setTitle('')
         setBody('')
+        setPurpose(undefined)
         setAckRequired(false)
         setDeadline('')
         setExpires('')
@@ -285,6 +360,7 @@ function NewMessageDialog({
       ...(hosted && project ? { project } : {}),
       title,
       body,
+      purpose: defaultBoardPurpose(purpose, ackRequired),
       ...(task ? { task } : {}),
       ...(splitValues(paths) ? { paths: splitValues(paths) } : {}),
       ...(splitValues(topics) ? { topics: splitValues(topics) } : {}),
@@ -299,16 +375,12 @@ function NewMessageDialog({
       title="New message"
       description="Post a notice from the operator."
       footer={
-        <>
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-          <Button
-            variant="primary"
-            disabled={post.isPending || !audience || !title.trim() || !body.trim()}
-            onClick={submit}
-          >
-            {post.isPending ? 'Posting...' : 'Post message'}
-          </Button>
-        </>
+        <MessageDialogFooter
+          close={() => onOpenChange(false)}
+          submit={submit}
+          disabled={post.isPending || !audience || !title.trim() || !body.trim()}
+          pending={post.isPending}
+        />
       }
     >
       <div className="grid gap-4">
@@ -335,6 +407,7 @@ function NewMessageDialog({
           label="Body"
           control={<Textarea value={body} onChange={(event) => setBody(event.target.value)} />}
         />
+        <PurposeSetting value={defaultBoardPurpose(purpose, ackRequired)} onChange={setPurpose} />
         <label
           htmlFor="ack-required"
           className="flex items-center gap-2 text-sm text-text-secondary"
@@ -370,16 +443,7 @@ function NewMessageDialog({
           label="Topics (optional, comma separated)"
           control={<Input value={topics} onChange={(event) => setTopics(event.target.value)} />}
         />
-        {post.error ? (
-          <p data-tone="error" className="text-status-text">
-            {post.error.message}
-          </p>
-        ) : null}
-        {result ? (
-          <p data-tone="success" className="text-status-text">
-            {result}
-          </p>
-        ) : null}
+        <MessageResult error={post.error} result={result} />
       </div>
     </Dialog>
   )

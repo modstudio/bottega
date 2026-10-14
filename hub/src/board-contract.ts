@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 
 export const BoardIdSchema = z
@@ -19,6 +20,7 @@ export const BoardPostInputSchema = z.object({
   project: z.string().optional(),
   title: z.string().trim().min(1),
   body: z.string().trim().min(1),
+  purpose: z.enum(BOARD_PURPOSES).optional(),
   task: z.string().optional(),
   paths: z.array(z.string()).optional(),
   topics: z.array(z.string()).optional(),
@@ -48,6 +50,7 @@ const BoardTagSchema = z.object({
 const BoardMessageSchema = z.object({
   id: BoardIdSchema,
   kind: z.string().nullable(),
+  purpose: z.enum(BOARD_PURPOSES).nullable().optional(),
   threadRootId: BoardIdSchema.nullable(),
   title: z.string().nullable(),
   body: z.string().nullable(),
@@ -75,6 +78,7 @@ const BoardMessageSchema = z.object({
 })
 const BoardOverviewBaseSchema = z.object({
   id: BoardIdSchema,
+  purpose: z.enum(BOARD_PURPOSES).optional(),
   title: z.string().nullable(),
   audience: z.string().nullable(),
   origin: BoardOriginSchema,

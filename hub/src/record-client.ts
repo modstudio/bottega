@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import {
   DOC_KINDS,
   DOC_STATUSES,
@@ -402,6 +403,7 @@ const hostedBoardListSchema = z.object({
 const hostedBoardPostInputSchema = z.object({
   id: z.string().uuid(),
   kind: z.literal('notice'),
+  purpose: z.enum(BOARD_PURPOSES).optional(),
   audience: z.string(),
   title: z.string(),
   body: z.string(),

@@ -32,7 +32,10 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
           '2026-10-13T10:01:00.000Z','emission-1')`,
       )
       .run()
-    expect(applyMigrations(database)).toEqual(['0102_board_reach_heartbeat'])
+    expect(applyMigrations(database)).toEqual([
+      '0102_board_reach_heartbeat',
+      '0103_board_message_purpose',
+    ])
     expect(database.query('SELECT * FROM board_reach_delivery').get()).toEqual({
       id: 1,
       message_source: 'hosted',
@@ -43,6 +46,7 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
       blocked_stop: 1,
       audience: 'architects',
       acknowledgement_required: 1,
+      purpose: 'information',
       posted_at: '2026-10-13T10:00:00.000Z',
       expires_at: '2026-10-14T10:00:00.000Z',
       session_started_at: '2026-10-13T09:00:00.000Z',

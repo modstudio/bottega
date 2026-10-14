@@ -2,8 +2,9 @@
 /** Routes board operations to the local store or hosted record without mixing their writes. */
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
+  boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
+import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -42,6 +43,7 @@ import {
   architectsPostingRefusal,
   OPERATOR_READER,
   parseAudience,
+  standingPostingRefusal,
 } from './board-policy.ts'
 import {
   acknowledgeNotice,
@@ -75,6 +77,7 @@ type BoardReplyResult = BoardPostResult & { rootId: string }
 type BoardMessageResult = {
   id: string
   kind: string | null
+  purpose: import('../../../shared/board-purpose.ts').BoardPurpose | null
   threadRootId: string | null
   title: string | null
   body: string | null
@@ -187,7 +190,13 @@ function localPostResult(value: ReturnType<typeof postNotice>): BoardPostResult 
 
 function hostedMessage(value: HostedBoardMessage): BoardMessageResult {
   const { noteId, ...message } = value
-  return { ...message, noteRecordId: noteId, noteLabel: null, text: null }
+  return {
+    ...message,
+    purpose: message.purpose ?? (message.kind === 'reply' ? null : 'information'),
+    noteRecordId: noteId,
+    noteLabel: null,
+    text: null,
+  }
 }
 
 function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
@@ -195,6 +204,7 @@ function localThread(value: ReturnType<typeof readThread>): BoardThreadResult {
     root: {
       ...value.root,
       id: String(value.root.id),
+      purpose: value.root.purpose,
       threadRootId: null,
       acceptedReplyId: stringId(value.root.acceptedReplyId),
       noteRecordId: value.root.noteRecordId,
@@ -235,6 +245,7 @@ function localStatus(value: ReturnType<typeof noticeStatus>, clock: number): Boa
     message: {
       id: String(value.message.id),
       kind: row.kind,
+      purpose: row.purpose,
       threadRootId: stringId(row.thread_root_id),
       title: row.title,
       body: row.body,
@@ -336,10 +347,15 @@ function hostedPostInput(
 ) {
   const actor = authorFacts(c.env)
   const project = projectAt(c.cwd)?.name
-  const expiresAt = new Date(c.clock + (input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS)).toISOString()
+  const purpose =
+    kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
+  const expiresAt = new Date(
+    c.clock + (input.expiresMs ?? boardDefaultExpiryMs(purpose)),
+  ).toISOString()
   return {
     id: newRecordId(),
     kind,
+    purpose,
     audience: input.audience,
     title: input.title,
     body: input.body,
@@ -364,13 +380,22 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   const c = context(inputContext)
   const actor = boardActor(c.env)
   const audience = parseAudience(input.audience)
+  const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const refusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
+    purpose,
     audience,
     authorKind: actor.kind,
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
   })
   if (refusal) throw new Error(refusal)
+  const standingRefusal = standingPostingRefusal({
+    purpose,
+    audience,
+    authorKind: actor.kind,
+    authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
+  })
+  if (standingRefusal) throw new Error(standingRefusal)
   if (boardMode(locality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
     if (localRefusal) throw new Error(localRefusal)

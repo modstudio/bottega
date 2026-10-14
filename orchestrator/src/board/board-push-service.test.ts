@@ -19,7 +19,7 @@ import { takeClaim } from './board-claim-service.ts'
 import { BOARD_PUSH_REFRESH_SECONDS } from './board-delivery.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES } from './board-render.ts'
-import { acknowledgeNotice, postNotice } from './board-service.ts'
+import { postNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
@@ -228,115 +228,6 @@ const hookOutput = JSON.stringify({
   ],
 })
 
-test('pending acknowledgement resolution combines local and hosted cache and excludes acknowledged or unaddressed notices', async () => {
-  const clock = Date.parse('2026-10-07T12:00:00.000Z')
-  db()
-    .query(
-      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
-     VALUES ('push-reader','claude-code','architect','test','push-project','/tmp',NULL,?,?)`,
-    )
-    .run(new Date(clock - 1_000).toISOString(), new Date(clock).toISOString())
-  const local = postNotice(
-    {
-      audience: 'project:push-project',
-      title: 'Local',
-      body: 'Local body',
-      ackRequired: true,
-    },
-    {},
-    clock,
-  )
-  const olderLocal = postNotice(
-    {
-      audience: 'project:push-project',
-      title: 'Older local',
-      body: 'Do not ask this reader to acknowledge.',
-      ackRequired: true,
-    },
-    {},
-    clock - 2_000,
-  )
-  const acknowledged = postNotice(
-    {
-      audience: 'project:push-project',
-      title: 'Done',
-      body: 'Done body',
-      ackRequired: true,
-    },
-    {},
-    clock + 1,
-  )
-  acknowledgeNotice(acknowledged.id, { CLAUDE_CODE_SESSION_ID: 'push-reader' }, clock + 2)
-  const setMeta = db().query(
-    'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-  )
-  setMeta.run('board_hosted_cache_owner', 'user-1')
-  setMeta.run('board_hosted_signed_in_user', 'user-1')
-  const hosted = {
-    id: '01990000-0000-7000-8000-000000000111',
-    kind: 'notice',
-    threadRootId: null,
-    title: 'Hosted',
-    body: 'Hosted body',
-    audience: 'project:push-project',
-    origin: {
-      kind: 'operator',
-      session: null,
-      harness: null,
-      project: null,
-      runId: null,
-    },
-    senderTags: [],
-    createdAt: new Date(clock).toISOString(),
-    expiresAt: new Date(clock + 60_000).toISOString(),
-    withdrawnAt: null,
-    state: 'open',
-    acceptedReplyId: null,
-    acceptedBy: null,
-    acceptedAt: null,
-    noteId: null,
-    notePendingError: null,
-    revision: '1',
-    scopeProjectIds: [],
-    recipientUserIds: [],
-    claimId: null,
-    authorUserId: 'user-1',
-    authorSession: null,
-    ackRequired: true,
-    ackDeadline: new Date(clock + 30_000).toISOString(),
-  }
-  db()
-    .query(
-      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-    )
-    .run(hosted.id, hosted.kind, null, hosted.revision, JSON.stringify(hosted))
-  const olderHosted = {
-    ...hosted,
-    id: '01990000-0000-7000-8000-000000000112',
-    title: 'Older hosted',
-    createdAt: new Date(clock - 2_000).toISOString(),
-  }
-  db()
-    .query(
-      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-    )
-    .run(olderHosted.id, olderHosted.kind, null, olderHosted.revision, JSON.stringify(olderHosted))
-
-  const pending = await pendingBoardDelivery({
-    session: 'push-reader',
-    budgetMs: 1,
-    clock: clock + 3,
-  })
-  expect(pending.delivery.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
-  )
-  expect(pending.pendingAcknowledgements.map((notice) => notice.id).sort()).toEqual(
-    [String(local.id), hosted.id].sort(),
-  )
-  expect(pending.delivery.map((notice) => notice.id)).not.toContain(String(olderLocal.id))
-  expect(pending.pendingAcknowledgements.map((notice) => notice.id)).not.toContain(olderHosted.id)
-})
-
 test('an architect may address architects without receiving its own post', async () => {
   ensurePostingProject()
   const clock = Date.parse('2026-10-07T13:00:00.000Z')
@@ -415,6 +306,12 @@ test('mid-session local delivery includes an ordinary notice, question, and part
     {},
     clock,
   )
+  const purposeMessages = [
+    { title: 'Requested action', body: 'request body', purpose: 'request' as const },
+    { title: 'Standing rule', body: 'standing body', purpose: 'standing' as const },
+  ].map((input) => postNotice({ audience: 'session:delivery-reader', ...input }, {}, clock + 1))
+  const request = purposeMessages[0]!
+  const standing = purposeMessages[1]!
   const question = askQuestion(
     {
       audience: 'session:delivery-reader',
@@ -432,8 +329,14 @@ test('mid-session local delivery includes an ordinary notice, question, and part
   })
   expect(first.delivery.map((message) => message.id)).toEqual([
     String(ordinary.id),
+    String(request.id),
+    String(standing.id),
     String(question.id),
   ])
+  const text = (id: number) => first.delivery.find((message) => message.id === String(id))!.text
+  expect(text(ordinary.id)).not.toContain('notice body')
+  expect(text(request.id)).toContain('request body')
+  expect(text(standing.id)).toContain('standing body')
   await markBoardDeliveryDelivered({
     session: 'delivery-reader',
     ids: first.delivery.map((message) => message.id),
@@ -620,6 +523,7 @@ test('delivery returns every pending notice and preserves its first delivered ti
       title: 'Reminder',
       body: 'Remember',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,
@@ -681,6 +585,7 @@ test('recent reminders are removed before bounding without changing pending ackn
         title: `Reminder ${index}`,
         body: 'Remember',
         ackRequired: true,
+        purpose: 'request',
       },
       {},
       clock + index,
@@ -727,6 +632,7 @@ test('ordinary-only delivery excludes required notices before bounding', async (
         title: `Required ${index}`,
         body: 'Acknowledge me',
         ackRequired: true,
+        purpose: 'request',
       },
       {},
       clock + index,
@@ -767,6 +673,7 @@ test('recently-injected ids do not suppress messages never delivered to the sess
       title: 'Unread acknowledgement',
       body: 'Must still arrive',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock,

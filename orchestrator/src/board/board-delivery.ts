@@ -2,6 +2,7 @@
 /** Refreshes hosted state within each caller's budget, then combines it with local delivery. */
 
 import { classifyBoardId } from '../../../shared/board-mode.ts'
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 
 import {
   claimCachedHosted,
@@ -11,6 +12,7 @@ import {
   refreshHostedBoard,
 } from './board-hosted-cache.ts'
 import { architectIdentity, OPERATOR_READER } from './board-policy.ts'
+import { boardDeliveryForm } from './board-render.ts'
 import {
   claimPushNotices,
   claimRunPushNotices,
@@ -39,6 +41,7 @@ type BoardDeliveryNotice = {
   oneLine: string
   ackRequired: boolean
   createdAt: string
+  purpose?: BoardPurpose
 }
 
 const splitBoardIds = (sourceIds: Array<string | number>) => {
@@ -59,6 +62,7 @@ const deliveryNotice = (notice: {
   oneLine: string
   ackRequired: boolean
   createdAt: string
+  purpose?: BoardPurpose
 }): BoardDeliveryNotice => ({ ...notice, id: String(notice.id) })
 
 const deliveryWarning = (...warnings: Array<string | null>): string | null => {
@@ -76,15 +80,23 @@ export async function claimBoardNotices(
     env,
   })
   const local = claimPushNotices(all, env)
+  const sessionStartNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
+    ...notice,
+    text:
+      boardDeliveryForm(notice.purpose, 'session-start') === 'full' ? notice.text : notice.oneLine,
+  })
   if (refreshed.status === 'local')
     return {
-      notices: local.notices.map(deliveryNotice),
+      notices: local.notices.map(deliveryNotice).map(sessionStartNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(sessionReader(env), all)
   return {
-    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    notices: [
+      ...local.notices.map(deliveryNotice).map(sessionStartNotice),
+      ...hosted.notices.map(deliveryNotice).map(sessionStartNotice),
+    ],
     warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }
@@ -116,19 +128,29 @@ export async function claimRunBoardNotices(
   runId: number,
   all = false,
   budgetMs = BOARD_PROMPT_REFRESH_BUDGET_MS,
+  sessionStart = false,
 ) {
+  const runNotice = (notice: ReturnType<typeof deliveryNotice>) => ({
+    ...notice,
+    text:
+      boardDeliveryForm(notice.purpose, sessionStart ? 'session-start' : 'running') === 'full'
+        ? notice.text
+        : notice.oneLine,
+  })
   const refreshed = await refreshHostedBoard({ budgetMs })
   const reader = runReader(runId)
   const local = claimRunPushNotices(runId, all)
   if (refreshed.status === 'local')
     return {
-      notices: local.notices.map(deliveryNotice),
+      notices: local.notices.map(deliveryNotice).map(runNotice),
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
   const hosted = claimCachedHostedForPush(reader, all)
   return {
-    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)],
+    notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)].map(
+      runNotice,
+    ),
     warning: deliveryWarning(local.warning, hosted.warning, hostedBoardVerificationWarning()),
     withheldOlderCount: local.withheldOlderCount + hosted.withheldOlderCount,
   }

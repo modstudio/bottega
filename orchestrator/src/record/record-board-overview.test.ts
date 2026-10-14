@@ -13,6 +13,7 @@ function message(kind: 'notice' | 'question'): HostedBoardMessage {
         ? '01990000-0000-7000-8000-000000000011'
         : '01990000-0000-7000-8000-000000000012',
     kind,
+    purpose: kind === 'question' ? 'request' : 'request',
     threadRootId: null,
     title: kind === 'notice' ? 'Deploy complete' : 'Which release?',
     body: kind === 'notice' ? 'The release is live.' : 'Choose the release channel.',
@@ -82,6 +83,7 @@ test('authored notice overview reports receipt reach and acknowledgement', () =>
     expiresAt: '2026-10-07T12:00:00.000Z',
     withdrawnAt: null,
     ackRequired: true,
+    purpose: 'request',
     ackDeadline: '2026-10-06T18:00:00.000Z',
     state: 'open',
     reached: 2,
@@ -95,6 +97,7 @@ test('question overview reports visible replies and hides another author reach',
   expect(hostedBoardOverviewEntry(message('question'), 1, receipts, reader)).toEqual({
     id: '01990000-0000-7000-8000-000000000012',
     kind: 'question',
+    purpose: 'request',
     title: 'Which release?',
     audience: `project:${PLATFORM_SLUG}`,
     origin: {

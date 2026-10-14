@@ -171,6 +171,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
     root: {
       id: question.id,
       kind: 'question',
+      purpose: 'request',
       threadRootId: null,
       title: 'Local question',
       body: 'Question body',
@@ -185,7 +186,7 @@ test('thread results have one pinned shape in local and hosted modes', async () 
       },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
-      expiresAt: '2026-10-06T12:00:00.000Z',
+      expiresAt: '2026-10-05T16:00:00.000Z',
       withdrawnAt: null,
       state: 'open',
       acceptedReplyId: null,
@@ -220,7 +221,13 @@ test('thread results have one pinned shape in local and hosted modes', async () 
   })
   const { noteId: _noteId, ...hostedRoot } = message
   expect(hosted).toEqual({
-    root: { ...hostedRoot, noteRecordId: unresolvedNoteId, noteLabel: null, text: null },
+    root: {
+      ...hostedRoot,
+      purpose: 'information',
+      noteRecordId: unresolvedNoteId,
+      noteLabel: null,
+      text: null,
+    },
     replies: [],
   })
 })
@@ -256,6 +263,7 @@ test('reading a thread stamps its printed root and replies while acknowledgement
       title: 'Acknowledge',
       body: 'Still needs acknowledgement',
       ackRequired: true,
+      purpose: 'request',
     },
     {},
     clock + 2,
@@ -294,6 +302,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
     message: {
       id: posted.id,
       kind: 'notice',
+      purpose: 'information',
       threadRootId: null,
       title: 'Local status',
       body: 'Status body',
@@ -308,7 +317,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
       },
       senderTags: [],
       createdAt: '2026-10-05T12:00:00.000Z',
-      expiresAt: '2026-10-06T12:00:00.000Z',
+      expiresAt: '2026-10-05T16:00:00.000Z',
       withdrawnAt: null,
       state: 'open',
       acceptedReplyId: null,
@@ -364,6 +373,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
   expect(hosted).toEqual({
     message: {
       ...hostedMessageFields,
+      purpose: 'information',
       noteRecordId: null,
       noteLabel: null,
       text: null,

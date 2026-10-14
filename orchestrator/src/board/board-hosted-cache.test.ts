@@ -900,8 +900,14 @@ test('hosted push selection withholds every older message and keeps newer messag
       createdAt: '2026-10-05T11:59:59.999Z',
       title: 'older required',
       ackRequired: true,
+      purpose: 'request',
     }),
     message({ createdAt: '2026-10-05T12:00:00.001Z', title: 'newer ordinary' }),
+    message({
+      createdAt: '2026-10-05T11:59:59.999Z',
+      title: 'older standing',
+      purpose: 'standing',
+    }),
   ]
   const put = database.query(
     'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
@@ -916,7 +922,7 @@ test('hosted push selection withholds every older message and keeps newer messag
       database,
     ),
   ).toMatchObject({
-    notices: [{ id: rows[2]!.id }],
+    notices: [{ id: rows[2]!.id }, { id: rows[3]!.id }],
     withheldOlderCount: 2,
   })
 })

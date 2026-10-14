@@ -1,8 +1,9 @@
 import { hostname } from 'node:os'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
-  BOARD_DEFAULT_EXPIRY_MS,
+  boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
+import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -21,6 +22,7 @@ import {
   postDecision,
   resolveAudience,
   runAudienceRefusal,
+  standingPostingRefusal,
   validatePostNoticeInput,
 } from './board-policy.ts'
 import { boardNoticeMatches } from './board-routing.ts'
@@ -57,11 +59,13 @@ export type PostNoticeInput = SenderBoardTags & {
   ackRequired?: boolean
   deadlineMs?: number
   expiresMs?: number
+  purpose?: BoardPurpose | string
   suggestingRunId?: number
 }
 export type MessageRow = {
   id: number
   kind: string
+  purpose: BoardPurpose | null
   author_kind: string
   author_session: string | null
   audience: string | null
@@ -84,6 +88,27 @@ export type MessageRow = {
   note_pending_error: string | null
   note_filing_started_at: string | null
   claim_id: number | null
+}
+
+function rootPurpose(
+  kind: 'notice' | 'question',
+  input: PostNoticeInput,
+  audience: Audience,
+  actor: BoardActor,
+  authorProject: string | null,
+): BoardPurpose {
+  const purpose =
+    kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
+  const refusal =
+    acknowledgementRefusal({
+      ackRequired: Boolean(input.ackRequired),
+      purpose,
+      audience,
+      authorKind: actor.kind,
+      authorProject,
+    }) ?? standingPostingRefusal({ purpose, audience, authorKind: actor.kind, authorProject })
+  if (refusal) throw new Error(refusal)
+  return purpose
 }
 
 export function boardReaderBeganAt(reader: string, database = db()): string | null {
@@ -462,16 +487,10 @@ export function insertRootMessage(
   validateRunAudience(audience, actor, database)
   const origin = resolvePostOrigin(actor, env, cwd)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
-  const ackRefusal = acknowledgementRefusal({
-    ackRequired: Boolean(input.ackRequired),
-    audience,
-    authorKind: actor.kind,
-    authorProject: origin.project,
-  })
-  if (ackRefusal) throw new Error(ackRefusal)
+  const purpose = rootPurpose(kind, input, audience, actor, origin.project)
   const senderTags = senderBoardTags(input)
   const deadlineMs = input.deadlineMs ?? BOARD_DEFAULT_ACK_DEADLINE_MS
-  const expiresMs = input.expiresMs ?? BOARD_DEFAULT_EXPIRY_MS
+  const expiresMs = input.expiresMs ?? boardDefaultExpiryMs(purpose)
   if (input.ackRequired && deadlineMs > expiresMs)
     throw new Error(
       `ack deadline ${deadlineMs}ms is later than expiry ${expiresMs}ms; set --deadline no later than --expires`,
@@ -479,12 +498,13 @@ export function insertRootMessage(
   const duplicateCandidates = database
     .query(
       `SELECT id FROM board_message
-       WHERE kind=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
+       WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_id IS ?
          AND author_project IS ? AND audience=? AND title=? AND body=?
          AND created_at>=? ORDER BY id DESC`,
     )
     .all(
       kind,
+      purpose,
       actor.kind,
       actor.session,
       input.suggestingRunId ?? null,
@@ -529,12 +549,13 @@ export function insertRootMessage(
   const inserted = database
     .query(
       `INSERT INTO board_message
-       (kind,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
+       (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
         ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
     )
     .run(
       kind,
+      purpose,
       actor.kind,
       actor.session,
       input.suggestingRunId ?? null,

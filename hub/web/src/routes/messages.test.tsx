@@ -27,6 +27,7 @@ test('messages render notice reach and question replies from the preloaded list'
         expiresAt: null,
         withdrawnAt: null,
         ackRequired: true,
+        purpose: 'request',
         ackDeadline: null,
         state: 'open',
         reached: 3,

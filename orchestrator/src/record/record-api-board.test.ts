@@ -111,6 +111,39 @@ test('board post refuses an invalid body at the route edge', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board message' })
 })
 
+test('board post accepts every purpose, defaults a missing purpose, and refuses an unknown purpose', async () => {
+  const purposes: string[] = []
+  const app = appWith(identity, {
+    postBoardMessage: async (input: { id: string; purpose: string }) => {
+      purposes.push(input.purpose)
+      return { id: input.id }
+    },
+  })
+  const post = (purpose?: string, ackRequired = false) =>
+    app.request('/v1/board/messages', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: newRecordId(),
+        kind: 'notice',
+        audience: 'operator',
+        title: 'Purpose',
+        body: 'Body',
+        expiresAt,
+        ...(ackRequired ? { ackRequired: true } : {}),
+        ...(purpose === undefined ? {} : { purpose }),
+      }),
+    })
+  for (const purpose of ['information', 'request', 'standing'])
+    expect((await post(purpose)).status).toBe(200)
+  expect((await post()).status).toBe(200)
+  expect((await post(undefined, true)).status).toBe(200)
+  const unknown = await post('unknown')
+  expect(unknown.status).toBe(400)
+  expect(await unknown.json()).toEqual({ error: 'invalid board message' })
+  expect(purposes).toEqual(['information', 'request', 'standing', 'information', 'request'])
+})
+
 test('board status binds the caller tenant and returns the service view', async () => {
   const id = newRecordId()
   const expected = { message: { id }, receipts: [] }

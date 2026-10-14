@@ -151,6 +151,7 @@ export const boardMessage = pgTable.withRLS(
       onDelete: 'set null',
     }),
     kind: text().notNull(),
+    purpose: text(),
     threadRootId: uuid('thread_root_id').references((): AnyPgColumn => boardMessage.id, {
       onDelete: 'cascade',
     }),
@@ -201,6 +202,12 @@ export const boardMessage = pgTable.withRLS(
       check(
         'board_message_kind_check',
         sql`${table.kind} IN ('notice','suggestion','question','reply')`,
+      ),
+      check(
+        'board_message_purpose_check',
+        sql`(${table.kind} = 'reply' AND ${table.purpose} IS NULL) OR
+          (${table.kind} <> 'reply' AND
+            (${table.purpose} IS NULL OR ${table.purpose} IN ('information','request','standing')))`,
       ),
       check(
         'board_message_reply_shape_check',

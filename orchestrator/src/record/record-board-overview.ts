@@ -54,9 +54,10 @@ export function hostedBoardOverviewEntry(
   const base = {
     id: message.id,
     kind: message.kind,
+    purpose: message.purpose ?? 'information',
     title: message.title,
     audience: message.audience,
-    audienceDescription: message.audienceDescription,
+    ...(message.audienceDescription ? { audienceDescription: message.audienceDescription } : {}),
     origin: message.origin,
     senderTags: message.senderTags,
     createdAt: message.createdAt,

@@ -48,7 +48,7 @@ export async function appendInitialRunBoardPrompt(
   prompt: string,
   runId: number,
 ): Promise<{ prompt: string; noticeIds: string[] }> {
-  const delivery = await claimRunBoardNotices(runId)
+  const delivery = await claimRunBoardNotices(runId, false, undefined, true)
   const section = renderRunBoardSection(delivery.notices)
   const boardText = [section.text, delivery.warning].filter(Boolean).join('\n\n')
   return {

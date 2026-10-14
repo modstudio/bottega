@@ -1054,6 +1054,7 @@ export function boardPostArgv(input: BoardPostInput): string[] {
     input.title,
     '--body',
     input.body,
+    ...(input.purpose !== undefined ? ['--purpose', input.purpose] : []),
     ...(input.task !== undefined ? ['--task', input.task] : []),
     ...(input.paths ?? []).flatMap((path) => ['--path', path]),
     ...(input.topics ?? []).flatMap((topic) => ['--topic', topic]),

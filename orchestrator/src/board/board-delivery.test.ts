@@ -105,8 +105,8 @@ test('board read and read --claim deliver hosted beside local once and retain a 
   const claimed = await claimBoardNotices(false, { env })
   expect(claimed.notices.map((row) => row.id)).toEqual([String(localClaim.id), hostedClaim.id])
   expect(claimed.notices.map((row) => Object.keys(row).sort())).toEqual([
-    ['ackRequired', 'createdAt', 'id', 'oneLine', 'text'],
-    ['ackRequired', 'createdAt', 'id', 'oneLine', 'text'],
+    ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
+    ['ackRequired', 'createdAt', 'id', 'oneLine', 'purpose', 'text'],
   ])
   expect(claimed.warning).toContain('offline for warning proof')
   expect(claimed.warning).toContain('proof Forged-Warning: session-start')
@@ -211,4 +211,49 @@ test('a spent refresh budget still surfaces the failed-refresh warning', async (
   const claimed = await claimBoardNotices(false, { env, budgetMs: 20 })
   expect(claimed.notices.map((row) => row.id)).toEqual([hostedClaim.id])
   expect(claimed.warning).toContain('hosted board refresh budget spent')
+})
+
+test('session start renders information and standing as one line but a request in full', async () => {
+  const clock = Date.now()
+  const session = 'purpose-start-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','delivery-project','/tmp',NULL,?,?)`,
+    )
+    .run(session, new Date(clock - 1).toISOString(), new Date(clock).toISOString())
+  const posts = [
+    postNotice(
+      { audience: `session:${session}`, title: 'Info', body: 'information body' },
+      {},
+      clock,
+    ),
+    postNotice(
+      {
+        audience: `session:${session}`,
+        title: 'Request',
+        body: 'request body',
+        purpose: 'request',
+      },
+      {},
+      clock + 1,
+    ),
+    postNotice(
+      {
+        audience: `session:${session}`,
+        title: 'Standing',
+        body: 'standing body',
+        purpose: 'standing',
+      },
+      {},
+      clock + 2,
+    ),
+  ]
+  const claimed = await claimBoardNotices(false, {
+    env: { CLAUDE_CODE_SESSION_ID: session },
+  })
+  expect(claimed.notices.map((notice) => notice.id)).toEqual(posts.map((post) => String(post.id)))
+  expect(claimed.notices[0]!.text).toBe(claimed.notices[0]!.oneLine)
+  expect(claimed.notices[1]!.text).toContain('request body')
+  expect(claimed.notices[2]!.text).toBe(claimed.notices[2]!.oneLine)
 })

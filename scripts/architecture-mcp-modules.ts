@@ -23,6 +23,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-board-tools.ts', [
     '@modelcontextprotocol/server',
     'zod',
+    '../../../shared/board-purpose.ts',
     '../board/board-delivery.ts',
     '../board/board-operations.ts',
     '../board/board-policy.ts',

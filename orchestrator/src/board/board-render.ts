@@ -1,3 +1,4 @@
+import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import type { BoardTag } from './board-tags.ts'
 
@@ -28,6 +29,18 @@ export type BoardDelivery = {
   requiresAcknowledgement: boolean
   createdAt: string
   deliveredAt: string | null
+  purpose?: BoardPurpose
+}
+
+export type BoardDeliveryMoment = 'session-start' | 'running'
+
+export function boardDeliveryForm(
+  purpose: BoardPurpose | undefined,
+  moment: BoardDeliveryMoment,
+): 'one-line' | 'full' {
+  if (purpose === 'request') return 'full'
+  if (purpose === 'standing' && moment === 'running') return 'full'
+  return 'one-line'
 }
 
 const BOARD_DELIVERY_TRUNCATED = '\n\n[Message cut to fit; orch board read shows it whole.]'
@@ -141,5 +154,5 @@ export function renderBoardNoticeOneLine(message: {
   ackRequired: boolean
 }): string {
   const acknowledgement = message.ackRequired ? 'required' : 'not required'
-  return `Board message ${boardHeaderValue(message.id)}: ${boardHeaderValue(message.title.slice(0, BOARD_TITLE_MAX_CHARS) || 'untitled')} — from ${boardHeaderValue(message.sender)}; acknowledgement ${acknowledgement}.`
+  return `Board message ${boardHeaderValue(message.id)}: ${boardHeaderValue(message.title.slice(0, BOARD_TITLE_MAX_CHARS) || 'untitled')} — from ${boardHeaderValue(message.sender)}; acknowledgement ${acknowledgement}. orch board thread ${boardHeaderValue(message.id)} shows the body.`
 }

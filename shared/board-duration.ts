@@ -1,5 +1,15 @@
-export const BOARD_DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000
+export const BOARD_INFORMATION_DEFAULT_EXPIRY_MS = 4 * 60 * 60 * 1000
+export const BOARD_REQUEST_DEFAULT_EXPIRY_MS = 4 * 60 * 60 * 1000
+export const BOARD_STANDING_DEFAULT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 export const BOARD_DEFAULT_ACK_DEADLINE_MS = 60 * 60 * 1000
+
+import type { BoardPurpose } from './board-purpose.ts'
+
+export function boardDefaultExpiryMs(purpose: BoardPurpose): number {
+  if (purpose === 'information') return BOARD_INFORMATION_DEFAULT_EXPIRY_MS
+  if (purpose === 'request') return BOARD_REQUEST_DEFAULT_EXPIRY_MS
+  return BOARD_STANDING_DEFAULT_EXPIRY_MS
+}
 
 export function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
