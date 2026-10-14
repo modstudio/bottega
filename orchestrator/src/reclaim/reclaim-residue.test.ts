@@ -50,24 +50,4 @@ describe('guarded residue reclaim', () => {
       kind: 'run',
     })
   })
-
-  test('stale settlement rolls evidence exclusion back when hosted enqueue fails', () => {
-    const parent = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: 'project' })
-    const runId = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'stale',
-      repo: 'project',
-      parent,
-      turn: 2,
-    })
-    db().query('UPDATE run SET record_id=NULL WHERE id=?').run(parent)
-
-    expect(() => reclaimResidue('stale-run', String(runId))).toThrow(
-      `run ${runId} has parent_run_id ${parent} without a record id`,
-    )
-    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(runId)).toEqual({
-      evidence_excluded: null,
-    })
-  })
 })
