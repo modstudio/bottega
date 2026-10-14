@@ -702,6 +702,40 @@ describe('docArgv', () => {
     expect(argv.slice(expectAt, expectAt + 2)).toEqual(['--expect', 'revision-1'])
   })
 
+  test('set maps article fields and their explicit clears to the CLI contract', () => {
+    const cleared = docArgv('set', {
+      scope: 'project',
+      subject: 'alpha',
+      slug: 'guide',
+      title: 'Guide',
+      reason: 'clear article fields',
+      parentSlug: null,
+      form: null,
+      articleSubject: null,
+      relatedSubjects: [],
+      sourceFiles: [],
+    })
+    expect(cleared).toEqual([
+      'doc',
+      'set',
+      'guide',
+      '--scope',
+      'project',
+      '--subject',
+      'alpha',
+      '--title',
+      'Guide',
+      '--reason',
+      'clear article fields',
+      '--no-parent',
+      '--no-form',
+      '--no-article-subject',
+      '--no-related-subjects',
+      '--no-source-files',
+      '--json',
+    ])
+  })
+
   test('remove without subject', () => {
     expect(
       docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),

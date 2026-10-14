@@ -51,6 +51,12 @@ import {
 } from './record-doc-mapping.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
+  storedDocAudiences,
+  storedDocDelivery,
+  storedDocKind,
+  storedDocParentId,
+} from './record-doc-stored-fields.ts'
+import {
   existingDocAtAddress,
   recordCanonTreeWriteRefusal,
   recordTreeWriteRefusal,
@@ -90,28 +96,35 @@ export type RecordCanonImportResult = {
 }
 
 type Tenant = { url: string } & TenantPrincipal
-type StoredDocRow = Record<string, unknown>
-
-function storedDocKind(input: { kind?: DocKind }, existing?: StoredDocRow): DocKind {
-  return input.kind ?? (existing?.kind == null ? 'working' : (String(existing.kind) as DocKind))
-}
-
-function storedDocAudiences(
-  input: { audiences?: DocAudiences },
-  existing?: StoredDocRow,
-): DocAudiences {
-  return (
-    input.audiences ??
-    (existing?.audiences == null ? ['technical'] : recordDocAudiences(existing.audiences))
-  )
-}
-
-function storedDocParentId(
-  input: { parentRecordId?: string | null },
-  existing?: StoredDocRow,
-): string | null {
-  if (input.parentRecordId !== undefined) return input.parentRecordId
-  return existing?.parent_id == null ? null : String(existing.parent_id)
+type RecordDocWriteInput = Tenant & {
+  scope: string
+  subject: string | null
+  owner?: string | null
+  slug: string
+  title: string
+  body: string
+  delivery?: DocDelivery
+  audiences?: DocAudiences
+  parentRecordId?: string | null
+  position?: number
+  featured?: boolean
+  status?: DocStatus
+  kind?: DocKind
+  form?: DocForm | null
+  articleSubjectId?: string | null
+  relatedSubjectIds?: string[]
+  sourceFiles?: string[]
+  replacementSlug?: string | null
+  projectName?: string | null
+  reason: string
+  author: string
+  sessionId?: string | null
+  forceInject?: string
+  op?: DocRevisionOp
+  at?: string
+  id?: string
+  revisionId?: string
+  expectedRevision?: string
 }
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
@@ -127,36 +140,7 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
 }
 
 export async function upsertRecordDoc(
-  input: Tenant & {
-    scope: string
-    subject: string | null
-    owner?: string | null
-    slug: string
-    title: string
-    body: string
-    delivery: DocDelivery
-    audiences?: DocAudiences
-    parentRecordId?: string | null
-    position?: number
-    featured?: boolean
-    status?: DocStatus
-    kind?: DocKind
-    form?: DocForm | null
-    articleSubjectId?: string | null
-    relatedSubjectIds?: string[]
-    sourceFiles?: string[]
-    replacementSlug?: string | null
-    projectName?: string | null
-    reason: string
-    author: string
-    sessionId?: string | null
-    forceInject?: string
-    op?: DocRevisionOp
-    at?: string
-    id?: string
-    revisionId?: string
-    expectedRevision?: string
-  },
+  input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
   const ownedAddress =
     refuseOwnedDocAddress(input.scope, input.subject, input.owner) ??
@@ -165,7 +149,7 @@ export async function upsertRecordDoc(
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -190,13 +174,14 @@ export async function upsertRecordDoc(
       input.owner ?? null,
     )
     assertWrite(facts.canonRefusal)
+    const delivery = storedDocDelivery(input, existing[0])
     assertWrite(
       refuseDocWrite({
         scope: input.scope,
         subject: input.subject,
         slug: input.slug,
         body: input.body,
-        delivery: input.delivery,
+        delivery,
         forceInject: input.forceInject,
         packBytes: 0,
         ...facts,
@@ -208,7 +193,7 @@ export async function upsertRecordDoc(
         'creating an article requires audiences; supply the audiences parameter',
       )
     }
-    assertWrite(refuseArticleDelivery({ ...input, kind }))
+    assertWrite(refuseArticleDelivery({ ...input, delivery, kind }))
     assertWrite(
       recordDocLintRefusal(
         { ...input, kind },
@@ -252,13 +237,12 @@ export async function upsertRecordDoc(
       input.position ?? (existing[0]?.position == null ? 0 : Number(existing[0].position))
     const featured =
       input.featured ?? (existing[0]?.featured == null ? false : Boolean(existing[0].featured))
-    const lifecycle = await recordDocumentLifecycle(tx, input, existing[0])
-    const { status, replacementSlug } = lifecycle
+    const { status, replacementSlug } = await recordDocumentLifecycle(tx, input, existing[0])
     const op: DocRevisionOp = input.op ?? (existing[0] ? 'set' : 'create')
     if (existing[0]) {
       await tx`
         UPDATE doc
-        SET title=${input.title}, body=${input.body}, delivery=${input.delivery},
+        SET title=${input.title}, body=${input.body}, delivery=${delivery},
             audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
@@ -270,7 +254,7 @@ export async function upsertRecordDoc(
           id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${input.delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${bindJsonb(tx, sourceFiles)}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${form}, ${articleSubjectId}::uuid, ${bindJsonb(tx, sourceFiles)}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -288,7 +272,7 @@ export async function upsertRecordDoc(
       op,
       title: input.title,
       body: input.body,
-      delivery: input.delivery,
+      delivery,
       audiences,
       parentId,
       position,

@@ -80,6 +80,7 @@ describe('hostedRouter', () => {
       'record.settings',
       'record.snapshots',
       'record.spend',
+      'record.subjects',
       'record.task',
       'record.updateReportSubscription',
       'record.void',

@@ -132,7 +132,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       slug: string
       title: string
       body: string
-      delivery: 'inject' | 'demand'
+      delivery?: 'inject' | 'demand'
       projectName?: string | null
       reason: string
       author: string
