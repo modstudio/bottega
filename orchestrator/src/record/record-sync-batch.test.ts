@@ -43,8 +43,22 @@ test('sends a payload exactly at the ceiling', () => {
   expect(plan([candidate(1, 100)]).send.map((row) => row.id)).toEqual([1])
 })
 
-test('keeps the row-count limit', () => {
-  expect(plan([candidate(1, 10), candidate(2, 10)], { countLimit: 1 }).send).toEqual([
-    candidate(1, 10),
-  ])
+test('classifies every row until a non-empty batch reaches a boundary', () => {
+  const rows = [
+    candidate(1, 101, 10),
+    candidate(2, 100, 1_001),
+    candidate(3, 10, 100),
+    candidate(4, 10, 1_001),
+    candidate(5, 10, 10),
+  ]
+  const result = plan(rows)
+
+  expect(result.quarantine.map((row) => row.id)).toEqual([1, 2])
+  expect(result.quarantine[1]!.reason).toContain(
+    'serialized row is 1001 bytes and requires a 1009 byte request, exceeding the 1000 byte client request budget',
+  )
+  expect(result.quarantine[1]!.reason).toContain('orch record outbox retire <row-id>')
+  expect(result.send.map((row) => row.id)).toEqual([3])
+  const classified = new Set([...result.quarantine, ...result.send].map((row) => row.id))
+  expect(rows.filter((row) => !classified.has(row.id)).map((row) => row.id)).toEqual([4, 5])
 })
