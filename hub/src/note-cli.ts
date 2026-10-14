@@ -155,36 +155,7 @@ async function resolveDuplicateNote(
   return filed
 }
 
-export function registerNoteCommands(program: Command): void {
-  const note = program.command('note [text...]').action((text: string[]) => {
-    throw forgottenNewHint(text.join(' '))
-  })
-  note
-    .command('new <text>')
-    .option('--project <name>', '')
-    .option('--same-as <reference>', '')
-    .option('--new', '')
-    .option('--area <area>', '')
-    .option('--anchor-json <json>', '')
-    .option('--json', '')
-    .action(async (text, options: NoteOptions) => {
-      open()
-      await newNoteCommand(text, options)
-    })
-  note
-    .command('list [text]')
-    .option('--project <X>', '')
-    .option('--stale', '')
-    .option('--session <ID>', '', repeat, [])
-    .option('--actionable', '')
-    .option('--kept', '')
-    .option('--json', '')
-    .option('--new', '')
-    .action((text: string | undefined, options: NoteOptions) => {
-      if (text !== undefined || options.new) throw listAsTextHint()
-      open()
-      listNoteCommand(options)
-    })
+function registerNoteReferenceCommands(note: Command): void {
   note
     .command('same <target> <source>')
     .option('--project <name>', '')
@@ -227,6 +198,9 @@ export function registerNoteCommands(program: Command): void {
         noteDropLine(await dropNote(reference(noteReference, options.project), options.reason)),
       )
     })
+}
+
+function registerNoteMaintenanceCommands(note: Command): void {
   note
     .command('stale')
     .description('mark vanished anchors and reap eligible notes')
@@ -259,6 +233,40 @@ export function registerNoteCommands(program: Command): void {
       console.log(JSON.stringify(result, null, 2))
       if (result.match === false) process.exitCode = 1
     })
+}
+
+export function registerNoteCommands(program: Command): void {
+  const note = program.command('note [text...]').action((text: string[]) => {
+    throw forgottenNewHint(text.join(' '))
+  })
+  note
+    .command('new <text>')
+    .option('--project <name>', '')
+    .option('--same-as <reference>', '')
+    .option('--new', '')
+    .option('--area <area>', '')
+    .option('--anchor-json <json>', '')
+    .option('--json', '')
+    .action(async (text, options: NoteOptions) => {
+      open()
+      await newNoteCommand(text, options)
+    })
+  note
+    .command('list [text]')
+    .option('--project <X>', '')
+    .option('--stale', '')
+    .option('--session <ID>', '', repeat, [])
+    .option('--actionable', '')
+    .option('--kept', '')
+    .option('--json', '')
+    .option('--new', '')
+    .action((text: string | undefined, options: NoteOptions) => {
+      if (text !== undefined || options.new) throw listAsTextHint()
+      open()
+      listNoteCommand(options)
+    })
+  registerNoteReferenceCommands(note)
+  registerNoteMaintenanceCommands(note)
 }
 
 const forgottenNewHint = (text: string) =>
