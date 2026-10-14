@@ -152,6 +152,7 @@ export const recordModules: RecordModule[] = [
     './record-write-decision.ts',
   ]),
   module('orchestrator/src/run/question-delivery.ts', [
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     './question-vocabulary.ts',
   ]),

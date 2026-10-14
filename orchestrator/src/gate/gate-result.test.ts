@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -39,8 +40,8 @@ function insertGate(input: {
     db()
       .query(
         `INSERT INTO gate_execution
-          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
-         VALUES (?,?,?,?,0,1000,?,?,?) RETURNING id`,
+          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
+         VALUES ('${newRecordId()}', ?,?,?,?,0,1000,?,?,?) RETURNING id`,
       )
       .get(
         input.runId,

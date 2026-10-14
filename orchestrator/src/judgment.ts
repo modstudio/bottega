@@ -2,6 +2,7 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { newRecordId } from '../../shared/record-id.ts'
 import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
@@ -87,8 +88,8 @@ function recordScoreVerdict(
 ): void {
   db()
     .query(
-      `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-     VALUES (?,?,?,?,?,?,?)
+      `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+     VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
                                        fidelity=excluded.fidelity,
                                        note=CASE
@@ -101,7 +102,7 @@ function recordScoreVerdict(
                                        END,
                                        scored_at=excluded.scored_at`,
     )
-    .run(id, delivery, quality, fidelity, note, scoredAt, scorer)
+    .run(newRecordId(), id, delivery, quality, fidelity, note, scoredAt, scorer)
 }
 
 type JudgeableRun = {

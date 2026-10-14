@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recalibrate } from './recalibration.ts'
@@ -53,8 +54,8 @@ describe('recalibrating the scorer', () => {
   ) =>
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at, scored_by)
-     VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, scored_at, scored_by)
+     VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
       )
       .run(runId, delivery, quality, fidelity, scoredAt, scorer)
 
@@ -96,6 +97,13 @@ describe('recalibrating the scorer', () => {
         session_id: 'calibration-session',
       })),
     )
+    for (const row of db()
+      .query<{ record_id: string }, []>('SELECT record_id FROM calibration')
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
     expect(db().query('SELECT delivery, quality, fidelity FROM score ORDER BY id').all()).toEqual(
       originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })),
     )

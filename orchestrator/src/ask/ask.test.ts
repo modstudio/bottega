@@ -408,8 +408,8 @@ describe('the live ask channel always answers', () => {
     db()
       .query(
         `INSERT INTO gate_execution
-          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
-         VALUES (?,?,?,?,?,?,?,?)`,
+          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
         olderWriter,
@@ -424,8 +424,8 @@ describe('the live ask channel always answers', () => {
     db()
       .query(
         `INSERT INTO gate_execution
-          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
-         VALUES (?,?,?,?,?,?,?,?)`,
+          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
         newerWriter,
@@ -440,8 +440,8 @@ describe('the live ask channel always answers', () => {
     db()
       .query(
         `INSERT INTO gate_execution
-          (run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
-         VALUES (?,?,?,?,?,?,?,?)`,
+          (record_id, run_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit)
+         VALUES ('${newRecordId()}', ?,?,?,?,?,?,?,?)`,
       )
       .run(
         otherWriter,

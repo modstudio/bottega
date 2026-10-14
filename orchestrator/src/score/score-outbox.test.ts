@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -29,8 +30,8 @@ function scoredRun(recordId: string | null = RECORD_ID): Database {
   database
     .query(
       `INSERT INTO score
-       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (42,'full','right','faithful','first',?,'architect')`,
+       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 42,'full','right','faithful','first',?,'architect')`,
     )
     .run(STAMP)
   return database

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -15,6 +16,14 @@ test("a later findings turn inherits its root's implicit review branch", async (
     .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
     .get(reserved)!.record_id
   expect(reservedRecordId[14]).toBe('7')
+  const carriedQuestionId = (
+    db()
+      .query<{ id: number }, [string, number]>(
+        `INSERT INTO question (record_id,run_id,asked_at,question)
+         VALUES (?,?,'2026-10-14','Which?') RETURNING id`,
+      )
+      .get(newRecordId(), root) as { id: number }
+  ).id
   db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
   const repository = join(runsDir, 'repository')
@@ -86,7 +95,7 @@ test("a later findings turn inherits its root's implicit review branch", async (
       usingMcp: false,
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
-      carriedQuestionIds: [],
+      carriedQuestionIds: [carriedQuestionId],
     })
 
     expect(claimed.claim.id).toBe(reserved)
@@ -96,6 +105,13 @@ test("a later findings turn inherits its root's implicit review branch", async (
         record_id: reservedRecordId,
       },
     )
+    expect(
+      db()
+        .query<{ record_id: string }, [number]>(
+          'SELECT record_id FROM run_carried_ruling WHERE run_id=?',
+        )
+        .get(claimed.claim.id)?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

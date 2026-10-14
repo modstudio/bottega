@@ -452,9 +452,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       closeRunChainQuestions(db(), opts.retryOf, QUESTION_CLOSE_ATTEMPT_FAILED_OVER)
     }
     const recordCarry = db().query(
-      'INSERT INTO run_carried_ruling (run_id,question_id) VALUES (?,?)',
+      'INSERT INTO run_carried_ruling (record_id,run_id,question_id) VALUES (?,?,?)',
     )
-    for (const questionId of carriedQuestionIds) recordCarry.run(claimed.id, questionId)
+    for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
     return claimed
   })
   const runToken = randomUUID()

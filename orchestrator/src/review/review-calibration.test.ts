@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -25,7 +26,9 @@ describe('review discipline', () => {
     for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(gradedReview, i, 'accepted')
     completeReview(gradedReview)
     db()
-      .query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+      .query(
+        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+      )
       .run(graded, '2026-02-03T00:00:00.000Z')
     const ungraded = addRun({ agent: 'grok', job: 'review-lens', model: 'm2', lens: 'fleet-b' })
     const ungradedReview = recordReview(ungraded, reviewReply(0), db())
@@ -42,7 +45,9 @@ describe('review discipline', () => {
       for (let i = 1; i <= MIN_REVIEW_TRIAGED / 2; i++) triageFinding(reviewId, i, 'accepted')
       completeReview(reviewId)
       db()
-        .query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+        .query(
+          `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+        )
         .run(runId, model === 'm3' ? '2026-02-04T00:00:00.000Z' : '2026-02-05T00:00:00.000Z')
     }
     const legacy = addRun({
@@ -62,7 +67,9 @@ describe('review discipline', () => {
     for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(legacyReview, i, 'accepted')
     completeReview(legacyReview)
     db()
-      .query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+      .query(
+        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'full','right',?)`,
+      )
       .run(legacy, '2026-02-06T00:00:00.000Z')
 
     expect(reviewCalibrationFleet()).toEqual([

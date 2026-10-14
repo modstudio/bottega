@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { formatPassingGate, passingGateForCommit, selectPassingGateId } from './gate-passed.ts'
 
@@ -40,8 +41,8 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
   const gate = d
     .query(
       `INSERT INTO gate_execution
-        (requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
-       VALUES ('2026-10-09','2026-10-09',0,1,100,'timed out',?,?) RETURNING id`,
+        (record_id, requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
+       VALUES ('${newRecordId()}', '2026-10-09','2026-10-09',0,1,100,'timed out',?,?) RETURNING id`,
     )
     .get(commit, repositoryPath) as { id: number }
 

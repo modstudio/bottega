@@ -214,8 +214,8 @@ test("a resumed turn's retained branch claim is settled with the branch it marks
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES ('${newRecordId()}', ?,?,?,'branch',?,'claimed','2026-10-06T00:00:00.000Z')`,
       )
       .run(fixture.id, child, projectId, `refs/heads/${turnBranch}`).lastInsertRowid,
   )
@@ -458,8 +458,8 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   db()
     .query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,?,?,'worktree',?,'claimed','2026-09-29T00:00:00.000Z')`,
+       (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       VALUES ('${newRecordId()}', ?,?,?,'worktree',?,'claimed','2026-09-29T00:00:00.000Z')`,
     )
     .run(id, id, projectId, tree)
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {

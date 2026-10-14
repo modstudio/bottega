@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
@@ -8,8 +9,8 @@ test('uses the resolved continuation tree tip as the checkpoint prompt start', (
   db()
     .query(
       `INSERT INTO run_checkpoint
-         (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
-       VALUES (?,?,?,?,?,?)`,
+         (record_id, run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+       VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
     )
     .run(rootId, 2, 'earlier-checkpoint', null, 0, new Date().toISOString())
 
@@ -39,8 +40,8 @@ test('a checkpoint without a resolved continuation tree gives the fresh-run reme
   db()
     .query(
       `INSERT INTO run_checkpoint
-         (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
-       VALUES (?,?,?,?,?,?)`,
+         (record_id, run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+       VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
     )
     .run(rootId, 1, 'checkpoint-without-tree', null, 0, new Date().toISOString())
 

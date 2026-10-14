@@ -387,7 +387,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'duel-boundary',
     'orchestrator/src/score/duel.ts',
-    ['../database/db.ts', '../evidence/evidence-query.ts', './score.ts'],
+    [
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+      '../evidence/evidence-query.ts',
+      './score.ts',
+    ],
     'Enforce the duel concern boundary.',
   ),
   boundary(
@@ -498,6 +503,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/judgment.ts',
     [
       'node:fs',
+      '../../shared/record-id.ts',
       '../../shared/record/schema.ts',
       './caller-classification.ts',
       './database/db.ts',
@@ -609,6 +615,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       'node:readline/promises',
+      '../../../shared/record-id.ts',
       './agreement.ts',
       '../database/db.ts',
       '../jobs/jobs.ts',

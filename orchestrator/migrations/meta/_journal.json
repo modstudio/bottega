@@ -750,6 +750,13 @@
       "when": 1791940000000,
       "tag": "0106_review_landing_release_doc_record_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1791947200000,
+      "tag": "0107_score_gate_claim_audit_record_identity",
+      "breakpoints": true
     }
   ]
 }

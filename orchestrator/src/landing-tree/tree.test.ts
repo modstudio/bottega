@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { removeHookTree } from '../hook-tree/tree.ts'
@@ -23,8 +24,8 @@ test('failed creation settles its worktree claim after the recipe already remove
   db()
     .query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,?,'worktree',?,'claimed',?)`,
+       (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+       VALUES ('${newRecordId()}', ?,?,'worktree',?,'claimed',?)`,
     )
     .run(id, id, missing, '2026-09-22T00:00:00.000Z')
 
@@ -43,8 +44,8 @@ test.each(['landing-tree', 'hook-tree'])(
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,'worktree',?,'claimed',?)`,
+         (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+         VALUES ('${newRecordId()}', ?,?,'worktree',?,'claimed',?)`,
       )
       .run(id, id, missing, '2026-09-23T00:00:00.000Z')
 

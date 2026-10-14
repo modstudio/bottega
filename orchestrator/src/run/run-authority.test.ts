@@ -111,6 +111,13 @@ describe('who may judge a run', () => {
           actor_session: 'session-A',
           reason: `before ${action}`,
         })
+        expect(
+          db()
+            .query<{ record_id: string }, [number]>(
+              'SELECT record_id FROM run_mutation_audit WHERE run_id=?',
+            )
+            .get(id)?.record_id,
+        ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 
         process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
         expect(() => authorizeRunMutation(id, action)).toThrow(

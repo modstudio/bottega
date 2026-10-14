@@ -135,6 +135,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/run/question-open.ts', []),
   module('orchestrator/src/run/question-close.ts', [
     '../database/db.ts',
+    './question-delivery.ts',
     './question-mutation.ts',
     './question-open.ts',
     './question-outbox.ts',
@@ -528,7 +529,6 @@ export const modules: ArchitectureModule[] = [
     '../run/run-alive.ts',
     '../run/run-lease.ts',
   ]),
-  module('orchestrator/src/resources/resource-claims.ts', ['../run/synthetic-lifecycle-job.ts']),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
@@ -566,6 +566,7 @@ export const modules: ArchitectureModule[] = [
     './review-types.ts',
   ]),
   module('orchestrator/src/review/review-triage.ts', [
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     './review-vocabulary.ts',
     '../contract/contract.ts',

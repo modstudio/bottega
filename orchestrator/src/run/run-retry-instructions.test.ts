@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { continuationInstructionsForFreshRetry } from './run-control.ts'
@@ -24,11 +25,27 @@ describe('fresh retry continuation recovery', () => {
       turn: 3,
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, first, 'continue', '2026-09-25T10:00:00.000Z', 'first instruction')
-    insertAudit.run(id, id, second, 'continue', '2026-09-25T11:00:00.000Z', 'second instruction')
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      first,
+      'continue',
+      '2026-09-25T10:00:00.000Z',
+      'first instruction',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      second,
+      'continue',
+      '2026-09-25T11:00:00.000Z',
+      'second instruction',
+    )
 
     const prompt = renderCheckpointContinuationPrompt({
       checkpointContext: 'CHECKPOINT RESUME\nResume at abc.',
@@ -65,11 +82,27 @@ describe('fresh retry continuation recovery', () => {
       turn: 3,
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, first, 'continue', '2026-09-25T10:00:00.000Z', 'first instruction')
-    insertAudit.run(id, id, second, 'continue', '2026-09-25T11:00:00.000Z', 'second instruction')
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      first,
+      'continue',
+      '2026-09-25T10:00:00.000Z',
+      'first instruction',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      second,
+      'continue',
+      '2026-09-25T11:00:00.000Z',
+      'second instruction',
+    )
 
     const prompt = renderCheckpointContinuationPrompt({
       checkpointContext: 'CHECKPOINT RESUME',
@@ -121,13 +154,41 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T15:21:16.986Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, 'continue', '2026-09-25T09:10:54.846Z', 'instructions for 6445')
-    insertAudit.run(id, id, 'continue', '2026-09-25T14:48:06.417Z', 'instructions for 6500')
-    insertAudit.run(id, id, 'retry', '2026-09-25T14:49:29.674Z', 'retried as run 6503')
-    insertAudit.run(id, id, 'continue', '2026-09-25T15:21:16.144Z', 'instructions for 6513')
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T09:10:54.846Z',
+      'instructions for 6445',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T14:48:06.417Z',
+      'instructions for 6500',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'retry',
+      '2026-09-25T14:49:29.674Z',
+      'retried as run 6503',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T15:21:16.144Z',
+      'instructions for 6513',
+    )
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
       {
@@ -191,14 +252,35 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T03:00:00.500Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, 'answer', '2026-09-24T23:20:29.266Z', null)
-    insertAudit.run(id, id, 'continue', '2026-09-25T00:00:00.000Z', 'first instructions')
-    insertAudit.run(id, id, 'answer', '2026-09-25T01:00:00.000Z', null)
-    insertAudit.run(id, id, 'continue', '2026-09-25T02:00:00.000Z', 'repeated instructions')
-    insertAudit.run(id, id, 'continue', '2026-09-25T03:00:00.000Z', 'repeated instructions')
+    insertAudit.run(newRecordId(), id, id, 'answer', '2026-09-24T23:20:29.266Z', null)
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T00:00:00.000Z',
+      'first instructions',
+    )
+    insertAudit.run(newRecordId(), id, id, 'answer', '2026-09-25T01:00:00.000Z', null)
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T02:00:00.000Z',
+      'repeated instructions',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T03:00:00.000Z',
+      'repeated instructions',
+    )
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
       {
@@ -231,10 +313,18 @@ describe('fresh retry continuation recovery', () => {
     })
     db()
       .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
-       VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?,?)`,
       )
-      .run(id, id, child, 'continue', '2026-09-25T10:00:00.000Z', 'identified instructions')
+      .run(
+        newRecordId(),
+        id,
+        id,
+        child,
+        'continue',
+        '2026-09-25T10:00:00.000Z',
+        'identified instructions',
+      )
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([
       {
@@ -249,11 +339,19 @@ describe('fresh retry continuation recovery', () => {
     const id = failedRoot()
     const child = addRun({ agent: 'grok', job: 'implement', status: 'failed', parent: id, turn: 2 })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, child, 'continue', '2026-09-25T10:00:00.000Z', null)
-    insertAudit.run(id, id, child, 'retry', '2026-09-25T10:00:00.001Z', `continued as run ${child}`)
+    insertAudit.run(newRecordId(), id, id, child, 'continue', '2026-09-25T10:00:00.000Z', null)
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      child,
+      'retry',
+      '2026-09-25T10:00:00.001Z',
+      `continued as run ${child}`,
+    )
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([])
   })
@@ -263,10 +361,10 @@ describe('fresh retry continuation recovery', () => {
     const child = addRun({ agent: 'grok', job: 'implement', status: 'failed', parent: id, turn: 2 })
     db()
       .query(
-        `INSERT INTO run_mutation_audit (run_id,root_id,turn_id,action,at,reason)
-       VALUES (?,?,?,?,?,NULL)`,
+        `INSERT INTO run_mutation_audit (record_id, run_id,root_id,turn_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?,NULL)`,
       )
-      .run(id, id, child, 'continue', '2026-09-25T09:10:55.600Z')
+      .run(newRecordId(), id, id, child, 'continue', '2026-09-25T09:10:55.600Z')
 
     expect(continuationInstructionsForFreshRetry(true, id, id)).toEqual([])
   })
@@ -282,11 +380,25 @@ describe('fresh retry continuation recovery', () => {
       startedAt: '2026-09-25T09:10:55.576Z',
     })
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id,root_id,action,at,reason)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id,root_id,action,at,reason)
+       VALUES (?, ?,?,?,?,?)`,
     )
-    insertAudit.run(id, id, 'continue', '2026-09-25T09:10:54.846Z', 'first candidate')
-    insertAudit.run(id, id, 'continue', '2026-09-25T09:10:56.127Z', 'second candidate')
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T09:10:54.846Z',
+      'first candidate',
+    )
+    insertAudit.run(
+      newRecordId(),
+      id,
+      id,
+      'continue',
+      '2026-09-25T09:10:56.127Z',
+      'second candidate',
+    )
 
     expect(() => continuationInstructionsForFreshRetry(true, id, id)).toThrow(
       `run ${id} continuation turn ${child} has no recoverable continue instructions. ` +

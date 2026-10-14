@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { appendQuestionDeliveries } from './question-delivery.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -97,12 +98,17 @@ export function retireRunChainQuestionDeliveries(
   let retired = 0
   for (const questionId of questionIds) {
     if (update.run(questionId).changes !== 1) continue
-    database
-      .query(
-        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
-         VALUES (?,NULL,'record-only','retired',?,?)`,
-      )
-      .run(questionId, at, reason)
+    appendQuestionDeliveries(
+      [questionId],
+      {
+        runId: null,
+        mode: 'record-only',
+        outcome: 'retired',
+        at,
+        error: reason,
+      },
+      database,
+    )
     enqueueQuestionRecord(database, questionId)
     retired += 1
   }

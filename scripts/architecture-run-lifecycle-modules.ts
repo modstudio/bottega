@@ -19,6 +19,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-failure.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
+  module('orchestrator/src/resources/resource-claims.ts', [
+    '../../../shared/record-id.ts',
+    '../run/synthetic-lifecycle-job.ts',
+  ]),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
   module('orchestrator/src/run/run-resume-options.ts', [
     '../worktree/worktree-types.ts',
@@ -214,6 +218,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-terminal.ts', [
+    '../../../shared/record-id.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
     '../confinement/confinement.ts',

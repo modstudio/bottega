@@ -217,11 +217,12 @@ describe('run detail', () => {
     const child = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
     const insertAudit = db().query(
-      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id, root_id, action, actor_session, at, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    insertAudit.run(root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
+    insertAudit.run(newRecordId(), root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
     insertAudit.run(
+      newRecordId(),
       child,
       root,
       'continue',
@@ -253,6 +254,8 @@ describe('run detail', () => {
       resolved_from: 'turn',
       root_id: root,
     })
-    expect(() => insertAudit.run(root, root, 'invented', null, nowIso(), null)).toThrow()
+    expect(() =>
+      insertAudit.run(newRecordId(), root, root, 'invented', null, nowIso(), null),
+    ).toThrow()
   })
 })

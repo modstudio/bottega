@@ -6,6 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
@@ -55,7 +56,7 @@ import { resolveRootFromLastTurn } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
-import { blockersToRecord } from './run-terminal-blockers.ts'
+import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
@@ -304,6 +305,14 @@ function recordedReviewedHead(runId: number, required: boolean): string | null {
       } | null
     )?.head_commit ?? null
   )
+}
+
+function insertBlockerRows(runId: number, rows: BlockerRow[], at: string): void {
+  if (!rows.length) return
+  const q = db().query(
+    `INSERT INTO blocker (record_id,run_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
+  )
+  for (const r of rows) q.run(newRecordId(), runId, at, r.what, r.why, r.impact, r.source, r.kind)
 }
 
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
@@ -601,26 +610,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     { status, error, failureKind },
     mcpRuling,
   ))
-
   try {
     const declared = (contract?.blockers ?? []).map((b) => ({
       what: b.what,
       why: b.why,
       impact: b.impact ?? null,
     }))
-    const rows = blockersToRecord({ declared, output })
-    if (rows.length) {
-      const q = db().query(
-        `INSERT INTO blocker (run_id, at, what, why, impact, source, kind)
-           VALUES (?,?,?,?,?,?,?)`,
-      )
-      for (const r of rows) q.run(claim.id, nowIso(), r.what, r.why, r.impact, r.source, r.kind)
-    }
+    insertBlockerRows(claim.id, blockersToRecord({ declared, output }), nowIso())
   } catch (e) {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
-
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,

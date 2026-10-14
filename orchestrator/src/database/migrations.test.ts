@@ -787,18 +787,18 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
     expect(() =>
       database
         .query(
-          `INSERT INTO run_mutation_audit (run_id,root_id,action,at)
-           VALUES (?,?,'overturn','2026-09-22')`,
+          `INSERT INTO run_mutation_audit (record_id,run_id,root_id,action,at)
+           VALUES (?,?,?,'overturn','2026-09-22')`,
         )
-        .run(run.id, run.id),
+        .run(newRecordId(), run.id, run.id),
     ).not.toThrow()
     expect(() =>
       database
         .query(
-          `INSERT INTO run_mutation_audit (run_id,root_id,action,at)
-           VALUES (?,?,'file','2026-09-23')`,
+          `INSERT INTO run_mutation_audit (record_id,run_id,root_id,action,at)
+           VALUES (?,?,?,'file','2026-09-23')`,
         )
-        .run(run.id, run.id),
+        .run(newRecordId(), run.id, run.id),
     ).not.toThrow()
     expect(
       database

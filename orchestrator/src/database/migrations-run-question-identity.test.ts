@@ -65,6 +65,7 @@ test('run and question identity migration fills nulls, keeps identities, and pre
       '0104_run_question_record_identity',
       '0105_doc_checked_against_commit',
       '0106_review_landing_release_doc_record_identity',
+      '0107_score_gate_claim_audit_record_identity',
     ])
     const runIds = database
       .query<{ id: number; record_id: string }, []>('SELECT id,record_id FROM run ORDER BY id')

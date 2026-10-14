@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import {
@@ -438,10 +439,11 @@ function insertEval(row: {
 }): void {
   db()
     .query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-     VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       row.slug,
       row.runId,
       row.canonSha,

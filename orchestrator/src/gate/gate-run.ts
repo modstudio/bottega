@@ -10,6 +10,7 @@ import {
   parseCheckExecutionLines,
 } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
@@ -209,11 +210,12 @@ export async function runArchitectGate(input: {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO gate_execution
-          (run_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
+          (record_id,run_id,requested_at,started_at,finished_at,exit_code,timed_out,elapsed_ms,
            output_tail,output_artifact,tooling_paths,resolved_command,head_commit,session_id,cwd)
-         VALUES (NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?) RETURNING id`,
+         VALUES (?,NULL,?,?,?,?,0,?,?,NULL,'[]',?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         ran.startedAt,
         ran.startedAt,
         ran.finishedAt,
@@ -228,11 +230,12 @@ export async function runArchitectGate(input: {
     if (!row) throw new Error('gate_execution row was not inserted')
     const insertCheck = d.query(
       `INSERT INTO check_execution
-        (gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
-       VALUES (?,?,?,?,?,?,?)`,
+        (record_id,gate_execution_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
     for (const check of checkExecutions) {
       insertCheck.run(
+        newRecordId(),
         row.id,
         check.check,
         check.category ?? null,

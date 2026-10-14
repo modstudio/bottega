@@ -213,8 +213,8 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     .run()
   database
     .query(
-      `INSERT INTO score (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (1,'full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
+      `INSERT INTO score (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 1,'full','right','faithful',?,'2026-09-15T01:00:00.000Z','architect')`,
     )
     .run(SECRET)
   enqueueScoreRecord(database, 1, '01990000-0000-7000-8000-000000000099')

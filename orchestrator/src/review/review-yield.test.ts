@@ -226,7 +226,7 @@ describe('review yield', () => {
     db().query("UPDATE run SET evidence_excluded='test void' WHERE id=?").run(runFor(voided))
     db()
       .query(
-        "INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'none',NULL,'2026-09-08T13:01:00Z')",
+        `INSERT INTO score (record_id, run_id,delivery,quality,scored_at) VALUES ('${newRecordId()}', ?,'none',NULL,'2026-09-08T13:01:00Z')`,
       )
       .run(runFor(none))
 

@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
@@ -25,8 +26,8 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO score
-       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
     )
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)
