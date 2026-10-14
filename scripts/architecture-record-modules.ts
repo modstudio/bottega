@@ -41,6 +41,7 @@ export const recordModules: RecordModule[] = [
     './outbox-failure.ts',
     './outbox-payload-contracts.ts',
     './record-auth.ts',
+    './record-evidence-references.ts',
     './record-release-sync.ts',
     './record-review-read.ts',
     './record-review-values.ts',
@@ -51,6 +52,7 @@ export const recordModules: RecordModule[] = [
     './score-sync.ts',
   ]),
   module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
+  module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',
     './record-auth.ts',
@@ -215,7 +217,11 @@ export const recordModules: RecordModule[] = [
     './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-sync-principal.ts', ['bun', './record-sync-contract.ts']),
-  module('orchestrator/src/record/outbox-dependency.ts', ['bun:sqlite', './record-sync-types.ts']),
+  module('orchestrator/src/record/outbox-dependency.ts', [
+    'bun:sqlite',
+    './record-evidence-references.ts',
+    './record-sync-types.ts',
+  ]),
   module('orchestrator/src/record/outbox-operator.ts', [
     'bun:sqlite',
     '../database/db.ts',

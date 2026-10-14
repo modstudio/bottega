@@ -1,6 +1,7 @@
 // concern: outbox-dependency
 /** Resolves local outbox parent state without knowing how hosted rows are sent. */
 import type { Database } from 'bun:sqlite'
+import { evidenceReferences } from './record-evidence-references.ts'
 import type { BlockedOutboxRow, OutboxRow, Payload } from './record-sync-types.ts'
 
 type ParentRef = { kind: string; recordId: string; blockedReason?: string }
@@ -64,41 +65,33 @@ function lensRun(
 }
 
 function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Database): ParentRef[] {
+  const hostedParents: ParentRef[] = evidenceReferences(row.kind, payload).map((reference) => ({
+    kind: reference.table,
+    recordId: reference.id,
+  }))
   switch (row.kind) {
-    case 'run':
-      return [
-        { kind: 'run', recordId: nullableString(payload.parentRunId) },
-        { kind: 'run', recordId: nullableString(payload.retryOf) },
-      ].filter((value): value is ParentRef => value.recordId !== null)
-    case 'score':
-      return [{ kind: 'run', recordId: row.record_id }]
-    case 'question':
-    case 'contention':
-      return nullableString(payload.runId) ? [{ kind: 'run', recordId: String(payload.runId) }] : []
     case 'review':
-      return reviewRunIds(database, row.record_id).map((recordId) => ({ kind: 'run', recordId }))
-    case 'review_lens':
       return [
-        { kind: 'run', recordId: nullableString(payload.runId) },
-        { kind: 'review', recordId: nullableString(payload.reviewId) },
-      ].filter((value): value is ParentRef => value.recordId !== null)
+        ...hostedParents,
+        ...reviewRunIds(database, row.record_id).map((recordId) => ({ kind: 'run', recordId })),
+      ]
     case 'review_finding': {
       const lensId = nullableString(payload.reviewLensId)
       const lens = lensId ? lensRun(database, lensId) : { runId: null, unreadable: false }
       return [
-        { kind: 'review', recordId: nullableString(payload.reviewId) },
-        {
-          kind: 'review_lens',
-          recordId: lensId,
-          blockedReason: lens.unreadable
-            ? `review_lens parent ${lensId} has an unreadable stored payload and no local normalized run`
-            : undefined,
-        },
+        ...hostedParents.map((parent) =>
+          parent.kind === 'review_lens' && lens.unreadable
+            ? {
+                ...parent,
+                blockedReason: `review_lens parent ${parent.recordId} has an unreadable stored payload and no local normalized run`,
+              }
+            : parent,
+        ),
         { kind: 'run', recordId: lens.runId },
       ].filter((value): value is ParentRef => value.recordId !== null)
     }
     default:
-      return []
+      return hostedParents
   }
 }
 

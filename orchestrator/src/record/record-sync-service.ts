@@ -27,6 +27,7 @@ import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-ru
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -144,20 +145,6 @@ function runValues(row: Payload, projectId: string | null) {
   }
 }
 
-type MachineEvidenceTable =
-  | 'run'
-  | 'question'
-  | 'review'
-  | 'review_lens'
-  | 'review_finding'
-  | 'review_read'
-  | 'landing'
-  | 'landing_override'
-  | 'landing_review_carry'
-  | 'landing_triage_snapshot'
-  | 'contention'
-  | 'test_flake'
-
 function evidenceCollision(kind: string, id: string): OutboxRowError {
   return new OutboxRowError(
     `${kind} record ${id} is already owned by another machine or user`,
@@ -187,59 +174,6 @@ function requireOwnedUpsert(
   existingOwned = false,
 ): void {
   if (rows.length === 0 && !existingOwned) throw evidenceCollision(kind, id)
-}
-
-type EvidenceReference = {
-  table: MachineEvidenceTable
-  id: string
-  kind: string
-}
-
-function evidenceReferences(kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS, row: Payload) {
-  const reference = (
-    table: MachineEvidenceTable,
-    id: unknown,
-    label: string = table,
-  ): EvidenceReference[] =>
-    id == null || String(id) === '' ? [] : [{ table, id: String(id), kind: label }]
-  switch (kind) {
-    case 'run':
-      return [
-        ...reference('run', row.retryOf, 'retry run'),
-        ...reference('run', row.parentRunId, 'parent run'),
-      ]
-    case 'score':
-      return reference('run', row.id, 'scored run')
-    case 'question':
-      return reference('run', row.runId, 'question run')
-    case 'review_lens':
-      return [
-        ...reference('review', row.reviewId, 'lens review'),
-        ...reference('run', row.runId, 'lens run'),
-      ]
-    case 'review_finding':
-      return [
-        ...reference('review', row.reviewId, 'finding review'),
-        ...reference('review_lens', row.reviewLensId, 'finding lens'),
-      ]
-    case 'landing':
-      return reference('landing', row.causingLandingId, 'causing landing')
-    case 'landing_review_carry':
-      return reference('review', row.reviewId, 'carried review')
-    case 'landing_triage_snapshot':
-      // `reviewIds` holds the machine's local review numbers, not record ids, so it names no row.
-      return [
-        ...reference('review_read', row.readId, 'triage read'),
-        ...reference('landing_override', row.overrideId, 'triage override'),
-      ]
-    case 'contention':
-      return [
-        ...reference('run', row.runId, 'contended run'),
-        ...reference('landing', row.landingId, 'contended landing'),
-      ]
-    default:
-      return []
-  }
 }
 
 async function assertEvidenceReferencesOwned(input: {

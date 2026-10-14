@@ -44,6 +44,7 @@ export type {
 
 export function outboxOrder(kind: string, id: number): readonly [phase: number, id: number] {
   if (kind === 'run') return [0, id]
+  if (kind === 'landing_review_carry' || kind === 'landing_triage_snapshot') return [3, id]
   switch (kind) {
     case 'score':
     case 'question':

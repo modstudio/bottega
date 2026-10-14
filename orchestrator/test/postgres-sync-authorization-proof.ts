@@ -422,4 +422,84 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     expect(await sync(1)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
     expect(input.admin(`SELECT machine_id FROM test_flake WHERE id='${id}';`)).toBe(input.machineId)
   })
+
+  test('hosted sync writes a review read before its triage snapshot in one sync', async () => {
+    const readId = newRecordId()
+    const snapshotId = newRecordId()
+    const at = '2026-10-13T04:00:00.000Z'
+    const reviewRead = Object.fromEntries(
+      OUTBOX_PAYLOAD_CONTRACTS.review_read.columns.map((column) => [column, null]),
+    )
+    Object.assign(reviewRead, {
+      id: readId,
+      spaceId: input.writeSpaceId,
+      projectName: input.writeProjectName,
+      machineId: input.machineId,
+      localId: nextLocalId++,
+      branch: 'DEV-1307-proof',
+      tip: 'proof-tip',
+      patchId: 'proof-patch',
+      pathSet: ['orchestrator/src/record/record-sync.ts'],
+      tier: 2,
+      note: 'reviewed',
+      sessionId: 'proof-session',
+      recordedAt: at,
+      createdAt: at,
+      updatedAt: at,
+    })
+    const snapshot = Object.fromEntries(
+      OUTBOX_PAYLOAD_CONTRACTS.landing_triage_snapshot.columns.map((column) => [column, null]),
+    )
+    Object.assign(snapshot, {
+      id: snapshotId,
+      spaceId: input.writeSpaceId,
+      projectName: input.writeProjectName,
+      machineId: input.machineId,
+      localId: nextLocalId++,
+      branch: 'DEV-1307-proof',
+      tip: 'proof-tip',
+      tree: 'proof-tree',
+      prNumber: 1307,
+      reviewIds: [],
+      patchId: 'proof-patch',
+      tier: 2,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'architect_read',
+      readId,
+      sessionId: 'proof-session',
+      at,
+      createdAt: at,
+      updatedAt: at,
+    })
+    const local = new Database(':memory:')
+    applyMigrations(local)
+    local
+      .query(
+        `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
+         (1,'review_read',?,?,?),
+         (2,'landing_triage_snapshot',?,?,?)`,
+      )
+      .run(readId, JSON.stringify(reviewRead), at, snapshotId, JSON.stringify(snapshot), at)
+    try {
+      expect(
+        await withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local,
+            identity: { id: input.machineId, name: 'proof-machine' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+          }),
+        ),
+      ).toMatchObject({ pushed: 2, failed: 0, pending: 0, quarantined: [] })
+      expect(input.admin(`SELECT count(*) FROM review_read WHERE id='${readId}';`)).toBe('1')
+      expect(
+        input.admin(
+          `SELECT count(*) FROM landing_triage_snapshot
+           WHERE id='${snapshotId}' AND read_id='${readId}';`,
+        ),
+      ).toBe('1')
+    } finally {
+      local.close()
+    }
+  })
 }
