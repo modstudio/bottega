@@ -2,7 +2,7 @@
  * What a dashboard needs, as functions.
  *
  * This concern no longer SERVES one - hub does, and it reads these through
- * `orch state` and `orch run`. Two pages both claiming to show agent scores
+ * `bottega run state` and `bottega run show`. Two pages both claiming to show agent scores
  * would drift, and this codebase has already paid for that once: its stats
  * command and its dashboard read 96% on review-lens while the router, counting
  * failures, was using 69%. One page, one scoreboard.
@@ -347,7 +347,7 @@ export function state(sinceDays: number | null = null) {
 /**
  * How often a long-lived process re-probes the local endpoint.
  *
- * The health cache is sized for `orch do`, which lives for one run. This
+ * The health cache is sized for `bottega run start`, which lives for one run. This
  * process lives for days, so without a refresh the dashboard would keep showing
  * a verdict taken at start-up — reporting the local model down for a week after
  * it came back, or up for a week after it went away. A minute is far below the

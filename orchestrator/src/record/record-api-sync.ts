@@ -3,6 +3,7 @@
 import type { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -45,9 +46,8 @@ const syncSchema = z.object({
     .max(RECORD_SYNC_BATCH_SIZE),
 })
 
-const requestRemedy = 'send a batch within the hosted sync limits, then retry `orch sync`'
-const payloadRemedy =
-  'repair the oversized local payload or retire its row with `orch record outbox retire <row-id> --reason <text>`, then retry `orch sync`'
+const requestRemedy = `send a batch within the hosted sync limits, then retry \`${PLATFORM_SLUG} record sync\``
+const payloadRemedy = `repair the oversized local payload or retire its row with \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
 
 export function registerRecordSyncRoute(
   app: Hono<SyncEnvironment>,

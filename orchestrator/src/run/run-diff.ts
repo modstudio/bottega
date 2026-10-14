@@ -1,5 +1,7 @@
 // concern: run-diff
 /** Knows run diff rendering. Must not know run control, transports, routing, the CLI, or worktrees by value. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
@@ -60,7 +62,7 @@ export function chooseSinceReadBound(input: {
       kind: 'refusal',
       message:
         `no architect read is recorded for branch ${input.branch}\n` +
-        `cleared by: record one with orch review read --note <note>, or run orch diff ${input.runId} for the whole change`,
+        `cleared by: record one with ${PLATFORM_SLUG} review read --note <note>, or run ${PLATFORM_SLUG} run diff ${input.runId} for the whole change`,
     }
   }
   if (!input.readIsAncestor) {
@@ -68,7 +70,7 @@ export function chooseSinceReadBound(input: {
       kind: 'refusal',
       message:
         `architect read tip ${input.read.tip} is not an ancestor of comparison tip ${input.comparisonTip} for branch ${input.branch}\n` +
-        `cleared by: run orch diff ${input.runId} for the whole change`,
+        `cleared by: run ${PLATFORM_SLUG} run diff ${input.runId} for the whole change`,
     }
   }
   return { kind: 'bound', read: input.read }
@@ -384,7 +386,7 @@ export async function runDiffCommand(
         // The ROOT owns the worktree. Discarding a child would clear that one
         // row's pointer and leave the root still naming a directory that had
         // just been deleted.
-        `\n  discard:  orch discard ${row.parent_run_id ?? id}`,
+        `\n  discard:  ${PLATFORM_SLUG} run discard ${row.parent_run_id ?? id}`,
     )
   }
   return

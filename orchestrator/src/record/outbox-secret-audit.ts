@@ -1,6 +1,7 @@
 // concern: outbox-secret-audit
 /** Counts secret-shaped free-text leaves in local outbox payloads. Must not print matched text. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { firstOutboxEvidenceRule } from './outbox-sanitize.ts'
 
 type OutboxSecretAuditStatus = 'synced' | 'pending' | 'quarantined' | 'retired'
@@ -42,8 +43,8 @@ function parseOutboxObject(payload: string): Record<string, unknown> | null {
 function unreadableOutboxAuditMessage(ids: number[], includeIds: boolean): string {
   const named = includeIds ? ` (outbox ids ${ids.join(',')})` : ''
   const clear = includeIds
-    ? 'repair the stored JSON or retire those rows with orch record outbox retire'
-    : 'rerun with --ids to name the unreadable rows, then repair their stored JSON or retire them with orch record outbox retire'
+    ? `repair the stored JSON or retire those rows with ${PLATFORM_SLUG} record outbox retire`
+    : `rerun with --ids to name the unreadable rows, then repair their stored JSON or retire them with ${PLATFORM_SLUG} record outbox retire`
   return (
     `refusing outbox secret audit: ${ids.length} rows were unreadable${named}\n` +
     'invariant: An audit never reports emptiness for rows it could not read.\n' +

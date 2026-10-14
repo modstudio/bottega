@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   retainedBranchForCloseOut,
   retainedBranchPruneCommand,
@@ -15,7 +16,7 @@ test('retained branch presentation names its purpose and scoped cleanup', () => 
     "DEV-1199-orch-1 is kept so this run's commits stay recoverable until the task lands",
   )
   expect(retainedBranchPruneCommand('fixture-project', 'DEV-1199')).toBe(
-    'orch branches prune --project fixture-project --key DEV-1199',
+    `${PLATFORM_SLUG} tree branch prune --project fixture-project --key DEV-1199`,
   )
   expect(retainedBranchPruneCommand('fixture-project', null)).toBeNull()
 })

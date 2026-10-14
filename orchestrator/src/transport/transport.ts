@@ -36,7 +36,7 @@ export type TransportName = 'cli' | 'acp'
  * session reported, unprompted, that they could execute nothing: the Docker
  * socket was denied, PHP was not on the host, a native binding was missing. One
  * downgraded its entire test verdict to "static review" and still found two
- * real defects. `orch blockers` now counts these — nine runs across two
+ * real defects. `bottega machine blockers` now counts these — nine runs across two
  * projects losing their build to one missing binding — which is what turned it
  * from an anecdote into a decision worth making.
  *
@@ -637,7 +637,7 @@ function loadAjvValidator(): AjvValidator {
   if (schemaValidator) return schemaValidator
   // Loaded here, not at module load: doctor and every reporting command reach
   // this module through run.ts, and the hermetic linked-tree fixtures carry no
-  // orchestrator/node_modules, so a static import broke `orch doctor`.
+  // orchestrator/node_modules, so a static import broke `bottega machine doctor`.
   try {
     const loaded = require('./ajv-validator.ts') as typeof import('./ajv-validator.ts')
     schemaValidator = loaded.createStrictSchemaValidator()

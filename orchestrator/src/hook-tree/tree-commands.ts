@@ -1,9 +1,9 @@
 // concern: hook-tree
 /** Owns hook-tree command behavior. Must not know CLI grammar. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { openLandingTree } from '../landing-tree/tree.ts'
 import { createHookTree, removeHookTree } from './tree.ts'
-
 export function treeCreateCommand(
   options: { cwd: string; name: string; key?: string; base?: string; seed?: string },
   presentation: { writePath(path: string): void },
@@ -24,5 +24,5 @@ export function treeOpenCommand(
   presentation.log(`tree: ${opened.path}`)
   presentation.log(`branch: ${opened.branch}`)
   presentation.log(`tip: ${opened.tip}`)
-  presentation.log(`release: orch tree remove ${opened.path}`)
+  presentation.log(`release: ${PLATFORM_SLUG} tree remove ${opened.path}`)
 }

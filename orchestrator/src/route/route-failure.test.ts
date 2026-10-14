@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { resolveFailover } from '../collect/collect.ts'
@@ -205,7 +206,7 @@ describe('failure classification', () => {
 
   test('a killed process tree is interrupted, not a verdict on the agent', () => {
     // The exact string run.ts writes when the child died with no output and our
-    // own timer never fired: a foreground `orch do` outliving the calling
+    // own timer never fired: a foreground `bottega run start` outliving the calling
     // harness's command timeout. 143 is SIGTERM, 130 SIGINT, 137 SIGKILL.
     expect(classify('exit 143, empty output')).toBe('interrupted')
     expect(classify('exit 130, empty output')).toBe('interrupted')
@@ -392,7 +393,7 @@ describe('routing counts failures as evidence', () => {
     expect(c.cooling).toContain('quota')
     expect(c.eligible).toBe(false)
     expect(c.why).toContain('vendor quota')
-    expect(c.why).toContain("run 'orch probe codex' to clear it")
+    expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
   })
 
   test('a later-id success finishing before quota failures does not mask them', () => {

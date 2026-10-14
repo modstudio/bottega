@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { detectBlockers } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -230,7 +231,7 @@ test('files_written naming scratch/reply.json survives the scratch-to-artifacts 
     })?.files_written,
   ).toEqual(['/tmp/scratch/reply.json'])
 })
-test('orch do diagnose --deliverable x returns unevidenced when x is missing', () => {
+test(`${PLATFORM_SLUG} run start diagnose --deliverable x returns unevidenced when x is missing`, () => {
   expect(
     missingDeclaredDeliverables(
       ['x'],

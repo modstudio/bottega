@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
@@ -122,7 +123,7 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
     .get(taskRecordId, row.number, row.id)
   if (collision) {
     throw new Error(
-      `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision.record_id}, not incoming UUID ${row.id}; run \`hub task doc list ${row.task_key}\``,
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision.record_id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
   conn

@@ -43,7 +43,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/sandbox/sandbox.ts',
-    line: 289,
+    line: 291,
     reason: 'the source-root sandbox carveout is explicitly omitted for embedded distributions',
   },
   {

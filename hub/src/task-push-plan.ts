@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   HOSTED_COMMENT_TABLE,
   HOSTED_DAY_TABLE,
@@ -247,7 +248,7 @@ function unrepairableRows(spaces: readonly SpaceAudit[]): UnrepairableRow[] {
             table: table.table,
             id,
             reason: decision.reason,
-            remedy: `inspect with \`hub note list --json\` and find record_id ${id}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+            remedy: `inspect with \`${PLATFORM_SLUG} note list --json\` and find record_id ${id}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
           })
     }
   return rows

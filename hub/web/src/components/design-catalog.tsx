@@ -18,6 +18,7 @@ import { Spinner } from '@/ui/spinner/spinner'
 import { Switch } from '@/ui/switch/switch'
 import { toast } from '@/ui/toast/toast'
 import { Tooltip } from '@/ui/tooltip/tooltip'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 const tones: Tone[] = ['neutral', 'success', 'warning', 'error', 'info', 'progress']
 
@@ -191,7 +192,9 @@ export function DesignCatalog() {
           </Row>
         ))}
         <Row label="font-mono">
-          <span className="font-mono">orch do implement --cwd DEV-674 0123456789</span>
+          <span className="font-mono">
+            {PLATFORM_SLUG} run start implement --cwd DEV-674 0123456789
+          </span>
         </Row>
       </div>
 

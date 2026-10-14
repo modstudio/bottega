@@ -1,7 +1,8 @@
 // concern: metric-commands
 /** Owns metric collection and reporting. Must not know CLI grammar. */
-import { collect, summary } from './metric.ts'
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { collect, summary } from './metric.ts'
 export async function metricCommand(
   options: { collect: boolean; days: number; window: number },
   presentation: { log(value: string): void; now(): number },
@@ -15,7 +16,7 @@ export async function metricCommand(
   }
   const report = summary(options.window)
   if (!report.days) {
-    presentation.log('no metric data — run: orch metric collect')
+    presentation.log(`no metric data — run: ${PLATFORM_SLUG} agent metric collect`)
     return
   }
   renderSummary(report, presentation)

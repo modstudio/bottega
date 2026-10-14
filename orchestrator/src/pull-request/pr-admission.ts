@@ -1,6 +1,7 @@
 // concern: pull-request-admission
 /** Resolves the caller's exact change, applies triage policy, and records admission evidence. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -62,9 +63,12 @@ export function resolvePullRequestChange(
 ): PullRequestChange {
   const project = projectAt(cwd, database)
   if (!project)
-    throw new Error(`cannot resolve a project for ${cwd}; run orch pr from a registered checkout`)
+    throw new Error(
+      `cannot resolve a project for ${cwd}; run ${PLATFORM_SLUG} pr from a registered checkout`,
+    )
   const branch = branchOverride ?? runGit(cwd, ['branch', '--show-current'])
-  if (!branch) throw new Error('orch pr requires a checked-out branch, not detached HEAD')
+  if (!branch)
+    throw new Error(`${PLATFORM_SLUG} pr requires a checked-out branch, not detached HEAD`)
   const tip = runGit(cwd, ['rev-parse', '--verify', `${sha}^{commit}`])
   const tree = runGit(cwd, ['rev-parse', '--verify', `${tip}^{tree}`])
   const measured = measureChangeGroup(cwd, project, branch, tip)
@@ -194,17 +198,17 @@ export function triageRefusal(
   }
   if (decision.unfinishedReviewIds.length) {
     lines.push(
-      `unfinished review${decision.unfinishedReviewIds.length === 1 ? '' : 's'} ${decision.unfinishedReviewIds.join(', ')}; cleared by: ${decision.unfinishedReviewIds.map((id) => `orch review complete ${id}`).join('; ')}`,
+      `unfinished review${decision.unfinishedReviewIds.length === 1 ? '' : 's'} ${decision.unfinishedReviewIds.join(', ')}; cleared by: ${decision.unfinishedReviewIds.map((id) => `${PLATFORM_SLUG} review complete ${id}`).join('; ')}`,
     )
   }
   if (decision.undisposedFindings.length) {
     lines.push(
-      `findings without a disposition: ${decision.undisposedFindings.map((finding) => finding.id).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `orch review triage ${finding.reviewId} ${finding.ordinal} <disposition>`).join('; ')}`,
+      `findings without a disposition: ${decision.undisposedFindings.map((finding) => finding.id).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewId} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
   for (const lens of decision.missingLenses) {
     lines.push(
-      `applicable lens ${lens} has not run and been judged; cleared by: orch do review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} has not run and been judged; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
     )
   }
   if (decision.finalTierRaised) {
@@ -213,7 +217,7 @@ export function triageRefusal(
     )
   } else if (decision.architectReadRequired) {
     lines.push(
-      `architect-read path failed: review ${decision.earlierReviewId} can be credited only after an architect reads this exact tip; cleared by: orch review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+      `architect-read path failed: review ${decision.earlierReviewId} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
   } else if (decision.earlierReviewId === null) {
     lines.push(
@@ -284,7 +288,8 @@ export function recordTriageOverride(
   cwd = process.cwd(),
 ): number {
   const validated = validatedOverrideReason(reason, fromOperator, '--reason')
-  if (validated === null) throw new Error('orch pr override requires --reason "<reason>"')
+  if (validated === null)
+    throw new Error(`${PLATFORM_SLUG} pr override requires --reason "<reason>"`)
   const change = resolvePullRequestChange(cwd)
   const database = writableDb()
   return writeTransaction(() => insertOverride(change, validated, database), database)

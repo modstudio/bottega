@@ -149,7 +149,7 @@ describe('resolveMechanicalChecks', () => {
       testSubstance: { phpPolicyRules: ['createMock'] },
     })
     expect(row(rows, 'spelling')).toMatchObject({
-      tool: 'orch check spelling',
+      tool: `${PLATFORM_SLUG} gate check spelling`,
       source: 'own',
     })
     expect(row(rows, 'attribution-markers')).toMatchObject({
@@ -157,7 +157,7 @@ describe('resolveMechanicalChecks', () => {
       source: 'own',
     })
     expect(row(rows, 'comment-hygiene')).toMatchObject({
-      tool: 'orch check comments',
+      tool: `${PLATFORM_SLUG} gate check comments`,
       source: 'own',
       note: 'settings.checks: commentTaskKeys, commentHistory',
     })

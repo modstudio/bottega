@@ -4,6 +4,7 @@
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
@@ -271,7 +272,7 @@ const docWriteContextSchema = z.object({
   author: z.string().trim().min(1),
   expectedRevision: z.string().uuid().optional(),
 })
-const activeSpaceRemedy = 'run `orch record space switch <slug>` to select an active space'
+const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`
 
 const noSpace = (context: Context<ApiEnvironment>) =>
   context.json({ error: 'record session has no active space', remedy: activeSpaceRemedy }, 409)

@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { constants } from 'node:os'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
@@ -153,7 +154,7 @@ export async function workflowCommand(
   else if (sub === 'import') importCommand(argv, print)
   else
     throw new Error(
-      'unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import',
+      `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
     )
 }
 
@@ -215,7 +216,7 @@ async function attachCommand(
     argv,
     cursor,
     context,
-    'orch workflow attach',
+    `${PLATFORM_SLUG} workflow attach`,
   )
   const args = workflowArgs(argv)
   const mode = resolveWorkflowCursorMode(
@@ -224,7 +225,7 @@ async function attachCommand(
     flagValue(argv, 'mode'),
     args,
     context,
-    'orch workflow attach',
+    `${PLATFORM_SLUG} workflow attach`,
     'pass --mode <slug>',
     undefined,
     cursor,
@@ -246,10 +247,10 @@ async function execCommand(
 ): Promise<void> {
   if (argv[2] !== '--')
     throw new Error(
-      'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
+      `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
     )
   const command = argv.slice(3)
-  if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
   const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
@@ -278,7 +279,7 @@ async function probeCommand(
 ): Promise<void> {
   if (argv[2] !== '--')
     throw new Error(
-      'orch workflow probe requires -- before the child command; use orch workflow probe [--cwd <dir>] -- <command…>',
+      `${PLATFORM_SLUG} workflow probe requires -- before the child command; use ${PLATFORM_SLUG} workflow probe [--cwd <dir>] -- <command…>`,
     )
   const command = argv.slice(3)
   const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
@@ -302,7 +303,7 @@ export function commandOutcome(verb: 'exec' | 'probe', result: ProbeRecord): Com
   if (result.signal)
     return {
       exitCode: 128 + constants.signals[result.signal],
-      errorLine: `orch workflow ${verb}: command was killed by ${result.signal}`,
+      errorLine: `${PLATFORM_SLUG} workflow ${verb}: command was killed by ${result.signal}`,
     }
   return { exitCode: result.exitCode }
 }
@@ -315,7 +316,7 @@ function presentCommandOutcome(
   const outcome = commandOutcome(verb, result)
   if (outcome.errorLine) presentation.error(outcome.errorLine)
   else if (verb === 'probe' && result.exitCode !== 0)
-    presentation.error(`orch workflow probe: command exited ${result.exitCode}`)
+    presentation.error(`${PLATFORM_SLUG} workflow probe: command exited ${result.exitCode}`)
   if (verb === 'probe' && (result.exitCode !== 0 || result.signal))
     presentation.error(result.outputTail || '(no output)')
   presentation.setExitCode(outcome.exitCode)
@@ -342,7 +343,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     argv,
     cursor,
     context,
-    'orch workflow rule',
+    `${PLATFORM_SLUG} workflow rule`,
   )
   const mode = resolveWorkflowCursorMode(
     slug,
@@ -350,7 +351,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
     flagValue(argv, 'mode'),
     args,
     context,
-    'orch workflow rule',
+    `${PLATFORM_SLUG} workflow rule`,
     'pass --mode <slug>',
     undefined,
     cursor,
@@ -378,7 +379,7 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
     argv,
     cursor,
     context,
-    'orch workflow abandon',
+    `${PLATFORM_SLUG} workflow abandon`,
   )
   const mode = resolveWorkflowCursorMode(
     slug,
@@ -386,7 +387,7 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
     flagValue(argv, 'mode'),
     args,
     context,
-    'orch workflow abandon',
+    `${PLATFORM_SLUG} workflow abandon`,
     'pass --mode <slug>',
     undefined,
     cursor,
@@ -425,7 +426,7 @@ async function stepCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
-  const target = cursorCommandTarget(argv, cursor, context, 'orch workflow step', true)
+  const target = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow step`, true)
   const { project, workflow: slug } = target
   const mode = cursor
     ? resolveWorkflowCursorMode(
@@ -434,7 +435,7 @@ async function stepCommand(
         requestedMode,
         args,
         context,
-        'orch workflow step',
+        `${PLATFORM_SLUG} workflow step`,
         'pass --mode <slug>',
         undefined,
         cursor,
@@ -486,7 +487,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     argv,
     cursor,
     context,
-    'orch workflow next',
+    `${PLATFORM_SLUG} workflow next`,
   )
   const mode = resolveWorkflowCursorMode(
     slug,
@@ -494,7 +495,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
     flagValue(argv, 'mode'),
     args,
     context,
-    'orch workflow next',
+    `${PLATFORM_SLUG} workflow next`,
     'pass --mode <slug>',
     undefined,
     cursor,
@@ -530,7 +531,7 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     argv,
     cursor,
     context,
-    'orch workflow await',
+    `${PLATFORM_SLUG} workflow await`,
   )
   const mode = resolveWorkflowCursorMode(
     slug,
@@ -538,7 +539,7 @@ function awaitCommand(argv: string[], print: (value: unknown, line?: string) => 
     flagValue(argv, 'mode'),
     args,
     context,
-    'orch workflow await',
+    `${PLATFORM_SLUG} workflow await`,
     'pass --mode <slug>',
     undefined,
     cursor,
@@ -615,7 +616,7 @@ function catalogueCommand(argv: string[], print: (value: unknown, line?: string)
   else if (sub === 'versions') print(stepCatalogueVersions())
   else
     throw new Error(
-      'unknown: orch workflow catalogue. Try show | set | promote | retire | fork | versions',
+      `unknown: ${PLATFORM_SLUG} workflow catalogue. Try show | set | promote | retire | fork | versions`,
     )
 }
 

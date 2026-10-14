@@ -2,6 +2,7 @@
 /** Resolves finished review facts, writes their interchange file, and invokes a project's recorder. */
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -145,7 +146,7 @@ function displayCommand(argv: readonly string[]): string {
 function recordCommandRemedy(branch: string, cwd: string): string {
   return (
     `cleared by: fix the project's review record command or its inputs, then rerun ` +
-    `orch review project-record ${branch} --cwd ${cwd} --reason "<one line>"`
+    `${PLATFORM_SLUG} review project-record ${branch} --cwd ${cwd} --reason "<one line>"`
   )
 }
 
@@ -157,7 +158,9 @@ export function recordProjectReviewCommand(
   operations: ReviewRecordCommandOperations = defaultOperations(),
 ): void {
   if (!cwd)
-    throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
+    throw new Error(
+      `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+    )
   if (!reason?.trim() || /[\r\n]/.test(reason)) {
     throw new Error('--reason must be one non-empty line')
   }
@@ -173,7 +176,7 @@ export function recordProjectReviewCommand(
   const review = operations.review(project, cwd, branch)
   if (!review.complete) {
     throw new Error(
-      `review triage for ${branch} is incomplete; finish every lens and finding with orch judge`,
+      `review triage for ${branch} is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score judge`,
     )
   }
   const findings = reviewRecordFindings(review.rows)

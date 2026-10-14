@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import {
@@ -36,7 +37,7 @@ test('a conflicting take is refused and tells the holder with an interrupting no
   presence('holder', null, clock)
   takeClaim({ subject: 'path:src/**' }, env('holder'), clock, cwd)
   expect(() => takeClaim({ subject: 'path:src/a.ts' }, env('other'), clock + 1, cwd)).toThrow(
-    /session holder.*orch board ask --audience session:holder/,
+    new RegExp(`session holder.*${PLATFORM_SLUG} board ask --audience session:holder`),
   )
   const notices = claimNoticesFor('holder', clock + 2)
   expect(notices).toHaveLength(1)

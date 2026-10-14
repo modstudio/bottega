@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -23,6 +24,7 @@ import {
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
+import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 import {
   removeDoc as deleteDoc,
@@ -30,7 +32,6 @@ import {
   docSubjects,
   getDoc,
   listDocRevisions,
-  parseResumeFrontmatter,
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
@@ -48,13 +49,13 @@ test('explicit settings user addressing preserves settings while bare user means
   expect(userAddressScope(false, 'project')).toBe('project')
 })
 
-test('orch doc search human output reports stale refresh work', () => {
+test(`${PLATFORM_SLUG} doc search human output reports stale refresh work`, () => {
   expect(formatDocSearchRefresh({ embedded: 2, deleted: 1, unchanged: 3, stale: 4 })).toBe(
     'refresh: 2 embedded, 1 deleted, 3 unchanged, 4 stale',
   )
 })
 
-test('orch doc search refuses an invalid scope with the store message', async () => {
+test(`${PLATFORM_SLUG} doc search refuses an invalid scope with the store message`, async () => {
   const result = await command(['doc', 'search', 'meaning', '--scope', 'invented'])
   expect(result.code).toBe(1)
   expect(result.err).toContain('unknown doc scope "invented"; valid scopes:')
@@ -109,7 +110,7 @@ async function command(args: string[], stdin = '') {
 }
 
 describe('scoped operator docs', () => {
-  test('orch doc list keyword filters return the union as full documents', async () => {
+  test(`${PLATFORM_SLUG} doc list keyword filters return the union as full documents`, async () => {
     await setDoc({
       scope: 'global',
       subject: null,
@@ -222,7 +223,7 @@ describe('scoped operator docs', () => {
     ])
   })
 
-  test('orch doc get and list --json expose the latest hosted revision', async () => {
+  test(`${PLATFORM_SLUG} doc get and list --json expose the latest hosted revision`, async () => {
     const stored = await setDoc({
       scope: 'global',
       subject: null,
@@ -239,7 +240,7 @@ describe('scoped operator docs', () => {
     )
   })
 
-  test('orch port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle', async () => {
+  test(`${PLATFORM_SLUG} doc port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle`, async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({
       name: 'target-invented',
@@ -317,7 +318,7 @@ describe('scoped operator docs', () => {
     expect(listDoctrineRules(true)).toMatchObject([{ number: 4, retired_at: expect.any(String) }])
   }, 20_000)
 
-  test('orch port refuses unknown registered project names', async () => {
+  test(`${PLATFORM_SLUG} doc port refuses unknown registered project names`, async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     const unknown = await command(['port', 'baseline', 'show', 'source-invented', 'missing'])
     expect(unknown.code).toBe(1)
@@ -344,24 +345,26 @@ describe('scoped operator docs', () => {
   test('nested command errors name the recognized group and list its verbs', async () => {
     expect(await command(['port', 'doctrine', 'show', '7'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch port doctrine show. Try list | add | retire'),
+      err: expect.stringContaining(
+        `unknown: ${PLATFORM_SLUG} doc port doctrine show. Try list | add | retire`,
+      ),
     })
     expect(await command(['port', 'ref'])).toMatchObject({
       code: 1,
       err: expect.stringContaining(
-        'unknown: orch port ref. Try list | show | set | resolve | delete-error',
+        `unknown: ${PLATFORM_SLUG} doc port ref. Try list | show | set | resolve | delete-error`,
       ),
     })
     expect(await command(['review', 'inspect'])).toMatchObject({
       code: 1,
       err: expect.stringContaining(
-        'unknown: orch review inspect. Try tier | record | project-record | triage | complete | calibration',
+        `unknown: ${PLATFORM_SLUG} review inspect. Try tier | record | project-record | triage | complete | calibration`,
       ),
     })
     expect(await command(['review'])).toMatchObject({
       code: 1,
       err: expect.stringContaining(
-        'unknown: orch review. Try tier | record | project-record | triage | complete | calibration',
+        `unknown: ${PLATFORM_SLUG} review. Try tier | record | project-record | triage | complete | calibration`,
       ),
     })
   }, 20_000)
@@ -457,7 +460,7 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('orch doc subjects --json lists project, agent and job names', async () => {
+  test(`${PLATFORM_SLUG} doc subjects --json lists project, agent and job names`, async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(docSubjects()).toEqual({
       project: ['known'],
@@ -467,19 +470,19 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('orch doc rm --json reports whether a row was removed', async () => {
+  test(`${PLATFORM_SLUG} doc rm --json reports whether a row was removed`, async () => {
     await setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
     expect(await removeDoc('global', null, 'gone')).toBe(true)
     expect(await removeDoc('global', null, 'gone')).toBe(false)
   })
 
-  test('orch doc set --json round-trips a body with quote, backtick and newline', async () => {
+  test(`${PLATFORM_SLUG} doc set --json round-trips a body with quote, backtick and newline`, async () => {
     const body = "quote' backtick` newline\n"
     await setDoc({ scope: 'global', subject: null, slug: 'round-trip', title: 'T', body })
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
   })
 
-  test('orch doc set prints document lint warnings in the existing warning shape', async () => {
+  test(`${PLATFORM_SLUG} doc set prints document lint warnings in the existing warning shape`, async () => {
     const result = await command(
       [
         'doc',
@@ -500,7 +503,7 @@ describe('scoped operator docs', () => {
     expect(result.err).toContain('warning: line 1: matches banned history pattern')
   })
 
-  test('orch doc lint prints findings as JSON and exits one', async () => {
+  test(`${PLATFORM_SLUG} doc lint prints findings as JSON and exits one`, async () => {
     const stored = await setDoc({
       scope: 'global',
       subject: null,
@@ -521,7 +524,7 @@ describe('scoped operator docs', () => {
     ])
   })
 
-  test('orch doc lint prints warning findings without failing', async () => {
+  test(`${PLATFORM_SLUG} doc lint prints warning findings without failing`, async () => {
     const stored = await setDoc({
       scope: 'global',
       subject: null,
@@ -535,7 +538,7 @@ describe('scoped operator docs', () => {
     expect(result.out).toContain('doc/history warning')
   })
 
-  test('orch doc warnings lists standing warnings and says so when none', async () => {
+  test(`${PLATFORM_SLUG} doc warnings lists standing warnings and says so when none`, async () => {
     const empty = await command(['doc', 'warnings', '--scope', 'global'])
     expect(empty.code).toBe(0)
     expect(empty.out).toBe('warnings: none')
@@ -567,7 +570,7 @@ describe('scoped operator docs', () => {
     expect((await command(['doc', 'warnings', '--scope', 'machine'])).out).toBe('warnings: none')
   })
 
-  test('orch doc history, diff, and restore operate on revisions without rewinding', async () => {
+  test(`${PLATFORM_SLUG} doc history, diff, and restore operate on revisions without rewinding`, async () => {
     await writeDoc({
       scope: 'global',
       subject: null,
@@ -605,7 +608,7 @@ describe('scoped operator docs', () => {
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   }, 20_000)
 
-  test('orch doc consume stamps the session and preserves the document outside its fields', async () => {
+  test(`${PLATFORM_SLUG} doc consume stamps the session and preserves the document outside its fields`, async () => {
     const body =
       '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
     await setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
@@ -629,7 +632,7 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('orch doc consume reports an already-consumed document without rewriting it', async () => {
+  test(`${PLATFORM_SLUG} doc consume reports an already-consumed document without rewriting it`, async () => {
     const body =
       '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
     await setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })

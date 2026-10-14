@@ -1,5 +1,5 @@
 // concern: test-substance-cli
-/** Owns only the `orch test-substance` grammar and presentation. */
+/** Owns only the `bottega gate test-substance` grammar and presentation. */
 
 import type { Command } from 'commander'
 import { testSubstanceJudgeCommand } from '../test-substance-commands.ts'

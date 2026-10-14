@@ -257,15 +257,15 @@ export function releaseLease(holder: string) {
  * Run something holding the lease, WAITING for it rather than racing it.
  *
  * `watch()` may skip a cycle when another process is collecting - there will be
- * another along in twenty seconds. A one-shot `hub collect` and the refresh
+ * another along in twenty seconds. A one-shot `bottega record pull` and the refresh
  * button cannot skip: somebody asked for this pass specifically, and a backfill
  * over thirty days has no next cycle to fall back on.
  *
- * They must not simply barge in either, which is what they did. `hub collect`
+ * They must not simply barge in either, which is what they did. `bottega record pull`
  * called collect() directly and never touched the lease, so it interleaved
  * freely with the server's watcher and the launchd daemon - and the transcripts
  * leg CLEARS a session's spans before reinserting them. Measured: two identical
- * collects run beside `hub serve` disagreed by two hours on one project, and
+ * collects run beside `bottega dashboard start` disagreed by two hours on one project, and
  * were byte-identical the moment the server was stopped.
  *
  * The wait is generous next to the work - a fast pass is ~300ms and a slow one
@@ -504,7 +504,7 @@ export async function collectOnce(
 /**
  * Collect on a clock until stopped.
  *
- * Used by `hub collect --watch` under launchd and by `hub serve`, which is why
+ * Used by `bottega record pull --watch` under launchd and by `bottega dashboard start`, which is why
  * it takes a holder name: whichever acquires the lease does the work, and the
  * other waits without duplicating it.
  */

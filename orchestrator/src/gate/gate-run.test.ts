@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from './gate-decision.ts'
@@ -289,7 +290,7 @@ test('refuses when the caller checkout top level cannot be resolved', async () =
       },
     }),
   ).rejects.toThrow(
-    `could not resolve the checkout top level for ${cwd}; run orch gate run from inside the checkout to gate`,
+    `could not resolve the checkout top level for ${cwd}; run ${PLATFORM_SLUG} gate run from inside the checkout to gate`,
   )
   expect(d.query('SELECT COUNT(*) AS count FROM gate_execution').get()).toEqual({ count: 0 })
 })

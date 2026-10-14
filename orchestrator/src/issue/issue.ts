@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
@@ -137,7 +137,7 @@ export const ISSUE_DIAGNOSIS_SCHEMA = {
 export function validatedTrackerTaskKey(
   value: string,
   project: Project,
-  source = 'hub task tracker-new',
+  source = `${PLATFORM_SLUG} task tracker-new`,
 ): string {
   const keyPattern = project.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   if (!new RegExp(keyPattern).test(value)) {
@@ -181,7 +181,7 @@ export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env },
@@ -191,7 +191,8 @@ async function hub(args: string[]): Promise<string> {
     new Response(child.stderr).text(),
     child.exited,
   ])
-  if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `hub exited ${code}`)
+  if (code !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
   return stdout.trim()
 }
 
@@ -269,8 +270,8 @@ export function requestText(
     ...(rejectedSeed
       ? [`Rejected seed: ${rejectedSeed}; registered options: ${options.join(' | ')}`]
       : []),
-    `Answer with: hub task comment ${issue.key} "Seed: <one of the options>"`,
-    `Resume with: orch fix-defect ${issue.key}`,
+    `Answer with: ${PLATFORM_SLUG} task comment ${issue.key} "Seed: <one of the options>"`,
+    `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key}`,
     `What is not established: ${issue.notEstablished}`,
   ].join('\n')
 }
@@ -307,7 +308,7 @@ function fixSeedRejection(target: Project, reporting: Project, comments: string[
 function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
-Do not edit files. Establish whether the cause is orch code, the live register row, or this project's own tool.
+Do not edit files. Establish whether the cause is ${PLATFORM_NAME}'s own code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
 ${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`
@@ -541,7 +542,7 @@ function outcomeDocument(
       : []),
     ...extra,
     `What could not be established: ${result.not_established}`,
-    `Resume with: orch fix-defect ${issue.key}`,
+    `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key}`,
   ].join('\n\n')
 }
 
@@ -619,7 +620,7 @@ async function recordIssueFailure(
     `Coordinator stopped: ${String((cause as Error)?.message ?? cause)}`,
     `Run: ${runId || 'none'}`,
     treeRecord,
-    `Resume with: orch fix-defect ${issue.key}`,
+    `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key}`,
     'What remains unresolved: the coordinator pass did not reach a recorded outcome.',
   ].join('\n\n')
   await handoff(
@@ -645,7 +646,7 @@ export async function workIssue(key: string): Promise<void> {
       `This first vertical slice requires a reproducible defect; ${issue.key} is a suggestion.`,
       'No reproduction or change was attempted.',
       `What remains unresolved: ${issue.notEstablished}`,
-      `Resume with: orch fix-defect ${issue.key} after a suggestion workflow is specified.`,
+      `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key} after a suggestion workflow is specified.`,
     ].join('\n\n')
     await handoff(issue.key, 'Issue handback: suggestion is outside the reproduction slice', body)
     await comment(
@@ -662,7 +663,7 @@ export async function workIssue(key: string): Promise<void> {
       'Coordinator could not attempt this issue because the sandbox runtime is unavailable.',
       `${sandboxRuntime.remedy[0]!.toUpperCase()}${sandboxRuntime.remedy.slice(1)}.`,
       'No reproduction or gate command was run on the host.',
-      `Resume with: orch fix-defect ${issue.key}`,
+      `Resume with: ${PLATFORM_SLUG} workflow fix-defect ${issue.key}`,
     ].join('\n\n')
     await handoff(issue.key, 'Issue handback: sandbox runtime is unavailable', body)
     await comment(
@@ -779,7 +780,7 @@ export async function workIssue(key: string): Promise<void> {
           : { ok: false, text: 'no reproduction command', exitCode: -1 }
       const applied = argv(
         [
-          ...bottegaEntryArgv('orch'),
+          ...bottegaEntryArgv(PLATFORM_SLUG),
           'project',
           'set',
           change.project,

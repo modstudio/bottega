@@ -1,5 +1,7 @@
 // concern: evidence
 /** Owns fix-defect, note, state, and search command behavior. Must not know CLI grammar. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { dispatchFiledIssues, filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
@@ -69,7 +71,9 @@ export function serveCommand(presentation: {
   error(value: string): void
   setExitCode(code: number): void
 }): void {
-  presentation.error('the dashboard moved: run `hub serve` (http://127.0.0.1:7778)')
+  presentation.error(
+    `the dashboard moved: run \`${PLATFORM_SLUG} dashboard start\` (http://127.0.0.1:7778)`,
+  )
   presentation.setExitCode(1)
 }
 

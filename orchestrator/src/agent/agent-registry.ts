@@ -2,6 +2,7 @@
 /** Owns persisted agent rows, hydration, cache, and mutations. Must not know probes or model-host state. */
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
@@ -408,7 +409,7 @@ export function removeAgent(name: string): void {
   if (count) {
     throw new Error(
       `refusing to remove agent "${name}": ${count} run row${count === 1 ? '' : 's'} name it\n` +
-        `disable it instead: orch agent set ${name} --enabled false --reason <reason>`,
+        `disable it instead: ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason <reason>`,
     )
   }
   const result = writableDb().query('DELETE FROM agent WHERE name=?').run(name)

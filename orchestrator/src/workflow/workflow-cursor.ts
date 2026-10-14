@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
@@ -283,7 +284,7 @@ function remedy(row: CursorRow, composition: ReturnType<typeof composeWorkflow>)
     .join('')
   return (
     `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
-    `fetch that step, or close it with: orch workflow next ${row.workflow_slug} --project ${row.project} ` +
+    `fetch that step, or close it with: ${PLATFORM_SLUG} workflow next ${row.workflow_slug} --project ${row.project} ` +
     `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
   )
 }

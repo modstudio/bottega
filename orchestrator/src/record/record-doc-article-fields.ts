@@ -1,5 +1,6 @@
 /** Resolves and persists hosted document article fields. */
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocForm, DocKind } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
@@ -65,7 +66,7 @@ export async function hostedArticleProjectId(
   const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) {
     throw new RecordDocError(
-      `project ${name} has no hosted row in record space ${spaceId}; run \`orch project push\` to create it`,
+      `project ${name} has no hosted row in record space ${spaceId}; run \`${PLATFORM_SLUG} project push\` to create it`,
       422,
     )
   }
@@ -138,11 +139,11 @@ export async function resolveHostedArticleFields(
     const row = subjectRows.find((candidate: Row) => String(candidate.id) === id)
     if (!row)
       throw new RecordDocError(
-        `subject ${id} is not in the document project; cleared by: orch subject list ${input.subject}`,
+        `subject ${id} is not in the document project; cleared by: ${PLATFORM_SLUG} doc subject list ${input.subject}`,
       )
     if (row.retired_at != null && !attached.has(id))
       throw new RecordDocError(
-        `subject ${id} is retired; cleared by: orch subject list ${input.subject}`,
+        `subject ${id} is retired; cleared by: ${PLATFORM_SLUG} doc subject list ${input.subject}`,
       )
   }
   return {
@@ -219,7 +220,7 @@ export async function importedArticleSubjectNames(
     await tx`SELECT id,name FROM subject WHERE space_id=${input.spaceId}::uuid AND project_id=${projectId}::uuid AND id=ANY(${tx.array(ids, 'uuid')})`
   if (rows.length !== ids.length)
     throw new RecordDocError(
-      `an article subject is not in the document project; cleared by: orch subject list ${input.subject}`,
+      `an article subject is not in the document project; cleared by: ${PLATFORM_SLUG} doc subject list ${input.subject}`,
     )
   return new Map(rows.map((row: Row) => [String(row.id), String(row.name)]))
 }

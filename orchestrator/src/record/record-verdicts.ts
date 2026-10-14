@@ -1,6 +1,7 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import {
@@ -56,7 +57,7 @@ export async function validateRecordVerdict(tx: SQL, input: HostedVerdict): Prom
   const run = runs[0] as Record<string, unknown> | undefined
   if (!run) {
     throw new RecordVerdictError(
-      'hosted run is absent; run `orch sync` to upload the run before retrying the verdict',
+      `hosted run is absent; run \`${PLATFORM_SLUG} record sync\` to upload the run before retrying the verdict`,
       404,
     )
   }
@@ -143,8 +144,7 @@ export async function voidRecordRun(input: Tenant & { id: string; reason: string
   })
 }
 
-const UNVOID_MIGRATION_REMEDY =
-  'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying'
+const UNVOID_MIGRATION_REMEDY = `hosted unvoid requires the pending record migration; apply it with \`${PLATFORM_SLUG} record migrate\` before retrying`
 
 async function supersedeRecordVoid(
   tx: SQL,

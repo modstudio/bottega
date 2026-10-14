@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -58,8 +58,7 @@ describe('record doctor decisions', () => {
     expect(checks).toContainEqual({
       name: 'last run attribution resolution',
       status: 'fail',
-      detail:
-        'stored record session: keychain unavailable; record session is missing or expired; run `orch record sign-in --email <email>`',
+      detail: `stored record session: keychain unavailable; record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
       section: 'customer',
     })
   })
@@ -124,7 +123,7 @@ describe('record doctor decisions', () => {
     expect(checks).toContainEqual({
       name: 'user memberships',
       status: 'fail',
-      detail: 'record session is missing or expired; run `orch record sign-in --email <email>`',
+      detail: `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
       section: 'customer',
     })
   })

@@ -3,6 +3,7 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
@@ -486,7 +487,7 @@ async function canonCommand(
     return
   }
   throw new Error(
-    'unknown: orch canon. Try audit | mirror | import | hydrate | list | check | diff | eval | evals | lint | load',
+    `unknown: ${PLATFORM_SLUG} doc canon. Try audit | mirror | import | hydrate | list | check | diff | eval | evals | lint | load`,
   )
 }
 

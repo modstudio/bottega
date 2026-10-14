@@ -1,4 +1,5 @@
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { hostedTaskReference, taskIdFor } from './hosted-task-reference.ts'
@@ -152,7 +153,10 @@ export function noteMirrorCollision(
     },
   )
   return decision.action === 'refuse'
-    ? { action: 'refuse' as const, reason: `${decision.reason}; inspect with hub note list` }
+    ? {
+        action: 'refuse' as const,
+        reason: `${decision.reason}; inspect with ${PLATFORM_SLUG} note list`,
+      }
     : decision
 }
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { promoteWorkflow, setWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { createDocsMcpServer } from './mcp.ts'
@@ -283,7 +284,7 @@ describe('workflow prompts on the wire', () => {
     expect(text).toContain('- key (optional): Existing task key.')
     expect(text).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
     expect(text).toContain(
-      `CLI \`orch workflow compose ${slug} --project prompt-fixture --mode <mode>\``,
+      `CLI \`${PLATFORM_SLUG} workflow compose ${slug} --project prompt-fixture --mode <mode>\``,
     )
     expect(text).not.toContain('facts: {}')
   })

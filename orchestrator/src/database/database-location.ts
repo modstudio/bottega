@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
@@ -198,7 +198,7 @@ export function linkedWorktreeDatabaseInitializationMessage(): string {
   return (
     'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
     "invariant: Only the main checkout's binary migrates the store.\n" +
-    'cleared by: orch migrate'
+    `cleared by: ${PLATFORM_SLUG} machine migrate`
   )
 }
 

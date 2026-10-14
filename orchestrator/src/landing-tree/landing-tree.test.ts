@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   LANDING_TREE_JOB,
   landingTreeCommandBase,
@@ -19,8 +20,7 @@ describe('landing-tree decisions', () => {
     ).toEqual({
       held: false,
       kept: true,
-      reason:
-        'clean landing tree; branch DEV-1037-orch-1 holds its work; orch tree open 1 recreates it',
+      reason: `clean landing tree; branch DEV-1037-orch-1 holds its work; ${PLATFORM_SLUG} tree open 1 recreates it`,
     })
   })
 
@@ -35,7 +35,7 @@ describe('landing-tree decisions', () => {
     ).toEqual({
       held: true,
       until: null,
-      reason: 'landing tree; remove with orch tree remove <path>',
+      reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
     })
   })
 
@@ -78,8 +78,7 @@ describe('landing-tree decisions', () => {
       false,
       {
         action: 'keep',
-        reason:
-          'landing tree held by session owner: branch has not landed; session owner releases it with orch tree remove <path>',
+        reason: `landing tree held by session owner: branch has not landed; session owner releases it with ${PLATFORM_SLUG} tree remove <path>`,
       },
     ],
   ] as const)('decides release from clean=%s landed=%s', (clean, landed, expected) => {

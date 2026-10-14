@@ -2,6 +2,7 @@
 /** Opens an architect-owned, project-provisioned tree on a finished run branch. */
 
 import { createHash } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -159,12 +160,12 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
     conversationRootId: null,
     projectId: project.id,
     projectName: project.name,
-    retryCommand: `orch tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+    retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
   })
   const existingPath = checkedOutWorktree(project.path, branch)
   if (existingPath) {
     throw new Error(
-      `branch ${branch} already has a live tree at ${existingPath}; use that path or release it with orch tree remove ${existingPath}`,
+      `branch ${branch} already has a live tree at ${existingPath}; use that path or release it with ${PLATFORM_SLUG} tree remove ${existingPath}`,
     )
   }
   writableDb()
@@ -254,7 +255,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
         conversationRootId: null,
         projectId: project.id,
         projectName: project.name,
-        retryCommand: `orch tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+        retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
       })
       prepareResumeBranchIfNeeded(project.path, plan)
       return createWorkerWorktree({

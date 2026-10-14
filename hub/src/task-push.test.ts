@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
@@ -274,14 +275,14 @@ test('a machine-only note is reported as unrepairable and repair queues nothing 
       table: HOSTED_NOTE_TABLE,
       id: noteId,
       reason: 'the hosted record assigns note numbers, so a missing note cannot be created by push',
-      remedy: `inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+      remedy: `inspect with \`${PLATFORM_SLUG} note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
     },
   ])
   expect(report.drain?.queued).toBe(0)
   expect(listHostedOutbox()).toEqual([])
   expect(formatTaskPushReport(report)).toContain(
     `unrepairable ${HOSTED_NOTE_TABLE} ${noteId} the hosted record assigns note numbers, so a missing note cannot be created by push\n` +
-      `  remedy: inspect with \`hub note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
+      `  remedy: inspect with \`${PLATFORM_SLUG} note list --json\` and find record_id ${noteId}. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
   )
   expect(report.ok).toBeFalse()
 })
@@ -343,7 +344,7 @@ test('a row only on the hosted record is reported and not touched', async () => 
     ).rows[0]!.count,
   ).toBe(before)
   expect(formatTaskPushReport(report)).toContain('The machine has no command to fetch them yet.')
-  expect(formatTaskPushReport(report)).not.toContain('hub collect')
+  expect(formatTaskPushReport(report)).not.toContain(`${PLATFORM_SLUG} record pull`)
 })
 
 test('a pending outbox entry is in flight not missing', async () => {

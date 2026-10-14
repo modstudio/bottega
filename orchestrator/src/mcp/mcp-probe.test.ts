@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   disabledProjectMcpServers,
   mcpCallEvidence,
@@ -30,7 +31,7 @@ test('a successful orch tool probe leaves worker attachment unverified', () => {
     }),
   ).toEqual({
     connected: null,
-    error: 'orch probe ok: task_list; worker attachment unverified',
+    error: `${PLATFORM_SLUG} agent probe ok: task_list; worker attachment unverified`,
   })
 })
 

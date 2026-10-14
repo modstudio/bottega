@@ -1,10 +1,10 @@
 // concern: workflow cursor stored autonomy
 /** Reads a cursor's pinned autonomy snapshot without inventing absent ship-to facts. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedShipToLevel } from '../../../shared/ship-to.ts'
 import type { CursorAutonomyResolution, StoredAutonomyResolution } from './autonomy.ts'
 import { shellWord } from './workflow-cursor-format.ts'
-
 export type CursorAutonomyRow = {
   id: number
   workflow_slug: string
@@ -37,7 +37,7 @@ export function cursorAutonomy(row: CursorAutonomyRow): CursorAutonomyResolution
     cursor: {
       id: row.id,
       composeCommand:
-        `orch workflow compose ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
+        `${PLATFORM_SLUG} workflow compose ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
         `--mode ${shellWord(row.mode_slug)}${args}`,
     },
   }

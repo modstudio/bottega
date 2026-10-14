@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { CLI_COMMANDS } from './args.ts'
 import { isHelpShapedInvocation, isStoreFreeInvocation } from './orch.ts'
@@ -112,8 +113,10 @@ test('setup facts is store-free at the executable entry boundary', () => {
     )
     expect(bareSetup.exitCode).toBe(2)
     expect(bareSetup.stderr.toString()).toContain('requires both stdin and stdout to be TTYs')
-    expect(bareSetup.stderr.toString()).toContain('orch setup apply --yes')
-    expect(bareSetup.stderr.toString()).toContain('orch setup apply --answers <file>')
+    expect(bareSetup.stderr.toString()).toContain(`${PLATFORM_SLUG} machine setup apply --yes`)
+    expect(bareSetup.stderr.toString()).toContain(
+      `${PLATFORM_SLUG} machine setup apply --answers <file>`,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
@@ -221,7 +222,7 @@ describe('importWorkflowTree', () => {
     )
 
     expect(() => composeWorkflow('intake', 'fixture', undefined, {}, d)).toThrow(
-      `signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
+      `signals; set with: ${PLATFORM_SLUG} project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
     )
     expect(composeWorkflow('plan-task', 'fixture', 'feature', {}, d).workflow.slug).toBe(
       'plan-task',
@@ -324,7 +325,7 @@ describe('importWorkflowTree', () => {
     }
 
     expect(() => importWorkflowTree(parseWorkflowTree(tree), 'drop fixture', 'worker', d)).toThrow(
-      'orch workflow retire fix-defect',
+      `${PLATFORM_SLUG} workflow retire fix-defect`,
     )
     expect(
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })

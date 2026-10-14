@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { planRecordSyncBatch, type RecordSyncBatchCandidate } from './record-sync-batch.ts'
 
 const candidate = (
@@ -57,7 +58,7 @@ test('classifies every row until a non-empty batch reaches a boundary', () => {
   expect(result.quarantine[1]!.reason).toContain(
     'serialized row is 1001 bytes and requires a 1011 byte request, exceeding the 1000 byte client request budget',
   )
-  expect(result.quarantine[1]!.reason).toContain('orch record outbox retire <row-id>')
+  expect(result.quarantine[1]!.reason).toContain(`${PLATFORM_SLUG} record outbox retire <row-id>`)
   expect(result.send.map((row) => row.id)).toEqual([3])
   const classified = new Set([...result.quarantine, ...result.send].map((row) => row.id))
   expect(rows.filter((row) => !classified.has(row.id)).map((row) => row.id)).toEqual([4, 5])

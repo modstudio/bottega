@@ -1,13 +1,13 @@
 // concern: record-write-authority
 /** Applies shared-state write authority at the hosted-record boundary. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordInstallBinding, rememberHostedRecord } from './install-binding.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
-
 export const BOUND_RECORD_WRITE_REFUSAL =
   'this install is bound to a hosted record, but ORCH_RECORD_API_URL is not set in this environment\n' +
-  'cleared by: orch record doctor'
+  `cleared by: ${PLATFORM_SLUG} record doctor`
 
 export function currentRecordWriteDecision(): RecordWriteDecision {
   return decideRecordWrite({

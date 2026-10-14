@@ -14,14 +14,14 @@ beforeEach(resetFixtureStore)
 
 test('fixture question selection removes only documented sessions whose run is absent', () => {
   const row = (
-    question_id: number,
-    session_id: string,
-    run_ref = `orch:${question_id}`,
+    questionId: number,
+    sessionId: string,
+    runRef = `orch:${questionId}`,
   ): FixtureQuestion => ({
-    question_id,
-    session_id,
-    run_ref,
-    root_ref: run_ref,
+    question_id: questionId,
+    session_id: sessionId,
+    run_ref: runRef,
+    root_ref: runRef,
     task_key: 'DEV-3000',
   })
   expect(

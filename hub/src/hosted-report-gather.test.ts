@@ -159,17 +159,17 @@ test('hosted reports label duplicate project names with their spaces in both rep
 test('hosted reports keep unmatched task keys separate and union each key', () => {
   const keys = ['STO-1196', 'STO-1197', 'STO-716', 'STO-1198']
   const gathered = gatherHostedReport(
-    keys.flatMap((task_key) => [
+    keys.flatMap((taskKey) => [
       row({
         task_id: null,
-        task_key,
+        task_key: taskKey,
         task_project: null,
         task_title: null,
         task_status: null,
       }),
       row({
         task_id: null,
-        task_key,
+        task_key: taskKey,
         task_project: null,
         task_title: null,
         task_status: null,

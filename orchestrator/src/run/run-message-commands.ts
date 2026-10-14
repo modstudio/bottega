@@ -1,5 +1,7 @@
 // concern: run-control
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -49,7 +51,7 @@ const scoreSuffix = (jobName: string) =>
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
 const scoreHint = (id: number, jobName: string, parent: number | null) =>
-  `orch score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
 const controlPresentation = (presentation: Presentation): RunControlPresentation => ({
@@ -187,12 +189,12 @@ export async function continueCommand(
   } | null
   const sources = parseWorkerMessageArgs(argv, {
     booleans: ['--follow', '--detach', '--quiet', '--findings'],
-    usage: 'orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
+    usage: `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
   })
   if (includeFindings && sources.positionals.includes('--findings')) {
     throw new Error(
       '--findings must appear before the message\n' +
-        'working form: orch continue <id> [--findings] [--follow] [--file PATH | "<what next>"]',
+        `working form: ${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`,
     )
   }
   const message = await readMessageText({

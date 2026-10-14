@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers review and confinement adapters. Must not own their behavior. */
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
@@ -17,10 +18,8 @@ import {
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 
-const CLEAR_USAGE =
-  'orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]'
-const REPORT_USAGE =
-  'orch confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--json]'
+const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
+const REPORT_USAGE = `${PLATFORM_SLUG} review confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--json]`
 
 function confinementReportCommand(flags: CliFlags): void {
   const lens = readonlyLensReportInputs(process.env)
@@ -73,7 +72,7 @@ export function register(program: Command): void {
       await dispatchReviewCommand(argv[1], argv, optionFlags(options), {
         log,
         usage: (): never => {
-          throw new Error('orch review --help')
+          throw new Error(`${PLATFORM_SLUG} review --help`)
         },
       })
     })

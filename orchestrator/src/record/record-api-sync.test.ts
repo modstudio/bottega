@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { identity } from '../../test/fixtures/record-api.ts'
 import { registerRecordSyncRoute } from './record-api-sync.ts'
 import {
@@ -87,7 +88,7 @@ test('sync returns request refusals and the active-space remedy as client errors
   })
   expect(noSpace.status).toBe(409)
   expect(await noSpace.json()).toEqual({
-    error: 'record session has no active space; run `orch record space switch <slug>`',
+    error: `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
   })
   expect(syncRecord).toHaveBeenCalledTimes(1)
 })

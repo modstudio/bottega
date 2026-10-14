@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -18,7 +19,7 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     .get(row.project, row.number)
   if (holder && holder.record_id !== row.id)
     throw new Error(
-      `note ${row.project}#${row.number} belongs to UUID ${holder.record_id}, not incoming UUID ${row.id}; run \`hub note list\``,
+      `note ${row.project}#${row.number} belongs to UUID ${holder.record_id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} note list\``,
     )
   const promotedTaskRecordId = row.promoted_task
     ? taskRecordIdFor(conn, row.promoted_task, row.project)

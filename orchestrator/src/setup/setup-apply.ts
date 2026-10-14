@@ -4,6 +4,7 @@
 import { lstat, mkdir, open, readFile, realpath, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   commandFailureReason,
   mcpAddArgv,
@@ -115,7 +116,9 @@ async function writeRecipe(action: AddAction | SetAction): Promise<CreatedRecipe
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error(`refusing to overwrite worktree recipe ${path}; re-run orch setup plan`)
+      throw new Error(
+        `refusing to overwrite worktree recipe ${path}; re-run ${PLATFORM_SLUG} machine setup plan`,
+      )
     }
     throw error
   }
@@ -144,7 +147,7 @@ function guardRegistrationAdd(action: RegistrationAction, runner: SetupCommandRu
   const detail =
     current.status === 'registered' ? mismatchReason(current, action.server) : current.detail
   throw new Error(
-    `${action.harness} ${action.server.name} changed before add (${detail}); run orch setup apply to review and replace it`,
+    `${action.harness} ${action.server.name} changed before add (${detail}); run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
   )
 }
 

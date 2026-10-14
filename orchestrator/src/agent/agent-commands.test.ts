@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { agentCommand, agentReadinessPresentation } from './agent-commands.ts'
 import { removeAgent } from './agent-registry.ts'
 
@@ -44,7 +45,7 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
 
   expect(fixed.map(agentReadinessPresentation)).toEqual([
     'not installed',
-    'installed but not probed — orch agent probe newcomer',
+    `installed but not probed — ${PLATFORM_SLUG} agent show probe newcomer`,
     'disabled — retired after replacement',
     'ready',
   ])

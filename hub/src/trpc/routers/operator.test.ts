@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import type { OperatorWaitingItem } from '../../orch.ts'
 import { createOperatorRouter } from './operator.ts'
 
@@ -18,7 +18,7 @@ const item: OperatorWaitingItem = {
   why: 'Because',
   waiting_since: '2026-09-24T12:00:00.000Z',
   episode: '2026-09-24T12:00:00.000Z',
-  answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
+  answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
 }
 
 test('waiting query and answer mutation use the orch seam', async () => {

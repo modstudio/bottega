@@ -1,5 +1,6 @@
 // concern: cleanup-sweep-decisions
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
 export type AbsentClaimFacts = {
@@ -175,7 +176,7 @@ export function decideRecordedRunCloseOut(
     }
   }
   const keepReason = facts.detail.startsWith('held by explicit --keep-tree')
-    ? 'held by explicit --keep-tree; clear with orch discard <run-id>'
+    ? `held by explicit --keep-tree; clear with ${PLATFORM_SLUG} run discard <run-id>`
     : facts.detail
   if (facts.outcome === 'failed') {
     return {

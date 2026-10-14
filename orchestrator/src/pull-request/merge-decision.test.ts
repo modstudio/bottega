@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideMergeAdmission,
   decideMergeProof,
@@ -24,7 +25,7 @@ describe('review admission', () => {
       }),
     ).toEqual({
       admitted: false,
-      refusal: 'review triage is incomplete; cleared by: run the review\nthen orch pr merge 42',
+      refusal: `review triage is incomplete; cleared by: run the review\nthen ${PLATFORM_SLUG} pr merge 42`,
     })
   })
 
@@ -38,7 +39,7 @@ describe('review admission', () => {
     expect(decision).toEqual({
       admitted: false,
       refusal: expect.stringContaining(
-        'was not checked: git rev-parse failed; cleared by: git fetch origin pull/42/head, then orch pr merge 42',
+        `was not checked: git rev-parse failed; cleared by: git fetch origin pull/42/head, then ${PLATFORM_SLUG} pr merge 42`,
       ),
     })
   })
@@ -131,7 +132,7 @@ describe('local-gate merge proof', () => {
     const decision = decideMergeProof(local({ gate: { recorded: false } }))
     expect(decision).toEqual({
       admitted: false,
-      refusal: expect.stringContaining('orch gate run'),
+      refusal: expect.stringContaining(`${PLATFORM_SLUG} gate run`),
     })
   })
 
@@ -147,7 +148,9 @@ describe('local-gate merge proof', () => {
     )
     expect(decision).toEqual({
       admitted: false,
-      refusal: expect.stringContaining('bring the branch up to origin/main, run orch gate run'),
+      refusal: expect.stringContaining(
+        `bring the branch up to origin/main, run ${PLATFORM_SLUG} gate run`,
+      ),
     })
   })
 })

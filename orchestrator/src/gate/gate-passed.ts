@@ -2,6 +2,7 @@
 /** Answers whether one project commit has an exact passing gate record. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 
@@ -30,9 +31,10 @@ export function passingGateForCommit(
   d: Database = db(),
 ): { project: string; commit: string; gateId: number | null } {
   const project = projectAt(cwd, d)
-  if (!project) throw new Error(`orch gate passed: no registered project contains ${cwd}`)
+  if (!project)
+    throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
   const normalized = commit.trim()
-  if (!normalized) throw new Error('orch gate passed requires a commit')
+  if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
   const candidates = d
     .query<GateCandidate, [string]>(
       `SELECT g.id,r.project_id AS projectId,g.cwd

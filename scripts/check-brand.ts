@@ -51,6 +51,13 @@ const ALLOWED = new Set([
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.
   'scripts/architecture-release.ts',
+  // Shell recipes invoke the front-door executable by its PATH name and cannot import the slug.
+  'local-stack/bin/gx10-install.sh',
+  'ops/bin/projects-morning-refresh.sh',
+  'ops/bin/hub-note-maintenance.sh',
+  'ops/bin/orch-record-sync.sh',
+  'ops/bin/orch-canon-audit.sh',
+  'ops/bin/orch-canon-mirror.sh',
 ])
 
 const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')

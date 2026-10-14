@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -26,7 +27,7 @@ async function inbox(): Promise<string> {
             )
             .get(root, root),
         ),
-      strandedRecovery: (root) => `stranded — orch retry ${root} --agent`,
+      strandedRecovery: (root) => `stranded — ${PLATFORM_SLUG} run retry ${root} --agent`,
     },
   )
   return lines.join('\n')

@@ -11,7 +11,9 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/docs.ts',
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',
@@ -32,7 +34,7 @@ export const docModules: DocModule[] = [
     '../record/record-project-destination-client.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/doc/canon-import-collision.ts', []),
+  module('orchestrator/src/doc/canon-import-collision.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-files.ts', [
     'node:fs',
     'node:path',
@@ -40,7 +42,10 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/doc/doc-status.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/doc/doc-status.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-write-guard.ts', ['../worker-store-write.ts']),
   module('orchestrator/src/doc/local-doc-status.ts', [
     '../../../shared/docs.ts',
@@ -54,7 +59,10 @@ export const docModules: DocModule[] = [
     './doc-audiences-codec.ts',
     './doc-write-allowed.ts',
   ]),
-  module('orchestrator/src/doc/doc-tree-rules.ts', ['../../../shared/docs.ts']),
+  module('orchestrator/src/doc/doc-tree-rules.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/docs.ts',
+  ]),
   module('orchestrator/src/doc/doc-subjects.ts', [
     '../../../shared/docs.ts',
     '../agent/agent-registry.ts',
@@ -62,6 +70,7 @@ export const docModules: DocModule[] = [
     '../jobs/jobs.ts',
   ]),
   module('orchestrator/src/doc/local-doc-tree-service.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/docs.ts',
     '../database/db.ts',
     './doc-audiences-codec.ts',

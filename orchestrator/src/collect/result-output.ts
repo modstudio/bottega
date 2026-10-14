@@ -1,4 +1,4 @@
-/** Maximum recovered transcript text printed by `orch result` for a truncated run. */
+/** Maximum recovered transcript text printed by `bottega run result` for a truncated run. */
 export const TRUNCATED_TRANSCRIPT_BYTES = 32 * 1024
 
 /** Extract human-readable prose from a persisted vendor transcript. */

@@ -1,6 +1,7 @@
 // concern: record-project-destination
 /** Resolves a registered project's hosted-record destination without consulting hosted state. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type RecordSpaceMembership,
   recordSpaceMembership,
@@ -37,14 +38,14 @@ export function projectRecordDestination(
 }
 
 export function noActiveRecordSpaceRefusal(): string {
-  return 'record session has no active space; run `orch record space switch <slug>`'
+  return `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 }
 
 export function recordSpaceMembershipRefusal(space: string): string {
   return (
     `the signed-in user is not a member of record space ${space}; ` +
     `an invitation from a member of that space is needed; list invitations with ` +
-    '`orch record space invitations`, then accept one with ' +
-    '`orch record space accept <invitation-id>`'
+    `\`${PLATFORM_SLUG} record space invitations\`, then accept one with ` +
+    `\`${PLATFORM_SLUG} record space accept <invitation-id>\``
   )
 }

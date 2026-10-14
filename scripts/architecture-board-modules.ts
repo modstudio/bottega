@@ -13,6 +13,7 @@ const module = (file: string, allowed: string[]): BoardModule => ({
 
 export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-adoption.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
@@ -49,6 +50,7 @@ export const boardModules: BoardModule[] = [
   module('orchestrator/src/board/board-watch-decision.ts', []),
   module('orchestrator/src/board/board-watch-frames.ts', ['../record/record-board-stream.ts']),
   module('orchestrator/src/board/board-watch.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
@@ -101,6 +103,7 @@ export const boardModules: BoardModule[] = [
     './board-thread-policy.ts',
   ]),
   module('orchestrator/src/board/board-operations.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/board-duration.ts',
     '../../../shared/board-purpose.ts',
     '../../../shared/record/schema.ts',
@@ -140,17 +143,20 @@ export const boardModules: BoardModule[] = [
     './board-routing.ts',
   ]),
   module('orchestrator/src/board/board-render.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/board-purpose.ts',
     './board-policy.ts',
     './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-thread-policy.ts', ['./board-policy.ts']),
   module('orchestrator/src/board/board-thread-render.ts', [
+    '../../../shared/brand.ts',
     './board-policy.ts',
     './board-render.ts',
   ]),
   module('orchestrator/src/board/board-answer-note.ts', ['../mcp/hub-notes.ts']),
   module('orchestrator/src/board/board-store.ts', [
+    '../../../shared/brand.ts',
     'node:os',
     '../../../shared/board-duration.ts',
     '../../../shared/board-purpose.ts',
@@ -165,6 +171,7 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-service.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:os',
     '../../../shared/board-purpose.ts',
@@ -179,6 +186,7 @@ export const boardModules: BoardModule[] = [
     './board-thread-render.ts',
   ]),
   module('orchestrator/src/board/board-claim-service.ts', [
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../project/projects.ts',
     './board-claim-policy.ts',
@@ -192,6 +200,7 @@ export const boardModules: BoardModule[] = [
     './board-operations.ts',
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',
     '../project/projects.ts',
@@ -209,6 +218,7 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-commands.ts', [
+    '../../../shared/brand.ts',
     'commander',
     '../../../shared/board-duration.ts',
     './board-adoption.ts',

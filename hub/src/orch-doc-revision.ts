@@ -1,5 +1,6 @@
 import type { DocAudience, DocAudiences, DocScope } from '../../shared/docs.ts'
-import { type DocRevisionMetadata, jsonDocument } from './orch.ts'
+import { jsonDocument } from './orch.ts'
+import type { DocRevisionMetadata } from './orch-doc-argv.ts'
 
 export type DocRevision = DocRevisionMetadata & {
   doc_id: number

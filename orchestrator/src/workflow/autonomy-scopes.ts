@@ -2,6 +2,7 @@
 /** Gathers workflow-autonomy scopes from the project, machine, hosted config, and cursor. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
   ConfigClientError,
@@ -99,7 +100,7 @@ export async function resolveProjectAutonomy(
 ): Promise<AutonomyResolution> {
   if (session.shipTo !== undefined) {
     throw new Error(
-      'ship to is operator-owned and cannot be set at session scope; use orch config set autonomy.ship-to <value>',
+      `ship to is operator-owned and cannot be set at session scope; use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
     )
   }
   const registered = projectByName(project, d)

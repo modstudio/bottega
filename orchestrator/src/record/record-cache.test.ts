@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   installRecordApiClient,
@@ -206,7 +207,7 @@ describe('record cache pull', () => {
     )
 
     await expect(pullRecordCache(db())).rejects.toThrow(
-      'record session has no active space; run `orch record space switch <slug>`',
+      `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
     )
     expect(queried).toBe(false)
   })
@@ -804,7 +805,7 @@ describe('record cache pull', () => {
         3,
         'ask',
         'ok',
-        'voided with orch score --void',
+        `voided with orch score --void`,
       )
     if (scored) {
       db()

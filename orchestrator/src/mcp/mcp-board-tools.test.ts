@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
@@ -93,7 +94,7 @@ test('board_read MCP result is the delivery envelope with one normalized notice 
       {
         id: String(posted.id),
         text: expect.stringContaining(`BOARD NOTICE ${posted.id}`),
-        oneLine: `Board message ${posted.id}: MCP read shape — from operator; acknowledgement not required. orch board thread ${posted.id} shows the body.`,
+        oneLine: `Board message ${posted.id}: MCP read shape — from operator; acknowledgement not required. ${PLATFORM_SLUG} board thread ${posted.id} shows the body.`,
         ackRequired: false,
         purpose: 'information',
         createdAt: expect.any(String),

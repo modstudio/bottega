@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
@@ -82,7 +83,7 @@ export function claimProject(
   if (actor.kind === 'operator') {
     if (!requested) throw new Error('operator claim requires --project <name>')
     if (!projectByName(requested))
-      throw new Error(`unknown project ${requested}; run orch project list`)
+      throw new Error(`unknown project ${requested}; run ${PLATFORM_SLUG} project list`)
     return requested
   }
   const held = projectAt(cwd)
@@ -258,7 +259,7 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
       conflict.holder_kind === 'operator' ? 'operator' : `session ${conflict.holder_session}`
     const remedy =
       conflict.holder_kind === 'architect'
-        ? `ask with orch board ask --audience session:${conflict.holder_session}, or wait`
+        ? `ask with ${PLATFORM_SLUG} board ask --audience session:${conflict.holder_session}, or wait`
         : 'wait for the operator claim to lapse'
     return `${named} until ${conflict.lapses_at} (${remedy})`
   })
@@ -434,7 +435,8 @@ export function releaseTaskClaims(
   clock = Date.now(),
 ): { released: number } {
   claimActor(env)
-  if (!projectByName(project)) throw new Error(`unknown project ${project}; run orch project list`)
+  if (!projectByName(project))
+    throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
   const database = writableDb()
   return writeTransaction(() => {
     const rows = database

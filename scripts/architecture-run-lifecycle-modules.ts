@@ -101,7 +101,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
-  module('orchestrator/src/run/run-task-reference.ts', ['../../../shared/self-spawn.ts']),
+  module('orchestrator/src/run/run-task-reference.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+  ]),
   module('orchestrator/src/run/run-task-branch-resolution.ts', [
     '../branch/task-branch.ts',
     '../branch/task-branch-reuse.ts',
@@ -218,6 +221,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-terminal.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../ask/ask.ts',
     './checkpoint.ts',

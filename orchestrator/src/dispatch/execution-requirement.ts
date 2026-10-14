@@ -1,5 +1,6 @@
 // concern: execution-requirement
 /** Decides whether a declared execution dependency fits the tree a job receives. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export function executionRequirementRefusal(input: {
   declared: boolean
   job: string
@@ -10,6 +11,6 @@ export function executionRequirementRefusal(input: {
   const identity = input.lens ? `${input.job}/${input.lens}` : input.job
   return (
     `refused: ${identity} requires execution, and a ${input.job} run gets a reader tree with no database, containers or server. ` +
-    `Run the proof in a tree that can execute it — orch tree open <run> on the change's finished run, then serve it with the project's worktree serve command — or drop --requires-execution if the review can be answered by reading.`
+    `Run the proof in a tree that can execute it — ${PLATFORM_SLUG} tree open <run> on the change's finished run, then serve it with the project's worktree serve command — or drop --requires-execution if the review can be answered by reading.`
   )
 }

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
@@ -614,7 +615,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     expect(() => getWorkflowStep('land', 'fixture', 'land', {}, d)).toThrow(
-      `- trunk; set with: orch project set fixture --settings '{"trunk":"<branch>"}'`,
+      `- trunk; set with: ${PLATFORM_SLUG} project set fixture --settings '{"trunk":"<branch>"}'`,
     )
   })
   test('returns only the resolved facts needed by composed steps', () => {

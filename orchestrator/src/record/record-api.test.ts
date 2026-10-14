@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
@@ -500,7 +501,7 @@ describe('record API', () => {
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
       error: 'record authentication required',
-      remedy: 'record session is missing or expired; run `orch record sign-in --email <email>`',
+      remedy: `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
     })
   })
 
@@ -513,7 +514,7 @@ describe('record API', () => {
     expect(scoped.status).toBe(409)
     expect(await scoped.json()).toEqual({
       error: 'record session has no active space',
-      remedy: 'run `orch record space switch <slug>` to select an active space',
+      remedy: `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`,
     })
   })
 
@@ -950,103 +951,5 @@ describe('record API presentation routes', () => {
       headers: { Origin: 'https://other.example.test', 'Access-Control-Request-Method': 'GET' },
     })
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
-  })
-})
-
-describe('record API doc write refusals', () => {
-  async function put(body: Record<string, unknown>) {
-    const app = appWith(identity, {
-      upsertDoc: async (input: {
-        scope: string
-        subject: string | null
-        slug: string
-        body: string
-        delivery: 'inject' | 'demand'
-        forceInject?: string
-      }) => {
-        const { refuseDocWrite } = await import('../doc/doc-write-allowed.ts')
-        const { RecordDocError } = await import('./record-docs.ts')
-        const refusal = refuseDocWrite({
-          scope: input.scope,
-          subject: input.subject,
-          slug: input.slug,
-          body: input.body,
-          delivery: input.delivery,
-          forceInject: input.forceInject,
-          packBytes: 0,
-          globalCanonSlugs: ['.agents/rules/shared.md'],
-          projectCanonSlugs: [],
-          currentCanon: [],
-          nextCanon: [{ slug: input.slug, body: input.body }],
-        })
-        if (refusal) throw new RecordDocError(refusal)
-        return { id, revisionId: id }
-      },
-    })
-    return app.request('/v1/docs', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        subject: null,
-        title: 'T',
-        reason: 'test',
-        author: 'tester',
-        ...body,
-      }),
-    })
-  }
-
-  test('refuses project and global inject', async () => {
-    const response = await put({
-      scope: 'global',
-      slug: 'refused',
-      body: 'B',
-      delivery: 'inject',
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: expect.stringContaining('make the instruction canon'),
-    })
-  })
-
-  test('refuses oversized inject', async () => {
-    const response = await put({
-      scope: 'job',
-      subject: 'understand',
-      slug: 'big',
-      body: 'x'.repeat(9 * 1024),
-      delivery: 'inject',
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: expect.stringContaining('threshold is 8192 bytes'),
-    })
-  })
-
-  test('refuses a colliding canon path', async () => {
-    const response = await put({
-      scope: 'canon',
-      subject: 'known',
-      slug: '.agents/rules/shared.md',
-      body: '---\ndescription: Shared\n---\n\nRule.\n',
-      delivery: 'demand',
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: expect.stringContaining('refusing canon path collision'),
-    })
-  })
-
-  test('refuses an unlinted global canon write', async () => {
-    const response = await put({
-      scope: 'canon',
-      slug: '.agents/rules/unlinted.md',
-      body: 'Rule without required metadata.\n',
-      delivery: 'demand',
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({
-      error: expect.stringContaining('refusing canon write'),
-    })
   })
 })

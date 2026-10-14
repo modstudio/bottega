@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
@@ -321,7 +322,7 @@ describe('local task tracker', () => {
   test('refuses issuance when the registered project has no prefix', async () => {
     expect(
       createTask({ project: 'nested', title: 'Cannot number this' }, { hosted }),
-    ).rejects.toThrow(`orch project set nested --settings '{"keyPrefixes":["ABC"]}'`)
+    ).rejects.toThrow(`${PLATFORM_SLUG} project set nested --settings '{"keyPrefixes":["ABC"]}'`)
   })
 
   test('refuses an unusable title at the shared creation boundary', async () => {
@@ -716,6 +717,6 @@ describe('local-authoritative task writes', () => {
   test('a never-bound project with no key prefix is refused locally', async () => {
     await expect(
       createTask({ project: 'nested', title: 'Cannot number this locally' }),
-    ).rejects.toThrow(`orch project set nested --settings '{"keyPrefixes":["ABC"]}'`)
+    ).rejects.toThrow(`${PLATFORM_SLUG} project set nested --settings '{"keyPrefixes":["ABC"]}'`)
   })
 })

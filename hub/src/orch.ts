@@ -19,16 +19,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
-  type DocAudiences,
-  type DocForm,
-  type DocKind,
-  type DocStatus,
   type FilingDocScope,
 } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
@@ -93,6 +90,13 @@ import {
   BoardStatusResultSchema,
   BoardThreadResultSchema,
 } from './board-contract.ts'
+import {
+  type DocListFilters,
+  type DocRevisionMetadata,
+  type DocSetInput,
+  type DocSubjects,
+  docArgv,
+} from './orch-doc-argv.ts'
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
@@ -103,10 +107,10 @@ const RUNS_DEADLINE_MS = 60_000
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
   const override = process.env.HUB_ORCH?.trim() || null
-  const checkout = assetPath('bin', 'orch')
+  const checkout = assetPath('bin', PLATFORM_SLUG)
   if (override && usableExecutable(override)) return override
   if (usableExecutable(checkout)) return checkout
-  const found = Bun.which('orch', { PATH: process.env.PATH })
+  const found = Bun.which(PLATFORM_SLUG, { PATH: process.env.PATH })
   if (found) return found
   throw missingBinary(override, checkout)
 }
@@ -123,9 +127,9 @@ function usableExecutable(candidate: string): boolean {
 
 function missingBinary(override: string | null, checkout: string): Error {
   return new Error(
-    `orch executable unavailable: HUB_ORCH override ${override ?? 'unset'}; ` +
+    `${PLATFORM_SLUG} executable unavailable: HUB_ORCH override ${override ?? 'unset'}; ` +
       `checkout executable ${checkout}; PATH lookup found nothing. ` +
-      'Set HUB_ORCH to an executable file, restore the checkout executable, or add orch to PATH.',
+      `Set HUB_ORCH to an executable file, restore the checkout executable, or add ${PLATFORM_SLUG} to PATH.`,
   )
 }
 
@@ -181,7 +185,7 @@ async function orchProcess(
     acceptedOutput?: (output: string) => boolean
   } = {},
 ): Promise<string> {
-  const command = bottegaEntryArgv('orch', resolveOrchExecutable)
+  const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const env = { ...process.env, ...opts.env }
   for (const key of opts.unsetEnv ?? []) delete env[key]
   const proc = Bun.spawn([...command, ...args], {
@@ -206,13 +210,14 @@ async function orchProcess(
     ])
     if (killedAtDeadline)
       throw new Error(
-        `hub killed orch ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
+        `hub killed ${PLATFORM_SLUG} ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
       )
     if (code !== 0) {
       const accepted =
         opts.acceptedExitCodes?.includes(code) &&
         (opts.acceptedOutput === undefined || opts.acceptedOutput(out.trim()))
-      if (!accepted) throw new Error(err.trim() || out.trim() || `orch ${args[0]} exited ${code}`)
+      if (!accepted)
+        throw new Error(err.trim() || out.trim() || `${PLATFORM_SLUG} ${args[0]} exited ${code}`)
     }
     return out.trim()
   } finally {
@@ -236,7 +241,7 @@ async function json<T>(
   try {
     value = JSON.parse(out)
   } catch {
-    throw new Error(`orch ${args.slice(0, 2).join(' ')} returned invalid JSON`)
+    throw new Error(`${PLATFORM_SLUG} ${args.slice(0, 2).join(' ')} returned invalid JSON`)
   }
   return schema.parse(value)
 }
@@ -249,7 +254,7 @@ export async function jsonDocument<T>(
   try {
     return JSON.parse(out) as T
   } catch {
-    throw new Error(`orch ${args.slice(0, 2).join(' ')} returned invalid JSON`)
+    throw new Error(`${PLATFORM_SLUG} ${args.slice(0, 2).join(' ')} returned invalid JSON`)
   }
 }
 
@@ -262,7 +267,7 @@ export function decodeRunsJson(text: string): OrchRunLineData[] {
     try {
       value = JSON.parse(line)
     } catch {
-      throw new Error(`orch runs --json line ${index + 1} is not JSON`)
+      throw new Error(`${PLATFORM_SLUG} run list --json line ${index + 1} is not JSON`)
     }
     const record =
       value && typeof value === 'object' && !Array.isArray(value)
@@ -293,40 +298,47 @@ export function decodeRunsJson(text: string): OrchRunLineData[] {
       path += typeof part === 'number' ? `[${part}]` : `${path ? '.' : ''}${String(part)}`
     }
     if (!path) path = 'record'
-    throw new Error(`orch runs --json line ${index + 1} missing ${path}`)
+    throw new Error(`${PLATFORM_SLUG} run list --json line ${index + 1} missing ${path}`)
   }
   return rows
 }
 
 export async function readRuns(since: string): Promise<OrchRun[]> {
   const rows = decodeRunsJson(
-    await orchProcess(['runs', '--json', '--since', since], RUNS_DEADLINE_MS),
+    await orchProcess(['run', 'list', '--json', '--since', since], RUNS_DEADLINE_MS),
   )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
-  json(['ruling', 'list', '--json', '--kind', 'workflow', '--since', since], RulingListSchema)
+  json(
+    ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
+    RulingListSchema,
+  )
 
 export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
   return decodeRunsJson(
     await orchProcess(
-      ['runs', '--json', ...ids.flatMap((id) => ['--id', String(id)])],
+      ['run', 'list', '--json', ...ids.flatMap((id) => ['--id', String(id)])],
       RUNS_DEADLINE_MS,
     ),
   )
 }
 
 export const waiting = (): Promise<OperatorWaitingItem[]> =>
-  json(['waiting', '--json'], z.array(OperatorWaitingItemSchema))
+  json(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
 
 export const claimWaitingNotifications = () =>
-  json(['waiting', '--claim-notifications', '--json'], z.array(ClaimedOperatorNotificationSchema))
+  json(
+    ['run', 'waiting', '--claim-notifications', '--json'],
+    z.array(ClaimedOperatorNotificationSchema),
+  )
 
 export type WaitingRuling = { questionId: number; ruling: string }
 
 export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
+  'question',
   'answer',
   String(runId),
   ...rulings.flatMap(({ questionId, ruling }) => [`--q${questionId}`, ruling]),
@@ -354,6 +366,7 @@ export type FileWaitingRuling = {
 }
 
 export const fileRulingArgv = (input: FileWaitingRuling): string[] => [
+  'question',
   'ruling',
   'file',
   String(input.questionId),
@@ -375,10 +388,10 @@ export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileR
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
-  json(['blockers', '--days', String(days), '--json'], OrchBlockersSchema)
+  json(['machine', 'blockers', '--days', String(days), '--json'], OrchBlockersSchema)
 
 export function projectList(): OrchProject[] {
-  const command = bottegaEntryArgv('orch', resolveOrchExecutable)
+  const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const proc = Bun.spawnSync([...command, 'project', 'list', '--json'], {
     env: { ...process.env },
     stdout: 'pipe',
@@ -388,7 +401,7 @@ export function projectList(): OrchProject[] {
   const out = proc.stdout.toString()
   const err = proc.stderr.toString().trim()
   if (proc.exitCode !== 0)
-    throw new Error(err || out.trim() || `orch project exited ${proc.exitCode}`)
+    throw new Error(err || out.trim() || `${PLATFORM_SLUG} project exited ${proc.exitCode}`)
   try {
     return OrchProjectListSchema.parse(JSON.parse(out))
   } catch (cause) {
@@ -461,7 +474,8 @@ export type BranchPruneResult = {
 /** Ask orchestrator to classify a task's branches without changing them. */
 export const classifyTaskBranches = (project: string, key: string): Promise<BranchPruneResult> =>
   jsonDocument<BranchPruneResult>([
-    'branches',
+    'tree',
+    'branch',
     'prune',
     '--project',
     project,
@@ -474,7 +488,8 @@ export const classifyTaskBranches = (project: string, key: string): Promise<Bran
 /** Ask orchestrator to prune a closed task's run-minted branches. */
 export const pruneTaskBranches = (project: string, key: string): Promise<BranchPruneResult> =>
   jsonDocument<BranchPruneResult>([
-    'branches',
+    'tree',
+    'branch',
     'prune',
     '--project',
     project,
@@ -496,10 +511,10 @@ export const releaseTaskClaims = (project: string, key: string): Promise<{ relea
   ])
 
 export const state = (days: number | null) =>
-  json(['state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
+  json(['run', 'state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
 
 export const health = (days: number): Promise<HarnessHealth> =>
-  json(['health', '--days', String(days), '--json'], HarnessHealthSchema)
+  json(['machine', 'health', '--days', String(days), '--json'], HarnessHealthSchema)
 
 export type OrchJob = {
   name: string
@@ -521,15 +536,15 @@ export type OrchAgentDefinition = {
   timeoutMs: number
 }
 
-export const jobs = () => jsonDocument<OrchJob[]>(['jobs', '--json'])
-export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agents', '--json'])
+export const jobs = () => jsonDocument<OrchJob[]>(['agent', 'jobs', '--json'])
+export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agent', 'list', '--json'])
 
 /** Dispatch a curator like any other read-only run; its output remains the run record. */
 export const dispatchNoteCurator = (cwd: string, prompt: string): Promise<string> =>
-  orchProcess(['do', 'understand', '--cwd', cwd], 0, { stdin: prompt })
+  orchProcess(['run', 'start', 'understand', '--cwd', cwd], 0, { stdin: prompt })
 
 export const run = (id: number): Promise<OrchRunDetail> =>
-  json(['run', String(id)], OrchRunDetailSchema)
+  json(['run', 'show', String(id)], OrchRunDetailSchema)
 export const runDetail = run
 
 /**
@@ -683,13 +698,14 @@ const SettingsCheckSchema = z.object({
   ),
 })
 
-export const contextArgv = (cwd: string) => ['context', '--cwd', cwd, '--json']
+export const contextArgv = (cwd: string) => ['agent', 'context', '--cwd', cwd, '--json']
 export const configArgv = (
   op: 'get' | 'list' | 'set',
   key?: string,
   value?: string,
   expectedRowVersion?: number | null,
 ) => [
+  'machine',
   'config',
   op,
   ...(key ? [key] : []),
@@ -698,6 +714,7 @@ export const configArgv = (
   '--json',
 ]
 export const configDeleteArgv = (key: string, expectedRowVersion?: number) => [
+  'machine',
   'config',
   'delete',
   key,
@@ -708,6 +725,7 @@ export const machineConfigArgv = (
   key?: string,
   value?: string,
 ) => [
+  'machine',
   'config',
   operation,
   ...(key ? [key] : []),
@@ -716,6 +734,7 @@ export const machineConfigArgv = (
   ...(operation === 'delete' ? [] : ['--json']),
 ]
 export const settingsCheckArgv = (target: { user: true } | { project: string }) => [
+  'machine',
   'settings',
   'render',
   '--check',
@@ -724,6 +743,7 @@ export const settingsCheckArgv = (target: { user: true } | { project: string }) 
 ]
 
 export const settingsPermissionArgv = (input: SettingsPermissionInput) => [
+  'machine',
   'settings',
   'permission',
   input.operation,
@@ -739,6 +759,7 @@ export const settingsPermissionArgv = (input: SettingsPermissionInput) => [
 ]
 
 export const machinePermissionListArgv = () => [
+  'machine',
   'settings',
   'permission',
   'list',
@@ -747,6 +768,7 @@ export const machinePermissionListArgv = () => [
 ]
 
 export const machinePermissionArgv = (input: MachinePermissionInput) => [
+  'machine',
   'settings',
   'permission',
   input.operation,
@@ -846,176 +868,6 @@ export const machinePermission = (input: MachinePermissionInput) =>
   json(machinePermissionArgv(input), MachinePermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-
-export type DocSubjects = {
-  project: string[]
-  stack: string[]
-  agent: string[]
-  job: string[]
-}
-
-export type DocListFilters = {
-  scope?: string
-  subject?: string | null
-  audience?: DocAudience
-  status?: DocStatus
-  kind?: DocKind
-  match?: string
-  bodyMatch?: string
-}
-
-export type DocSetInput = {
-  scope: string
-  subject: string | null
-  slug: string
-  title: string
-  body: string
-  reason: string
-  delivery?: 'inject' | 'demand'
-  audiences?: DocAudiences
-  status?: DocStatus
-  kind?: DocKind
-  replacementSlug?: string | null
-  parentSlug?: string | null
-  form?: DocForm | null
-  articleSubject?: string | null
-  relatedSubjects?: string[]
-  sourceFiles?: string[]
-  position?: number
-  expectedRevision?: string
-}
-
-export type DocRevisionMetadata = {
-  id: number
-  op: 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
-  author: string
-  authorName?: string | null
-  reason: string
-  at: string
-  bytes: number
-  status?: DocStatus
-  kind?: DocKind
-  replacement_slug?: string | null
-}
-
-export type DocArgvInput = {
-  scope?: string
-  subject?: string | null
-  slug?: string
-  title?: string
-  body?: string
-  reason?: string
-  delivery?: 'inject' | 'demand'
-  audience?: DocAudience
-  audiences?: DocAudiences
-  status?: DocStatus
-  kind?: DocKind
-  replacementSlug?: string | null
-  match?: string
-  bodyMatch?: string
-  parentSlug?: string | null
-  form?: DocForm | null
-  articleSubject?: string | null
-  relatedSubjects?: string[]
-  sourceFiles?: string[]
-  position?: number
-  expectedRevision?: string
-  user?: boolean
-}
-
-export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
-
-function subjectFlags(subject: string | null | undefined): string[] {
-  return subject ? ['--subject', subject] : []
-}
-
-function docAddressFlags(input: DocArgvInput): string[] {
-  return [
-    ...(input.scope ? ['--scope', input.scope] : []),
-    ...(input.user ? ['--user'] : subjectFlags(input.subject)),
-  ]
-}
-
-function nullableDocFlag(value: string | null | undefined, flag: string, clearFlag: string) {
-  if (value === null) return [clearFlag]
-  return value ? [flag, value] : []
-}
-
-function docListFlags(values: string[] | undefined, flag: string, clearFlag: string) {
-  if (values?.length === 0) return [clearFlag]
-  return values?.flatMap((value) => [flag, value]) ?? []
-}
-
-function docSetFlags(input: DocArgvInput): string[] {
-  return [
-    ...(input.delivery ? ['--delivery', input.delivery] : []),
-    ...(input.audiences ? ['--audience', input.audiences.join(',')] : []),
-    ...(input.status ? ['--status', input.status] : []),
-    ...(input.kind ? ['--kind', input.kind] : []),
-    ...(input.replacementSlug ? ['--replacement', input.replacementSlug] : []),
-    ...nullableDocFlag(input.parentSlug, '--parent', '--no-parent'),
-    ...nullableDocFlag(input.form, '--form', '--no-form'),
-    ...nullableDocFlag(input.articleSubject, '--article-subject', '--no-article-subject'),
-    ...docListFlags(input.relatedSubjects, '--related-subject', '--no-related-subjects'),
-    ...docListFlags(input.sourceFiles, '--source-file', '--no-source-files'),
-    ...(input.position !== undefined ? ['--position', String(input.position)] : []),
-    ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
-  ]
-}
-
-export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
-  switch (op) {
-    case 'list':
-      return [
-        'doc',
-        'list',
-        ...docAddressFlags(input),
-        ...(input.audience ? ['--audience', input.audience] : []),
-        ...(input.status ? ['--status', input.status] : []),
-        ...(input.kind ? ['--kind', input.kind] : []),
-        ...(input.match !== undefined ? ['--match', input.match] : []),
-        ...(input.bodyMatch !== undefined ? ['--body-match', input.bodyMatch] : []),
-        '--json',
-      ]
-    case 'get':
-      return [
-        'doc',
-        'show',
-        input.slug!,
-        ...docAddressFlags(input),
-        ...(input.audience ? ['--audience', input.audience] : []),
-        '--json',
-      ]
-    case 'set':
-      return [
-        'doc',
-        'set',
-        input.slug!,
-        ...docAddressFlags(input),
-        '--title',
-        input.title!,
-        '--reason',
-        input.reason!,
-        ...docSetFlags(input),
-        '--json',
-      ]
-    case 'remove':
-      return [
-        'doc',
-        'rm',
-        input.slug!,
-        ...docAddressFlags(input),
-        '--reason',
-        input.reason!,
-        ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
-        '--json',
-      ]
-    case 'history':
-      return ['doc', 'history', input.scope!, input.subject ?? '-', input.slug!, '--json']
-    case 'subjects':
-      return ['doc', 'subjects', '--json']
-  }
-}
 
 export const docList = (filters: DocListFilters = {}) =>
   jsonDocument<DocRow[]>(docArgv('list', filters))

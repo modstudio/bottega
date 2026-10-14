@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { requireDatabase } from './db.ts'
 import {
   hostedCreateReportSubscription,
@@ -66,7 +67,7 @@ function subscribeScope(options: ReportOptions) {
   if (options.scope === 'members')
     return { kind: 'members' as const, userIds: options.member ?? [] }
   throw new Error(
-    'usage: hub report subscribe --scope space|project|members [--project NAME] [--member USER_ID] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]',
+    `usage: ${PLATFORM_SLUG} report subscribe --scope space|project|members [--project NAME] [--member USER_ID] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]`,
   )
 }
 
@@ -86,7 +87,7 @@ async function reportSubscribe(options: ReportOptions): Promise<void> {
 export function registerReportCommands(program: Command): void {
   const report = program.command('report').action(() => {
     open()
-    throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push|send')
+    throw new Error(`usage: ${PLATFORM_SLUG} report subscribe|subscriptions|unsubscribe|push|send`)
   })
   report
     .command('subscribe')

@@ -1,6 +1,7 @@
 // concern: board-mode-decision
 /** Decides where one board operation belongs from plain install and operation facts. */
 
+import { PLATFORM_SLUG } from './brand.ts'
 export type BoardLocality = 'machine-audience' | 'suggestion' | 'own-architect' | 'shared'
 
 export type BoardModeDecision = { mode: 'local' | 'hosted' } | { mode: 'refused'; reason: string }
@@ -19,8 +20,7 @@ export function classifyBoardId(id: string): BoardIdShape {
   return 'invalid'
 }
 
-const missingHostedConfiguration =
-  'this install has adopted the hosted board but ORCH_RECORD_API_URL is not configured; configure the hosted record API and sign in with orch record sign-in'
+const missingHostedConfiguration = `this install has adopted the hosted board but ORCH_RECORD_API_URL is not configured; configure the hosted record API and sign in with ${PLATFORM_SLUG} record sign-in`
 
 function isHostedConfigured(value: HostedConfigured): boolean {
   return typeof value === 'function' ? value() : value

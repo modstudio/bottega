@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { upsertProject } from '../project/projects.ts'
 import { subjectCommand } from './subject-commands.ts'
 
@@ -16,7 +17,7 @@ test('list presents an empty registered project as one line while JSON stays an 
   })
   expect(lines).toEqual([
     [
-      'project alpha has no subjects; add one with: orch subject add alpha <name> --definition <definition>',
+      `project alpha has no subjects; add one with: ${PLATFORM_SLUG} doc subject add alpha <name> --definition <definition>`,
     ],
   ])
 
@@ -39,6 +40,6 @@ test('rename, define, and retire unknown subjects name the list command that cle
   ] as const) {
     await expect(
       subjectCommand(verb, ['subject', verb, 'alpha', ...tail], flags, presentation),
-    ).rejects.toThrow('orch subject list alpha')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc subject list alpha`)
   }
 })

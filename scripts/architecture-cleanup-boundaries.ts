@@ -3,6 +3,7 @@ export const cleanupBoundarySpecs = [
     name: 'cleanup-sweep-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'node:fs',
       'node:path',
       './cleanup.ts',
@@ -39,5 +40,13 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  },
+  {
+    name: 'cleanup-sweep-decisions-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
+    allowed: ['../../../shared/brand.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep cleanup sweep decisions pure and independent of filesystems, stores, commands, and processes.',
   },
 ] as const

@@ -1,10 +1,10 @@
 // concern: review-round-budget
 /** Knows the per-tier round ceiling and measures branch use from eligible review evidence. */
 import { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
-
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
 export type ReviewRoundBudgetDecision = {
@@ -224,7 +224,8 @@ export function reviewBudgetCommand(
   flags: Flags,
   presentation: Presentation,
 ): void {
-  if (argv.length !== 2) throw new Error('orch review budget [--since <ISO date>] [--json]')
+  if (argv.length !== 2)
+    throw new Error(`${PLATFORM_SLUG} review budget [--since <ISO date>] [--json]`)
   const since = flags.flag('since')
   if (since && !Number.isFinite(Date.parse(since))) throw new Error('--since must be an ISO date')
   const database = new Database(DB_PATH, { readonly: true })

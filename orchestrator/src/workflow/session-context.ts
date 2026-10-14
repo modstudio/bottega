@@ -2,7 +2,7 @@
 /** Owns the architect session autonomy slice. Must not own CLI grammar or hook assembly. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
@@ -19,7 +19,7 @@ import { HOSTED_AUTONOMY_SCOPE_NAMES, resolveProjectAutonomy } from './autonomy-
 import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 
-const AUTONOMY_SETTER = 'orch config set'
+const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
 
 type ArchitectSessionContext =
   | { registered: false }

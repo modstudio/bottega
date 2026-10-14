@@ -20,7 +20,7 @@ if (( $# != 1 )); then
   exit 1
 fi
 
-release_command="orch release bottega --rung hosted-$APP"
+release_command="bottega release run bottega --rung hosted-$APP"
 for release_variable in ORCH_RELEASE_PROJECT ORCH_RELEASE_RUNG ORCH_RELEASE_COMMIT; do
   if [[ -z "${!release_variable:-}" ]]; then
     echo "REFUSE: $release_variable is unset or empty; deploy with $release_command" >&2
@@ -48,7 +48,7 @@ if [[ "$ORCH_RELEASE_COMMIT" != "$commit" ]]; then
   exit 1
 fi
 if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=no)" ]]; then
-  echo "REFUSE: tracked files differ from the commit being deployed; commit or stash them, then release with orch release" >&2
+  echo "REFUSE: tracked files differ from the commit being deployed; commit or stash them, then release with bottega release run" >&2
   exit 1
 fi
 
@@ -69,7 +69,7 @@ fi
 
 cd "$PROJECT_ROOT"
 
-if ! ORCH_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/orch" record migrate; then
+if ! ORCH_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/bottega" record migrate; then
   echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
   exit 1
 fi

@@ -1,6 +1,7 @@
 // concern: tracked worktree reseeding
 /** Resolves one existing tree's recorded owner and runs its project-defined reseed hook. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolvedPathsEqual } from '../../../shared/git.ts'
 import { db, sessionId } from '../database/db.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
@@ -11,7 +12,6 @@ import type { TrackedRecipe } from './recipe-schema.ts'
 import { runStep } from './recipe-step.ts'
 import { readSnapshot } from './tracked-recipe.ts'
 import { refreshStepContext, refreshTarget, registeredRefreshTarget } from './tree-refresh.ts'
-
 export function reseedStep(recipe: TrackedRecipe, recipePath: string) {
   const step = recipe.seeds?.reseed
   if (step) return step
@@ -29,7 +29,7 @@ export function reseedSeed(
   if (selected !== null && selected !== undefined) return selected
   const guidance = choices.map((choice) => JSON.stringify(choice)).join(', ')
   throw new Error(
-    `this tree has no recorded launch seed; run orch tree reseed <seed> (recipe choices: ${guidance})`,
+    `this tree has no recorded launch seed; run ${PLATFORM_SLUG} tree reseed <seed> (recipe choices: ${guidance})`,
   )
 }
 
@@ -57,7 +57,7 @@ function owningChainParticipants(rootRunId: number): ReseedChainParticipant[] {
 function reseedTree(path: string, requestedSeed: string | undefined): string[] {
   const registered = registeredRefreshTarget(path)
   if (resolvedPathsEqual(registered.treeRoot, registered.main)) {
-    throw new Error(`orch tree reseed refuses the main checkout ${registered.treeRoot}`)
+    throw new Error(`${PLATFORM_SLUG} tree reseed refuses the main checkout ${registered.treeRoot}`)
   }
   const { project, treeRoot, recipePath } = refreshTarget(registered)
   const roots = recordedChainRootsForWorktree(treeRoot)
@@ -105,7 +105,7 @@ export function treeReseedCommand(
 ): void {
   const registered = registeredRefreshTarget(path)
   if (resolvedPathsEqual(registered.treeRoot, registered.main)) {
-    throw new Error(`orch tree reseed refuses the main checkout ${registered.treeRoot}`)
+    throw new Error(`${PLATFORM_SLUG} tree reseed refuses the main checkout ${registered.treeRoot}`)
   }
   withWorktreeLease(
     registered.project.path,

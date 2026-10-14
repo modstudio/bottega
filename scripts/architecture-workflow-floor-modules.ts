@@ -16,11 +16,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-format.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/ship-to.ts',
     './autonomy.ts',
     './workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-arguments.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
     './workflow-cursor-format.ts',
@@ -40,8 +42,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-transition.ts',
     './workflows.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-floor.ts', []),
+  module('orchestrator/src/workflow/workflow-floor.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
+    '../../../shared/brand.ts',
     './autonomy.ts',
     './workflow-floor.ts',
   ]),
@@ -60,6 +63,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:child_process',
     'node:fs',
     'node:path',
+    '../../../shared/brand.ts',
     '../../../shared/docs.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
@@ -82,6 +86,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/workflow/workflow-probe.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:child_process',
     'node:fs',
@@ -95,6 +100,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../sandbox/sandbox-runtime.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:crypto',
     '../database/db.ts',

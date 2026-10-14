@@ -13,21 +13,21 @@ set -uo pipefail
 GO=0; [[ "${1:-}" == "--go" ]] && GO=1
 MODEL="${MODEL:-Qwen/Qwen3.6-35B-A3B-FP8}"
 PORT="${PORT:-8000}"          # on the host; the client tunnels a local port here
-# Why this image: orch doc show local-model-host-hardware --scope machine
+# Why this image: bottega doc show local-model-host-hardware --scope machine
 IMAGE="${IMAGE:-vllm/vllm-openai:cu130-nightly}"
-# Models path on this host: orch doc show local-model-host-hardware --scope machine
+# Models path on this host: bottega doc show local-model-host-hardware --scope machine
 : "${MODELS_DIR:?set MODELS_DIR to the models directory on the host}"
-# GPU_UTIL on this host: orch doc show local-model-host-hardware --scope machine
+# GPU_UTIL on this host: bottega doc show local-model-host-hardware --scope machine
 GPU_UTIL="${GPU_UTIL:-0.50}"
 # The context window, and it is a ROUTING input: a job whose working set will not
 # fit excludes this agent outright, so the number here decides what the local
 # model is allowed to do. Keep it in step with the registered agent's
-# contextTokens — `orch doctor` reads the served value back and reports a
+# contextTokens — `bottega machine doctor` reads the served value back and reports a
 # mismatch rather than letting the two drift.
-# Why this value on this host: orch doc show local-model-host-hardware --scope machine
+# Why this value on this host: bottega doc show local-model-host-hardware --scope machine
 MAX_LEN="${MAX_LEN:-163840}"
 # Most output tokens any one request may generate, and what a request naming no
-# limit gets: orch doc show local-model-host-hardware --scope machine
+# limit gets: bottega doc show local-model-host-hardware --scope machine
 MAX_OUTPUT="${MAX_OUTPUT:-32768}"
 
 ok=1
@@ -156,5 +156,5 @@ On the Mac:
   ssh -N -L ${PORT}:127.0.0.1:${PORT} <host-alias> &
   export ORCH_MODEL_HOST_URL=http://127.0.0.1:${PORT}/v1
   export ORCH_MODEL_HOST_MODEL='${MODEL}'
-  orch doctor
+  bottega machine doctor
 EOF

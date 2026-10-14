@@ -2,6 +2,7 @@
 /** Owns the atomic hosted move of one project's attributable rows. */
 
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { currentRecordUserSession } from './record-session.ts'
@@ -80,7 +81,7 @@ export async function moveRecordProjectSpace(input: {
   const source = input.source ?? current.activeSpaceId
   if (!source) {
     throw new Error(
-      'record session has no active source space; run `orch record space switch <slug>`',
+      `record session has no active source space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
     )
   }
 
@@ -94,14 +95,14 @@ export async function moveRecordProjectSpace(input: {
       `
       if (!available[0]?.available) {
         throw new Error(
-          'record migrations are behind this command; run `orch record migrate`, then retry',
+          `record migrations are behind this command; run \`${PLATFORM_SLUG} record migrate\`, then retry`,
         )
       }
       const applied = await tx`SELECT record_applied_migration_count() AS count`
       const shipped = recordMigrationCount()
       if (Number(applied[0]?.count ?? 0) !== shipped) {
         throw new Error(
-          `record migrations are behind this command (applied ${Number(applied[0]?.count ?? 0)}, shipped ${shipped}); run \`orch record migrate\`, then retry`,
+          `record migrations are behind this command (applied ${Number(applied[0]?.count ?? 0)}, shipped ${shipped}); run \`${PLATFORM_SLUG} record migrate\`, then retry`,
         )
       }
       const rows = await tx`

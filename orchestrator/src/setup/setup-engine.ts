@@ -1,7 +1,7 @@
 // concern: setup-engine
 /** Turns setup facts into proposals and ruling-shaped questions. Pure: no store, process, or filesystem. */
 
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
@@ -222,32 +222,32 @@ function builtInAgentNotice(
     return harness?.path && harness.auth === 'signed-in'
       ? {
           message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
-          fix: `orch agent set ${name} --enabled true`,
+          fix: `${PLATFORM_SLUG} agent show set ${name} --enabled true`,
         }
       : null
   }
   if (!harness?.path) {
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
-      fix: `install ${name}, or orch agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+      fix: `install ${name}, or ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason "${name} is not installed on this machine"`,
     }
   }
   if (harness.auth === 'signed-out') {
     return {
       message: `${name} agent is enabled but the ${name} harness is not signed in`,
-      fix: `sign in to ${name}, or orch agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+      fix: `sign in to ${name}, or ${PLATFORM_SLUG} agent show set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
     }
   }
   if (harness.auth === 'unknown') {
     return {
       message: `the sign-in state of ${name} could not be established`,
-      fix: `check ${name} sign-in and re-run orch setup plan`,
+      fix: `check ${name} sign-in and re-run ${PLATFORM_SLUG} machine setup plan`,
     }
   }
   return !agent.probePassed
     ? {
         message: `${name} harness is installed and signed in but the ${name} agent cannot take repository work until it is probed`,
-        fix: `orch agent probe ${name}`,
+        fix: `${PLATFORM_SLUG} agent show probe ${name}`,
       }
     : null
 }
@@ -266,7 +266,7 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
     ) {
       notices.push({
         message: `${candidate.harness} harness is installed but unregistered`,
-        fix: `orch agent add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
+        fix: `${PLATFORM_SLUG} agent show add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
       })
     }
   }
@@ -290,7 +290,7 @@ function proposeProjectToolchain(
   if (!current?.settings.gate && !gate) {
     notices.push({
       message: `no gate was detected for ${repository.name}`,
-      fix: `orch project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+      fix: `${PLATFORM_SLUG} project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
     })
   }
   const recipeContent = inferredRecipeContent(repository)

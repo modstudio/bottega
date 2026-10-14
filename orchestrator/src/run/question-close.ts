@@ -2,12 +2,12 @@
 /** Knows when and how an unanswered question is closed. Must not know CLI grammar. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
-
 export const QUESTION_CLOSE_CHAIN_STOPPED = 'chain-stopped'
 export const QUESTION_CLOSE_CHAIN_VOIDED = 'chain-voided'
 export const QUESTION_CLOSE_CHAIN_STALE = 'chain-stale'
@@ -152,11 +152,13 @@ export function closeQuestionByOperator(
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)
   if (row.workflow_cursor_id !== null && row.cursor_state === 'awaiting-ruling') {
     throw new Error(
-      `question ${questionId} belongs to a workflow awaiting a ruling; use orch workflow rule or orch workflow abandon`,
+      `question ${questionId} belongs to a workflow awaiting a ruling; use ${PLATFORM_SLUG} workflow rule or ${PLATFORM_SLUG} workflow abandon`,
     )
   }
   if (row.run_id !== null && (row.latest_status === 'running' || row.latest_status === 'asking')) {
-    throw new Error(`question ${questionId}'s chain is live; use orch answer ${row.root_id}`)
+    throw new Error(
+      `question ${questionId}'s chain is live; use ${PLATFORM_SLUG} question answer ${row.root_id}`,
+    )
   }
   writeTransaction(() => {
     if (closeQuestions(database, [questionId], `${QUESTION_CLOSE_OPERATOR}: ${text}`) !== 1) {

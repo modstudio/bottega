@@ -1,5 +1,5 @@
 // concern: cli
-/** The `orch do` CLI options, shared with catalogue command validation. */
+/** The `bottega run start` CLI options, shared with catalogue command validation. */
 export const ORCH_DO_OPTIONS = [
   { flags: '--agent <value>', name: 'agent', value: 'required' },
   { flags: '--avoid <value>', name: 'avoid', value: 'required' },

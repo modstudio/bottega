@@ -1,6 +1,7 @@
 // concern: workflow cursor arguments
 /** Merges late workflow arguments and records the explicitly rebindable changes. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
@@ -79,7 +80,7 @@ export function applyCursorArguments(
   )
   if (decision.action === 'refuse')
     throw new Error(
-      `${decision.reason}; orch workflow abandon${workflowCursorReference(row.id).cli} --reason "<why>"`,
+      `${decision.reason}; ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.id).cli} --reason "<why>"`,
     )
   const encoded = JSON.stringify(decision.args)
   if (decision.rebindings.length) {

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
 import { classify, type FailureKind } from '../failure/failure.ts'
@@ -94,7 +95,7 @@ async function collectProbe(name: string, agent: ReturnType<typeof rowAgent>, sc
         await transport.prompt(handle, VENDOR_PROBE_PROMPT)
         return handle.collect()
       })(),
-      operationName: `${agent.harness} vendor probe; rerun orch probe ${name}`,
+      operationName: `${agent.harness} vendor probe; rerun ${PLATFORM_SLUG} agent probe ${name}`,
       timeoutMs: agent.timeoutMs,
       onTimeout: () => transport.cancel(handle),
     })

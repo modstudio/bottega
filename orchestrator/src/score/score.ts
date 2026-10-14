@@ -34,7 +34,7 @@ export type Fidelity = 'drifted' | 'partial' | 'faithful'
  *
  * Deliberately coarse. Three levels an axis is what a person can apply the same
  * way twice, months apart, which matters more than resolution when the whole
- * corpus is 1,425 judgments (`orch stats`, measured 2026-09-06) and five
+ * corpus is 1,425 judgments (`bottega agent stats`, measured 2026-09-06) and five
  * decide a route.
  */
 export const WEIGHT: Record<Delivery, Record<Quality, number> | number> = {
@@ -126,7 +126,7 @@ export const FIDELITY = ['drifted', 'partial', 'faithful'] as const satisfies re
  * The rule this enforces is already written down — "only that session can judge
  * it, because only it read the output" — and being written down was not enough.
  * Two sessions scored each other's runs within one hour on 2026-08-31, both by
- * the same route: `orch do` prints a run id only when a long run FINISHES, so
+ * the same route: `bottega run start` prints a run id only when a long run FINISHES, so
  * during a parallel fan-out you hold outputs with no ids, and "my second block
  * of ids continues my first" is the obvious inference. It is wrong precisely
  * when a concurrent session's runs have interleaved into the gap, which is the

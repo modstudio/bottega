@@ -1,5 +1,7 @@
 // concern: task-key-lookup
 /** Reads a task through the tracker protocol declared by its registered project. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
 import {
@@ -32,7 +34,7 @@ export function classifyHubTaskLookup(
   stderr: string,
 ): TaskKeyLookupResult {
   if (code === 0) return { state: 'found' }
-  const detail = stderr.trim() || stdout.trim() || `hub exited ${code}`
+  const detail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`
   if (detail.split('\n').some((line) => line.trim() === `no task ${key}`)) {
     return { state: 'not-found' }
   }
@@ -42,7 +44,15 @@ export function classifyHubTaskLookup(
 async function lookupHubTask(project: Project, key: string): Promise<TaskKeyLookupResult> {
   try {
     const child = Bun.spawn(
-      [...bottegaEntryArgv('hub'), 'task', 'show', key, '--project', project.name, '--json'],
+      [
+        ...bottegaEntryArgv(PLATFORM_SLUG),
+        'task',
+        'show',
+        key,
+        '--project',
+        project.name,
+        '--json',
+      ],
       { cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
     )
     const [stdout, stderr, code] = await Promise.all([
@@ -52,7 +62,10 @@ async function lookupHubTask(project: Project, key: string): Promise<TaskKeyLook
     ])
     return classifyHubTaskLookup(key, code, stdout, stderr)
   } catch (cause) {
-    return { state: 'unreachable', condition: `hub task lookup failed: ${errorText(cause)}` }
+    return {
+      state: 'unreachable',
+      condition: `${PLATFORM_SLUG} task lookup failed: ${errorText(cause)}`,
+    }
   }
 }
 

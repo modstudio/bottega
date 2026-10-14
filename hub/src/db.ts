@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
@@ -147,7 +147,7 @@ export function closeDatabaseForFixture(): void {
   schemaReload = null
 }
 
-/** Long-lived processes (hub serve) reload instead of refusing a write after a migrate. */
+/** Long-lived processes (bottega dashboard start) reload instead of refusing a write after a migrate. */
 export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
   schemaReload = onReload
 }
@@ -166,7 +166,13 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     return db()
   }
   if (!forWrite) return d
-  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after hub migrate'))
+  throw new Error(
+    staleWriteRefusal(
+      actual,
+      opened,
+      `restart this process after ${PLATFORM_SLUG} machine migrate`,
+    ),
+  )
 }
 
 export function db(): Database {
@@ -217,7 +223,7 @@ export function unauthorizedHubMigrationMessage(path = DB_PATH): string {
   return (
     `refusing to migrate the default store: cannot establish an authorized ${PLATFORM_NAME} installation: ${path}\n` +
     'invariant: A default store is created or migrated only by a checkout or an installed distribution.\n' +
-    `cleared by: run hub migrate from a checkout or reinstall ${PLATFORM_NAME}`
+    `cleared by: run ${PLATFORM_SLUG} machine migrate from a checkout or reinstall ${PLATFORM_NAME}`
   )
 }
 
@@ -271,7 +277,7 @@ export function migrateDatabase(): {
     const identity = create ? machineId() : storedMachineId()
     if (!identity)
       throw new Error(
-        'refusing to migrate hub before carrying over the machine identity; run orch migrate, then hub migrate',
+        `refusing to migrate hub before carrying over the machine identity; run ${PLATFORM_SLUG} machine migrate`,
       )
     const versions = applyMigrations(d, undefined, { machine_id: identity })
     const repairs = [...repairCounts()]

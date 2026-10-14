@@ -209,7 +209,7 @@ describe('operational monitor conditions', () => {
             condition.kind === 'retained-worktree-docker-resource' &&
             condition.subject === `app-orch-${runId}-web`,
         ),
-      ).toMatchObject({ action: `run orch close-out ${runId}` })
+      ).toMatchObject({ action: `run ${PLATFORM_SLUG} run close-out ${runId}` })
     } finally {
       spawn.mockRestore()
     }
@@ -325,7 +325,7 @@ describe('operational monitor conditions', () => {
   test('two sessions stale on one task are two conditions and do not collide', async () => {
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
       const argv = cmd.map(String)
-      if (argv.includes('rulings')) {
+      if (argv.includes('question') && argv.includes('stats')) {
         return {
           exitCode: 0,
           stdout: Buffer.from(
@@ -382,7 +382,7 @@ describe('operational monitor conditions', () => {
   test('two untracked questions from one session are two conditions', async () => {
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
       const argv = cmd.map(String)
-      if (argv.includes('rulings')) {
+      if (argv.includes('question') && argv.includes('stats')) {
         return {
           exitCode: 0,
           stdout: Buffer.from(
@@ -455,7 +455,7 @@ describe('operational monitor conditions', () => {
     const spawnFor = (staleAfter: string) =>
       spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
         const argv = cmd.map(String)
-        if (argv.includes('rulings')) {
+        if (argv.includes('question') && argv.includes('stats')) {
           return {
             exitCode: 0,
             stdout: Buffer.from(payload(staleAfter)),
@@ -543,7 +543,7 @@ describe('operational monitor conditions', () => {
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
       const argv = cmd.map(String)
-      if (argv.includes('rulings')) {
+      if (argv.includes('question') && argv.includes('stats')) {
         return {
           exitCode: 0,
           stdout: Buffer.from(JSON.stringify({ stale_after: '1h', questions: [] })),
@@ -560,7 +560,7 @@ describe('operational monitor conditions', () => {
           subject: `run:${id}`,
           ownerSession: 'sess-recover',
           detail: `run ${id} is marked asking but has no unanswered question (stranded)`,
-          action: `run orch abandon ${id} to close it, or orch continue ${id} to resume it; an intent decision`,
+          action: `run ${PLATFORM_SLUG} run abandon ${id} to close it, or ${PLATFORM_SLUG} run continue ${id} to resume it; an intent decision`,
         }),
       ])
       expect(result.conditions.some((c) => c.kind === 'task-waiting-on-ruling')).toBe(false)
@@ -580,7 +580,7 @@ describe('operational monitor conditions', () => {
     const unscored = addRun({ agent: 'grok', job: 'fix', status: 'ok', session: 'run-reader' })
     const unowned = addRun({ agent: 'agy', job: 'craft', status: 'stale', session: null })
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
-      if (cmd.map(String).includes('rulings')) {
+      if (cmd.map(String).includes('stats')) {
         return {
           exitCode: 0,
           stdout: Buffer.from('{"stale_after":"1h","questions":[]}'),

@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -302,7 +303,7 @@ const scoreSuffix = (jobName: string) =>
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
 const scoreHint = (id: number, jobName: string, parent: number | null) =>
-  `orch score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
 const duration = (ms: number | null | undefined) => {
   if (ms == null) return '—'
   const seconds = ms / 1000
@@ -392,10 +393,10 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
     { has, flag, values },
     {
       usage: (): never => {
-        throw new Error('orch do <job> [prompt]')
+        throw new Error(`${PLATFORM_SLUG} run start <job> [prompt]`)
       },
       doUsage: (): never => {
-        throw new Error('orch do <job> [prompt]')
+        throw new Error(`${PLATFORM_SLUG} run start <job> [prompt]`)
       },
       error: presentation.error,
       printRunId: presentation.printRunId,

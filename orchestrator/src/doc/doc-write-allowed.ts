@@ -1,5 +1,6 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
   type DocKind,
@@ -15,7 +16,7 @@ import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from
 
 export { refuseSettingsBody }
 
-export const RECORD_WRITE_REMEDY = 'cleared by: orch record doctor'
+export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
 
@@ -88,7 +89,7 @@ export function refuseArticleDelivery(input: {
 }): string | null {
   if (input.kind !== 'article') return null
   const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  const command = `orch doc set ${input.slug} --scope ${input.scope}${input.subject === null ? '' : ` --subject ${input.subject}`}`
+  const command = `${PLATFORM_SLUG} doc set ${input.slug} --scope ${input.scope}${input.subject === null ? '' : ` --subject ${input.subject}`}`
   if (input.scope === 'canon') {
     return (
       `refusing article document ${address}: canon scope requires kind working\n` +
@@ -177,7 +178,7 @@ export function refuseSettingsAddress(
   if (Boolean(owner) === (subject === null)) return null
   return (
     'settings docs require an owner and no subject, or a project subject and no owner\n' +
-    'cleared by: orch settings import --user or --project <name>'
+    `cleared by: ${PLATFORM_SLUG} machine settings import --user or --project <name>`
   )
 }
 
@@ -214,7 +215,7 @@ export function decideDocRevisionWrite(input: {
       allow: false,
       reason:
         `refusing ${input.scope} update at current revision ${current}; pass --expect ${current}\n` +
-        're-read with orch doc get and re-apply the edit',
+        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
     }
   }
   if (input.expected !== input.current) {
@@ -222,7 +223,7 @@ export function decideDocRevisionWrite(input: {
       allow: false,
       reason:
         `refusing stale document update: expected revision ${input.expected}, current revision ${current}\n` +
-        're-read with orch doc get and re-apply the edit',
+        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
     }
   }
   return { allow: true }

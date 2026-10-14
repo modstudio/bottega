@@ -3,6 +3,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { appendWorkflowOutput, recordWorkflowExec, recordWorkflowProbe } from './workflow-probe.ts'
@@ -128,7 +129,7 @@ test('bounds a long tail using GATE_OUTPUT_TAIL_BYTES', async () => {
 test('refuses a missing command', async () => {
   expect(
     recordWorkflowProbe([], { d: database(), runner: () => ({ exitCode: 0, output: '' }) }),
-  ).rejects.toThrow('orch workflow probe needs a command after --')
+  ).rejects.toThrow(`${PLATFORM_SLUG} workflow probe needs a command after --`)
 })
 
 test('refuses a probe outside a registered project', async () => {

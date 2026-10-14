@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   containsSecretShaped,
   extractOwnedSettings,
@@ -13,7 +14,7 @@ import {
 const extra = {
   env: { SECRET: 'do-not-store' },
   enabledPlugins: { a: true },
-  permissions: { allow: ['Bash(orch result *)'], deny: ['Bash(rm *)'] },
+  permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`], deny: ['Bash(rm *)'] },
   hooks: { PreToolUse: [{ matcher: 'Bash' }] },
   tui: { theme: 'dark' },
 }
@@ -135,7 +136,11 @@ describe('containsSecretShaped', () => {
       value: () => 'bun --no-env-file "$CLAUDE_PROJECT_DIR/orchestrator/hooks/canon-edit-guard.ts"',
       refuse: false,
     },
-    { name: 'permission rule', value: () => 'Bash(./bin/orch result *)', refuse: false },
+    {
+      name: 'permission rule',
+      value: () => `Bash(./bin/${PLATFORM_SLUG} run result *)`,
+      refuse: false,
+    },
     {
       name: 'path with long words',
       value: () => 'orchestrator/hooks/canon-edit-guard.ts',
@@ -208,7 +213,7 @@ describe('secretShapedSettingsRefusal', () => {
       refuseSettingsBody(
         'settings',
         serializeOwnedSettings({
-          permissions: { allow: ['Bash(orch result *)'] },
+          permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
           hooks: {
             PreToolUse: [
               {

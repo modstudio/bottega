@@ -24,7 +24,6 @@ import {
   contextArgv,
   contextGet,
   decodeRunsJson,
-  docArgv,
   fileRulingArgv,
   MachineAutonomyEntrySchema,
   MachinePermissionOverlaySchema,
@@ -88,15 +87,23 @@ test('machine bridge schemas parse the CLI output shapes', () => {
 })
 
 test('managed context wrappers build exact argv', () => {
-  expect(contextArgv('/work/project')).toEqual(['context', '--cwd', '/work/project', '--json'])
+  expect(contextArgv('/work/project')).toEqual([
+    'agent',
+    'context',
+    '--cwd',
+    '/work/project',
+    '--json',
+  ])
   expect(configArgv('get', 'autonomy.stage.review')).toEqual([
+    'machine',
     'config',
     'get',
     'autonomy.stage.review',
     '--json',
   ])
-  expect(configArgv('list')).toEqual(['config', 'list', '--json'])
+  expect(configArgv('list')).toEqual(['machine', 'config', 'list', '--json'])
   expect(configArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.stage.review',
@@ -104,6 +111,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(configArgv('set', 'autonomy.preset', 'manual', 4)).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.preset',
@@ -113,19 +121,22 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(configDeleteArgv('autonomy.stage.review')).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.stage.review',
   ])
   expect(configDeleteArgv('autonomy.stage.review', 3)).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.stage.review',
     '--expect',
     '3',
   ])
-  expect(machineConfigArgv('list')).toEqual(['config', 'list', '--machine', '--json'])
+  expect(machineConfigArgv('list')).toEqual(['machine', 'config', 'list', '--machine', '--json'])
   expect(machineConfigArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.stage.review',
@@ -134,12 +145,14 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machineConfigArgv('delete', 'autonomy.ship-to')).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.ship-to',
     '--machine',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
+    'machine',
     'settings',
     'render',
     '--check',
@@ -147,6 +160,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(settingsCheckArgv({ project: PLATFORM_NAME })).toEqual([
+    'machine',
     'settings',
     'render',
     '--check',
@@ -164,6 +178,7 @@ test('managed context wrappers build exact argv', () => {
       reason: 'needed',
     }),
   ).toEqual([
+    'machine',
     'settings',
     'permission',
     'add',
@@ -180,6 +195,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionListArgv()).toEqual([
+    'machine',
     'settings',
     'permission',
     'list',
@@ -187,6 +203,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' })).toEqual([
+    'machine',
     'settings',
     'permission',
     'add',
@@ -198,6 +215,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' })).toEqual([
+    'machine',
     'settings',
     'permission',
     'drop',
@@ -236,14 +254,14 @@ test('settings check preserves an exit-one refusal with empty stdout', async () 
   const executable = join(root, 'orch-refusal')
   writeFileSync(
     executable,
-    "#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run orch record login' >&2\nexit 1\n",
+    `#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run ${PLATFORM_SLUG} record login' >&2\nexit 1\n`,
   )
   chmodSync(executable, 0o755)
   const prior = process.env.HUB_ORCH
   try {
     process.env.HUB_ORCH = executable
     await expect(settingsCheck({ user: true })).rejects.toThrow(
-      'no signed-in record session; run orch record login',
+      `no signed-in record session; run ${PLATFORM_SLUG} record login`,
     )
   } finally {
     if (prior === undefined) delete process.env.HUB_ORCH
@@ -289,43 +307,9 @@ printf '%s\n' '{"messages":[],"warning":null}'
   }
 })
 
-test('owner-scoped doc wrappers never send an owner id', () => {
-  expect(docArgv('list', { scope: 'canon', user: true })).toEqual([
-    'doc',
-    'list',
-    '--scope',
-    'canon',
-    '--user',
-    '--json',
-  ])
-  expect(
-    docArgv('set', {
-      scope: 'settings',
-      user: true,
-      slug: 'settings',
-      title: 'settings',
-      reason: 'change rule',
-      expectedRevision: 'revision-1',
-    }),
-  ).toEqual([
-    'doc',
-    'set',
-    'settings',
-    '--scope',
-    'settings',
-    '--user',
-    '--title',
-    'settings',
-    '--reason',
-    'change rule',
-    '--expect',
-    'revision-1',
-    '--json',
-  ])
-})
-
 test('operator file-ruling argv runs the verb through the orch seam with json', () => {
   expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([
+    'question',
     'ruling',
     'file',
     '7',
@@ -345,6 +329,7 @@ test('operator file-ruling argv runs the verb through the orch seam with json', 
       title: 'Which shape?',
     }),
   ).toEqual([
+    'question',
     'ruling',
     'file',
     '7',
@@ -370,6 +355,7 @@ test('operator answer argv preserves the ruling and records the UI operator chan
       { questionId: 8, ruling: 'Keep both' },
     ]),
   ).toEqual([
+    'question',
     'answer',
     '42',
     '--q7',
@@ -383,7 +369,7 @@ test('operator answer argv preserves the ruling and records the UI operator chan
   ])
 })
 
-test('the orch waiting client contract accepts a no-project item', () => {
+test(`the ${PLATFORM_SLUG} run waiting client contract accepts a no-project item`, () => {
   expect(
     OperatorWaitingItemSchema.parse({
       kind: 'question',
@@ -400,7 +386,7 @@ test('the orch waiting client contract accepts a no-project item', () => {
       why: null,
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command: 'orch answer 42 --q7 "<ruling>"',
+      answer_command: `${PLATFORM_SLUG} question answer 42 --q7 "<ruling>"`,
     }),
   ).toMatchObject({ project: null })
 })
@@ -525,13 +511,13 @@ test('orch resolution accepts only executable files from override, checkout, and
     format: 'esm',
   })
   expect(built.success).toBe(true)
-  const checkoutCandidate = join(bundledRoot, 'bin', 'orch')
+  const checkoutCandidate = join(bundledRoot, 'bin', PLATFORM_SLUG)
   mkdirSync(checkoutCandidate, { recursive: true })
   const first = join(root, 'first-bin')
   const second = join(root, 'second-bin')
-  mkdirSync(join(first, 'orch'), { recursive: true })
+  mkdirSync(join(first, PLATFORM_SLUG), { recursive: true })
   mkdirSync(second)
-  const found = join(second, 'orch')
+  const found = join(second, PLATFORM_SLUG)
   writeFileSync(found, '#!/bin/sh\nexit 0\n')
   chmodSync(found, 0o755)
   const override = join(root, 'override-orch')
@@ -577,208 +563,6 @@ test('dashboard scoring capability is private and bound to this hub process', ()
   } finally {
     stopDashboardCapability()
   }
-})
-
-describe('docArgv', () => {
-  test('list forwards keyword filters using the MCP option names', () => {
-    expect(docArgv('list', { match: 'title', bodyMatch: 'body' })).toEqual([
-      'doc',
-      'list',
-      '--match',
-      'title',
-      '--body-match',
-      'body',
-      '--json',
-    ])
-  })
-
-  test('list with no filters', () => {
-    expect(docArgv('list')).toEqual(['doc', 'list', '--json'])
-  })
-
-  test('list with scope', () => {
-    expect(docArgv('list', { scope: 'global' })).toEqual([
-      'doc',
-      'list',
-      '--scope',
-      'global',
-      '--json',
-    ])
-  })
-
-  test('list with scope and subject', () => {
-    expect(docArgv('list', { scope: 'project', subject: 'alpha' })).toEqual([
-      'doc',
-      'list',
-      '--scope',
-      'project',
-      '--subject',
-      'alpha',
-      '--json',
-    ])
-  })
-
-  test('get without subject', () => {
-    expect(docArgv('get', { scope: 'global', subject: null, slug: 'hello' })).toEqual([
-      'doc',
-      'show',
-      'hello',
-      '--scope',
-      'global',
-      '--json',
-    ])
-  })
-
-  test('get with subject', () => {
-    expect(docArgv('get', { scope: 'project', subject: 'alpha', slug: 'hello' })).toEqual([
-      'doc',
-      'show',
-      'hello',
-      '--scope',
-      'project',
-      '--subject',
-      'alpha',
-      '--json',
-    ])
-  })
-
-  test('set without subject does not put the body in argv', () => {
-    const body = "quote' backtick` newline\n"
-    const argv = docArgv('set', {
-      scope: 'global',
-      subject: null,
-      slug: 'hello',
-      title: 'Hi',
-      body,
-      reason: 'why',
-    })
-    expect(argv).toEqual([
-      'doc',
-      'set',
-      'hello',
-      '--scope',
-      'global',
-      '--title',
-      'Hi',
-      '--reason',
-      'why',
-      '--json',
-    ])
-    expect(argv).not.toContain(body)
-  })
-
-  test('set with subject', () => {
-    expect(
-      docArgv('set', {
-        scope: 'agent',
-        subject: 'codex',
-        slug: 'notes',
-        title: 'Notes',
-        reason: 'why',
-      }),
-    ).toEqual([
-      'doc',
-      'set',
-      'notes',
-      '--scope',
-      'agent',
-      '--subject',
-      'codex',
-      '--title',
-      'Notes',
-      '--reason',
-      'why',
-      '--json',
-    ])
-  })
-
-  test('set includes expect exactly when an expected revision is given', () => {
-    const argv = docArgv('set', {
-      scope: 'canon',
-      subject: 'alpha',
-      slug: '.agents/rules/docs.md',
-      title: 'Docs',
-      reason: 'updated',
-      expectedRevision: 'revision-1',
-    })
-    const expectAt = argv.indexOf('--expect')
-    expect(argv.filter((argument) => argument === '--expect')).toHaveLength(1)
-    expect(argv.slice(expectAt, expectAt + 2)).toEqual(['--expect', 'revision-1'])
-  })
-
-  test('set maps article fields and their explicit clears to the CLI contract', () => {
-    const cleared = docArgv('set', {
-      scope: 'project',
-      subject: 'alpha',
-      slug: 'guide',
-      title: 'Guide',
-      reason: 'clear article fields',
-      parentSlug: null,
-      form: null,
-      articleSubject: null,
-      relatedSubjects: [],
-      sourceFiles: [],
-    })
-    expect(cleared).toEqual([
-      'doc',
-      'set',
-      'guide',
-      '--scope',
-      'project',
-      '--subject',
-      'alpha',
-      '--title',
-      'Guide',
-      '--reason',
-      'clear article fields',
-      '--no-parent',
-      '--no-form',
-      '--no-article-subject',
-      '--no-related-subjects',
-      '--no-source-files',
-      '--json',
-    ])
-  })
-
-  test('remove without subject', () => {
-    expect(
-      docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),
-    ).toEqual(['doc', 'rm', 'host', '--scope', 'machine', '--reason', 'why', '--json'])
-  })
-
-  test('remove with subject', () => {
-    expect(
-      docArgv('remove', { scope: 'job', subject: 'implement', slug: 'notes', reason: 'obsolete' }),
-    ).toEqual([
-      'doc',
-      'rm',
-      'notes',
-      '--scope',
-      'job',
-      '--subject',
-      'implement',
-      '--reason',
-      'obsolete',
-      '--json',
-    ])
-  })
-
-  test('remove includes expect exactly when an expected revision is given', () => {
-    const argv = docArgv('remove', {
-      scope: 'canon',
-      subject: 'alpha',
-      slug: '.agents/rules/docs.md',
-      reason: 'obsolete',
-      expectedRevision: 'revision-1',
-    })
-    const expectAt = argv.indexOf('--expect')
-    expect(argv.filter((argument) => argument === '--expect')).toHaveLength(1)
-    expect(argv.slice(expectAt, expectAt + 2)).toEqual(['--expect', 'revision-1'])
-  })
-
-  test('subjects', () => {
-    expect(docArgv('subjects')).toEqual(['doc', 'subjects', '--json'])
-  })
 })
 
 describe('projectArgv', () => {

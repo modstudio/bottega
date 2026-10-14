@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { spawnFixtureGitSync, spawnFixtureSync } from '../../test/fixtures/spawn.ts'
 import { dir } from '../../test/preload.ts'
 import { applyMigrations } from '../database/migrations.ts'
@@ -104,7 +105,7 @@ function installGh(): string {
   return bin
 }
 
-describe('orch check --enabled', () => {
+describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
   test('an empty register opt-in succeeds and names the project', () => {
     const root = repository('checks-none')
     const database = registerProject('checks-none', root, { trunk: 'main' })

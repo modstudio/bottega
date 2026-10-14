@@ -21,6 +21,7 @@ import {
   type AutonomyPreset,
   type AutonomyValue,
 } from '../../../../shared/autonomy'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { isShipToValue, SHIP_TO_VALUES } from '../../../../shared/ship-to'
 
 export const Route = createFileRoute('/context')({ component: ManagedContextPage })
@@ -31,7 +32,7 @@ export const Route = createFileRoute('/context')({ component: ManagedContextPage
  */
 const hosted = isHostedMode()
 
-const APPLY_NOTE = 'Each machine applies these at session start (orch settings apply).'
+const APPLY_NOTE = `Each machine applies these at session start (${PLATFORM_SLUG} machine settings apply).`
 
 const capitalized = (value: string) => `${value[0]!.toUpperCase()}${value.slice(1)}`
 
@@ -741,9 +742,9 @@ function userMachineOverlay<Machine>(target: string, data: { machine?: Machine }
 }
 
 function applyCommand(target: string, projects: ManagedProject[]) {
-  if (target === 'user') return 'orch settings render --write --user --yes'
+  if (target === 'user') return `${PLATFORM_SLUG} machine settings render --write --user --yes`
   const note = projects.find((row) => row.name === target)?.worktreeNote
-  const command = `orch settings render --write --project ${target} --yes`
+  const command = `${PLATFORM_SLUG} machine settings render --write --project ${target} --yes`
   return note ? `${command}\n\nWorktree note:\n${note}` : command
 }
 

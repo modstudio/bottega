@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ANSWER_CHANNEL_CLI,
   ANSWER_CHANNEL_VALUES,
@@ -30,16 +31,16 @@ function shellValue(value: string): string {
 }
 
 export const ANSWER_WORKING_FORMS =
-  `  orch answer <id> --q<id> "<ruling>"\n` +
-  `  orch answer <id> --q<id> --file <path>\n  orch answer <id> --file <path>\n` +
-  `  orch answer <id> "<ruling>"`
+  `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>"\n` +
+  `  ${PLATFORM_SLUG} question answer <id> --q<id> --file <path>\n  ${PLATFORM_SLUG} question answer <id> --file <path>\n` +
+  `  ${PLATFORM_SLUG} question answer <id> "<ruling>"`
 export const TELL_WORKING_FORMS =
-  `  orch tell <id> "<message>"\n` +
-  `  orch tell <id> --file <path>\n  orch tell <id> --ping "<message>"\n` +
-  `  orch tell <id>  (message on stdin)`
+  `  ${PLATFORM_SLUG} run tell <id> "<message>"\n` +
+  `  ${PLATFORM_SLUG} run tell <id> --file <path>\n  ${PLATFORM_SLUG} run tell <id> --ping "<message>"\n` +
+  `  ${PLATFORM_SLUG} run tell <id>  (message on stdin)`
 export const CONTINUE_WORKING_FORMS =
-  `  orch continue <id> "<what next>"\n` +
-  `  orch continue <id> --file <path>\n  orch continue <id>  (message on stdin)`
+  `  ${PLATFORM_SLUG} run continue <id> "<what next>"\n` +
+  `  ${PLATFORM_SLUG} run continue <id> --file <path>\n  ${PLATFORM_SLUG} run continue <id>  (message on stdin)`
 
 /** Empty, whitespace-only, or a single token beginning with `--` is a misparse. */
 export function misparsedMessage(text: string): 'empty' | 'dash-token' | null {
@@ -244,7 +245,7 @@ export function parseWorkerMessageArgs(
 ): AnswerTextSources {
   const usage =
     options.usage ??
-    'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
+    `${PLATFORM_SLUG} question answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]`
   const booleans = new Set(options.booleans ?? [])
   const questions = options.questions ?? false
   const byId: QuestionTextSource[] = []

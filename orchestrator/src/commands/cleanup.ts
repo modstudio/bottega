@@ -3,6 +3,7 @@
 
 import { existsSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
 import { db } from '../database/db.ts'
@@ -22,7 +23,7 @@ function keptBranchLine(
     afterCutCount === null
       ? `${uniqueCount} commit(s) reachable only from this branch`
       : `deleting it would lose commits reachable from no other ref; ${afterCutCount} commit(s) after the cut`
-  return `kept branch ${branch}: ${reason} — merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
+  return `kept branch ${branch}: ${reason} — merge it, or ${PLATFORM_SLUG} run discard ${id} --force to delete it after checking no other run owns it`
 }
 
 const presentation: CleanupPresentation = {

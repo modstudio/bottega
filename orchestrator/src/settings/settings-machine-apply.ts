@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import {
@@ -110,7 +111,7 @@ function applyUserSettings(
     if (unprotected.length) {
       throw new Error(
         `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
-          'cleared by: run `orch settings env import --user` first',
+          `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
       )
     }
     const environment = selectedSettingsEnvironment(secretsPath, owned.envKeys ?? [])
@@ -247,7 +248,7 @@ export async function applyMachineSettings(
     overrides.workerProcess ?? (() => isOrchWorkerProcess(process.env, process.pid))
   if (workerProcess()) {
     throw new Error(
-      'refusing settings apply from an orch worker run; an operator must run orch settings apply',
+      `refusing settings apply from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings apply`,
     )
   }
   const deps = dependencies({ ...overrides, workerProcess })

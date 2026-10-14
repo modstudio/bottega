@@ -30,6 +30,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'record-auth-boundary',
     'orchestrator/src/record/record-auth.ts',
     [
+      '../../../shared/brand.ts',
       '@better-auth/drizzle-adapter/relations-v2',
       'better-auth',
       'better-auth/plugins',
@@ -112,13 +113,14 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'verdict-rules-boundary',
     'orchestrator/src/verdict/verdict-rules.ts',
-    ['../failure/failure.ts', '../score/score.ts'],
+    ['../../../shared/brand.ts', '../failure/failure.ts', '../score/score.ts'],
     'Keep verdict policy pure and independent of local and hosted persistence adapters.',
   ),
   boundary(
     'record-verdicts-boundary',
     'orchestrator/src/record/record-verdicts.ts',
     [
+      '../../../shared/brand.ts',
       'bun',
       '../score/score.ts',
       '../verdict/verdict-payload.ts',

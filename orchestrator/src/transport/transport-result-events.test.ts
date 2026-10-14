@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideFinalMcpConnection } from '../run/run-mcp-attachment.ts'
 import { cliResultEvents } from './transport-result-events.ts'
 
@@ -6,7 +7,7 @@ const server = 'starship'
 const preLaunchEvidence = {
   server,
   connected: true,
-  error: 'orch probe ok: task_list; worker attachment unverified',
+  error: `${PLATFORM_SLUG} agent probe ok: task_list; worker attachment unverified`,
 }
 
 describe('CLI streamed MCP evidence', () => {

@@ -1,6 +1,7 @@
 // concern: monitor-canon-drift
 /** Compares managed projects' landed trees with stored canon without modifying either. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   EMPTY_PROJECT_CANON_IMPORT_REMEDY,
   EMPTY_PROJECT_CANON_STORE_CONDITION,
@@ -52,7 +53,7 @@ export function canonDriftCondition(
     subject: project.name,
     since: null,
     detail: `${project.name} landed canon at ${comparison.ref} (${comparison.commit}) differs from stored canon: ${displayed.join(', ')}${remainder > 0 ? `, and ${remainder} more` : ''}`,
-    action: 'run orch canon hydrate in a worktree, commit the hydrated paths, and land the branch',
+    action: `run ${PLATFORM_SLUG} doc canon hydrate in a worktree, commit the hydrated paths, and land the branch`,
     affectedProject: project.name,
   }
 }
@@ -84,7 +85,7 @@ export function observeProjectCanonDrift(
         since: null,
         ageMs: null,
         detail: `${project.name} canon drift observation unavailable: ${String((cause as Error).message ?? cause)}`,
-        action: `reported; restore readable remote-tracking landing tree in ${project.path} and canon store, then run orch monitor`,
+        action: `reported; restore readable remote-tracking landing tree in ${project.path} and canon store, then run ${PLATFORM_SLUG} machine monitor`,
         affectedProject: project.name,
       },
     ]

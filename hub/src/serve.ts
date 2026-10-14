@@ -221,7 +221,7 @@ export function strip(hours: number) {
     collectedAt: setting('collect.at'),
     // What CODE is answering, not just how fresh its data is.
     //
-    // `hub serve` reads its TypeScript once at import, so a running server goes
+    // `bottega dashboard start` reads its TypeScript once at import, so a running server goes
     // on serving the bundle it started with however many times the source is
     // edited. The page looked perfectly current the whole time - a recent
     // collect time, live counters - while serving a version that predated the
@@ -385,7 +385,7 @@ export async function view(
     // Search, display strings, and the page slice are per request and are not
     // part of that key.
     const built = await orchCache.get(`runs:${hours}:${f.agent}:${f.project}`, async () => {
-      // Read through `orch runs --json`, not from hub's interval mirror: only the
+      // Read through `bottega run list --json`, not from hub's interval mirror: only the
       // orchestrator knows a run's VERDICT, and a runs list you cannot score from
       // is a list of chores you have to go elsewhere to do.
       // Windowed by the BAND, like every other view. This read a fixed 30 days

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -258,7 +259,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
       articleSubject: other.id,
       reason: 'prove project refusal',
     }),
-  ).rejects.toThrow('orch subject list articles')
+  ).rejects.toThrow(`${PLATFORM_SLUG} doc subject list articles`)
   await expect(
     setDoc({
       scope: 'project',

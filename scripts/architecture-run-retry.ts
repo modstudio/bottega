@@ -11,6 +11,7 @@ export const runRetryModuleSpecs = [
     name: 'run-retry-workspace-boundary',
     file: 'orchestrator/src/run/run-retry-workspace.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'node:fs',
       '../../../shared/process-identity.ts',
       '../database/db.ts',

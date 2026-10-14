@@ -231,7 +231,9 @@ describe('settings apply', () => {
             target: expect.stringContaining('canon claude'),
             outcome: 'refused',
             detail: expect.stringMatching(
-              /this store holds no user canon.*orch canon import --user.*remove the files yourself/,
+              new RegExp(
+                `this store holds no user canon.*${PLATFORM_SLUG} doc canon import --user.*remove the files yourself`,
+              ),
             ),
             changed: false,
           }),

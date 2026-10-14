@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -232,7 +233,7 @@ export function removeHookTree(requestedPath: string): void {
   }
   if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
     throw new Error(
-      `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `orch close-out ${row.id}`).join('; ')}`,
+      `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `${PLATFORM_SLUG} run close-out ${row.id}`).join('; ')}`,
     )
   }
   if (owners.length > 1) {

@@ -2,6 +2,7 @@
 /** Owns production workflow-tree reads and atomic draft imports. Must not know commands, filesystems, projects, runs, or transports. */
 import type { Database } from 'bun:sqlite'
 import { isDeepStrictEqual } from 'node:util'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type CatalogueSequence,
@@ -84,7 +85,7 @@ export function importWorkflowTree(
     if (missingFlows.length) {
       throw new Error(
         `refusing import: production flows missing from the tree:\n${missingFlows
-          .map((slug) => `- ${slug}: orch workflow retire ${slug}`)
+          .map((slug) => `- ${slug}: ${PLATFORM_SLUG} workflow retire ${slug}`)
           .join('\n')}`,
       )
     }

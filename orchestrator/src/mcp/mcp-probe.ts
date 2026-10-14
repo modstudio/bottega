@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -556,6 +557,6 @@ export function mcpCallEvidence(result: McpProbeResult | null): McpCallEvidence 
   }
   return {
     connected: null,
-    error: `orch probe ok: ${result.tool}; worker attachment unverified`,
+    error: `${PLATFORM_SLUG} agent probe ok: ${result.tool}; worker attachment unverified`,
   }
 }

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
@@ -274,7 +275,7 @@ describe('ship-to workflow composition', () => {
           shipToAutonomy(level),
         ),
       ).toThrow(
-        'ship-to depth "hosted" names a rung released on demand with orch release fixture --rung hosted and cannot be a ship-to depth',
+        `ship-to depth "hosted" names a rung released on demand with ${PLATFORM_SLUG} release run fixture --rung hosted and cannot be a ship-to depth`,
       )
     },
   )
@@ -329,8 +330,7 @@ describe('ship-to workflow composition', () => {
       'fixture',
     )
     const autonomy = shipToAutonomy('trunk')
-    const expected =
-      'project fixture tracker is missing workflow state "done"; set it with: orch project set fixture --settings'
+    const expected = `project fixture tracker is missing workflow state "done"; set it with: ${PLATFORM_SLUG} project set fixture --settings`
 
     expect(() =>
       composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy),
@@ -370,8 +370,7 @@ describe('ship-to workflow composition', () => {
         unavailableReason: 'record service offline',
       },
     }
-    const expected =
-      'hosted autonomy settings could not be read: record service offline; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>'
+    const expected = `hosted autonomy settings could not be read: record service offline; retry when the hosted record is reachable, or set the level for this machine with ${PLATFORM_SLUG} machine config set --machine autonomy.ship-to <level>`
 
     expect(() =>
       composeWorkflow('ship-to-fixture', 'fixture', undefined, {}, d, {}, autonomy),

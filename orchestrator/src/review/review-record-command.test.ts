@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -114,7 +115,7 @@ test('refuses incomplete triage with the judge remedy', () => {
       },
     ),
   ).toThrow(
-    'review triage for DEV-1110-record is incomplete; finish every lens and finding with orch judge',
+    `review triage for DEV-1110-record is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score judge`,
   )
 })
 

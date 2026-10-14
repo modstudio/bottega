@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
@@ -25,7 +26,7 @@ test('an alive owner refusal names the landing-tree retry command', () => {
       conversationRootId: null,
       projectId: null,
       projectName: 'fixture',
-      retryCommand: 'orch tree open 41',
+      retryCommand: `${PLATFORM_SLUG} tree open 41`,
     }),
-  ).toThrow('then retry orch tree open 41')
+  ).toThrow(`then retry ${PLATFORM_SLUG} tree open 41`)
 })

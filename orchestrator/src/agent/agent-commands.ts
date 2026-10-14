@@ -1,6 +1,7 @@
 // concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { probeAgent } from './agent-probe.ts'
@@ -172,7 +173,8 @@ export function agentReadinessPresentation(facts: {
 }): string {
   if (!facts.enabled) return `disabled — ${facts.disabledReason}`
   if (!facts.executableFound) return 'not installed'
-  if (!facts.probedAt) return `installed but not probed — orch agent probe ${facts.name}`
+  if (!facts.probedAt)
+    return `installed but not probed — ${PLATFORM_SLUG} agent show probe ${facts.name}`
   if (!facts.available) return `unavailable — ${facts.unavailableReason}`
   return 'ready'
 }

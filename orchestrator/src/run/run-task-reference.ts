@@ -1,11 +1,12 @@
 // concern: run task reference
-/** Resolves an optional durable hub task identity without making hub availability a dispatch prerequisite. */
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+/** Resolves an optional durable bottega task identity without making hub availability a dispatch prerequisite. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 export async function resolveTaskRecordId(project: string, key: string): Promise<string | null> {
   try {
     const child = Bun.spawn(
-      [...bottegaEntryArgv('hub'), 'task', 'show', key, '--project', project, '--json'],
+      [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'show', key, '--project', project, '--json'],
       {
         stdout: 'pipe',
         stderr: 'ignore',

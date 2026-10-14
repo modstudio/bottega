@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../caller-classification.ts'
 import { shouldExpireUnjudgedOwner } from '../cleanup/cleanup-sweep-decisions.ts'
@@ -67,7 +68,7 @@ test('a plain terminal owns, lists, scores, and judges its fixture runs', async 
       exitCode = value
     },
   })
-  expect(output.join('\n')).toContain(`orch score ${scoreId}`)
+  expect(output.join('\n')).toContain(`${PLATFORM_SLUG} score ${scoreId}`)
   expect(exitCode).toBe(1)
 
   await scoreRun(scoreId, flags, { ...judgmentOptions, dashboardAuthorized: false }, presentation)

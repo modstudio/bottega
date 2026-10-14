@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
@@ -139,7 +140,7 @@ describe('review triage', () => {
     const reviewId = recordReview(runId, reviewReply(1), db())
     expect(() =>
       amendFinding(reviewId, 1, 'accepted', 'correction', undefined, 'low', db()),
-    ).toThrow(`review ${reviewId} is incomplete; use orch review triage ${reviewId} 1`)
+    ).toThrow(`review ${reviewId} is incomplete; use ${PLATFORM_SLUG} review triage ${reviewId} 1`)
     triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
     completeReview(reviewId, db())
     expect(() => amendFinding(reviewId, 1, 'accepted', '   ', undefined, 'low', db())).toThrow(
@@ -156,7 +157,7 @@ describe('review triage', () => {
     triageFinding(reviewId, 1, 'accepted', undefined, 'low', db())
     completeReview(reviewId, db())
     expect(() => triageFinding(reviewId, 1, 'modified', undefined, 'low', db())).toThrow(
-      `use orch review amend ${reviewId} 1`,
+      `use ${PLATFORM_SLUG} review amend ${reviewId} 1`,
     )
   })
 })

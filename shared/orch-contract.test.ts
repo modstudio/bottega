@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from './brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -48,7 +48,7 @@ test('harness health has one validated cross-concern payload contract', () => {
   expect(() => HarnessHealthSchema.parse({ ...payload, landingRefusals: '0' })).toThrow()
 })
 
-test('orch state accepts a constructed cooling string and caps.contextTokens number or null', () => {
+test(`${PLATFORM_SLUG} run state accepts a constructed cooling string and caps.contextTokens number or null`, () => {
   const payload = {
     live: [],
     stale: 0,

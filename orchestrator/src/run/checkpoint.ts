@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -217,7 +218,7 @@ export function checkpointResumeContext(
     throw new Error(
       `run ${rootId} has a checkpoint but no branch or retained ref resolves for its latest started turn; ` +
         `invariant: a resume prompt names only the commit the resumed tree exposes; ` +
-        `remedy: start a fresh keyed run from a known base with orch do ${launch?.job ?? '<job>'} ` +
+        `remedy: start a fresh keyed run from a known base with ${PLATFORM_SLUG} run start ${launch?.job ?? '<job>'} ` +
         `--key ${launch?.launch_key ?? '<task key>'} --base <ref>`,
     )
   }

@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { diagnosticUrl, jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
@@ -17,7 +18,7 @@ import type {
   PushableHubChangeTable,
 } from './push-contract.ts'
 
-const TEST_REFUSAL = 'hub task client refuses a real hosted URL unless a stub is injected in tests'
+const TEST_REFUSAL = `${PLATFORM_SLUG} task client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -116,7 +117,7 @@ async function responseObject(
   const token = options.token ?? readRecordSessionToken()
   if (!token)
     throw new Error(
-      `record session is absent. Run \`orch record sign-in\`, then \`orch record doctor\`.`,
+      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
     )
   let response: Response
   try {
@@ -412,7 +413,7 @@ export async function hostedPushChanges(
   const token = options.token ?? readRecordSessionToken()
   if (!token)
     throw new Error(
-      'record session is absent. Run `orch record sign-in`, then `orch record doctor`.',
+      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
     )
   const url = `${baseUrl.replace(/\/$/, '')}/v1/changes`
   let response: Response
@@ -488,7 +489,7 @@ async function taskIdentityResponse(
   const token = options.token ?? readRecordSessionToken()
   if (!token)
     throw new Error(
-      `record session is absent. Run \`orch record sign-in\`, then \`orch record doctor\`.`,
+      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
     )
   const url = `${baseUrl.replace(/\/$/, '')}/v1/tasks/identity`
   let response: Response

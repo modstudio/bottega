@@ -4,6 +4,7 @@
  * turns. Must not know transports, worktrees, routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -243,7 +244,7 @@ function requireAnswerableLiveness(
   throw new Error(
     `run ${id} is ${refusal}. ` +
       'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
-      `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
+      `${PLATFORM_SLUG} run retry ${id} --agent <name> (carries the recorded ruling) or ${PLATFORM_SLUG} run abandon ${id}`,
   )
 }
 
@@ -295,7 +296,7 @@ function latestRetryTurn(
     .all(rootId, rootId) as { id: number; question: string }[]
   throw new Error(
     `run ${id} is asking with open questions: ${questions.map((q) => `q${q.id}: ${q.question}`).join('; ')}. ` +
-      `Answer them, or orch abandon ${id}`,
+      `Answer them, or ${PLATFORM_SLUG} run abandon ${id}`,
   )
 }
 
@@ -751,7 +752,7 @@ export async function answerRun(
     if (!input.rulings) {
       throw new Error(
         `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: orch answer ${id} --q${open[0]!.id} "<ruling>", ` +
+          `Rule with: ${PLATFORM_SLUG} question answer ${id} --q${open[0]!.id} "<ruling>", ` +
           'or pass a ruling via --file or stdin.',
       )
     } else {
@@ -772,8 +773,8 @@ export async function answerRun(
   ) {
     throw new Error(
       `run ${id} cannot be resumed: no vendor session (agent ${resumeAgent}); ` +
-        `the ruling was NOT recorded; options: \`orch retry ${id} --agent …\` to ` +
-        `re-dispatch with the ruling appended to the spec, or \`orch abandon ${id}\``,
+        `the ruling was NOT recorded; options: \`${PLATFORM_SLUG} run retry ${id} --agent …\` to ` +
+        `re-dispatch with the ruling appended to the spec, or \`${PLATFORM_SLUG} run abandon ${id}\``,
     )
   }
   if (!ownersLive) {
@@ -865,8 +866,8 @@ export async function answerRun(
     if (!input.json)
       console.log(
         `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
-          `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
-          `or orch abandon ${id}.`,
+          `The run remains asking; use ${PLATFORM_SLUG} run retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
+          `or ${PLATFORM_SLUG} run abandon ${id}.`,
       )
     return answerResult('recorded', id, row.record_id, null)
   }
@@ -885,7 +886,7 @@ export async function answerRun(
 
   const worktreePath = latest.worktree ?? row.worktree
   /**
-   * DETACHED, for the reason `orch do` already is.
+   * DETACHED, for the reason `bottega run start` already is.
    *
    * A resumed turn is a full agent run — minutes, not seconds — and run in
    * the foreground it outlives an agent harness's command timeout, which
@@ -969,8 +970,8 @@ export async function answerRun(
     if (!input.flags.quiet) {
       console.error(
         `\n— ${row.job} runs detached; a foreground one dies with its shell.` +
-          `\n  orch wait ${childId}      then:  orch result ${childId}` +
-          `\n  orch inbox          if it stops to ask` +
+          `\n  ${PLATFORM_SLUG} run wait ${childId}      then:  ${PLATFORM_SLUG} run result ${childId}` +
+          `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
           `\n  --follow            to watch it here instead`,
       )
     }
@@ -988,14 +989,14 @@ export async function answerRun(
     }
     throw new Error(
       `the rulings ARE recorded and were not lost, but resumed run ${childId} failed: ` +
-        `${failureReason(failed)}\nRetry it with: orch continue ${id}`,
+        `${failureReason(failed)}\nRetry it with: ${PLATFORM_SLUG} run continue ${id}`,
     )
   }
   const done = db().query('SELECT status FROM run WHERE id = ?').get(id) as { status: string }
   console.error(
     done.status === 'asking'
-      ? `\n  STILL ASKING — orch inbox`
-      : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
+      ? `\n  STILL ASKING — ${PLATFORM_SLUG} question inbox`
+      : `\n  ${PLATFORM_SLUG} run diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
   return answerResult('resumed', id, row.record_id, childId)
 }

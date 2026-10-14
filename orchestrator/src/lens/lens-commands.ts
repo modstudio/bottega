@@ -1,9 +1,9 @@
 // concern: review
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
-
 export function lensCommand(argv: string[], presentation: { log(value: string): void }): void {
   const sub = argv[1]
   const json = argv.includes('--json')
@@ -26,7 +26,7 @@ export function lensCommand(argv: string[], presentation: { log(value: string): 
     emit(row)
   } else if (sub === 'set') setLensCommand(argv, emit)
   else if (sub === 'profile') profileCommand(argv, emit)
-  else throw new Error('unknown: orch lens. Try list | show | set | profile')
+  else throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
 }
 
 const enabled = (argv: string[]) => {
@@ -118,5 +118,5 @@ function profileCommand(argv: string[], emit: Emit): void {
     )
     return
   }
-  throw new Error('unknown: orch lens profile. Try list | show | set')
+  throw new Error(`unknown: ${PLATFORM_SLUG} review lens profile. Try list | show | set`)
 }

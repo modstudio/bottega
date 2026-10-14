@@ -2,6 +2,7 @@
 /** Registers record authentication grammar. Must not own authentication behavior. */
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow } from '../record/outbox-quarantine.ts'
@@ -41,6 +42,10 @@ function hostedCommand<T>(command: string, action: () => T): T {
   return action()
 }
 
+function hostedRecord<T>(verb: string, action: () => T): T {
+  return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
+}
+
 export function register(program: Command): void {
   const record = program.command('record')
   const presentation = { log }
@@ -49,7 +54,7 @@ export function register(program: Command): void {
     .requiredOption('--email <email>')
     .requiredOption('--name <name>')
     .action((options) =>
-      hostedCommand('orch record sign-up', () =>
+      hostedCommand(`${PLATFORM_SLUG} record sign-up`, () =>
         signUpCommand(String(options.email), String(options.name), promptPassword, { log }),
       ),
     )
@@ -57,23 +62,23 @@ export function register(program: Command): void {
     .command('sign-in')
     .requiredOption('--email <email>')
     .action((options) =>
-      hostedCommand('orch record sign-in', () =>
+      hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>
         signInCommand(String(options.email), promptPassword, { log }),
       ),
     )
   record
     .command('whoami')
-    .action(() => hostedCommand('orch record whoami', () => whoamiCommand({ log })))
+    .action(() => hostedCommand(`${PLATFORM_SLUG} record whoami`, () => whoamiCommand({ log })))
   record
     .command('migrate')
-    .action(() => hostedCommand('orch record migrate', () => recordMigrateCommand(presentation)))
+    .action(() => hostedRecord('migrate', () => recordMigrateCommand(presentation)))
   const publicDoc = record.command('public-doc')
   publicDoc
     .command('designate')
     .argument('<space-slug>')
     .argument('<project-name>')
     .action((spaceSlug, projectName) =>
-      hostedCommand('orch record public-doc designate', () =>
+      hostedCommand(`${PLATFORM_SLUG} record public-doc designate`, () =>
         recordPublicDocDesignateCommand(String(spaceSlug), String(projectName), presentation),
       ),
     )
@@ -81,7 +86,7 @@ export function register(program: Command): void {
     .command('list')
     .option('--json')
     .action((options) =>
-      hostedCommand('orch record public-doc list', () =>
+      hostedCommand(`${PLATFORM_SLUG} record public-doc list`, () =>
         recordPublicDocListCommand({ json: Boolean(options.json) }, presentation),
       ),
     )
@@ -90,7 +95,7 @@ export function register(program: Command): void {
     .argument('<space-slug>')
     .argument('<project-name>')
     .action((spaceSlug, projectName) =>
-      hostedCommand('orch record public-doc clear', () =>
+      hostedCommand(`${PLATFORM_SLUG} record public-doc clear`, () =>
         recordPublicDocClearCommand(String(spaceSlug), String(projectName), presentation),
       ),
     )
@@ -136,15 +141,13 @@ export function register(program: Command): void {
   const space = record.command('space')
   space
     .command('list')
-    .action(() =>
-      hostedCommand('orch record space list', () => recordSpaceListCommand(presentation)),
-    )
+    .action(() => hostedRecord('space list', () => recordSpaceListCommand(presentation)))
   space
     .command('create')
     .requiredOption('--name <name>')
     .requiredOption('--slug <slug>')
     .action((options) =>
-      hostedCommand('orch record space create', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space create`, () =>
         recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
       ),
     )
@@ -152,7 +155,7 @@ export function register(program: Command): void {
     .command('switch')
     .argument('<slug-or-id>')
     .action((value) =>
-      hostedCommand('orch record space switch', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space switch`, () =>
         recordSpaceSwitchCommand(String(value), presentation),
       ),
     )
@@ -161,14 +164,14 @@ export function register(program: Command): void {
     .requiredOption('--email <email>')
     .option('--role <role>', 'member, admin, or owner', 'member')
     .action((options) =>
-      hostedCommand('orch record space invite', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space invite`, () =>
         recordSpaceInviteCommand(String(options.email), String(options.role), presentation),
       ),
     )
   space
     .command('invitations')
     .action(() =>
-      hostedCommand('orch record space invitations', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space invitations`, () =>
         recordSpaceInvitationsCommand(presentation),
       ),
     )
@@ -176,7 +179,7 @@ export function register(program: Command): void {
     .command('accept')
     .argument('<invitation-id>')
     .action((value) =>
-      hostedCommand('orch record space accept', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space accept`, () =>
         recordSpaceAcceptCommand(String(value), presentation),
       ),
     )
@@ -187,7 +190,7 @@ export function register(program: Command): void {
     .option('--dry-run')
     .option('--confirm <count>')
     .action((project, options) =>
-      hostedCommand('orch record space move-project', () =>
+      hostedCommand(`${PLATFORM_SLUG} record space move-project`, () =>
         recordSpaceMoveProjectCommand(
           String(project),
           String(options.to),
@@ -203,12 +206,12 @@ export function register(program: Command): void {
     .command('push-docs')
     .option('--dry-run')
     .action((options) =>
-      hostedCommand('orch record push-docs', () =>
+      hostedCommand(`${PLATFORM_SLUG} record push-docs`, () =>
         pushDocsCommand({ dryRun: Boolean(options.dryRun) }, { log }),
       ),
     )
   record.command('publish').action(() =>
-    hostedCommand('orch record publish', () =>
+    hostedCommand(`${PLATFORM_SLUG} record publish`, () =>
       publishSnapshotsCommand({
         log,
         setExitCode: (code) => {

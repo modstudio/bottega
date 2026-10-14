@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers run detail and listing adapters. Must not own run behavior. */
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { processStartTime } from '../../../shared/process-identity.ts'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
@@ -23,7 +24,7 @@ function chainHasPendingDelivery(rootId: number): boolean {
 }
 
 const strandedRecovery = (id: number) =>
-  `stranded — orch retry ${id} --agent … with the recorded ruling, or orch abandon ${id}`
+  `stranded — ${PLATFORM_SLUG} run retry ${id} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${id}`
 
 export function register(program: Command): void {
   program

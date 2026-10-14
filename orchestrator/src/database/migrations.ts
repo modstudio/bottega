@@ -1,9 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
@@ -178,13 +178,13 @@ export function migrationRefusal(d: Database): string | null {
   if (state.ahead) {
     return (
       `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: orch migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
     )
   }
   if (state.pending.length) {
     return (
       `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: orch migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
     )
   }
   return null

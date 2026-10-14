@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
@@ -312,7 +313,7 @@ test('review command rejects --dry-run for other verbs before they write', async
       'accepted',
       '--dry-run',
     ]),
-  ).rejects.toThrow('--dry-run is only valid for orch review restore-triage')
+  ).rejects.toThrow(`--dry-run is only valid for ${PLATFORM_SLUG} review restore-triage`)
 
   expect(db().query('SELECT * FROM review_finding WHERE id=?').get(seed.findingId)).toEqual(before)
 })

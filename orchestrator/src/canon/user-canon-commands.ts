@@ -1,5 +1,7 @@
 // concern: user-canon-commands
 /** Knows user canon import and hydration command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
@@ -151,7 +153,7 @@ export async function userCanonHydrateCommand(
   presentation: UserCanonPresentation,
 ): Promise<void> {
   if (flags.has('force')) {
-    throw new Error('unknown flag for orch canon hydrate --user: --force')
+    throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
   }
   const owner = await signedInDocOwner()
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))

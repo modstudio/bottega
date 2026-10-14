@@ -1,4 +1,4 @@
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { Cards, Check, Cta, PageHero, Panel, Section } from './shared'
 
 const features = [
@@ -77,18 +77,19 @@ export function BoardPage() {
         <Panel eyebrow="Notes">
           <pre>
             <span className="c">{'// during a run, costing nothing'}</span>
-            {`\n`}$ <b>orch note</b> "rate limiter counts retries{`\n`} as new requests"{`\n\n`}
+            {`\n`}$ <b>{PLATFORM_SLUG} note new</b> "rate limiter counts retries{`\n`} as new
+            requests"{`\n\n`}
             <span className="c">
               {' '}
               harbor#189 filed · 1 sighting{`\n`} anchored: harbor · HBR-205 · rate-limit.ts:64
               {`\n\n`}
               {'// later, yours to dispose of'}
             </span>
-            {`\n`}$ <b>hub note list</b> --actionable{`\n\n`}
+            {`\n`}$ <b>{PLATFORM_SLUG} note list</b> --actionable{`\n\n`}
             <b> 189</b> <span className="c">rate limiter counts retries … 3 sightings</span>
             {`\n`}
             <b> 204</b> <span className="c">export job has no timeout 1 sighting</span>
-            {`\n\n`}$ <b>hub note promote</b> 189{`\n`}
+            {`\n\n`}$ <b>{PLATFORM_SLUG} note promote</b> 189{`\n`}
             <span className="c">
               {' '}
               HBR-212 opened, carrying the note and{`\n`} its sightings as evidence
@@ -117,7 +118,7 @@ export function BoardPage() {
             ))}
           </div>
           <pre className="panel-pre">
-            $ <b>hub task list</b> --all-projects --open{`\n\n`}
+            $ <b>{PLATFORM_SLUG} task list</b> --all-projects --open{`\n\n`}
             <span className="c">
               {' '}
               atlas ATL-412 in run codex{`\n`} harbor HBR-205 in review claude{`\n`} meridian

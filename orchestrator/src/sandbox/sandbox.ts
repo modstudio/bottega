@@ -1,4 +1,5 @@
 // concern: readonly sandbox policy and its sandbox-runtime adapter; must not know run control, worktrees, or CLI grammar.
+
 import {
   chmodSync,
   closeSync,
@@ -20,6 +21,7 @@ import {
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -357,7 +359,8 @@ export function probeSandboxProfileForCwd(input: {
   database: Parameters<typeof projectAt>[1]
 }): SandboxRuntimeConfig {
   const project = projectAt(input.cwd, input.database)
-  if (!project) throw new Error(`orch workflow probe: no registered project contains ${input.cwd}`)
+  if (!project)
+    throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${input.cwd}`)
   return probeSandboxProfile({
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,

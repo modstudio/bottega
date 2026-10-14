@@ -10,9 +10,9 @@ import {
 } from './test-substance-commands.ts'
 
 const file = '/project/example.test.ts'
-const payload = (tool_name: string, tool_input: Record<string, unknown>) => ({
-  tool_name,
-  tool_input: { file_path: file, ...tool_input },
+const payload = (toolName: string, toolInput: Record<string, unknown>) => ({
+  tool_name: toolName,
+  tool_input: { file_path: file, ...toolInput },
 })
 const read = () => 'first first\nsecond\n'
 

@@ -1,6 +1,7 @@
 // Tests codex-mcp-scope.ts: explicit Codex CLI configuration and MCP grants.
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ROOT } from '../database/database-location.ts'
 import {
@@ -135,14 +136,16 @@ test('reading-job project overlays all use the credential-free reader proxy', ()
   const local = entries.find((entry) => entry.startsWith('mcp_servers.local='))!
   const fallback = entries.find((entry) => entry.startsWith('mcp_servers.secret='))!
   for (const entry of [local, fallback]) {
-    expect(entry).toContain('mcp-reader-proxy')
+    expect(entry).toContain('reader-proxy')
     expect(entry).toContain('starship')
     expect(entry).toContain('/project')
     expect(entry).not.toContain('literal-secret')
     expect(entry).not.toContain('.claude/mcp/mcp-run')
   }
   expect(entries.find((entry) => entry.startsWith('mcp_servers.orch-ask='))).toContain('ask-server')
-  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain('args=["mcp"]')
+  expect(entries.find((entry) => entry.startsWith('mcp_servers.orch='))).toContain(
+    'args=["mcp","serve"]',
+  )
 })
 
 test('reading job without a registered project receives no project servers', () => {
@@ -186,11 +189,11 @@ test('orch-ask CLI definition matches the ACP command and args', () => {
   const entry = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' })).find((arg) =>
     arg.startsWith('mcp_servers.orch-ask='),
   )!
-  expect(entry).toContain(`command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))}`)
-  expect(entry).toContain(`args=${JSON.stringify(['ask-server'])}`)
+  expect(entry).toContain(`command=${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))}`)
+  expect(entry).toContain(`args=${JSON.stringify(['mcp', 'ask-server'])}`)
   expect(entry).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
   expect(serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' }))).toContain(
-    `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))},args=["mcp"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
+    `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))},args=["mcp","serve"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
   )
 })
 

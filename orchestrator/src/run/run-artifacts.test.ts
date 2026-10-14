@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -143,7 +144,7 @@ test('an artifact persistence failure cannot overwrite a concurrent operator sto
     rmSync(tree, { recursive: true, force: true })
   }
 })
-test('orch retry preserves a reader root deliverable contract and timeout', () => {
+test(`${PLATFORM_SLUG} run retry preserves a reader root deliverable contract and timeout`, () => {
   const root = addRun({ agent: 'codex', job: 'understand' })
   const child = addRun({ agent: 'grok', job: 'understand', parent: root, turn: 2 })
   writeDispatchState(root, { deliverables: ['x'], timeoutMinutes: 17 })

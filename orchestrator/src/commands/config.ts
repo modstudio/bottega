@@ -1,7 +1,8 @@
 // concern: config-commands
-/** Owns only the `orch config` grammar and presentation. */
+/** Owns only the `bottega machine config` grammar and presentation. */
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigScope } from '../../../shared/config-client.ts'
 import {
   isShipToConfigKey,
@@ -52,7 +53,7 @@ export function assertConfigWriteAllowed(
   const normalized = value === undefined ? { key, value } : shipToWrite(key, value)
   if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
     throw new Error(
-      `refusing autonomy config write from an orch worker run; an operator must run orch config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
+      `refusing autonomy config write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
     )
   }
   if (value !== undefined && isShipToConfigKey(key) && storedShipToLevel(value) === undefined)
@@ -134,7 +135,7 @@ export function register(program: Command): void {
         if (options.json) log(JSON.stringify(row))
         else
           log(
-            'machine settings take effect at the next session start (or after `orch settings apply`)',
+            `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
           )
         return
       }
@@ -168,7 +169,7 @@ export function register(program: Command): void {
           )
         deleteMachineEntry(key)
         log(
-          'machine settings take effect at the next session start (or after `orch settings apply`)',
+          `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
         )
         return
       }

@@ -10,7 +10,7 @@ export const recordSettingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/record/record-auth.ts',
       'orchestrator/src/record/record-settings.ts',
     ],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['../../../shared/brand.ts'],
     reason: 'Keep hosted settings routes independent of SQL and local execution.',
   },
   {

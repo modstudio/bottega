@@ -215,15 +215,15 @@ try {
   const agentList = await smoke(binary, ['orch', 'agent', 'list'], stateHome)
   for (const builtIn of ['codex', 'grok']) {
     if (!agentList.split('\n').some((line) => line.startsWith(`${builtIn} `))) {
-      throw new Error(`orch agent list did not show built-in agent ${builtIn}`)
+      throw new Error(`${PLATFORM_SLUG} agent show list did not show built-in agent ${builtIn}`)
     }
   }
   await smoke(binary, ['hub', 'task', 'list'], stateHome)
   if (!existsSync(join(stateHome, 'orchestrator', 'orch.db'))) {
-    throw new Error('orch jobs did not create the orchestrator store')
+    throw new Error(`${PLATFORM_SLUG} agent jobs did not create the orchestrator store`)
   }
   if (!existsSync(join(stateHome, 'hub', 'hub.db'))) {
-    throw new Error('hub task list did not create the hub store')
+    throw new Error(`${PLATFORM_SLUG} task list did not create the hub store`)
   }
   await smoke(
     binary,
@@ -235,7 +235,8 @@ try {
   const setupFacts = JSON.parse(
     await smoke(binary, ['orch', 'setup', 'facts', '--json'], stateHome),
   ) as { os?: unknown }
-  if (!setupFacts.os) throw new Error('orch setup facts --json returned no os field')
+  if (!setupFacts.os)
+    throw new Error(`${PLATFORM_SLUG} machine setup facts --json returned no os field`)
   const setupRepository = join(scratch, 'setup-repository')
   mkdirSync(setupRepository)
   writeFileSync(join(setupRepository, 'README.md'), 'setup binary smoke\n')
@@ -248,22 +249,24 @@ try {
     await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
   ) as { diff?: { kind?: string }[] }
   if (setupPlan.diff?.filter((action) => action.kind === 'add').length !== 1) {
-    throw new Error('orch setup plan did not return exactly one add proposal')
+    throw new Error(`${PLATFORM_SLUG} machine setup plan did not return exactly one add proposal`)
   }
   await smoke(binary, ['orch', 'setup', 'apply', '--in', setupRepository, '--yes'], stateHome)
   const mcpInvocations = readFileSync(mcpRecord, 'utf8').split('\n')
   const addInvocations = mcpInvocations.filter((line) => line.includes('\tmcp\tadd\t'))
   if (!addInvocations.some((line) => line.startsWith('claude\t') && line.includes('\torch\t'))) {
-    throw new Error('orch setup apply did not register orch with Claude')
+    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch with Claude`)
   }
   if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch\t'))) {
-    throw new Error('orch setup apply did not register orch with Codex')
+    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch with Codex`)
   }
   if (!addInvocations.some((line) => line.startsWith('codex\t') && line.includes('\torch-ask\t'))) {
-    throw new Error('orch setup apply did not register orch-ask with Codex')
+    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register orch-ask with Codex`)
   }
   if (!addInvocations.every((line) => line.includes(`\t${realpathSync(binary)}\t`))) {
-    throw new Error('orch setup apply did not register the compiled binary command')
+    throw new Error(
+      `${PLATFORM_SLUG} machine setup apply did not register the compiled binary command`,
+    )
   }
   const setupProjects = JSON.parse(
     await smoke(binary, ['orch', 'project', 'list', '--json'], stateHome),
@@ -272,13 +275,15 @@ try {
     (project) => project.path === realpathSync(setupRepository),
   )
   if (!setupProject?.settings?.keyPrefixes?.length) {
-    throw new Error('orch setup apply did not register a key prefix')
+    throw new Error(`${PLATFORM_SLUG} machine setup apply did not register a key prefix`)
   }
   const secondSetupPlan = JSON.parse(
     await smoke(binary, ['orch', 'setup', 'plan', '--in', setupRepository, '--json'], stateHome),
   ) as { questions?: unknown[] }
   if (secondSetupPlan.questions?.length !== 0) {
-    throw new Error('second orch setup plan returned questions for a configured project')
+    throw new Error(
+      `second ${PLATFORM_SLUG} machine setup plan returned questions for a configured project`,
+    )
   }
   const secondSetup = JSON.parse(
     await smoke(
@@ -291,7 +296,7 @@ try {
     !secondSetup.actions?.length ||
     secondSetup.actions.some((action) => action.status !== 'unchanged')
   ) {
-    throw new Error('second orch setup apply did not report unchanged')
+    throw new Error(`second ${PLATFORM_SLUG} machine setup apply did not report unchanged`)
   }
   const orchestrator = new Database(join(stateHome, 'orchestrator', 'orch.db'), {
     readonly: true,
@@ -300,7 +305,7 @@ try {
     const seen = orchestrator
       .query('SELECT 1 FROM session_seen WHERE session_id = ?')
       .get('DEV-997-binary-smoke')
-    if (!seen) throw new Error('orch jobs did not stamp the invoking session')
+    if (!seen) throw new Error(`${PLATFORM_SLUG} agent jobs did not stamp the invoking session`)
   } finally {
     orchestrator.close()
   }

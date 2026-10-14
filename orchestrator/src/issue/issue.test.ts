@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ISSUE_WORKER_SCHEMA,
   type IssueWorkerReply,
@@ -37,7 +38,7 @@ describe('filed issue coordinator inputs', () => {
       notEstablished: 'the cause',
     } as FiledIssue
     expect(requestText(issue, 'Which seed?', ['none', 'full'], 'none', 'worktree')).toContain(
-      'Answer with: hub task comment DEV-9 "Seed: <one of the options>"',
+      `Answer with: ${PLATFORM_SLUG} task comment DEV-9 "Seed: <one of the options>"`,
     )
   })
 
@@ -81,10 +82,10 @@ describe('filed issue coordinator inputs', () => {
     } as unknown as Project
     expect(validatedTrackerTaskKey('AB-42', project)).toBe('AB-42')
     expect(() => validatedTrackerTaskKey('', project)).toThrow(
-      'hub task tracker-new did not return a valid task key; returned ""',
+      `${PLATFORM_SLUG} task tracker-new did not return a valid task key; returned ""`,
     )
     expect(() => validatedTrackerTaskKey('created task AB-42', project)).toThrow(
-      'hub task tracker-new did not return a valid task key; returned "created task AB-42"',
+      `${PLATFORM_SLUG} task tracker-new did not return a valid task key; returned "created task AB-42"`,
     )
   })
 

@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   formatCursorOpened,
   formatCursorResumed,
@@ -27,8 +28,7 @@ export function withSelfRuling(
     : result
 }
 
-const legend =
-  "Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with `orch workflow await` and stop."
+const legend = `Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. job names the orch job the step dispatches, or - when you do the step yourself. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`
 
 const rulingsHeader = (result: WorkflowComposition) =>
   `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).${
@@ -63,9 +63,9 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     : `Begin now by fetching step 1, ${first.slug}.${takeover}`
   const reference = result.cursor ? workflowCursorReference(result.cursor.id) : null
   const cursor = reference?.cli ?? ''
-  const nextCommand = `orch workflow next ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --note "<how the floor was met>"`
-  const awaitCommand = `orch workflow await ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --question "..."`
-  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`orch workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
+  const nextCommand = `${PLATFORM_SLUG} workflow next ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --note "<how the floor was met>"`
+  const awaitCommand = `${PLATFORM_SLUG} workflow await ${result.workflow.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args} --question "..."`
+  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`${PLATFORM_SLUG} workflow step ${result.workflow.slug} ${first.slug} --project ${result.project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
   return [
     `${result.workflow.title} — ${mode.title}`,
     result.workflow.description,
@@ -100,7 +100,7 @@ function modeChoiceLines(result: WorkflowComposition): string[] {
     ),
     ...result.needs.mode.map((mode) => `${mode.slug}: ${mode.entry}`),
     'Choose a mode by answering its question, then compose again with that mode.',
-    `Next call: MCP \`compose_workflow\` or \`get_workflow_step\` with \`mode\`${mcpArgs}; CLI \`orch workflow compose ${result.workflow.slug} --project ${result.project} --mode <mode>${cliArgs}\`.`,
+    `Next call: MCP \`compose_workflow\` or \`get_workflow_step\` with \`mode\`${mcpArgs}; CLI \`${PLATFORM_SLUG} workflow compose ${result.workflow.slug} --project ${result.project} --mode <mode>${cliArgs}\`.`,
   ]
 }
 
@@ -127,8 +127,8 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
 
 function operatorRulingAutonomy(hasOtherFloor: boolean): string {
   return hasOtherFloor
-    ? "this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with `orch workflow await` when that is the evidence you use."
-    : 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+    ? `this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`
+    : `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
 }
 
 function autonomyInstruction(step: WorkflowStep): string {
@@ -137,18 +137,18 @@ function autonomyInstruction(step: WorkflowStep): string {
   if (step.floor.includes('ruling') && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
-    return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+    return `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
   if (resolved === 'auto' && step.autonomy === 'ask')
     return maySelfRule
-      ? 'rule this step yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
-      : 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
+      ? `rule this step yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+      : `rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   if (resolved === 'review')
     return maySelfRule
-      ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-      : 'rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+      ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+      : `rule yourself; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
   return maySelfRule
-    ? 'rule yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a design or product-direction decision still goes to the operator (`orch workflow await`).'
-    : 'rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).'
+    ? `rule yourself and record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\`; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    : `rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
@@ -156,7 +156,7 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
-  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`orch workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
+  const close = `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP)${cursor} or \`${PLATFORM_SLUG} workflow next${step.cursor ? ` ${step.workflow}${cliCursor}` : ''}\`, giving a one-line note of how the floor was met;`
   const pointer =
     step.next === undefined
       ? `${close} that serves the following step from the workflow's step list.`

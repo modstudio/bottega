@@ -6,6 +6,21 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+/**
+ * Claim a run id, hand the work to a process that outlives this one, and return.
+ *
+ * The id has to exist BEFORE the agent is picked, because the whole point is to
+ * print it and exit — so a placeholder row is claimed here and `run()` fills it
+ * in once it has routed. Until then the row reads agent `(pending)`, which is
+ * true: nothing has been chosen yet.
+ *
+ * The child writes stdout and stderr to its per-run coordinator log and is
+ * unref'd, so this process's event loop can drain and exit while the child keeps
+ * going. That is the part every
+ * caller-side workaround got wrong — a shell wrapper dies and takes the agent
+ * with it, and `setsid` does not exist on macOS.
+ */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -23,21 +38,6 @@ import { runLeaseState } from './run-lease.ts'
 import { ensureDispatchMcpMainStack } from './run-mcp-main-stack.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
-
-/**
- * Claim a run id, hand the work to a process that outlives this one, and return.
- *
- * The id has to exist BEFORE the agent is picked, because the whole point is to
- * print it and exit — so a placeholder row is claimed here and `run()` fills it
- * in once it has routed. Until then the row reads agent `(pending)`, which is
- * true: nothing has been chosen yet.
- *
- * The child writes stdout and stderr to its per-run coordinator log and is
- * unref'd, so this process's event loop can drain and exit while the child keeps
- * going. That is the part every
- * caller-side workaround got wrong — a shell wrapper dies and takes the agent
- * with it, and `setsid` does not exist on macOS.
- */
 export async function detach(
   jobName: string,
   prompt: string,
@@ -53,7 +53,7 @@ export async function detach(
    * then this function has inserted a placeholder row — so a worker that tries
    * to hire someone leaves a `(pending)` row behind that nobody ever fills in
    * and the stale sweep later marks `interrupted`. Observed: a grok worker read
-   * the `orch do` instructions in AGENTS.md, tried twice, and left two abandoned
+   * the `bottega run start` instructions in AGENTS.md, tried twice, and left two abandoned
    * rows in the run table.
    *
    * They cost routing nothing, because `(pending)` is not an agent any query
@@ -98,7 +98,7 @@ export async function detach(
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
   mkdirSync(runsDir, { recursive: true })
-  // Named by the clock alone, this collided: concurrent `orch do` calls for the
+  // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
   // them then read whichever prompt was written last. Six review lenses fired at
   // once produced three runs sharing one file and answering one question. The id
@@ -145,7 +145,7 @@ export async function detach(
       if (liveOwner) {
         throw new Error(
           `run ${liveOwner.id} (${liveOwner.status}) is alive on the original chain or retained branch/tree; ` +
-            `wait for it or orch abandon ${spec.resume.parent}`,
+            `wait for it or ${PLATFORM_SLUG} run abandon ${spec.resume.parent}`,
         )
       }
     }

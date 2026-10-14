@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
@@ -143,7 +144,9 @@ describe('record API client test safety', () => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async () =>
       Response.json(
-        { error: 'record session has no active space; run `orch record space switch <slug>`' },
+        {
+          error: `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
+        },
         { status: 409 },
       )) as unknown as typeof fetch
     try {
@@ -158,7 +161,7 @@ describe('record API client test safety', () => {
       }
       expect(refusal).toBeInstanceOf(Error)
       expect((refusal as Error).message).toBe(
-        'record session has no active space; run `orch record space switch <slug>`',
+        `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
       )
     } finally {
       globalThis.fetch = originalFetch

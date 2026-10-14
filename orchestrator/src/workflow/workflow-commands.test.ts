@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { program } from '../cli/program.ts'
 import { db, sessionId } from '../database/db.ts'
@@ -116,7 +117,7 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
 
 test('workflow probe refuses a missing command', async () => {
   expect(workflowCommand(['workflow', 'probe', '--'], presentation([]))).rejects.toThrow(
-    'orch workflow probe needs a command after --',
+    `${PLATFORM_SLUG} workflow probe needs a command after --`,
   )
 })
 
@@ -131,19 +132,19 @@ test('workflow next refuses --basis without --self-ruling at the command edge', 
 
 test('workflow exec refuses a missing command', async () => {
   expect(workflowCommand(['workflow', 'exec', '--'], presentation([]))).rejects.toThrow(
-    'orch workflow exec needs a command after --',
+    `${PLATFORM_SLUG} workflow exec needs a command after --`,
   )
 })
 
 test('workflow probe requires a separator before the child command', async () => {
   expect(workflowCommand(['workflow', 'probe', '/usr/bin/true'], presentation([]))).rejects.toThrow(
-    'orch workflow probe requires -- before the child command; use orch workflow probe [--cwd <dir>] -- <command…>',
+    `${PLATFORM_SLUG} workflow probe requires -- before the child command; use ${PLATFORM_SLUG} workflow probe [--cwd <dir>] -- <command…>`,
   )
 })
 
 test('workflow exec requires a separator before the child command', async () => {
   expect(workflowCommand(['workflow', 'exec', '/usr/bin/true'], presentation([]))).rejects.toThrow(
-    'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
+    `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
   )
 })
 
@@ -242,7 +243,7 @@ test('Commander refuses workflow exec without a separator before running the chi
         '--json',
       ]),
     ).rejects.toThrow(
-      'orch workflow exec requires -- before the child command; use orch workflow exec [--cwd <dir>] -- <command…>',
+      `${PLATFORM_SLUG} workflow exec requires -- before the child command; use ${PLATFORM_SLUG} workflow exec [--cwd <dir>] -- <command…>`,
     )
 
     expect((db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n).toBe(before)
@@ -342,7 +343,7 @@ test('command outcome maps a signal to its shell status and error line', () => {
     }),
   ).toEqual({
     exitCode: 143,
-    errorLine: 'orch workflow exec: command was killed by SIGTERM',
+    errorLine: `${PLATFORM_SLUG} workflow exec: command was killed by SIGTERM`,
   })
 })
 
@@ -378,7 +379,10 @@ test('workflow probe prints a failed command exit and stored output tail after t
 
   expect(shown.stdout).toHaveLength(1)
   expect(shown.stdout[0]).toMatch(/^\d+$/)
-  expect(shown.stderr).toEqual(['orch workflow probe: command exited 127', 'command not found\n'])
+  expect(shown.stderr).toEqual([
+    `${PLATFORM_SLUG} workflow probe: command exited 127`,
+    'command not found\n',
+  ])
   expect(shown.exitCodes).toEqual([127])
 })
 
@@ -405,7 +409,7 @@ test('workflow probe failure prints the stored withheld marker instead of secret
   })
 
   expect(shown.stderr).toEqual([
-    'orch workflow probe: command exited 1',
+    `${PLATFORM_SLUG} workflow probe: command exited 1`,
     '[withheld: secret-shaped content]',
   ])
   expect(shown.stderr.join('\n')).not.toContain('ghp_exampletokenvalue')
@@ -419,7 +423,7 @@ test('workflow probe failure says when the stored output tail is empty', async (
     probeRunner: () => ({ exitCode: 2, output: '' }),
   })
 
-  expect(shown.stderr).toEqual(['orch workflow probe: command exited 2', '(no output)'])
+  expect(shown.stderr).toEqual([`${PLATFORM_SLUG} workflow probe: command exited 2`, '(no output)'])
 })
 
 test('workflow probe JSON adds exitCode and outputTail only for a failure', async () => {
@@ -435,7 +439,7 @@ test('workflow probe JSON adds exitCode and outputTail only for a failure', asyn
     exitCode: 7,
     outputTail: 'failed\n',
   })
-  expect(failing.stderr).toEqual(['orch workflow probe: command exited 7', 'failed\n'])
+  expect(failing.stderr).toEqual([`${PLATFORM_SLUG} workflow probe: command exited 7`, 'failed\n'])
 
   const passing = outcomePresentation()
   await workflowCommand(['workflow', 'probe', '--', 'passing'], passing.presentation, {
@@ -499,7 +503,7 @@ test('cursor command without a default mode names the available modes', async ()
       presentation([]),
     ),
   ).rejects.toThrow(
-    `orch workflow next cannot resolve a default mode for workflow "${slug}"; modes: report, repair; pass --mode <slug>`,
+    `${PLATFORM_SLUG} workflow next cannot resolve a default mode for workflow "${slug}"; modes: report, repair; pass --mode <slug>`,
   )
 })
 
@@ -699,7 +703,7 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
       presentation([]),
     ),
   ).rejects.toThrow(
-    `orch workflow next cannot resolve a mode for workflow "${slug}"; ` +
+    `${PLATFORM_SLUG} workflow next cannot resolve a mode for workflow "${slug}"; ` +
       'active cursor modes: repair, report; pass --mode <slug>',
   )
 })

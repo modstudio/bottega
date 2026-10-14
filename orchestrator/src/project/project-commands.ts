@@ -4,6 +4,7 @@
  * not know runs, routing, transports, reviews, the CLI, or worktrees by value.
  */
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
@@ -59,8 +60,8 @@ function emptyProjectListMessage(retired: boolean): string {
   if (retired) return 'no retired projects.'
   return (
     'no projects registered.\n\n' +
-    '  orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]\n' +
-    '  orch project retire <name> [--undo]\n\n' +
+    `  ${PLATFORM_SLUG} project add <path> [--name X] [--stack Y] [--no-canon] [--json]\n` +
+    `  ${PLATFORM_SLUG} project retire <name> [--undo]\n\n` +
     'The stack is what lets routing tell "good at PHP" from "good at Vue";\n' +
     'two projects sharing one stack pool their evidence.'
   )
@@ -96,7 +97,7 @@ function listProjectsCommand(flags: ProjectFlags, presentation: ProjectPresentat
    *
    * The boundary check forbids the import and a shared database would make
    * two concerns one, so what another concern needs is emitted here — the
-   * same contract `orch state` already serves the dashboard under. A
+   * same contract `bottega run state` already serves the dashboard under. A
    * project's identity, stack and settings are exactly the facts hub needs
    * to stop knowing four repository names of its own.
    */
@@ -205,7 +206,7 @@ async function addProjectCommand(
     presentation.log(`un-retired ${name}`)
   } else {
     presentation.log(
-      `registered ${name}  ${stack ?? '(no stack — orch project set ' + name + ' --stack ...)'}  ${path}`,
+      `registered ${name}  ${stack ?? '(no stack — ${PLATFORM_SLUG} project set ' + name + ' --stack ...)'}  ${path}`,
     )
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {
@@ -447,7 +448,7 @@ async function setProjectCommand(
   const name = argv[2]
   if (!name)
     throw new Error(
-      'orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
+      `${PLATFORM_SLUG} project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]`,
     )
   const project = projectByName(name)
   if (!project) throw new Error(`no project "${name}"`)
@@ -503,7 +504,7 @@ async function retireProjectCommand(
   presentation: ProjectPresentation,
 ): Promise<void> {
   const name = argv[2]
-  if (!name) throw new Error('orch project retire <name> [--undo]')
+  if (!name) throw new Error(`${PLATFORM_SLUG} project retire <name> [--undo]`)
   if (flags.has('undo')) {
     await unretireWrittenProject(name)
     presentation.log(`un-retired ${name}`)
@@ -547,7 +548,7 @@ export async function projectCommand(
       versionText = flag('version')
     if (!name || !axis || !profile || !reason?.trim())
       throw new Error(
-        'orch project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT',
+        `${PLATFORM_SLUG} project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT`,
       )
     const version = versionText === undefined ? undefined : Number(versionText)
     const result = selectProjectProfile({
@@ -568,7 +569,7 @@ export async function projectCommand(
 
   if (sub === 'migrate-create') {
     const name = argv[2]
-    if (!name) throw new Error('orch project migrate-create <name> [--apply]')
+    if (!name) throw new Error(`${PLATFORM_SLUG} project migrate-create <name> [--apply]`)
     const p = projectByName(name)
     if (!p) throw new Error(`no project "${name}"`)
     const create = p.settings.worktree?.create
@@ -601,7 +602,7 @@ export async function projectCommand(
 
   if (sub === 'remove') {
     const name = argv[2]
-    if (!name) throw new Error('orch project remove <name>')
+    if (!name) throw new Error(`${PLATFORM_SLUG} project remove <name>`)
     presentation.log(
       (await removeWrittenProject(name)) ? `removed ${name}` : `no project "${name}"`,
     )
@@ -623,5 +624,7 @@ export async function projectCommand(
     return
   }
 
-  throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove | retire | push`)
+  throw new Error(
+    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | remove | retire | push`,
+  )
 }

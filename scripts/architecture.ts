@@ -40,6 +40,7 @@ import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiFolders, uiLayers } from './architecture-ui-layers.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
+import { worktreeModules } from './architecture-worktree-modules.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
@@ -134,6 +135,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/question-open.ts', []),
   module('orchestrator/src/run/question-close.ts', [
+    '../../../shared/brand.ts',
     '../database/db.ts',
     './question-delivery.ts',
     './question-mutation.ts',
@@ -217,6 +219,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
   ]),
   module('orchestrator/src/branch/branches.ts', [
+    '../../../shared/brand.ts',
     './branch-base-claim.ts',
     './branch-landing-match.ts',
     './branch-landing-record.ts',
@@ -233,6 +236,7 @@ export const modules: ArchitectureModule[] = [
     './task-branch.ts',
   ]),
   module('orchestrator/src/agent/agent-probe.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     './agent-registry.ts',
     './agents.ts',
@@ -244,6 +248,7 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport.ts',
   ]),
   module('orchestrator/src/agent/vendor-probe.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     './agent-registry.ts',
     '../database/db.ts',
@@ -251,6 +256,7 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport.ts',
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
+    '../../../shared/brand.ts',
     './agents.ts',
     './capabilities.ts',
     '../database/db.ts',
@@ -265,6 +271,7 @@ export const modules: ArchitectureModule[] = [
     './codex-mcp-scope.ts',
   ]),
   module('orchestrator/src/sandbox/codex-mcp-scope.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../mcp/mcp-probe.ts',
     '../mcp/mcp-tool-list.ts',
@@ -272,8 +279,12 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
   ...recipeModules,
-  module('orchestrator/src/hook-tree/hook-tree.ts', ['../run/synthetic-lifecycle-job.ts']),
+  module('orchestrator/src/hook-tree/hook-tree.ts', [
+    '../../../shared/brand.ts',
+    '../run/synthetic-lifecycle-job.ts',
+  ]),
   module('orchestrator/src/landing-tree/landing-tree.ts', [
+    '../../../shared/brand.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../worktree/worktree-template.ts',
   ]),
@@ -286,6 +297,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/worktree/keep-tree-hold.ts', []),
   module('orchestrator/src/agent/model-host.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/state-directory.ts',
     './agent-registry.ts',
@@ -293,6 +305,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', [
+    '../../../shared/brand.ts',
     './workflow-cursor-format.ts',
     './workflow-floor.ts',
     './workflows.ts',
@@ -302,6 +315,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/ship-to.ts',
   ]),
   module('orchestrator/src/workflow/autonomy-scopes.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
@@ -317,6 +331,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/monitor/monitor-conditions.ts', [
     'node:fs',
     'node:path',
+    '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
     '../events.ts',
@@ -344,6 +359,7 @@ export const modules: ArchitectureModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [
+    '../../../shared/brand.ts',
     'node:crypto',
     '../board/board-hosted-cache.ts',
     '../board/board-push-service.ts',
@@ -415,10 +431,11 @@ export const modules: ArchitectureModule[] = [
   module('shared/autonomy.ts', []),
   module('shared/keychain.ts', []),
   module('shared/machine-key-id.ts', []),
-  module('shared/record-remedies.ts', []),
+  module('shared/record-remedies.ts', ['./brand.ts']),
   module('shared/settings-summary.ts', ['node:crypto', './secret-shaped.ts']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [
+    './brand.ts',
     './config-client.ts',
     './hosted-config-space.ts',
     './record-remedies.ts',
@@ -470,11 +487,13 @@ export const modules: ArchitectureModule[] = [
     '../verdict/verdict-payload.ts',
   ]),
   module('orchestrator/src/project/project-lock.ts', [
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/project/project-hosted-write.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination.ts',
@@ -508,10 +527,14 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/state-directory.ts',
     '../database/db.ts',
   ]),
-  module('orchestrator/src/resources/worker-hooks.ts', ['../../../shared/self-spawn.ts']),
-  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', []),
+  module('orchestrator/src/resources/worker-hooks.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+  ]),
+  module('orchestrator/src/reclaim/reclaim-residue-policy.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/reclaim/reclaim-worktree-dirty.ts', []),
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
+    '../../../shared/brand.ts',
     'node:fs',
     'node:path',
     '../agent/agent-registry.ts',
@@ -548,6 +571,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', ['../evidence/evidence-query.ts']),
   module('orchestrator/src/review/review-read.ts', [
+    'shared/brand.ts',
     'bun:sqlite',
     '../../../shared/record/schema.ts',
     '../../../shared/secret-shaped.ts',
@@ -566,6 +590,7 @@ export const modules: ArchitectureModule[] = [
     './review-types.ts',
   ]),
   module('orchestrator/src/review/review-triage.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
     './review-vocabulary.ts',
@@ -590,6 +615,7 @@ export const modules: ArchitectureModule[] = [
     'node:stream',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/embedded-assets.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
@@ -628,8 +654,13 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport-cli.ts',
   ]),
   module('orchestrator/src/state/statistics.ts', []),
-  module('orchestrator/src/hook-tree/tree-commands.ts', ['./tree.ts', '../landing-tree/tree.ts']),
+  module('orchestrator/src/hook-tree/tree-commands.ts', [
+    '../../../shared/brand.ts',
+    './tree.ts',
+    '../landing-tree/tree.ts',
+  ]),
   module('orchestrator/src/hook-tree/tree.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     'node:crypto',
     'node:fs',
@@ -649,6 +680,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/landing-tree/tree.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     'node:crypto',
     '../close/close-out.ts',
@@ -683,6 +715,7 @@ export const modules: ArchitectureModule[] = [
     './workflow-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-store.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:util',
     '../database/db.ts',
@@ -691,60 +724,7 @@ export const modules: ArchitectureModule[] = [
     './workflow-tree.ts',
     './workflows.ts',
   ]),
-  module('orchestrator/src/worktree/worktree-caller.ts', [
-    '../project/projects.ts',
-    '../git/git-environment.ts',
-    './worktree-types.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-create.ts', [
-    '../branch/create-time-settlement.ts',
-    '../database/db.ts',
-    '../project/projects.ts',
-    '../recipe/recipe.ts',
-    '../recipe/tracked-recipe.ts',
-    './worktree-template.ts',
-    './worktree-attribution.ts',
-    '../git/git-environment.ts',
-    '../project/project-lock.ts',
-    './worktree-remove.ts',
-    './worktree-caller.ts',
-    './worktree-seed.ts',
-    './worktree-tool.ts',
-    './worktree-types.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-preflight.ts', [
-    '../project/projects.ts',
-    './worktree-template.ts',
-    '../git/git-environment.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-readonly.ts', [
-    '../project/projects.ts',
-    './worktree-provision.ts',
-    './worktree-template.ts',
-    '../git/git-environment.ts',
-    './worktree-remove.ts',
-    './worktree-create.ts',
-    './worktree-types.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-provision.ts', ['node:fs', 'node:path']),
-  module('orchestrator/src/worktree/worktree-remove.ts', [
-    '../database/db.ts',
-    '../project/projects.ts',
-    '../recipe/recipe.ts',
-    '../recipe/tracked-recipe.ts',
-    './worktree-attribution.ts',
-    '../git/git-environment.ts',
-    '../resources/ref-guard.ts',
-    '../resources/resource-claims.ts',
-    './snapshotless-tracked-recipe.ts',
-    './worktree-tool.ts',
-    './worktree-types.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-tool.ts', [
-    './worktree-template.ts',
-    '../git/git-environment.ts',
-  ]),
-  module('orchestrator/src/worktree/worktree-types.ts', []),
+  ...worktreeModules,
 ]
 
 export const inversions: ArchitectureInversion[] = [

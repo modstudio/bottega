@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type DocSearchOutput, DocSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
@@ -220,7 +221,12 @@ function isDocRow(value: unknown): value is DocRow {
 
 export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
   const child = Bun.spawn(
-    [...bottegaEntryArgv('orch', resolve(repositoryRoot, 'bin/orch')), 'doc', 'list', '--json'],
+    [
+      ...bottegaEntryArgv(PLATFORM_SLUG, resolve(repositoryRoot, 'bin', PLATFORM_SLUG)),
+      'doc',
+      'list',
+      '--json',
+    ],
     {
       cwd: repositoryRoot,
       stdout: 'pipe',
@@ -235,7 +241,7 @@ export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
   if (exitCode !== 0) {
     throw new Error(
       `doc corpus export failed: ${stderr.trim() || `exit ${exitCode}`}. ` +
-        'Run `bin/orch doc list --json` from the repository root.',
+        `Run \`bin/${PLATFORM_SLUG} doc list --json\` from the repository root.`,
     )
   }
   let rows: unknown

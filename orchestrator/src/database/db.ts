@@ -166,7 +166,7 @@ export function closeDatabaseForFixture(): void {
   schemaReload = null
 }
 
-/** Long-lived processes (orch mcp) reload instead of refusing a write after a migrate. */
+/** Long-lived processes (bottega mcp serve) reload instead of refusing a write after a migrate. */
 export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
   schemaReload = onReload
 }
@@ -187,7 +187,13 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     return db(forWrite)
   }
   if (!forWrite) return d
-  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after orch migrate'))
+  throw new Error(
+    staleWriteRefusal(
+      actual,
+      opened,
+      `restart this process after ${PLATFORM_SLUG} machine migrate`,
+    ),
+  )
 }
 
 export function db(writable = false): Database {
@@ -208,7 +214,7 @@ export function db(writable = false): Database {
   const d = linkedWorktreeReadOnly
     ? new Database(readOnlyPath, { readonly: true })
     : new Database(DB_PATH, { readwrite: true, create: false })
-  // Several `orch do` processes write concurrently during a fan-out. Without a
+  // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
   // of the very runs it was launching.
@@ -517,9 +523,9 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * failed run is not owed one — failing is already an implicit `delivery=none` —
  * and neither is a run still in flight.
  *
- * `orch doctor` and the dashboard card each subtracted a total score count from
+ * `bottega machine doctor` and the dashboard card each subtracted a total score count from
  * a total run count instead, which counts probes, in-flight runs, failures and
- * abandoned rows as debt. They reported 28 unscored where `orch pending` — the
+ * abandoned rows as debt. They reported 28 unscored where `bottega score pending` — the
  * command that actually tells you what to do about it — reported none.
  */
 /**

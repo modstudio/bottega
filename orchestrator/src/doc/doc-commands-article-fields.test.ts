@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { register } from '../commands/docs.ts'
 import { optionFlags } from '../commands/support.ts'
@@ -74,7 +75,7 @@ const show = async (slug: string) => {
   return JSON.parse(result.out)
 }
 
-test('orch doc commands preserve, clear, and list article fields by subject name', async () => {
+test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by subject name`, async () => {
   upsertProject({
     name: 'article-command-project',
     path: '/w/article-command-project',
@@ -189,7 +190,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
     'Unknown',
   ])
   expect(unknown.code).toBe(1)
-  expect(unknown.err).toContain('orch subject list article-command-project')
+  expect(unknown.err).toContain(`${PLATFORM_SLUG} doc subject list article-command-project`)
 
   for (const address of [[], ['--scope', 'project']]) {
     const unscoped = await command(['doc', 'list', ...address, '--article-subject', 'Pricing'])

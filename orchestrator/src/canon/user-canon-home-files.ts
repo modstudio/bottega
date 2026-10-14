@@ -1,5 +1,6 @@
 // concern: user-canon-home-files
 /** Reads and applies harness-home canon files. Must not know stores, commands, runs, routing, or transports. */
+
 import {
   lstatSync,
   mkdirSync,
@@ -11,6 +12,7 @@ import {
   rmSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   applyBackedUpSettingsWrites,
@@ -48,7 +50,7 @@ export type UserCanonHomePlanDecision =
 
 export const EMPTY_USER_CANON_STORE_REFUSAL =
   'this store holds no user canon while the home has files another store marked as managed; ' +
-  'keep them by importing with `orch canon import --user`; or remove the files yourself'
+  `keep them by importing with \`${PLATFORM_SLUG} doc canon import --user\`; or remove the files yourself`
 
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {
@@ -193,8 +195,8 @@ export function planUserCanonHome(input: {
       }
       throw new Error(
         `refusing to overwrite unmarked ${input.home.mapping.harness} home file ${path}: its content differs from user canon\n` +
-          'keep the file (file wins): orch canon import --user\n' +
-          'keep the store (store wins): orch canon hydrate --user --adopt',
+          `keep the file (file wins): ${PLATFORM_SLUG} doc canon import --user\n` +
+          `keep the store (store wins): ${PLATFORM_SLUG} doc canon hydrate --user --adopt`,
       )
     }
     if (decision.action === 'write') {

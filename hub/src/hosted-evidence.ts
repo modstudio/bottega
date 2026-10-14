@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { PushedDay, PushedInterval } from './push-contract.ts'
-
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
 export type DayEvidence = PushedDay
@@ -156,7 +156,7 @@ export async function applyDayChangeInTransaction(
     WHERE id=${row.machine_id}::uuid AND user_id=${identity.userId}::uuid`
   if (!knownMachine.length)
     throw new Error(
-      `machine ${row.machine_id} is unknown or belongs to another user; run orch sync to register the machine`,
+      `machine ${row.machine_id} is unknown or belongs to another user; run ${PLATFORM_SLUG} record sync to register the machine`,
     )
   const existing = await tx<{ id: string; by_id: boolean; machine_id: string | null }[]>`
     SELECT id::text AS id,id=${row.id}::uuid AS by_id,machine_id::text FROM hub_day

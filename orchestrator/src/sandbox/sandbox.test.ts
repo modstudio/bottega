@@ -97,8 +97,8 @@ test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
     expect(written).toContain('model = "grok"\n[mcp_servers.orch]')
     expect(written).not.toContain('/main/orchestrator/src/cli.ts')
     expect(written).not.toContain('STALE')
-    expect(written).toContain(`command = ${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))}`)
-    expect(written).toContain('args = ["ask-server"]')
+    expect(written).toContain(`command = ${JSON.stringify(join(ROOT, '..', 'bin', PLATFORM_SLUG))}`)
+    expect(written).toContain('args = ["mcp","ask-server"]')
     writeFileSync(join(source, 'config.toml'), 'replacement = true\n')
     prepareGrokMcpHome(runDir, [], source, 'srt')
     const sandboxed = readFileSync(join(runDir, 'config.toml'), 'utf8')
@@ -200,7 +200,11 @@ test('chooses the Grok ask command from the launch sandbox', () => {
     join(ROOT, 'src', 'ask', 'ask-proxy.ts'),
     'ask-server',
   ])
-  expect(grokAskServerCommand('host')).toEqual([join(ROOT, '..', 'bin', 'orch'), 'ask-server'])
+  expect(grokAskServerCommand('host')).toEqual([
+    join(ROOT, '..', 'bin', PLATFORM_SLUG),
+    'mcp',
+    'ask-server',
+  ])
 })
 
 test('prepares and updates a Grok home for the launch sandbox only', () => {

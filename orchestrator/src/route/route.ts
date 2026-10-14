@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
   fileContractProbeReason,
@@ -374,7 +375,7 @@ export function weightCase(): string {
    *
    * Otherwise the axis would exist everywhere a person looks and nowhere the
    * router looks — which is the exact failure this file already carries a
-   * section about: `orch stats`, the dashboard and the router each held their
+   * section about: `bottega agent stats`, the dashboard and the router each held their
    * own copy of the aggregate, and when one learned to count failures the
    * others did not follow. Built from FIDELITY_PENALTY for the same reason the
    * matrix above is built from WEIGHT: editing the constant has to move
@@ -614,7 +615,7 @@ export function candidates(
       why = `not declared for ${jobName}`
     } else if (cooling && coolingProbeAgent !== name) {
       eligible = false
-      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run 'orch probe ${name}' to clear it`
+      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run '${PLATFORM_SLUG} agent probe ${name}' to clear it`
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -623,7 +624,7 @@ export function candidates(
       why = 'metered billing'
     } else if (!a.probedAt) {
       eligible = false
-      why = `unprobed agent is ineligible for all jobs; run orch agent probe ${name}`
+      why = `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe ${name}`
     } else if (predatesFileContract(a)) {
       eligible = false
       why = fileContractProbeReason(name)
@@ -704,7 +705,7 @@ export type Scored = Candidate & { job: string; promptBucket: PromptSizeBucket }
 /**
  * Every job × agent cell, scored exactly the way routing scores it.
  *
- * `orch stats` and the dashboard matrix each had their own copy of this query,
+ * `bottega agent stats` and the dashboard matrix each had their own copy of this query,
  * and both still filtered `status='ok'` after the router stopped: grok on
  * review-lens read 96% in both views and 69% to the thing actually choosing,
  * because 6 failures were invisible to the report and not to the decision. The
@@ -754,7 +755,7 @@ export function scoreboard(onlyJob?: string): Scored[] {
  * is used only once it has earned MIN_SAMPLE on its own, and until then the
  * job-wide evidence answers, exactly as it did before.
  *
- * Which level was used is returned, not inferred, because `orch pick` has to be
+ * Which level was used is returned, not inferred, because `bottega agent pick` has to be
  * able to say WHY — a recommendation drawn from four PHP runs and one drawn
  * from thirty mixed ones deserve different amounts of trust, and only the
  * router knows which it gave you.

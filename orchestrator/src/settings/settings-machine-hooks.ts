@@ -2,6 +2,7 @@
 /** Pure declaration and merge of product-owned machine hooks. */
 
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
   BOARD_PUSH_REFRESH_SECONDS,
@@ -27,7 +28,7 @@ const SCRIPT_FILES = [
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
 type HookEvent = 'PreToolUse' | 'SubagentStart' | 'PostToolUse' | 'Stop' | 'SessionStart'
-type HookCondition = string | { absoluteOrch: 'do' | 'land' }
+type HookCondition = string | { absoluteOrch: 'do' }
 type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
@@ -58,23 +59,16 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     script: 'test-substance-guard.py',
   },
   { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
-  { event: 'PostToolUse', matcher: 'Bash', if: 'Bash(orch do:*)', script: 'heartbeat-remind.py' },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: `Bash(${PLATFORM_SLUG} run start:*)`,
+    script: 'heartbeat-remind.py',
+  },
   {
     event: 'PostToolUse',
     matcher: 'Bash',
     if: { absoluteOrch: 'do' },
-    script: 'heartbeat-remind.py',
-  },
-  {
-    event: 'PostToolUse',
-    matcher: 'Bash',
-    if: 'Bash(orch land:*)',
-    script: 'heartbeat-remind.py',
-  },
-  {
-    event: 'PostToolUse',
-    matcher: 'Bash',
-    if: { absoluteOrch: 'land' },
     script: 'heartbeat-remind.py',
   },
   {
@@ -106,7 +100,7 @@ function scriptPath(assetRoot: string, file: ScriptFile): string {
 
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
   if (typeof value === 'string' || value === undefined) return value
-  return `Bash(${join(assetRoot, 'bin', 'orch')} ${value.absoluteOrch}:*)`
+  return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} run start:*)`
 }
 
 function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string): string {

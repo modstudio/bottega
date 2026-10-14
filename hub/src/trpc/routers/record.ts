@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -162,7 +163,7 @@ function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
   if (refusal)
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: `${refusal}\ncleared by: correct the named field and run orch record publish`,
+      message: `${refusal}\ncleared by: correct the named field and run ${PLATFORM_SLUG} record publish`,
     })
   return null
 }

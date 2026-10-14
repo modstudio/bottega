@@ -25,6 +25,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   gitToplevel,
   inspectCheckout,
@@ -200,7 +201,7 @@ export function retiredProjectByName(name: string): Project | null {
 
 /** Dispatching into a retired project names the undo, not emptiness. */
 export function retiredProjectRefusal(name: string): string {
-  return `project ${name} is retired; cleared by: orch project retire ${name} --undo`
+  return `project ${name} is retired; cleared by: ${PLATFORM_SLUG} project retire ${name} --undo`
 }
 
 export function retiredProjectAt(cwd: string): Project | null {
@@ -399,7 +400,7 @@ export function projectRemovalRefusal(
   if (!named.length) return null
   return [
     `project ${name} is referenced by ${named.join(', ')}; removing it would blank their project attribution`,
-    `cleared by: orch project retire ${name}`,
+    `cleared by: ${PLATFORM_SLUG} project retire ${name}`,
   ]
 }
 
@@ -630,7 +631,7 @@ function reviewLensProblems(
   return review.lenses.flatMap((entry, index) =>
     entry && typeof entry === 'object' && typeof entry.lens === 'string' && !enabled.has(entry.lens)
       ? [
-          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from orch lens list`,
+          `review.lenses.${index}.lens: unknown or disabled lens "${entry.lens}"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
         ]
       : [],
   )
@@ -842,7 +843,7 @@ export function detachedCheckoutDecision(
 
 function registerBranchRemedy(landing: string, checkoutPath: string, projectName: string): string {
   return (
-    `cleared by: check out ${landing} in ${checkoutPath} or correct it with orch project set ${projectName} ` +
+    `cleared by: check out ${landing} in ${checkoutPath} or correct it with ${PLATFORM_SLUG} project set ${projectName} ` +
     `--settings '{"trunk":"<branch>"}'`
   )
 }
@@ -994,7 +995,7 @@ function mainCheckoutRefusal(
     `${project.name}: main checkout ${project.path} has tracked modifications: ${dirtyTracked.join(', ')}\n` +
     `work from a worktree under ${hint} instead\n` +
     `invariant: ${MAIN_CHECKOUT_INVARIANT}\n` +
-    `cleared by: orch do --cwd ${shellQuote(`${hint}/<tree>`)}`
+    `cleared by: ${PLATFORM_SLUG} run start --cwd ${shellQuote(`${hint}/<tree>`)}`
   )
 }
 

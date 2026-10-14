@@ -27,6 +27,7 @@ export const gateModules: GateModule[] = [
     './gate-decision.ts',
   ]),
   module('orchestrator/src/gate/gate-run.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'node:child_process',
     'node:fs',
@@ -43,9 +44,14 @@ export const gateModules: GateModule[] = [
     './gate-decision.ts',
   ]),
   module('orchestrator/src/gate/gate-passed.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/gate/gate-result.ts', ['../database/db.ts', '../project/projects.ts']),
+  module('orchestrator/src/gate/gate-result.ts', [
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+  ]),
 ]

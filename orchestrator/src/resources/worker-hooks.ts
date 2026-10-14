@@ -17,6 +17,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 type WorkerHookName = 'commit-msg' | 'pre-push'
@@ -188,7 +189,7 @@ export function installWorkerHook(hookDir: string, name: WorkerHookName, content
     }
     throw new Error(
       `refusing to replace worker ${name} hook ${installed}: it was not written by orch; ` +
-        `remove ${installed} or run orch discard <run> for the chain`,
+        `remove ${installed} or run ${PLATFORM_SLUG} run discard <run> for the chain`,
     )
   }
   let fd: number | null = null

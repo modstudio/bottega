@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers the release adapter. Must not own release policy or persistence. */
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   releaseLog,
   releaseProject,
@@ -20,7 +21,9 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action((project, options) => {
       if (!project)
-        throw new Error('orch release <project> [--rung <name>] [--rollback "<reason>"]')
+        throw new Error(
+          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"]`,
+        )
       const result = releaseProject(project, options.rung, options.rollback)
       if (options.json) log(JSON.stringify(result))
       else {

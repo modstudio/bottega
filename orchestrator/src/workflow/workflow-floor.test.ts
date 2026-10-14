@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   catalogueFloors,
   decideFloorSatisfaction,
@@ -136,7 +137,7 @@ test('an operator ruling floor requires a bound operator answer', () => {
     expect(decision.action).toBe('refuse')
     if (decision.action === 'refuse') {
       expect(decision.message).toContain('no operator answer on this step')
-      expect(decision.message).toContain('orch workflow await')
+      expect(decision.message).toContain(`${PLATFORM_SLUG} workflow await`)
     }
   }
   expect(decide({ floors: [operatorRuling], evidence: operatorAnswer })).toMatchObject({
@@ -152,8 +153,7 @@ test('an agent ruling is refused when task evidence also meets an alternative fl
   })
   expect(decision).toEqual({
     action: 'refuse',
-    message:
-      'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it',
+    message: `floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`,
   })
 })
 
@@ -205,7 +205,7 @@ test.each([
   expect(decision.action).toBe(allowed ? 'allow' : 'refuse')
   if (!allowed && decision.action === 'refuse') {
     expect(decision.message).toContain(`commit ${evidence.tree?.commit ?? '<current tree commit>'}`)
-    expect(decision.message).toContain('orch gate run')
+    expect(decision.message).toContain(`${PLATFORM_SLUG} gate run`)
   }
 })
 
@@ -280,8 +280,7 @@ test('an exec from another session is refused with the rerun remedy', () => {
   })
   expect(decision).toEqual({
     action: 'refuse',
-    message:
-      'command-exit evidence exec:4 belongs to another session; run the command again with `orch workflow exec -- <command>` in this session after the step started',
+    message: `command-exit evidence exec:4 belongs to another session; run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`,
   })
 })
 
@@ -317,8 +316,7 @@ test('an exec older than the active step is refused with the rerun remedy', () =
   })
   expect(decision).toEqual({
     action: 'refuse',
-    message:
-      'command-exit evidence exec:4 predates this step becoming active; run the command again with `orch workflow exec -- <command>` in this session after the step started',
+    message: `command-exit evidence exec:4 predates this step becoming active; run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`,
   })
 })
 

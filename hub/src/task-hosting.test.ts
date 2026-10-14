@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import {
@@ -97,7 +98,7 @@ describe('hosted-only task safety', () => {
       expect(response?.status).toBe(403)
       expect(await response?.json()).toEqual({
         error: `record space '${requested}' is not among the caller's memberships`,
-        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+        remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
       })
       expect(writes).toBe(0)
     }
@@ -162,7 +163,7 @@ describe('hosted-only task safety', () => {
         title: 'Missing',
       }),
     ).rejects.toThrow(
-      "project 'missing' is absent from record space space-b. Run `orch record space move-project` or declare the project's space in the register.",
+      `project 'missing' is absent from record space space-b. Run \`${PLATFORM_SLUG} record space move-project\` or declare the project's space in the register.`,
     )
     await expect(
       createHostedTaskInTransaction(

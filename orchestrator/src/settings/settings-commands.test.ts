@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -40,7 +41,7 @@ function fixtureProject(name: string) {
     `${JSON.stringify(
       {
         env: { SECRET: 'no' },
-        permissions: { allow: ['Bash(orch result *)'] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
         hooks: { PreToolUse: [{ matcher: 'Bash' }] },
       },
       null,
@@ -49,7 +50,7 @@ function fixtureProject(name: string) {
   )
   writeFileSync(
     join(root, '.claude', 'settings.local.json'),
-    `${JSON.stringify({ permissions: { allow: ['Bash(orch inbox*)'], ask: ['Bash(git *)'] } }, null, 2)}\n`,
+    `${JSON.stringify({ permissions: { allow: [`Bash(${PLATFORM_SLUG} question inbox*)`], ask: ['Bash(git *)'] } }, null, 2)}\n`,
   )
   upsertProject({
     name,
@@ -118,7 +119,7 @@ describe('settings import', () => {
 
     await expect(
       settingsImportCommand(presentation().flags({ user: true }), presentation().port(root)),
-    ).rejects.toThrow(/bound to a hosted record[\s\S]*orch record doctor/)
+    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record doctor`))
 
     expect(keychainCalls).toBe(0)
     expect(apiCalls).toEqual([])
@@ -144,7 +145,7 @@ describe('settings import', () => {
     })
     expect(shown.logs.join('\n')).toContain('permissions.allow: 1')
     expect(shown.logs.join('\n')).toContain('adoption')
-    expect(shown.logs.join('\n')).toContain('Bash(orch inbox*)')
+    expect(shown.logs.join('\n')).toContain(`Bash(${PLATFORM_SLUG} question inbox*)`)
     expect(shown.logs.join('\n')).not.toContain('SECRET')
     expect(getDoc('settings', 'alpha', 'settings')).toBeNull()
 
@@ -152,7 +153,7 @@ describe('settings import', () => {
     const stored = getDoc('settings', 'alpha', 'settings')
     expect(stored?.body).toBe(
       serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
         hooks: { PreToolUse: [{ matcher: 'Bash' }] },
       }),
     )
@@ -214,7 +215,7 @@ describe('settings import', () => {
       join(root, '.claude', 'settings.json'),
       `${JSON.stringify(
         {
-          permissions: { allow: ['Bash(orch result *)'] },
+          permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
           hooks: {
             PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }],
           },
@@ -239,9 +240,14 @@ describe('settings import', () => {
       join(root, '.claude', 'settings.json'),
       `${JSON.stringify(
         {
-          permissions: { allow: ['Bash(orch result *)'] },
+          permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
           hooks: {
-            PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'orch note' }] }],
+            PreToolUse: [
+              {
+                matcher: 'Bash',
+                hooks: [{ type: 'command', command: `${PLATFORM_SLUG} note new` }],
+              },
+            ],
           },
         },
         null,
@@ -250,7 +256,7 @@ describe('settings import', () => {
     )
     await settingsImportCommand(shownFlags('clean-hook'), presentation().port(root))
     const stored = getDoc('settings', 'clean-hook', 'settings')
-    expect(stored?.body).toContain('orch note')
+    expect(stored?.body).toContain(`${PLATFORM_SLUG} note new`)
     expect(stored?.body).not.toContain('SECRET')
   })
 })
@@ -265,7 +271,7 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
         hooks: {
           PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: sentinel }] }],
         },
@@ -294,7 +300,9 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)', 'Bash(orch diff *)'] },
+        permissions: {
+          allow: [`Bash(${PLATFORM_SLUG} run result *)`, `Bash(${PLATFORM_SLUG} run diff *)`],
+        },
         hooks: {},
       }),
       reason: 'seed store',
@@ -308,7 +316,7 @@ describe('settings render --check', () => {
       shown.port(root),
     )
     const text = shown.logs.join('\n')
-    expect(text).toContain('removed allow Bash(orch diff *)')
+    expect(text).toContain(`removed allow Bash(${PLATFORM_SLUG} run diff *)`)
     expect(text).toContain('added hook PreToolUse')
     expect(text).not.toContain('"matcher"')
     expect(shown.code()).toBe(1)
@@ -322,7 +330,7 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'], defaultMode: 'acceptEdits' },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`], defaultMode: 'acceptEdits' },
         hooks: { PreToolUse: [{ matcher: 'Bash' }] },
       }),
       reason: 'seed store',
@@ -344,7 +352,7 @@ describe('settings render --check', () => {
       `${JSON.stringify(
         {
           permissions: {
-            allow: ['Bash(orch result *)'],
+            allow: [`Bash(${PLATFORM_SLUG} run result *)`],
             additionalDirectories: ['src'],
           },
           hooks: { PreToolUse: [{ matcher: 'Bash' }] },
@@ -359,7 +367,7 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
         hooks: { PreToolUse: [{ matcher: 'Bash' }] },
       }),
       reason: 'seed store',
@@ -376,12 +384,12 @@ describe('settings render --check', () => {
 
   test('hooks that differ only in key order are not drift', async () => {
     const root = fixtureProject('hook-order')
-    const hook = { matcher: 'Bash', type: 'command', command: 'orch note' }
+    const hook = { matcher: 'Bash', type: 'command', command: `${PLATFORM_SLUG} note new` }
     writeFileSync(
       join(root, '.claude', 'settings.json'),
       `${JSON.stringify(
         {
-          permissions: { allow: ['Bash(orch result *)'] },
+          permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
           hooks: { PreToolUse: [hook] },
         },
         null,
@@ -394,8 +402,10 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'] },
-        hooks: { PreToolUse: [{ type: 'command', command: 'orch note', matcher: 'Bash' }] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
+        hooks: {
+          PreToolUse: [{ type: 'command', command: `${PLATFORM_SLUG} note new`, matcher: 'Bash' }],
+        },
       }),
       reason: 'seed store',
     })
@@ -405,18 +415,18 @@ describe('settings render --check', () => {
       shown.port(root),
     )
     expect(shown.logs.join('\n')).toContain('drift: none')
-    expect(shown.logs.join('\n')).not.toContain('orch note')
+    expect(shown.logs.join('\n')).not.toContain(`${PLATFORM_SLUG} note new`)
     expect(shown.code()).toBe(0)
   })
 
   test('drift output fingerprints hooks and never prints commands', async () => {
     const root = fixtureProject('hook-print')
-    const command = 'orch note'
+    const command = `${PLATFORM_SLUG} note new`
     writeFileSync(
       join(root, '.claude', 'settings.json'),
       `${JSON.stringify(
         {
-          permissions: { allow: ['Bash(orch result *)'] },
+          permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
           hooks: {
             PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }],
           },
@@ -431,9 +441,11 @@ describe('settings render --check', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: ['Bash(orch result *)'] },
+        permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
         hooks: {
-          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'hub task' }] }],
+          SessionStart: [
+            { matcher: '*', hooks: [{ type: 'command', command: `${PLATFORM_SLUG} task` }] },
+          ],
         },
       }),
       reason: 'seed store',
@@ -447,7 +459,7 @@ describe('settings render --check', () => {
     expect(text).toMatch(/added hook PreToolUse Bash [0-9a-f]{12}/)
     expect(text).toMatch(/removed hook SessionStart \* [0-9a-f]{12}/)
     expect(text).not.toContain(command)
-    expect(text).not.toContain('hub task')
+    expect(text).not.toContain(`${PLATFORM_SLUG} task`)
     expect(shown.code()).toBe(1)
   })
 })
@@ -509,7 +521,7 @@ test('render drift containing a sentinel rule prints no sentinel', async () => {
     slug: 'settings',
     title: 'settings',
     body: serializeOwnedSettings({
-      permissions: { allow: ['Bash(orch result *)'] },
+      permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`] },
       hooks: { PreToolUse: [{ matcher: 'Bash' }] },
     }),
     reason: 'seed store',

@@ -6,9 +6,9 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
 
-"$ROOT/bin/hub" note stale
+"$ROOT/bin/bottega" note stale
 stale_status=$?
-"$ROOT/bin/hub" note curate --scheduled
+"$ROOT/bin/bottega" note curate --scheduled
 curator_status=$?
 
 if (( stale_status != 0 || curator_status != 0 )); then

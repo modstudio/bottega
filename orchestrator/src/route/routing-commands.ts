@@ -1,6 +1,7 @@
 // concern: routing-commands
 /** Knows routing reports, backtests, guidance and agreement. Must not know runs, transports, the CLI, worktrees, or reviews by value. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt } from '../project/projects.ts'
 import { bradleyTerry } from '../score/agreement.ts'
@@ -273,7 +274,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
       `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
   )
   log(
-    'Named secrets are resolved with orch config secret run --name KEY -- <command>. orch config secret list shows hosted key names. Local keys live in the env files the resolver reads.',
+    `Named secrets are resolved with ${PLATFORM_SLUG} machine config secret run --name KEY -- <command>. ${PLATFORM_SLUG} machine config secret list shows hosted key names. Local keys live in the env files the resolver reads.`,
   )
 }
 

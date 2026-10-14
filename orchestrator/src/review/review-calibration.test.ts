@@ -215,7 +215,7 @@ describe('review discipline', () => {
       score(runId, 'full', 'right')
       if (voided) {
         db()
-          .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+          .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
           .run(runId)
       }
       return runId

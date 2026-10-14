@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -48,7 +49,7 @@ afterAll(() => {
   else process.env.ORCH_RECORD_API_URL = priorRecordApiUrl
 })
 
-describe('orch project retire', () => {
+describe(`${PLATFORM_SLUG} project retire`, () => {
   test('list omits retired rows unless --retired', async () => {
     upsertProject({ name: 'listed-live', path: '/w/listed-live' })
     upsertProject({ name: 'listed-retired', path: '/w/listed-retired' })
@@ -95,12 +96,12 @@ test('hosted failure leaves the local register unchanged', async () => {
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertProject: async () => {
-      throw new Error('record API 503\ncleared by: orch record doctor')
+      throw new Error(`record API 503\ncleared by: ${PLATFORM_SLUG} record doctor`)
     },
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-hosted-fail-'))
   await expect(runProject(['project', 'add', path], { name: 'hosted-fail' })).rejects.toThrow(
-    'cleared by: orch record doctor',
+    `cleared by: ${PLATFORM_SLUG} record doctor`,
   )
   expect(projectByName('hosted-fail')).toBeNull()
 })
@@ -112,7 +113,7 @@ test('hosted rename failure leaves hosted and local unchanged', async () => {
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push(input.name)
-      throw new Error('record API 503\ncleared by: orch record doctor')
+      throw new Error(`record API 503\ncleared by: ${PLATFORM_SLUG} record doctor`)
     },
     renameSubject: async () => {
       throw new Error('must not chain a second hosted rename')
@@ -120,7 +121,7 @@ test('hosted rename failure leaves hosted and local unchanged', async () => {
   })
   await expect(
     runProject(['project', 'set', 'rename-src'], { name: 'rename-dst' }),
-  ).rejects.toThrow('cleared by: orch record doctor')
+  ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record doctor`)
   expect(hosted).toEqual(['rename-dst'])
   expect(projectByName('rename-src')?.path).toBe('/w/rename-src')
   expect(projectByName('rename-dst')).toBeNull()

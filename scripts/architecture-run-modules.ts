@@ -29,6 +29,7 @@ export const runModuleBoundarySpecs = [
     name: 'run-diff-boundary',
     file: 'orchestrator/src/run/run-diff.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'node:fs',
       '../database/db.ts',
       '../git/git-environment.ts',

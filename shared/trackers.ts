@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { PLATFORM_SLUG } from './brand.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
@@ -48,13 +49,13 @@ const trackerProtocolActions = {
     document: { agent: 'task_addDocument' },
   },
   hub: {
-    search: { agent: 'hub task list --project {project}' },
-    get: { agent: 'hub task show {key}' },
-    create: { agent: 'hub task new --project {project}' },
-    update: { agent: 'hub task set {key}' },
-    status: { agent: 'hub task set {key} --status' },
-    comment: { agent: 'hub task comment {key}' },
-    document: { agent: 'hub task doc new {key}' },
+    search: { agent: `${PLATFORM_SLUG} task list --project {project}` },
+    get: { agent: `${PLATFORM_SLUG} task show {key}` },
+    create: { agent: `${PLATFORM_SLUG} task new --project {project}` },
+    update: { agent: `${PLATFORM_SLUG} task set {key}` },
+    status: { agent: `${PLATFORM_SLUG} task set {key} --status` },
+    comment: { agent: `${PLATFORM_SLUG} task comment {key}` },
+    document: { agent: `${PLATFORM_SLUG} task doc new {key}` },
   },
 } satisfies Record<TrackerProtocol, Partial<Record<TrackerAction, TrackerActionName>>>
 
@@ -161,7 +162,7 @@ export function refuseInvalidReviewStages(
   const stages = tracker.reviewStages
   if (!stages) return
   const remedy =
-    `set it with: orch project set <name> --settings ` +
+    `set it with: ${PLATFORM_SLUG} project set <name> --settings ` +
     `'${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`
   for (const [stage, raw] of Object.entries(stages)) {
     const category = tracker.states?.[raw]
@@ -224,9 +225,9 @@ export const documentsRefusal = (protocol: string): string =>
   `Documents are hub-native; this record lives in ${protocol} and carries none.`
 const workspaceTeamRefusal = (project: TrackerProject): string =>
   `workspace-mcp create refused: project ${project.name} tracker is missing team; ` +
-  `set it with: orch project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
+  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
 const cursorProjectRefusal = (project: TrackerProject): string =>
-  `${CURSOR_CREATE_REFUSAL}; set it with: orch project set ${project.name} --settings ` +
+  `${CURSOR_CREATE_REFUSAL}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
   `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
 
 const keyFormat = (project: TrackerProject | null): string | null => {

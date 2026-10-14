@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   createHostedRecordFixture,
   HOSTED_FIXTURE_MACHINE_ID,
@@ -178,11 +179,14 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   expect(
     (await apply([{ table: 'hub_day', id: conflict.id, op: 'upsert', row: conflict }]))[0],
   ).toMatchObject({ status: 'rejected' })
-  for (const machine_id of ['01990000-0000-7000-8000-000000008399', foreignMachineId]) {
-    const rejected = { ...first, id: Bun.randomUUIDv7(), machine_id, day: '2026-10-21' }
+  for (const machineId of ['01990000-0000-7000-8000-000000008399', foreignMachineId]) {
+    const rejected = { ...first, id: Bun.randomUUIDv7(), machine_id: machineId, day: '2026-10-21' }
     expect(
       (await apply([{ table: 'hub_day', id: rejected.id, op: 'upsert', row: rejected }]))[0],
-    ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('run orch sync') })
+    ).toMatchObject({
+      status: 'rejected',
+      reason: expect.stringContaining(`run ${PLATFORM_SLUG} record sync`),
+    })
   }
 
   const legacyId = '01990000-0000-7000-8000-000000008333'
@@ -261,8 +265,8 @@ test('real and legacy machine day timestamps serialize through the strict edge',
         VALUES (?,?,'2026-10-10','2026-10-10 23:00:00')`)
       .run(legacyId, day.machine_id),
   )
-  const inputs = [current.record_id, legacyId].map((row_id) =>
-    loadOutboxChange(db(), { table_name: 'hub_day', row_id, operation: 'upsert' }),
+  const inputs = [current.record_id, legacyId].map((rowId) =>
+    loadOutboxChange(db(), { table_name: 'hub_day', row_id: rowId, operation: 'upsert' }),
   )
   expect(inputs.every(Boolean)).toBeTrue()
   const changes = inputs.map((loaded) => loaded!.change)

@@ -6,6 +6,7 @@ import { APIError, betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
 import { account, invitation, session, verification } from '../../../shared/record/schema-auth.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
@@ -16,8 +17,7 @@ import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
 export const RECORD_SESSION_KEY = 'record_session'
-export const RECORD_SIGN_UP_INVITATION_REQUIRED =
-  'Record sign-up is by invitation only; ask a record space owner to run `orch record space invite --email <email>`.'
+export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitation only; ask a record space owner to run \`${PLATFORM_SLUG} record space invite --email <email>\`.`
 
 type RecordAuthEnvironment = Record<string, string | undefined>
 

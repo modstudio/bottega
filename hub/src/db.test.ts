@@ -82,7 +82,7 @@ test('the unauthorized default-store migration refusal names the condition and r
   expect(unauthorizedHubMigrationMessage('/state/hub.db')).toBe(
     `refusing to migrate the default store: cannot establish an authorized ${PLATFORM_NAME} installation: /state/hub.db\n` +
       'invariant: A default store is created or migrated only by a checkout or an installed distribution.\n' +
-      `cleared by: run hub migrate from a checkout or reinstall ${PLATFORM_NAME}`,
+      `cleared by: run ${PLATFORM_SLUG} machine migrate from a checkout or reinstall ${PLATFORM_NAME}`,
   )
 })
 

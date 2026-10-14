@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Section } from './shared'
 
 const tabs = [
@@ -9,7 +9,7 @@ const tabs = [
     eyebrow: 'Dispatch',
     body: (
       <>
-        $ <b>orch do implement</b> ATL-412 \<br />
+        $ <b>{PLATFORM_SLUG} run start implement</b> ATL-412 \<br />
         &nbsp;&nbsp;&nbsp;&nbsp;--spec docs/webhook-retries.md \<br />
         &nbsp;&nbsp;&nbsp;&nbsp;--lens failure-paths
         <br />
@@ -54,7 +54,7 @@ const tabs = [
     eyebrow: 'Escalation',
     body: (
       <>
-        $ <b>orch inbox</b>
+        $ <b>{PLATFORM_SLUG} question inbox</b>
         <br />
         <br />
         <b>&nbsp;&nbsp;r-4f17</b>&nbsp; qwen3-32b · local&nbsp;&nbsp;{' '}
@@ -67,7 +67,7 @@ const tabs = [
           &nbsp;&nbsp;&nbsp;them as well, or scope to the new path?”
         </span>
         <br />
-        <br />$ <b>orch answer</b> r-4f17 \<br />
+        <br />$ <b>{PLATFORM_SLUG} question answer</b> r-4f17 \<br />
         &nbsp;&nbsp;&nbsp;&nbsp;"Scope to the new path. File a note for the
         <br />
         &nbsp;&nbsp;&nbsp;&nbsp; two callers; they are a separate change."

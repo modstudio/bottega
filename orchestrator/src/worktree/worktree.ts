@@ -19,7 +19,7 @@
  * WHAT THIS DELIBERATELY DOES NOT DO ITSELF: commit, push, or merge. The worker's
  * contract governs those operations. Implement and fix workers may commit on
  * their own run branch and leave all changes there for the architect to judge
- * through `orch diff`; a land worker alone may fast-forward trunk from its
+ * through `bottega run diff`; a land worker alone may fast-forward trunk from its
  * disposable worktree. No worker pushes.
  */
 import { existsSync } from 'node:fs'

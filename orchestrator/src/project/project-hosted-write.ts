@@ -1,6 +1,7 @@
 // concern: project-hosted-write
 /** Applies project-register write authority at the hosted-record boundary. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -108,7 +109,7 @@ export async function refuseHostedProjectSpaceChange(
             (candidate) => candidate.spaceId === row.spaceId,
           )
           throw new Error(
-            `project ${project.name} already has a hosted row in record space ${rowSpace?.slug ?? row.spaceId}; run \`orch record space move-project\` before changing settings.space`,
+            `project ${project.name} already has a hosted row in record space ${rowSpace?.slug ?? row.spaceId}; run \`${PLATFORM_SLUG} record space move-project\` before changing settings.space`,
           )
         }
       }
@@ -117,5 +118,5 @@ export async function refuseHostedProjectSpaceChange(
 }
 
 export function requireHostedProjectPush(): void {
-  requireHostedRecord('orch project push')
+  requireHostedRecord(`${PLATFORM_SLUG} project push`)
 }

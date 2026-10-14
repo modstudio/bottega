@@ -1,6 +1,7 @@
 // concern: review
 /** Selects and renders triaged review findings for a writing continuation. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -42,7 +43,7 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
     })
     throw new Error(
       `review round is not triage-complete:\n${details.join('\n')}\n` +
-        'cleared by: complete the review with orch judge',
+        `cleared by: complete the review with ${PLATFORM_SLUG} score judge`,
     )
   }
 

@@ -2,12 +2,13 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
 import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import type { AppRouter, HostedRouter } from '../../../src/trpc/router.ts'
 import { hostedOrigin, isHostedMode, unauthorizedLeadsToSignIn } from '../lib/hub-mode.ts'
 import { toast } from '../ui/toast/toast.tsx'
 import { fetchWithHubCredentials } from './transport.ts'
 
-const LOCAL_LOGIN_MESSAGE = 'Your local session expired. Run `hub login` to sign in again.'
+const LOCAL_LOGIN_MESSAGE = `Your local session expired. Run \`${PLATFORM_SLUG} dashboard login\` to sign in again.`
 
 function isUnauthorized(error: unknown) {
   return error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED'

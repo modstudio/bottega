@@ -4,6 +4,7 @@
  * not know transports, contracts, or routing.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
@@ -314,7 +315,10 @@ function taskBranchScoreVoidRemedies(
       const voidCommands = candidates
         .filter((candidate) => candidate !== kept)
         .flatMap((candidate) => candidate.nominatingRuns.map((run) => run.id))
-        .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
+        .map(
+          (id) =>
+            `    ${PLATFORM_SLUG} score ${id} --void --note "not the live ${launchKey} branch"`,
+        )
         .join('\n')
       return `  To keep ${kept.branch}:\n${voidCommands}`
     })

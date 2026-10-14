@@ -1,4 +1,5 @@
 // concern: outcome
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 
 type WorkerQuestion = {
@@ -261,7 +262,11 @@ export function label(
 export function outcomeOf(row: OutcomeRow): { terminal: boolean; ok: boolean; line: string } {
   if (row.status === 'running') return { terminal: false, ok: false, line: 'running' }
   if (row.status === 'asking') {
-    return { terminal: true, ok: true, line: `asking - orch inbox (or orch answer ${row.id})` }
+    return {
+      terminal: true,
+      ok: true,
+      line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${row.id})`,
+    }
   }
   if (row.status === 'ok') {
     const line = Object.hasOwn(row, 'delivery')

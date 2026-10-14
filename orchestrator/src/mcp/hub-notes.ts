@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type BottegaEntry, bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -28,8 +29,8 @@ export type FiledNoteAnchor = {
   session_id: string | null
 }
 
-export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
+async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Promise<string> {
+  const child = Bun.spawn([...bottegaEntryArgv(entry), ...args], {
     cwd,
     env: { ...process.env },
     stdin: 'ignore',
@@ -42,9 +43,13 @@ export async function hubOutput(args: string[], cwd = process.cwd()): Promise<st
     child.exited,
   ])
   if (exitCode !== 0) {
-    throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   }
   return stdout
+}
+
+export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
+  return spawnOutput(PLATFORM_SLUG, args, cwd)
 }
 
 export async function fileNote(
@@ -127,6 +132,7 @@ export async function hubNoteLabel(recordId: string, options: { cwd: string }): 
   }
   const notes = [...(await list(false)), ...(await list(true))]
   const note = notes.find((candidate) => candidate.record_id === recordId)
-  if (!note) throw new Error(`hub cannot resolve note ${recordId}; run \`hub note list\``)
+  if (!note)
+    throw new Error(`hub cannot resolve note ${recordId}; run \`${PLATFORM_SLUG} note list\``)
   return note.label
 }

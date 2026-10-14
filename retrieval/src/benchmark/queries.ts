@@ -181,7 +181,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   ),
   codeQuestion(
     'real-continue-tree',
-    'How does orch continue decide which worktree and branch to resume?',
+    `How does ${PLATFORM_SLUG} run continue decide which worktree and branch to resume?`,
     'orchestrator/src/run/resume-tree.ts',
     "source: 'latest turn branch',",
   ),
@@ -193,7 +193,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   ),
   codeQuestion(
     'real-wait-asking',
-    'What makes orch wait return when a worker starts asking a question?',
+    `What makes ${PLATFORM_SLUG} run wait return when a worker starts asking a question?`,
     'orchestrator/src/collect/collect.ts',
     "asking?.state === 'open'",
   ),

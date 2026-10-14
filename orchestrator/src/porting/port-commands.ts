@@ -2,6 +2,7 @@
 /** Knows port ledger command semantics and presentation. Must not know runs, routing, transports, the CLI, or worktrees. */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
 import {
@@ -33,6 +34,10 @@ type PortPresentation = {
   log(...values: unknown[]): void
   writeStdout(value: string): Promise<void>
   exitCode(code: number): void
+}
+
+function refusePortUsage(usage: string): never {
+  throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
 }
 
 export async function portCommand(
@@ -67,7 +72,8 @@ export async function portCommand(
 
   if (group === 'import') {
     const dir = argv[2]
-    if (!dir) throw new Error('orch port import <dir> [--dry-run] [--replace] [--json]')
+    if (!dir)
+      throw new Error(`${PLATFORM_SLUG} doc port import <dir> [--dry-run] [--replace] [--json]`)
     const names = {
       doctrine: 'doctrine.md',
       differences: 'differences.md',
@@ -218,7 +224,7 @@ export async function portCommand(
     const sourceName = argv[3]
     const targetName = argv[4]
     if (!sourceName || !targetName)
-      throw new Error('orch port baseline show <source> <target> [--json]')
+      throw new Error(`${PLATFORM_SLUG} doc port baseline show <source> <target> [--json]`)
     const { pair } = namedPair(sourceName, targetName)
     if (!pair) {
       output(null, `no port pair from "${sourceName}" to "${targetName}"`)
@@ -240,7 +246,7 @@ export async function portCommand(
     const clear = has('clear')
     const rawCommit = argv[5]
     if (!sourceName || !targetName || (!clear && !rawCommit)) {
-      throw new Error('orch port baseline set <source> <target> <commit> [--json] | --clear')
+      refusePortUsage('baseline set <source> <target> <commit> [--json] | --clear')
     }
     const commit = clear ? null : (rawCommit ?? null)
     const { pair } = namedPair(sourceName, targetName, true)
@@ -258,7 +264,7 @@ export async function portCommand(
     const sourceName = argv[3]
     const targetName = argv[4]
     if (!sourceName || !targetName)
-      throw new Error('orch port skip list <source> <target> [--json]')
+      throw new Error(`${PLATFORM_SLUG} doc port skip list <source> <target> [--json]`)
     const { pair } = namedPair(sourceName, targetName)
     const rows = pair ? listSkips(pair.id) : []
     if (has('json')) {
@@ -275,7 +281,7 @@ export async function portCommand(
     const candidate = argv[5]
     const reason = flag('reason')
     if (!sourceName || !targetName || !candidate || reason === undefined) {
-      throw new Error('orch port skip add <source> <target> <candidate> --reason TEXT [--json]')
+      refusePortUsage('skip add <source> <target> <candidate> --reason TEXT [--json]')
     }
     const { pair } = namedPair(sourceName, targetName)
     if (!pair)
@@ -306,7 +312,7 @@ export async function portCommand(
     const taskKey = argv[3]
     const projectName = flag('project')
     if (!taskKey || !projectName)
-      throw new Error('orch port ref show <task-key> --project PROJECT [--json]')
+      throw new Error(`${PLATFORM_SLUG} doc port ref show <task-key> --project PROJECT [--json]`)
     const target = namedProject(projectName)
     const ref = ledgerRef(target.id, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
@@ -334,9 +340,7 @@ export async function portCommand(
     const note = flag('note')
     const projectName = flag('project')
     if (!taskKey || !projectName || sourceJson === undefined || note === undefined) {
-      throw new Error(
-        'orch port ref set <task-key> --project PROJECT --sources JSON --note TEXT [--json]',
-      )
+      refusePortUsage('ref set <task-key> --project PROJECT --sources JSON --note TEXT [--json]')
     }
     let raw: unknown
     try {
@@ -385,7 +389,7 @@ export async function portCommand(
     const taskKey = argv[3]
     const projectName = flag('project')
     if (!taskKey || !projectName)
-      throw new Error('orch port ref resolve <task-key> --project PROJECT [--json]')
+      throw new Error(`${PLATFORM_SLUG} doc port ref resolve <task-key> --project PROJECT [--json]`)
     const ref = resolveLedgerRef(namedProject(projectName).id, taskKey)
     if (!ref) throw new Error(`no port ledger ref for task "${projectName}:${taskKey}"`)
     output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
@@ -396,7 +400,7 @@ export async function portCommand(
     const taskKey = argv[3]
     const projectName = flag('project')
     if (!taskKey || !projectName)
-      throw new Error('orch port ref delete-error <task-key> --project PROJECT [--json]')
+      refusePortUsage('ref delete-error <task-key> --project PROJECT [--json]')
     const removed = removeLedgerRef(namedProject(projectName).id, taskKey)
     output(
       { removed },
@@ -425,9 +429,7 @@ export async function portCommand(
     const number = Number(argv[3])
     const title = flag('title')
     if (!Number.isInteger(number) || number <= 0 || title === undefined) {
-      throw new Error(
-        'orch port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]',
-      )
+      refusePortUsage('doctrine add <number> --title TEXT (--file F | body on stdin) [--json]')
     }
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')
@@ -444,7 +446,7 @@ export async function portCommand(
   if (group === 'doctrine' && action === 'retire') {
     const number = Number(argv[3])
     if (!Number.isInteger(number) || number <= 0) {
-      throw new Error('orch port doctrine retire <number> [--json]')
+      throw new Error(`${PLATFORM_SLUG} doc port doctrine retire <number> [--json]`)
     }
     const retired = retireDoctrineRule(number)
     output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
@@ -459,8 +461,10 @@ export async function portCommand(
   }
   if (group && portVerbs[group]) {
     throw new Error(
-      `unknown: orch port ${group}${action ? ` ${action}` : ''}. Try ${portVerbs[group]}`,
+      `unknown: ${PLATFORM_SLUG} doc port ${group}${action ? ` ${action}` : ''}. Try ${portVerbs[group]}`,
     )
   }
-  throw new Error('unknown: orch port. Try import | baseline | skip | ref | doctrine')
+  throw new Error(
+    `unknown: ${PLATFORM_SLUG} doc port. Try import | baseline | skip | ref | doctrine`,
+  )
 }

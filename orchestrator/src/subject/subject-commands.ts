@@ -1,5 +1,6 @@
 // concern: subject-commands
 /** Owns subject command semantics and presentation. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   addSubject,
   defineSubject,
@@ -46,7 +47,7 @@ export async function subjectCommand(
       const qualifier =
         !includeRetired && listSubjects(project, { retired: true }).length > 0 ? 'live ' : ''
       presentation.log(
-        `project ${project} has no ${qualifier}subjects; add one with: orch subject add ${project} <name> --definition <definition>`,
+        `project ${project} has no ${qualifier}subjects; add one with: ${PLATFORM_SLUG} doc subject add ${project} <name> --definition <definition>`,
       )
     }
     return
@@ -89,5 +90,5 @@ export async function subjectCommand(
     print([await retireSubject(project, target.id)], flags, presentation)
     return
   }
-  throw new Error(`unknown subject command "${verb}"; use orch subject --help`)
+  throw new Error(`unknown subject command "${verb}"; use ${PLATFORM_SLUG} doc subject --help`)
 }

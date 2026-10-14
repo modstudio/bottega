@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -55,6 +56,6 @@ test('a checkpoint without a resolved continuation tree gives the fresh-run reme
   ).toThrow(
     `run ${rootId} has a checkpoint but no branch or retained ref resolves for its latest started turn; ` +
       'invariant: a resume prompt names only the commit the resumed tree exposes; ' +
-      'remedy: start a fresh keyed run from a known base with orch do implement --key DEV-970 --base <ref>',
+      `remedy: start a fresh keyed run from a known base with ${PLATFORM_SLUG} run start implement --key DEV-970 --base <ref>`,
   )
 })

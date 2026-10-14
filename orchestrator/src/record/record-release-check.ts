@@ -20,7 +20,7 @@ function appRecordUrl(app: HostedApp): { name: string; value: string } {
 }
 
 function releaseRemedy(app: HostedApp): string {
-  return `orch release ${PLATFORM_SLUG} --rung hosted-${app}`
+  return `${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-${app}`
 }
 
 export async function recordReleaseCheck(app: HostedApp): Promise<void> {
@@ -30,13 +30,13 @@ export async function recordReleaseCheck(app: HostedApp): Promise<void> {
     applied = await appliedRecordMigrationCount(recordUrl.value)
   } catch {
     throw new Error(
-      `release check could not read drizzle.__drizzle_migrations with ${recordUrl.name}; run \`${releaseRemedy(app)}\` or \`orch record migrate\`, then retry`,
+      `release check could not read drizzle.__drizzle_migrations with ${recordUrl.name}; run \`${releaseRemedy(app)}\` or \`${PLATFORM_SLUG} record migrate\`, then retry`,
     )
   }
   const decision = decideRecordRelease(applied, recordMigrationCount())
   if (decision.status === 'refuse') {
     throw new Error(
-      `release refused: applied migrations ${decision.applied}; shipped migrations ${decision.shipped}; run \`${releaseRemedy(app)}\` or \`orch record migrate\`, then retry`,
+      `release refused: applied migrations ${decision.applied}; shipped migrations ${decision.shipped}; run \`${releaseRemedy(app)}\` or \`${PLATFORM_SLUG} record migrate\`, then retry`,
     )
   }
   if (decision.status === 'warn') {

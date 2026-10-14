@@ -4,6 +4,7 @@
  * worktree paths. Must not know transports, routing, or contracts.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import {
@@ -217,7 +218,7 @@ export function preflight(
     problems.push(
       `this project's worktree create command has no branch template.\n` +
         `Set the worktree branch key with:\n` +
-        `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
+        `  ${PLATFORM_SLUG} project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
     )
   }
   if (writesJob && tool?.branch?.includes('{key}') && !key) {

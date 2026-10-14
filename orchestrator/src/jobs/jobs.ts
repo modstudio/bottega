@@ -41,7 +41,7 @@ export type Job = {
    * ceiling is that number capped just below the stale cutoff.
    */
   timeoutMs?: number
-  /** Declared ceiling for `orch do --timeout`, in ms, before the stale cap. */
+  /** Declared ceiling for `bottega run start --timeout`, in ms, before the stale cap. */
   timeoutCeilingMs?: number
   /** This job returns independently triageable review findings. */
   findings?: boolean
@@ -51,7 +51,7 @@ export type Job = {
 
 /**
  * Default and ceiling timeouts, in minutes. Help text, the worker's bound
- * sentence, and `orch do --timeout` all read from here.
+ * sentence, and `bottega run start --timeout` all read from here.
  *
  * `defaultMinutes: null` means the selected agent's own bound, then the
  * ceiling. Every ceiling is still capped just below STALE_AFTER_MS; when that
@@ -110,7 +110,7 @@ export const JOB_TIMEOUTS = {
   'review-lens-inline': { defaultMinutes: null, ceilingMinutes: 20 },
 } as const satisfies Record<string, { defaultMinutes: number | null; ceilingMinutes: number }>
 
-/** Compact defaults/ceilings for `orch do --help`, derived from JOB_TIMEOUTS. */
+/** Compact defaults/ceilings for `bottega run start --help`, derived from JOB_TIMEOUTS. */
 export function jobTimeoutHelp(): string {
   return Object.entries(JOB_TIMEOUTS)
     .map(
@@ -158,7 +158,7 @@ export function timeoutCeilingRefusal(j: Job, requestedMinutes: number): string 
 }
 
 /**
- * Resolve the wall bound for a run. `overrideMinutes` is `orch do --timeout`.
+ * Resolve the wall bound for a run. `overrideMinutes` is `bottega run start --timeout`.
  * Throws if the override is not a positive integer or exceeds the ceiling.
  */
 export function resolveJobTimeoutMs(

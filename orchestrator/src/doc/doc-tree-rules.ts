@@ -1,5 +1,7 @@
 // concern: document-tree-rules
 /** Pure document audience and tree policy. Knows no store, transport, or clock. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudiences } from '../../../shared/docs.ts'
 
 type DocumentTreeNode = {
@@ -37,7 +39,7 @@ function canonTreeRefusal(input: DocumentTreeWrite, address: string, set: string
     .sort()
     .join(
       ', ',
-    )}; cleared by: re-parent each child with orch doc set <child> --parent <slug> (or --no-parent)`
+    )}; cleared by: re-parent each child with ${PLATFORM_SLUG} doc set <child> --parent <slug> (or --no-parent)`
 }
 
 function audienceScopeRefusal(
@@ -54,7 +56,7 @@ function audienceScopeRefusal(
 
 export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | null {
   const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  const set = `orch doc set ${input.slug} --scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
+  const set = `${PLATFORM_SLUG} doc set ${input.slug} --scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
   const audienceRefusal = audienceScopeRefusal(input, address, set)
   if (audienceRefusal) return audienceRefusal
   const canonRefusal = canonTreeRefusal(input, address, set)
@@ -65,7 +67,7 @@ export function documentTreeWriteRefusal(input: DocumentTreeWrite): string | nul
       .sort()
       .join(
         ', ',
-      )}; cleared by: re-parent each child with orch doc set <child> --parent <slug> (or --no-parent), or remove the children first`
+      )}; cleared by: re-parent each child with ${PLATFORM_SLUG} doc set <child> --parent <slug> (or --no-parent), or remove the children first`
   }
   if (
     input.requestedParentSlug !== undefined &&

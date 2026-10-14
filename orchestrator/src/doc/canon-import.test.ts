@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
@@ -77,7 +78,12 @@ test('canon import leaves non-current rows alone and refuses imported-path colli
       reason: 'collide with draft',
       rows: [{ slug, title: slug, body: 'Imported body.' }],
     }),
-  ).rejects.toThrow(/is draft and collides.*orch doc status.*--status current.*orch doc rm/s)
+  ).rejects.toThrow(
+    new RegExp(
+      `is draft and collides.*${PLATFORM_SLUG} doc status.*--status current.*${PLATFORM_SLUG} doc rm`,
+      's',
+    ),
+  )
 })
 
 describe.each([

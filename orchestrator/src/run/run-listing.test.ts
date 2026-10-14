@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
@@ -39,7 +40,7 @@ function command(
             )
             .get(root, root),
         ),
-      strandedRecovery: (root) => `orch retry ${root} --agent`,
+      strandedRecovery: (root) => `${PLATFORM_SLUG} run retry ${root} --agent`,
       thinOutputWarning,
       processObservation: observation,
       clock,
@@ -199,7 +200,7 @@ describe('run listing', () => {
     const id = insert('ok')
     await expect(
       command({ id: [String(id)], since: ['2026-09-01T00:00:00Z'], json: true }),
-    ).rejects.toThrow('orch runs --id and --since cannot be combined')
+    ).rejects.toThrow(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
   })
 
   test('runs JSON emits every execution interval in a resumed chain', async () => {

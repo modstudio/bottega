@@ -1,10 +1,12 @@
 // concern: board-operation-routing
 /** Routes board operations to the local store or hosted record without mixing their writes. */
+
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -533,7 +535,7 @@ async function fileHostedNote(
       noteRecordId: null,
       noteLabel: null,
       notePendingError: detail,
-      retry: `orch board file-note ${questionId}`,
+      retry: `${PLATFORM_SLUG} board file-note ${questionId}`,
     }
   }
 }

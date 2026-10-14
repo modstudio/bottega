@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { notificationCommand } from '../../../shared/operator-notification.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -143,7 +144,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       why: 'because',
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command: `orch answer ${owner.id} --q${question.id} --from-operator "<ruling>"`,
+      answer_command: `${PLATFORM_SLUG} question answer ${owner.id} --q${question.id} --from-operator "<ruling>"`,
     },
     {
       kind: 'workflow',
@@ -158,8 +159,7 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
       why: null,
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command:
-        'orch workflow rule fixture-workflow --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator',
+      answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator`,
     },
   ])
   expect(waiting.every((item) => /^[0-9a-f-]{36}$/.test(item.question_record_id))).toBe(true)

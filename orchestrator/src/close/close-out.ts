@@ -6,6 +6,7 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
@@ -378,7 +379,7 @@ function terminalHoldResult(
       detail:
         hold.until === null
           ? hold.reason
-          : `held by ${hold.reason} until ${hold.until}; clear with orch discard ${runId}`,
+          : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
     }
   }
   if ('kept' in hold && hold.kept)

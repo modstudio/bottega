@@ -1,6 +1,7 @@
 // concern: pull-request merge proof
 /** Decides whether immutable pull-request and proof facts admit a merge. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export type PullRequestCheck = {
   name: string
   bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
@@ -47,7 +48,7 @@ export type MergeAdmissionInput =
 
 export type MergeDecision = { admitted: true } | { admitted: false; refusal: string }
 
-const rerun = (number: number) => `orch pr merge ${number}`
+const rerun = (number: number) => `${PLATFORM_SLUG} pr merge ${number}`
 
 export function decidePullRequestIdentity(input: PullRequestIdentityInput): MergeDecision {
   if (input.state.toUpperCase() !== 'OPEN') {
@@ -112,13 +113,13 @@ export function decideMergeProof(input: MergeProofInput): MergeDecision {
   if (!input.gate.recorded) {
     return {
       admitted: false,
-      refusal: `no passing local gate is recorded for pull request #${input.number} head ${input.headCommit}; cleared by: run orch gate run in the branch's tree, then ${rerun(input.number)}`,
+      refusal: `no passing local gate is recorded for pull request #${input.number} head ${input.headCommit}; cleared by: run ${PLATFORM_SLUG} gate run in the branch's tree, then ${rerun(input.number)}`,
     }
   }
   if (input.gate.remoteLandingTip !== input.gate.mergeBase) {
     return {
       admitted: false,
-      refusal: `the registered landing branch ${input.landingBranch} moved to ${input.gate.remoteLandingTip} past merge base ${input.gate.mergeBase} for head ${input.headCommit}; cleared by: bring the branch up to origin/${input.landingBranch}, run orch gate run in the branch's tree, push it, then ${rerun(input.number)}`,
+      refusal: `the registered landing branch ${input.landingBranch} moved to ${input.gate.remoteLandingTip} past merge base ${input.gate.mergeBase} for head ${input.headCommit}; cleared by: bring the branch up to origin/${input.landingBranch}, run ${PLATFORM_SLUG} gate run in the branch's tree, push it, then ${rerun(input.number)}`,
     }
   }
   return { admitted: true }

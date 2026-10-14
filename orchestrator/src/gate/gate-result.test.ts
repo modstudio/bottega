@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -90,7 +91,7 @@ test('recorded gate result is the most recent finished execution for the exact p
   ).toBeNull()
 })
 
-test('a later passing orch gate run beats a cancelled worker gate on the same commit', () => {
+test(`a later passing ${PLATFORM_SLUG} gate run beats a cancelled worker gate on the same commit`, () => {
   const commit = 'reviewed-commit'
   const projectId = insertProject('reader', readerPath)
   const reader = insertRun(projectId, 'review-lens', commit)
@@ -152,7 +153,7 @@ test('a row with no run is not returned for another project or an unregistered c
   expect(recordedGateResult(reader).result).toBeNull()
 })
 
-test('formatRecordedGateResult names orch gate run when the row has no run', () => {
+test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has no run`, () => {
   const formatted = formatRecordedGateResult({
     headCommit: 'abc',
     result: {
@@ -170,8 +171,8 @@ test('formatRecordedGateResult names orch gate run when the row has no run', () 
   expect(formatted).toBe(
     [
       'Recorded gate result for commit abc:',
-      "This result was recorded by the project's writer gate or by orch gate run for that commit.",
-      'recorded by: orch gate run',
+      `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+      `recorded by: ${PLATFORM_SLUG} gate run`,
       'exit code: 0',
       'timed out: false',
       'elapsed ms: 10',

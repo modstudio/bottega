@@ -1,6 +1,7 @@
 // concern: code-commands
 /** Resolves project code-search requests and presents their results. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { searchProjectCode } from './code-search.ts'
 
@@ -11,7 +12,8 @@ export async function codeSearchCommand(
   flags: Flags,
   presentation: { cwd(): string; log(...values: unknown[]): void },
 ): Promise<void> {
-  if (!query) throw new Error('orch code search "<query>" [--project P] [--k N] [--json]')
+  if (!query)
+    throw new Error(`${PLATFORM_SLUG} doc code search "<query>" [--project P] [--k N] [--json]`)
   const projectName = flags.flag('project')
   const callerProject = projectAt(presentation.cwd())
   const project = projectName ? projectByName(projectName) : projectAt(presentation.cwd())

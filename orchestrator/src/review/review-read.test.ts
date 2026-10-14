@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
@@ -148,7 +149,9 @@ test('the read command records the branch and tip from --cwd', () => {
         },
         { log: () => undefined },
       ),
-    ).toThrow(`${missing} does not exist; pass a live worktree (orch tree open <run> opens one)`)
+    ).toThrow(
+      `${missing} does not exist; pass a live worktree (${PLATFORM_SLUG} tree open <run> opens one)`,
+    )
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
@@ -176,7 +179,7 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   expect(() =>
     recordArchitectRead({ cwd, sha: 'unreachable', note: 'read the final fix' }, d, runGit),
   ).toThrow(
-    'could not reconcile branch DEV-1068-work with tip unreachable-tip; run orch review read from the worktree that has the branch containing that commit checked out (orch tree open <run> opens one)',
+    `could not reconcile branch DEV-1068-work with tip unreachable-tip; run ${PLATFORM_SLUG} review read from the worktree that has the branch containing that commit checked out (${PLATFORM_SLUG} tree open <run> opens one)`,
   )
   expect(
     d.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM review_read').get()?.count,

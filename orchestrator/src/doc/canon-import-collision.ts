@@ -1,4 +1,5 @@
 /** Pure collision policy shared by local and hosted canon import adapters. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export function nonCurrentCanonCollisionRefusal(input: {
   rows: Array<{ slug: string; status: string }>
   desiredSlugs: Iterable<string>
@@ -14,7 +15,7 @@ export function nonCurrentCanonCollisionRefusal(input: {
   const rowAddress = `canon/${input.address.kind === 'user' ? '_' : input.address.subject}/${collision.slug}`
   return (
     `refusing canon import: ${rowAddress} is ${collision.status} and collides with the imported path; ` +
-    `cleared by: orch doc status ${collision.slug} ${selector} --status current --reason TEXT, ` +
-    `or orch doc rm ${collision.slug} ${selector} --reason TEXT`
+    `cleared by: ${PLATFORM_SLUG} doc status ${collision.slug} ${selector} --status current --reason TEXT, ` +
+    `or ${PLATFORM_SLUG} doc rm ${collision.slug} ${selector} --reason TEXT`
   )
 }

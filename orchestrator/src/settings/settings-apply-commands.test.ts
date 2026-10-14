@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -242,7 +243,7 @@ describe('settings adopt', () => {
     const localText = `${JSON.stringify(
       {
         permissions: {
-          allow: ['Bash(orch result *)'],
+          allow: [`Bash(${PLATFORM_SLUG} run result *)`],
           ask: ['Bash(git status)'],
           deny: ['Read(.env)'],
         },
@@ -256,7 +257,7 @@ describe('settings adopt', () => {
     await settingsAdoptCommand(flags({ user: true, all: true }), [], output.port)
     const stored = parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body)
     expect(stored.permissions).toEqual({
-      allow: ['Bash(orch result *)'],
+      allow: [`Bash(${PLATFORM_SLUG} run result *)`],
       ask: ['Bash(git status)'],
       deny: ['Read(.env)'],
     })
@@ -310,7 +311,7 @@ describe('worker settings apply refusals', () => {
     await expect(
       settingsRenderWriteCommand(flags({ user: true, write: true, yes: true }), shown().port),
     ).rejects.toThrow(
-      'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
+      `refusing settings render --write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
     )
   })
 

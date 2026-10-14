@@ -1,6 +1,7 @@
 // concern: record-command
 /** Presents record migration, space, invitation, and doctor operations. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { openReadOnlyDatabase } from '../database/db.ts'
 import {
@@ -228,7 +229,7 @@ export async function recordSpaceMoveProjectCommand(
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(
       `record rows moved to ${result.destinationSlug}, but the local register declaration did not: ${detail}\n` +
-        `the next sync would target the old space until it is set; run \`orch project set ${projectName} --settings '{"space":"${result.destinationSlug}"}'\``,
+        `the next sync would target the old space until it is set; run \`${PLATFORM_SLUG} project set ${projectName} --settings '{"space":"${result.destinationSlug}"}'\``,
     )
   }
   presentation.log(

@@ -11,6 +11,7 @@ import { PageHeader } from '@/ui/page-header/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table/table'
 import { toast } from '@/ui/toast/toast'
 
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 export const Route = createFileRoute('/notes')({ component: NotesPage })
 
 function NotesPage() {
@@ -106,7 +107,7 @@ function LocalNotesPage() {
       ) : (
         <EmptyState
           title={stale ? 'No stale notes.' : 'No open notes.'}
-          hint="File one with orch note."
+          hint={`File one with ${PLATFORM_SLUG} note new.`}
         />
       )}
     </section>

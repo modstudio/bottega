@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   compareIdentitySets,
   drainFailsAudit,
@@ -112,8 +113,7 @@ test('a machine-only note is unrepairable because its number must be assigned by
       table: note,
       id: 'local-note',
       reason: 'the hosted record assigns note numbers, so a missing note cannot be created by push',
-      remedy:
-        'inspect with `hub note list --json` and find record_id local-note. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.',
+      remedy: `inspect with \`${PLATFORM_SLUG} note list --json\` and find record_id local-note. The machine has no command to create a note the hosted record lacks, so the choice is to file it again or drop the machine copy. Dropping the machine copy currently queues an update that the hosted record can only reject.`,
     },
   ])
   expect(taskPushVerdict(plan, { rejected: 0, quarantined: 0, waitingOnRouting: {} })).toBeFalse()

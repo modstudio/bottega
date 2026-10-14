@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
@@ -9,7 +10,7 @@ import {
   hostedTaskIdentity,
 } from './task-client.ts'
 
-const TEST_REFUSAL = 'hub note client refuses a real hosted URL unless a stub is injected in tests'
+const TEST_REFUSAL = `${PLATFORM_SLUG} note client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
 const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -30,7 +31,7 @@ async function request<T>(
   const token = options.token ?? readRecordSessionToken()
   if (!token)
     throw new Error(
-      'record session is absent. Run `orch record sign-in`, then `orch record doctor`.',
+      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
     )
   let response: Response
   try {

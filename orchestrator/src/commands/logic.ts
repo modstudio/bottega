@@ -2,6 +2,7 @@
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
 
 import type { Command, OptionValues } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
@@ -167,6 +168,10 @@ function workflowCommandOptions(program: Command): Command {
     .option('--json')
 }
 
+function epicRegisteredProjectWorkingDirectoryRefusal(): string {
+  return `${PLATFORM_SLUG} workflow epic requires a registered project working directory`
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('enforcement')
@@ -267,7 +272,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         Boolean(options.config),
         verb,
         options.project,
-        assetPath('bin', 'orch'),
+        assetPath('bin', PLATFORM_SLUG),
         presentation,
       ),
     )
@@ -593,7 +598,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((key, options) => {
       const project = projectAt(process.cwd())
-      if (!project) throw new Error('orch epic requires a registered project working directory')
+      if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
       return epicCommand(project.name, key, Boolean(options.json), presentation)
     })
   program

@@ -1,12 +1,13 @@
 // concern: ratchet-cli
-/** Owns only the `orch ratchet` grammar and presentation. */
+/** Owns only the `bottega gate ratchet` grammar and presentation. */
 
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { runRatchet } from '../ratchet/ratchet-service.ts'
 
 const USAGE =
-  'usage: orch ratchet --format <name> [--staged|--base <ref>] [--support <path>]... <command...>\n' +
-  '   or: orch ratchet --format <phpcs|phpstan> --head-report <file> --base-report <file> [--staged|--base <ref>] [--report-root <path>] [--measure <rule>=<pattern>]...'
+  `usage: ${PLATFORM_SLUG} gate ratchet --format <name> [--staged|--base <ref>] [--support <path>]... <command...>\n` +
+  `   or: ${PLATFORM_SLUG} gate ratchet --format <phpcs|phpstan> --head-report <file> --base-report <file> [--staged|--base <ref>] [--report-root <path>] [--measure <rule>=<pattern>]...`
 
 function measure(value: string, previous: { rule: string; pattern: string }[]) {
   const separator = value.indexOf('=')

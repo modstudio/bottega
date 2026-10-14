@@ -172,7 +172,7 @@ describe('MCP mirror attachment ruling', () => {
 })
 
 describe('MCP tool-probe attachment ruling', () => {
-  test('a successful required orch probe launches with worker attachment unverified', () => {
+  test('a successful required bottega agent probe launches with worker attachment unverified', () => {
     const ruling = decideMcpToolProbe(
       {
         server: mcpServerName,
@@ -190,7 +190,7 @@ describe('MCP tool-probe attachment ruling', () => {
     )
     expect(ruling.callEvidence).toEqual({
       connected: null,
-      error: 'orch probe ok: ping; worker attachment unverified',
+      error: 'bottega agent probe ok: ping; worker attachment unverified',
     })
     expect(ruling.refusalReason).toBeNull()
     expect(ruling.failedConnection).toBeNull()
@@ -213,7 +213,7 @@ describe('MCP tool-probe attachment ruling', () => {
       projectName,
     )
     expect(ruling.refusalReason).toContain('mcp unverifiable on codex')
-    expect(ruling.refusalReason).toContain(`orch project set ${projectName}`)
+    expect(ruling.refusalReason).toContain(`bottega project set ${projectName}`)
     expect(ruling.failedConnection).toBeNull()
   })
 

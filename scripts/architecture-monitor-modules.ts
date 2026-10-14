@@ -55,14 +55,26 @@ export const monitorModules: MonitorModule[] = [
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
     './database-connection-conditions.ts',
+    './orphan-inventory-conditions.ts',
+  ]),
+  module('orchestrator/src/monitor/orphan-inventory-conditions.ts', [
+    '../../../shared/brand.ts',
+    '../resources/resource-inventory.ts',
+    './monitor-conditions.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/database-connection-conditions.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../recipe/database-connection.ts',
     './monitor-types.ts',
   ]),
-  module('orchestrator/src/monitor/release-live-conditions.ts', ['./monitor-types.ts']),
+  module('orchestrator/src/monitor/release-live-conditions.ts', [
+    '../../../shared/brand.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/ratcheted-rule-conditions.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../enforcement/enforcement-records.ts',
     '../project/projects.ts',
@@ -76,12 +88,14 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-branches.ts', []),
   module('orchestrator/src/monitor/monitor-harness-load.ts', [
+    '../../../shared/brand.ts',
     '../canon/canon-load.ts',
     '../canon/canon-load-files.ts',
     '../project/projects.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-canon-drift.ts', [
+    '../../../shared/brand.ts',
     '../canon/canon-empty-store-refusal.ts',
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',
@@ -98,6 +112,7 @@ export const monitorModules: MonitorModule[] = [
     '../database/store-write-lock.ts',
   ]),
   module('orchestrator/src/monitor/monitor-outbox.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../record/outbox-dependency.ts',
     '../record/outbox-quarantine.ts',

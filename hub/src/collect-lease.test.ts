@@ -47,10 +47,10 @@ describe('collect lease', () => {
   })
 
   test('a one-shot collect waits for the lease instead of racing it', async () => {
-    // This is the bug: `hub collect` called collect() directly and never took
+    // This is the bug: `bottega record pull` called collect() directly and never took
     // the lease, so it interleaved with the server's watcher while the
     // transcripts leg was clearing and rewriting a session's spans. Two
-    // identical collects beside `hub serve` disagreed by two hours.
+    // identical collects beside `bottega dashboard start` disagreed by two hours.
     acquireLease('watcher')
     let ran = false
     const r = await withLease(

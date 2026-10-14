@@ -1,5 +1,6 @@
 /** Run stop knows run terminal writes, worktree ownership, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   branchDeletionProvenanceRefusal,
   type CleanupOptions,
@@ -291,7 +292,7 @@ export async function abandonRun(
     if (row?.status !== 'asking') {
       const remedy =
         row?.status === 'running'
-          ? `; run orch stop ${id} to stop its running turn`
+          ? `; run ${PLATFORM_SLUG} run stop ${id} to stop its running turn`
           : row
             ? `; the latest turn is already terminal (${row.status}), so no lifecycle verb applies`
             : '; no lifecycle verb applies to an empty chain'

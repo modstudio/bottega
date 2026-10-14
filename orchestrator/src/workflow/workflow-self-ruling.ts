@@ -1,11 +1,11 @@
 // concern: workflows
 /** Pure authority decision for an agent closing a workflow step with its own ruling. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AutonomyValue } from './autonomy.ts'
 import { type Floor, flagForFloor } from './workflow-floor.ts'
 
-const remedy =
-  'use `orch workflow await` and `orch workflow rule` instead, with `--from-operator` where the operator rules'
+const remedy = `use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule\` instead, with \`--from-operator\` where the operator rules`
 
 function operatorRulingRefusal(floors: Pick<Floor, 'kind' | 'operatorRuling'>[]): string {
   const alternatives = floors.filter((floor) => floor.kind !== 'ruling')
@@ -27,6 +27,6 @@ export function selfRulingRefusal(
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))
     return operatorRulingRefusal(floors)
   if (!basis.trim())
-    return 'self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with `orch workflow await` and `orch workflow rule --from-operator`'
+    return `self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule --from-operator\``
   return null
 }

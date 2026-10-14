@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
@@ -200,7 +201,7 @@ test('session ship-to aliases are refused instead of overriding an operator-owne
         database(JSON.stringify({ autonomy: { 'ship-to': 'branch' } })),
         missingConfig,
       ),
-    ).rejects.toThrow('use orch config set autonomy.ship-to <value>')
+    ).rejects.toThrow(`use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`)
   }
 })
 

@@ -2,6 +2,7 @@
 /** Knows pure canon classification and lint rules. Must not know filesystems, stores, commands, or processes. */
 import { posix } from 'node:path'
 import GithubSlugger from 'github-slugger'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS } from '../../../shared/canon-references.ts'
 import { type Finding, introducedFindings } from '../../../shared/ratchet.ts'
 import {
@@ -752,7 +753,7 @@ function contextPathFindings(file: CanonFile, trackedPaths: string[]): Finding[]
             file: file.path,
             line: 1,
             rule: 'canon/context-path-glob',
-            message: `context ${file.path} path glob ${JSON.stringify(pattern)} matches no tracked file; correct the glob in the canon store with orch doc set, then orch canon hydrate`,
+            message: `context ${file.path} path glob ${JSON.stringify(pattern)} matches no tracked file; correct the glob in the canon store with ${PLATFORM_SLUG} doc set, then ${PLATFORM_SLUG} doc canon hydrate`,
           },
         ],
   )
