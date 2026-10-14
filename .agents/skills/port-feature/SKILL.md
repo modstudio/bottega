@@ -29,7 +29,7 @@ no supporting files in this directory any more.
 | process differences | `bottega doc show port-process-differences --scope global` |
 | the category scan map — what lives where | `bottega doc show port-category-map --scope global` |
 | improvements owed back to a project | `bottega doc show port-backports --scope project --subject <name>` |
-| the ledger | `bottega doc port ref list`, `bottega doc port ref show <TASK-KEY>` |
+| the ledger | `bottega doc port ref list`, `bottega doc port ref show <TASK-KEY> --project <target>` |
 | scan progress for a pair | `bottega doc port baseline show <source> <target>` |
 | features deliberately skipped | `bottega doc port skip list <source> <target>` |
 | what could not be represented at migration | `bottega doc show port-import-exclusions --scope global` |
@@ -66,10 +66,10 @@ no supporting files in this directory any more.
 
 4. **Consult the ledger, and RESOLVE rather than delete.** For each entry
    targeting this project (`bottega doc port ref list`), if its task is now complete,
-   run `bottega doc port ref resolve <TASK-KEY>`. Do NOT delete it. A resolved ref is
+   run `bottega doc port ref resolve <TASK-KEY> --project <target>`. Do NOT delete it. A resolved ref is
    kept deliberately: deleting it would make "this port completed" and "this was
    never ported" indistinguishable, including to a later scan deciding whether
-   to offer the same work again. `bottega doc port ref delete-error <TASK-KEY>` exists
+   to offer the same work again. `bottega doc port ref delete-error <TASK-KEY> --project <target>` exists
    only for a ref recorded in error, and is not the same act.
 
 5. **Scan the source, SCOPED TO THE FEATURE from step 2.** In the source's
@@ -93,7 +93,7 @@ no supporting files in this directory any more.
    project-management / system-management layer changes are candidates, and
    product-domain changes are dropped outright. Then drop anything the target's
    differences doc records as deliberately unique, and anything already skipped
-   for this pair (`bottega doc port skip list`).
+   for this pair (`bottega doc port skip list <source> <target>`).
 
    Ask what the ADAPTED version would be, not whether the code applies. Where
    the two projects differ in shape, a port is a pattern re-expressed, and a
@@ -118,14 +118,14 @@ no supporting files in this directory any more.
    backoff", never "Port project X's retry backoff". The provenance goes in the
    ledger instead:
 
-       bottega doc port ref set <TASK-KEY> --sources '[{"source_project_id":N,"commits":[...],"paths":[...],"note":"..."}]' --note "..."
+       bottega doc port ref set <TASK-KEY> --project <target> --sources '[{"project":"<source>","commits":[...],"paths":[...],"note":"..."}]' --note "..."
 
    A ref may name SEVERAL source projects; that is what the array is for. Put
    any qualifying text — "as a stated gap, not an implementation" — in that
    source's own `note` rather than dropping it.
 
    End the task description with the single neutral line
-   `Porting reference: bottega doc port ref show <TASK-KEY>`. That is how the
+   `Porting reference: bottega doc port ref show <TASK-KEY> --project <target>`. That is how the
    implementer finds the source material.
 
 9. **Update scan progress.** Write the scanned source HEAD to the pair:
