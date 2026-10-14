@@ -169,7 +169,7 @@ describe('importWorkflowTree', () => {
         )
       } else {
         expect(step.body).toContain(
-          '`bottega doc set` with `--scope project --subject orch-docs-fixture`',
+          `\`${PLATFORM_SLUG} doc set\` with \`--scope project --subject orch-docs-fixture\``,
         )
       }
       expect(step.body).not.toContain('{{')
