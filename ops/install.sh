@@ -42,6 +42,20 @@ FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
 LOAD_WAIT_TRIES=20
 LOAD_WAIT_SECONDS=0.25
 FAILED_LABELS=()
+HOSTED_HUB_WRITE_LABELS=(
+  "com.user.hub-note-maintenance"
+  "com.user.orch-fix-defect"
+  "com.user.orch-monitor"
+)
+
+needs_hosted_hub_url() {
+  local candidate="$1"
+  local hosted_label
+  for hosted_label in "${HOSTED_HUB_WRITE_LABELS[@]}"; do
+    [[ "$candidate" == "$hosted_label" ]] && return 0
+  done
+  return 1
+}
 
 wait_unloaded() {
   local tries=0
@@ -89,6 +103,10 @@ remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply run
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
+  if needs_hosted_hub_url "$label" && [[ -z "${HUB_HOSTED_URL:-}" ]]; then
+    remove_skipped_agent "$label" "HUB_HOSTED_URL is unset; set HUB_HOSTED_URL and run ops/install.sh again"
+    continue
+  fi
   if [[ "$label" == "com.user.local-model-tunnel" && -z "$MODEL_HOST" ]]; then
     remove_skipped_agent "$label" "model_host.ssh_alias is unset"
     continue
@@ -146,7 +164,8 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__FLYCTL__#${FLYCTL}#g" \
       -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
       -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
-      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" "$tmpl" > "$target"
+      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" \
+      -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$target"
 
   # Load it. A label that still will not load is reported and the rest continue.
   if bootstrap_with_retry "$target"; then
