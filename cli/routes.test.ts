@@ -31,3 +31,28 @@ test('every route resolves to an existing owner command', () => {
     }
   }
 })
+
+function commandAt(program: Command, path: readonly string[]): Command {
+  let current = program
+  for (const name of path)
+    current = current.commands.find((candidate) => candidate.name() === name)!
+  return current
+}
+
+test('each composite part declares exactly the options its owner command accepts', () => {
+  // --watch is refused on purpose: a composite must not start a command that never returns.
+  const refused = new Set(['--help', '--watch'])
+  for (const route of ROUTES) {
+    for (const part of route.composite ?? []) {
+      const program = part.owner === 'orch' ? orchProgram : hubProgram
+      const accepted = commandAt(program, part.argv)
+        .options.map((option) => option.long)
+        .filter((name): name is string => !!name && !refused.has(name))
+        .sort()
+      expect(
+        Object.keys(part.options ?? {}).sort(),
+        `${route.command.join(' ')}: ${part.label}`,
+      ).toEqual(accepted)
+    }
+  }
+})
