@@ -50,9 +50,7 @@ export async function syncCommand(
     presentation.log(
       `landing evidence backfill enqueued ${evidence.enqueuedLandings}, ${evidence.enqueuedOverrides}, ${evidence.enqueuedCarries}, ${evidence.enqueuedContentions}, ${evidence.enqueuedFlakes}`,
     )
-    presentation.log(
-      `release backfill enqueued ${result.backfill.releases.enqueued}`,
-    )
+    presentation.log(`release backfill enqueued ${result.backfill.releases.enqueued}`)
   }
   if (!result.configured) {
     presentation.log('no record configured')
