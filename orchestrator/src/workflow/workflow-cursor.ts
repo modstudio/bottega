@@ -20,10 +20,12 @@ import {
   cursorName,
   formatCursorOpened,
   formatCursorResumed,
+  renderWorkflowCursorLine,
   shellWord,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import {
+  LISTED_CURSOR_COLUMNS,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
@@ -1007,10 +1009,9 @@ export function listWorkflowCursors(
     values.push(options.session)
   }
   const rows = d
-    .query(`SELECT id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-       ordinal,step_slug,state,workflow_version,catalogue_version,args,autonomy,closed,question,
-       total_steps,created_at,updated_at,enforcement
-       FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
+    .query(
+      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`,
+    )
     .all(...values) as CursorRow[]
   return rows.map((row) => {
     const open = openWorkflowObligations(row.id, d)
@@ -1021,12 +1022,4 @@ export function listWorkflowCursors(
     }
     return { ...listed, line: renderWorkflowCursorLine(listed) }
   })
-}
-
-export function renderWorkflowCursorLine(
-  row: CursorRow & { next_slug: string; obligations?: string },
-): string {
-  const question = row.question ? ` question: ${row.question}` : ''
-  const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
-  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
 }

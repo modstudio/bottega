@@ -7,6 +7,10 @@ import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowMode, showWorkflow } from './workflows.ts'
 
+/** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
+export const LISTED_CURSOR_COLUMNS =
+  'id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,workflow_version,catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
+
 export type WorkflowCursorIdentity = {
   project?: string
   workflow?: string
