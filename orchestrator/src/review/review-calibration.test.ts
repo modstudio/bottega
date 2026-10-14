@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { state } from '../state/serve.ts'
 import { calibrationLine, reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import {
-import { newRecordId } from '../../../shared/record-id.ts'
-
   completeReview,
   gradeReviewLens,
   MIN_REVIEW_TRIAGED,

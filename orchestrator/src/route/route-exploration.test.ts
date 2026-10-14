@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -9,8 +10,6 @@ import {
   triageFinding,
 } from '../review/review-triage.ts'
 import {
-import { newRecordId } from '../../../shared/record-id.ts'
-
   BETA_SCALE,
   candidates,
   currentPolicySelection,

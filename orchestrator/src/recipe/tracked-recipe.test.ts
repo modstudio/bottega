@@ -774,10 +774,10 @@ describe('tracked recipe execution', () => {
     const insertClaim = database.query(
       `INSERT INTO resource_claim
        (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-       VALUES ('${newRecordId()}', ?,?,?,'database',?,'claimed',?)`,
+       VALUES (?, ?,?,?,'database',?,'claimed',?)`,
     )
-    insertClaim.run(successfulRun, successfulRun, projectId, 'postgres:app_ok', nowIso())
-    insertClaim.run(failedRun, failedRun, projectId, 'postgres:app_failed', nowIso())
+    insertClaim.run(newRecordId(), successfulRun, successfulRun, projectId, 'postgres:app_ok', nowIso())
+    insertClaim.run(newRecordId(), failedRun, failedRun, projectId, 'postgres:app_failed', nowIso())
     const snapshot: RecipeSnapshot = {
       source: { path: '.orch/worktree.jsonc', commit: 'abc' },
       recipe: { create: [step('database')] },

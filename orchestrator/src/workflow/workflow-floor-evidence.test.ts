@@ -592,8 +592,8 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
      VALUES ('${newRecordId()}',1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
   ).run()
   d.query(
-    `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)
-     VALUES (1,'rule','adopting-session','2026-09-01',
+    `INSERT INTO question_mutation_audit (record_id,question_id,action,actor_session,at,reason)
+     VALUES ('${newRecordId()}',1,'rule','adopting-session','2026-09-01',
              'adopted from gone owner s by adopting-session; Proceed.')`,
   ).run()
   d.query(

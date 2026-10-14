@@ -1,12 +1,11 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
-import { newRecordId } from '../../../shared/record-id.ts'
-
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,

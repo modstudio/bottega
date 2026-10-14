@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
 import {
-import { newRecordId } from '../../../shared/record-id.ts'
-
   ROUTING_BACKTEST_SEEDS,
   routingBacktest,
   routingBacktestEnsemble,

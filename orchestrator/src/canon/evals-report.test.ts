@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
-import { newRecordId } from '../../../shared/record-id.ts'
-
   CANON_EVALS,
   canonEvalsReport,
   failingCanonEvalSlugs,
