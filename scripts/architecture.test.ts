@@ -38,3 +38,30 @@ test('hosted report delivery transitively rejects the local store and git', () =
   expect(rule?.to.path).toContain(exactArchitecturePath('bun:sqlite'))
   expect(rule?.to.reachable).toBe(true)
 })
+
+function ruleAllows(
+  rule: ReturnType<typeof architectureRules>['forbidden'][number],
+  from: string,
+  to: string,
+): boolean {
+  if (!new RegExp(rule.from.path).test(from)) return true
+  if (rule.from.pathNot?.some((pattern) => new RegExp(pattern).test(from))) return true
+  if (rule.to.path && !new RegExp(rule.to.path).test(to)) return true
+  return Boolean(rule.to.pathNot?.some((pattern) => new RegExp(pattern).test(to)))
+}
+
+test('only the cli composition root receives concern entry exceptions', () => {
+  const rules = architectureRules().forbidden
+  const isolation = rules.find((rule) => rule.name === 'concern-isolation')!
+  const composition = rules.find((rule) => rule.name === 'cli-imports-only-concern-entries')!
+  const inspection = rules.find(
+    (rule) => rule.name === 'cli-route-test-inspects-only-owner-programs',
+  )!
+  const compositionRoot = modules.find((entry) => entry.allowed.includes('hub/src/cli.ts'))!.file
+  expect(
+    ruleAllows(isolation, 'hub/src/architecture-hole-proof.ts', 'orchestrator/src/cli/orch.ts'),
+  ).toBeFalse()
+  expect(ruleAllows(composition, compositionRoot, 'orchestrator/src/cli/orch.ts')).toBeTrue()
+  expect(ruleAllows(inspection, 'cli/routes.test.ts', 'orchestrator/src/cli/program.ts')).toBeTrue()
+  expect(ruleAllows(inspection, 'cli/routes.test.ts', 'orchestrator/src/run/exec.ts')).toBeFalse()
+})

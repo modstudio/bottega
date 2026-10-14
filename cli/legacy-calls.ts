@@ -14,6 +14,33 @@ type LegacyCall = {
   source: 'internal' | 'external'
 }
 
+const NESTED_COMMANDS: Readonly<Record<'orch' | 'hub', ReadonlySet<string>>> = {
+  orch: new Set([
+    'board',
+    'branches',
+    'config',
+    'confinement',
+    'gate',
+    'pr',
+    'question',
+    'record',
+    'release',
+    'ruling',
+    'settings',
+    'setup',
+    'test-substance',
+    'tree',
+  ]),
+  hub: new Set(['note', 'outbox', 'report', 'task']),
+}
+
+function legacyCommandTokens(oldName: 'orch' | 'hub', argv: readonly string[]): string[] {
+  if (!argv[0]) return []
+  return NESTED_COMMANDS[oldName].has(argv[0]) && argv[1] && !argv[1].startsWith('-')
+    ? argv.slice(0, 2)
+    : argv.slice(0, 1)
+}
+
 function legacyPath(env: StateEnvironment): string {
   return join(resolveStateRoot(env), 'legacy-calls.jsonl')
 }
@@ -30,7 +57,7 @@ export function recordLegacyCall(
     const row: LegacyCall = {
       time: new Date().toISOString(),
       oldName,
-      tokens: argv.slice(0, 2),
+      tokens: legacyCommandTokens(oldName, argv),
       cwd: process.cwd(),
       harnessSessionId: env.CLAUDE_CODE_SESSION_ID?.trim() || null,
       source,

@@ -4,7 +4,13 @@ export type CommandRoute = {
   command: readonly string[]
   owner: RouteOwner
   argv?: readonly string[]
-  composite?: readonly { owner: 'orch' | 'hub'; argv: readonly string[]; label: string }[]
+  composite?: readonly {
+    owner: 'orch' | 'hub'
+    argv: readonly string[]
+    label: string
+    options?: Readonly<Record<string, boolean>>
+  }[]
+  continueOnFailure?: boolean
   description?: string
   hidden?: boolean
 }
@@ -110,8 +116,18 @@ export const ROUTES = (
       command: ['record', 'sync'],
       owner: 'composite',
       composite: [
-        { owner: 'orch', argv: ['sync'], label: 'orchestrator sync' },
-        { owner: 'hub', argv: ['collect'], label: 'hub collect' },
+        {
+          owner: 'orch',
+          argv: ['sync'],
+          label: 'orchestrator sync',
+          options: { '--backfill': false },
+        },
+        {
+          owner: 'hub',
+          argv: ['collect'],
+          label: 'hub collect',
+          options: { '--since': true, '--only': true },
+        },
       ],
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
@@ -143,15 +159,26 @@ export const ROUTES = (
       command: ['machine', 'doctor'],
       owner: 'composite',
       composite: [
-        { owner: 'orch', argv: ['doctor'], label: 'orchestrator doctor' },
+        {
+          owner: 'orch',
+          argv: ['doctor'],
+          label: 'orchestrator doctor',
+          options: { '--wake': false },
+        },
         { owner: 'hub', argv: ['doctor'], label: 'hub doctor' },
       ],
+      continueOnFailure: true,
     },
     {
       command: ['machine', 'migrate'],
       owner: 'composite',
       composite: [
-        { owner: 'orch', argv: ['migrate'], label: 'orchestrator migrate' },
+        {
+          owner: 'orch',
+          argv: ['migrate'],
+          label: 'orchestrator migrate',
+          options: { '--backfill-spec-sha': false },
+        },
         { owner: 'hub', argv: ['migrate'], label: 'hub migrate' },
       ],
     },

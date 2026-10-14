@@ -16,6 +16,15 @@ test('legacy call counts retain source and first and last sightings', () => {
   recordLegacyCall('orch', ['result', '42'], 'external', env)
   const rows = legacyCallCounts(undefined, env)
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatchObject({ command: 'orch result 42', source: 'external', count: 2 })
+  expect(rows[0]).toMatchObject({ command: 'orch result', source: 'external', count: 2 })
   expect(rows[0]!.firstSeen <= rows[0]!.lastSeen).toBeTrue()
+})
+
+test('legacy call counts preserve genuine nested commands', () => {
+  const env = { BOTTEGA_STATE_HOME: root }
+  recordLegacyCall('hub', ['task', 'show', 'DEV-1311'], 'internal', env)
+  recordLegacyCall('hub', ['task', 'show', 'DEV-1312'], 'internal', env)
+  expect(legacyCallCounts(undefined, env)).toMatchObject([
+    { command: 'hub task show', source: 'internal', count: 2 },
+  ])
 })

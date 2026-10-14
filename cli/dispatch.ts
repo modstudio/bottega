@@ -53,15 +53,36 @@ async function legacy(
 }
 
 async function composite(
-  parts: NonNullable<ReturnType<typeof resolveRoute>>['route']['composite'],
+  route: NonNullable<ReturnType<typeof resolveRoute>>['route'],
   rest: string[],
   entries: BinaryEntries,
 ): Promise<number> {
+  const parts = route.composite ?? []
+  const partArguments = parts.map(() => [] as string[])
+  for (let index = 0; index < rest.length; index += 1) {
+    const argument = rest[index]!
+    const option = argument.includes('=') ? argument.slice(0, argument.indexOf('=')) : argument
+    const ownerIndex = parts.findIndex((part) => part.options?.[option] !== undefined)
+    if (ownerIndex < 0) {
+      console.error(`unknown composite option: ${argument}`)
+      return 2
+    }
+    partArguments[ownerIndex]!.push(argument)
+    if (parts[ownerIndex]!.options?.[option] && !argument.includes('=')) {
+      const value = rest[++index]
+      if (value === undefined) {
+        console.error(`option requires an argument: ${option}`)
+        return 2
+      }
+      partArguments[ownerIndex]!.push(value)
+    }
+  }
   let result = 0
-  for (const part of parts ?? []) {
-    console.log(`== ${part.label} ==`)
-    const code = await entries[part.owner]([...part.argv, ...rest])
+  for (const [index, part] of parts.entries()) {
+    console.error(`== ${part.label} ==`)
+    const code = await entries[part.owner]([...part.argv, ...partArguments[index]!])
     if (code !== 0 && result === 0) result = code
+    if (code !== 0 && !route.continueOnFailure) break
   }
   return result
 }
@@ -111,8 +132,7 @@ export async function dispatchBinary(
     return 2
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
-  if (resolved.route.owner === 'composite')
-    return composite(resolved.route.composite, resolved.rest, entries)
+  if (resolved.route.owner === 'composite') return composite(resolved.route, resolved.rest, entries)
   const ownerArgv = [...(resolved.route.argv ?? []), ...resolved.rest]
   return entries[resolved.route.owner](ownerArgv)
 }

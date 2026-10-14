@@ -49,42 +49,4 @@ export const releaseModules = [
       'orchestrator/src/release/release-decision.ts',
     ],
   },
-  {
-    file: 'cli/bottega.ts',
-    allowed: [
-      'hub/src/cli.ts',
-      'orchestrator/src/ask/ask-proxy.ts',
-      'orchestrator/src/check/check-attribution.ts',
-      'orchestrator/src/check/check-strict-schema.ts',
-      'orchestrator/src/cli/orch.ts',
-      'orchestrator/src/run/exec.ts',
-      'retrieval/src/search-cli.ts',
-      'shared/brand.ts',
-      'shared/install-root.ts',
-      'cli/dispatch.ts',
-    ],
-  },
-  {
-    file: 'cli/dispatch.ts',
-    allowed: [
-      'node:path',
-      'shared/brand.ts',
-      'shared/self-spawn.ts',
-      'cli/legacy-calls.ts',
-      'cli/routes.ts',
-    ],
-  },
-  {
-    file: 'cli/legacy-calls.ts',
-    allowed: ['node:fs', 'node:path', 'shared/brand.ts', 'shared/state-directory.ts'],
-  },
-  {
-    file: 'cli/routes.test.ts',
-    allowed: [
-      'commander',
-      'hub/src/cli-program.ts',
-      'orchestrator/src/cli/program.ts',
-      'cli/routes.ts',
-    ],
-  },
 ]

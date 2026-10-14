@@ -23,11 +23,10 @@ test('source entries preserve their current argv prefixes', () => {
     '--no-env-file',
     assetPath('orchestrator', 'src', 'run', 'exec.ts'),
   ])
-  expect(bottegaEntryArgv('ask-server')).toEqual([
-    process.execPath,
-    '--no-env-file',
-    assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
-    'ask-server',
+  expect(bottegaEntryArgv('ask-server')).toEqual([assetPath('bin', 'orch'), 'ask-server'])
+  expect(bottegaEntryArgv('mcp-reader-proxy')).toEqual([
+    assetPath('bin', 'orch'),
+    'mcp-reader-proxy',
   ])
   expect(bottegaEntryArgv('ask-proxy')).toEqual([
     Bun.which('bun') ?? process.execPath,

@@ -1,6 +1,6 @@
 // Tests codex-mcp-scope.ts: explicit Codex CLI configuration and MCP grants.
 import { expect, test } from 'bun:test'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { ROOT } from '../database/database-location.ts'
 import {
@@ -186,10 +186,8 @@ test('orch-ask CLI definition matches the ACP command and args', () => {
   const entry = serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' })).find((arg) =>
     arg.startsWith('mcp_servers.orch-ask='),
   )!
-  expect(entry).toContain(`command=${JSON.stringify(process.execPath)}`)
-  expect(entry).toContain(
-    `args=${JSON.stringify(['--no-env-file', join(dirname(import.meta.path), '..', 'cli', 'orch.ts'), 'ask-server'])}`,
-  )
+  expect(entry).toContain(`command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))}`)
+  expect(entry).toContain(`args=${JSON.stringify(['ask-server'])}`)
   expect(entry).toContain(`env_vars=${JSON.stringify(CODEX_ASK_ENV_VARS)}`)
   expect(serverEntries(codexScopeArgs({ mcp: true, mcpServer: 'orch' }))).toContain(
     `mcp_servers.orch={command=${JSON.stringify(join(ROOT, '..', 'bin', 'orch'))},args=["mcp"],env_vars=${JSON.stringify(CODEX_ORCH_ENV_VARS)}}`,
