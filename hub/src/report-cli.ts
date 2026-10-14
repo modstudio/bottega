@@ -6,6 +6,70 @@ import {
 import { runReportDeliveryCommand } from './report-delivery-cli.ts'
 import { pushReports } from './report-push.ts'
 
+type ReportOptions = {
+  cadence?: string
+  day?: string
+  dryRun?: boolean
+  hour?: string
+  json?: boolean
+  member?: string[]
+  project?: string
+  recipient?: string
+  scope?: string
+  zone?: string
+}
+
+const repeat = (value: string, previous: string[] = []) => [...previous, value]
+
+function reportArgv(subcommand: string, positionals: string[], options: ReportOptions): string[] {
+  const argv = ['report', subcommand, ...positionals]
+  for (const name of ['cadence', 'day', 'hour', 'project', 'recipient', 'scope', 'zone'] as const) {
+    const value = options[name]
+    if (value !== undefined) argv.push(`--${name}`, value)
+  }
+  for (const member of options.member ?? []) argv.push('--member', member)
+  if (options.dryRun) argv.push('--dry-run')
+  if (options.json) argv.push('--json')
+  return argv
+}
+
+function registerReportAction(command: Command, subcommand: string): void {
+  command.action(async (...args: unknown[]) => {
+    requireDatabase()
+    const commander = args.at(-1) as Command
+    const positionals = args.slice(0, -2).map(String)
+    await runReportCommand(reportArgv(subcommand, positionals, commander.opts() as ReportOptions))
+  })
+}
+
+export function registerReportCommands(program: Command): void {
+  const report = program.command('report').description('manage scheduled reports')
+  const subscribe = report
+    .command('subscribe')
+    .option('--scope <space|project|person>', '')
+    .option('--project <name>', '')
+    .option('--member <user-id>', '', repeat, [])
+    .option('--cadence <daily|weekly>', '')
+    .option('--hour <N>', '')
+    .option('--day <monday>', '')
+    .option('--zone <area/city>', '')
+    .option('--recipient <user-id>', '')
+  registerReportAction(subscribe, 'subscribe')
+  const subscriptions = report.command('subscriptions').option('--json', '')
+  registerReportAction(subscriptions, 'subscriptions')
+  registerReportAction(report.command('unsubscribe <id>'), 'unsubscribe')
+  const send = report
+    .command('send')
+    .description('render and send every subscription whose period is due')
+    .option('--dry-run', '')
+  registerReportAction(send, 'send')
+  const push = report
+    .command('push')
+    .description('migrate and verify send history')
+    .option('--dry-run', '')
+  registerReportAction(push, 'push')
+}
+
 function flagOf(argv: string[], name: string) {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
@@ -95,3 +159,5 @@ export async function runReportCommand(argv: string[]) {
   if (sub === 'send') return runReportDeliveryCommand(argv)
   throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push|send')
 }
+import type { Command } from 'commander'
+import { requireDatabase } from './db.ts'

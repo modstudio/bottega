@@ -1,4 +1,6 @@
+import type { Command } from 'commander'
 import { projectOf } from './attribute.ts'
+import { requireDatabase } from './db.ts'
 import {
   acknowledgeNote,
   createNote,
@@ -27,6 +29,104 @@ export const NOTE_USAGE = `hub note new "<text>" [--project NAME] [--same-as LAB
   hub note curate [--scheduled]
   hub note curator [--enable|--disable]
   hub note push [--dry-run]   migrate and verify the local note cache`
+
+type NoteOptions = {
+  actionable?: boolean
+  anchorJson?: string
+  area?: string
+  disable?: boolean
+  dryRun?: boolean
+  enable?: boolean
+  json?: boolean
+  kept?: boolean
+  new?: boolean
+  project?: string
+  reason?: string
+  sameAs?: string
+  scheduled?: boolean
+  session?: string[]
+  stale?: boolean
+  task?: string
+}
+
+const repeat = (value: string, previous: string[] = []) => [...previous, value]
+
+function noteArgv(subcommand: string, positionals: string[], options: NoteOptions): string[] {
+  const argv = ['note', subcommand, ...positionals]
+  const values: Array<[keyof NoteOptions, string]> = [
+    ['anchorJson', 'anchor-json'],
+    ['area', 'area'],
+    ['project', 'project'],
+    ['reason', 'reason'],
+    ['sameAs', 'same-as'],
+    ['task', 'task'],
+  ]
+  for (const [key, flag] of values) if (typeof options[key] === 'string') argv.push(`--${flag}`, options[key])
+  for (const session of options.session ?? []) argv.push('--session', session)
+  const booleans: Array<[keyof NoteOptions, string]> = [
+    ['actionable', 'actionable'],
+    ['disable', 'disable'],
+    ['dryRun', 'dry-run'],
+    ['enable', 'enable'],
+    ['json', 'json'],
+    ['kept', 'kept'],
+    ['new', 'new'],
+    ['scheduled', 'scheduled'],
+    ['stale', 'stale'],
+  ]
+  for (const [key, flag] of booleans) if (options[key]) argv.push(`--${flag}`)
+  return argv
+}
+
+function registerNoteAction(command: Command, subcommand: string): void {
+  command.action(async (...args: unknown[]) => {
+    requireDatabase()
+    const commander = args.at(-1) as Command
+    const options = commander.opts() as NoteOptions
+    const positionals = args
+      .slice(0, -2)
+      .flatMap((value) => (Array.isArray(value) ? value.map(String) : [String(value)]))
+    await runNoteCommand(noteArgv(subcommand, positionals, options))
+  })
+}
+
+export function registerNoteCommands(program: Command): void {
+  const note = program.command('note').description('manage observations')
+  const create = note
+    .command('new <text>')
+    .option('--project <name>', '')
+    .option('--same-as <reference>', '')
+    .option('--new', '')
+    .option('--area <area>', '')
+    .option('--anchor-json <json>', '')
+    .option('--json', '')
+  registerNoteAction(create, 'new')
+  const list = note
+    .command('list')
+    .option('--project <X>', '')
+    .option('--stale', '')
+    .option('--session <ID>', '', repeat, [])
+    .option('--actionable', '')
+    .option('--kept', '')
+    .option('--json', '')
+  registerNoteAction(list, 'list')
+  registerNoteAction(note.command('same <target> <source>'), 'same')
+  registerNoteAction(note.command('keep <references...>'), 'keep')
+  const promote = note.command('promote <reference>').option('--task <key>', '')
+  registerNoteAction(promote, 'promote')
+  const drop = note.command('drop <reference>').option('--reason <reason>', '')
+  registerNoteAction(drop, 'drop')
+  registerNoteAction(note.command('stale').description('mark vanished anchors and reap eligible notes'), 'stale')
+  const curate = note.command('curate').option('--scheduled', '')
+  registerNoteAction(curate, 'curate')
+  const curator = note.command('curator').option('--enable', '').option('--disable', '')
+  registerNoteAction(curator, 'curator')
+  const push = note
+    .command('push')
+    .description('migrate and verify the local note cache')
+    .option('--dry-run', '')
+  registerNoteAction(push, 'push')
+}
 
 const NOTE_VALUE_FLAGS = new Set([
   '--anchor-json',

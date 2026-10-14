@@ -1,27 +1,31 @@
-import type { ParsedTaskArguments } from './task-command-arguments.ts'
 import { pruneForeignHostedTasks } from './task-prune-foreign.ts'
 import { formatTaskPushReport, pushTasks } from './task-push.ts'
 
 export async function runHostedTaskMaintenance(
   command: 'push' | 'prune-foreign',
-  args: ParsedTaskArguments,
+  args: {
+    confirm?: string
+    dryRun?: boolean
+    json?: boolean
+    onlyPresentElsewhere?: boolean
+    project?: string
+    repair?: boolean
+  },
 ) {
-  const has = (name: string) => args.booleans.has(`--${name}`)
-  const flag = (name: string) => args.values.get(`--${name}`)
   if (command === 'push') {
-    const result = await pushTasks({ repair: has('repair') })
-    console.log(has('json') ? JSON.stringify(result, null, 2) : formatTaskPushReport(result))
+    const result = await pushTasks({ repair: Boolean(args.repair) })
+    console.log(args.json ? JSON.stringify(result, null, 2) : formatTaskPushReport(result))
     if (!result.ok) process.exitCode = 1
     return
   }
-  const confirmation = flag('confirm')
+  const confirmation = args.confirm
   const result = await pruneForeignHostedTasks({
-    dryRun: has('dry-run'),
+    dryRun: Boolean(args.dryRun),
     confirmation: confirmation === undefined ? undefined : Number(confirmation),
-    project: flag('project'),
-    onlyPresentElsewhere: has('only-present-elsewhere'),
+    project: args.project,
+    onlyPresentElsewhere: Boolean(args.onlyPresentElsewhere),
   })
-  if (has('json')) {
+  if (args.json) {
     console.log(JSON.stringify(result, null, 2))
     return
   }
