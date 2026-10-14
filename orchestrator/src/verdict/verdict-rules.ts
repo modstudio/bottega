@@ -4,7 +4,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
-export const VOID_EXCLUSION_REASON = `voided with ${PLATFORM_SLUG} score --void`
+// Stored in run.evidence_excluded and compared literally by unvoid; it names the old command on purpose.
+export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
 
 export function refuseChildTurnVoid(
   requestedId: number,

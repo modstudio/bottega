@@ -92,7 +92,7 @@ describe('score ruling', () => {
     )
     await score(id, [], { void: true })
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
   })
 
@@ -165,7 +165,7 @@ describe('score ruling', () => {
     db().query("UPDATE run SET agent='(pending)',failure_kind='harness' WHERE id=?").run(harness)
     await score(harness, ['none'], { void: true })
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(harness)).toEqual({
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     const other = insert('failed')
     db().query("UPDATE run SET agent='(pending)',failure_kind='other' WHERE id=?").run(other)
@@ -235,7 +235,7 @@ describe('score ruling', () => {
     await score(id, [], { void: true }, { auditReason: 'operator cleanup' })
 
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     expect(
       db()
@@ -784,7 +784,7 @@ describe('voided output evidence', () => {
 
     expect(db().query('SELECT status,evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
       status: 'asking',
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     expect(
       db().query('SELECT answered_at,closed_at,close_reason FROM question WHERE run_id=?').get(id),
@@ -887,7 +887,7 @@ describe('voided output evidence', () => {
     await score(id, ['none'], { void: true, 'better-than': String(partner) })
     expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(id)).toEqual({
       close_reason: 'chain-voided',
@@ -904,7 +904,7 @@ describe('voided output evidence', () => {
       .all(id)
     expect(outbox.map((row) => row.kind)).toEqual(['score', 'run'])
     expect(JSON.parse(outbox[1]!.payload)).toMatchObject({
-      evidenceExcluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidenceExcluded: `voided with orch score --void`,
     })
     expect(
       db().query('SELECT COUNT(*) n FROM duel WHERE winner_run_id=? OR loser_run_id=?').get(id, id),
@@ -957,7 +957,7 @@ describe('voided output evidence', () => {
       "verdict was not recorded: failure kind 'quota' is not evidence",
     )
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
   })

@@ -363,7 +363,7 @@ describe('run answers', () => {
       { status: 'failed', excluded: null },
       { status: 'stopped', excluded: null },
       { status: 'stale', excluded: null },
-      { status: 'asking', excluded: `voided with ${PLATFORM_SLUG} score --void` },
+      { status: 'asking', excluded: `voided with orch score --void` },
     ]) {
       const id = addRun({
         agent: 'missing-test-agent',

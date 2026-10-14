@@ -57,7 +57,7 @@ describe('the activity window', () => {
     score(voided, 'full', 'right')
     db()
       .query(
-        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+        `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`,
       )
       .run(voided)
 
@@ -71,7 +71,7 @@ describe('the activity window', () => {
     const noVerdict = agedRun(0, { agent: 'grok', job: 'craft' })
     db()
       .query(
-        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+        `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`,
       )
       .run(noVerdict)
 
@@ -124,7 +124,7 @@ describe('evidence totals', () => {
     score(voided, 'full', 'right')
     db()
       .query(
-        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+        `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`,
       )
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
@@ -135,7 +135,7 @@ describe('evidence totals', () => {
     score(kept, 'full', 'right')
     db()
       .query(
-        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+        `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`,
       )
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
@@ -145,7 +145,7 @@ describe('evidence totals', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed' })
     db()
       .query(
-        `UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+        `UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with orch score --void' WHERE id=?`,
       )
       .run(id)
     expect(runTotals()).toMatchObject({ runs: 1, scored: 0, voided: 1, unscored: 0 })

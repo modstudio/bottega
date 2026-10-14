@@ -805,7 +805,7 @@ describe('record cache pull', () => {
         3,
         'ask',
         'ok',
-        `voided with ${PLATFORM_SLUG} score --void`,
+        `voided with orch score --void`,
       )
     if (scored) {
       db()
