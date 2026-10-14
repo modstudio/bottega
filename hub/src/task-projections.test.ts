@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 import {
+  type BoardSourceRow,
   combineMachineDays,
+  projectBoard,
   projectBoardCards,
   projectFlightDone,
   projectRatioSummary,
@@ -213,4 +215,61 @@ test('local projection keeps one shared label separate by task record id', () =>
     { recordId: 'alpha-record', project: 'alpha' },
     { recordId: 'beta-record', project: 'beta' },
   ])
+})
+
+function boardRow(overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>): BoardSourceRow {
+  return {
+    project: 'workshop',
+    title: overrides.key,
+    assignee: null,
+    status: 'active',
+    status_category: 'active',
+    source: 'local',
+    updated_at: '2026-09-17T12:00:00.000Z',
+    last_seen: '2026-09-17T12:00:00.000Z',
+    ...overrides,
+  }
+}
+
+test("a filtered project still receives done rows that would fall below the cap behind another project's rows", () => {
+  const cap = 3
+  const rows = [
+    boardRow({ key: 'DEV-1', updated_at: '2026-09-17T12:00:00.000Z' }),
+    boardRow({ key: 'DEV-2', updated_at: '2026-09-17T11:00:00.000Z' }),
+    boardRow({ key: 'DEV-3', updated_at: '2026-09-17T10:00:00.000Z' }),
+    boardRow({
+      key: 'SEGNA-1',
+      project: 'segnavia',
+      status: 'done',
+      status_category: 'done',
+      source: 'mcp',
+      updated_at: '2026-09-01T00:00:00.000Z',
+    }),
+  ]
+  const recentKeys = ['unattributed:segnavia:SEGNA-1']
+  const input = { rows, recentKeys, liveKeys: [] as string[], projects: project, cap }
+  const unfiltered = projectBoard(input)
+  const filtered = projectBoard({ ...input, filters: { project: 'segnavia', source: '' } })
+  expect(unfiltered.cards.map((card) => card.key)).toEqual(['DEV-1', 'DEV-2', 'DEV-3'])
+  expect(filtered.cards.map((card) => card.key)).toEqual(['SEGNA-1'])
+  expect(filtered.totals).toEqual(unfiltered.totals)
+  expect(Object.keys(filtered.totals.project).sort()).toEqual(['segnavia', 'workshop'])
+})
+
+test('the unfiltered board still caps at the cap', () => {
+  const rows = [1, 2, 3, 4, 5].map((n) =>
+    boardRow({ key: `DEV-${n}`, updated_at: `2026-09-17T1${n}:00:00.000Z` }),
+  )
+  const board = projectBoard({
+    rows,
+    recentKeys: [],
+    liveKeys: [],
+    projects: project,
+    cap: 2,
+    filters: { project: '', source: '' },
+  })
+  expect(board.cards).toHaveLength(2)
+  expect(board.cap).toBe(2)
+  expect(board.cards.map((card) => card.key)).toEqual(['DEV-5', 'DEV-4'])
+  expect(board.totals.status.active).toBe(5)
 })

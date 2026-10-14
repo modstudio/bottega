@@ -266,38 +266,27 @@ export async function hostedBoard(
       liveKeys: live.map((row) => `${row.space_id}\0${row.task_key}`),
       projects: projectRows,
       cap: 250,
+      filters: input.filters,
     })
   })
-  const sourceMatches = (card: (typeof board.cards)[number]) =>
-    !input.filters.source ||
-    (input.filters.source === 'hub'
-      ? card.source === 'local'
-      : card.source !== 'local' && card.project === input.filters.source)
-  const cards = board.cards.filter(
-    (card) =>
-      (!input.filters.project || card.project === input.filters.project) && sourceMatches(card),
-  )
   const strings = (values: (string | null | undefined)[]) =>
     [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
+  const { sourceFacetProjects, ...page } = board
   return {
     ...strip(facts.intervals, tasks, input.hours, to, facts.collectedAt, facts.tasksShipped),
     view: 'board' as const,
     data: {
-      ...board,
-      cards,
+      ...page,
       scoped: Boolean(input.filters.project || input.filters.source),
       filters: input.filters,
-      matched: cards.length,
+      matched: page.cards.length,
       facets: {
         agents: [] as string[],
         projects: strings([
           ...input.projects.map((item) => item.name),
-          ...Object.keys(board.totals.project),
+          ...Object.keys(page.totals.project),
         ]),
-        sources: strings([
-          'hub',
-          ...board.cards.filter((card) => card.source !== 'local').map((card) => card.project),
-        ]),
+        sources: strings(['hub', ...sourceFacetProjects]),
       },
     },
   }

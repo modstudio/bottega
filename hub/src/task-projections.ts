@@ -403,6 +403,16 @@ const sourceMatches = (row: { source: string | null; project: string | null }, s
   !source ||
   (source === 'hub' ? row.source === 'local' : row.source !== 'local' && row.project === source)
 
+export type BoardFilters = { project: string; source: string }
+
+/** Project and source together; empty values keep every row. */
+function matchesBoardFilters(
+  row: { source: string | null; project: string | null },
+  filters: BoardFilters,
+) {
+  return (!filters.project || row.project === filters.project) && sourceMatches(row, filters.source)
+}
+
 export function projectFlightDone(input: {
   name: 'flight' | 'done'
   tasks: ProjectedTask[]
@@ -413,11 +423,7 @@ export function projectFlightDone(input: {
   now: number
 }) {
   const all = input.tasks
-  const rows = all.filter(
-    (row) =>
-      (!input.filters.project || row.project === input.filters.project) &&
-      sourceMatches(row, input.filters.source),
-  )
+  const rows = all.filter((row) => matchesBoardFilters(row, input.filters))
   const closed = new Set(
     input.completed.map((row) =>
       taskIdentity({
@@ -558,6 +564,7 @@ export function projectBoard(input: {
   liveKeys: string[]
   projects: ProjectionProject[]
   cap: number
+  filters?: BoardFilters
 }) {
   const recent = new Set(input.recentKeys)
   const eligible = input.rows.filter(
@@ -589,13 +596,13 @@ export function projectBoard(input: {
           : status === 'dropped'
             ? 4
             : 2
-  const rows = [...eligible]
-    .sort(
-      (a, b) =>
-        rank(a.status_category) - rank(b.status_category) ||
-        (b.updated_at ?? b.last_seen).localeCompare(a.updated_at ?? a.last_seen),
-    )
-    .slice(0, input.cap)
+  const filters = input.filters ?? { project: '', source: '' }
+  const ranked = [...eligible].sort(
+    (a, b) =>
+      rank(a.status_category) - rank(b.status_category) ||
+      (b.updated_at ?? b.last_seen).localeCompare(a.updated_at ?? a.last_seen),
+  )
+  const rows = ranked.filter((row) => matchesBoardFilters(row, filters)).slice(0, input.cap)
   return {
     cards: projectBoardCards(rows, input.liveKeys, input.projects),
     totals: {
@@ -603,5 +610,10 @@ export function projectBoard(input: {
       project: count((row) => row.project ?? 'elsewhere'),
     },
     cap: input.cap,
+    sourceFacetProjects: ranked
+      .slice(0, input.cap)
+      .filter((row) => row.source !== 'local')
+      .map((row) => row.project)
+      .filter((value): value is string => Boolean(value)),
   }
 }

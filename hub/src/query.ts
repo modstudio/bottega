@@ -6,6 +6,7 @@ import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 import {
+  type BoardFilters,
   combineMachineDays,
   type DayIntervalRow,
   intervalEndMs,
@@ -347,7 +348,11 @@ export type Board = {
   cap: number
 }
 
-export function boardTasks(windowDays = 14, cap = 250): Board {
+export function boardTasks(
+  windowDays = 14,
+  cap = 250,
+  filters?: BoardFilters,
+): Board & { sourceFacetProjects: string[] } {
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
 
   /**
@@ -420,5 +425,12 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       .filter((id): id is string => id !== null),
   )
 
-  return projectBoard({ rows, recentKeys: recent, liveKeys: [...live], projects: projects(), cap })
+  return projectBoard({
+    rows,
+    recentKeys: recent,
+    liveKeys: [...live],
+    projects: projects(),
+    cap,
+    filters,
+  })
 }
