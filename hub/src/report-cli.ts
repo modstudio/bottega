@@ -120,9 +120,7 @@ export function registerReportCommands(program: Command): void {
     .option('--dry-run', '')
     .action(async (options: ReportOptions) => {
       open()
-      await runReportDeliveryCommand(
-        options.dryRun ? ['report', 'send', '--dry-run'] : ['report', 'send'],
-      )
+      await runReportDeliveryCommand({ dryRun: Boolean(options.dryRun) })
     })
   report
     .command('push')

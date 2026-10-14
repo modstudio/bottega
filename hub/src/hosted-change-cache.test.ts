@@ -14,7 +14,7 @@ import {
   drainHostedOutbox,
   listHostedOutbox,
   queueHostedChange,
-  runHostedOutboxCommand,
+  showHostedOutboxEntry,
 } from './outbox.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
@@ -26,7 +26,10 @@ const noteId = '01990000-0000-7000-8000-000000001250'
 const otherNoteId = '01990000-0000-7000-8000-000000001251'
 const acknowledgementId = '01990000-0000-7000-8000-000000001252'
 const secondAcknowledgementId = '01990000-0000-7000-8000-000000001253'
-const options = { baseUrl: 'https://hub.example.test', token: 'session' } as const
+const options = {
+  baseUrl: 'https://hub.example.test',
+  token: 'session',
+} as const
 const registered = [
   { name: 'one', settings: { space: 'one' } },
   { name: 'two', settings: { space: 'two' } },
@@ -172,7 +175,13 @@ test('note upserts distinguish a timestamp no-op from a changed row', async () =
       page({
         next: 14,
         changes: [
-          { sequence: 13, table: 'hub_note', id: noteId, op: 'upsert', row: note() },
+          {
+            sequence: 13,
+            table: 'hub_note',
+            id: noteId,
+            op: 'upsert',
+            row: note(),
+          },
           {
             sequence: 14,
             table: 'hub_note',
@@ -292,7 +301,13 @@ test('acknowledgements apply after their note within a page and fetch a missing 
                 op: 'upsert',
                 row: acknowledgement(),
               },
-              { sequence: 14, table: 'hub_note', id: noteId, op: 'upsert', row: note() },
+              {
+                sequence: 14,
+                table: 'hub_note',
+                id: noteId,
+                op: 'upsert',
+                row: note(),
+              },
               {
                 sequence: 15,
                 table: 'hub_note_acknowledgement',
@@ -348,7 +363,15 @@ test('an acknowledgement on a later page uses the note from an earlier page', as
         ? page({
             next: 13,
             more: true,
-            changes: [{ sequence: 13, table: 'hub_note', id: noteId, op: 'upsert', row: note() }],
+            changes: [
+              {
+                sequence: 13,
+                table: 'hub_note',
+                id: noteId,
+                op: 'upsert',
+                row: note(),
+              },
+            ],
           })
         : page({
             next: 14,
@@ -378,8 +401,10 @@ test('a pulled acknowledgement adopts its id without stranding a queued keep', a
   writeTransaction((conn) => {
     applyHostedNote(conn, note())
     conn
-      .query(`INSERT INTO note_acknowledgement
-        (record_id,note_record_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?,?)`)
+      .query(
+        `INSERT INTO note_acknowledgement
+        (record_id,note_record_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?,?)`,
+      )
       .run(localId, noteId, 'session-1', '2026-10-09T13:00:00.000Z', 2)
     queueHostedChange(conn, HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, localId, 'upsert', at)
   })
@@ -425,14 +450,20 @@ test('a pulled acknowledgement adopts its id without stranding a queued keep', a
     registered: () => [{ name: 'one', settings: { space: 'space-one' } }],
     push: async (changes) => {
       sent.push(...changes)
-      return changes.map((change) => ({ id: change.id, status: 'applied' as const }))
+      return changes.map((change) => ({
+        id: change.id,
+        status: 'applied' as const,
+      }))
     },
   })
   expect(report.sent).toBe(1)
   expect(sent).toEqual([
     expect.objectContaining({
       id: acknowledgementId,
-      row: expect.objectContaining({ acknowledged_at: '2026-10-09T13:00:00.000Z', sightings: 2 }),
+      row: expect.objectContaining({
+        acknowledged_at: '2026-10-09T13:00:00.000Z',
+        sightings: 2,
+      }),
     }),
   ])
 })
@@ -490,12 +521,18 @@ test('a pending sighting merges a pulled sighting and drains only its identified
           userId: 'user-1',
           activeSpaceId: 'space-one',
           memberships: [{ spaceId: 'space-one', slug: 'one', permission: 'write' as const }],
-          capabilities: { spacePush: true, spacePushTables: [HOSTED_NOTE_TABLE] },
+          capabilities: {
+            spacePush: true,
+            spacePushTables: [HOSTED_NOTE_TABLE],
+          },
         }),
         registered: () => [{ name: 'one', settings: { space: 'space-one' } }],
         push: async (changes) => {
           sent.push(...(changes as Array<{ row?: { anchors?: string } }>))
-          return changes.map((change) => ({ id: change.id, status: 'applied' as const }))
+          return changes.map((change) => ({
+            id: change.id,
+            status: 'applied' as const,
+          }))
         },
       })
     ).sent,
@@ -513,7 +550,10 @@ test('a pulled hosted deletion quarantines a pending sighting with its anchor re
   writeTransaction((conn) => {
     applyHostedNote(
       conn,
-      note({ anchors: JSON.stringify([{ id: localAnchor, kind: 'run' }]), sightings: 1 }),
+      note({
+        anchors: JSON.stringify([{ id: localAnchor, kind: 'run' }]),
+        sightings: 1,
+      }),
     )
     queueHostedChange(conn, HOSTED_NOTE_TABLE, noteId, 'upsert', at, ['anchors', 'last_seen_at'])
   })
@@ -536,7 +576,7 @@ test('a pulled hosted deletion quarantines a pending sighting with its anchor re
   )
   const entry = listHostedOutbox()[0]!
   expect(entry.quarantined_at).not.toBeNull()
-  expect(runHostedOutboxCommand(['outbox', 'show', entry.id]).join('\n')).toContain(localAnchor)
+  expect(showHostedOutboxEntry(entry.id).join('\n')).toContain(localAnchor)
   expect(db().query(`SELECT 1 FROM note WHERE record_id=?`).get(noteId)).toBeNull()
 })
 
@@ -619,7 +659,11 @@ test('a deleted note upsert skips its live acknowledgement without fetching in b
   )
   expect(followerParentFetches).toBe(0)
   expect(cursor()).toBe('14')
-  expect(report).toMatchObject({ upsertsChanged: 0, upsertsNoop: 1, deletesSkipped: 1 })
+  expect(report).toMatchObject({
+    upsertsChanged: 0,
+    upsertsNoop: 1,
+    deletesSkipped: 1,
+  })
   expect({
     note: db().query('SELECT 1 FROM note WHERE record_id=?').get(noteId) ?? null,
     acknowledgement:
@@ -644,7 +688,13 @@ test('a note collision refuses the page and leaves its cursor in place', async (
             op: 'upsert',
             row: note({ id: otherNoteId, text: 'would roll back' }),
           },
-          { sequence: 14, table: 'hub_note', id: noteId, op: 'upsert', row: note() },
+          {
+            sequence: 14,
+            table: 'hub_note',
+            id: noteId,
+            op: 'upsert',
+            row: note(),
+          },
         ],
       }),
   })

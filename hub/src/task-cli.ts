@@ -1,8 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
-import { assetPath } from '../../shared/install-root.ts'
-import { projectOf } from './attribute.ts'
-import { requireDatabase, writeTransaction } from './db.ts'
+import { PresenceOption } from './cli-command.ts'
+import { requireDatabase } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects } from './projects.ts'
 import {
@@ -23,6 +22,7 @@ import {
   updateTaskDocument,
 } from './task-document.ts'
 import { runHostedTaskMaintenance } from './task-hosted-cli.ts'
+import { importTasks } from './task-import.ts'
 import { createAdvertisedTrackerTaskKey } from './tracker-new.ts'
 import { createTrackerOwnedTask, refreshTrackerTask } from './tracker-task-cli.ts'
 
@@ -98,7 +98,13 @@ async function createTaskCommand(options: TaskOptions): Promise<void> {
   try {
     if (override !== undefined && !override.trim())
       throw new Error('--allow-duplicate requires a non-empty reason')
-    const input = { project, title, body, status: options.status, parent: options.parent }
+    const input = {
+      project,
+      title,
+      body,
+      status: options.status,
+      parent: options.parent,
+    }
     const trackerKey = await createTrackerOwnedTask(input, {
       allowDuplicateReason: override,
       afterDuplicateSearch,
@@ -136,7 +142,10 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     console.log(
       JSON.stringify(
         freshness?.trackerRead
-          ? { ...shown, tracker_comments_verifiable: freshness.commentsVerifiable }
+          ? {
+              ...shown,
+              tracker_comments_verifiable: freshness.commentsVerifiable,
+            }
           : shown,
       ),
     )
@@ -155,56 +164,6 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     }
   }
   for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
-}
-
-async function importTasks(file: string): Promise<void> {
-  const checkout = assetPath()
-  const project = projectOf(checkout)
-  const prefix = projects().find((candidate) => candidate.name === project)?.settings
-    .keyPrefixes?.[0]
-  if (!project || !prefix) throw new Error('the local project must declare a key prefix')
-  const items = JSON.parse(readFileSync(file, 'utf8')) as {
-    title: string
-    opened: string
-    closed: string | null
-    shas: string[]
-  }[]
-  const log = Bun.spawnSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
-  const stamps = new Map(
-    new TextDecoder()
-      .decode(log.stdout)
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => line.split('\t') as [string, string]),
-  )
-  const imported: Array<{ key: string; shas: string[] }> = []
-  for (const item of items) {
-    const row = await createTask(
-      {
-        project,
-        title: item.title,
-        status: item.closed ? 'done' : 'open',
-        openedAt: item.opened,
-        closedAt: item.closed,
-      },
-      { skipDuplicateCheck: true },
-    )
-    imported.push({ key: row.key, shas: item.shas })
-  }
-  writeTransaction((conn) => {
-    for (const item of imported)
-      for (const sha of item.shas) {
-        const at = stamps.get(sha)
-        if (at)
-          conn
-            .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, item.key, at)
-      }
-  })
-  console.log(`imported ${items.length} tasks`)
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
@@ -241,22 +200,6 @@ function taskOptions(command: Command): TaskOptions {
   return command.opts() as TaskOptions
 }
 
-function preserveTaskParseErrors(command: Command, syntax: string): Command {
-  command.configureOutput({
-    outputError: (message, write) => {
-      const missing = message.match(/^error: missing required argument '[^']+'/)
-      const unknown = message.match(/^error: unknown option '([^']+)'/)
-      const missingValue = message.match(/^error: option '([^ ]+) [^']+' argument missing/)
-      if (missing) write(`missing positional: <end of arguments>\nvalid syntax: ${syntax}\n`)
-      else if (unknown) write(`unknown flag: ${unknown[1]}\nvalid syntax: ${syntax}\n`)
-      else if (missingValue)
-        write(`value flag has no value: ${missingValue[1]}\nvalid syntax: ${syntax}\n`)
-      else write(message)
-    },
-  })
-  return command
-}
-
 const commonBody = (command: Command) =>
   command.option('--body <text>', '').option('--body-file <path>', '')
 
@@ -288,69 +231,70 @@ function registerTaskCreationCommands(task: Command): void {
       if (!options.json) throw new Error('hub task duplicates requires --json')
       console.log(JSON.stringify(rows))
     })
-  commonBody(
-    task.command('tracker-new').option('--project <X>', '').option('--title <text>', ''),
-  ).action(async (_options, command) => {
-    open()
-    const options = taskOptions(command)
-    const project = projects().find((candidate) => candidate.name === required(options, 'project'))
-    if (!project) throw new Error(`unknown project '${options.project}'`)
-    const tracker = project.settings.tracker
-    const env = tracker?.envPrefix ?? project.settings.envPrefix
-    if (!tracker || !env)
-      throw new Error(`project ${project.name} has no usable tracker configured`)
-    const auth = await credentials(env)
-    if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
-    const status = tracker.openStatuses?.[0]
-    if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
-    const client = new Mcp(auth.url, auth.token)
-    try {
-      await client.initialize()
-      console.log(
-        await createAdvertisedTrackerTaskKey(client, project, {
-          title: required(options, 'title'),
-          body: required(options, 'body'),
-          status,
-        }),
+  task
+    .command('tracker-new')
+    .option('--project <X>', '')
+    .option('--title <text>', '')
+    .option('--body <text>', '')
+    .action(async (_options, command) => {
+      open()
+      const options = taskOptions(command)
+      const project = projects().find(
+        (candidate) => candidate.name === required(options, 'project'),
       )
-    } finally {
-      await client.close()
-    }
-  })
+      if (!project) throw new Error(`unknown project '${options.project}'`)
+      const tracker = project.settings.tracker
+      const env = tracker?.envPrefix ?? project.settings.envPrefix
+      if (!tracker || !env)
+        throw new Error(`project ${project.name} has no usable tracker configured`)
+      const auth = await credentials(env)
+      if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
+      const status = tracker.openStatuses?.[0]
+      if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
+      const client = new Mcp(auth.url, auth.token)
+      try {
+        await client.initialize()
+        console.log(
+          await createAdvertisedTrackerTaskKey(client, project, {
+            title: required(options, 'title'),
+            body: required(options, 'body'),
+            status,
+          }),
+        )
+      } finally {
+        await client.close()
+      }
+    })
 }
 
 function registerTaskQueryCommands(task: Command): void {
-  preserveTaskParseErrors(
-    task
-      .command('list')
-      .option('--project <X>', '')
-      .option('--status <Y>', '')
-      .option('--parent <key>', '')
-      .option('--json', ''),
-    'hub task list [--project X] [--status Y] [--parent KEY] [--json]',
-  ).action((_options, command) => {
-    open()
-    const options = taskOptions(command)
-    const rows = listTasks({
-      project: options.project,
-      status: options.status,
-      parent: options.parent,
+  task
+    .command('list')
+    .option('--project <X>', '')
+    .option('--status <Y>', '')
+    .option('--parent <key>', '')
+    .option('--json', '')
+    .action((_options, command) => {
+      open()
+      const options = taskOptions(command)
+      const rows = listTasks({
+        project: options.project,
+        status: options.status,
+        parent: options.parent,
+      })
+      if (options.json) console.log(JSON.stringify(rows))
+      else if (!rows.length) console.log('no tasks')
+      else rows.forEach(printTaskRow)
     })
-    if (options.json) console.log(JSON.stringify(rows))
-    else if (!rows.length) console.log('no tasks')
-    else rows.forEach(printTaskRow)
-  })
-  preserveTaskParseErrors(
-    task
-      .command('show <key>')
-      .option('--project <X>', '')
-      .option('--json', '')
-      .option('--fresh', ''),
-    'hub task show <KEY> [--project X] [--json] [--fresh]',
-  ).action(async (key, _options, command) => {
-    open()
-    await showTaskCommand(key, taskOptions(command))
-  })
+  task
+    .command('show <key>')
+    .option('--project <X>', '')
+    .option('--json', '')
+    .option('--fresh', '')
+    .action(async (key, _options, command) => {
+      open()
+      await showTaskCommand(key, taskOptions(command))
+    })
   commonBody(
     task
       .command('set <key>')
@@ -358,7 +302,7 @@ function registerTaskQueryCommands(task: Command): void {
       .option('--title <text>', '')
       .option('--status <Y>', '')
       .option('--parent <key>', '')
-      .option('--no-parent', '')
+      .addOption(new PresenceOption('--no-parent', ''))
       .option('--assignee <name>', '')
       .option('--force', '')
       .option('--abandon <reason>', ''),
@@ -412,7 +356,7 @@ function registerTaskLifecycleCommands(task: Command): void {
     .description('backfill from a clustered commit history')
     .action(async (file) => {
       open()
-      await importTasks(file)
+      console.log(`imported ${await importTasks(file)} tasks`)
     })
   task
     .command('push')
@@ -446,7 +390,12 @@ function registerTaskDocumentReadCommands(document: Command): void {
     open()
     const options = taskOptions(command)
     const created = await createTaskDocument(
-      { task: key, title: required(options, 'title'), body: taskBody(options), role: options.role },
+      {
+        task: key,
+        title: required(options, 'title'),
+        body: taskBody(options),
+        role: options.role,
+      },
       { project: options.project },
     )
     console.log(created.label)
@@ -491,7 +440,7 @@ function registerTaskDocumentWriteCommands(document: Command): void {
       .option('--project <X>', '')
       .option('--title <text>', '')
       .option('--role <role>', '')
-      .option('--no-role', '')
+      .addOption(new PresenceOption('--no-role', ''))
       .option('--version <token>', ''),
   ).action(async (reference, _options, command) => {
     open()
@@ -521,7 +470,9 @@ function registerTaskDocumentWriteCommands(document: Command): void {
     .action(async (reference, _options, command) => {
       open()
       const options = taskOptions(command)
-      const removed = await deleteTaskDocument(reference, { scope: { project: options.project } })
+      const removed = await deleteTaskDocument(reference, {
+        scope: { project: options.project },
+      })
       console.log(`${removed.label} removed from ${removed.task_key}`)
     })
 }

@@ -144,14 +144,21 @@ async function resolveDuplicateNote(
           project: options.project,
         })
       : answer === 'new'
-        ? await createNote({ text, area: options.area, forceNew: true, project: options.project })
+        ? await createNote({
+            text,
+            area: options.area,
+            forceNew: true,
+            project: options.project,
+          })
         : result
   if (!filed.note) throw new Error('note not filed')
   return filed
 }
 
 export function registerNoteCommands(program: Command): void {
-  const note = program.command('note')
+  const note = program.command('note [text...]').action((text: string[]) => {
+    throw forgottenNewHint(text.join(' '))
+  })
   note
     .command('new <text>')
     .option('--project <name>', '')
@@ -165,33 +172,45 @@ export function registerNoteCommands(program: Command): void {
       await newNoteCommand(text, options)
     })
   note
-    .command('list')
+    .command('list [text]')
     .option('--project <X>', '')
     .option('--stale', '')
     .option('--session <ID>', '', repeat, [])
     .option('--actionable', '')
     .option('--kept', '')
     .option('--json', '')
-    .action((options: NoteOptions) => {
+    .option('--new', '')
+    .action((text: string | undefined, options: NoteOptions) => {
+      if (text !== undefined || options.new) throw listAsTextHint()
       open()
       listNoteCommand(options)
     })
-  note.command('same <target> <source>').action(async (target, source) => {
-    open()
-    const row = await mergeNote(reference(target), reference(source))
-    console.log(noteSameLine(row))
-  })
-  note.command('keep <references...>').action(async (references) => {
-    open()
-    await keepNoteCommand(references)
-  })
+  note
+    .command('same <target> <source>')
+    .option('--project <name>', '')
+    .action(async (target, source, options: NoteOptions) => {
+      open()
+      const row = await mergeNote(
+        reference(target, options.project),
+        reference(source, options.project),
+      )
+      console.log(noteSameLine(row))
+    })
+  note
+    .command('keep <references...>')
+    .option('--project <name>', '')
+    .action(async (references, options: NoteOptions) => {
+      open()
+      await keepNoteCommand(references, options.project)
+    })
   note
     .command('promote <reference>')
     .option('--task <key>', '')
+    .option('--project <name>', '')
     .action(async (noteReference, options: NoteOptions) => {
       open()
       const row = await promoteNoteCommand(
-        reference(noteReference),
+        reference(noteReference, options.project),
         options.task,
         options.task !== undefined,
       )
@@ -200,10 +219,13 @@ export function registerNoteCommands(program: Command): void {
   note
     .command('drop <reference>')
     .option('--reason <reason>', '')
+    .option('--project <name>', '')
     .action(async (noteReference, options: NoteOptions) => {
       open()
       if (!options.reason) throw new Error('hub note drop <LABEL|UUID|NUMBER> --reason "..."')
-      console.log(noteDropLine(await dropNote(reference(noteReference), options.reason)))
+      console.log(
+        noteDropLine(await dropNote(reference(noteReference, options.project), options.reason)),
+      )
     })
   note
     .command('stale')
@@ -239,6 +261,14 @@ export function registerNoteCommands(program: Command): void {
     })
 }
 
+const forgottenNewHint = (text: string) =>
+  new Error(
+    `hub note new <text> [--same-as LABEL|UUID|NUMBER|--new]; to file the text "${text}", put new before it`,
+  )
+
+const listAsTextHint = () =>
+  new Error('to file the text "list", use: hub note new "list" [--new|--same-as LABEL|UUID|NUMBER]')
+
 export function noteFiledOutput(note: {
   label: string
   sightings: number
@@ -265,8 +295,19 @@ export const noteCandidateLine = (note: { label: string; score: number; text: st
   `${note.label} score ${note.score.toFixed(3)}  ${note.text}`
 
 export function noteFiledJson(
-  note: { record_id: string; number: number; label: string; sightings: number } | null,
-  candidates: { record_id: string; number: number; label: string; text: string; score: number }[],
+  note: {
+    record_id: string
+    number: number
+    label: string
+    sightings: number
+  } | null,
+  candidates: {
+    record_id: string
+    number: number
+    label: string
+    text: string
+    score: number
+  }[],
 ) {
   return {
     record_id: note?.record_id ?? null,

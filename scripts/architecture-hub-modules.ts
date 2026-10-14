@@ -122,6 +122,7 @@ export const hubModuleSpecs = [
     allowed: [
       'commander',
       '../../shared/install-root.ts',
+      './cli-command.ts',
       './core-cli.ts',
       './db.ts',
       './note-cli.ts',
@@ -129,6 +130,10 @@ export const hubModuleSpecs = [
       './report-cli.ts',
       './task-cli.ts',
     ],
+  },
+  {
+    file: 'hub/src/cli-command.ts',
+    allowed: ['commander'],
   },
   {
     file: 'hub/src/core-cli.ts',
@@ -155,7 +160,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/outbox-cli.ts',
-    allowed: ['commander', './db.ts', './outbox.ts'],
+    allowed: ['commander', './db.ts', './outbox.ts', './outbox-trace.ts'],
   },
   {
     file: 'hub/src/report-cli.ts',
@@ -172,8 +177,7 @@ export const hubModuleSpecs = [
     allowed: [
       'node:fs',
       'commander',
-      '../../shared/install-root.ts',
-      './attribute.ts',
+      './cli-command.ts',
       './db.ts',
       './mcp.ts',
       './projects.ts',
@@ -181,8 +185,20 @@ export const hubModuleSpecs = [
       './task-close.ts',
       './task-document.ts',
       './task-hosted-cli.ts',
+      './task-import.ts',
       './tracker-new.ts',
       './tracker-task-cli.ts',
+    ],
+  },
+  {
+    file: 'hub/src/task-import.ts',
+    allowed: [
+      'node:fs',
+      '../../shared/install-root.ts',
+      './attribute.ts',
+      './db.ts',
+      './projects.ts',
+      './task.ts',
     ],
   },
   {

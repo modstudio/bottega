@@ -4,11 +4,13 @@ import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
   drainHostedOutbox,
+  discardHostedOutboxEntryCommand,
   hostedOutboxDoctorLines,
   listHostedOutbox,
   mergeQueuedHostedChange,
   queueHostedChange,
-  runHostedOutboxCommand,
+  retryHostedOutboxEntryCommand,
+  showHostedOutboxEntry,
 } from './outbox.ts'
 import { listOutboxTrace } from './outbox-trace.ts'
 import {
@@ -113,10 +115,8 @@ describe('hosted outbox', () => {
         .run()
     })
     const id = listHostedOutbox()[0]!.id
-    expect(runHostedOutboxCommand(['outbox', 'show', id]).join('\n')).toContain('copy me')
-    expect(runHostedOutboxCommand(['outbox', 'discard', id])).toEqual([
-      `outbox entry ${id} discarded`,
-    ])
+    expect(showHostedOutboxEntry(id).join('\n')).toContain('copy me')
+    expect(discardHostedOutboxEntryCommand(id)).toEqual([`outbox entry ${id} discarded`])
     expect(listHostedOutbox()).toHaveLength(0)
   })
   test('a tracker task queues only when its machine row changes', () => {
@@ -245,7 +245,11 @@ describe('hosted outbox', () => {
         seen.push(...(changes as Array<{ row: Record<string, unknown> }>).map((row) => row.row))
         return changes.map((change: { id: string }) =>
           change.id === rejectedId
-            ? ({ id: change.id, status: 'rejected', reason: 'bad row' } as const)
+            ? ({
+                id: change.id,
+                status: 'rejected',
+                reason: 'bad row',
+              } as const)
             : ({ id: change.id, status: 'applied' } as const),
         )
       },
@@ -275,12 +279,18 @@ describe('hosted outbox', () => {
         registered: () => [project],
         push: reject,
       })
-    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantine_reason: 'invalid' })
+    expect(listHostedOutbox()[0]).toMatchObject({
+      attempts: 3,
+      quarantine_reason: 'invalid',
+    })
     const entryId = listHostedOutbox()[0]!.id
-    expect(runHostedOutboxCommand(['outbox', 'retry', entryId])).toEqual([
+    expect(retryHostedOutboxEntryCommand(entryId)).toEqual([
       `outbox entry ${entryId} queued for retry`,
     ])
-    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 3, quarantined_at: null })
+    expect(listHostedOutbox()[0]).toMatchObject({
+      attempts: 3,
+      quarantined_at: null,
+    })
   })
 
   test('request failure and absent capability leave the entry untouched', async () => {
@@ -292,7 +302,10 @@ describe('hosted outbox', () => {
         throw new Error('offline')
       },
     })
-    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 0, last_error: null })
+    expect(listHostedOutbox()[0]).toMatchObject({
+      attempts: 0,
+      last_error: null,
+    })
     const report = await drainHostedOutbox({
       identity: async () => ({ ...identity, capabilities: {} }),
     })
@@ -362,7 +375,12 @@ describe('hosted outbox', () => {
         writeTransaction((conn) =>
           conn
             .query(`INSERT OR REPLACE INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
-            .run(JSON.stringify({ holder: 'takeover', until: Date.now() + 60_000 })),
+            .run(
+              JSON.stringify({
+                holder: 'takeover',
+                until: Date.now() + 60_000,
+              }),
+            ),
         )
         return [{ id: eventId, status: 'applied' }]
       },
@@ -396,13 +414,17 @@ describe('hosted outbox', () => {
     const dayId = '01990000-0000-7000-8000-000000009002'
     writeTransaction((conn) => {
       conn
-        .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
+        .query(
+          `INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
           VALUES (?,'fixture','orch','2026-10-11T10:00:00.000Z',
-            '2026-10-11T10:01:00.000Z','orch:9001')`)
+            '2026-10-11T10:01:00.000Z','orch:9001')`,
+        )
         .run(intervalId)
       conn
-        .query(`INSERT INTO day(record_id,day,collected_at)
-          VALUES (?,'2026-10-11','2026-10-11T23:00:00.000Z')`)
+        .query(
+          `INSERT INTO day(record_id,day,collected_at)
+          VALUES (?,'2026-10-11','2026-10-11T23:00:00.000Z')`,
+        )
         .run(dayId)
     })
     const sent: HostedPushChange[] = []
@@ -442,9 +464,15 @@ describe('hosted outbox', () => {
       },
     })
     expect(waiting.waitingOnRouting).toEqual({ 'unregistered-project': 1 })
-    expect(listHostedOutbox()[0]).toMatchObject({ attempts: 0, last_error: null })
+    expect(listHostedOutbox()[0]).toMatchObject({
+      attempts: 0,
+      last_error: null,
+    })
     expect(
-      await hostedOutboxDoctorLines({ identity: async () => identity, registered: () => [] }),
+      await hostedOutboxDoctorLines({
+        identity: async () => identity,
+        registered: () => [],
+      }),
     ).toContain('hosted outbox 1 waiting on routing: unregistered-project')
 
     registered = [project]
@@ -487,9 +515,17 @@ describe('hosted outbox', () => {
       }
       return [{ id: eventId, status: 'duplicate' as const }]
     }
-    await drainHostedOutbox({ identity: async () => identity, registered: () => [project], push })
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push,
+    })
     expect(listHostedOutbox()[0]).toMatchObject({ generation: 2, attempts: 0 })
-    await drainHostedOutbox({ identity: async () => identity, registered: () => [project], push })
+    await drainHostedOutbox({
+      identity: async () => identity,
+      registered: () => [project],
+      push,
+    })
     expect(seen).toEqual(['open', 'newer'])
     expect(listHostedOutbox()).toHaveLength(0)
     expect(listOutboxTrace().map((row) => row.generation)).toEqual([2, 1])
@@ -529,7 +565,11 @@ describe('hosted outbox', () => {
     expect(operations).toEqual(['delete', 'upsert'])
     expect(listHostedOutbox()).toHaveLength(0)
     expect(listOutboxTrace()).toEqual([
-      expect.objectContaining({ row_id: eventId, operation: 'delete', generation: 2 }),
+      expect.objectContaining({
+        row_id: eventId,
+        operation: 'delete',
+        generation: 2,
+      }),
     ])
   })
 
@@ -569,14 +609,18 @@ describe('hosted outbox', () => {
       const commentId = Bun.randomUUIDv7()
       const documentId = Bun.randomUUIDv7()
       conn
-        .query(`INSERT INTO task_comment
+        .query(
+          `INSERT INTO task_comment
             (record_id,task_key,task_record_id,body,created_at)
-            VALUES (?,'FIX-11',?,'comment','2026-10-11T12:01:00.000Z')`)
+            VALUES (?,'FIX-11',?,'comment','2026-10-11T12:01:00.000Z')`,
+        )
         .run(commentId, child.record_id)
       conn
-        .query(`INSERT INTO task_document
+        .query(
+          `INSERT INTO task_document
             (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
-            VALUES (?,'FIX-11',?,1,'document','body','v1','2026-10-11T12:01:00.000Z','2026-10-11T12:01:00.000Z')`)
+            VALUES (?,'FIX-11',?,1,'document','body','v1','2026-10-11T12:01:00.000Z','2026-10-11T12:01:00.000Z')`,
+        )
         .run(documentId, child.record_id)
       queueHostedChange(conn, 'hub_task_comment', commentId, 'upsert')
       queueHostedChange(conn, 'hub_task_document', documentId, 'upsert')

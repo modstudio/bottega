@@ -62,14 +62,7 @@ export function listOutboxTrace(rowId?: string): OutboxTraceRow[] {
         .all()
 }
 
-export function runOutboxTraceCommand(argv: string[]): string[] {
-  const json = argv.includes('--json')
-  const rowIndex = argv.indexOf('--row')
-  const rowId = rowIndex === -1 ? undefined : argv[rowIndex + 1]
-  if (rowIndex !== -1 && !rowId) throw new Error('usage: hub outbox trace [--row ID] [--json]')
-  const allowed = new Set(['trace', '--json', '--row', rowId])
-  if (argv.slice(1).some((argument) => !allowed.has(argument)))
-    throw new Error('usage: hub outbox trace [--row ID] [--json]')
+export function outboxTraceLines(rowId?: string, json = false): string[] {
   const rows = listOutboxTrace(rowId)
   if (json) return [JSON.stringify(rows)]
   if (!rows.length) return ['hosted outbox trace is empty']
