@@ -20,6 +20,7 @@ import {
   fieldWriteInput,
   parentChoices,
   subjectsExcept,
+  withCurrentSubjects,
 } from './doc-field-changes.ts'
 import {
   DOC_AUDIENCE_LABELS,
@@ -112,10 +113,12 @@ function useSubjects(doc: DocsDoc, source: DocsSource, canAddress: boolean) {
     }),
     enabled: source === 'hosted' && enabled,
   })
-  const rows = source === 'hosted' ? hosted.data : local.data
+  const query = source === 'hosted' ? hosted : local
   return {
-    enabled,
-    subjects: (rows ?? []).map(({ id, name }): DocArticleSubject => ({ id, name })),
+    // Until the catalog has arrived, a menu built from it would offer only "None".
+    ready: enabled && query.isSuccess,
+    error: enabled ? query.error?.message : undefined,
+    subjects: (query.data ?? []).map(({ id, name }): DocArticleSubject => ({ id, name })),
   }
 }
 
@@ -365,9 +368,13 @@ function ArticleRows({
   source: DocsSource
   field: FieldSave
 }) {
-  const { enabled, subjects } = useSubjects(doc, source, field.canAddress)
-  const subjectChoices = subjectsExcept(subjects, doc.relatedSubjects ?? [])
+  const catalog = useSubjects(doc, source, field.canAddress)
   const related = doc.relatedSubjects ?? []
+  const known = withCurrentSubjects(catalog.subjects, [
+    ...(doc.articleSubject ? [doc.articleSubject] : []),
+    ...related,
+  ])
+  const subjectChoices = subjectsExcept(known, related)
   return (
     <>
       <Row label="Type">
@@ -392,7 +399,7 @@ function ArticleRows({
         <FieldError message={field.error('form')} />
       </Row>
       <Row label="Subject">
-        {enabled ? (
+        {catalog.ready ? (
           <ChoiceText
             label="Subject"
             value={doc.articleSubject?.id ?? ''}
@@ -411,13 +418,13 @@ function ArticleRows({
         ) : (
           (doc.articleSubject?.name ?? 'None')
         )}
-        <FieldError message={field.error('articleSubject')} />
+        <FieldError message={field.error('articleSubject') ?? catalog.error} />
       </Row>
       <Row label="Related">
-        {enabled ? (
+        {catalog.ready ? (
           <ChipChoices
             label="Related subjects"
-            options={subjectsExcept(subjects, doc.articleSubject ? [doc.articleSubject] : []).map(
+            options={subjectsExcept(known, doc.articleSubject ? [doc.articleSubject] : []).map(
               ({ id, name }) => ({ value: id, label: name }),
             )}
             selected={related.map(({ id }) => id)}
@@ -425,7 +432,7 @@ function ArticleRows({
             onSave={(ids) =>
               field.save({
                 field: 'relatedSubjects',
-                value: subjects
+                value: known
                   .filter(({ id }) => ids.includes(id))
                   .sort((left, right) => left.name.localeCompare(right.name)),
               })

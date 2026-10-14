@@ -118,6 +118,18 @@ export function subjectsExcept(
   return subjects.filter(({ id }) => !takenIds.has(id))
 }
 
+/**
+ * The project's subjects plus any the article already carries that the catalog does not list (a
+ * retired subject, say), so a choice made from the list never drops one the list could not show.
+ */
+export function withCurrentSubjects(
+  catalog: readonly DocArticleSubject[],
+  current: readonly DocArticleSubject[],
+): DocArticleSubject[] {
+  const listed = new Set(catalog.map(({ id }) => id))
+  return [...catalog, ...current.filter(({ id }) => !listed.has(id))]
+}
+
 type LocalFieldPatch = Omit<LocalFieldWrite, keyof WriteBase>
 type HostedFieldPatch = Omit<HostedFieldWrite, keyof WriteBase | 'spaceId'>
 

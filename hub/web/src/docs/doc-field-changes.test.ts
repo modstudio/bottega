@@ -4,6 +4,7 @@ import {
   fieldWriteInput,
   parentChoices,
   subjectsExcept,
+  withCurrentSubjects,
 } from './doc-field-changes.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 
@@ -141,4 +142,13 @@ test('hosted writes use record ids and send only the changed optional field', ()
     expectedRevision: 'revision-2',
     parentRecordId: 'parent-id',
   })
+})
+
+test('a subject the article carries but the catalog does not list stays choosable', () => {
+  const catalog = [{ id: 'pricing', name: 'Pricing' }]
+  const retired = { id: 'stock', name: 'Stock' }
+  expect(withCurrentSubjects(catalog, [retired, { id: 'pricing', name: 'Pricing' }])).toEqual([
+    { id: 'pricing', name: 'Pricing' },
+    retired,
+  ])
 })
