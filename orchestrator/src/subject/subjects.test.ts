@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -29,14 +30,14 @@ const row = (project: string, name: string, parentId: string | null = null) => (
 describe('project subjects', () => {
   test('refuses an unregistered project and returns an empty list for a registered project', () => {
     expect(() => listSubjects('missing')).toThrow(
-      'unknown project "missing"; cleared by: orch project list',
+      `unknown project "missing"; cleared by: ${PLATFORM_SLUG} project list`,
     )
     upsertProject({ name: 'alpha', path: '/w/alpha' })
     expect(listSubjects('alpha')).toEqual([])
   })
 
   test('every mutation refuses an unregistered project with the project-list remedy', async () => {
-    const refusal = 'unknown project "missing"; cleared by: orch project list'
+    const refusal = `unknown project "missing"; cleared by: ${PLATFORM_SLUG} project list`
     await expect(
       addSubject({ project: 'missing', name: 'One', definition: 'One.' }),
     ).rejects.toThrow(refusal)
@@ -56,7 +57,7 @@ describe('project subjects', () => {
     ])
     await expect(
       addSubject({ project: 'alpha', name: 'First', definition: 'Duplicate.' }),
-    ).rejects.toThrow('orch subject list alpha')
+    ).rejects.toThrow(`${PLATFORM_SLUG} doc subject list alpha`)
     await retireSubject('alpha', first.id)
     const replacement = await addSubject({ project: 'alpha', name: 'First', definition: 'New.' })
     expect(replacement.id).not.toBe(first.id)
@@ -72,9 +73,11 @@ describe('project subjects', () => {
     const one = await addSubject({ project: 'alpha', name: 'One', definition: 'One.' })
     const two = await addSubject({ project: 'alpha', name: 'Two', definition: 'Two.' })
     const foreign = await addSubject({ project: 'beta', name: 'Foreign', definition: 'Foreign.' })
-    await expect(reorderSubjects('alpha', [one.id])).rejects.toThrow('orch subject list alpha')
+    await expect(reorderSubjects('alpha', [one.id])).rejects.toThrow(
+      `${PLATFORM_SLUG} doc subject list alpha`,
+    )
     await expect(reorderSubjects('alpha', [one.id, foreign.id])).rejects.toThrow(
-      'orch subject list alpha',
+      `${PLATFORM_SLUG} doc subject list alpha`,
     )
     expect((await reorderSubjects('alpha', [two.id, one.id])).map(({ id }) => id)).toEqual([
       two.id,

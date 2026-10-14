@@ -5,9 +5,9 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ENV_RUNNER=(bun --no-env-file "$ROOT/shared/env-source.ts" run --)
 
-"${ENV_RUNNER[@]}" bun --no-env-file "$ROOT/orchestrator/src/cli/orch.ts" sync
+"${ENV_RUNNER[@]}" "$ROOT/bin/bottega" record push
 sync_status=$?
-"${ENV_RUNNER[@]}" bun --no-env-file "$ROOT/orchestrator/src/cli/orch.ts" record publish
+"${ENV_RUNNER[@]}" "$ROOT/bin/bottega" record publish
 publish_status=$?
 
 if (( sync_status != 0 || publish_status != 0 )); then

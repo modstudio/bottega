@@ -101,7 +101,7 @@ describe('Drizzle migration journal', () => {
     expect(migrationRefusal(d)).toContain(
       "invariant: Only the main checkout's binary migrates the store.",
     )
-    expect(migrationRefusal(d)).toContain('cleared by: orch migrate')
+    expect(migrationRefusal(d)).toContain(`cleared by: ${PLATFORM_SLUG} machine migrate`)
     d.close()
   })
 
@@ -430,7 +430,9 @@ describe('schema coexistence', () => {
         db().query('UPDATE project SET name = name WHERE 0').run()
       })
     } catch (error) {
-      expect(String(error)).toContain('cleared by: restart this process after orch migrate')
+      expect(String(error)).toContain(
+        `cleared by: restart this process after ${PLATFORM_SLUG} machine migrate`,
+      )
     }
   })
 

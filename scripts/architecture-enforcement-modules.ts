@@ -13,6 +13,7 @@ export const enforcementModules = [
   {
     file: 'orchestrator/src/enforcement/enforcement-resolution.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../project/project-settings.ts',
       './enforcement-catalogue.ts',
       './mechanical-check-declaration.ts',

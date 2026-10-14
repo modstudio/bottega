@@ -12,10 +12,11 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
-  module('orchestrator/src/record/record-sync-batch.ts', []),
+  module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-sync.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
     'hono',
     'hono/body-limit',
@@ -25,6 +26,7 @@ export const recordModules: RecordModule[] = [
     './record-sync-decision.ts',
   ]),
   module('orchestrator/src/record/record-sync-decision.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-request.ts',
     './record-auth.ts',
@@ -32,6 +34,7 @@ export const recordModules: RecordModule[] = [
     './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-sync-service.ts', [
+    '../../../shared/brand.ts',
     'bun',
     'drizzle-orm',
     'drizzle-orm/bun-sql',
@@ -62,6 +65,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-pending-invitations.ts', ['bun']),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
+    '../../../shared/brand.ts',
     'bun',
     '../../../shared/docs.ts',
     '../../../shared/record/schema.ts',
@@ -86,6 +90,7 @@ export const recordModules: RecordModule[] = [
     './record-subjects.ts',
   ]),
   module('orchestrator/src/record/record-subjects.ts', [
+    '../../../shared/brand.ts',
     'bun',
     '../../../shared/record/schema.ts',
     '../../../shared/record/tenant.ts',
@@ -100,6 +105,7 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-project-destination.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-space-membership.ts',
     '../project/project-settings.ts',
   ]),
@@ -147,6 +153,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite', '../database/db.ts']),
   module('orchestrator/src/record/record-write-decision.ts', []),
   module('orchestrator/src/record/record-write-authority.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',
     './install-binding.ts',
     './record-write-decision.ts',
@@ -164,13 +171,19 @@ export const recordModules: RecordModule[] = [
     '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/record/outbox-sanitize.ts', ['../../../shared/secret-shaped.ts']),
-  module('orchestrator/src/record/outbox-secret-audit.ts', ['bun:sqlite', './outbox-sanitize.ts']),
+  module('orchestrator/src/record/outbox-secret-audit.ts', [
+    '../../../shared/brand.ts',
+    'bun:sqlite',
+    './outbox-sanitize.ts',
+  ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
     './outbox-sanitize.ts',
   ]),
   module('orchestrator/src/record/record-command.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
@@ -185,6 +198,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-tunnel-error.ts', []),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
+    '../../../shared/brand.ts',
     'bun',
     '../../../shared/record-remedies.ts',
     './record-session.ts',
@@ -203,6 +217,7 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-doctor.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
     '../../../shared/record/schema.ts',
@@ -235,7 +250,11 @@ export const recordModules: RecordModule[] = [
     './outbox-dependency.ts',
     './outbox-quarantine.ts',
   ]),
-  module('orchestrator/src/record/outbox-quarantine.ts', ['bun:sqlite', '../database/db.ts']),
+  module('orchestrator/src/record/outbox-quarantine.ts', [
+    '../../../shared/brand.ts',
+    'bun:sqlite',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
   module('orchestrator/src/record/record-session.ts', [
     '../../../shared/record-session.ts',
@@ -244,6 +263,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-space.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-space-membership.ts',
@@ -282,6 +302,7 @@ export const recordModules: RecordModule[] = [
     './record-docs.ts',
   ]),
   module('orchestrator/src/record/record-space-move.ts', [
+    '../../../shared/brand.ts',
     'bun',
     '../../../shared/record-space-membership.ts',
     '../postgres/postgres-migrate.ts',

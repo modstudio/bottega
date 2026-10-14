@@ -1,6 +1,7 @@
 // concern: landing-tree
 /** Pure identity, capability, base, and release decisions for architect landing trees. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
@@ -85,7 +86,7 @@ export function landingTreeReleaseDecision(
       action: 'keep',
       reason:
         `landing tree held by ${owner}: branch has not landed; ` +
-        `${owner} releases it with orch tree remove <path>`,
+        `${owner} releases it with ${PLATFORM_SLUG} tree remove <path>`,
     }
   return { action: 'release' }
 }
@@ -97,13 +98,17 @@ export function landingTreeHoldDecision<T>(
 ): T | { held: true; until: null; reason: string } | { held: false; kept: true; reason: string } {
   if (row.job !== LANDING_TREE_JOB || !row.treeExists) return ordinary
   if (!clean) {
-    return { held: true, until: null, reason: 'landing tree; remove with orch tree remove <path>' }
+    return {
+      held: true,
+      until: null,
+      reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+    }
   }
   return {
     held: false,
     kept: true,
     reason:
       `clean landing tree; branch ${row.branch ?? '<unknown>'} holds its work; ` +
-      `orch tree open ${row.runId} recreates it`,
+      `${PLATFORM_SLUG} tree open ${row.runId} recreates it`,
   }
 }

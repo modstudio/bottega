@@ -17,6 +17,7 @@ export const subjectModules = [
     '../record/record-subjects.ts',
   ]),
   module('orchestrator/src/subject/subjects.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../../../shared/record/schema.ts',
     '../../../shared/subjects.ts',
@@ -26,5 +27,8 @@ export const subjectModules = [
     '../record/record-write-authority.ts',
     './subject-client.ts',
   ]),
-  module('orchestrator/src/subject/subject-commands.ts', ['./subjects.ts']),
+  module('orchestrator/src/subject/subject-commands.ts', [
+    '../../../shared/brand.ts',
+    './subjects.ts',
+  ]),
 ]

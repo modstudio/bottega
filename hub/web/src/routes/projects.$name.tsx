@@ -10,7 +10,7 @@ import { Textarea } from '@/ui/field/textarea'
 import { FieldSection, SettingBlock } from '@/ui/form-layout/form-layout'
 import { Sheet } from '@/ui/sheet/sheet'
 import { toast } from '@/ui/toast/toast'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 
@@ -19,7 +19,7 @@ function shellQuote(value: string) {
 }
 
 function settingsCommand(name: string, value: Record<string, unknown>) {
-  return `orch project set ${shellQuote(name)} --settings ${shellQuote(JSON.stringify(value))}`
+  return `${PLATFORM_SLUG} project set ${shellQuote(name)} --settings ${shellQuote(JSON.stringify(value))}`
 }
 
 function pretty(value: unknown) {
@@ -221,17 +221,17 @@ function ProjectForm({ project }: { project: ProjectRow }) {
           <div className="space-y-5">
             <SettingBlock
               label="Path"
-              cli={`orch project set ${shellQuote(project.name)} --path ${shellQuote(path)}`}
+              cli={`${PLATFORM_SLUG} project set ${shellQuote(project.name)} --path ${shellQuote(path)}`}
               control={<Input value={path} onChange={(event) => setPath(event.target.value)} />}
             />
             <SettingBlock
               label="Stack"
-              cli={`orch project set ${shellQuote(project.name)} --stack ${shellQuote(stack)}`}
+              cli={`${PLATFORM_SLUG} project set ${shellQuote(project.name)} --stack ${shellQuote(stack)}`}
               control={<Input value={stack} onChange={(event) => setStack(event.target.value)} />}
             />
             <SettingBlock
               label="Canon ratio"
-              cli={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}
+              cli={`${PLATFORM_SLUG} project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}
               control={
                 <label htmlFor="project-canon" className="flex items-center gap-2">
                   <Checkbox

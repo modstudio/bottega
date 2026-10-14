@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
@@ -17,8 +18,7 @@ import {
   reapHostedNotes,
 } from './hosted-notes.ts'
 
-const TEST_REFUSAL =
-  'hub note API refuses real identity and database clients unless stubs are injected in tests'
+const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 type Identity = { userId: string; spaceId: string; memberships: RecordSpaceMembership[] }
@@ -153,7 +153,7 @@ export async function noteApi(
     return json(
       {
         error: `record space '${who.refusedSpace}' is not among the caller's memberships`,
-        remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+        remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
       },
       403,
     )

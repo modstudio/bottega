@@ -1,6 +1,7 @@
 // concern: board-adoption
 /** Plans and performs the one-time, resumable move from the local board to the hosted board. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -475,7 +476,7 @@ function unexpectedHostedRefusal(candidate: Candidate, error: unknown): Error | 
       : `withdraw local ${candidate.kind} ${candidate.id}`
   return new Error(
     `hosted service refused local ${candidate.kind} ${candidate.id}: ${error.message}; ` +
-      `${remedy} (or let it expire), then rerun orch board adopt with the new --confirm total`,
+      `${remedy} (or let it expire), then rerun ${PLATFORM_SLUG} board adopt with the new --confirm total`,
     { cause: error },
   )
 }
@@ -588,7 +589,7 @@ function handleUploadError(
   if (disposition === 'rate') return 'rate'
   if (disposition === 'machine')
     throw new Error(
-      'this machine is not registered under the signed-in user; run orch sync on this machine, then rerun the same orch board adopt command',
+      `this machine is not registered under the signed-in user; run ${PLATFORM_SLUG} record sync on this machine, then rerun the same ${PLATFORM_SLUG} board adopt command`,
       { cause: error },
     )
   if (disposition === 'lasting') {
@@ -625,7 +626,7 @@ export async function adoptHostedBoard(
     if (error instanceof RecordApiRequestError && error.kind === 'refused') {
       const serviceMessage = error.message.split(/\r?\n/, 1)[0]
       throw new Error(
-        `the deployed record API did not serve the board routes: ${serviceMessage}; deploy the record API from a commit that includes the board routes, then rerun orch board adopt`,
+        `the deployed record API did not serve the board routes: ${serviceMessage}; deploy the record API from a commit that includes the board routes, then rerun ${PLATFORM_SLUG} board adopt`,
         { cause: error },
       )
     }
@@ -649,7 +650,7 @@ export async function adoptHostedBoard(
     }
   if (input.confirm !== plan.total)
     throw new Error(
-      `confirmation ${input.confirm} does not match current candidate total ${plan.total}; rerun orch board adopt --confirm ${plan.total}`,
+      `confirmation ${input.confirm} does not match current candidate total ${plan.total}; rerun ${PLATFORM_SLUG} board adopt --confirm ${plan.total}`,
     )
 
   const roots = new Map(messageRows(database).map((row) => [row.id, row]))

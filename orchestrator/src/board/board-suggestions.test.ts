@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { claimNotices } from './board-service.ts'
@@ -52,7 +53,7 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
   expect(
     claimNotices(false, { CLAUDE_CODE_SESSION_ID: 'owning-architect' }, clock + 1)[0]!.text,
   ).toContain(
-    `Acknowledgement: dispose with orch board suggestion post ${suggested.id} --audience <expr> or orch board suggestion decline ${suggested.id}`,
+    `Acknowledgement: dispose with ${PLATFORM_SLUG} board suggestion post ${suggested.id} --audience <expr> or ${PLATFORM_SLUG} board suggestion decline ${suggested.id}`,
   )
 
   const posted = postBoardSuggestion(

@@ -1,5 +1,6 @@
 // concern: record-sync-decision
 /** Pure authorization decisions for hosted evidence sync. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -51,7 +52,7 @@ export function recordSyncMachineOwnershipDecision(
   if (existingOwnerId === null || existingOwnerId === sessionUserId) return { status: 'allowed' }
   return {
     status: 'refused',
-    reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`orch sync\``,
+    reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`${PLATFORM_SLUG} record sync\``,
   }
 }
 
@@ -60,7 +61,7 @@ export function recordSyncMachineOwnershipDecision(
  * that belongs to someone else look the same to the service.
  */
 export function recordSyncReferenceRefusal(reference: { kind: string; id: string }): string {
-  return `${reference.kind} ${reference.id} is absent from this space or belongs to another machine or user; sync the record it refers to from this machine first, then retry \`orch sync\``
+  return `${reference.kind} ${reference.id} is absent from this space or belongs to another machine or user; sync the record it refers to from this machine first, then retry \`${PLATFORM_SLUG} record sync\``
 }
 
 export class RecordSyncRequestRefusal extends Error {}

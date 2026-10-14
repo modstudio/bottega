@@ -100,7 +100,7 @@ export type Agent = {
   /**
    * Mint the session id BEFORE the run, when the agent lets us choose it.
    *
-   * Better than scraping one afterwards, and for the same reason `orch do
+   * Better than scraping one afterwards, and for the same reason `bottega run start
    * --detach` reserves its run id before routing: the handle exists before the
    * thing it names, so a worker that dies mid-turn is still resumable. grok
    * takes `--session-id`; codex assigns its own and reports it, which is
@@ -149,7 +149,7 @@ export type Agent = {
   /**
    * How long this agent may take before the run is abandoned.
    *
-   * Without one, `orch do` waits on the child for ever: a hung agent hangs the
+   * Without one, `bottega run start` waits on the child for ever: a hung agent hangs the
    * caller, and thirty minutes later another process sweeps the row to `stale`
    * while the parent is still blocked on it. The ceilings are set from measured
    * behavior with room above the worst case, not from a guess — grok's longest

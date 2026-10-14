@@ -1,4 +1,5 @@
 /** Close-out retains only a branch minted by this conversation. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export function retainedBranchForCloseOut(mintedBranch: string | null): string | null {
   return mintedBranch
 }
@@ -13,5 +14,7 @@ export function retainedBranchPruneCommand(
   project: string | null,
   key: string | null,
 ): string | null {
-  return project && key ? `orch branches prune --project ${project} --key ${key}` : null
+  return project && key
+    ? `${PLATFORM_SLUG} tree branch prune --project ${project} --key ${key}`
+    : null
 }

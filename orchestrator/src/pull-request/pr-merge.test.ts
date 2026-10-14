@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
@@ -209,7 +210,7 @@ test('an admission lookup that cannot see the head refuses with the fetch comman
         },
       }),
     ),
-  ).toThrow('git fetch origin pull/42/head, then orch pr merge 42')
+  ).toThrow(`git fetch origin pull/42/head, then ${PLATFORM_SLUG} pr merge 42`)
   expect(merged).toBe(false)
 })
 
@@ -230,7 +231,7 @@ test('an admission error for a present head uses the general proof refusal', () 
     failure = cause instanceof Error ? cause.message : String(cause)
   }
   expect(failure).toContain(
-    'proof was not checked: review store unavailable; cleared by: restore forge and repository access, then orch pr merge 42',
+    `proof was not checked: review store unavailable; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge 42`,
   )
   expect(failure).not.toContain('git fetch origin pull/42/head')
 })
@@ -360,7 +361,7 @@ test('a head commit that changes after checks is refused without merging', () =>
 
 test('a missing recorded local gate refuses with the gate command', () => {
   registerProject([])
-  expect(() => mergePullRequest('42', cwd, adapter())).toThrow('run orch gate run')
+  expect(() => mergePullRequest('42', cwd, adapter())).toThrow(`run ${PLATFORM_SLUG} gate run`)
 })
 
 test('a moved landing branch refuses after reading the recorded local gate', () => {
@@ -374,5 +375,5 @@ test('a moved landing branch refuses after reading the recorded local gate', () 
         landingState: () => ({ remoteLandingTip: 'new-base', mergeBase: 'old-base' }),
       }),
     ),
-  ).toThrow('bring the branch up to origin/main, run orch gate run')
+  ).toThrow(`bring the branch up to origin/main, run ${PLATFORM_SLUG} gate run`)
 })

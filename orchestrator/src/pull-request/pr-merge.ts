@@ -5,6 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -330,14 +331,14 @@ export function mergePullRequest(
   const project = projectAt(cwd, database)
   if (!project) {
     throw new Error(
-      `cannot resolve a project for ${cwd}; run orch pr merge from a registered checkout`,
+      `cannot resolve a project for ${cwd}; run ${PLATFORM_SLUG} pr merge from a registered checkout`,
     )
   }
   const landingBranch = project.settings.trunk?.trim()
   const release = project.settings.release
   if (!landingBranch || !release) {
     throw new Error(
-      `project ${project.name} has no landing branch and release policy; cleared by: orch project set ${project.name} --settings '<settings with trunk and release>'`,
+      `project ${project.name} has no landing branch and release policy; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
     )
   }
 
@@ -384,7 +385,7 @@ export function mergePullRequest(
     const message = cause instanceof Error ? cause.message : String(cause)
     if (message.startsWith('refusing merge:')) throw cause
     throw new Error(
-      `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then orch pr merge ${target}`,
+      `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
     )
   }
 }

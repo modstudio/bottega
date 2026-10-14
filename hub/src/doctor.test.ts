@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { hubDoctorLines } from './doctor.ts'
 
 beforeAll(resetFixtureStore)
 
-describe('hub doctor', () => {
+describe(`${PLATFORM_SLUG} machine doctor`, () => {
   const previousHostedUrl = process.env.HUB_HOSTED_URL
   beforeAll(() => {
     delete process.env.HUB_HOSTED_URL

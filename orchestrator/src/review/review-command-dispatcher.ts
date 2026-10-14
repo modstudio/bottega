@@ -1,6 +1,7 @@
 // concern: review-commands
 /** Routes exceptional review maintenance verbs, otherwise preserving the frozen review command. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewCommand } from './review-commands.ts'
 import { amendReviewFindingCommand } from './review-finding-amend-command.ts'
 import { restoreReviewFindingsCommand } from './review-finding-restore.ts'
@@ -37,12 +38,14 @@ export async function dispatchReviewCommand(
   presentation: ReviewPresentation,
 ): Promise<void> {
   if (flags.has('dry-run') && sub !== 'restore-triage') {
-    throw new Error('--dry-run is only valid for orch review restore-triage')
+    throw new Error(`--dry-run is only valid for ${PLATFORM_SLUG} review restore-triage`)
   }
   if (dispatchReadOnlyReviewCommand(sub, argv, flags, presentation)) return
   if (sub === 'project-record') {
     if (argv.length !== 3) {
-      throw new Error('orch review project-record <branch> --cwd <tree> --reason "<one line>"')
+      throw new Error(
+        `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`,
+      )
     }
     recordProjectReviewCommand(argv[2]!, flags.flag('cwd'), flags.flag('reason'), presentation)
     return
@@ -54,7 +57,7 @@ export async function dispatchReviewCommand(
   if (sub === 'restore-findings') {
     if (argv.length !== 2) {
       throw new Error(
-        'orch review restore-findings [--json] [--write --confirm-restore] ' +
+        `${PLATFORM_SLUG} review restore-findings [--json] [--write --confirm-restore] ` +
           '[--confirm-live-store <path>]',
       )
     }
@@ -62,7 +65,8 @@ export async function dispatchReviewCommand(
     return
   }
   if (sub === 'restore-triage') {
-    if (argv.length !== 2) throw new Error('orch review restore-triage [--dry-run] [--json]')
+    if (argv.length !== 2)
+      throw new Error(`${PLATFORM_SLUG} review restore-triage [--dry-run] [--json]`)
     restoreReviewTriageCommand(flags, presentation)
     return
   }

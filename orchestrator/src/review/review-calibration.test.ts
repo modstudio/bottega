@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
@@ -215,7 +216,9 @@ describe('review discipline', () => {
       score(runId, 'full', 'right')
       if (voided) {
         db()
-          .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+          .query(
+            `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+          )
           .run(runId)
       }
       return runId

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   processReleaseDecision,
   refGuardReleaseDecision,
@@ -216,7 +217,7 @@ describe('residue release decisions', () => {
       }),
     ).toEqual({
       allowed: false,
-      refusal: 'refused; invariant: the run status is stale; fix: run orch stop 41',
+      refusal: `refused; invariant: the run status is stale; fix: run ${PLATFORM_SLUG} run stop 41`,
     })
     expect(
       staleRunReleaseDecision({
@@ -227,7 +228,7 @@ describe('residue release decisions', () => {
       }),
     ).toEqual({
       allowed: false,
-      refusal: 'refused; invariant: the run status is stale; fix: run orch abandon 42',
+      refusal: `refused; invariant: the run status is stale; fix: run ${PLATFORM_SLUG} run abandon 42`,
     })
     expect(
       staleRunReleaseDecision({

@@ -23,14 +23,14 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-vocabulary.ts',
     './run-mutation-owner.ts',
   ]),
-  module('orchestrator/src/run/question-ruling-remedy.ts', []),
+  module('orchestrator/src/run/question-ruling-remedy.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/run/run-mutation-owner.ts', ['../cleanup/cleanup-sweep-decisions.ts']),
   module('orchestrator/src/run/ruling-file-authority.ts', [
     '../../../shared/question-vocabulary.ts',
     './run-answer-authority.ts',
     './run-mutation-owner.ts',
   ]),
-  module('orchestrator/src/run/ruling-file-text.ts', []),
+  module('orchestrator/src/run/ruling-file-text.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/run/ruling-list.ts', [
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
@@ -38,6 +38,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   ]),
   module('orchestrator/src/run/ruling-overturn-authority.ts', []),
   module('orchestrator/src/run/ruling-overturn.ts', [
+    '../../../shared/brand.ts',
     '../database/db.ts',
     './question-vocabulary.ts',
     './question-mutation.ts',
@@ -46,6 +47,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './run-authority.ts',
   ]),
   module('orchestrator/src/run/ruling-file.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/docs.ts',
     '../../../shared/question-vocabulary.ts',
     '../caller-classification.ts',
@@ -61,6 +63,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './run-mutation-owner.ts',
   ]),
   module('orchestrator/src/operator/operator-waiting.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     '../../../shared/machine-config.ts',
     '../../../shared/orch-contract.ts',

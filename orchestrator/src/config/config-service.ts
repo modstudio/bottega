@@ -1,6 +1,7 @@
 // concern: config-command-service
 /** Composes local bootstrap custody, hosted config operations, and pure rotation policy. */
 import { hostname } from 'node:os'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
   ConfigClientError,
@@ -78,7 +79,10 @@ export function planRotation(
 
 async function localMachine() {
   const pair = readMachineKey()
-  if (!pair) throw new Error('machine key is not initialized; run `orch config machine init`')
+  if (!pair)
+    throw new Error(
+      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+    )
   return machineKeyInfo(pair)
 }
 

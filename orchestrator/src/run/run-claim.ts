@@ -247,7 +247,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * one: codex's `--output-schema` wants a path and grok's `--json-schema`
    * wants the text, which agents.ts reads back from the same file.
    *
-   * A caller's own `--schema` still wins. `orch do implement --schema mine.json`
+   * A caller's own `--schema` still wins. `bottega run start implement --schema mine.json`
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */

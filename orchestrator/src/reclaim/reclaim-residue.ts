@@ -2,6 +2,7 @@
 /** Observes and releases one explicitly named piece of monitor residue. */
 import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
@@ -344,7 +345,11 @@ function reclaimStaleRun(subject: string, options: Options) {
   if (!options.dryRun) {
     writableDb()
     const changedAt = nowIso()
-    settleRunEvidence(runId, `settled by orch reclaim stale-run at ${changedAt}`, changedAt)
+    settleRunEvidence(
+      runId,
+      `settled by ${PLATFORM_SLUG} machine reclaim stale-run at ${changedAt}`,
+      changedAt,
+    )
   }
   return {
     ok: true,

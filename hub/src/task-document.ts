@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
@@ -202,7 +203,7 @@ export async function updateTaskDocument(
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
   if (changes.body !== undefined && !expectedVersion)
-    throw new Error('a body update requires --version from `hub task doc show`')
+    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
   const mode = taskWriteMode(task.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()

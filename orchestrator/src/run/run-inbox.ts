@@ -1,5 +1,7 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
@@ -150,7 +152,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
       can_answer: canAnswer,
       question: row.question,
       answer_command: canAnswer
-        ? `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
+        ? `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
           `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_id).cli}${flags} --ruling "<ruling>"`
         : null,
       ownership_notice: canAnswer
@@ -534,8 +536,8 @@ export async function runInboxCommand(
   }
   if (answerable.length) {
     log(
-      `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
-        `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
+      `\nrule on them:  ${PLATFORM_SLUG} question answer ${lastRoot} "<ruling>"    (one per question, in order)` +
+        `\n               ${PLATFORM_SLUG} question answer ${lastRoot} --q<id> "<ruling>"`,
     )
   }
   for (const r of recoverable) {
@@ -545,7 +547,7 @@ export async function runInboxCommand(
         `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           (stranded
             ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
-            : `asking, but no ruling is open — recoverable: orch continue ${r.id}`),
+            : `asking, but no ruling is open — recoverable: ${PLATFORM_SLUG} run continue ${r.id}`),
       )
       if (r.session_id === null) {
         log('        unowned — any session may continue it')
@@ -555,7 +557,7 @@ export async function runInboxCommand(
         `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
           (stranded
-            ? `stranded — only the owning session may use orch retry ${r.id} --agent … or orch abandon ${r.id}`
+            ? `stranded — only the owning session may use ${PLATFORM_SLUG} run retry ${r.id} --agent … or ${PLATFORM_SLUG} run abandon ${r.id}`
             : 'only the owning session may continue it'),
       )
     }

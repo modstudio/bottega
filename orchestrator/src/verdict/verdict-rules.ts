@@ -1,9 +1,10 @@
 // concern: verdict-rules
 /** Decides whether plain run and score facts form a verdict that may be recorded. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
-
-export const VOID_EXCLUSION_REASON = 'voided with orch score --void'
+export const VOID_EXCLUSION_REASON = `voided with ${PLATFORM_SLUG} score --void`
 
 export function refuseChildTurnVoid(
   requestedId: number,
@@ -14,7 +15,7 @@ export function refuseChildTurnVoid(
   return (
     `refused: turn ${requestedId} is not routing evidence on its own because routing reads roots; ` +
     'voiding one turn is never needed. ' +
-    `To void the whole conversation, run orch score ${resolvedRootId} --void.`
+    `To void the whole conversation, run ${PLATFORM_SLUG} score ${resolvedRootId} --void.`
   )
 }
 

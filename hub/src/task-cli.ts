@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
@@ -159,7 +160,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     for (const document of shown.documents) {
       const role = document.role ? ` [${document.role}]` : ''
       console.log(
-        `  ${document.label}${role}  ${document.title} — hub task doc show ${document.label}`,
+        `  ${document.label}${role}  ${document.title} — ${PLATFORM_SLUG} task doc show ${document.label}`,
       )
     }
   }
@@ -178,13 +179,15 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
   if (claimReleaseError) {
     console.error(`claim release failed: ${claimReleaseError.message}`)
     console.error(
-      `retry: orch board claim release-task ${closed.key} --project ${closed.project} --json`,
+      `retry: ${PLATFORM_SLUG} board claim release-task ${closed.key} --project ${closed.project} --json`,
     )
     process.exitCode = 1
   }
   if (pruneError) {
     console.error(`branch prune failed: ${pruneError.message}`)
-    console.error(`retry: orch branches prune --project ${closed.project} --key ${closed.key}`)
+    console.error(
+      `retry: ${PLATFORM_SLUG} tree branch prune --project ${closed.project} --key ${closed.key}`,
+    )
     process.exitCode = 1
     return
   }
@@ -228,7 +231,7 @@ function registerTaskCreationCommands(task: Command): void {
         listTasks({ project: required(options, 'project') }),
         required(options, 'title'),
       )
-      if (!options.json) throw new Error('hub task duplicates requires --json')
+      if (!options.json) throw new Error(`${PLATFORM_SLUG} task duplicates requires --json`)
       console.log(JSON.stringify(rows))
     })
   task
@@ -323,7 +326,8 @@ function registerTaskQueryCommands(task: Command): void {
       ...(body !== undefined ? { body } : {}),
       ...(options.assignee !== undefined ? { assignee: required(options, 'assignee') } : {}),
     }
-    if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
+    if (!Object.keys(changes).length)
+      throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     printTaskRow(
       await setTask(key, { project: options.project }, changes, {
         force: Boolean(options.force),
@@ -458,7 +462,8 @@ function registerTaskDocumentWriteCommands(document: Command): void {
       ...(body !== undefined ? { body } : {}),
       ...(options.version !== undefined ? { expectedVersion: required(options, 'version') } : {}),
     }
-    if (!Object.keys(changes).length) throw new Error('hub task doc set requires a field to change')
+    if (!Object.keys(changes).length)
+      throw new Error(`${PLATFORM_SLUG} task doc set requires a field to change`)
     const updated = await updateTaskDocument(reference, changes, {
       scope: { project: options.project },
     })

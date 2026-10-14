@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
@@ -174,7 +175,7 @@ describe('canon drift branch gate', () => {
   test('an empty project store names import as the remedy instead of hydrate', () => {
     expect(canonEmptyStoreDriftRefusal({ projectRowCount: 0, deleteCount: 1 })).toEqual({
       condition: 'this store holds no project canon while the tree has managed canon paths',
-      remedy: 'orch canon import --project',
+      remedy: `${PLATFORM_SLUG} doc canon import --project`,
     })
     expect(canonEmptyStoreDriftRefusal({ projectRowCount: 1, deleteCount: 1 })).toBeNull()
   })

@@ -1,6 +1,7 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { stampEndedClaims } from '../board/board-claim-service.ts'
 import { reapBoardReach } from '../board/board-reach.ts'
@@ -177,7 +178,7 @@ function printSweepKept(
   if (showRows) {
     for (const row of kept) presentation.log(`  ${row.line}`)
   } else {
-    const parts = ['orch sweep --dry-run']
+    const parts = [`${PLATFORM_SLUG} machine sweep --dry-run`]
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }

@@ -13,7 +13,7 @@ export type { OrchRun } from '../../../shared/orch-contract.ts'
 /**
  * Delegated agent runs, as intervals.
  *
- * Read through `orch runs --json` rather than by opening orch.db. The
+ * Read through `bottega run list --json` rather than by opening orch.db. The
  * orchestrator owns that file; a second concern reading it directly is how the
  * "a database per concern" line stops being true, and the CLI is a published
  * interface that can keep working when the schema behind it moves.

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
@@ -91,7 +92,7 @@ describe('hosted-only note safety', () => {
     expect(decision.reason).toContain('workshop#12')
     expect(decision.reason).toContain('id-hosted')
     expect(decision.reason).toContain('id-new')
-    expect(decision.reason).toContain('hub note list')
+    expect(decision.reason).toContain(`${PLATFORM_SLUG} note list`)
     expect(noteMirrorCollision(incoming, incoming, incoming)).toEqual({ action: 'update-same-row' })
     expect(noteMirrorCollision(incoming, null, null)).toEqual({ action: 'insert' })
   })
@@ -134,7 +135,7 @@ describe('hosted-only note safety', () => {
   test('cache pull applies an update and a soft delete', () => {
     const at = '2026-09-17T12:00:00.000Z'
     const ids = new Map<number, string>()
-    const row = (number: number, text: string, deleted_at: string | null) => ({
+    const row = (number: number, text: string, deletedAt: string | null) => ({
       id:
         ids.get(number) ??
         (() => {
@@ -155,7 +156,7 @@ describe('hosted-only note safety', () => {
       stale_reason: null,
       promoted_task: null,
       updated_at: at,
-      deleted_at,
+      deleted_at: deletedAt,
     })
     applyHostedNoteChanges({
       notes: [row(990, 'old', null), row(991, 'gone', null)],
@@ -233,7 +234,7 @@ describe('hosted-only note safety', () => {
         cursor: at,
       }),
     ).toThrow(
-      `note workshop#77 belongs to UUID ${existing}, not incoming UUID ${incoming}; run \`hub note list\``,
+      `note workshop#77 belongs to UUID ${existing}, not incoming UUID ${incoming}; run \`${PLATFORM_SLUG} note list\``,
     )
   })
 })

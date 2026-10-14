@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -325,7 +326,7 @@ export async function reviewCommand(
   if (sub === 'show') {
     const reviewId = Number(argv[2])
     if (!Number.isInteger(reviewId) || reviewId <= 0)
-      throw new Error('orch review show <id> [--json]')
+      throw new Error(`${PLATFORM_SLUG} review show <id> [--json]`)
     const review = getReview(reviewId)
     if (has('json')) log(JSON.stringify(review))
     else {
@@ -376,7 +377,7 @@ export async function reviewCommand(
   }
   if (sub === 'tier') {
     const value = argv[2]
-    if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
+    if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
     printReviewTier(reviewTierOutput(value, resolveReviewCommandCwd(flag('cwd'))), has('json'), log)
     return
   }
@@ -401,7 +402,7 @@ export async function reviewCommand(
   if (sub === 'record') {
     const runIds = argv.slice(2).map((value) => resolveRunIdentifier(db(), value))
     if (!runIds.length) {
-      throw new Error('orch review record <run-id>...')
+      throw new Error(`${PLATFORM_SLUG} review record <run-id>...`)
     }
     const entries = runIds.map((runId) => {
       const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as {
@@ -437,7 +438,7 @@ export async function reviewCommand(
     const disposition = argv[4] as Disposition
     if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
       throw new Error(
-        `orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`,
+        `${PLATFORM_SLUG} review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`,
       )
     }
     triageFinding(reviewId, finding, disposition, flag('category'), flag('severity'))
@@ -446,7 +447,7 @@ export async function reviewCommand(
   }
   if (sub === 'complete') {
     const reviewId = Number(argv[2])
-    if (!reviewId) throw new Error('orch review complete <review-id>')
+    if (!reviewId) throw new Error(`${PLATFORM_SLUG} review complete <review-id>`)
     completeReview(reviewId)
     log(`completed review ${reviewId}`)
     return
@@ -488,7 +489,7 @@ export async function reviewCommand(
       return
     }
     if (!lens || !agent || !model)
-      throw new Error('orch review calibration [<lens> <agent> <model>] [--json]')
+      throw new Error(`${PLATFORM_SLUG} review calibration [<lens> <agent> <model>] [--json]`)
     const calibration = reviewCalibration(lens, agent, model)
     if (has('json')) {
       log(JSON.stringify(calibration))
@@ -521,6 +522,6 @@ export async function reviewCommand(
     return
   }
   throw new Error(
-    `unknown: orch review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+    `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
   )
 }

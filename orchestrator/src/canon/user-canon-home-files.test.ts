@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 import {
   applyUserCanonHomePlans,
@@ -141,7 +142,12 @@ describe('Claude home canon files', () => {
         rows: [{ slug: 'AGENTS.md', body: 'stored' }],
         files: collectUserCanonHome(claudeHome),
       }),
-    ).toThrow(/orch canon import --user.*orch canon hydrate --user --adopt/s)
+    ).toThrow(
+      new RegExp(
+        `${PLATFORM_SLUG} doc canon import --user.*${PLATFORM_SLUG} doc canon hydrate --user --adopt`,
+        's',
+      ),
+    )
   })
 
   test('adopts an unmarked file only after backing it up privately', () => {
@@ -523,7 +529,12 @@ describe('Codex and Grok home canon files', () => {
           rows: [{ slug: 'AGENTS.md', body: 'stored' }],
           files: collectUserCanonHome(installed),
         }),
-      ).toThrow(/orch canon import --user.*orch canon hydrate --user --adopt/s)
+      ).toThrow(
+        new RegExp(
+          `${PLATFORM_SLUG} doc canon import --user.*${PLATFORM_SLUG} doc canon hydrate --user --adopt`,
+          's',
+        ),
+      )
     }
   })
 

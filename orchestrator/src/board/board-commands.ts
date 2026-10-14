@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
@@ -192,7 +193,7 @@ export function registerBoardCommands(program: Command): void {
       for (const row of result.stays)
         console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
       if (result.status === 'plan')
-        console.log(`rerun with: orch board adopt --confirm ${result.total}`)
+        console.log(`rerun with: ${PLATFORM_SLUG} board adopt --confirm ${result.total}`)
       else {
         console.log(
           `moved ${result.uploaded}; stayed ${result.refused}; remaining ${result.remaining}`,

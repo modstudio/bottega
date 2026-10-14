@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   articleFieldRefusal,
   canonRemovalRefusal,
@@ -39,7 +40,7 @@ test('articles are demand-only and excluded from canon', () => {
     'kind article requires effective delivery demand',
   )
   expect(refuseArticleDelivery({ ...base, delivery: 'inject' })).toContain(
-    'orch doc set guide --scope job --subject understand --kind article --delivery demand',
+    `${PLATFORM_SLUG} doc set guide --scope job --subject understand --kind article --delivery demand`,
   )
   expect(refuseArticleDelivery({ ...base, delivery: 'demand' })).toBeNull()
   expect(
@@ -178,7 +179,7 @@ describe('decideDocRevisionWrite', () => {
       allow: false,
       reason:
         'refusing canon update at current revision revision-2; pass --expect revision-2\n' +
-        're-read with orch doc get and re-apply the edit',
+        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
     })
     expect(
       decideDocRevisionWrite({
@@ -197,7 +198,7 @@ describe('decideDocRevisionWrite', () => {
       allow: false,
       reason:
         'refusing settings update at current revision revision-2; pass --expect revision-2\n' +
-        're-read with orch doc get and re-apply the edit',
+        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
     })
   })
 
@@ -213,7 +214,7 @@ describe('decideDocRevisionWrite', () => {
       expect(decision.allow).toBe(false)
       if (!decision.allow) {
         expect(decision.reason).toContain('expected revision revision-1')
-        expect(decision.reason).toContain('re-read with orch doc get and re-apply')
+        expect(decision.reason).toContain(`re-read with ${PLATFORM_SLUG} doc get and re-apply`)
       }
     }
   })

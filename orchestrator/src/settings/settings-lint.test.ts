@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { adoptionCandidates, lintSettings } from './settings-lint.ts'
 
 describe('lintSettings', () => {
@@ -24,10 +25,10 @@ describe('lintSettings', () => {
         settings: {
           permissions: {
             allow: [
-              'Bash(./bin/orch result *)',
-              'Bash(orch result *)',
-              'Bash(./bin/hub task *)',
-              'Bash(hub task *)',
+              `Bash(./bin/${PLATFORM_SLUG} run result *)`,
+              `Bash(${PLATFORM_SLUG} run result *)`,
+              `Bash(./bin/${PLATFORM_SLUG} task *)`,
+              `Bash(${PLATFORM_SLUG} task *)`,
             ],
           },
           hooks: {},

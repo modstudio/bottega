@@ -1,6 +1,7 @@
 // concern: tree database connection classification
 /** Classifies sampled database sessions from plain values without observing a server or clock. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   ADMIN_APPLICATION_NAME,
@@ -15,8 +16,7 @@ type OffenseKind = 'cross-tree-database-connection' | 'untagged-tree-database-co
 
 type Offense = { kind: OffenseKind; applicationName: string }
 
-const SAMPLE_LIMIT =
-  'sessions are sampled when orch monitor runs, so one that opens and closes between runs is not seen, and a tree provisioned without a tag reads as untagged until it is released'
+const SAMPLE_LIMIT = `sessions are sampled when ${PLATFORM_SLUG} machine monitor runs, so one that opens and closes between runs is not seen, and a tree provisioned without a tag reads as untagged until it is released`
 
 type SampledDatabaseConnection = {
   datname: string

@@ -4,6 +4,7 @@ import {
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
 import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -349,14 +350,14 @@ function validateArchitectAudience(
 ): void {
   if (actor.kind === 'architect' && !project && audience.kind !== 'architects')
     throw new Error(
-      `architect posting project is unknown for ${cwd}; post from a registered project or run orch project add first`,
+      `architect posting project is unknown for ${cwd}; post from a registered project or run ${PLATFORM_SLUG} project add first`,
     )
   const refusal = architectsPostingRefusal(audience, project)
   if (refusal) throw new Error(refusal)
   if (audience.kind !== 'architects') return
   if (audience.value && !projects(undefined, database).some((item) => item.name === audience.value))
     throw new Error(
-      `unknown board project ${audience.value}; run orch project list and use architects:<registered-project>`,
+      `unknown board project ${audience.value}; run ${PLATFORM_SLUG} project list and use architects:<registered-project>`,
     )
 }
 

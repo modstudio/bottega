@@ -24,6 +24,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-answer-boundary',
     'orchestrator/src/run/run-answer.ts',
     [
+      '../../../shared/brand.ts',
       'node:fs',
       '../../../shared/orch-contract.ts',
       '../../../shared/process-identity.ts',
@@ -91,6 +92,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-control-boundary',
     'orchestrator/src/run/run-control.ts',
     [
+      '../../../shared/brand.ts',
       'node:fs',
       '../cli/args.ts',
       '../clock.ts',
@@ -124,6 +126,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-dispatch-boundary',
     'orchestrator/src/run/run-dispatch.ts',
     [
+      '../../../shared/brand.ts',
       'node:child_process',
       'node:crypto',
       'node:fs',
@@ -151,6 +154,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-inbox-boundary',
     'orchestrator/src/run/run-inbox.ts',
     [
+      '../../../shared/brand.ts',
       '../database/db.ts',
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
@@ -166,6 +170,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-listing-boundary',
     'orchestrator/src/run/run-listing.ts',
     [
+      '../../../shared/brand.ts',
       '../collect/collect.ts',
       '../database/db.ts',
       '../evidence/evidence-query.ts',

@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ManagedContextPage, UserCanonSection } from '@/routes/context'
 import { queryClient, trpc } from '@/trpc/client'
 
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+
 const doc = {
   id: 1,
   scope: 'canon' as const,
@@ -55,7 +57,7 @@ function seedBase() {
     file: { path: '/home/operator/.claude/settings.json', exists: true },
     revision: 'revision-settings',
     settings: {
-      permissions: { allow: ['Bash(orch result *)'], ask: [], deny: [] },
+      permissions: { allow: [`Bash(${PLATFORM_SLUG} run result *)`], ask: [], deny: [] },
       hooks: [{ event: 'PreToolUse', matcher: 'Bash', fingerprint: '123456abcdef' }],
       envKeys: ['ORCH_TOKEN'],
     },
@@ -113,7 +115,7 @@ test('managed hooks render fingerprints and never command text', () => {
 test('managed settings shows the apply command without a write control', () => {
   seedBase()
   const html = render()
-  expect(html).toContain('orch settings render --write --user --yes')
+  expect(html).toContain(`${PLATFORM_SLUG} machine settings render --write --user --yes`)
   expect(html).not.toContain('>Write settings<')
 })
 
@@ -149,11 +151,11 @@ test('user canon shows the signed-in refusal instead of an empty state', () => {
       <UserCanonSection
         rows={undefined}
         pending={false}
-        error="no signed-in record session; cleared by: run orch record login"
+        error={`no signed-in record session; cleared by: run ${PLATFORM_SLUG} record login`}
       />
     </QueryClientProvider>,
   )
   expect(html).toContain('no signed-in record session')
-  expect(html).toContain('cleared by: run orch record login')
+  expect(html).toContain(`cleared by: run ${PLATFORM_SLUG} record login`)
   expect(html).not.toContain('No rows')
 })

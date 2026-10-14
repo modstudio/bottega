@@ -1,17 +1,18 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setupAskCommand } from './ask-commands.ts'
 
 test('setup-ask exits non-zero when any registration fails', async () => {
   const output: string[] = []
   const code = await setupAskCommand(
-    ['/bin/orch', 'ask-server'],
+    [`/bin/${PLATFORM_SLUG}`, 'mcp', 'ask-server'],
     { log: (line) => output.push(line) },
     {
       find: (name) => `/bin/${name}`,
       runner: (argv) => ({
         exitCode: argv[0] === '/bin/grok' ? 1 : 0,
         stdout: argv.includes('get')
-          ? 'Command: /bin/orch\nArgs: ["ask-server"]'
+          ? `Command: /bin/${PLATFORM_SLUG}\nArgs: ["mcp","ask-server"]`
           : argv.includes('list')
             ? '[]'
             : '',
@@ -29,7 +30,7 @@ test('setup-ask guards a differing registration and directs replacement through 
   const output: string[] = []
   const calls: string[][] = []
   const code = await setupAskCommand(
-    ['/bin/orch', 'ask-server'],
+    [`/bin/${PLATFORM_SLUG}`, 'mcp', 'ask-server'],
     { log: (line) => output.push(line) },
     {
       find: (name) => `/bin/${name}`,
@@ -46,5 +47,7 @@ test('setup-ask guards a differing registration and directs replacement through 
   )
   expect(code).toBe(1)
   expect(calls.some((argv) => argv.includes('add'))).toBe(false)
-  expect(output.join('\n')).toContain('run orch setup apply to review and replace it')
+  expect(output.join('\n')).toContain(
+    `run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
+  )
 })

@@ -2,6 +2,7 @@
 /** Builds report-only conditions for mechanical-rule debt that drained and refilled. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type CategoryExecutionRow,
   categoryExecutionRows,
@@ -22,7 +23,7 @@ export function ratchetedRuleRefillConditions(
       since: refill.finishedAt,
       ageMs: null,
       detail: `${refill.category} has ${refill.remaining} remaining findings; the last gate that recorded zero finished at ${refill.lastZeroFinishedAt}`,
-      action: `report only; inspect orch enforcement --project ${project.name}`,
+      action: `report only; inspect ${PLATFORM_SLUG} gate enforcement --project ${project.name}`,
       affectedProject: project.name,
     })),
   )

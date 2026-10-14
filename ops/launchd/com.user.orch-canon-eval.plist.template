@@ -12,7 +12,8 @@
          still matches the last pass for that agent unless invoked with --force. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__INSTALL_ROOT__/bin/orch</string>
+        <string>__INSTALL_ROOT__/bin/bottega</string>
+        <string>doc</string>
         <string>canon</string>
         <string>eval</string>
     </array>

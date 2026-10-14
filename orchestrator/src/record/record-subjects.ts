@@ -1,6 +1,7 @@
 // concern: record-subjects
 /** Owns tenant-bound hosted subject reads and writes. */
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
@@ -62,7 +63,7 @@ async function projectId(tx: SQL, spaceId: string, project: string): Promise<str
   `
   if (!rows.length) {
     throw new RecordSubjectError(
-      `project "${project}" is not present in this record space; cleared by: orch project list`,
+      `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
       404,
     )
   }
@@ -156,7 +157,7 @@ export async function addRecordSubject(
     } catch (error) {
       if (String(error).includes('subject_live_name')) {
         throw new RecordSubjectError(
-          `subject "${input.name}" already exists in project ${input.project}; cleared by: orch subject list ${input.project}`,
+          `subject "${input.name}" already exists in project ${input.project}; cleared by: ${PLATFORM_SLUG} doc subject list ${input.project}`,
           409,
         )
       }
@@ -186,7 +187,7 @@ async function updateRecordSubject(
     } catch (error) {
       if (String(error).includes('subject_live_name')) {
         throw new RecordSubjectError(
-          `subject "${input.value}" already exists in project ${input.project}; cleared by: orch subject list ${input.project}`,
+          `subject "${input.value}" already exists in project ${input.project}; cleared by: ${PLATFORM_SLUG} doc subject list ${input.project}`,
           409,
         )
       }
@@ -199,7 +200,7 @@ async function updateRecordSubject(
 
 const unknownSubject = (project: string, id: string) =>
   new RecordSubjectError(
-    `subject "${id}" is not in project ${project}; cleared by: orch subject list ${project}`,
+    `subject "${id}" is not in project ${project}; cleared by: ${PLATFORM_SLUG} doc subject list ${project}`,
     404,
   )
 
@@ -228,7 +229,7 @@ export async function reorderRecordSubjects(
       JSON.stringify(expected) !== JSON.stringify(supplied)
     ) {
       throw new RecordSubjectError(
-        `reorder must name every non-retired subject in project ${input.project} exactly once; cleared by: orch subject list ${input.project}`,
+        `reorder must name every non-retired subject in project ${input.project} exactly once; cleared by: ${PLATFORM_SLUG} doc subject list ${input.project}`,
       )
     }
     for (const [position, id] of input.ids.entries()) {

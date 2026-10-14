@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { lintProse } from '../canon/prose-lint.ts'
 import {
   filedDocRef,
@@ -80,12 +81,14 @@ describe('filed ruling text', () => {
 
 describe('operator file-offer hint', () => {
   test('names the file verb for operator-attributed rulings only', () => {
-    expect(rulingFileHint(7)).toBe('File this ruling: orch ruling file 7 --as doc|canon')
+    expect(rulingFileHint(7)).toBe(
+      `File this ruling: ${PLATFORM_SLUG} question ruling file 7 --as doc|canon`,
+    )
     expect(
       rulingFileOfferLines({ questionIds: [7, 8], operatorAttributed: true, json: false }),
     ).toEqual([
-      'File this ruling: orch ruling file 7 --as doc|canon',
-      'File this ruling: orch ruling file 8 --as doc|canon',
+      `File this ruling: ${PLATFORM_SLUG} question ruling file 7 --as doc|canon`,
+      `File this ruling: ${PLATFORM_SLUG} question ruling file 8 --as doc|canon`,
     ])
     expect(
       rulingFileOfferLines({ questionIds: [7], operatorAttributed: false, json: false }),

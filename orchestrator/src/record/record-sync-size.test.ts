@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, mock, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { syncRecord } from './record-sync.ts'
 import {
   RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
@@ -79,7 +80,7 @@ test('an oversized first row is quarantined without blocking a legal later row',
   expect(rows[0]!.quarantine_reason).toContain(
     `${RECORD_SYNC_MAX_PAYLOAD_BYTES + 1} bytes, exceeding the ${RECORD_SYNC_MAX_PAYLOAD_BYTES} byte limit`,
   )
-  expect(rows[0]!.quarantine_reason).toContain('orch record outbox retire <row-id>')
+  expect(rows[0]!.quarantine_reason).toContain(`${PLATFORM_SLUG} record outbox retire <row-id>`)
   expect(rows[1]!.synced_at).toBe(STAMP)
   expect(requests[0]!.rows.map((row) => row.id)).toEqual([2])
 
@@ -143,7 +144,7 @@ test('a request-oversized legal payload is quarantined and later rows still sync
     local
       .query<{ quarantine_reason: string }, []>('SELECT quarantine_reason FROM outbox WHERE id=1')
       .get()!.quarantine_reason,
-  ).toContain('orch record outbox retire <row-id>')
+  ).toContain(`${PLATFORM_SLUG} record outbox retire <row-id>`)
 })
 
 test('a child of a size-quarantined parent waits while an independent row syncs', async () => {

@@ -209,7 +209,7 @@ describe('operational monitor conditions', () => {
             condition.kind === 'retained-worktree-docker-resource' &&
             condition.subject === `app-orch-${runId}-web`,
         ),
-      ).toMatchObject({ action: `run orch close-out ${runId}` })
+      ).toMatchObject({ action: `run ${PLATFORM_SLUG} run close-out ${runId}` })
     } finally {
       spawn.mockRestore()
     }
@@ -560,7 +560,7 @@ describe('operational monitor conditions', () => {
           subject: `run:${id}`,
           ownerSession: 'sess-recover',
           detail: `run ${id} is marked asking but has no unanswered question (stranded)`,
-          action: `run orch abandon ${id} to close it, or orch continue ${id} to resume it; an intent decision`,
+          action: `run ${PLATFORM_SLUG} run abandon ${id} to close it, or ${PLATFORM_SLUG} run continue ${id} to resume it; an intent decision`,
         }),
       ])
       expect(result.conditions.some((c) => c.kind === 'task-waiting-on-ruling')).toBe(false)

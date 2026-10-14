@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/trackers.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -148,30 +149,42 @@ test('commandEvidence gate requires a non-deferrable command-exit floor', () => 
   ).toContain('step "design" cannot defer command-exit when commandEvidence is "gate"')
 })
 
-test('orch do dispatches require a prompt or file', () => {
+test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
   const definition = (body: string) => ({ steps: [{ ...step, stage: 'implement', body }] })
 
-  expect(validateStepCatalogue(definition('Dispatch `orch do implement --key DEV-1`.'))).toContain(
-    'step "design" dispatch "orch do implement --key DEV-1" must include --file or a double-quoted argument',
-  )
   expect(
-    validateStepCatalogue(definition('Dispatch `orch do implement --key "DEV-1"`.')),
+    validateStepCatalogue(
+      definition(`Dispatch \`${PLATFORM_SLUG} run start implement --key DEV-1\`.`),
+    ),
   ).toContain(
-    'step "design" dispatch "orch do implement --key "DEV-1"" must include --file or a double-quoted argument',
-  )
-  expect(
-    validateStepCatalogue(definition('Dispatch `orch do implement --key DEV-1 --file`.')),
-  ).toContain(
-    'step "design" dispatch "orch do implement --key DEV-1 --file" must include --file or a double-quoted argument',
+    `step "design" dispatch "${PLATFORM_SLUG} run start implement --key DEV-1" must include --file or a double-quoted argument`,
   )
   expect(
     validateStepCatalogue(
-      definition('Dispatch `orch do implement --key DEV-1 "Implement the specified change."`.'),
+      definition(`Dispatch \`${PLATFORM_SLUG} run start implement --key "DEV-1"\`.`),
+    ),
+  ).toContain(
+    `step "design" dispatch "${PLATFORM_SLUG} run start implement --key "DEV-1"" must include --file or a double-quoted argument`,
+  )
+  expect(
+    validateStepCatalogue(
+      definition(`Dispatch \`${PLATFORM_SLUG} run start implement --key DEV-1 --file\`.`),
+    ),
+  ).toContain(
+    `step "design" dispatch "${PLATFORM_SLUG} run start implement --key DEV-1 --file" must include --file or a double-quoted argument`,
+  )
+  expect(
+    validateStepCatalogue(
+      definition(
+        `Dispatch \`${PLATFORM_SLUG} run start implement --key DEV-1 "Implement the specified change."\`.`,
+      ),
     ),
   ).toEqual([])
   expect(
     validateStepCatalogue(
-      definition('Dispatch `/checkout/bin/orch do implement --key DEV-1 --file specification.md`.'),
+      definition(
+        `Dispatch \`/checkout/bin/${PLATFORM_SLUG} run start implement --key DEV-1 --file specification.md\`.`,
+      ),
     ),
   ).toEqual([])
 })
@@ -185,7 +198,7 @@ test('promoting a stored pre-validator draft revalidates before changing product
   const invalid = {
     steps: production.definition.steps.map((item) =>
       item.slug === 'diagnose'
-        ? { ...item, body: 'Dispatch `orch do diagnose --key {{key}}`.' }
+        ? { ...item, body: `Dispatch \`${PLATFORM_SLUG} run start diagnose --key {{key}}\`.` }
         : item,
     ),
   }
@@ -196,7 +209,7 @@ test('promoting a stored pre-validator draft revalidates before changing product
   ).run(production.owner_id, JSON.stringify(invalid))
 
   expect(() => promoteStepCatalogue(2, 'promote legacy', 'architect', d)).toThrow(
-    'step "diagnose" dispatch "orch do diagnose --key {{key}}" must include --file or a double-quoted argument',
+    `step "diagnose" dispatch "${PLATFORM_SLUG} run start diagnose --key {{key}}" must include --file or a double-quoted argument`,
   )
   expect(productionStepCatalogue(d).n).toBe(production.n)
   expect(showStepCatalogue(2, d).status).toBe('draft')

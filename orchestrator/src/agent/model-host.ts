@@ -3,12 +3,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+/** Where the model host's OpenAI-compatible endpoint lives. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS, type AgentRow } from './agent-registry.ts'
 import type { Agent } from './agents.ts'
-
-/** Where the model host's OpenAI-compatible endpoint lives. */
 export function modelHostUrl(): string {
   return readMachineValue('model_host.url')
 }
@@ -162,7 +162,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * Anything that ROUTES (`do`) or REPORTS A ROUTE (`pick`, `guide`, `doctor`,
  * `agents`). Exported rather than left in the command adapter so it can be asserted against:
  * a command added to the switch that prints eligibility and is missing here
- * reports a route that `orch do` would not take, which is exactly what
+ * reports a route that `bottega run start` would not take, which is exactly what
  * happened to `pick` and `guide`.
  *
  * `stats` is deliberately absent — it reports recorded history, and history does
@@ -213,7 +213,7 @@ export function localAgentHealth(name: string): LocalHealth | null {
 /**
  * Forget the probe, so the next caller takes a fresh one.
  *
- * The cache is right for `orch do`, which lives for one run. It is wrong for
+ * The cache is right for `bottega run start`, which lives for one run. It is wrong for
  * anything long-lived — `orch serve` runs for days, and a verdict taken when the
  * box happened to be rebooting would outlive the reboot by the life of the
  * process. Whoever holds a process open longer than a run is responsible for
@@ -228,7 +228,7 @@ export function localAgentHealth(name: string): LocalHealth | null {
  * binary that is sitting right there on PATH.
  */
 export function fileContractProbeReason(name: string): string {
-  return `registration probe predates the file contract; run orch agent probe ${name}`
+  return `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe ${name}`
 }
 
 export function predatesFileContract(agent: Agent): boolean {
@@ -239,10 +239,11 @@ export function unavailableReason(name: string): string | null {
   const a = AGENTS[name]
   if (!a) return 'unknown agent'
   if (a.enabled === false) return `disabled — ${a.disabledReason}`
-  if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
+  if (a.probePassed === null)
+    return `registration probe incomplete; run ${PLATFORM_SLUG} agent show probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
   if (a.contextTokens === 0) {
-    return `no declared context window; run orch agent set ${name} --context-tokens <tokens>`
+    return `no declared context window; run ${PLATFORM_SLUG} agent show set ${name} --context-tokens <tokens>`
   }
   if (!harnessInstalled(name)) return 'not installed'
   if (a.operatedBy === 'self') {

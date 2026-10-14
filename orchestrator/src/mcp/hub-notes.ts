@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
@@ -29,7 +30,7 @@ export type FiledNoteAnchor = {
 }
 
 export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
     cwd,
     env: { ...process.env },
     stdin: 'ignore',
@@ -127,6 +128,7 @@ export async function hubNoteLabel(recordId: string, options: { cwd: string }): 
   }
   const notes = [...(await list(false)), ...(await list(true))]
   const note = notes.find((candidate) => candidate.record_id === recordId)
-  if (!note) throw new Error(`hub cannot resolve note ${recordId}; run \`hub note list\``)
+  if (!note)
+    throw new Error(`hub cannot resolve note ${recordId}; run \`${PLATFORM_SLUG} note list\``)
   return note.label
 }

@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
 import { preflight } from './dispatch-preflight.ts'
@@ -77,6 +78,6 @@ test('unknown catalogue lens passes preflight and produces a caller-prompt notic
       stack: 'node',
     }),
   ).toEqual([
-    "! lens not-in-the-catalogue has no catalogue row and runs with the caller's prompt only; orch lens list shows the catalogue",
+    `! lens not-in-the-catalogue has no catalogue row and runs with the caller's prompt only; ${PLATFORM_SLUG} review lens list shows the catalogue`,
   ])
 })

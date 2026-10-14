@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -110,7 +111,9 @@ test('refuses a round with an untriaged finding and names its remedy', () => {
   const database = fixture()
   addReview(database, 11, 'correctness', [{ ordinal: 3, disposition: null }])
   expect(() => continuationFindings(database, group, 'message')).toThrow(
-    /review 11: untriaged finding ordinal\(s\) 3[\s\S]*orch judge/,
+    new RegExp(
+      `review 11: untriaged finding ordinal\\(s\\) 3[\\s\\S]*${PLATFORM_SLUG} score judge`,
+    ),
   )
 })
 

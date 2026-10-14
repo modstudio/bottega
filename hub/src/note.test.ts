@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -313,22 +314,22 @@ describe('suggestion notes', () => {
       expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
       expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
       expect(() => resolveNoteReference('42', 'workshop')).toThrow(
-        'no note workshop#42; use a project#number label or run `hub note list`',
+        `no note workshop#42; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
       )
       expect(() => resolveNoteReference('42', null)).toThrow(
-        'no note <project>#42; use a project#number label or run `hub note list`',
+        `no note <project>#42; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
       )
       expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
-        'no note alpha#41; use a project#number label or run `hub note list`',
+        `no note alpha#41; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
       )
       expect(resolveNoteReference(alphaId, 'workshop')).toBe(alphaId)
       expect(() => resolveNoteReference('99', 'workshop')).toThrow(
-        'no note workshop#99; use a project#number label or run `hub note list`',
+        `no note workshop#99; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
       )
     })
 
-    test('orch note succeeding with no hosted record files locally', async () => {
-      const text = `Local orch note ${crypto.randomUUID()}`
+    test(`${PLATFORM_SLUG} note new succeeding with no hosted record files locally`, async () => {
+      const text = `Local ${PLATFORM_SLUG} note new ${crypto.randomUUID()}`
       const prior = process.env.CLAUDE_CODE_SESSION_ID
       try {
         process.env.CLAUDE_CODE_SESSION_ID = 'note-local-session'
@@ -461,7 +462,7 @@ describe('suggestion notes', () => {
     })
   })
 
-  test('orch note files through hub with cwd and session anchors', async () => {
+  test(`${PLATFORM_SLUG} note new files through hub with cwd and session anchors`, async () => {
     const text = `CLI suggestion ${crypto.randomUUID()}`
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     try {
@@ -478,7 +479,7 @@ describe('suggestion notes', () => {
     }
   })
 
-  test('hub note names a malformed explicit anchor field', () => {
+  test(`${PLATFORM_SLUG} note names a malformed explicit anchor field`, () => {
     const anchor: NoteAnchor = {
       cwd: '/fixtures/repos/workshop',
       project: 'workshop',
@@ -527,7 +528,7 @@ describe('suggestion notes', () => {
     ).toThrow('anchor.files[0].path')
   })
 
-  test('orch note without a duplicate choice returns candidates and files nothing', async () => {
+  test(`${PLATFORM_SLUG} note new without a duplicate choice returns candidates and files nothing`, async () => {
     const unique = crypto.randomUUID()
     const first = (
       await fileNote({

@@ -18,6 +18,7 @@ import {
 } from 'node:fs'
 import { platform } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
 import { tryWriteContention } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
@@ -245,7 +246,7 @@ function nextWaiterTicket(waitersDir: string, deadline: number): string {
         throw new Error(
           `timed out waiting for the waiter-ticket lock ${lock}\n` +
             'invariant: A lock waiter is served in arrival order.\n' +
-            'cleared by: the holder finishing; orch monitor names a dead holder, which the next arrival reclaims',
+            `cleared by: the holder finishing; ${PLATFORM_SLUG} machine monitor names a dead holder, which the next arrival reclaims`,
         )
       }
       Atomics.wait(sleeper, 0, 0, 10)

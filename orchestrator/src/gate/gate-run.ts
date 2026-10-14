@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
 import { readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
@@ -97,7 +98,7 @@ const observeGitState: ArchitectGateGitState = (cwd) => {
   })
   if (head.status !== 0) {
     throw new Error(
-      `orch gate run needs HEAD in ${cwd}: ${head.stderr?.trim() || `git exited ${head.status}`}`,
+      `${PLATFORM_SLUG} gate run needs HEAD in ${cwd}: ${head.stderr?.trim() || `git exited ${head.status}`}`,
     )
   }
   const status = spawnSync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
@@ -106,7 +107,7 @@ const observeGitState: ArchitectGateGitState = (cwd) => {
   })
   if (status.status !== 0) {
     throw new Error(
-      `orch gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
+      `${PLATFORM_SLUG} gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
     )
   }
   return {
@@ -157,25 +158,27 @@ export async function runArchitectGate(input: {
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   if (process.env.ORCH_DEPTH !== undefined)
-    throw new Error('orch gate run is reserved for architect sessions; ORCH_DEPTH is set')
+    throw new Error(
+      `${PLATFORM_SLUG} gate run is reserved for architect sessions; ORCH_DEPTH is set`,
+    )
   const caller = sessionId()
   if (!caller)
     throw new Error(
-      `orch gate run is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'run the gate')}`,
+      `${PLATFORM_SLUG} gate run is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'run the gate')}`,
     )
   const cwd = input.cwd ?? process.cwd()
   const project = projectAt(cwd, input.d ?? db())
-  if (!project) throw new Error(`orch gate run: no registered project contains ${cwd}`)
+  if (!project) throw new Error(`${PLATFORM_SLUG} gate run: no registered project contains ${cwd}`)
   const gate = project.settings.gate?.trim()
   if (!gate) {
     throw new Error(
-      `orch gate run: project ${project.name} has no registered gate; set settings.gate`,
+      `${PLATFORM_SLUG} gate run: project ${project.name} has no registered gate; set settings.gate`,
     )
   }
   const checkoutTopLevel = (input.topLevel ?? gitToplevel)(cwd)
   if (!checkoutTopLevel) {
     throw new Error(
-      `orch gate run: could not resolve the checkout top level for ${cwd}; run orch gate run from inside the checkout to gate`,
+      `${PLATFORM_SLUG} gate run: could not resolve the checkout top level for ${cwd}; run ${PLATFORM_SLUG} gate run from inside the checkout to gate`,
     )
   }
   ensureMainStackStarted({

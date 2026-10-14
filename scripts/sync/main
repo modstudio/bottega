@@ -72,7 +72,7 @@ if [[ ! -d "$PROJECT_ROOT/node_modules" ]]; then
   echo "INSTALL: bootstrap succeeded; recorded bun.lock ${bootstrap_bun_lock_hash:0:12}"
 fi
 
-if ! refresh_output="$("$PROJECT_ROOT/bin/orch" tree refresh "$PROJECT_ROOT" 2>&1)"; then
+if ! refresh_output="$("$PROJECT_ROOT/bin/bottega" tree refresh "$PROJECT_ROOT" 2>&1)"; then
   refresh_output="${refresh_output//$'\n'/ }"
   echo "REFUSE: $refresh_output" >&2
   exit 1

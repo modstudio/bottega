@@ -1,18 +1,18 @@
 import { expect, test } from 'bun:test'
 import { decideCollectorReplace } from './interval-replace.ts'
 
-const existing = (record_id: string, start_at: string, ref = 'claude:file:0') => ({
-  record_id,
+const existing = (recordId: string, startAt: string, ref = 'claude:file:0') => ({
+  record_id: recordId,
   source: 'claude',
   ref,
-  start_at,
+  start_at: startAt,
 })
 
-const recomputed = (start_at: string, end_at: string, ref = 'claude:file:0') => ({
+const recomputed = (startAt: string, endAt: string, ref = 'claude:file:0') => ({
   source: 'claude',
   ref,
-  start_at,
-  end_at,
+  start_at: startAt,
+  end_at: endAt,
 })
 
 test('unchanged start updates in place and keeps the UUID', () => {

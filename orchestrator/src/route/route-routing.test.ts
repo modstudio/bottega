@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
@@ -40,17 +41,17 @@ test('the registration probe gates inline and repository jobs', () => {
     )
     expect(unprobedInline).toMatchObject({
       eligible: false,
-      why: 'unprobed agent is ineligible for all jobs; run orch agent probe codex',
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
     })
     expect(unprobedRepository).toMatchObject({
       eligible: false,
-      why: 'unprobed agent is ineligible for all jobs; run orch agent probe codex',
+      why: `unprobed agent is ineligible for all jobs; run ${PLATFORM_SLUG} agent show probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', undefined)
     expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
       eligible: false,
-      why: 'registration probe predates the file contract; run orch agent probe codex',
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
     })
 
     setProbe('2026-01-01T00:00:00Z', true)
@@ -92,7 +93,7 @@ test('rerunning a narrowed file-question probe clears the file-contract refusal'
       candidates('file-question').find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({
       eligible: false,
-      why: 'registration probe predates the file contract; run orch agent probe codex',
+      why: `registration probe predates the file contract; run ${PLATFORM_SLUG} agent show probe codex`,
     })
 
     recordAgentProbe('codex', {
@@ -157,7 +158,7 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
     expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
-    expect(message).toContain('run orch agent probe codex')
+    expect(message).toContain(`run ${PLATFORM_SLUG} agent show probe codex`)
     expect(message).toContain('disabled for routing refusal test')
   } finally {
     const restore = db().query(

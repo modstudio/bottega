@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookupResult } from './task-key-admission.ts'
 
 const check = (result: TaskKeyLookupResult, protocol = 'hub') =>
@@ -14,8 +15,7 @@ test('task key admission proceeds when the tracker finds the task', async () => 
 test('task key admission refuses a task the tracker did not find', async () => {
   expect(await check({ state: 'not-found' })).toEqual({
     action: 'refuse',
-    message:
-      'task DEV-1028 does not exist in project fixture; create it with hub task new --project fixture, or correct --key',
+    message: `task DEV-1028 does not exist in project fixture; create it with ${PLATFORM_SLUG} task new --project fixture, or correct --key`,
   })
 })
 

@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
@@ -409,7 +410,7 @@ export function reclaimBranch(
       return {
         result: refuse(
           `branch classification is ${evidence.state}; commits unreachable from landing branch ${trunk}: ${absent.join(', ')}; ` +
-            `prove a landing with orch branches landed ${branch} --pr <number>, or delete it by hand with git branch -D ${branch}`,
+            `prove a landing with ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>, or delete it by hand with git branch -D ${branch}`,
         ),
       }
     }

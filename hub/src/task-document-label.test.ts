@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 
 test('task document labels round trip', () => {
@@ -9,9 +10,9 @@ test('task document labels round trip', () => {
 
 test('task document labels refuse bare integers and malformed labels', () => {
   expect(() => parseTaskDocumentLabel('3')).toThrow(
-    'expected label <KEY>/<number> or a document UUID; run `hub task doc list <KEY>`',
+    `expected label <KEY>/<number> or a document UUID; run \`${PLATFORM_SLUG} task doc list <KEY>\``,
   )
   expect(() => parseTaskDocumentLabel('DEV-1208/no')).toThrow(
-    'expected label DEV-1208/<number> or a document UUID; run `hub task doc list DEV-1208`',
+    `expected label DEV-1208/<number> or a document UUID; run \`${PLATFORM_SLUG} task doc list DEV-1208\``,
   )
 })

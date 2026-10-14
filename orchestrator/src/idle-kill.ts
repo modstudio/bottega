@@ -156,7 +156,7 @@ function groupHasUninterruptible(pid: number, samples: ProcessSample[]): boolean
 /**
  * Group-kill only when our own pgid is known and the target differs.
  * Unknown selfPgid used to take `pgid !== null`, which is the coordinator's
- * session on a detached `orch do` (setsid: coordinator pgid equals its pid,
+ * session on a detached `bottega run start` (setsid: coordinator pgid equals its pid,
  * and the vendor inherits it). pgid 0 and 1 are rejected outright: 0 is not a
  * process group, and kill(-1) is every process the user can signal.
  */

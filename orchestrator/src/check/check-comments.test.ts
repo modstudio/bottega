@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { commentsInSource } from './check-comment-extraction.ts'
 import {
   type CommentSource,
@@ -65,7 +66,7 @@ describe('comment hygiene decisions', () => {
 
   test('task-key checking refuses an empty prefix list', () => {
     expect(commentTaskKeyRefusal(true, 'fixture', [])).toContain(
-      `orch project set fixture --settings '{"keyPrefixes":["<PREFIX>"]}'`,
+      `${PLATFORM_SLUG} project set fixture --settings '{"keyPrefixes":["<PREFIX>"]}'`,
     )
     expect(commentTaskKeyRefusal(false, 'fixture', [])).toBeNull()
   })

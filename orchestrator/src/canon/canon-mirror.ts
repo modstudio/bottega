@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { closeOutRun } from '../close/close-out.ts'
@@ -589,7 +590,7 @@ async function mirrorProject(
     return {
       project: project.name,
       failed: true,
-      text: `failed, missing canonMirrorKey; remedy: orch project set ${project.name} --settings '{"canonMirrorKey":"<KEY>"}'`,
+      text: `failed, missing canonMirrorKey; remedy: ${PLATFORM_SLUG} project set ${project.name} --settings '{"canonMirrorKey":"<KEY>"}'`,
     }
   const trunk = project.settings.trunk?.trim()
   if (!trunk)

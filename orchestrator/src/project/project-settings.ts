@@ -59,7 +59,7 @@ export type WorktreeTool = {
   remove?: string
   /**
    * Reclaims orphans — containers, databases, metadata — for worktrees whose
-   * directory has already gone. Run by `orch sweep`, because the expensive
+   * directory has already gone. Run by `bottega machine sweep`, because the expensive
    * leak is not the directory: it is the database still sitting behind it.
    */
   sweep?: string

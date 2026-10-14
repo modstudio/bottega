@@ -1,6 +1,7 @@
 /** Cleanup knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { repoRootOf, restoreBranch, targetGitEnvironment } from '../git/git-environment.ts'
@@ -346,7 +347,7 @@ export function verifyBranchOwnershipAfterCleanup(
  * however it likes — one project's tool derives the directory from the TICKET KEY, so
  * every run carrying `--key STAR-5084` lands in the same directory. Four
  * runs (665, 666, 668, 669) shared one tree, three of them blocked and one
- * actively working in it, and `orch discard 665` would have removed the
+ * actively working in it, and `bottega run discard 665` would have removed the
  * directory out from under run 669 mid-task. It was also that task's own
  * worktree, seeded, not a throwaway.
  *
@@ -404,7 +405,7 @@ function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: bo
   if (ownership === 'attached') {
     throw new Error(
       `refusing to remove attached tree ${row.worktree}; ` +
-        `clear this conversation's pointer with orch close-out ${row.id}`,
+        `clear this conversation's pointer with ${PLATFORM_SLUG} run close-out ${row.id}`,
     )
   }
   if (ownership === 'unknown') {

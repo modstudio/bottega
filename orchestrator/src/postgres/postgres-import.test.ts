@@ -66,7 +66,9 @@ test('project import refuses without a signed-in user before opening its sources
       databaseUrl: 'missing',
       spaceId: 'space',
     }),
-  ).rejects.toThrow('a signed-in user is required; run `orch record sign-in`, then retry')
+  ).rejects.toThrow(
+    `a signed-in user is required; run \`${PLATFORM_SLUG} record sign-in\`, then retry`,
+  )
 })
 
 async function targetState(sql: SQL): Promise<unknown> {

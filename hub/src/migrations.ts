@@ -1,16 +1,16 @@
 import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { readInstallAsset } from '../../shared/embedded-assets.ts'
-import { assetPath } from '../../shared/install-root.ts'
-
 // Twin of orchestrator/src/database/migrations.ts. It remains local because the journal
 // table, migration directory, refusal text and lifecycle command belong to the
 // concern; moving those parameters into shared/ would make shared know both.
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { readInstallAsset } from '../../shared/embedded-assets.ts'
+import { assetPath } from '../../shared/install-root.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
-const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'
+const SCHEMA_INVARIANT = `Only ${PLATFORM_SLUG} machine migrate changes the store schema.`
 export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
@@ -171,13 +171,13 @@ export function migrationRefusal(d: Database): string | null {
   if (state.ahead) {
     return (
       `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: hub migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
     )
   }
   if (state.pending.length) {
     return (
       `refusing to open a store behind this binary's migration journal: ${state.pending[0]!.tag}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: hub migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
     )
   }
   return null

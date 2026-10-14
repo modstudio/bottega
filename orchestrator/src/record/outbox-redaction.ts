@@ -1,6 +1,7 @@
 // concern: outbox-redaction
 /** Re-enqueues sanitized copies of already-synced record payloads. Must not know hosted storage. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { sanitizeOutboxPayloadForRules } from './outbox-sanitize.ts'
 
@@ -59,7 +60,7 @@ function parsePayload(row: SyncedOutboxRow): Record<string, unknown> {
   throw new Error(
     `refusing synced outbox redaction: outbox row ${row.id} has an unreadable payload\n` +
       'invariant: Redaction never reports success for a payload it could not inspect.\n' +
-      `cleared by: repair the stored JSON or retire row ${row.id} with orch record outbox retire`,
+      `cleared by: repair the stored JSON or retire row ${row.id} with ${PLATFORM_SLUG} record outbox retire`,
   )
 }
 

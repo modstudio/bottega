@@ -177,7 +177,7 @@ async function searchDuplicateIssues(
     ])
     const duplicates = JSON.parse(output) as DuplicateCandidate[]
     if (!Array.isArray(duplicates))
-      throw new Error('hub task duplicates returned a non-array JSON value')
+      throw new Error(`${PLATFORM_SLUG} task duplicates returned a non-array JSON value`)
     return { duplicates, error: null }
   } catch (error) {
     return { duplicates: null, error: error instanceof Error ? error.message : String(error) }
@@ -189,7 +189,7 @@ export type IssueReporter =
   | { kind: 'monitor'; invocationId: number; affectedProject: string }
 
 export function fileIssueTaskKey(stdout: string, project: Project): string {
-  return validatedTrackerTaskKey(stdout.trim(), project, 'hub task new for file_issue')
+  return validatedTrackerTaskKey(stdout.trim(), project, `${PLATFORM_SLUG} task new for file_issue`)
 }
 
 type WorkerReporter = {

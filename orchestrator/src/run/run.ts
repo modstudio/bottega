@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -206,7 +207,7 @@ export async function run(opts: {
   launchCwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
-  /** The run this one re-attempts, for `orch retry`. */
+  /** The run this one re-attempts, for `bottega run retry`. */
   retryOf?: number
   noFailover?: boolean
   noWaitCapacity?: boolean
@@ -243,7 +244,7 @@ export async function run(opts: {
   /**
    * A row already claimed by the caller, to be filled in rather than inserted.
    *
-   * `orch do --detach` needs to print a run id BEFORE the work starts, which it
+   * `bottega run start --detach` needs to print a run id BEFORE the work starts, which it
    * cannot do if the id is allocated in here after routing. So the caller
    * claims a placeholder row, hands the id over, and this fills it in once the
    * agent is picked.
@@ -266,7 +267,7 @@ export async function run(opts: {
   resume?: RunResumeOptions
   /** Declared reader deliverable names, from repeated `--deliverable`. */
   deliverables?: string[]
-  /** `orch do --timeout` in minutes. */
+  /** `bottega run start --timeout` in minutes. */
   timeoutMinutes?: number
   /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
   keepTree?: KeepTreeExemption
@@ -368,7 +369,7 @@ export async function run(opts: {
   /**
    * A writing job carries its role contract, and carries it HERE.
    *
-   * The caller's prompt is stored unwrapped at prompt_path so `orch retry` can
+   * The caller's prompt is stored unwrapped at prompt_path so `bottega run retry` can
    * re-send it and wrap once. The bound text — preamble plus prompt — is what
    * the agent is actually sent, hashed and routed, and is written beside it as
    * `.bound.txt`. Wrapping it further down would send a payload the database
@@ -967,12 +968,12 @@ export async function run(opts: {
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
-  // header that `orch result` prints (lens run 2290): the register is stale and
+  // header that `bottega run result` prints (lens run 2290): the register is stale and
   // the project unwatched on every later run until somebody reads this.
   const skipLines = skipped.map(
     (failure) =>
       `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-      'fix the register with orch project set',
+      `fix the register with ${PLATFORM_SLUG} project set`,
   )
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {

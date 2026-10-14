@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -101,7 +102,7 @@ describe('idle run classification', () => {
     expect(idleRunCondition({ ...row, pidAlive: false }, clock, 5 * 60_000)).toMatchObject({
       kind: 'stale-run',
       subject: 'run:73',
-      action: 'run orch stop 73',
+      action: `run ${PLATFORM_SLUG} run stop 73`,
     })
   })
 
@@ -370,7 +371,7 @@ describe('operational monitor conditions', () => {
           since: '2026-09-15T10:00:01.000Z',
           ageMs: 7_199_000,
           detail: `sandbox_dir claim for terminal conversation ${normal} remains claimed; allocation key /runs/sandbox-${normal}`,
-          action: 'run orch sweep; orch sweep --dry-run prints why a claim is kept',
+          action: `run ${PLATFORM_SLUG} machine sweep; ${PLATFORM_SLUG} machine sweep --dry-run prints why a claim is kept`,
         },
       ],
       errors: [`terminal time for conversation ${broken} could not be established`],
@@ -395,7 +396,7 @@ describe('operational monitor conditions', () => {
           ageMs: 3_601_000,
           detail:
             'sandbox_dir claim for terminal conversation 52 remains claimed; allocation key /runs/sandbox-52',
-          action: 'run orch sweep; orch sweep --dry-run prints why a claim is kept',
+          action: `run ${PLATFORM_SLUG} machine sweep; ${PLATFORM_SLUG} machine sweep --dry-run prints why a claim is kept`,
         },
       ],
       errors: [],
@@ -509,7 +510,7 @@ describe('operational monitor conditions', () => {
           since: null,
           ageMs: null,
           detail: 'sandbox directory for terminal conversation 52 uses 8192 bytes',
-          action: 'run orch reclaim sandbox 52 --dry-run, then orch reclaim sandbox 52',
+          action: `run ${PLATFORM_SLUG} machine reclaim sandbox 52 --dry-run, then ${PLATFORM_SLUG} machine reclaim sandbox 52`,
         },
       ],
       errors: [],
@@ -556,7 +557,7 @@ describe('operational monitor conditions', () => {
           ageMs: null,
           detail:
             'run 63 recorded Grok trust heading [folders."/trees/63"] after its worktree disappeared',
-          action: 'run orch reclaim trust 63 --dry-run, then orch reclaim trust 63',
+          action: `run ${PLATFORM_SLUG} machine reclaim trust 63 --dry-run, then ${PLATFORM_SLUG} machine reclaim trust 63`,
         },
       ],
       errors: [],
@@ -667,7 +668,7 @@ describe('operational monitor conditions', () => {
         since: '2026-09-04T20:00:00Z',
         ageMs: 120_000,
         detail: expect.stringContaining('dead coordinator pid 4194304'),
-        action: 'run orch sweep to terminalize the abandoned bootstrap',
+        action: `run ${PLATFORM_SLUG} machine sweep to terminalize the abandoned bootstrap`,
       }),
     ])
   })
@@ -701,7 +702,7 @@ describe('operational monitor conditions', () => {
     expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
   })
 
-  test('derives ghost interval ages from the audited hub reconcile command', () => {
+  test(`derives ghost interval ages from the audited ${PLATFORM_SLUG} machine reconcile command`, () => {
     const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
       exitCode: 0,
       stdout: Buffer.from(
@@ -717,7 +718,7 @@ describe('operational monitor conditions', () => {
           kind: 'ghost-open-interval',
           subject: 'interval:747618',
           ageMs: 68_400_000,
-          action: 'reconciled through hub reconcile',
+          action: `reconciled through ${PLATFORM_SLUG} machine reconcile`,
         }),
       ])
     } finally {
@@ -869,7 +870,7 @@ describe('operational monitor conditions', () => {
     ])
   })
 
-  test('a missing hub rulings document is an observation error, not emptiness', () => {
+  test(`a missing ${PLATFORM_SLUG} question stats document is an observation error, not emptiness`, () => {
     const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
       exitCode: 1,
       stdout: Buffer.from(''),

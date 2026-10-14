@@ -1,6 +1,7 @@
 /** Pure document lifecycle policy. Knows no store, transport, row type, or error class. */
-import { DOC_STATUSES, type DocStatus } from '../../../shared/docs.ts'
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { DOC_STATUSES, type DocStatus } from '../../../shared/docs.ts'
 export type DocumentLifecycleWrite = {
   scope: string
   subject: string | null
@@ -31,7 +32,7 @@ export function documentLifecycleDecision(
   const status =
     input.scope === 'resume' ? 'current' : (input.requestedStatus ?? input.priorStatus ?? 'current')
   const address = `--scope ${input.scope}${input.subject ? ` --subject ${input.subject}` : ''}`
-  const statusCommand = `orch doc status ${input.slug} ${address}`
+  const statusCommand = `${PLATFORM_SLUG} doc status ${input.slug} ${address}`
   if (!DOC_STATUSES.includes(status)) {
     return {
       status: null,
@@ -66,7 +67,7 @@ export function documentLifecycleDecision(
     return {
       status: null,
       replacementSlug: null,
-      refusal: `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: orch doc set ${replacementSlug} ${address} --title TITLE --reason TEXT`,
+      refusal: `replacement document "${replacementSlug}" does not exist in the same scope and subject; cleared by: ${PLATFORM_SLUG} doc set ${replacementSlug} ${address} --title TITLE --reason TEXT`,
     }
   }
   return { status, replacementSlug, refusal: null }

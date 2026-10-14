@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { Cards, Check, Cta, PageHero, Panel, Section } from './shared'
 
 const steps = [
@@ -189,7 +190,7 @@ export function WorkflowsPage() {
                 ))}
               </div>
               <pre className="panel-pre">
-                $ <b>orch workflow compose</b> ship-task --project atlas{`\n\n`}
+                $ <b>{PLATFORM_SLUG} workflow compose</b> ship-task --project atlas{`\n\n`}
                 <span className="c">
                   {' '}
                   workflow ship-task v4 · mode full{`\n`} catalogue v16{`\n`} steps 10 (6 auto · 4

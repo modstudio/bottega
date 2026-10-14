@@ -1,6 +1,7 @@
 // concern: ruling-file
 /** Files an answered ruling as a doc or canon-proposal note. Must not know CLI grammar. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { FILING_DOC_SCOPES, type FilingDocScope, resolveDocSubject } from '../../../shared/docs.ts'
 import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
@@ -155,7 +156,7 @@ function refusal(
   if (decision.code === 'overturned-without-replacement') {
     return (
       `question ${row.id} was overturned without a replacement; ` +
-      `file the replacement first with orch ruling overturn ${row.id} --because ... --replacement "<ruling>"`
+      `file the replacement first with ${PLATFORM_SLUG} question ruling overturn ${row.id} --because ... --replacement "<ruling>"`
     )
   }
   if (decision.code === 'already-filed') {
@@ -165,7 +166,7 @@ function refusal(
     )
   }
   if (decision.code === 'canon-direct') {
-    return `canon is never written directly; file a canon proposal with orch ruling file ${row.id} --as canon`
+    return `canon is never written directly; file a canon proposal with ${PLATFORM_SLUG} question ruling file ${row.id} --as canon`
   }
   if (decision.code === 'operator-attribution') return '--channel ui requires --from-operator'
   if (decision.code === 'dashboard-capability') {
@@ -218,7 +219,10 @@ function loadQuestion(questionId: number): QuestionRow {
          WHERE q.id=?`,
     )
     .get(questionId) as QuestionRow | null
-  if (!row) throw new Error(`no question ${questionId}; inspect question ids with orch inbox --all`)
+  if (!row)
+    throw new Error(
+      `no question ${questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
+    )
   return row
 }
 
@@ -268,7 +272,7 @@ async function writeCanonProposal(
 ): Promise<{ filed_ref: null; filed_record_id: string; filed_label: string }> {
   if (row.run_id === null && !row.project_path) {
     throw new Error(
-      `workflow project ${row.repo ?? 'unknown'} is not registered; register it with orch project add before filing a canon proposal`,
+      `workflow project ${row.repo ?? 'unknown'} is not registered; register it with ${PLATFORM_SLUG} project add before filing a canon proposal`,
     )
   }
   const filed = await stores.fileNote(
@@ -276,7 +280,7 @@ async function writeCanonProposal(
     row.cwd ? { cwd: row.cwd } : undefined,
   )
   if (!filed.noteRecordId || !filed.noteLabel)
-    throw new Error('hub note new did not report a note UUID and label')
+    throw new Error(`${PLATFORM_SLUG} note new did not report a note UUID and label`)
   return { filed_ref: null, filed_record_id: filed.noteRecordId, filed_label: filed.noteLabel }
 }
 

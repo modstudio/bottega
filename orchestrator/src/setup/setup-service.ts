@@ -3,6 +3,7 @@
 
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
@@ -50,7 +51,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
-  const orch = bottegaEntryArgv('orch')
+  const front = bottegaEntryArgv(PLATFORM_SLUG)
   const ask = bottegaEntryArgv('ask-server')
   return proposeSetup(
     resolveWorktreeLifecycle,
@@ -60,7 +61,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     state.agents,
     repositories.notices,
     [
-      { name: 'orch', command: orch[0]!, args: [...orch.slice(1), 'mcp'] },
+      { name: 'orch', command: front[0]!, args: [...front.slice(1), 'mcp', 'serve'] },
       { name: 'orch-ask', command: ask[0]!, args: ask.slice(1) },
     ],
   )

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -219,7 +220,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
             await transport.prompt(handle, prompt)
             return handle.collect()
           })(),
-          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun orch agent probe ${name}`,
+          operationName: `${agent.harness} agent probe prompt and collection; inspect harness logs and rerun ${PLATFORM_SLUG} agent show probe ${name}`,
           timeoutMs: agent.timeoutMs,
           onTimeout: () => transport.cancel(handle),
         })

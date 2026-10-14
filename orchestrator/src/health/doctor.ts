@@ -79,13 +79,13 @@ function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | u
   if (baseUrl && !registration) {
     lines.push(
       configuredModel
-        ? `register        orch agent add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
+        ? `register        ${PLATFORM_SLUG} agent show add qwen36-goose --harness goose --backend vllm --model ${configuredModel} --base-url ${baseUrl} --context-tokens <tokens>`
         : 'register        ORCH_MODEL_HOST_MODEL is required before registering qwen36-goose',
     )
   }
   if (registration && contextTokens === null) {
     lines.push(
-      `context         not declared — run orch agent set ${registration.name} --context-tokens <tokens>`,
+      `context         not declared — run ${PLATFORM_SLUG} agent show set ${registration.name} --context-tokens <tokens>`,
     )
   }
   return { registration, contextTokens, lines }
@@ -103,7 +103,7 @@ function localContextDiagnosis(
   return (
     `context         ${(servedContext / 1024).toFixed(0)}K served` +
     `  MISMATCH — registry declares ${(declaredContext / 1024).toFixed(0)}K.` +
-    ` Run orch agent set ${registration.name} --context-tokens ${servedContext} or re-serve.`
+    ` Run ${PLATFORM_SLUG} agent show set ${registration.name} --context-tokens ${servedContext} or re-serve.`
   )
 }
 
@@ -297,7 +297,7 @@ export async function doctorCommand(
   if (calibrationStale) {
     log(
       `recalibrate: ${scoresSinceCalibration} scores since last blind check; ` +
-        'run orch recalibrate --n 12',
+        `run ${PLATFORM_SLUG} score recalibrate --n 12`,
     )
   }
   log('agents')
@@ -346,7 +346,7 @@ export async function doctorCommand(
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
   if (!r.ok && configuredUrl) {
     // Reporting commands do not have side effects, so doctor only sends a
-    // packet when asked in as many words. `orch do` wakes on its own; a
+    // packet when asked in as many words. `bottega run start` wakes on its own; a
     // status check that silently powered on a shared machine would be a
     // surprise, and the surprise would land on a colleague.
     if (has('wake')) {
@@ -356,7 +356,7 @@ export async function doctorCommand(
       const d = wakeStatus()
       const last = lastWakeAttempt()
       log(
-        `\nwake            ${d.send ? 'available — orch doctor --wake' : d.detail}` +
+        `\nwake            ${d.send ? `available — ${PLATFORM_SLUG} machine doctor --wake` : d.detail}` +
           (last ? `  (last attempt ${last.toISOString()})` : ''),
       )
     }
@@ -383,7 +383,7 @@ export async function doctorCommand(
     log(
       '\nan agent is cooling. If you have fixed the cause — topped up a quota,\n' +
         'logged back in — prove it and the cooldown clears immediately:\n' +
-        '  orch probe <name>\n' +
+        `  ${PLATFORM_SLUG} agent probe <name>\n` +
         'A probe never counts as routing evidence, but it does count as being alive.',
     )
   }
@@ -400,7 +400,7 @@ export async function doctorCommand(
   const counts = runTotals()
   // runTotals().unscored, not runs - scored: that subtraction counts probes,
   // in-flight runs, failures and abandoned rows as debt, and reported 28
-  // owing where `orch pending` — the command that actually tells you what
+  // owing where `bottega score pending` — the command that actually tells you what
   // to do about it — reported none.
   log(
     `\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`,

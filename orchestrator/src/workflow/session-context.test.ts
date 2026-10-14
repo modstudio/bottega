@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -140,7 +140,7 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(plan).toMatchObject({ agreed: true, value: 'review', scope: 'project' })
   const text = slice.text as string
   expect(text).toStartWith(
-    `Autonomy for session-context-agree, resolved now from ${PLATFORM_NAME}; change it with orch config set`,
+    `Autonomy for session-context-agree, resolved now from ${PLATFORM_NAME}; change it with ${PLATFORM_SLUG} machine config set`,
   )
   expect(text).toContain('rulings: user (project)')
   expect(text).toContain('plan: review (project)')

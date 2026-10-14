@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
@@ -20,7 +21,7 @@ import {
 const LOGIN_TOKEN_EXPIRY_MS = 5 * 60 * 1000
 const SESSION_EXPIRY_MS = 12 * 60 * 60 * 1000
 const SESSION_COOKIE = 'hub_session'
-export const LOCAL_LOGIN_MESSAGE = 'Local hub session required; run `hub login`.'
+export const LOCAL_LOGIN_MESSAGE = `Local hub session required; run \`${PLATFORM_SLUG} dashboard login\`.`
 
 type Clock = () => number
 type RandomId = () => string
@@ -117,7 +118,7 @@ export class LocalHubAuth {
 
   mintLoginUrl(port: number): string {
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-      throw new Error('usage: hub login [--port N]')
+      throw new Error(`usage: ${PLATFORM_SLUG} dashboard login [--port N]`)
     }
     ensureHubLoginTokenDirectory(this.env)
     const token = this.randomId()

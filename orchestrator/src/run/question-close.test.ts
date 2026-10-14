@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -84,7 +85,7 @@ test('operator close accepts a terminal question and records the supplied reason
 test('operator close refuses live, answered and blank questions', () => {
   const live = fixture('asking')
   expect(() => closeQuestionByOperator(live.questionId, 'obsolete', live.database)).toThrow(
-    'chain is live; use orch answer 42',
+    `chain is live; use ${PLATFORM_SLUG} question answer 42`,
   )
   const answered = fixture()
   answered.database

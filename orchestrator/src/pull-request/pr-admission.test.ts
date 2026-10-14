@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import {
   createPullRequest,
@@ -192,6 +193,6 @@ test('a missing applicable lens refusal names the lens and dispatch command', ()
   })
   expect(message).toContain('applicable lens craft has not run and been judged')
   expect(message).toContain(
-    'orch do review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft',
+    `${PLATFORM_SLUG} run start review-lens --review DEV-1221-review-lenses --key <task-key> --lens craft`,
   )
 })

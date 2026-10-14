@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { engagedMs } from '../../shared/interval.ts'
 import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
@@ -187,7 +188,7 @@ export function rollUpDays(): number {
   const machine = storedMachineId()
   if (!machine)
     throw new Error(
-      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+      `refusing to write daily totals without a machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
   const d = db()
   const rows = projectRollUpDays(

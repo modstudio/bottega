@@ -8,7 +8,7 @@ export type FailingDefaultCanonEval = {
   agent: string
 }
 
-/** Latest wrong-answer evals for the agent used when `orch canon eval` is unpinned. */
+/** Latest wrong-answer evals for the agent used when `bottega doc canon eval` is unpinned. */
 export function failingDefaultCanonEvals(): FailingDefaultCanonEval[] {
   return db()
     .query(

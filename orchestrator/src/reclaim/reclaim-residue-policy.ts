@@ -1,6 +1,7 @@
 // concern: reclaim-residue-policy
-/** Pure release decisions for residue observed by `orch monitor`. */
+/** Pure release decisions for residue observed by `bottega machine monitor`. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export type ReleaseDecision =
   | { allowed: true; action: string }
   | { allowed: false; refusal: string }
@@ -16,9 +17,16 @@ export function refGuardReleaseDecision(facts: {
   worktreeExists: boolean
   conversationLive: boolean
 }): ReleaseDecision {
-  if (!facts.exists) return refuse('the named ref-guard directory exists', 'run orch monitor again')
+  if (!facts.exists)
+    return refuse(
+      'the named ref-guard directory exists',
+      `run ${PLATFORM_SLUG} machine monitor again`,
+    )
   if (facts.worktreeExists)
-    return refuse('no worktree for the run exists', 'release the worktree with orch close-out')
+    return refuse(
+      'no worktree for the run exists',
+      `release the worktree with ${PLATFORM_SLUG} run close-out`,
+    )
   if (facts.conversationLive)
     return refuse('no run in the conversation is live', 'wait for or stop the live run')
   return allow('remove the ref-guard directory')
@@ -30,13 +38,20 @@ export function sandboxReleaseDecision(facts: {
   conversationTerminal: boolean
   processAlive: boolean
 }): ReleaseDecision {
-  if (!facts.exists) return refuse('the named sandbox directory exists', 'run orch monitor again')
+  if (!facts.exists)
+    return refuse(
+      'the named sandbox directory exists',
+      `run ${PLATFORM_SLUG} machine monitor again`,
+    )
   if (!facts.conversationExists)
     return refuse('the sandbox has a recorded conversation', 'restore or identify its run record')
   if (!facts.conversationTerminal)
     return refuse('every run in the conversation is terminal', 'wait for or stop the live run')
   if (facts.processAlive)
-    return refuse('no process of the conversation is alive', 'run orch reclaim process <run-id>')
+    return refuse(
+      'no process of the conversation is alive',
+      `run ${PLATFORM_SLUG} machine reclaim process <run-id>`,
+    )
   return allow('remove the sandbox directory')
 }
 
@@ -45,7 +60,8 @@ export function retainedRefReleaseDecision(facts: {
   runExists: boolean
   terminal: boolean
 }): ReleaseDecision {
-  if (!facts.exists) return refuse('the retained ref exists', 'run orch monitor again')
+  if (!facts.exists)
+    return refuse('the retained ref exists', `run ${PLATFORM_SLUG} machine monitor again`)
   if (!facts.runExists)
     return refuse('the retained ref has a recorded run', 'restore its run record')
   if (!facts.terminal)
@@ -78,7 +94,10 @@ export function trustReleaseDecision(facts: {
   if (facts.pathExists)
     return refuse('the trusted worktree path is absent', 'release its worktree first')
   if (!facts.headingExists)
-    return refuse('the recorded heading exists in the vendor trust file', 'run orch monitor again')
+    return refuse(
+      'the recorded heading exists in the vendor trust file',
+      `run ${PLATFORM_SLUG} machine monitor again`,
+    )
   return allow('remove exactly the recorded trust section')
 }
 
@@ -100,7 +119,10 @@ export function processReleaseDecision(facts: {
       'check the run id',
     ) as ProcessReleaseDecision
   if (!facts.terminal)
-    return refuse('the run is terminal', 'use orch stop for a live run') as ProcessReleaseDecision
+    return refuse(
+      'the run is terminal',
+      `use ${PLATFORM_SLUG} run stop for a live run`,
+    ) as ProcessReleaseDecision
   if (!facts.alive) return { allowed: true, action: 'record-released' }
   if (facts.signalAllowed === false)
     return refuse(
@@ -122,15 +144,18 @@ export function staleRunReleaseDecision(facts: {
   if (facts.status !== 'stale') {
     const fix =
       facts.status === 'running'
-        ? `run orch stop ${facts.runId}`
+        ? `run ${PLATFORM_SLUG} run stop ${facts.runId}`
         : facts.status === 'asking'
-          ? `run orch abandon ${facts.runId}`
+          ? `run ${PLATFORM_SLUG} run abandon ${facts.runId}`
           : facts.status === 'ok' || facts.status === 'failed' || facts.status === 'stopped'
             ? `the run is already terminal (${facts.status}); no lifecycle verb applies`
             : `no lifecycle verb exists for status ${facts.status ?? '(missing)'}`
     return refuse('the run status is stale', fix)
   }
   if (facts.alreadyExcluded)
-    return refuse('the stale run is not already evidence-excluded', 'run orch monitor again')
+    return refuse(
+      'the stale run is not already evidence-excluded',
+      `run ${PLATFORM_SLUG} machine monitor again`,
+    )
   return allow('mark the stale run evidence-excluded and settled')
 }

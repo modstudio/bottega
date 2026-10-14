@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type {
@@ -7,9 +8,8 @@ import type {
 } from './hosted-reports.ts'
 import { HOSTED_SEND_PAGE_SIZE } from './hosted-reports.ts'
 
-const TEST_REFUSAL =
-  'hub report client refuses a real hosted URL unless a stub is injected in tests'
-const REMEDY = 'Set HUB_HOSTED_URL and run `orch record doctor`.'
+const TEST_REFUSAL = `${PLATFORM_SLUG} report client refuses a real hosted URL unless a stub is injected in tests`
+const REMEDY = `Set HUB_HOSTED_URL and run \`${PLATFORM_SLUG} record doctor\`.`
 type ReportFetch = (input: string, init?: RequestInit) => Promise<Response>
 export type ReportClientOptions = {
   baseUrl?: string
@@ -29,7 +29,7 @@ async function request<T>(
   const token = options.token ?? readRecordSessionToken()
   if (!token)
     throw new Error(
-      'record session is absent. Run `orch record sign-in`, then `orch record doctor`.',
+      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
     )
   let response: Response
   try {

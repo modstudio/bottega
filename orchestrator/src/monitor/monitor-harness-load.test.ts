@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { LoadPlan } from '../canon/canon-load.ts'
 import { harnessLoadCondition, observeProjectHarnessLoad } from './monitor-harness-load.ts'
 
@@ -41,7 +42,7 @@ describe('harness load monitor decision', () => {
       since: null,
       detail:
         'sample claude architect load measured 110 chars; limit 100 chars; largest always-on files: /projects/sample/large.md (90 chars), /projects/sample/small.md (20 chars)',
-      action: 'run orch canon load --cwd /projects/sample --harness claude',
+      action: `run ${PLATFORM_SLUG} doc canon load --cwd /projects/sample --harness claude`,
       affectedProject: 'sample',
     })
   })

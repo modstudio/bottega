@@ -4,6 +4,7 @@
  * database writes beyond docs, runs, routing, transports, or the CLI.
  */
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -120,7 +121,7 @@ function docWarningAddress(doc: { scope: string; subject: string | null; slug: s
 
 function listDocWarnings(flags: DocFlags, presentation: DocPresentation): void {
   const scope = flags.flag('scope')
-  if (!scope) throw new Error('orch doc warnings --scope S [--subject X] [--json]')
+  if (!scope) throw new Error(`${PLATFORM_SLUG} doc warnings --scope S [--subject X] [--json]`)
   const warnings = listedDocFindings(flags, storedDocWarnings).map(
     ({ scope: warningScope, subject, slug, line, message, remedy }) => ({
       address: docWarningAddress({ scope: warningScope, subject, slug }),
@@ -215,7 +216,9 @@ async function semanticSearch(
 ): Promise<void> {
   const query = argv[2]
   if (!query)
-    throw new Error('orch doc search "<query>" [--scope S] [--subject X] [--k N] [--json]')
+    throw new Error(
+      `${PLATFORM_SLUG} doc search "<query>" [--scope S] [--subject X] [--k N] [--json]`,
+    )
   const rawK = flags.flag('k') ?? '5'
   if (!/^\d+$/.test(rawK) || Number(rawK) < 1) throw new Error('--k must be a positive integer')
   const filter = {
@@ -353,14 +356,17 @@ function handledReadDocCommand(
   }
   if (sub !== 'show' && sub !== 'get') return false
   const slug = argv[2]
-  if (!slug || !address.scope) throw new Error(`orch doc ${sub} <slug> --scope S [--subject X]`)
+  if (!slug || !address.scope)
+    throw new Error(`${PLATFORM_SLUG} doc ${sub} <slug> --scope S [--subject X]`)
   const doc = readDoc(
     { scope: address.scope, subject: address.subject, owner: address.owner },
     slug,
     docReadAudience(flags.flag('audience')),
   )
   if (!doc)
-    throw new Error(`no ${address.scope} doc "${slug}"; use orch doc list --scope ${address.scope}`)
+    throw new Error(
+      `no ${address.scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${address.scope}`,
+    )
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
@@ -448,7 +454,7 @@ async function handleSetDocCommand(
   const reason = flag('reason')
   if (!slug || !address.scope || title === undefined || !reason?.trim()) {
     throw new Error(
-      'orch doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)',
+      `${PLATFORM_SLUG} doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)`,
     )
   }
   const canonTree = commandDocWriteTree(address.scope, address.subject, flags, presentation, ports)
@@ -508,7 +514,7 @@ async function handleStatusDocCommand(
   const reason = flags.flag('reason')
   if (!slug || !address.scope || !status || !reason?.trim()) {
     throw new Error(
-      'orch doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]',
+      `${PLATFORM_SLUG} doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]`,
     )
   }
   const result = await setDocStatus(
@@ -545,7 +551,7 @@ function handledRevisionDocCommand(
   const slug = argv[4]
   const revisionId = Number(argv[5])
   if (!scope || rawSubject === undefined || !slug || !revisionId)
-    throw new Error('orch doc revision <scope> <subject|-> <slug> <rev> --json')
+    throw new Error(`${PLATFORM_SLUG} doc revision <scope> <subject|-> <slug> <rev> --json`)
   const subject = rawSubject === '-' ? null : rawSubject
   if (flags.has('user') && (scope !== 'canon' || subject !== null)) {
     throw new Error('--user history address must be canon -')
@@ -600,7 +606,9 @@ export async function docCommand(
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope)
-      throw new Error('orch doc consume <slug> --scope S [--subject X] [--expect REVISION]')
+      throw new Error(
+        `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
+      )
     const result = await consumeDoc(scope, subject, slug, {
       reason: flag('reason') ?? 'consumed by session',
       author: flag('author'),
@@ -622,7 +630,7 @@ export async function docCommand(
     const reason = flag('reason')
     if (!slug || !scope || !reason?.trim())
       throw new Error(
-        'orch doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]',
+        `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
       )
     const canonTree = commandDocWriteTree(scope, subject, flags, presentation, ports)
     const removed = await removeDoc(
@@ -660,10 +668,10 @@ export async function docCommand(
   }
   if (sub === 'export' || sub === 'import') {
     const dir = argv[2]
-    if (!dir) throw new Error(`orch doc ${sub} <dir>`)
+    if (!dir) throw new Error(`${PLATFORM_SLUG} doc ${sub} <dir>`)
     const reason = flag('reason')
     if (sub === 'import' && !reason?.trim())
-      throw new Error('orch doc import <dir> --reason TEXT [--author NAME]')
+      throw new Error(`${PLATFORM_SLUG} doc import <dir> --reason TEXT [--author NAME]`)
     const count =
       sub === 'export'
         ? exportDocs(dir)
@@ -677,7 +685,7 @@ export async function docCommand(
     const slug = argv[4]
     if (!addressScope || rawAddressSubject === undefined || !slug) {
       throw new Error(
-        `orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
+        `${PLATFORM_SLUG} doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`,
       )
     }
     const addressSubject = rawAddressSubject === '-' ? null : rawAddressSubject
@@ -721,7 +729,7 @@ export async function docCommand(
     const reason = flag('reason')
     if (!revisionId || !reason?.trim()) {
       throw new Error(
-        'orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]',
+        `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
       )
     }
     const restored = await restoreDoc(
@@ -758,6 +766,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: orch doc ${sub}. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
+    `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }

@@ -22,7 +22,7 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/
 source "$(dirname "${BASH_SOURCE[0]}")/lib-logrotate.sh"
 start_dated_log "$HOME/Library/Logs/projects-refresh" 30
 
-ORCH="$(cd "$(dirname "$0")/../.." && pwd)/bin/orch"
+ORCH="$(cd "$(dirname "$0")/../.." && pwd)/bin/bottega"
 
 # The registered main checkout of each project, and nothing else.
 INSTANCES=()
@@ -122,9 +122,9 @@ for _index in "${!INSTANCES[@]}"; do
 done
 
 echo
-echo "--- orch metric (Claude tokens per shipped task) ---"
+echo "--- bottega agent metric (Claude tokens per shipped task) ---"
 if [[ -x "$ORCH" ]]; then
-  "$ORCH" metric collect --days 30 2>&1 | sed 's/^/  /'
+  "$ORCH" agent metric collect --days 30 2>&1 | sed 's/^/  /'
 else
   echo "  SKIP: orch is not executable at $ORCH"
 fi

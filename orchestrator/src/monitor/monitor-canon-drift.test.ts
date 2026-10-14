@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { canonDriftCondition } from './monitor-canon-drift.ts'
 
 const project = { name: 'sample' }
@@ -19,8 +20,7 @@ describe('canon drift monitor decision', () => {
       since: null,
       detail:
         'sample landed canon at origin/main (0123456789abcdef) differs from stored canon: .agents/rules/a.md',
-      action:
-        'run orch canon hydrate in a worktree, commit the hydrated paths, and land the branch',
+      action: `run ${PLATFORM_SLUG} doc canon hydrate in a worktree, commit the hydrated paths, and land the branch`,
       affectedProject: 'sample',
     })
   })
@@ -66,7 +66,7 @@ describe('canon drift monitor decision', () => {
       subject: 'sample',
       since: null,
       detail: 'sample: this store holds no project canon while the tree has managed canon paths',
-      action: 'orch canon import --project',
+      action: `${PLATFORM_SLUG} doc canon import --project`,
       affectedProject: 'sample',
     })
   })

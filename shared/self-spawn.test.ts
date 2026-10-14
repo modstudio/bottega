@@ -1,10 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from './brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 import { BOTTEGA_ENTRY_PROTOCOL, type BottegaEntry, bottegaEntryArgv } from './self-spawn.ts'
 
 const entries: BottegaEntry[] = [
+  PLATFORM_SLUG,
   'orch',
   'hub',
   'run-exec',
@@ -16,6 +17,7 @@ const entries: BottegaEntry[] = [
 afterEach(() => registerEmbeddedAssets(null))
 
 test('source entries preserve their current argv prefixes', () => {
+  expect(bottegaEntryArgv(PLATFORM_SLUG)).toEqual([assetPath('bin', PLATFORM_SLUG)])
   expect(bottegaEntryArgv('orch')).toEqual([assetPath('bin', 'orch')])
   expect(bottegaEntryArgv('hub')).toEqual([assetPath('bin', 'hub')])
   expect(bottegaEntryArgv('run-exec')).toEqual([
@@ -23,10 +25,15 @@ test('source entries preserve their current argv prefixes', () => {
     '--no-env-file',
     assetPath('orchestrator', 'src', 'run', 'exec.ts'),
   ])
-  expect(bottegaEntryArgv('ask-server')).toEqual([assetPath('bin', 'orch'), 'ask-server'])
+  expect(bottegaEntryArgv('ask-server')).toEqual([
+    assetPath('bin', PLATFORM_SLUG),
+    'mcp',
+    'ask-server',
+  ])
   expect(bottegaEntryArgv('mcp-reader-proxy')).toEqual([
-    assetPath('bin', 'orch'),
-    'mcp-reader-proxy',
+    assetPath('bin', PLATFORM_SLUG),
+    'mcp',
+    'reader-proxy',
   ])
   expect(bottegaEntryArgv('ask-proxy')).toEqual([
     Bun.which('bun') ?? process.execPath,

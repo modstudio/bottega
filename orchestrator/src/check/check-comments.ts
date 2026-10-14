@@ -1,5 +1,5 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DEFAULT_COMMENT_HISTORY_PHRASES } from '../canon/prose-lint.ts'
-
 export type CommentSource = {
   file: string
   line: number
@@ -45,7 +45,7 @@ export function commentTaskKeyRefusal(
   prefixes: readonly string[] | undefined,
 ): string | null {
   if (!enabled || prefixes?.some((prefix) => prefix.trim())) return null
-  return `checks.commentTaskKeys for ${project} requires keyPrefixes; set them with: orch project set ${project} --settings '{"keyPrefixes":["<PREFIX>"]}'`
+  return `checks.commentTaskKeys for ${project} requires keyPrefixes; set them with: ${PLATFORM_SLUG} project set ${project} --settings '{"keyPrefixes":["<PREFIX>"]}'`
 }
 
 /** Findings are a pure decision over one extracted comment and supplied rules. */

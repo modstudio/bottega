@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -376,9 +377,9 @@ describe('task branch ambiguity refusal', () => {
     expect(message).toContain('git branch -d STAR-5307')
     expect(message).toContain('do not use -D')
     expect(message).toContain('false or stale')
-    expect(message.indexOf('git branch -d')).toBeLessThan(message.indexOf('orch score'))
-    expect(message).toContain('orch score 9648 --void')
-    expect(message).toContain('orch score 9690 --void')
+    expect(message.indexOf('git branch -d')).toBeLessThan(message.indexOf(`${PLATFORM_SLUG} score`))
+    expect(message).toContain(`${PLATFORM_SLUG} score 9648 --void`)
+    expect(message).toContain(`${PLATFORM_SLUG} score 9690 --void`)
   })
 })
 

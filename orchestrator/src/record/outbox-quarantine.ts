@@ -1,8 +1,8 @@
 // concern: outbox-quarantine
 /** Owns local quarantine state and its append-only operator audit. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-
 export type QuarantinedOutboxRow = {
   id: number
   kind: string
@@ -46,7 +46,7 @@ function quarantinedRow(database: Database, rowId: number): OutboxIdentity {
   }
   if (!row.quarantined_at) {
     throw new Error(
-      `outbox row ${rowId} is not quarantined; run \`orch sync\` and use retry or retire only after the row is reported as quarantined`,
+      `outbox row ${rowId} is not quarantined; run \`${PLATFORM_SLUG} record sync\` and use retry or retire only after the row is reported as quarantined`,
     )
   }
   return row
@@ -148,7 +148,7 @@ export function retireOutboxRow(
     const blocked = candidate.quarantined_at ? false : additionalEligibility?.(database, rowId)
     if (!candidate.quarantined_at && !blocked) {
       throw new Error(
-        `outbox row ${rowId} is not quarantined or blocked by a retired parent; run \`orch sync\` and retire only a reported row`,
+        `outbox row ${rowId} is not quarantined or blocked by a retired parent; run \`${PLATFORM_SLUG} record sync\` and retire only a reported row`,
       )
     }
     const row = candidate

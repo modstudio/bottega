@@ -33,5 +33,5 @@ depends on it. The host's identity, network, hardware, measurements, credentials
 and incident history are machine-scoped operator docs, available with:
 
 ```
-orch doc list --scope machine
+bottega doc list --scope machine
 ```

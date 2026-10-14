@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   checkPushedTip,
   createPullRequest,
@@ -21,7 +22,7 @@ export function validateGithubArguments(args: readonly string[]): void {
   const forbidden = args.map(forbiddenGithubFlag).find((flag) => flag !== null)
   if (forbidden) {
     throw new Error(
-      `orch pr create refuses ${forbidden}; it admits the checked-out head into the registered landing branch and owns pull-request output`,
+      `${PLATFORM_SLUG} pr create refuses ${forbidden}; it admits the checked-out head into the registered landing branch and owns pull-request output`,
     )
   }
 }

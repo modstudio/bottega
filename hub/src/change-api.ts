@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
   listHostedChanges,
@@ -131,7 +132,7 @@ function refusedSpaceResponse(space: string) {
   return json(
     {
       error: `record space '${space}' is not among the caller's memberships`,
-      remedy: 'Run `orch record space list` and choose a space where the caller is a member.',
+      remedy: `Run \`${PLATFORM_SLUG} record space list\` and choose a space where the caller is a member.`,
     },
     403,
   )

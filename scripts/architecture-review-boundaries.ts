@@ -9,11 +9,12 @@ export type ReviewBoundarySpec = {
 export const reviewModuleSpecs = [
   {
     file: 'orchestrator/src/review/review-command-cwd.ts',
-    allowed: ['node:fs', 'node:path'],
+    allowed: ['../../../shared/brand.ts', 'node:fs', 'node:path'],
   },
   {
     file: 'orchestrator/src/review/review-record-command.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'bun:sqlite',
       'node:path',
       '../../../shared/state-directory.ts',
@@ -48,6 +49,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-command-dispatcher-boundary',
     file: 'orchestrator/src/review/review-command-dispatcher.ts',
     allowed: [
+      '../../../shared/brand.ts',
       './review-commands.ts',
       './review-finding-amend-command.ts',
       './review-finding-restore.ts',
@@ -62,7 +64,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-finding-amend-command-boundary',
     file: 'orchestrator/src/review/review-finding-amend-command.ts',
-    allowed: ['./review-triage.ts', './review-vocabulary.ts'],
+    allowed: ['../../../shared/brand.ts', './review-triage.ts', './review-vocabulary.ts'],
     reason: 'Keep completed-review amendment command parsing inside the review concern.',
   },
   {
@@ -87,6 +89,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-commands-boundary',
     file: 'orchestrator/src/review/review-commands.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'bun:sqlite',
       'node:fs',
       'zod',
@@ -120,7 +123,13 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-round-budget-boundary',
     file: 'orchestrator/src/review/review-round-budget.ts',
-    allowed: ['bun:sqlite', '../database/db.ts', './review-evidence-sql.ts', './review-yield.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      'bun:sqlite',
+      '../database/db.ts',
+      './review-evidence-sql.ts',
+      './review-yield.ts',
+    ],
     reason: 'Keep review budget policy and reporting inside eligible review evidence.',
   },
   {
@@ -178,6 +187,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-read-boundary',
     file: 'orchestrator/src/review/review-read.ts',
     allowed: [
+      'shared/brand.ts',
       'bun:sqlite',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',

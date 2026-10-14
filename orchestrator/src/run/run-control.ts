@@ -5,6 +5,7 @@
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
@@ -90,8 +91,8 @@ export function continuationInstructionsForFreshRetry(
   const refuse = (turnId: number): never => {
     throw new Error(
       `run ${rootId} continuation turn ${turnId} has no recoverable continue instructions. ` +
-        `Re-send the instructions with orch continue ${rootId} --file <spec>, ` +
-        `or pass orch retry ${turnId} for that turn directly.`,
+        `Re-send the instructions with ${PLATFORM_SLUG} run continue ${rootId} --file <spec>, ` +
+        `or pass ${PLATFORM_SLUG} run retry ${turnId} for that turn directly.`,
     )
   }
   for (const turn of turns) {
@@ -200,9 +201,9 @@ export async function follow(
             '\n' +
             open.map((q) => `  · ${q.question}`).join('\n') +
             `\n\n  ${outcome.line}` +
-            `\n  orch inbox              the questions in full` +
-            `\n  orch answer ${row.parent_run_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
-            `\n  orch diff ${row.parent_run_id ?? chain.finalId}          what it changed before it asked`,
+            `\n  ${PLATFORM_SLUG} question inbox              the questions in full` +
+            `\n  ${PLATFORM_SLUG} question answer ${row.parent_run_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
+            `\n  ${PLATFORM_SLUG} run diff ${row.parent_run_id ?? chain.finalId}          what it changed before it asked`,
         )
         return row.status
       }
@@ -233,7 +234,7 @@ export async function follow(
       // working; saying where to look for it is more use than destroying it.
       console.error(
         `— run ${id} still going after ${Math.round(RUN_FOLLOW_TIMEOUT_MS / 60_000)}m.` +
-          ` It is detached and will finish on its own:  orch run ${id}`,
+          ` It is detached and will finish on its own:  ${PLATFORM_SLUG} run show ${id}`,
       )
       process.exit(2)
     }
@@ -274,7 +275,7 @@ export function refuseEscapedChain(id: number): void {
   throw new Error(
     `run ${id} is ${kind} (${recovery})\n` +
       'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared\n' +
-      `cleared by: orch confinement clear ${id} --writer TEXT --note TEXT`,
+      `cleared by: ${PLATFORM_SLUG} review confinement clear ${id} --writer TEXT --note TEXT`,
   )
 }
 
@@ -467,7 +468,7 @@ export function refuseHeldContinuationBranch(
   throw new Error(
     `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
       `release it with git worktree remove ${holdingPath}, ` +
-      `or orch tree remove ${holdingPath} if it is an orch-opened tree`,
+      `or ${PLATFORM_SLUG} tree remove ${holdingPath} if it is an orch-opened tree`,
   )
 }
 
@@ -563,7 +564,9 @@ export async function continueRun(
   // with an open question guesses — the single thing this design exists to
   // prevent.
   if (open.n)
-    throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
+    throw new Error(
+      `run ${id} is waiting on ${open.n} question(s): ${PLATFORM_SLUG} question answer ${id} ...`,
+    )
   const continuationMessage = producedContinuationMessage(message, produceMessage)
   const { latest, nextTurn } = continuationTurn(
     id,
@@ -714,8 +717,8 @@ export async function reportContinuedRun(
     if (!flags.quiet) {
       console.error(
         `\n— ${jobName} runs detached; a foreground one dies with its shell.` +
-          `\n  orch wait ${childId}      then:  orch result ${childId}` +
-          `\n  orch inbox          if it stops to ask` +
+          `\n  ${PLATFORM_SLUG} run wait ${childId}      then:  ${PLATFORM_SLUG} run result ${childId}` +
+          `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
           `\n  --follow            to watch it here instead`,
       )
     }

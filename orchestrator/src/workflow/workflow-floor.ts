@@ -1,6 +1,8 @@
 // concern: workflows
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
 
@@ -15,9 +17,8 @@ export type EnforcementMode = 'note-only' | 'floors'
 export type CommandEvidence = 'gate'
 
 export const floorGuidance = {
-  ruling:
-    'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`; where you rule the step yourself, pass `self_ruling` with `self_ruling_basis` (or `--self-ruling <text>` with `--basis <text>`) on the closing call',
-  'command-exit': 'run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`',
+  ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
+  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
     'record or attach the artifact and pass `--artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
@@ -25,7 +26,7 @@ export const floorGuidance = {
 
 export function evidenceGuidance(kind: FloorKind, operatorRuling: boolean): string {
   if (kind === 'ruling' && operatorRuling)
-    return 'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`'
+    return `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\``
   return floorGuidance[kind]
 }
 
@@ -324,10 +325,10 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
 
 function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   if (floor.kind === 'ruling' && floor.operatorRuling)
-    return 'floor ruling is unmet: no operator answer on this step; record the question with `orch workflow await`; the operator answers it'
+    return `floor ruling is unmet: no operator answer on this step; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate') {
     const commit = evidence.tree?.commit ?? '<current tree commit>'
-    return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`orch gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
+    return `floor command-exit is unmet: no passing gate record for ${evidence.tree?.project ?? 'this project'} commit ${commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${commit}, then pass \`--gate <gate execution id>\``
   }
   const existing =
     `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
@@ -350,8 +351,7 @@ function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {
 function commandExitBindingRefusal(evidence: ValidatedEvidence): string | null {
   const exec = evidence.exec
   if (!exec) return null
-  const remedy =
-    'run the command again with `orch workflow exec -- <command>` in this session after the step started'
+  const remedy = `run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`
   if (!exec.sessionMatches && !exec.sessionAdoptedCursor)
     return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
   if (!exec.createdAfterStepActivation)
@@ -366,7 +366,7 @@ function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEviden
     evidence.ruling.boundToCursor &&
     evidence.ruling.boundToStep
     ? null
-    : 'floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with `orch workflow await`; the operator answers it'
+    : `floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
 }
 
 function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
@@ -399,7 +399,7 @@ function refuseSatisfy(satisfy: ValidatedSatisfy): FloorDecision {
   if (!satisfy.found)
     return {
       action: 'refuse',
-      message: `obligation ${satisfy.id} does not exist; pass --satisfies <obligation id> from orch workflow listing`,
+      message: `obligation ${satisfy.id} does not exist; pass --satisfies <obligation id> from ${PLATFORM_SLUG} workflow listing`,
     }
   if (!satisfy.cursorMatches)
     return {

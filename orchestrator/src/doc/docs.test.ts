@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { listDocRevisions, readDocRevision, setDoc } from './docs.ts'
 
 test('an addressed revision read refuses an id from another document with the history remedy', async () => {
@@ -23,7 +24,7 @@ test('an addressed revision read refuses an id from another document with the hi
   const id = listDocRevisions('global', null, 'revision-other')[0]!.id
 
   expect(() => readDocRevision('global', null, 'revision-owner', id)).toThrow(
-    `revision ${id} does not belong to global/_/revision-owner; run orch doc history global - revision-owner`,
+    `revision ${id} does not belong to global/_/revision-owner; run ${PLATFORM_SLUG} doc history global - revision-owner`,
   )
 })
 

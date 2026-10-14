@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
@@ -10,7 +11,6 @@ import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
-
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
@@ -200,7 +200,7 @@ function scoreHint(
 ): string {
   const target = parent ?? id
   return (
-    `orch score ${target} <none|partial|full> [wrong|mixed|right]` +
+    `${PLATFORM_SLUG} score ${target} <none|partial|full> [wrong|mixed|right]` +
     scoreSuffix(jobName) +
     ' --note "..."' +
     (parent ? `   # the whole conversation, not turn ${id}` : '')
@@ -348,7 +348,7 @@ export function releasedWritingTreeNote(
   runId: number,
 ): string {
   return facts.writingRun && facts.worktree === null
-    ? `\n  open tree:  orch tree open ${runId}`
+    ? `\n  open tree:  ${PLATFORM_SLUG} tree open ${runId}`
     : ''
 }
 
@@ -481,11 +481,11 @@ export function collectResult(
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
     throw new Error(
-      `unrecognized argument: ${unknown}\nworking form: orch result <run-id> [--quiet] [--artifacts]`,
+      `unrecognized argument: ${unknown}\nworking form: ${PLATFORM_SLUG} run result <run-id> [--quiet] [--artifacts]`,
     )
   }
   const id = Number(argv[1])
-  if (!id) throw new Error('orch result <run-id>')
+  if (!id) throw new Error(`${PLATFORM_SLUG} run result <run-id>`)
   const chain = resolveFailover(database, id)
   const row = database
     .query(
@@ -572,10 +572,10 @@ export function collectResult(
   if (asking) {
     presentation.error(
       (asking.state === 'open'
-        ? `\n— run ${id} asking — waiting on a ruling: orch answer ${asking.rootId} ...`
+        ? `\n— run ${id} asking — waiting on a ruling: ${PLATFORM_SLUG} question answer ${asking.rootId} ...`
         : asking.state === 'running'
           ? `\n— run ${id} asking — resumed as run ${asking.runningId}, which is still running`
-          : `\n— run ${id} asking — recoverable: orch continue ${asking.rootId}`) +
+          : `\n— run ${id} asking — recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`) +
         baseNote +
         mcpNote(row) +
         filedNotesNote(row.id) +
@@ -684,13 +684,13 @@ export async function collectWaitForRuns(
             ? {
                 terminal: true,
                 ok: true,
-                line: `asking - orch inbox (or orch answer ${asking.rootId})`,
+                line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${asking.rootId})`,
               }
             : asking?.state === 'recoverable'
               ? {
                   terminal: true,
                   ok: true,
-                  line: `asking - recoverable: orch continue ${asking.rootId}`,
+                  line: `asking - recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`,
                 }
               : outcomeOf(row)
       return { requestedId, row, chain, outcome }
@@ -745,20 +745,21 @@ export async function collectWait(
       if (value === undefined || value.startsWith('--')) {
         throw new Error(
           'argument --timeout needs a value\n' +
-            'working form: orch wait <run-id>... [--timeout SECONDS]',
+            `working form: ${PLATFORM_SLUG} run wait <run-id>... [--timeout SECONDS]`,
         )
       }
       i++
       continue
     }
     throw new Error(
-      `unrecognized argument: ${arg}\n` + 'working form: orch wait <run-id>... [--timeout SECONDS]',
+      `unrecognized argument: ${arg}\n` +
+        `working form: ${PLATFORM_SLUG} run wait <run-id>... [--timeout SECONDS]`,
     )
   }
   const ids = rest
     .filter((x, i) => /^\d+$/.test(x) && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
     .map(Number)
-  if (!ids.length) throw new Error('orch wait <run-id>...')
+  if (!ids.length) throw new Error(`${PLATFORM_SLUG} run wait <run-id>...`)
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = timeoutAt >= 0 ? Number(argv[timeoutAt + 1]) * 1000 : COLLECT_WAIT_DEFAULT_MS
   const result = await collectWaitForRuns(database, ids, {

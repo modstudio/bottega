@@ -6,6 +6,7 @@ export const releaseModules = [
   {
     file: 'orchestrator/src/release/release-service.ts',
     allowed: [
+      'shared/brand.ts',
       'node:fs',
       'node:path',
       'orchestrator/src/database/db.ts',
@@ -24,6 +25,7 @@ export const releaseModules = [
   {
     file: 'orchestrator/src/release/release-ledger.ts',
     allowed: [
+      'shared/brand.ts',
       'bun:sqlite',
       'node:os',
       'shared/record/schema.ts',

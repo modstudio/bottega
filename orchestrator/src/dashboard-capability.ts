@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { lstatSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV,
   DASHBOARD_CAPABILITY_TOKEN_ENV,
@@ -10,14 +11,24 @@ import { pidAlive } from '../../shared/process-identity.ts'
 
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
-  return words.some(
-    (word, index) =>
+  return words.some((word, index) => {
+    const next = words[index + 1]
+    const after = words[index + 2]
+    if (
+      (word === PLATFORM_SLUG || word.endsWith(`/bin/${PLATFORM_SLUG}`)) &&
+      next === 'dashboard' &&
+      after === 'start'
+    ) {
+      return true
+    }
+    return (
       (word === 'hub' ||
         word.endsWith('/bin/hub') ||
         word === 'hub/src/cli.ts' ||
         word.endsWith('/hub/src/cli.ts')) &&
-      words[index + 1] === 'serve',
-  )
+      next === 'serve'
+    )
+  })
 }
 
 /** Verify that this process was launched by the live, same-user hub dashboard. */

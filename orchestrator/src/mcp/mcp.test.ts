@@ -7,6 +7,7 @@ import {
 } from '@modelcontextprotocol/client'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
@@ -173,7 +174,7 @@ describe('orch MCP', () => {
         const result = await client.callTool(request)
         expect(result.isError).toBe(true)
         expect((result.content as { text: string }[])[0]!.text).toContain(
-          'use orch config set autonomy.ship-to <value>',
+          `use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
         )
       }
     } finally {
@@ -441,13 +442,13 @@ describe('orch MCP', () => {
 
     expect(fileIssueTaskKey('DEV-1270\n', fileIssueProject)).toBe('DEV-1270')
     expect(() => fileIssueTaskKey('DEV-1270\n', reportingProject)).toThrow(
-      'hub task new for file_issue did not return a valid task key; returned "DEV-1270"',
+      `${PLATFORM_SLUG} task new for file_issue did not return a valid task key; returned "DEV-1270"`,
     )
   })
 
   test('file_issue refuses a notice line followed by a task key', () => {
     expect(() => fileIssueTaskKey('hosted change sent\nDEV-1270\n', fileIssueProject)).toThrow(
-      'hub task new for file_issue did not return a valid task key; returned "hosted change sent\\nDEV-1270"',
+      `${PLATFORM_SLUG} task new for file_issue did not return a valid task key; returned "hosted change sent\\nDEV-1270"`,
     )
   })
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -145,7 +146,7 @@ test('a recreated released tree path survives a second close-out', () => {
       `DEV-647-orch-${fixture.id} is kept so this run's commits stay recoverable until the task lands`,
     )
     expect(first.detail).toContain(
-      `prune after landing: orch branches prune --project close-out-${fixture.id} --key DEV-647`,
+      `prune after landing: ${PLATFORM_SLUG} tree branch prune --project close-out-${fixture.id} --key DEV-647`,
     )
     expect(existsSync(fixture.tree)).toBe(false)
     expect(db().query('SELECT worktree FROM run WHERE id=?').get(fixture.id)).toEqual({

@@ -20,7 +20,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-lint-boundary',
     file: `${source}settings-lint.ts`,
-    allowed: ['shared/ratchet.ts', `${source}settings.ts`],
+    allowed: ['shared/brand.ts', 'shared/ratchet.ts', `${source}settings.ts`],
     typeOnlyAllowed: [],
     reason: 'Keep settings lint decisions pure.',
   },
@@ -49,6 +49,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     name: 'settings-apply-commands-boundary',
     file: `${source}settings-apply-commands.ts`,
     allowed: [
+      'shared/brand.ts',
       'node:fs',
       'shared/git.ts',
       'shared/install-root.ts',
@@ -73,6 +74,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     name: 'settings-commands-boundary',
     file: `${source}settings-commands.ts`,
     allowed: [
+      'shared/brand.ts',
       'shared/ratchet.ts',
       'shared/settings-summary.ts',
       'shared/install-root.ts',
@@ -123,6 +125,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     name: 'settings-machine-apply-boundary',
     file: `${source}settings-machine-apply.ts`,
     allowed: [
+      'shared/brand.ts',
       'bun:sqlite',
       'node:fs',
       'node:path',
@@ -151,7 +154,12 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-machine-hooks-boundary',
     file: `${source}settings-machine-hooks.ts`,
-    allowed: ['node:path', 'orchestrator/src/board/board-delivery.ts', `${source}settings.ts`],
+    allowed: [
+      'shared/brand.ts',
+      'node:path',
+      'orchestrator/src/board/board-delivery.ts',
+      `${source}settings.ts`,
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep product-owned machine hook registration independent of stores and CLI grammar.',
   },

@@ -249,7 +249,7 @@ test('a refused board probe names the missing routes and writes no adoption stat
   const action = adoptHostedBoard({ client })
 
   await expect(action).rejects.toThrow(
-    'the deployed record API did not serve the board routes: record API 404; deploy the record API from a commit that includes the board routes, then rerun orch board adopt',
+    `the deployed record API did not serve the board routes: record API 404; deploy the record API from a commit that includes the board routes, then rerun ${PLATFORM_SLUG} board adopt`,
   )
   expect(db().query('SELECT count(*) count FROM board_hosted_adoption_ledger').get()).toEqual({
     count: 0,

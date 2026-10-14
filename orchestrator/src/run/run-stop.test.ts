@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -325,7 +326,7 @@ test('abandon loses cleanly to a concurrent continuation claim', async () => {
     },
   })
   expect(result.err).toContain(`${turn} turn 2 running`)
-  expect(result.err).toContain(`run orch stop ${root}`)
+  expect(result.err).toContain(`run ${PLATFORM_SLUG} run stop ${root}`)
   expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'asking' })
 })
 

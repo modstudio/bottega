@@ -40,7 +40,11 @@ export async function mcpCommand(
     throw new Error(`unknown mcp verb "${verb}"`)
   } else if (config)
     presentation.log(
-      JSON.stringify({ mcpServers: { orch: { command: binary, args: ['mcp'] } } }, null, 2),
+      JSON.stringify(
+        { mcpServers: { orch: { command: binary, args: ['mcp', 'serve'] } } },
+        null,
+        2,
+      ),
     )
   else await serveDocsMcp()
 }

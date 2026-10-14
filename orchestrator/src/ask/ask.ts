@@ -2,7 +2,7 @@
  * The live escalation channel: a worker asks a question WITHOUT ending its turn.
  *
  * The durable protocol already works — a worker returns `status: blocked`, the
- * architect rules, and `orch answer` resumes its session. That is the right
+ * architect rules, and `bottega question answer` resumes its session. That is the right
  * fallback and it is what everything degrades to. But it is coarse: the worker
  * stops, its turn ends, and it comes back through a resume. For a question that
  * takes the architect ten seconds to answer, ending a turn to ask it is a lot
@@ -361,7 +361,7 @@ async function requestGate(
 /**
  * Record a question and wait for the architect to rule on it.
  *
- * The row is written before the wait so the question is visible in `orch inbox`
+ * The row is written before the wait so the question is visible in `bottega question inbox`
  * immediately — a worker blocked on a question nobody can see is the failure
  * this whole channel exists to remove, and it would look exactly like a hung
  * agent.
@@ -394,7 +394,7 @@ export async function ask(o: {
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query('SELECT answer FROM question WHERE id = ? AND answered_at IS NOT NULL')
 
-  // BOUNDED BY CONSTRUCTION, like `orch wait`. An unbounded poll against a
+  // BOUNDED BY CONSTRUCTION, like `bottega run wait`. An unbounded poll against a
   // question nobody will ever answer is the failure this is meant to remove
   // rather than relocate.
   for (;;) {

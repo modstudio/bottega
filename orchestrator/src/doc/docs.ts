@@ -4,6 +4,7 @@
  * Subject-bearing facts name one subject; resume briefs use the project and epic slug.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
@@ -461,7 +462,7 @@ export async function setDocStatus(
   owner: string | null = null,
 ): Promise<Doc> {
   const current = getDoc(scope, subject, slug, owner)
-  if (!current) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
+  if (!current) throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
     scope: current.scope,
     subject: current.subject,
@@ -873,7 +874,7 @@ export function readDocRevision(
     revision.slug !== slug
   )
     throw new Error(
-      `revision ${id} does not belong to ${scope}/${subject ?? '_'}/${slug}; run orch doc history ${scope} ${subject ?? '-'} ${slug}`,
+      `revision ${id} does not belong to ${scope}/${subject ?? '_'}/${slug}; run ${PLATFORM_SLUG} doc history ${scope} ${subject ?? '-'} ${slug}`,
     )
   return audience
     ? docForAudience(revision, audience, `${scope}/${subject ?? '_'}/${slug} revision ${id}`)

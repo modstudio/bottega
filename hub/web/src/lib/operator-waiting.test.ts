@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { waitingByRun, waitingInboxEntries } from './operator-waiting.ts'
 
 test('maps only the exact active run named by a waiting question', () => {
@@ -18,7 +18,7 @@ test('maps only the exact active run named by a waiting question', () => {
     why: null,
     waiting_since: '2026-09-24T12:00:00.000Z',
     episode: 'episode-1',
-    answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
+    answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
   }
   const workflow = {
     ...question,

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
   BOARD_PUSH_REFRESH_SECONDS,
@@ -31,10 +32,10 @@ const profileHooks = {
     {
       matcher: 'Bash',
       hooks: [
-        handler('heartbeat-remind.py', { if: 'Bash(orch do:*)' }),
-        handler('heartbeat-remind.py', { if: `Bash(${OLD_ROOT}/bin/orch do:*)` }),
-        handler('heartbeat-remind.py', { if: 'Bash(orch land:*)' }),
-        handler('heartbeat-remind.py', { if: `Bash(${OLD_ROOT}/bin/orch land:*)` }),
+        handler('heartbeat-remind.py', { if: `Bash(${PLATFORM_SLUG} run start:*)` }),
+        handler('heartbeat-remind.py', {
+          if: `Bash(${OLD_ROOT}/bin/${PLATFORM_SLUG} run start:*)`,
+        }),
       ],
     },
   ],
@@ -63,10 +64,10 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(16)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(14)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
-  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(4)
+  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(2)
 })
 
 test('unrelated profile handlers survive unchanged and in place', () => {
@@ -119,7 +120,7 @@ test('superseded handlers name exactly the removed profile entries', () => {
     { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
     { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
-    ...Array.from({ length: 4 }, () => ({
+    ...Array.from({ length: 2 }, () => ({
       event: 'PostToolUse',
       matcher: 'Bash',
       script: 'heartbeat-remind.py' as const,

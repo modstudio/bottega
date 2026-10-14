@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import type { RecordFetch } from '../../record-client.ts'
 import { recordRouter } from './record.ts'
 
@@ -62,13 +63,16 @@ describe('hosted project releases procedure', () => {
   test('surfaces a record failure instead of returning empty release readings', async () => {
     const api = caller(async () =>
       Response.json(
-        { error: 'record authentication required', remedy: 'run `orch record login`' },
+        {
+          error: 'record authentication required',
+          remedy: `run \`${PLATFORM_SLUG} record login\``,
+        },
         { status: 401 },
       ),
     )
     await expect(api.projectReleases({ project: 'project-one' })).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
-      message: 'run `orch record login`',
+      message: `run \`${PLATFORM_SLUG} record login\``,
     })
   })
 })

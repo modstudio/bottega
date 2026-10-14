@@ -49,7 +49,7 @@ export const healthPayload = (days?: number) => harnessHealth(days)
 /**
  * What is stopping agents doing their work, counted.
  *
- * The counterpart to `orch inbox`: that raises decisions only the architect
+ * The counterpart to `bottega question inbox`: that raises decisions only the architect
  * can make, this raises conditions only the ENVIRONMENT can fix. Both were
  * arriving already and neither was visible — a blocker turns up alongside a
  * run that otherwise succeeded, so nothing about the run looked wrong.
@@ -68,7 +68,7 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
   /**
    * PUBLISHED, because hub cannot import this concern or open orch.db.
    *
-   * The same contract `orch state` and `orch project list --json` already
+   * The same contract `bottega run state` and `bottega project list --json` already
    * serve: what another concern needs is emitted here rather than reached
    * for. Field names are the query's, so a reader of this command and a
    * reader of the table see the same words.

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -496,7 +497,7 @@ test('emits manual MCP instructions for an installed harness without CLI support
   expect(plan.questions).toEqual([])
   expect(plan.notices[0]).toMatchObject({
     message: expect.stringContaining('goose'),
-    fix: expect.stringContaining('orch mcp --config'),
+    fix: expect.stringContaining(`${PLATFORM_SLUG} mcp serve --config`),
   })
 })
 
@@ -531,7 +532,7 @@ test('notices when an enabled built-in agent harness is absent', () => {
   expect(plan.notices).toEqual([
     {
       message: 'codex agent is enabled but the codex harness is not installed',
-      fix: 'install codex, or orch agent set codex --enabled false --reason "codex is not installed on this machine"',
+      fix: `install codex, or ${PLATFORM_SLUG} agent show set codex --enabled false --reason "codex is not installed on this machine"`,
     },
   ])
 })
@@ -546,7 +547,7 @@ test('notices when an enabled built-in agent harness is not signed in', () => {
   expect(plan.notices).toEqual([
     {
       message: 'grok agent is enabled but the grok harness is not signed in',
-      fix: 'sign in to grok, or orch agent set grok --enabled false --reason "grok is not signed in on this machine"',
+      fix: `sign in to grok, or ${PLATFORM_SLUG} agent show set grok --enabled false --reason "grok is not signed in on this machine"`,
     },
   ])
 })
@@ -561,7 +562,7 @@ test('notices separately when an enabled built-in harness sign-in state is unkno
   expect(plan.notices).toEqual([
     {
       message: 'the sign-in state of codex could not be established',
-      fix: 'check codex sign-in and re-run orch setup plan',
+      fix: `check codex sign-in and re-run ${PLATFORM_SLUG} machine setup plan`,
     },
   ])
 })
@@ -586,7 +587,7 @@ test('notices when a ready built-in harness has a disabled agent', () => {
   expect(plan.notices).toEqual([
     {
       message: 'codex harness is installed and signed in but the codex agent is disabled',
-      fix: 'orch agent set codex --enabled true',
+      fix: `${PLATFORM_SLUG} agent show set codex --enabled true`,
     },
   ])
 })
@@ -612,7 +613,7 @@ test('notices when an installed signed-in built-in has not passed its probe', ()
     {
       message:
         'codex harness is installed and signed in but the codex agent cannot take repository work until it is probed',
-      fix: 'orch agent probe codex',
+      fix: `${PLATFORM_SLUG} agent show probe codex`,
     },
   ])
 })
@@ -632,7 +633,7 @@ test('notices an installed unregistered non-built-in harness without guessing a 
   expect(plan.notices).toEqual([
     {
       message: 'goose harness is installed but unregistered',
-      fix: 'orch agent add <name> --harness goose --backend <backend> --model <model>',
+      fix: `${PLATFORM_SLUG} agent show add <name> --harness goose --backend <backend> --model <model>`,
     },
   ])
 })

@@ -1,6 +1,7 @@
 // concern: ruling-overturn
 /** Records withdrawal of an answered question. Must not know CLI grammar or dispatch. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -59,7 +60,9 @@ export function overturnRuling(input: {
     )
     .get(input.questionId) as OverturnRow | null
   if (!row)
-    throw new Error(`no question ${input.questionId}; inspect question ids with orch inbox --all`)
+    throw new Error(
+      `no question ${input.questionId}; inspect question ids with ${PLATFORM_SLUG} question inbox --all`,
+    )
   let authority = row.run_id === null ? null : runMutationActor(row.run_id)
   const actor = sessionId()
   const denied = refusal(row)

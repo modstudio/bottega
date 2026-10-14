@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDoc, importDocs, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import {
@@ -124,7 +125,7 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: 'prove refusal',
       }),
-    ).rejects.toThrow(/bound to a hosted record[\s\S]*orch record doctor/)
+    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record doctor`))
     expect(getDoc('global', null, 'bound-refusal')).toBeNull()
   })
 

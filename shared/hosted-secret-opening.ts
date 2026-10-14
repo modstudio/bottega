@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigSecret, DataKey } from './config-client.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
@@ -30,7 +31,9 @@ export async function hostedIdentity(
   pinned = readHostedConfigIdentity(),
 ): Promise<{ spaceId: string; userId: string }> {
   if (!pinned)
-    throw new Error('hosted config machine is not initialized; run `orch config machine init`')
+    throw new Error(
+      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
+    )
   const current = await client.whoami()
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   if (current.activeSpaceId !== pinned.spaceId)

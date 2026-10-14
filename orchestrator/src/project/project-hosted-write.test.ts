@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:te
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -88,7 +89,9 @@ test('a bound store refuses before adding a local row and names record doctor', 
   rememberHostedRecord()
   const path = mkdtempSync(join(tmpdir(), 'orch-bound-project-'))
   await expect(runProject(['project', 'add', path], { name: 'bound-refusal' })).rejects.toThrow(
-    /bound to a hosted record[\s\S]*ORCH_RECORD_API_URL[\s\S]*orch record doctor/,
+    new RegExp(
+      `bound to a hosted record[\\s\\S]*ORCH_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record doctor`,
+    ),
   )
   expect(projectByName('bound-refusal')).toBeNull()
 })

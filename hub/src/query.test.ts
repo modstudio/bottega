@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -50,10 +51,10 @@ test('day writers refuse to mint a missing machine identity', async () => {
   try {
     process.env[CONFIG_HOME_ENV] = join(root, 'config')
     expect(() => rollUpDays()).toThrow(
-      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+      `refusing to write daily totals without a machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
     await expect(ingestGit('2026-10-01')).rejects.toThrow(
-      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+      `refusing to write daily totals without a machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
   } finally {
     if (prior === undefined) delete process.env[CONFIG_HOME_ENV]

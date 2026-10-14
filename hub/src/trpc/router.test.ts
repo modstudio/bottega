@@ -556,8 +556,7 @@ describe('doc router', () => {
   })
 
   test('set and remove classify stale revision refusals as conflicts', async () => {
-    const refusal =
-      'orch doc exited 1: refusing stale document update: expected revision revision-1, current revision revision-2'
+    const refusal = `${PLATFORM_SLUG} doc exited 1: refusing stale document update: expected revision revision-1, current revision revision-2`
     const conflict = {
       code: 'CONFLICT',
       message:
@@ -588,8 +587,8 @@ describe('doc router', () => {
     ).rejects.toMatchObject(conflict)
   })
 
-  test('other doc write errors remain bad requests with orch context removed', async () => {
-    docSet.mockRejectedValueOnce(new Error('orch doc exited 1: write failed'))
+  test(`other doc write errors remain bad requests with ${PLATFORM_SLUG} agent context removed`, async () => {
+    docSet.mockRejectedValueOnce(new Error(`${PLATFORM_SLUG} doc exited 1: write failed`))
     await expect(
       caller.doc.set({
         scope: 'global',
@@ -657,7 +656,9 @@ describe('doc router', () => {
   })
 
   test("orch errors surface as BAD_REQUEST with orch's message", async () => {
-    docGet.mockRejectedValueOnce(new Error('orch doc exited 1: invalid slug; use 1-64 lowercase'))
+    docGet.mockRejectedValueOnce(
+      new Error(`${PLATFORM_SLUG} doc exited 1: invalid slug; use 1-64 lowercase`),
+    )
     let thrown: unknown
     try {
       await caller.doc.get({ scope: 'global', subject: null, slug: 'Bad' })
@@ -1045,21 +1046,23 @@ describe('managed context', () => {
 
   test('maps a missing signed-in record session to a refusal instead of rows', async () => {
     userDocList.mockImplementationOnce(async () => {
-      throw new Error('no signed-in record session; cleared by: run `orch record login`')
+      throw new Error(
+        `no signed-in record session; cleared by: run \`${PLATFORM_SLUG} record login\``,
+      )
     })
     await expect(caller.context.userCanon.list()).rejects.toMatchObject({
       code: 'BAD_REQUEST',
-      message: 'no signed-in record session; cleared by: run `orch record login`',
+      message: `no signed-in record session; cleared by: run \`${PLATFORM_SLUG} record login\``,
     })
   })
 
   test('preserves a settings-check refusal verbatim', async () => {
     settingsCheck.mockImplementationOnce(async () => {
-      throw new Error('no signed-in record session; run orch record login')
+      throw new Error(`no signed-in record session; run ${PLATFORM_SLUG} record login`)
     })
     await expect(caller.context.settings.get({ user: true })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
-      message: 'no signed-in record session; run orch record login',
+      message: `no signed-in record session; run ${PLATFORM_SLUG} record login`,
     })
   })
 })

@@ -1,6 +1,7 @@
 // concern: board-watch
 /** Holds the hosted board stream and pulls the cache. Must not know SQL or the hosted stream server. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installationBuildId } from '../../../shared/install-root.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
@@ -24,8 +25,7 @@ import { type BoardStreamFrame, createBoardStreamParser } from './board-watch-fr
 
 const BOARD_WATCH_REFRESH_BUDGET_MS = 30_000
 export const BOARD_WATCH_ERROR_DETAIL_MAX = 240
-export const BOARD_WATCH_UNCONFIGURED_REMEDY =
-  'ORCH_RECORD_API_URL is not set; cleared by: orch record doctor'
+export const BOARD_WATCH_UNCONFIGURED_REMEDY = `ORCH_RECORD_API_URL is not set; cleared by: ${PLATFORM_SLUG} record doctor`
 
 export type BoardWatchOpen = RecordBoardStreamOpen
 

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { latestArchitectRead } from '../review/review-read.ts'
@@ -29,7 +30,7 @@ test('since-read refuses a missing read with both remedies', () => {
     kind: 'refusal',
     message:
       'no architect read is recorded for branch DEV-1257-work\n' +
-      'cleared by: record one with orch review read --note <note>, or run orch diff 1257 for the whole change',
+      `cleared by: record one with ${PLATFORM_SLUG} review read --note <note>, or run ${PLATFORM_SLUG} run diff 1257 for the whole change`,
   })
 })
 
@@ -50,7 +51,7 @@ test('since-read refuses a rewritten branch and names both commits', () => {
   if (decision.kind === 'refusal') {
     expect(decision.message).toContain('read-tip')
     expect(decision.message).toContain('rewritten-tip')
-    expect(decision.message).toContain('cleared by: run orch diff 1257')
+    expect(decision.message).toContain(`cleared by: run ${PLATFORM_SLUG} run diff 1257`)
   }
 })
 

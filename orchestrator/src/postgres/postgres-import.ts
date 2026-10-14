@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hostedProjectColumns } from '../record/record-project-columns.ts'
 import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
@@ -109,7 +110,9 @@ function sequenceImportDecision(
 export async function importProjects(options: ProjectImportOptions): Promise<ProjectImportResult> {
   if (!options.spaceId) throw new Error('spaceId is required')
   if (!options.principal?.userId)
-    throw new Error('a signed-in user is required; run `orch record sign-in`, then retry')
+    throw new Error(
+      `a signed-in user is required; run \`${PLATFORM_SLUG} record sign-in\`, then retry`,
+    )
   const userId = options.principal.userId
   const source = readSources(options.orchDb, options.hubDb)
   const postgres = new SQL(options.databaseUrl)

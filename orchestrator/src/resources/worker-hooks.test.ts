@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installWorkerHook, recognizeWorkerHook } from './worker-hooks.ts'
 
 const CURRENT_COMMIT_MSG =
@@ -116,7 +117,7 @@ test('worker hook installer refuses an unrecognized hook with both remedies', ()
 
     expect(() => installWorkerHook(hookDir, 'commit-msg', CURRENT_COMMIT_MSG)).toThrow(
       `refusing to replace worker commit-msg hook ${installed}: it was not written by orch; ` +
-        `remove ${installed} or run orch discard <run> for the chain`,
+        `remove ${installed} or run ${PLATFORM_SLUG} run discard <run> for the chain`,
     )
   } finally {
     rmSync(hookDir, { recursive: true, force: true })

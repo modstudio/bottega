@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
@@ -16,8 +17,7 @@ import {
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
 
-const TEST_REFUSAL =
-  'hub report API refuses real identity and database clients unless stubs are injected in tests'
+const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
 type Config = { recordApiUrl: string; recordDatabaseUrl: string }
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
 const json = (value: unknown, status = 200) => Response.json(value, { status })

@@ -2,6 +2,7 @@
 /** Registers setup detection and project-register adapters. Must not own setup policy. */
 import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
@@ -23,7 +24,7 @@ export function register(program: Command): void {
     .action(async (options: SetupOptions) => {
       if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
         console.error(
-          'orch setup requires both stdin and stdout to be TTYs; use orch setup apply --yes or orch setup apply --answers <file>',
+          `${PLATFORM_SLUG} machine setup requires both stdin and stdout to be TTYs; use ${PLATFORM_SLUG} machine setup apply --yes or ${PLATFORM_SLUG} machine setup apply --answers <file>`,
         )
         process.exitCode = 2
         return
@@ -70,7 +71,9 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
       if (Boolean(options.yes) === Boolean(options.answers)) {
-        throw new Error('orch setup apply requires exactly one of --yes or --answers <file>')
+        throw new Error(
+          `${PLATFORM_SLUG} machine setup apply requires exactly one of --yes or --answers <file>`,
+        )
       }
       const folders = inputs(options)
       let answerValue: unknown

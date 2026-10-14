@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
@@ -147,7 +148,7 @@ describe('workflow render check', () => {
         project: 'fixture',
         workflows: ['first', 'second'],
         facts: [
-          `tracker; set with: orch project set fixture --settings '{"tracker":{"protocol":"<protocol>"}}'`,
+          `tracker; set with: ${PLATFORM_SLUG} project set fixture --settings '{"tracker":{"protocol":"<protocol>"}}'`,
         ],
       },
     ])
@@ -171,7 +172,7 @@ describe('workflow render check', () => {
         project: 'fixture',
         workflows: ['signal-check'],
         facts: [
-          `signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
+          `signals; set with: ${PLATFORM_SLUG} project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`,
         ],
       },
     ])

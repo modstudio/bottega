@@ -156,7 +156,7 @@ test('local architect audiences select the posting project, all projects, or one
       clock + 4,
       cwd,
     ),
-  ).toThrow(/unknown board project missing.*orch project list/)
+  ).toThrow(new RegExp(`unknown board project missing.*${PLATFORM_SLUG} project list`))
   expect(() =>
     postNotice(
       { audience: 'architects', title: 'Projectless', body: 'No.' },
@@ -688,7 +688,7 @@ test('architect posting outside a registered project is refused with a remedy', 
       Date.now() + 40_000,
       '/definitely/not/a/registered/project',
     ),
-  ).toThrow(/post from a registered project or run orch project add first/)
+  ).toThrow(new RegExp(`post from a registered project or run ${PLATFORM_SLUG} project add first`))
 })
 
 test('secret-shaped title or body is refused before storage without echoing it', () => {

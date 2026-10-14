@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
@@ -207,13 +208,13 @@ export function createLocalTaskInTransaction(
   const project = registeredProject(input.project)
   if (taskCreationDestination(project) === 'tracker')
     throw new Error(
-      `project '${input.project}' owns task creation in its tracker; use hub task new --project ${input.project} --title "..."`,
+      `project '${input.project}' owns task creation in its tracker; use ${PLATFORM_SLUG} task new --project ${input.project} --title "..."`,
     )
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
     throw new Error(
       `project '${input.project}' has no key prefix; set one with ` +
-        `orch project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
+        `${PLATFORM_SLUG} project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
     )
   }
   const category = status(input.status)
@@ -354,7 +355,7 @@ export async function createTask(
   const project = registeredProject(input.project)
   if (taskCreationDestination(project) === 'tracker')
     throw new Error(
-      `project '${input.project}' owns task creation in its tracker; use hub task new --project ${input.project} --title "..."`,
+      `project '${input.project}' owns task creation in its tracker; use ${PLATFORM_SLUG} task new --project ${input.project} --title "..."`,
     )
   const mode = writeMode(input.project, options.hosted)
   if (mode === 'local-authoritative') {
@@ -364,7 +365,7 @@ export async function createTask(
   if (!prefix) {
     throw new Error(
       `project '${input.project}' has no key prefix; set one with ` +
-        `orch project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
+        `${PLATFORM_SLUG} project set ${input.project} --settings '{"keyPrefixes":["ABC"]}'`,
     )
   }
   const category = status(input.status)

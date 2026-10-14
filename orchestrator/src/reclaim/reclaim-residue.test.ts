@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reclaimResidue } from './reclaim-residue.ts'
@@ -40,7 +41,9 @@ describe('guarded residue reclaim', () => {
     expect(reclaimResidue('stale-run', String(runId))).toMatchObject({ ok: true })
 
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(runId)).toEqual({
-      evidence_excluded: expect.stringContaining('settled by orch reclaim stale-run'),
+      evidence_excluded: expect.stringContaining(
+        `settled by ${PLATFORM_SLUG} machine reclaim stale-run`,
+      ),
     })
     expect(
       db()

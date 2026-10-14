@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { pick } from '../route/route.ts'
@@ -80,7 +81,7 @@ function installVendor(collected: TransportResult) {
   registerTransport('acp', () => transport)
 }
 
-describe('orch probe', () => {
+describe(`${PLATFORM_SLUG} agent probe`, () => {
   test('a successful probe clears the quota exclusion', async () => {
     excludeCodex()
     expect(() => pick('implement', 'codex')).toThrow(/vendor quota/)
@@ -116,7 +117,9 @@ describe('orch probe', () => {
     expect(probed.kind).toBe('quota')
     expect(probed.message).toContain(vendorMessage)
     expect(() => pick('implement', 'codex')).toThrow(/vendor quota/)
-    expect(() => pick('implement', 'codex')).toThrow(/orch probe codex/)
+    expect(() => pick('implement', 'codex')).toThrow(
+      new RegExp(`${PLATFORM_SLUG} agent probe codex`),
+    )
   })
 
   test('a probe against an agent with no exclusion succeeds and changes nothing', async () => {

@@ -1,6 +1,7 @@
 // concern: monitor-harness-load
 /** Measures registered projects' architect harness load and decides which plans need attention. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_NAMES, type LoadPlan, planHarnessLoad } from '../canon/canon-load.ts'
 import { gatherHarnessLoadFacts } from '../canon/canon-load-files.ts'
 import type { Project } from '../project/projects.ts'
@@ -33,7 +34,7 @@ export function harnessLoadCondition(
     detail:
       `${project.name} ${plan.harness} architect load measured ${plan.total} ${plan.unit}; ` +
       `limit ${plan.limit} ${plan.unit}; largest always-on files: ${largestAlwaysOnFiles(plan)}`,
-    action: `run orch canon load --cwd ${project.path} --harness ${plan.harness}`,
+    action: `run ${PLATFORM_SLUG} doc canon load --cwd ${project.path} --harness ${plan.harness}`,
     affectedProject: project.name,
   }
 }
@@ -57,7 +58,7 @@ export function observeProjectHarnessLoad(
         since: null,
         ageMs: null,
         detail: `${project.name} harness load observation unavailable: ${String((cause as Error).message ?? cause)}`,
-        action: `reported; restore readable checkout ${project.path}, then run orch monitor`,
+        action: `reported; restore readable checkout ${project.path}, then run ${PLATFORM_SLUG} machine monitor`,
         affectedProject: project.name,
       },
     ]

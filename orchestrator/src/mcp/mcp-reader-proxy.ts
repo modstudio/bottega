@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client'
 import { Server } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type Project,
   projectByName,
@@ -197,7 +198,7 @@ async function serveReaderMcpProxy(
     if (dependencies.retiredProjectByName(projectName))
       throw new Error(retiredProjectRefusal(projectName))
     throw new Error(
-      `project ${JSON.stringify(projectName)} is not registered; run orch project add <path> --name ${JSON.stringify(projectName)}`,
+      `project ${JSON.stringify(projectName)} is not registered; run ${PLATFORM_SLUG} project add <path> --name ${JSON.stringify(projectName)}`,
     )
   }
   const cwd = runTreePath(runTree, project.path)

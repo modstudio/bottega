@@ -3,6 +3,7 @@ import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
@@ -590,7 +591,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             const answer = await ask({
               runId,
               question: req.params.message,
-              why: 'ACP form elicitation delivered through orch answer',
+              why: `ACP form elicitation delivered through ${PLATFORM_SLUG} question answer`,
             })
             if (answer.answered) {
               db()

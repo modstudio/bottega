@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers documentation and register adapters. Must not own their behavior. */
 import { type Command, Option } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { docCommand } from '../doc/doc-commands.ts'
@@ -33,7 +34,7 @@ export function assertUserCanonHydrateAllowed(
 ): void {
   if (!isOrchWorkerProcess(env, pid, inventory)) return
   if (flags.has('check') && !flags.has('adopt')) return
-  const command = `orch canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`
+  const command = `${PLATFORM_SLUG} doc canon hydrate --user${flags.has('adopt') ? ' --adopt' : ''}`
   throw new Error(
     `refusing user canon hydrate from an orch worker run; an operator must run ${command}`,
   )

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   recordSyncAuthorizationDecision,
@@ -64,6 +65,6 @@ test('sync machine ownership permits registration and the owner but refuses anot
     ),
   ).toEqual({
     status: 'refused',
-    reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`orch sync\``,
+    reason: `machine ${machineId} is registered to another user; sign in as the user that registered this machine, then retry \`${PLATFORM_SLUG} record sync\``,
   })
 })

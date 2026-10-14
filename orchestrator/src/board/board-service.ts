@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -64,7 +65,8 @@ export function recordPresence(
       'operator and run:<id> readers are reserved; use a real architect session id or address the worker with run:<id>',
     )
   const project = projectAt(cwd)
-  if (!project) throw new Error(`no registered project contains ${cwd}; run orch project add first`)
+  if (!project)
+    throw new Error(`no registered project contains ${cwd}; run ${PLATFORM_SLUG} project add first`)
   const current = db()
     .query(
       `SELECT launch_key FROM run
@@ -509,7 +511,7 @@ export function boardEscalations(clock = Date.now()) {
       since: row.ack_deadline,
       ageMs: row.ack_deadline ? clock - Date.parse(row.ack_deadline) : null,
       detail: `Board notice ${row.id} is not acknowledged by ${row.reader_session}`,
-      action: `inspect with orch board status ${row.id}`,
+      action: `inspect with ${PLATFORM_SLUG} board status ${row.id}`,
     }))
 }
 

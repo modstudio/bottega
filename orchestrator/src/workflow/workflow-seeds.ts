@@ -2,6 +2,7 @@
 /** Knows the built-in workflow definitions and advances them by seed revision.
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
@@ -15,7 +16,7 @@ const seeds = [
     revision: 5,
     definition: {
       title: 'Fix one reported defect',
-      description: "A projection of the 'orch fix-defect' command's coordinator for inspection.",
+      description: `A projection of the '${PLATFORM_SLUG} workflow fix-defect' command's coordinator for inspection.`,
       arguments: [{ name: 'key', required: true, description: 'The filed task key.' }],
       modes: [
         {
@@ -32,7 +33,7 @@ const seeds = [
           job: 'diagnose',
           autonomy: 'auto',
           gate: null,
-          body: 'Dispatch `orch do diagnose --key {{key}} "Diagnose {{key}}: read it with {{tracker.actions.get}}, establish its cause with file:line evidence, and change nothing."` and establish the cause before editing.',
+          body: `Dispatch \`${PLATFORM_SLUG} run start diagnose --key {{key}} "Diagnose {{key}}: read it with {{tracker.actions.get}}, establish its cause with file:line evidence, and change nothing."\` and establish the cause before editing.`,
         },
         {
           slug: 'fix',
@@ -40,7 +41,7 @@ const seeds = [
           job: 'issue-worker',
           autonomy: 'auto',
           gate: null,
-          body: 'Write the fix specification to a file: the recorded diagnosis, the before-fix reproduction, the fix to make, and what must remain true. Dispatch `orch do issue-worker --key {{key}} --file <specification file>`.',
+          body: `Write the fix specification to a file: the recorded diagnosis, the before-fix reproduction, the fix to make, and what must remain true. Dispatch \`${PLATFORM_SLUG} run start issue-worker --key {{key}} --file <specification file>\`.`,
         },
         {
           slug: 'verify',
@@ -56,7 +57,7 @@ const seeds = [
           job: 'review-lens',
           autonomy: 'auto',
           gate: null,
-          body: 'Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree\'s ./bin/orch, whose access to the shared per-user store is read-only. Run `/absolute/path/to/main-checkout/bin/orch do review-lens --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."`, where `<fix-branch>` is the branch `orch result` prints for the issue-worker run.',
+          body: `Use \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG}\` from the main checkout, never a worktree's ./bin/${PLATFORM_SLUG}, whose access to the shared per-user store is read-only. Run \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG} run start review-lens --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."\`, where \`<fix-branch>\` is the branch \`${PLATFORM_SLUG} run result\` prints for the issue-worker run.`,
         },
         {
           slug: 'triage',

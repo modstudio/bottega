@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideAbsentClaim,
   decideFilesystemOrphanAfterInventory,
@@ -370,7 +371,7 @@ describe('recorded run close-out ruling', () => {
       },
       expected: {
         action: 'keep',
-        keepReason: 'held by explicit --keep-tree; clear with orch discard <run-id>',
+        keepReason: `held by explicit --keep-tree; clear with ${PLATFORM_SLUG} run discard <run-id>`,
         cleanupFailed: false,
       },
     },

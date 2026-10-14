@@ -1,6 +1,7 @@
 // concern: stray worktree monitor conditions
 /** Presents the shared stray-directory inventory without changing filesystem state. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type {
   StrayWorktreeDirectory,
   StrayWorktreeProject,
@@ -9,7 +10,7 @@ import { inventoryStrayWorktreeDirectories } from '../cleanup/stray-worktree-inv
 import type { MonitorCondition } from './monitor-types.ts'
 
 function conditionAction(decision: StrayWorktreeDirectory['decision']): string {
-  if (decision === 'archive') return 'run orch sweep to archive it'
+  if (decision === 'archive') return `run ${PLATFORM_SLUG} machine sweep to archive it`
   if (decision === 'keep-claimed') return 'kept because a recorded pointer claims it'
   if (decision === 'keep-recent') return 'kept until it remains unchanged beyond the quiet window'
   return 'report only; establish a safe ordinary directory before cleanup'

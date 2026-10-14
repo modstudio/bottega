@@ -4,7 +4,7 @@
 export const ratchetModules = [
   {
     file: 'orchestrator/src/commands/ratchet.ts',
-    allowed: ['commander', '../ratchet/ratchet-service.ts'],
+    allowed: ['../../../shared/brand.ts', 'commander', '../ratchet/ratchet-service.ts'],
   },
   {
     file: 'orchestrator/src/ratchet/ratchet-service.ts',
@@ -39,7 +39,7 @@ export const ratchetModules = [
   },
   {
     file: 'orchestrator/src/commands/ratchet.test.ts',
-    allowed: ['bun:test', 'commander', './ratchet.ts'],
+    allowed: ['../../../shared/brand.ts', 'bun:test', 'commander', './ratchet.ts'],
   },
   {
     file: 'orchestrator/src/ratchet/ratchet-plan.ts',

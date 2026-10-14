@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -293,13 +294,17 @@ describe('collection records', () => {
       .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
       .get(id)!.record_id
     expect(recordedResult(id).errors).toEqual([
-      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  orch score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
+      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
 
   test.each([
     ['tree present', { writingRun: true, worktree: '/tmp/tree' }, ''],
-    ['tree released', { writingRun: true, worktree: null }, '\n  open tree:  orch tree open 42'],
+    [
+      'tree released',
+      { writingRun: true, worktree: null },
+      `\n  open tree:  ${PLATFORM_SLUG} tree open 42`,
+    ],
     ['non-writing run', { writingRun: false, worktree: null }, ''],
   ])('%s controls the open-tree footer', (_name, facts, expected) => {
     expect(releasedWritingTreeNote(facts, 42)).toBe(expected)
@@ -323,8 +328,8 @@ describe('collection records', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(errors.join('\n')).toContain(`score it:  orch score ${root}`)
-    expect(errors.join('\n')).not.toContain(`score it:  orch score ${child}`)
+    expect(errors.join('\n')).toContain(`score it:  ${PLATFORM_SLUG} score ${root}`)
+    expect(errors.join('\n')).not.toContain(`score it:  ${PLATFORM_SLUG} score ${child}`)
   })
 
   test('result and wait name the branch actually minted for a writing run', () => {
@@ -380,7 +385,7 @@ describe('collection records', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(logs.join('\n')).toContain(`${asking}\tasking - orch inbox`)
+    expect(logs.join('\n')).toContain(`${asking}\tasking - ${PLATFORM_SLUG} question inbox`)
   })
 
   test('a flag value is not mistaken for a run id', async () => {
@@ -421,7 +426,7 @@ describe('collection records', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(logs.join('\n')).toContain(`orch answer ${root}`)
+    expect(logs.join('\n')).toContain(`${PLATFORM_SLUG} question answer ${root}`)
   })
 
   test('wait exposes an asking chain with no open question or running turn as recoverable', async () => {
@@ -435,7 +440,7 @@ describe('collection records', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(logs.join('\n')).toContain(`recoverable: orch continue ${root}`)
+    expect(logs.join('\n')).toContain(`recoverable: ${PLATFORM_SLUG} run continue ${root}`)
   })
 
   test('result on an asking run succeeds, prints its reply, and points to the inbox', () => {
@@ -459,7 +464,7 @@ describe('collection records', () => {
     try {
       collectResult(db(), ['result', String(id)])
       expect(logs.join('\n')).toContain('partial answer')
-      expect(errors.join('\n')).toContain(`orch answer ${id}`)
+      expect(errors.join('\n')).toContain(`${PLATFORM_SLUG} question answer ${id}`)
     } finally {
       log.mockRestore()
       error.mockRestore()
@@ -536,7 +541,7 @@ describe('collection records', () => {
     expect(logs.join('\n')).toContain('harness, exit 17: worktree creation failed')
   })
 
-  test('orch result says so on the record a person would score from', () => {
+  test(`${PLATFORM_SLUG} run result says so on the record a person would score from`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE id=?").run(id)
     expect(recordedResult(id).errors.join('\n')).toContain(
@@ -544,7 +549,7 @@ describe('collection records', () => {
     )
   })
 
-  test('orch result lists worker-filed notes and near-duplicate candidates', () => {
+  test(`${PLATFORM_SLUG} run result lists worker-filed notes and near-duplicate candidates`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     appendRunEvent(id, {
       ts: new Date().toISOString(),
@@ -555,7 +560,7 @@ describe('collection records', () => {
     expect(recordedResult(id).errors.join('\n')).toContain('notes:     71 (near 8, 13)')
   })
 
-  test('orch result lists labels from new worker note events', () => {
+  test(`${PLATFORM_SLUG} run result lists labels from new worker note events`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     appendRunEvent(id, {
       ts: new Date().toISOString(),
@@ -569,7 +574,7 @@ describe('collection records', () => {
     )
   })
 
-  test('orch result exposes degradation and the explicit trust command', () => {
+  test(`${PLATFORM_SLUG} run result exposes degradation and the explicit trust command`, () => {
     const id = addRun({ agent: 'grok', job: 'review-lens' })
     db()
       .query(
@@ -581,7 +586,7 @@ describe('collection records', () => {
     expect(shown).toContain("trust:     grok --cwd '/tmp/a lens tree' --trust")
   })
 
-  test('orch result names an unverified attach distinctly from a confirmed one', () => {
+  test(`${PLATFORM_SLUG} run result names an unverified attach distinctly from a confirmed one`, () => {
     const unverified = addRun({ agent: 'codex', job: 'review-lens' })
     db()
       .query(

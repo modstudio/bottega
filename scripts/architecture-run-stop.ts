@@ -3,6 +3,7 @@ export const runStopBoundarySpecs = [
     name: 'run-stop-boundary',
     file: 'orchestrator/src/run/run-stop.ts',
     allowed: [
+      '../../../shared/brand.ts',
       '../cleanup/cleanup.ts',
       '../database/db.ts',
       '../record/machine-identity.ts',

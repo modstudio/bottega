@@ -9,7 +9,7 @@ Unattended daily maintenance for the machine, run by `launchd`.
 | Local model tunnel | always, when configured | SSH local forwarding, kept alive |
 | Record tunnel | always, when configured | Fly Postgres local proxy, kept alive |
 | Orch monitor | every 4 hours (provisional) | record and report stuck operational state |
-| Orch canon eval | 07:00 | behavioral canon probes (`orch canon eval`), routing-neutral |
+| Orch canon eval | 07:00 | behavioral canon probes (`bottega doc canon eval`), routing-neutral |
 
 None has a TTY, so interactive prompts are skipped. If the machine is asleep at
 the scheduled time, launchd runs the job on the next wake.
@@ -51,7 +51,7 @@ the one required port forward and no commands. Facts about a particular host,
 key restriction or network belong in machine docs:
 
 ```
-orch doc list --scope machine
+bottega doc list --scope machine
 ```
 
 `ORCH_MODEL_HOST_URL` and `ORCH_MODEL_HOST_MODEL` must be available to

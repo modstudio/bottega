@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
 
@@ -14,7 +15,7 @@ function versionCommand(): number {
 
 async function initDatabaseCommand(argv: string[]): Promise<number> {
   if (argv.length !== 1) {
-    console.error('unrecognized argument\nworking form: orch init-db')
+    console.error(`unrecognized argument\nworking form: ${PLATFORM_SLUG} machine init-db`)
     return 1
   }
   try {

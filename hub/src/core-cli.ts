@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
 import {
@@ -48,7 +49,7 @@ function printTasks(hours = '48'): void {
   const to = nowIso()
   const rows = tasksInWindow(from, to)
   if (!rows.length) {
-    console.log('nothing recorded in that window — run `hub collect` first')
+    console.log(`nothing recorded in that window — run \`${PLATFORM_SLUG} record pull\` first`)
     return
   }
   const n = (value: number) => value.toLocaleString('en-US')
@@ -213,7 +214,7 @@ function registerServeCommands(program: Command): void {
     .action(async (options: { port?: string }) => {
       const port = Number(options.port)
       if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-        console.error('usage: hub serve-stop --port N')
+        console.error(`usage: ${PLATFORM_SLUG} dashboard stop --port N`)
         process.exitCode = 2
       } else if (!(await stopRecordedServe(port))) process.exitCode = 1
     })
@@ -225,7 +226,7 @@ function registerServeCommands(program: Command): void {
     .action(async (options: { port?: string; down?: boolean }) => {
       const port = Number(options.port)
       if (!options.down || !Number.isInteger(port) || port < 1 || port > 65_535) {
-        console.error('usage: hub serve-check --port N --down')
+        console.error(`usage: ${PLATFORM_SLUG} dashboard check --port N --down`)
         process.exitCode = 2
       } else if (!reportServeDown(port, await checkServeDown(port))) process.exitCode = 1
     })

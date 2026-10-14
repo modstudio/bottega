@@ -2,6 +2,7 @@
 /** Owns durable operator-waiting state, relay policy, and its stable read model. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { type OperatorInboxKind, operatorInboxPath } from '../../../shared/operator-inbox.ts'
 import {
@@ -210,7 +211,7 @@ function operatorWaitingWithEpisodes(
         why: row.why,
         waiting_since: row.awaiting_operator_at,
         episode: row.awaiting_operator_at,
-        answer_command: `orch answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
+        answer_command: `${PLATFORM_SLUG} question answer ${row.root_id} --q${row.id} --from-operator "<ruling>"`,
       },
     })),
     ...workflows.map((row) => {
@@ -235,7 +236,7 @@ function operatorWaitingWithEpisodes(
           why: null,
           waiting_since: row.waiting_since,
           episode: row.waiting_since,
-          answer_command: `orch workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
+          answer_command: `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${flags} --ruling "<ruling>" --from-operator`,
         },
       }
     }),

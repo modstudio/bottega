@@ -74,7 +74,7 @@ const canonEmptyStoreRefusalBoundarySpecs: ImportBoundary[] = [
   {
     name: 'canon-empty-store-refusal-boundary',
     file: `${source}canon-empty-store-refusal.ts`,
-    allowed: [],
+    allowed: ['shared/brand.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep the empty-project canon store refusal text independent of planning, stores, and commands.',
@@ -86,6 +86,7 @@ const canonCommandBoundarySpecs: ImportBoundary[] = [
     name: 'canon-commands-boundary',
     file: `${source}canon-commands.ts`,
     allowed: [
+      'shared/brand.ts',
       'node:fs',
       'node:path',
       'zod',
@@ -132,6 +133,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
     name: 'canon-mirror-boundary',
     file: `${source}canon-mirror.ts`,
     allowed: [
+      'shared/brand.ts',
       'node:crypto',
       'node:fs',
       'node:os',
@@ -225,6 +227,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     name: 'user-canon-commands-boundary',
     file: `${source}user-canon-commands.ts`,
     allowed: [
+      'shared/brand.ts',
       'shared/ratchet.ts',
       'shared/state-directory.ts',
       'orchestrator/src/doc/docs.ts',
@@ -254,6 +257,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     name: 'user-canon-home-files-boundary',
     file: `${source}user-canon-home-files.ts`,
     allowed: [
+      'shared/brand.ts',
       'node:fs',
       'node:path',
       'orchestrator/src/settings/settings-write.ts',

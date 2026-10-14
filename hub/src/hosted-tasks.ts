@@ -1,4 +1,5 @@
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
@@ -161,7 +162,7 @@ export async function createHostedTaskInTransaction(
   if (!project)
     throw new Error(
       `project '${input.project}' is absent from record space ${identity.spaceId}. ` +
-        `Run \`orch record space move-project\` or declare the project's space in the register.`,
+        `Run \`${PLATFORM_SLUG} record space move-project\` or declare the project's space in the register.`,
     )
   const prefix = project?.key_prefixes[0]
   if (!prefix) throw new Error(`project '${input.project}' has no key prefix`)
@@ -538,7 +539,7 @@ export async function mirrorDocumentRow(
         )[0]
   if (numberHolder) {
     throw new Error(
-      `task document number collision: ${formatTaskDocumentLabel(row.task_key, number!)} belongs to UUID ${numberHolder.id}, not incoming UUID ${row.id}; run \`hub task doc list ${row.task_key}\``,
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, number!)} belongs to UUID ${numberHolder.id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
   const decision = mirrorCollisionDecision(

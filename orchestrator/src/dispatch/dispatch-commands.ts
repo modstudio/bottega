@@ -1,6 +1,7 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   mechanicallyEnforcedChecks,
   resolveMechanicalChecks,
@@ -38,7 +39,7 @@ export function genericLensProfileNotices(
     .map(
       (profile) =>
         `! lens ${resolved.id} uses generic ${profile.axis} body; write the stack profile with: ` +
-        `orch lens profile set ${resolved.id} --axis ${profile.axis} --name ${profileName} ` +
+        `${PLATFORM_SLUG} review lens profile set ${resolved.id} --axis ${profile.axis} --name ${profileName} ` +
         '--body-file <path> --enabled true --reason <reason>',
     )
 }
@@ -52,7 +53,7 @@ export function lensDispatchNotices(input: {
   if (input.lens && !input.resolved && input.jobName !== 'review-lens-inline') {
     return [
       `! lens ${input.lens} has no catalogue row and runs with the caller's prompt only; ` +
-        'orch lens list shows the catalogue',
+        `${PLATFORM_SLUG} review lens list shows the catalogue`,
     ]
   }
   return genericLensProfileNotices(input.resolved, input.stack)
@@ -491,13 +492,15 @@ export async function dispatchCommand(
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
     printRunId(id)
     if (!has('quiet') && !porcelain) {
-      error(`detached as run ${id}: orch wait ${id}, then orch result ${id}`)
+      error(
+        `detached as run ${id}: ${PLATFORM_SLUG} run wait ${id}, then ${PLATFORM_SLUG} run result ${id}`,
+      )
     }
     if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
       error(
         `\n— ${jobName} detached by default; collect it when it finishes.` +
-          `\n  orch wait ${id}      then:  orch result ${id}` +
-          `\n  orch inbox          if it stops to ask` +
+          `\n  ${PLATFORM_SLUG} run wait ${id}      then:  ${PLATFORM_SLUG} run result ${id}` +
+          `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
           `\n  --follow            to watch it here instead`,
       )
     }
@@ -508,7 +511,7 @@ export async function dispatchCommand(
    * The foreground path runs DETACHED too, and then watches the row.
    *
    * It used to spawn the agent as a child of this process, which meant the
-   * work died with the caller. That is not hypothetical: an `orch do` left in
+   * work died with the caller. That is not hypothetical: an `bottega run start` left in
    * the foreground outlives an agent harness's command timeout, the harness
    * kills the process group, run()'s signal handler forwards SIGTERM to the
    * agent, and a run that was minutes from an answer is destroyed having
@@ -518,7 +521,7 @@ export async function dispatchCommand(
    *
    * Detaching first means the worker owns the row and finishes regardless. A
    * killed caller now loses only its own view of the output: the run
-   * completes, records its verdict, and `orch run <id>` still has the answer.
+   * completes, records its verdict, and `bottega run show <id>` still has the answer.
    * The wait is bounded by the agent's own timeout plus a margin, so a
    * genuinely stuck run still returns control rather than hanging for ever.
    */

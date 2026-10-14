@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import {
@@ -12,7 +13,14 @@ import {
 const operatorPid = 400
 const inventory = {
   ascertainable: true as const,
-  rows: [{ pid: operatorPid, ppid: 1, pgid: operatorPid, command: 'orch settings permission' }],
+  rows: [
+    {
+      pid: operatorPid,
+      ppid: 1,
+      pgid: operatorPid,
+      command: `${PLATFORM_SLUG} machine settings permission`,
+    },
+  ],
 }
 
 test('machine permission operations edit additions and drops without a hosted row', () => {

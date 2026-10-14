@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -44,13 +45,16 @@ const audiencesSchema = z
 function rethrowMcpDocWriteError(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error)
   const currentRevision = message.match(/current revision ([^;,\s]+)/)?.[1]
-  if (!currentRevision || !message.includes('re-read with orch doc get and re-apply the edit')) {
+  if (
+    !currentRevision ||
+    !message.includes(`re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`)
+  ) {
     throw error
   }
 
   const withoutCliRemedy = message
     .replace(/; pass --expect [^\s]+/, '')
-    .replace(/\nre-read with orch doc get and re-apply the edit/, '')
+    .replace(new RegExp(`\\nre-read with ${PLATFORM_SLUG} doc get and re-apply the edit`), '')
   throw new Error(
     `${withoutCliRemedy}; pass expected_revision ${currentRevision}; ` +
       're-read with get_doc and re-apply the edit',

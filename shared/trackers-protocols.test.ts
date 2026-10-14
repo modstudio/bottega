@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import {
   CURSOR_CREATE_REFUSAL,
   createTrackerTask,
@@ -205,7 +206,7 @@ describe('tracker create protocols', () => {
       createTrackerTask(fixture.caller, missingTeam, task, {
         properties: { summary: {}, description: {}, team: {}, status: {} },
       }),
-    ).rejects.toThrow(`orch project set starship --settings '{"tracker":{"team":"…"}}'`)
+    ).rejects.toThrow(`${PLATFORM_SLUG} project set starship --settings '{"tracker":{"team":"…"}}'`)
     expect(fixture.calls).toEqual([])
   })
 
@@ -215,7 +216,7 @@ describe('tracker create protocols', () => {
     delete missingProjectId.settings.tracker!.projectId
 
     await expect(createTrackerTask(fixture.caller, missingProjectId, task)).rejects.toThrow(
-      `orch project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+      `${PLATFORM_SLUG} project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
     )
     expect(fixture.calls).toEqual([])
   })
@@ -397,7 +398,7 @@ describe('tracker capabilities', () => {
       allowed: false,
       reason:
         `${CURSOR_CREATE_REFUSAL}; set it with: ` +
-        `orch project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+        `${PLATFORM_SLUG} project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
     })
   })
 

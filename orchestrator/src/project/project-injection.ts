@@ -1,6 +1,7 @@
 // concern: project-injection
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   PHP_POLICY_RULES,
   type PhpPolicyRule,
@@ -88,7 +89,7 @@ const reviewSchema = strictObject({
     path: ['record'],
     message:
       `${problem}; valid placeholders: ${REVIEW_RECORD_PLACEHOLDERS.map((name) => `{${name}}`).join(', ')}; ` +
-      `set with: orch project set <project> --settings '{"review":{"lenses":[],"record":"<command> {findings}"}}'`,
+      `set with: ${PLATFORM_SLUG} project set <project> --settings '{"review":{"lenses":[],"record":"<command> {findings}"}}'`,
   })
 })
 
@@ -97,7 +98,7 @@ const testSubstanceSchema = strictObject({
     .array(
       z.custom<PhpPolicyRule>(
         (rule) => typeof rule === 'string' && PHP_POLICY_RULES.includes(rule as PhpPolicyRule),
-        `unknown PHP policy rule; valid rules: ${PHP_POLICY_RULES.join(', ')}; set with: orch project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+        `unknown PHP policy rule; valid rules: ${PHP_POLICY_RULES.join(', ')}; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
       ),
     )
     .superRefine((rules, context) => {
@@ -107,7 +108,7 @@ const testSubstanceSchema = strictObject({
           context.addIssue({
             code: 'custom',
             path: [index],
-            message: `PHP policy rule "${rule}" is repeated; use each valid rule at most once; set with: orch project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+            message: `PHP policy rule "${rule}" is repeated; use each valid rule at most once; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
           })
         }
         seen.add(rule)
@@ -115,7 +116,7 @@ const testSubstanceSchema = strictObject({
     }),
 })
 
-const mechanicalChecksRemedy = `set with: orch project set <project> --settings '{"mechanicalChecks":{"<category>":{"tool":"<command>"}}}'`
+const mechanicalChecksRemedy = `set with: ${PLATFORM_SLUG} project set <project> --settings '{"mechanicalChecks":{"<category>":{"tool":"<command>"}}}'`
 
 const mechanicalChecksSchema = z.record(z.string(), z.unknown()).superRefine((entries, context) => {
   for (const [identifier, raw] of Object.entries(entries)) {
@@ -227,7 +228,7 @@ function resolvedReviewStages(
   if (defaultReviewState && reviewStates.length === 0) reviewStates.push(defaultReviewState)
   if (!tracker.reviewStages && reviewStates.length > 1) {
     throw new Error(
-      `project ${projectName} tracker has several review states (${reviewStates.join(', ')}) but no reviewStages selection; set it with: orch project set ${projectName} --settings '${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`,
+      `project ${projectName} tracker has several review states (${reviewStates.join(', ')}) but no reviewStages selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { reviewStages: { waiting: '<waiting-review-state>', active: '<in-review-state>' } } })}'`,
     )
   }
   const waiting = tracker.reviewStages?.waiting ?? reviewStates[0]
@@ -338,8 +339,8 @@ const settingCommands: Record<Exclude<InjectionSource, 'stack'>, string> = {
 
 function commandFor(project: InjectableProject, source: InjectionSource): string {
   return source === 'stack'
-    ? `orch project set ${project.name} --stack <stack>`
-    : `orch project set ${project.name} ${settingCommands[source]}`
+    ? `${PLATFORM_SLUG} project set ${project.name} --stack <stack>`
+    : `${PLATFORM_SLUG} project set ${project.name} ${settingCommands[source]}`
 }
 
 export type MissingWorkflowInjectionFact = {

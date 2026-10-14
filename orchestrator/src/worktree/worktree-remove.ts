@@ -2,6 +2,7 @@
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   borrowedCheckoutOf,
@@ -191,7 +192,7 @@ export function observedChangesIn(w: Worktree, sinceBase = false, lowerBound?: s
  * Never called automatically on failure. A failed implementation run is the
  * case where the half-finished tree is most worth reading, and a cleanup that
  * ran on error would destroy the evidence at precisely the moment it mattered.
- * `orch discard` is a decision someone makes.
+ * `bottega run discard` is a decision someone makes.
  */
 /**
  * Take one down with the project's own tool, so its INFRASTRUCTURE goes too.
@@ -288,7 +289,7 @@ function removeWithTool(
       `${w.path} was NOT removed — the project's own tool refused, and orch will not ` +
       `force past that:\n${r.out.slice(-600) || `exit code from ${tool.remove}`}\n\n` +
       `Those refusals guard uncommitted work and unmerged branches. Inspect and resolve ` +
-      `the protected work with the project's own tooling, then run orch discard again. ` +
+      `the protected work with the project's own tooling, then run ${PLATFORM_SLUG} run discard again. ` +
       `--force will not override a project tool's refusal unless the tree carries orch's ` +
       `${ORCH_RUN_MARKER} ownership marker.`,
   }
@@ -620,7 +621,7 @@ export function removeWorktree(
   }
   // REPORTED, not swallowed. This function's own comment says a removal that
   // silently fails leaves the run's changes on disk with nothing pointing at
-  // them — and then it discarded git's answer, after which `orch discard`
+  // them — and then it discarded git's answer, after which `bottega run discard`
   // cleared the database pointer and said "discarded". A locked or busy
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -402,8 +403,8 @@ describe('fresh retry continuation recovery', () => {
 
     expect(() => continuationInstructionsForFreshRetry(true, id, id)).toThrow(
       `run ${id} continuation turn ${child} has no recoverable continue instructions. ` +
-        `Re-send the instructions with orch continue ${id} --file <spec>, ` +
-        `or pass orch retry ${child} for that turn directly.`,
+        `Re-send the instructions with ${PLATFORM_SLUG} run continue ${id} --file <spec>, ` +
+        `or pass ${PLATFORM_SLUG} run retry ${child} for that turn directly.`,
     )
   })
 })

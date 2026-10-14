@@ -1,11 +1,3 @@
-import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
-import { storedMachineId } from '../../../shared/machine-config.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
-import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
-import { nowIso, type Project, writeTransaction } from '../db.ts'
-import { projects } from '../projects.ts'
-import { upsertGitTasks } from './git-task-cache.ts'
-
 /**
  * Generated files, which are not work.
  *
@@ -14,6 +6,15 @@ import { upsertGitTasks } from './git-task-cache.ts'
  * every migration, so adding one column reads as a 23,000-line day. Left in,
  * the lines lens measures the ORM's verbosity rather than anything anyone did.
  */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { storedMachineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
+import { nowIso, type Project, writeTransaction } from '../db.ts'
+import { projects } from '../projects.ts'
+import { upsertGitTasks } from './git-task-cache.ts'
+
 export type { FileKind } from '../../../shared/file-kind.ts'
 
 /**
@@ -148,7 +149,7 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
   const machine = storedMachineId()
   if (!machine)
     throw new Error(
-      'refusing to write daily totals without a machine identity; run orch migrate, then hub migrate',
+      `refusing to write daily totals without a machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()

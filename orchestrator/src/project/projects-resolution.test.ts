@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
@@ -285,7 +286,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
   test('projectRemovalRefusal names only non-zero tables', () => {
     expect(projectRemovalRefusal('kept', { ...none, run: 2, resource_claim: 1, doc: 4 })).toEqual([
       'project kept is referenced by 2 run(s), 1 claim(s), 4 doc(s); removing it would blank their project attribution',
-      'cleared by: orch project retire kept',
+      `cleared by: ${PLATFORM_SLUG} project retire kept`,
     ])
   })
 
@@ -301,7 +302,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
       .run(project.id)
     expect(() => removeProject('kept-run')).toThrow(
       'project kept-run is referenced by 1 run(s); removing it would blank their project attribution\n' +
-        'cleared by: orch project retire kept-run',
+        `cleared by: ${PLATFORM_SLUG} project retire kept-run`,
     )
     expect(projectByName('kept-run')?.id).toBe(project.id)
     expect(
@@ -331,7 +332,7 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(retiredProjectByName('tombstoned')?.id).toBe(retired!.id)
     expect(retiredProjectAt(path)?.name).toBe('tombstoned')
     expect(retiredProjectRefusal('tombstoned')).toBe(
-      'project tombstoned is retired; cleared by: orch project retire tombstoned --undo',
+      `project tombstoned is retired; cleared by: ${PLATFORM_SLUG} project retire tombstoned --undo`,
     )
     expect(retireProject('tombstoned')).toBe('already-retired')
   })

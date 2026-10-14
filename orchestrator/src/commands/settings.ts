@@ -1,6 +1,7 @@
 // concern: settings-cli
-/** Owns only the `orch settings` grammar and presentation. */
+/** Owns only the `bottega machine settings` grammar and presentation. */
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   settingsAdoptCommand,
   settingsEnvImportCommand,
@@ -72,7 +73,7 @@ export function register(program: Command): void {
     .action((options) => {
       if (!options.machine) {
         throw new Error(
-          'refusing hosted permission listing; run orch settings permission list --machine',
+          `refusing hosted permission listing; run ${PLATFORM_SLUG} machine settings permission list --machine`,
         )
       }
       for (const line of listMachineSettingsPermissions(Boolean(options.json))) log(line)
@@ -110,7 +111,7 @@ export function register(program: Command): void {
           else {
             log(result.message)
             log(
-              'machine permissions take effect at the next session start (or after `orch settings apply`)',
+              `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
             )
           }
           return
@@ -137,7 +138,7 @@ export function register(program: Command): void {
         else {
           log(result.message)
           log(
-            'machine permissions take effect at the next session start (or after `orch settings apply`)',
+            `machine permissions take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
           )
         }
       })

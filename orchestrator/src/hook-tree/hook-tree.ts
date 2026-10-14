@@ -1,6 +1,7 @@
 // concern: hook-tree
 /** Owns hook-tree identity and pure lifecycle decisions. Must not know databases, worktree execution, or the CLI. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HOOK_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
 export { HOOK_TREE_JOB }
@@ -22,7 +23,11 @@ export function hookTreeHoldDecision<T>(
   ordinary: T,
 ): T | { held: true; until: null; reason: string } {
   return isHookTree(run) && run.treeExists
-    ? { held: true, until: null, reason: 'hook tree; remove with orch tree remove <path>' }
+    ? {
+        held: true,
+        until: null,
+        reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      }
     : ordinary
 }
 
@@ -49,7 +54,7 @@ export function hookTreeNotice(run: HookTreeNoticeInput, clock: number) {
       since: run.startedAt,
       ageMs: Number.isFinite(startedAt) ? Math.max(0, clock - startedAt) : null,
       detail: `hook tree ${run.path} has run status ${run.status}`,
-      action: `orch tree remove ${run.path}`,
+      action: `${PLATFORM_SLUG} tree remove ${run.path}`,
       severity: 'informational' as const,
     }
   }
@@ -63,7 +68,7 @@ export function hookTreeNotice(run: HookTreeNoticeInput, clock: number) {
     since: run.startedAt,
     ageMs,
     detail: `hook tree ${run.path} remains provisioned`,
-    action: `orch tree remove ${run.path}`,
+    action: `${PLATFORM_SLUG} tree remove ${run.path}`,
     severity: 'informational' as const,
   }
 }

@@ -2,6 +2,7 @@
 /** Owns monitor notice currentness, claiming, formatting, and delivery acknowledgement. */
 
 import { randomUUID } from 'node:crypto'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   hostedBoardVerificationWarning,
   takeHostedBoardVerificationTransition,
@@ -65,7 +66,7 @@ function landingNoticeDetail(row: {
         ? 'LANDING-REBASE-REQUIRED'
         : 'LANDING-INSTALL-FAILED'
   const branch = row.branch.replace(/[\t\r\n]/g, ' ')
-  return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch branches'`
+  return `${event} ${row.id}/${branch} ${duration}; inspect with '${PLATFORM_SLUG} tree branch'`
 }
 
 function recordStalledRunSubjects(

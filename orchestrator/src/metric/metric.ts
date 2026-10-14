@@ -31,7 +31,7 @@ const targetGitEnvironment = (repo: string) =>
  * somebody else's projects are theirs to declare rather than something to fork
  * this file over.
  *
- * Read per call rather than cached at module load: `orch project add` can
+ * Read per call rather than cached at module load: `bottega project add` can
  * change the answer inside a long-lived process, and a cached list would keep
  * reporting a newly-registered project's spend as untracked.
  */

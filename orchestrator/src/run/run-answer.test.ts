@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
@@ -362,7 +363,7 @@ describe('run answers', () => {
       { status: 'failed', excluded: null },
       { status: 'stopped', excluded: null },
       { status: 'stale', excluded: null },
-      { status: 'asking', excluded: 'voided with orch score --void' },
+      { status: 'asking', excluded: `voided with ${PLATFORM_SLUG} score --void` },
     ]) {
       const id = addRun({
         agent: 'missing-test-agent',
@@ -935,7 +936,7 @@ describe('retry command', () => {
       `run ${id} is asking with open questions: q`,
     )
     await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
-      `Answer them, or orch abandon ${id}`,
+      `Answer them, or ${PLATFORM_SLUG} run abandon ${id}`,
     )
   })
 
@@ -951,8 +952,8 @@ describe('retry command', () => {
 
     await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
       `run ${id} continuation turn ${child} has no recoverable continue instructions. ` +
-        `Re-send the instructions with orch continue ${id} --file <spec>, ` +
-        `or pass orch retry ${child} for that turn directly.`,
+        `Re-send the instructions with ${PLATFORM_SLUG} run continue ${id} --file <spec>, ` +
+        `or pass ${PLATFORM_SLUG} run retry ${child} for that turn directly.`,
     )
   })
 

@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type McpConnection,
   type McpMode,
@@ -165,7 +166,7 @@ export function decideMcpToolProbe(
         ? `MCP tool call failed on ${server}: ${callEvidence.error}`
         : `mcp unverifiable on ${agent}: ${callEvidence.error}` +
           `\ninvariant: --mcp means a proven tool call, never a handshake` +
-          `\ncleared by: orch project set ${projectName ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${server}>"}}'`
+          `\ncleared by: ${PLATFORM_SLUG} project set ${projectName ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${server}>"}}'`
       : null
   return {
     callEvidence,

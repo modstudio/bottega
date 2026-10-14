@@ -1,4 +1,4 @@
-/** Live vendor event log: append-only JSONL plus last_event_at, and orch peek. */
+/** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from './database/database-location.ts'

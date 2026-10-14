@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
@@ -132,7 +133,7 @@ describe('workflow cursor stored autonomy', () => {
     expect(() =>
       getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d),
     ).toThrow(
-      `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: orch workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: orch workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
+      `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
     )
   })
 

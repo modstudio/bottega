@@ -1,4 +1,5 @@
 /** Resolves and validates article fields for a local document write. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type DocAudiences,
   type DocForm,
@@ -72,7 +73,7 @@ export function resolveLocalDocArticleFields(
     const row = resolveSubject(projectName, reference)
     if (row.retiredAt && !existingIds.has(row.id)) {
       throw new Error(
-        `subject "${reference}" is retired; cleared by: orch subject list ${projectName}`,
+        `subject "${reference}" is retired; cleared by: ${PLATFORM_SLUG} doc subject list ${projectName}`,
       )
     }
     return { id: row.id, name: row.name }

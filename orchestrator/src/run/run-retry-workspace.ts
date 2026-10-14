@@ -2,6 +2,7 @@
 /** Resolves and validates the retained or reprovisioned tree used by a fresh retry. */
 
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
@@ -119,7 +120,7 @@ export function resolveWritingRetryWorkspace(input: {
   const checkpoint = latestCheckpoint(db(), input.rootId)
   const recordedTip =
     latest.branch_kept_tip ?? input.branchKeptTip ?? checkpoint?.commit_sha ?? latest.base_commit
-  const startOver = `orch do ${input.job} --key ${input.launchKey ?? '<key>'} ...`
+  const startOver = `${PLATFORM_SLUG} run start ${input.job} --key ${input.launchKey ?? '<key>'} ...`
   if (!branch || !recordedTip) {
     throw new Error(
       `run ${input.id} has no recorded run branch or tip; start over with ${startOver}`,
@@ -156,7 +157,7 @@ export function resolveWritingRetryWorkspace(input: {
   if (decision.action === 'refuse-live-owner') {
     throw new Error(
       `run ${latest.id} still has a live owner on worktree ${latest.worktree}; ` +
-        `wait for or stop it, then retry orch retry ${input.id}`,
+        `wait for or stop it, then retry ${PLATFORM_SLUG} run retry ${input.id}`,
     )
   }
   assertBranchHasNoAliveOwner({
@@ -164,7 +165,7 @@ export function resolveWritingRetryWorkspace(input: {
     conversationRootId: input.rootId,
     projectId: input.projectId,
     projectName: input.repo,
-    retryCommand: `orch retry ${input.id}`,
+    retryCommand: `${PLATFORM_SLUG} run retry ${input.id}`,
   })
   if (!liveTip) throw new Error(`run ${input.id} branch ${branch} has no live tip`)
   if (decision.action === 'reuse-tree') {

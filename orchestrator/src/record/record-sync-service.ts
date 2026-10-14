@@ -3,6 +3,7 @@
 import { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -256,7 +257,7 @@ async function applyHostedUnvoid(
   `
   if (columns.length !== 3) {
     throw new OutboxRowError(
-      'hosted unvoid requires the pending record migration; apply it with `orch record migrate` before retrying',
+      `hosted unvoid requires the pending record migration; apply it with \`${PLATFORM_SLUG} record migrate\` before retrying`,
       'migration-mismatch',
     )
   }

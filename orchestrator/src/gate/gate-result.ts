@@ -1,8 +1,8 @@
 // concern: recorded gate evidence for read-only workers
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-
 export type RecordedGateCandidate = {
   id: number
   projectId: number | null
@@ -115,8 +115,10 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
   const result = input.result
   return [
     `Recorded gate result for commit ${result.headCommit}:`,
-    "This result was recorded by the project's writer gate or by orch gate run for that commit.",
-    result.runId === null ? 'recorded by: orch gate run' : `executing run id: ${result.runId}`,
+    `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+    result.runId === null
+      ? `recorded by: ${PLATFORM_SLUG} gate run`
+      : `executing run id: ${result.runId}`,
     `exit code: ${result.exitCode ?? 'not recorded'}`,
     `timed out: ${result.timedOut ?? 'not recorded'}`,
     `elapsed ms: ${result.elapsedMs ?? 'not recorded'}`,

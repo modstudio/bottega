@@ -67,7 +67,7 @@ function acquireIssueLease(key: string): KernelLease | null {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv('hub'), ...args], {
+  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env },

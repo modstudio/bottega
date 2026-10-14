@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { consumeDoc, removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -492,7 +493,7 @@ describe('scoped operator docs', () => {
     })
   })
 
-  test('orch doc resumes prints padded columns and is silent when there are none', async () => {
+  test(`${PLATFORM_SLUG} doc resumes prints padded columns and is silent when there are none`, async () => {
     upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     expect(listOpenResumes(knownRepository)).toEqual({ open: [], unreadable: [] })
     expect(listOpenResumes('/nowhere')).toEqual({ open: [], unreadable: [] })
@@ -513,7 +514,7 @@ describe('scoped operator docs', () => {
     })
   }, 20_000)
 
-  test('orch doc resumes reports unreadable briefs without changing human stdout', async () => {
+  test(`${PLATFORM_SLUG} doc resumes reports unreadable briefs without changing human stdout`, async () => {
     upsertProject({ name: 'known', path: knownRepository, stack: null, canon: true, settings: {} })
     const invalidBriefs: Array<[string, string]> = [
       ['no-frontmatter', 'BODY'],

@@ -1,6 +1,7 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -148,7 +149,7 @@ export function gradeReviewLens(
   if (!row) {
     if (!output) throw new Error(`run ${runId} has no review output to record`)
     // The scoring path records through recordReview so it shares the same
-    // best-effort commit pinning as `orch review record`.
+    // best-effort commit pinning as `bottega review record`.
     const reviewId = recordReview(runId, output, database)
     row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as {
       id: number
@@ -180,7 +181,7 @@ export function triageFinding(
   if (!review) throw new Error(`no review ${reviewId}`)
   if (review.completed_at) {
     throw new Error(
-      `review ${reviewId} is already complete; use orch review amend ${reviewId} ${ordinal} ... --reason "<text>"`,
+      `review ${reviewId} is already complete; use ${PLATFORM_SLUG} review amend ${reviewId} ${ordinal} ... --reason "<text>"`,
     )
   }
   const finding = database
@@ -231,7 +232,7 @@ export function amendFinding(
     if (!review) throw new Error(`no review ${reviewId}`)
     if (!review.completed_at) {
       throw new Error(
-        `review ${reviewId} is incomplete; use orch review triage ${reviewId} ${ordinal} ...`,
+        `review ${reviewId} is incomplete; use ${PLATFORM_SLUG} review triage ${reviewId} ${ordinal} ...`,
       )
     }
     const finding = database

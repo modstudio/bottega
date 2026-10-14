@@ -1,6 +1,7 @@
 // concern: settings-commands
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
@@ -381,8 +382,8 @@ function targetLabel(target: SettingsTargetKind): string {
 
 function settingsImportRemedy(target: SettingsTargetKind): string {
   return target.kind === 'user'
-    ? 'cleared by: orch doc set --scope settings --user --slug settings'
-    : `cleared by: orch doc set --scope settings --subject ${target.name} --slug settings`
+    ? `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`
+    : `cleared by: ${PLATFORM_SLUG} doc set --scope settings --subject ${target.name} --slug settings`
 }
 
 function logOwnedCounts(owned: OwnedSettings, log: (...values: unknown[]) => void): void {

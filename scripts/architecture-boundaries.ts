@@ -67,14 +67,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'code-commands-boundary',
     'orchestrator/src/code/code-commands.ts',
-    ['../project/projects.ts', './code-search.ts'],
+    ['../../../shared/brand.ts', '../project/projects.ts', './code-search.ts'],
     'Keep code search commands independent of stores, transports, and retrieval internals.',
   ),
   boundary(
     'agent-commands-boundary',
     'orchestrator/src/agent/agent-commands.ts',
     [
-      './agent-probe.ts',
+      '../../../shared/brand.ts', './agent-probe.ts',
       './agent-registry.ts',
       '../cli/args.ts',
       '../database/db.ts',
@@ -104,7 +104,7 @@ export const importBoundaries: ImportBoundary[] = [
     'canon-lint-boundary',
     'orchestrator/src/canon/canon-lint.ts',
     [
-      'node:path',
+      '../../../shared/brand.ts', 'node:path',
       'github-slugger',
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
@@ -142,7 +142,7 @@ export const importBoundaries: ImportBoundary[] = [
     'cleanup-boundary',
     'orchestrator/src/cleanup/cleanup.ts',
     [
-      'node:fs',
+      '../../../shared/brand.ts', 'node:fs',
       'node:path',
       '../database/db.ts',
       '../resources/docker-resources.ts',
@@ -163,17 +163,12 @@ export const importBoundaries: ImportBoundary[] = [
   ...cleanupBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
-  boundary(
-    'cleanup-sweep-decisions-boundary',
-    'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
-    [],
-    'Keep cleanup sweep decisions pure and independent of filesystems, stores, commands, and processes.',
-  ),
+
   boundary(
     'close-out-boundary',
     'orchestrator/src/close/close-out.ts',
     [
-      'node:fs',
+      '../../../shared/brand.ts', 'node:fs',
       'node:path',
       './absent-close-out-residue.ts',
       './absent-tree-close-out.ts',
@@ -233,7 +228,7 @@ export const importBoundaries: ImportBoundary[] = [
     'dispatch-commands-boundary',
     'orchestrator/src/dispatch/dispatch-commands.ts',
     [
-      'node:fs',
+      '../../../shared/brand.ts', 'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
       './review-lens-prompt.ts',
@@ -248,16 +243,18 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
   ),
+
   boundary(
     'task-key-admission-boundary',
     'orchestrator/src/dispatch/task-key-admission.ts',
-    [],
+    ['../../../shared/brand.ts'],
     'Keep task-key admission a pure decision over tracker lookup evidence.',
   ),
   boundary(
     'task-key-lookup-boundary',
     'orchestrator/src/dispatch/task-key-lookup.ts',
     [
+      '../../../shared/brand.ts',
       '../../../shared/self-spawn.ts',
       '../../../shared/trackers.ts',
       '../mcp/mcp-probe.ts',
@@ -270,13 +267,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'execution-requirement-boundary',
     'orchestrator/src/dispatch/execution-requirement.ts',
-    [],
+    ['../../../shared/brand.ts'],
     'Keep execution requirement admission a pure decision over declared execution and tree kind.',
   ),
   boundary(
     'dispatch-preflight-boundary',
     'orchestrator/src/dispatch/dispatch-preflight.ts',
     [
+      '../../../shared/brand.ts',
       '../git/checkout-identity.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
@@ -301,6 +299,7 @@ export const importBoundaries: ImportBoundary[] = [
     'doc-commands-boundary',
     'orchestrator/src/doc/doc-commands.ts',
     [
+      '../../../shared/brand.ts',
       'node:fs',
       '../../../shared/docs.ts',
       '../canon/canon-files.ts',
@@ -322,7 +321,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'doc-lint-boundary',
     'orchestrator/src/doc/doc-lint.ts',
-    ['../../../shared/docs.ts', '../canon/canon-lint.ts', '../canon/prose-lint.ts'],
+    [
+      '../../../shared/brand.ts',
+      '../../../shared/docs.ts',
+      '../canon/canon-lint.ts',
+      '../canon/prose-lint.ts',
+    ],
     'Keep document lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
@@ -342,6 +346,7 @@ export const importBoundaries: ImportBoundary[] = [
     'doc-write-allowed-boundary',
     'orchestrator/src/doc/doc-write-allowed.ts',
     [
+      '../../../shared/brand.ts',
       '../canon/canon-hydrate.ts',
       '../canon/canon-write-gate.ts',
       '../canon/pack-budget.ts',
@@ -502,6 +507,7 @@ export const importBoundaries: ImportBoundary[] = [
     'judgment-boundary',
     'orchestrator/src/judgment.ts',
     [
+      '../../shared/brand.ts',
       'node:fs',
       '../../shared/record-id.ts',
       '../../shared/record/schema.ts',
@@ -546,7 +552,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'metric-commands-boundary',
     'orchestrator/src/metric/metric-commands.ts',
-    ['./metric.ts'],
+    ['../../../shared/brand.ts', './metric.ts'],
     'Keep metric command adapters independent of the run nucleus and the CLI: they compose concern modules for one verb and own no lifecycle.',
   ),
   boundary(
@@ -572,13 +578,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'outcome-boundary',
     'orchestrator/src/outcome.ts',
-    [],
+    ['../../shared/brand.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
   boundary(
     'port-commands-boundary',
     'orchestrator/src/porting/port-commands.ts',
     [
+      '../../../shared/brand.ts',
       'node:fs',
       'node:path',
       '../database/db.ts',
@@ -593,6 +600,7 @@ export const importBoundaries: ImportBoundary[] = [
     'project-commands-boundary',
     'orchestrator/src/project/project-commands.ts',
     [
+      '../../../shared/brand.ts',
       'node:fs',
       '../database/db.ts',
       '../lens/lenses.ts',
@@ -652,6 +660,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-api-boundary',
     'orchestrator/src/record/record-api.ts',
     [
+      '../../../shared/brand.ts',
       'hono',
       'hono/cors',
       'zod',
@@ -830,6 +839,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-sync-boundary',
     'orchestrator/src/record/record-sync.ts',
     [
+      '../../../shared/brand.ts',
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-api-url.ts',
       '../database/db.ts',
@@ -912,6 +922,7 @@ export const importBoundaries: ImportBoundary[] = [
     'routing-commands-boundary',
     'orchestrator/src/route/routing-commands.ts',
     [
+      '../../../shared/brand.ts',
       '../score/agreement.ts',
       '../score/duel.ts',
       '../state/guide.ts',
@@ -947,6 +958,7 @@ export const importBoundaries: ImportBoundary[] = [
     'task-branch-boundary',
     'orchestrator/src/branch/task-branch.ts',
     [
+      '../../../shared/brand.ts',
       '../git/checkout-identity.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
@@ -963,6 +975,7 @@ export const importBoundaries: ImportBoundary[] = [
     'workflows-boundary',
     'orchestrator/src/workflow/workflow-seeds.ts',
     [
+      '../../../shared/brand.ts',
       '../database/db.ts',
       '../review/review-vocabulary.ts',
       './step-catalogue.ts',

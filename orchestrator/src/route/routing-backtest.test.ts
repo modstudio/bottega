@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -255,7 +256,9 @@ describe('routing backtest statistics', () => {
       )
       .run(newRecordId(), id)
     db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .query(
+        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+      )
       .run(id)
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)

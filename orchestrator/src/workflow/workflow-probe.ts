@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
@@ -72,7 +73,7 @@ async function sandboxedRunner(
 ): Promise<ProbeRunResult> {
   const runtime = sandboxRuntimeAvailability()
   if (!runtime.available) {
-    throw new Error(`orch workflow probe refuses to run unsandboxed; ${runtime.remedy}`)
+    throw new Error(`${PLATFORM_SLUG} workflow probe refuses to run unsandboxed; ${runtime.remedy}`)
   }
   const scratch = mkdtempSync(join(tmpdir(), 'orch-probe-'))
   try {
@@ -85,7 +86,7 @@ async function sandboxedRunner(
       )
     } catch (error) {
       throw new Error(
-        `orch workflow probe could not establish a sandbox: ${
+        `${PLATFORM_SLUG} workflow probe could not establish a sandbox: ${
           error instanceof Error ? error.message : String(error)
         }; ${runtime.remedy}`,
       )
@@ -116,7 +117,7 @@ export async function recordWorkflowProbe(
     commit?: string | null
   } = {},
 ): Promise<ProbeRecord> {
-  if (!command.length) throw new Error('orch workflow probe needs a command after --')
+  if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
@@ -214,16 +215,18 @@ export async function recordWorkflowExec(
     registeredProject?: boolean
   } = {},
 ): Promise<ProbeRecord> {
-  if (!command.length) throw new Error('orch workflow exec needs a command after --')
+  if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
   if (process.env.ORCH_DEPTH !== undefined)
-    throw new Error('orch workflow exec is reserved for architect sessions; ORCH_DEPTH is set')
+    throw new Error(
+      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ORCH_DEPTH is set`,
+    )
   if (!sessionId())
     throw new Error(
-      `orch workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
+      `${PLATFORM_SLUG} workflow exec is reserved for architect sessions; ${callerIdentityRefusal(callerIdentity(), 'execute a workflow')}`,
     )
   const cwd = input.cwd ?? process.cwd()
   if (input.registeredProject === false)
-    throw new Error(`orch workflow exec: no registered project contains ${cwd}`)
+    throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
   const ran = input.runner
     ? await input.runner({ command, cwd })
     : await execRunner(command, cwd, input.write ?? ((chunk) => process.stdout.write(chunk)))

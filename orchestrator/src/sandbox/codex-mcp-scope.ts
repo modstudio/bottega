@@ -4,12 +4,12 @@
  * one run. Must not know dispatch, project lookup, transports, or credentials.
  */
 import { isAbsolute, join, resolve } from 'node:path'
+/** Parent environment names Codex may forward into the orch-ask subprocess. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-probe.ts'
 import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 import { mcpConfigForRun, projectReaderProxyServers } from './mcp-reader-scope.ts'
-
-/** Parent environment names Codex may forward into the orch-ask subprocess. */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
 /** Parent environment names Codex may forward into the read-mostly orch subprocess. */
 export const CODEX_ORCH_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_DEPTH'] as const
@@ -169,10 +169,10 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   args.push('-c', serverOverlay('orch-ask', askServer))
   if (!opts.mcp) return args
 
-  const [orchCommand, ...orchArgs] = bottegaEntryArgv('orch')
+  const [orchCommand, ...orchArgs] = bottegaEntryArgv(PLATFORM_SLUG)
   const orchServer = {
     command: orchCommand,
-    args: [...orchArgs, 'mcp'],
+    args: [...orchArgs, 'mcp', 'serve'],
     env_vars: CODEX_ORCH_ENV_VARS,
   }
   args.push('-c', serverOverlay('orch', orchServer))

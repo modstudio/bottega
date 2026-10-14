@@ -6,6 +6,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/change-api.ts',
     allowed: [
+      '../../shared/brand.ts',
       '../../shared/record-space-request.ts',
       './hosted-changes.ts',
       './hosted-identity-set.ts',
@@ -29,7 +30,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/identity-set-contract.ts',
     allowed: ['../../shared/record-id.ts', './push-contract.ts'],
   },
-  { file: 'hub/src/task-push-plan.ts', allowed: ['./push-contract.ts'] },
+  { file: 'hub/src/task-push-plan.ts', allowed: ['../../shared/brand.ts', './push-contract.ts'] },
   { file: 'hub/src/push-contract.ts', allowed: [] },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
@@ -69,6 +70,10 @@ export const hubModuleSpecs = [
     allowed: ['./decision.ts', 'shared/brand.ts'],
   },
   {
+    file: 'hub/src/trpc/orch-error.ts',
+    allowed: ['@trpc/server', '../../../shared/brand.ts'],
+  },
+  {
     file: 'hub/src/fixture-question-reclaim.ts',
     allowed: ['./db.ts', './orch.ts', './reconcile.ts'],
   },
@@ -79,6 +84,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-api.ts',
     allowed: [
+      '../../shared/brand.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',
@@ -90,6 +96,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-document.ts',
     allowed: [
+      '../../shared/brand.ts',
       'node:crypto',
       '../../shared/record/schema.ts',
       './db.ts',
@@ -100,11 +107,12 @@ export const hubModuleSpecs = [
       './task-write-destination.ts',
     ],
   },
-  { file: 'hub/src/task-document-label.ts', allowed: [] },
+  { file: 'hub/src/task-document-label.ts', allowed: ['../../shared/brand.ts'] },
   { file: 'hub/src/ingest/interval-replace.ts', allowed: [] },
   {
     file: 'hub/src/note-cli.ts',
     allowed: [
+      '../../shared/brand.ts',
       'commander',
       './attribute.ts',
       './db.ts',
@@ -138,6 +146,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/core-cli.ts',
     allowed: [
+      '../../shared/brand.ts',
       'commander',
       '../../shared/interval.ts',
       '../../shared/machine-config.ts',
@@ -165,6 +174,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/report-cli.ts',
     allowed: [
+      '../../shared/brand.ts',
       'commander',
       './db.ts',
       './report-client.ts',
@@ -175,6 +185,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-cli.ts',
     allowed: [
+      '../../shared/brand.ts',
       'node:fs',
       'commander',
       './cli-command.ts',
@@ -203,7 +214,13 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/note-project-space.ts',
-    allowed: ['./note-client.ts', './projects.ts', './task-client.ts', './task-project-space.ts'],
+    allowed: [
+      '../../shared/brand.ts',
+      './note-client.ts',
+      './projects.ts',
+      './task-client.ts',
+      './task-project-space.ts',
+    ],
   },
   {
     file: 'hub/src/task-write-destination.ts',

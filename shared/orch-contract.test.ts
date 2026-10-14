@@ -6,6 +6,8 @@ import {
   OrchRunDetailSchema,
   OrchStateSchema,
 } from './orch-contract.ts'
+import { PLATFORM_SLUG } from './brand.ts'
+import { HarnessHealthSchema, OrchAgentDefinitionSchema, OrchStateSchema } from './orch-contract.ts'
 
 test('agent snapshot parsing preserves who operates the endpoint', () => {
   const parsed = OrchAgentDefinitionSchema.parse({
@@ -48,7 +50,7 @@ test('harness health has one validated cross-concern payload contract', () => {
   expect(() => HarnessHealthSchema.parse({ ...payload, landingRefusals: '0' })).toThrow()
 })
 
-test('orch state accepts a constructed cooling string and caps.contextTokens number or null', () => {
+test(`${PLATFORM_SLUG} run state accepts a constructed cooling string and caps.contextTokens number or null`, () => {
   const payload = {
     live: [],
     stale: 0,

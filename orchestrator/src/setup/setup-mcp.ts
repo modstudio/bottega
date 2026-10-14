@@ -1,7 +1,8 @@
 // concern: setup-mcp
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
 const MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
@@ -77,7 +78,7 @@ export function runSetupCommand(
 }
 
 export function manualMcpInstructions(harness: HarnessName): string {
-  return `run orch mcp --config and follow ${HARNESS_MCP_CATALOGUE[harness].manualDocumentation ?? 'the harness MCP documentation'}`
+  return `run ${PLATFORM_SLUG} mcp serve --config and follow ${HARNESS_MCP_CATALOGUE[harness].manualDocumentation ?? 'the harness MCP documentation'}`
 }
 
 function mcpReadArgv(harness: HarnessName, bin: string, name: McpServerName): string[] {

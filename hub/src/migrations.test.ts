@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore, runHubFixtureProcess } from '../test/run-fixtures.ts'
@@ -187,8 +188,10 @@ describe('hub migration journal', () => {
     const d = fresh()
     d.exec('DELETE FROM hub_migrations')
     expect(migrationRefusal(d)).toContain('refusing to open a store behind')
-    expect(migrationRefusal(d)).toContain('invariant: Only hub migrate changes the store schema.')
-    expect(migrationRefusal(d)).toContain('cleared by: hub migrate')
+    expect(migrationRefusal(d)).toContain(
+      `invariant: Only ${PLATFORM_SLUG} machine migrate changes the store schema.`,
+    )
+    expect(migrationRefusal(d)).toContain(`cleared by: ${PLATFORM_SLUG} machine migrate`)
     d.close()
 
     const ahead = fresh()
@@ -198,7 +201,7 @@ describe('hub migration journal', () => {
       )
       .run()
     expect(migrationRefusal(ahead)).toContain('refusing to open a store ahead')
-    expect(migrationRefusal(ahead)).toContain('cleared by: hub migrate')
+    expect(migrationRefusal(ahead)).toContain(`cleared by: ${PLATFORM_SLUG} machine migrate`)
     ahead.close()
   })
 
@@ -871,7 +874,7 @@ describe('hub migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('hub migrate formats a one-line repair summary naming the durable table', () => {
+  test(`${PLATFORM_SLUG} machine migrate formats a one-line repair summary naming the durable table`, () => {
     expect(
       formatMigrationRepairSummary([
         { reason: 'missing task record id; minted UUID v7', count: 1 },

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { register } from './review.ts'
 
-const CLEAR_USAGE =
-  'orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]'
+const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
 
 function confinementProgram(): Command {
   const program = new Command().exitOverride()

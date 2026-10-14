@@ -2,6 +2,7 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record-id.ts'
 import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
@@ -436,7 +437,7 @@ export async function judgeRun(
       }
       if (!parsedOutput)
         throw new Error(
-          `run ${id} has no recorded review; recover it with orch review record ${id}`,
+          `run ${id} has no recorded review; recover it with ${PLATFORM_SLUG} review record ${id}`,
         )
     } else if (delivery !== 'none') {
       storedGrades = Object.fromEntries(
@@ -522,7 +523,7 @@ export async function judgeRun(
   }
   if (missing.length) {
     throw new Error(
-      `orch judge ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`,
+      `${PLATFORM_SLUG} score judge ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`,
     )
   }
   const note = options.note
@@ -645,8 +646,8 @@ function scoringHelp(
       `  wrong     confidently incorrect, or answered a different question\n` +
       `  mixed     some of it right, some not\n` +
       `  right     correct and usable as it stands\n\n` +
-      `  orch score ${id} full right --note "..."\n` +
-      `  orch score ${id} none --note "..."`
+      `  ${PLATFORM_SLUG} score ${id} full right --note "..."\n` +
+      `  ${PLATFORM_SLUG} score ${id} none --note "..."`
     )
   }
   if (refusal.code === 'fidelity-missing') {
@@ -658,8 +659,8 @@ function scoringHelp(
       `  faithful  built the spec, and ASKED wherever the spec ran out\n\n` +
       `Asking is faithful. A worker that stopped, asked, and built what it was told\n` +
       `did exactly the right thing and must not be marked down for it — read\n` +
-      `'orch diff ${id}' against the spec rather than the summary it wrote itself.\n\n` +
-      `  orch score ${id} ${delivery} ${quality} faithful --note "..."`
+      `'${PLATFORM_SLUG} run diff ${id}' against the spec rather than the summary it wrote itself.\n\n` +
+      `  ${PLATFORM_SLUG} score ${id} ${delivery} ${quality} faithful --note "..."`
     )
   }
   return refusal.message
@@ -763,10 +764,10 @@ export async function scoreRun(
   // screen. The orchestrator's own dashboard used to bypass this by writing
   // the score table directly, which is the same exception made invisible;
   // `--scorer` records WHO judged it but grants no authority on its own.
-  // `orch score 279 none` and `orch score 279 full right` are both complete
+  // `bottega score 279 none` and `bottega score 279 full right` are both complete
   // judgments; quality is meaningless without something to judge.
   //
-  // Read positionally past the flags, not by index: `orch score 279 none
+  // Read positionally past the flags, not by index: `bottega score 279 none
   // --note "..."` put `--note` in the quality slot and was rejected as an
   // incoherent judgment, which is a confusing way to be told about a typo
   // you did not make.

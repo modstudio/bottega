@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { ingestRunFixtures, resetFixtureStore, runFixture } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
@@ -36,7 +37,7 @@ test('setShipTo without a login cookie gets 401 and never reaches orch', async (
       }),
     )
     expect(response.status).toBe(401)
-    expect(await response.text()).toContain('hub login')
+    expect(await response.text()).toContain(`${PLATFORM_SLUG} dashboard login`)
     expect(spawn).not.toHaveBeenCalled()
   } finally {
     spawn.mockRestore()
@@ -108,7 +109,7 @@ describe('run ingest', () => {
       byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
-      stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
+      stdout: new Blob([argv.includes('list') ? JSON.stringify(run) : JSON.stringify(state)]),
       stderr: new Blob(['']),
       exited: Promise.resolve(0),
       kill() {},
@@ -126,7 +127,7 @@ describe('run ingest', () => {
       id: 9821,
       status: 'ok',
       delivery: 'none',
-      evidence_excluded: 'voided with orch score --void',
+      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
     })
     const state = {
       live: [],
@@ -141,7 +142,7 @@ describe('run ingest', () => {
       byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
-      stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
+      stdout: new Blob([argv.includes('list') ? JSON.stringify(run) : JSON.stringify(state)]),
       stderr: new Blob(['']),
       exited: Promise.resolve(0),
       kill() {},
@@ -156,7 +157,7 @@ describe('run ingest', () => {
         expect.objectContaining({
           id: 9821,
           delivery: 'none',
-          evidence_excluded: 'voided with orch score --void',
+          evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
         }),
       ])
     } finally {
@@ -183,7 +184,7 @@ describe('run ingest', () => {
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([
-        argv.includes('runs')
+        argv.includes('list')
           ? runs.map((run) => JSON.stringify(run)).join('\n')
           : JSON.stringify(state),
       ]),
@@ -241,7 +242,7 @@ describe('run ingest', () => {
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([
-        argv.includes('runs')
+        argv.includes('list')
           ? runs.map((run) => JSON.stringify(run)).join('\n')
           : JSON.stringify(state),
       ]),
@@ -308,7 +309,7 @@ describe('run ingest', () => {
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([
-        argv.includes('runs')
+        argv.includes('list')
           ? runs.map((run) => JSON.stringify(run)).join('\n')
           : JSON.stringify(state),
       ]),

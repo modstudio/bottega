@@ -2,6 +2,7 @@
 /** Registers inbox and diff adapters. Must not own their behavior. */
 import { existsSync } from 'node:fs'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { cleanupRepoRoot } from '../cleanup/cleanup.ts'
 import { db, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -26,7 +27,7 @@ function chainHasPendingDelivery(rootId: number): boolean {
 }
 
 const strandedRecovery = (id: number) =>
-  `stranded — orch retry ${id} --agent … with the recorded ruling, or orch abandon ${id}`
+  `stranded — ${PLATFORM_SLUG} run retry ${id} --agent … with the recorded ruling, or ${PLATFORM_SLUG} run abandon ${id}`
 
 export function register(program: Command): void {
   program
@@ -61,7 +62,7 @@ export function register(program: Command): void {
         error: console.error,
         write,
         usage: (): never => {
-          throw new Error('orch diff <id> [--quiet] [--since-base | --since-read]')
+          throw new Error(`${PLATFORM_SLUG} run diff <id> [--quiet] [--since-base | --since-read]`)
         },
         cleanupRepoRoot,
         observedChangesIn,

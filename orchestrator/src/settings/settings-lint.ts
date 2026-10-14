@@ -1,5 +1,6 @@
 // concern: settings-lint
 /** Pure lint of owned Claude permission rules. Must not know filesystems, stores, commands, or transports. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import {
   allPermissionRules,
@@ -11,6 +12,7 @@ import {
 export type SettingsTarget = { id: string; settings: OwnedSettings }
 
 const BIN_PREFIXES = [
+  [`./bin/${PLATFORM_SLUG}`, PLATFORM_SLUG],
   ['./bin/orch', 'orch'],
   ['./bin/hub', 'hub'],
 ] as const

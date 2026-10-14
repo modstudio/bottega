@@ -23,7 +23,7 @@ import {
  * real debugging session looking for a PATH problem that did not exist. Every
  * call here therefore checks the directory first and answers for itself.
  *
- * It matters because the normal case IS a missing directory: `orch discard` on
+ * It matters because the normal case IS a missing directory: `bottega run discard` on
  * a worktree somebody already deleted by hand, or on a scratch repository that
  * has since been cleaned up.
  */
@@ -271,7 +271,7 @@ function gitConfigOk(args: string[], cwd: string): string | null {
  *
  * A patch is a byte-exact artifact: `git apply` reads trailing newlines as
  * part of the hunk, so trimming one turns a valid patch into `corrupt patch at
- * line 301`. That is not hypothetical — `orch diff 638 > p && git apply p`
+ * line 301`. That is not hypothetical — `bottega run diff 638 > p && git apply p`
  * failed exactly that way on the first real implementation run, while the same
  * diff taken straight from git applied cleanly, because `gitOk` trims and a
  * diff is the one thing here that must not be tidied.

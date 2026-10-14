@@ -6,6 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
@@ -758,7 +759,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       // A parsed findings reply is the review event. Capture it in the same
       // terminal transaction so a successful lens cannot exist in the gap
       // between "ran" and "recorded". Probe traffic is calibration and is not
-      // recorded. Manual `orch review record` remains the recovery path for
+      // recorded. Manual `bottega review record` remains the recovery path for
       // historical or otherwise uncaptured outputs.
       recordTerminalReviewEvidence(db(), {
         runId: identity.parent_run_id ?? claim.id,
@@ -783,7 +784,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           )
           .run(
             `unreconciled: reply at ${runTerminalReplyPath(claim.id)}; ` +
-              `cleared by: orch reconcile ${claim.id}  (${retry})`,
+              `cleared by: ${PLATFORM_SLUG} run reconcile ${claim.id}  (${retry})`,
             claim.id,
           )
       } catch {

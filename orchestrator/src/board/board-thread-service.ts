@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -124,7 +125,7 @@ export function replyToThread(
     const project = actor.kind === 'architect' ? projectAt(cwd) : null
     if (actor.kind === 'architect' && !project)
       throw new Error(
-        `architect replying project is unknown for ${cwd}; reply from a registered project or run orch project add first`,
+        `architect replying project is unknown for ${cwd}; reply from a registered project or run ${PLATFORM_SLUG} project add first`,
       )
     const createdAt = new Date(clock).toISOString()
     const inserted = database
@@ -219,7 +220,7 @@ export function readThread(id: number, env: Environment = process.env, clock = D
 }
 
 function retryHint(questionId: number, pendingError: string | null): string | null {
-  return pendingError ? `orch board file-note ${questionId}` : null
+  return pendingError ? `${PLATFORM_SLUG} board file-note ${questionId}` : null
 }
 
 function filingLeaseRefusal(question: MessageRow, clock: number): string | null {
@@ -231,7 +232,7 @@ function filingLeaseRefusal(question: MessageRow, clock: number): string | null 
   if (decision.kind === 'filed')
     return `board question ${question.id} already filed note ${question.note_label}`
   if (decision.kind === 'in-progress')
-    return `board question ${question.id} note filing is in progress; retry with orch board file-note ${question.id} after ${new Date(decision.retryAt).toISOString()}`
+    return `board question ${question.id} note filing is in progress; retry with ${PLATFORM_SLUG} board file-note ${question.id} after ${new Date(decision.retryAt).toISOString()}`
   return null
 }
 
@@ -257,7 +258,7 @@ function takeFilingLease(
       const raced = message(questionId)
       throw new Error(
         filingLeaseRefusal(raced, clock) ??
-          `board question ${questionId} note filing is in progress; retry with orch board file-note ${questionId}`,
+          `board question ${questionId} note filing is in progress; retry with ${PLATFORM_SLUG} board file-note ${questionId}`,
       )
     }
     const question = message(questionId)
@@ -363,7 +364,7 @@ export async function acceptAnswer(
         reply.id,
         reader,
         new Date(clock).toISOString(),
-        `note filing has not completed; retry with orch board file-note ${question.id}`,
+        `note filing has not completed; retry with ${PLATFORM_SLUG} board file-note ${question.id}`,
         question.id,
       )
     return { question: message(question.id), reply }

@@ -200,7 +200,7 @@ function retainedDockerResourceAction(
       })
     : false
   return terminal && owner.worktree && !existsSync(owner.worktree) && teardownPlan
-    ? `run orch close-out ${owner.id}`
+    ? `run ${PLATFORM_SLUG} run close-out ${owner.id}`
     : 'informational; retained resources require review before any removal'
 }
 
@@ -513,7 +513,7 @@ export async function monitor(
       subject: `run:${run.id}`,
       since: run.started_at,
       detail: `run ${run.id} is marked asking but has no unanswered question (stranded)`,
-      action: `run orch abandon ${run.id} to close it, or orch continue ${run.id} to resume it; an intent decision`,
+      action: `run ${PLATFORM_SLUG} run abandon ${run.id} to close it, or ${PLATFORM_SLUG} run continue ${run.id} to resume it; an intent decision`,
       ownerSession: run.session_id,
     })
 
@@ -537,7 +537,7 @@ export async function monitor(
       subject: `run:${run.id}`,
       since: run.close_out_attempted_at,
       detail: run.close_out_detail ?? `terminal run ${run.id} close-out ${run.close_out_outcome}`,
-      action: `run orch close-out ${run.id}`,
+      action: `run ${PLATFORM_SLUG} run close-out ${run.id}`,
       ownerSession: run.session_id,
     })
 
@@ -710,8 +710,8 @@ export async function monitor(
           ? `run ${held.id} retained by ${held.keep_tree_reason ?? 'explicit --keep-tree'} until ${hold.until}`
           : `run ${held.id} ${dirty!.detail}`,
         action: explicit
-          ? `clear with orch discard ${held.id}`
-          : `commit or remove the work, then run orch close-out ${held.id}`,
+          ? `clear with ${PLATFORM_SLUG} run discard ${held.id}`
+          : `commit or remove the work, then run ${PLATFORM_SLUG} run close-out ${held.id}`,
         severity: ageMs !== null && ageMs >= 48 * 60 * 60 * 1000 ? 'attention' : 'informational',
       })
     }
@@ -856,7 +856,7 @@ export async function monitor(
           what_happened: `Monitor cannot safely handle ${condition.subject}: ${condition.detail}`,
           expected:
             'The monitor needs a machine-readable detector or an established command so it can report or repair this condition without inference or direct database writes.',
-          reproduce_command: 'orch monitor',
+          reproduce_command: `${PLATFORM_SLUG} machine monitor`,
           environment: `monitor invocation ${invocation}; affected machine/project is named in the evidence`,
           evidence: `monitor invocation ${invocation}; ${condition.kind} ${condition.subject}; ${condition.detail}`,
           not_established:

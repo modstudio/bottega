@@ -1,5 +1,6 @@
 // concern: run-inbox
 /** Owns mailbox message parsing and reporting. Must not know CLI grammar. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   assertWorkerText,
   parseWorkerMessageArgs,
@@ -18,7 +19,7 @@ export async function tellCommand(
   presentation: { log(value: string): void },
 ): Promise<void> {
   const sources = parseWorkerMessageArgs(argv, {
-    usage: 'orch tell <run-id> ["<message>"] [--file PATH] [--ping]',
+    usage: `${PLATFORM_SLUG} run tell <run-id> ["<message>"] [--file PATH] [--ping]`,
     booleans: ['--ping'],
   })
   const body = (await readMessageText({

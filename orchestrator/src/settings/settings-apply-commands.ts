@@ -1,6 +1,7 @@
 // concern: settings-apply-commands
 /** Knows env import, adoption, guarded render writes, and restore command semantics. */
 import { realpathSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions } from '../../../shared/machine-config.ts'
@@ -165,7 +166,7 @@ export async function settingsRenderWriteCommand(
 ): Promise<void> {
   if (workerProcess()) {
     throw new Error(
-      'refusing settings render --write from an orch worker run; an operator must run orch settings render --write',
+      `refusing settings render --write from an orch worker run; an operator must run ${PLATFORM_SLUG} machine settings render --write`,
     )
   }
   const target = resolveTarget(flags)
@@ -203,7 +204,7 @@ export async function settingsRenderWriteCommand(
     if (unprotected.length > 0) {
       throw new Error(
         `refusing settings write: env key(s) exist only in ${path}: ${unprotected.join(', ')}\n` +
-          'cleared by: run `orch settings env import --user` first, or pass ' +
+          `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first, or pass ` +
           unprotected.map((name) => `--drop-env ${name}`).join(' ') +
           ' to drop deliberately',
       )

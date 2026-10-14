@@ -1,6 +1,7 @@
 // concern: subjects
 /** Owns local subject storage and hosted-first subject mutations. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   SubjectDefinitionSchema,
@@ -41,7 +42,7 @@ const mapped = (row: LocalRow): Subject => ({
 })
 
 const unknownProject = (project: string): Error =>
-  new Error(`unknown project "${project}"; cleared by: orch project list`)
+  new Error(`unknown project "${project}"; cleared by: ${PLATFORM_SLUG} project list`)
 
 const assertRegisteredProject = (project: string, database: Database = db()): void => {
   if (!projectRowByName(project, database)) throw unknownProject(project)
@@ -84,11 +85,11 @@ export function resolveSubject(
   if (matches.length === 1) return mapped(matches[0]!)
   if (matches.length > 1) {
     throw new Error(
-      `subject name "${reference}" is ambiguous in project ${project}; use its UUID from: orch subject list ${project}`,
+      `subject name "${reference}" is ambiguous in project ${project}; use its UUID from: ${PLATFORM_SLUG} doc subject list ${project}`,
     )
   }
   throw new Error(
-    `subject "${reference}" is not in project ${project}; cleared by: orch subject list ${project}`,
+    `subject "${reference}" is not in project ${project}; cleared by: ${PLATFORM_SLUG} doc subject list ${project}`,
   )
 }
 
@@ -118,7 +119,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
   const project = projectRowByName(row.project, database)
   if (!project) {
     throw new Error(
-      `cannot apply subject ${row.id}: project ${row.project} is not registered; cleared by: orch project add <path> --name ${row.project}`,
+      `cannot apply subject ${row.id}: project ${row.project} is not registered; cleared by: ${PLATFORM_SLUG} project add <path> --name ${row.project}`,
     )
   }
   const definition = SubjectDefinitionSchema.parse(row.definition)
@@ -147,7 +148,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
   } catch (error) {
     if (String(error).includes('subject.project_id, subject.name')) {
       throw new Error(
-        `subject "${row.name}" already exists in project ${row.project}; cleared by: orch subject list ${row.project}`,
+        `subject "${row.name}" already exists in project ${row.project}; cleared by: ${PLATFORM_SLUG} doc subject list ${row.project}`,
       )
     }
     throw error
@@ -243,7 +244,7 @@ function localReorder(project: string, ids: string[], at = nowIso()): Subject[] 
   const supplied = [...new Set(ids)].sort()
   if (ids.length !== supplied.length || JSON.stringify(expected) !== JSON.stringify(supplied)) {
     throw new Error(
-      `reorder must name every non-retired subject in project ${project} exactly once; cleared by: orch subject list ${project}`,
+      `reorder must name every non-retired subject in project ${project} exactly once; cleared by: ${PLATFORM_SLUG} doc subject list ${project}`,
     )
   }
   for (const [position, id] of ids.entries()) {

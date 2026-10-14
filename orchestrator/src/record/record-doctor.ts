@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
@@ -197,7 +198,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
       ? {
           name: 'local outbox quarantined rows',
           status: 'fail',
-          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
+          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\``,
           section: 'customer',
         }
       : {

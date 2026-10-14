@@ -2,6 +2,7 @@
 /** Registers the run-minted branch report. Must not own report behavior. */
 
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordBranchLanding } from '../branch/branch-landing-service.ts'
 import {
   branchesReport,
@@ -57,7 +58,9 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action((options) => {
       if (Boolean(options.key) === Boolean(options.allLocal)) {
-        throw new Error('orch branches prune requires exactly one of --key <KEY> or --all-local')
+        throw new Error(
+          `${PLATFORM_SLUG} tree branch prune requires exactly one of --key <KEY> or --all-local`,
+        )
       }
       const report = options.allLocal
         ? pruneOtherBranches({ project: options.project, dryRun: options.dryRun })

@@ -27,7 +27,9 @@ export function RunShowcase() {
               <i />
               <i />
             </div>
-            <span className="path mono">{PLATFORM_SLUG} — orch board</span>
+            <span className="path mono">
+              {PLATFORM_SLUG} — {PLATFORM_SLUG} board
+            </span>
           </div>
           <div className="app-body">
             <aside className="app-side">

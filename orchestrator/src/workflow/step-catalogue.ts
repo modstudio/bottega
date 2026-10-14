@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns the shared, versioned workflow-step catalogue. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -62,7 +63,12 @@ function validateDispatchPrompts(item: Record<string, unknown>, errors: string[]
   const slug = String(item.slug ?? '')
   for (const match of item.body.matchAll(/`([^`\n]+)`/g)) {
     const command = match[1]!.trim()
-    if (!/^(?:orch|\S*\/bin\/orch)\s+do\s+\S+/.test(command)) continue
+    if (
+      !new RegExp(
+        `^(?:(?:orch|\\S*\\/bin\\/orch)\\s+do|(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})\\s+run\\s+start)\\s+\\S+`,
+      ).test(command)
+    )
+      continue
     if (!dispatchHasPromptOrFile(command))
       errors.push(
         `step "${slug}" dispatch "${command}" must include --file or a double-quoted argument`,

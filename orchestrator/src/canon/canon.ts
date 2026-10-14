@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { $ } from 'bun'
-import { CONCERNS } from '../../../shared/brand.ts'
+import { CONCERNS, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { isCliCommand } from '../cli/args.ts'
@@ -546,7 +546,7 @@ export function checkDoc(
           line,
           message: `line ${line}: \`${token}\` names no orch subcommand`,
         })
-      const doJob = token.match(/^orch do\s+([a-z][\w-]*)$/)
+      const doJob = token.match(new RegExp(`^${PLATFORM_SLUG} run start\\s+([a-z][\\w-]*)$`))
       if (doJob && !JOBS[doJob[1]!])
         findings.push({
           kind: 'job',
@@ -649,7 +649,7 @@ export function acceptPackDiff(diff: PackDiff): Pack | null {
   if (linkedWorktreeReadOnly) {
     throw new Error(
       'refusing canon acceptance: linked-worktree binary has read-only store access\n' +
-        "remedy: run this command with the main checkout's bin/orch",
+        `remedy: run this command with the main checkout's bin/${PLATFORM_SLUG}`,
     )
   }
   recordPack(diff.current)

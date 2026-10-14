@@ -131,6 +131,7 @@ export const ROUTES = (
       ],
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
+    route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
     route('record outbox', 'orch', 'record outbox'),
     route('record', 'orch', 'record'),
     route('agent show', 'orch', 'agent'),

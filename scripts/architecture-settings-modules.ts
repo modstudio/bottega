@@ -13,6 +13,7 @@ const module = (file: string, allowed: string[]): SettingsModule => ({
 
 export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/project/project-injection.ts', [
+    '../../../shared/brand.ts',
     'zod',
     '../../../shared/trackers.ts',
     '../../../shared/test-substance/test-substance.ts',
@@ -21,12 +22,14 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/config/secret-run.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/env-source.ts',
     '../../../shared/hosted-secrets.ts',
     '../sandbox/record-connection-env.ts',
   ]),
   module('orchestrator/src/config/config-service.ts', [
+    '../../../shared/brand.ts',
     'node:os',
     '../../../shared/config-directory.ts',
     '../../../shared/config-client.ts',
@@ -41,6 +44,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/trust-list.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
+    '../../../shared/brand.ts',
     'node:readline/promises',
     'commander',
     '../../../shared/config-client.ts',
@@ -51,6 +55,7 @@ export const settingsModules: SettingsModule[] = [
     './support.ts',
   ]),
   module('orchestrator/src/commands/settings.ts', [
+    '../../../shared/brand.ts',
     'commander',
     '../settings/settings-apply-commands.ts',
     '../settings/settings-commands.ts',
@@ -70,6 +75,7 @@ export const settingsModules: SettingsModule[] = [
     '../run/run-process.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [
+    '../../../shared/brand.ts',
     'bun:sqlite',
     'fs',
     'path',
@@ -92,6 +98,7 @@ export const settingsModules: SettingsModule[] = [
     './settings-write.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-hooks.ts', [
+    '../../../shared/brand.ts',
     'node:path',
     '../board/board-delivery.ts',
     './settings.ts',

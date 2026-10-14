@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -154,7 +155,7 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
 
 function registeredProject(name: string): void {
   if (!projects().some((candidate) => candidate.name === name))
-    throw new Error(`project '${name}' is not registered; run \`orch project list\``)
+    throw new Error(`project '${name}' is not registered; run \`${PLATFORM_SLUG} project list\``)
 }
 
 function writeMode(
@@ -355,7 +356,9 @@ export function resolveNoteReference(value: string, sessionProject: string | nul
   if (hasRecordIdShape(value)) {
     const recordId = value.toLowerCase()
     if (db().query('SELECT 1 FROM note WHERE record_id=?').get(recordId)) return recordId
-    throw new Error(`no note ${recordId}; use a project#number label or run \`hub note list\``)
+    throw new Error(
+      `no note ${recordId}; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+    )
   }
   let project: string | null = sessionProject
   let number: number
@@ -380,7 +383,9 @@ export function resolveNoteReference(value: string, sessionProject: string | nul
     : null
   if (inProject) return inProject.record_id
   const expected = formatNoteLabel(project ?? '<project>', number)
-  throw new Error(`no note ${expected}; use a project#number label or run \`hub note list\``)
+  throw new Error(
+    `no note ${expected}; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+  )
 }
 
 export async function acknowledgeNote(
@@ -950,7 +955,7 @@ export function noteCuratorPrompt(notes: Pick<NoteRow, 'label' | 'text'>[]): str
   return [
     'Re-read every open note below against this checkout. Return proposals only; make no changes.',
     'For each note return: still-holds, genuine-duplicate-of-project#number, earned-promotion, and area, with reasons.',
-    'A human will act through hub note same, drop, or promote.',
+    `A human will act through ${PLATFORM_SLUG} note same, drop, or promote.`,
     '',
     ...notes.map((note) => `${note.label}: ${note.text}`),
   ].join('\n')

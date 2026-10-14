@@ -1,6 +1,7 @@
 // concern: record-sync
 /** Batches local outbox rows for the hosted API and applies authoritative per-row results. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import {
   parseRecordSpaceMemberships,
@@ -135,7 +136,7 @@ function pendingCount(local: Database): number {
 function syncRouteError(error: unknown): never {
   if (error instanceof RecordApiRequestError && error.status === 404) {
     throw new Error(
-      'hosted record API predates evidence sync; release the hosted API, then retry `orch sync`',
+      `hosted record API predates evidence sync; release the hosted API, then retry \`${PLATFORM_SLUG} record sync\``,
     )
   }
   throw error

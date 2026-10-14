@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type DocsSettings,
   type ReleaseSettings,
@@ -88,7 +89,9 @@ describe('project workflow injection', () => {
     expect(unknownPlaceholder).toContain(
       'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
     )
-    expect(unknownPlaceholder).toContain('set with: orch project set <project> --settings')
+    expect(unknownPlaceholder).toContain(
+      `set with: ${PLATFORM_SLUG} project set <project> --settings`,
+    )
     const missingFindings = validateProjectSettings({
       review: { lenses: [], record: 'project-review record --tier {tier}' },
     }).join('\n')
@@ -110,7 +113,7 @@ describe('project workflow injection', () => {
         enabledLensIds: ['correctness'],
       }),
     ).toEqual([
-      'review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from orch lens list',
+      `review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
     ])
   })
 
@@ -120,7 +123,7 @@ describe('project workflow injection', () => {
     } as unknown as Project['settings']).join('\n')
     expect(unknownRuleErrors).toContain('unknown PHP policy rule')
     expect(unknownRuleErrors).toContain('valid rules:')
-    expect(unknownRuleErrors).toContain('orch project set <project> --settings')
+    expect(unknownRuleErrors).toContain(`${PLATFORM_SLUG} project set <project> --settings`)
     expect(
       validateProjectSettings({
         testSubstance: { phpPolicyRules: ['createMock', 'createMock'] },
@@ -139,7 +142,9 @@ describe('project workflow injection', () => {
     expect(problems).toEqual([
       expect.stringContaining('mechanicalChecks.mystery: unknown category'),
     ])
-    expect(problems.every((problem) => problem.includes('orch project set <project>'))).toBe(true)
+    expect(
+      problems.every((problem) => problem.includes(`${PLATFORM_SLUG} project set <project>`)),
+    ).toBe(true)
   })
 
   test('validates a rung live command as a non-empty string', () => {
@@ -256,7 +261,7 @@ describe('project workflow injection', () => {
       validateProjectSettings({
         tracker: {
           protocol: 'hub',
-          actions: { get: 'hub task show {key}; rm -rf checkout' },
+          actions: { get: `${PLATFORM_SLUG} task show {key}; rm -rf checkout` },
         },
       }).join('\n'),
     ).toContain('tracker.actions: hub protocol accepts no action overrides; remove tracker.actions')
@@ -355,8 +360,8 @@ describe('project workflow injection', () => {
       ['tracker'],
       { key: 'DEV-661' },
     ).tracker
-    expect(hub.actions.search).toBe('hub task list --project fixture')
-    expect(hub.actions.get).toBe('hub task show DEV-661')
+    expect(hub.actions.search).toBe(`${PLATFORM_SLUG} task list --project fixture`)
+    expect(hub.actions.get).toBe(`${PLATFORM_SLUG} task show DEV-661`)
   })
 
   test('workspace facts include the document action (mutation: drop the action)', () => {
@@ -481,7 +486,7 @@ describe('project workflow injection', () => {
       state: 'review',
       floor: 'tracker-transition',
     })
-    expect(hub.actions.get).toBe('hub task show DEV-661')
+    expect(hub.actions.get).toBe(`${PLATFORM_SLUG} task show DEV-661`)
   })
 
   test('validates each review stage selection at the register edge', () => {
@@ -511,7 +516,7 @@ describe('project workflow injection', () => {
     )
     expect(problems({ waiting: 'waiting', active: 'reviewing' })).toBe('')
     expect(problems({ waiting: 'missing', active: 'reviewing' })).toContain(
-      `orch project set <name> --settings`,
+      `${PLATFORM_SLUG} project set <name> --settings`,
     )
   })
 
@@ -555,7 +560,7 @@ describe('project workflow injection', () => {
         ['tracker'],
       ),
     ).toThrow(
-      'project fixture tracker has several review states (waiting, reviewing) but no reviewStages selection; set it with: orch project set fixture --settings',
+      `project fixture tracker has several review states (waiting, reviewing) but no reviewStages selection; set it with: ${PLATFORM_SLUG} project set fixture --settings`,
     )
   })
 
@@ -569,7 +574,7 @@ describe('project workflow injection', () => {
       ['tracker'],
       { key: 'DEV-661' },
     ).tracker
-    expect(hostileProject.actions.search).toBe('hub task list --project {project}')
+    expect(hostileProject.actions.search).toBe(`${PLATFORM_SLUG} task list --project {project}`)
 
     const hostileKey = resolveInjection(
       {
@@ -580,7 +585,7 @@ describe('project workflow injection', () => {
       ['tracker'],
       { key: 'DEV-1; cat secrets' },
     ).tracker
-    expect(hostileKey.actions.get).toBe('hub task show {key}')
+    expect(hostileKey.actions.get).toBe(`${PLATFORM_SLUG} task show {key}`)
   })
 
   test('the register edge refuses a blank or non-string trunk', () => {
@@ -633,15 +638,15 @@ describe('project workflow injection', () => {
         settings: {
           tracker: {
             protocol: 'hub',
-            actions: { get: 'hub task show {key}; cat secrets' },
+            actions: { get: `${PLATFORM_SLUG} task show {key}; cat secrets` },
           },
         },
       },
       ['tracker'],
       { key: 'DEV_661' },
     ).tracker
-    expect(tracker.actions.search).toBe('hub task list --project fixture_name')
-    expect(tracker.actions.get).toBe('hub task show DEV_661')
+    expect(tracker.actions.search).toBe(`${PLATFORM_SLUG} task list --project fixture_name`)
+    expect(tracker.actions.get).toBe(`${PLATFORM_SLUG} task show DEV_661`)
   })
 
   test('one refusal names every missing fact and its project update command', () => {
@@ -657,9 +662,9 @@ describe('project workflow injection', () => {
 
     expect(() => resolveInjection(project, ['docs', 'signals', 'stack'])).toThrow(
       'project fixture is missing workflow injection facts:\n' +
-        `- docs; set with: orch project set fixture --settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'\n` +
-        `- signals; set with: orch project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'\n` +
-        '- stack; set with: orch project set fixture --stack <stack>',
+        `- docs; set with: ${PLATFORM_SLUG} project set fixture --settings '{"docs":{"protocol":"<orch-docs|workspace-mcp|cursor-mcp|array-mcp>"}}'\n` +
+        `- signals; set with: ${PLATFORM_SLUG} project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'\n` +
+        `- stack; set with: ${PLATFORM_SLUG} project set fixture --stack <stack>`,
     )
   })
 })

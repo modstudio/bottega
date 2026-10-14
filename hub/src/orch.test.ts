@@ -88,15 +88,23 @@ test('machine bridge schemas parse the CLI output shapes', () => {
 })
 
 test('managed context wrappers build exact argv', () => {
-  expect(contextArgv('/work/project')).toEqual(['context', '--cwd', '/work/project', '--json'])
+  expect(contextArgv('/work/project')).toEqual([
+    'agent',
+    'context',
+    '--cwd',
+    '/work/project',
+    '--json',
+  ])
   expect(configArgv('get', 'autonomy.stage.review')).toEqual([
+    'machine',
     'config',
     'get',
     'autonomy.stage.review',
     '--json',
   ])
-  expect(configArgv('list')).toEqual(['config', 'list', '--json'])
+  expect(configArgv('list')).toEqual(['machine', 'config', 'list', '--json'])
   expect(configArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.stage.review',
@@ -104,6 +112,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(configArgv('set', 'autonomy.preset', 'manual', 4)).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.preset',
@@ -113,19 +122,22 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(configDeleteArgv('autonomy.stage.review')).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.stage.review',
   ])
   expect(configDeleteArgv('autonomy.stage.review', 3)).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.stage.review',
     '--expect',
     '3',
   ])
-  expect(machineConfigArgv('list')).toEqual(['config', 'list', '--machine', '--json'])
+  expect(machineConfigArgv('list')).toEqual(['machine', 'config', 'list', '--machine', '--json'])
   expect(machineConfigArgv('set', 'autonomy.stage.review', 'auto')).toEqual([
+    'machine',
     'config',
     'set',
     'autonomy.stage.review',
@@ -134,12 +146,14 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machineConfigArgv('delete', 'autonomy.ship-to')).toEqual([
+    'machine',
     'config',
     'delete',
     'autonomy.ship-to',
     '--machine',
   ])
   expect(settingsCheckArgv({ user: true })).toEqual([
+    'machine',
     'settings',
     'render',
     '--check',
@@ -147,6 +161,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(settingsCheckArgv({ project: PLATFORM_NAME })).toEqual([
+    'machine',
     'settings',
     'render',
     '--check',
@@ -164,6 +179,7 @@ test('managed context wrappers build exact argv', () => {
       reason: 'needed',
     }),
   ).toEqual([
+    'machine',
     'settings',
     'permission',
     'add',
@@ -180,6 +196,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionListArgv()).toEqual([
+    'machine',
     'settings',
     'permission',
     'list',
@@ -187,6 +204,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionArgv({ operation: 'add', list: 'allow', rule: 'Bash(orch *)' })).toEqual([
+    'machine',
     'settings',
     'permission',
     'add',
@@ -198,6 +216,7 @@ test('managed context wrappers build exact argv', () => {
     '--json',
   ])
   expect(machinePermissionArgv({ operation: 'drop', list: 'ask', rule: 'Bash(rm *)' })).toEqual([
+    'machine',
     'settings',
     'permission',
     'drop',
@@ -236,14 +255,14 @@ test('settings check preserves an exit-one refusal with empty stdout', async () 
   const executable = join(root, 'orch-refusal')
   writeFileSync(
     executable,
-    "#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run orch record login' >&2\nexit 1\n",
+    `#!/bin/sh\nprintf '%s\\n' 'no signed-in record session; run ${PLATFORM_SLUG} record login' >&2\nexit 1\n`,
   )
   chmodSync(executable, 0o755)
   const prior = process.env.HUB_ORCH
   try {
     process.env.HUB_ORCH = executable
     await expect(settingsCheck({ user: true })).rejects.toThrow(
-      'no signed-in record session; run orch record login',
+      `no signed-in record session; run ${PLATFORM_SLUG} record login`,
     )
   } finally {
     if (prior === undefined) delete process.env.HUB_ORCH
@@ -326,6 +345,7 @@ test('owner-scoped doc wrappers never send an owner id', () => {
 
 test('operator file-ruling argv runs the verb through the orch seam with json', () => {
   expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([
+    'question',
     'ruling',
     'file',
     '7',
@@ -345,6 +365,7 @@ test('operator file-ruling argv runs the verb through the orch seam with json', 
       title: 'Which shape?',
     }),
   ).toEqual([
+    'question',
     'ruling',
     'file',
     '7',
@@ -370,6 +391,7 @@ test('operator answer argv preserves the ruling and records the UI operator chan
       { questionId: 8, ruling: 'Keep both' },
     ]),
   ).toEqual([
+    'question',
     'answer',
     '42',
     '--q7',
@@ -383,7 +405,7 @@ test('operator answer argv preserves the ruling and records the UI operator chan
   ])
 })
 
-test('the orch waiting client contract accepts a no-project item', () => {
+test(`the ${PLATFORM_SLUG} run waiting client contract accepts a no-project item`, () => {
   expect(
     OperatorWaitingItemSchema.parse({
       kind: 'question',
@@ -400,7 +422,7 @@ test('the orch waiting client contract accepts a no-project item', () => {
       why: null,
       waiting_since: '2026-09-25',
       episode: '2026-09-25',
-      answer_command: 'orch answer 42 --q7 "<ruling>"',
+      answer_command: `${PLATFORM_SLUG} question answer 42 --q7 "<ruling>"`,
     }),
   ).toMatchObject({ project: null })
 })
@@ -525,13 +547,13 @@ test('orch resolution accepts only executable files from override, checkout, and
     format: 'esm',
   })
   expect(built.success).toBe(true)
-  const checkoutCandidate = join(bundledRoot, 'bin', 'orch')
+  const checkoutCandidate = join(bundledRoot, 'bin', PLATFORM_SLUG)
   mkdirSync(checkoutCandidate, { recursive: true })
   const first = join(root, 'first-bin')
   const second = join(root, 'second-bin')
-  mkdirSync(join(first, 'orch'), { recursive: true })
+  mkdirSync(join(first, PLATFORM_SLUG), { recursive: true })
   mkdirSync(second)
-  const found = join(second, 'orch')
+  const found = join(second, PLATFORM_SLUG)
   writeFileSync(found, '#!/bin/sh\nexit 0\n')
   chmodSync(found, 0o755)
   const override = join(root, 'override-orch')

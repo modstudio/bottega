@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 import {
   HOOK_TREE_JOB,
@@ -15,7 +16,7 @@ describe('hook-tree lifecycle decisions', () => {
     expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: true }, ordinary)).toEqual({
       held: true,
       until: null,
-      reason: 'hook tree; remove with orch tree remove <path>',
+      reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
     })
     expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: false }, ordinary)).toBe(ordinary)
     expect(hookTreeHoldDecision({ job: 'implement', treeExists: true }, ordinary)).toBe(ordinary)
@@ -49,7 +50,7 @@ describe('hook-tree lifecycle decisions', () => {
     expect(hookTreeNotice(hook, clock)).toMatchObject({
       kind: 'hook-tree-old',
       detail: 'hook tree /trees/orch-41 remains provisioned',
-      action: 'orch tree remove /trees/orch-41',
+      action: `${PLATFORM_SLUG} tree remove /trees/orch-41`,
     })
     expect(hookTreeNotice({ ...hook, startedAt: boundary }, clock)).toBeNull()
     expect(hookTreeNotice({ ...hook, job: 'implement' }, clock)).toBeNull()
@@ -67,7 +68,7 @@ describe('hook-tree lifecycle decisions', () => {
     expect(hookTreeNotice(hook, clock)).toMatchObject({
       kind: 'hook-tree-failed',
       detail: 'hook tree /trees/orch-42 has run status stale',
-      action: 'orch tree remove /trees/orch-42',
+      action: `${PLATFORM_SLUG} tree remove /trees/orch-42`,
     })
   })
 

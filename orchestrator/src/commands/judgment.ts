@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb } from '../database/db.ts'
@@ -79,7 +80,7 @@ const cleanupPresentation: CleanupPresentation = {
     process.exitCode = code
   },
   keptBranchLine: (branch, unique, after, id) =>
-    `kept branch ${branch}: ${after === null ? `${unique} commit(s) reachable only from this branch` : `deleting it would lose commits reachable from no other ref; ${after} commit(s) after the cut`} — merge it, or orch discard ${id} --force to delete it after checking no other run owns it`,
+    `kept branch ${branch}: ${after === null ? `${unique} commit(s) reachable only from this branch` : `deleting it would lose commits reachable from no other ref; ${after} commit(s) after the cut`} — merge it, or ${PLATFORM_SLUG} run discard ${id} --force to delete it after checking no other run owns it`,
 }
 
 function addJudgmentOptions(command: Command, judge: boolean): Command {

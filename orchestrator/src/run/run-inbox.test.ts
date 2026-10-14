@@ -41,7 +41,7 @@ async function inbox(
             )
             .get(root, root),
         ),
-      strandedRecovery: (root) => `stranded — orch retry ${root} --agent`,
+      strandedRecovery: (root) => `stranded — ${PLATFORM_SLUG} run retry ${root} --agent`,
     },
     options.cwd,
   )
@@ -86,7 +86,7 @@ test('inbox names the canonical root in its answer footer', async () => {
     turn: 2,
   })
   question(child, 'which?')
-  expect(await inbox()).toContain(`orch answer ${root}`)
+  expect(await inbox()).toContain(`${PLATFORM_SLUG} question answer ${root}`)
 })
 
 test('inbox does not list a closed question', async () => {
@@ -208,7 +208,7 @@ test('inbox lists workflow questions with their identity and answer command', as
   const shown = await inbox({ all: true })
   expect(shown).toContain('workflow fixture-workflow · fixture · mode default · step 3 fix')
   expect(shown).toContain(
-    'orch workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
+    `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
   )
   expect(shown).not.toContain('--from-operator')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
@@ -220,8 +220,7 @@ test('inbox lists workflow questions with their identity and answer command', as
       mode: 'default',
       step: { n: 3, slug: 'fix' },
       can_answer: true,
-      answer_command:
-        'orch workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"',
+      answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
       ownership_notice: null,
     }),
   )
@@ -250,7 +249,7 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
     'owned by session foreign-session; only that session, or the operator relaying a decision, may answer it'
   const shown = await inbox({ all: true })
   expect(shown).toContain(notice)
-  expect(shown).not.toContain('answer: orch workflow rule')
+  expect(shown).not.toContain(`answer: ${PLATFORM_SLUG} workflow rule`)
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
     expect.objectContaining({
       kind: 'workflow',
@@ -401,7 +400,7 @@ test('bare project inbox includes recoverable roots owned by this session in oth
   })
   const shown = await inbox()
   expect(shown).toContain(`run ${ownElsewhere} · codex/implement · elsewhere`)
-  expect(shown).toContain(`recoverable: orch continue ${ownElsewhere}`)
+  expect(shown).toContain(`recoverable: ${PLATFORM_SLUG} run continue ${ownElsewhere}`)
   expect(shown).not.toContain(`run ${foreignElsewhere}`)
 })
 test('inbox marks an answered-but-undelivered chain stranded', async () => {
@@ -423,7 +422,7 @@ test('inbox marks an answered-but-undelivered chain stranded', async () => {
       new Date().toISOString(),
       new Date().toISOString(),
     )
-  expect(await inbox()).toContain(`stranded — orch retry ${id} --agent`)
+  expect(await inbox()).toContain(`stranded — ${PLATFORM_SLUG} run retry ${id} --agent`)
 })
 test('close-out retires a stale chain pending delivery from the inbox', async () => {
   const id = addRun({
@@ -444,7 +443,7 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
       new Date().toISOString(),
       new Date().toISOString(),
     )
-  expect(await inbox()).toContain(`stranded — orch retry ${id} --agent`)
+  expect(await inbox()).toContain(`stranded — ${PLATFORM_SLUG} run retry ${id} --agent`)
 
   closeTerminalChainQuestions(id, false)
 
@@ -465,5 +464,5 @@ test('inbox and continue refuse recovery while a later chain turn is running', a
     session: 'orch-test-session',
   })
   addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
-  expect(await inbox()).not.toContain(`recoverable: orch continue ${root}`)
+  expect(await inbox()).not.toContain(`recoverable: ${PLATFORM_SLUG} run continue ${root}`)
 })

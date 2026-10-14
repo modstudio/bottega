@@ -3,10 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { userInfo } from 'node:os'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { enqueueReleaseRecord } from './release-outbox.ts'
-
 export function startReleaseLedgerEntry(
   database: Database,
   input: {
@@ -37,7 +37,10 @@ export function startReleaseLedgerEntry(
         sessionId(),
         nowIso(),
       )
-    if (!row) throw new Error('release ledger entry was not inserted; run orch migrate, then retry')
+    if (!row)
+      throw new Error(
+        `release ledger entry was not inserted; run ${PLATFORM_SLUG} machine migrate, then retry`,
+      )
     enqueueReleaseRecord(database, row.id)
     return row.id
   }, database)

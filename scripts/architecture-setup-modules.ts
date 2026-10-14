@@ -13,6 +13,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'bun:sqlite',
       'node:fs',
+      '../../../shared/brand.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../project/project-commands.ts',
@@ -65,7 +66,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-apply-boundary',
     file: 'orchestrator/src/setup/setup-apply.ts',
-    allowed: ['node:fs/promises', 'node:path', './setup-mcp.ts'],
+    allowed: ['../../../shared/brand.ts', 'node:fs/promises', 'node:path', './setup-mcp.ts'],
     typeOnlyAllowed: ['./setup-planner.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
@@ -93,7 +94,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-mcp-boundary',
     file: 'orchestrator/src/setup/setup-mcp.ts',
-    allowed: ['../../../shared/secret-shaped.ts'],
+    allowed: ['../../../shared/brand.ts', '../../../shared/secret-shaped.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',
   },

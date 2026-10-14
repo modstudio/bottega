@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type PidRecordIdentity,
   pidAlive,
@@ -132,7 +133,7 @@ export function staleRunConditions(database = db(), clock = Date.now()): Monitor
     since: run.started_at,
     ageMs: age(run.started_at, clock),
     detail: run.error ?? `run ${run.id} is stale`,
-    action: `run orch reclaim stale-run ${run.id} --dry-run, then orch reclaim stale-run ${run.id}`,
+    action: `run ${PLATFORM_SLUG} machine reclaim stale-run ${run.id} --dry-run, then ${PLATFORM_SLUG} machine reclaim stale-run ${run.id}`,
     ownerSession: run.session_id,
   }))
 }
@@ -212,7 +213,7 @@ export function idleRunCondition(
       since: run.started_at,
       ageMs: age(run.started_at, clock),
       detail: `run ${run.id} is running but its recorded pid is gone; no terminal state was recorded`,
-      action: `run orch stop ${run.id}`,
+      action: `run ${PLATFORM_SLUG} run stop ${run.id}`,
       ownerSession: run.session_id,
     }
   }
@@ -277,7 +278,7 @@ export function stalledRunConditions(
         since: run.last_event_at ?? run.started_at,
         ageMs: observed.idleMs,
         detail: observed.detail,
-        action: `run orch stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
+        action: `run ${PLATFORM_SLUG} run stop ${run.id}, then re-dispatch; otherwise wait for the idle bound`,
         ownerSession: run.session_id,
       },
     ]
@@ -440,7 +441,7 @@ export function terminalProcessResidueObservations(
           since: run.started_at,
           ageMs: age(run.started_at, clock),
           detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
-          action: `run orch reclaim process ${run.id} --dry-run, then orch reclaim process ${run.id}`,
+          action: `run ${PLATFORM_SLUG} machine reclaim process ${run.id} --dry-run, then ${PLATFORM_SLUG} machine reclaim process ${run.id}`,
         },
       },
     ]
@@ -545,7 +546,7 @@ export function abandonedBootstrapConditions(clock = Date.now()): MonitorConditi
         since: run.started_at,
         ageMs: age(run.started_at, clock),
         detail: `pending run ${run.id} ${cause} after the ${PENDING_BOOTSTRAP_MS}ms launch grace`,
-        action: 'run orch sweep to terminalize the abandoned bootstrap',
+        action: `run ${PLATFORM_SLUG} machine sweep to terminalize the abandoned bootstrap`,
         ownerSession: run.session_id,
       },
     ]
@@ -570,27 +571,23 @@ export function rulingConditions(clock = Date.now()): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const p = Bun.spawnSync([...bottegaEntryArgv('hub'), 'rulings', '--json'], {
+  const p = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  if (p.exitCode !== 0) {
-    return {
-      conditions: [],
-      errors: [p.stderr.toString().trim() || `hub rulings exited ${p.exitCode}`],
-    }
-  }
+  if (p.exitCode !== 0)
+    return { conditions: [], errors: [p.stderr.toString().trim() || `${PLATFORM_SLUG} question stats exited ${p.exitCode}`] }
   const raw = p.stdout.toString().trim()
-  if (!raw) return { conditions: [], errors: ['hub rulings --json produced no document'] }
+  if (!raw)
+    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json produced no document`] }
   let payload: HubRulingsPayload
   try {
     payload = JSON.parse(raw) as HubRulingsPayload
   } catch {
-    return { conditions: [], errors: ['hub rulings --json was not a JSON document'] }
+    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json was not a JSON document`] }
   }
-  if (!Array.isArray(payload.questions)) {
-    return { conditions: [], errors: ['hub rulings --json missing questions array'] }
-  }
+  if (!Array.isArray(payload.questions))
+    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json missing questions array`] }
   const threshold = durationMs(payload.stale_after ?? '1h') ?? 3_600_000
   const conditions = payload.questions
     .flatMap((row): MonitorCondition[] => {
@@ -607,7 +604,7 @@ export function rulingConditions(clock = Date.now()): {
           ageMs,
           detail: `task ${task} waiting on a ruling; session ${session}; ${elapsedDetail(ageMs)}`,
           action: ['sess-a', 'sess-b', 'sess-old', 'sess-probe'].includes(session)
-            ? 'run orch reclaim fixture-questions --dry-run, then orch reclaim fixture-questions'
+            ? `run ${PLATFORM_SLUG} machine reclaim fixture-questions --dry-run, then ${PLATFORM_SLUG} machine reclaim fixture-questions`
             : 'reported; it does not answer',
           severity: ageMs >= threshold ? 'attention' : 'informational',
           ownerSession: row.session_id,
@@ -620,14 +617,16 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  const p = Bun.spawnSync([...bottegaEntryArgv('hub'), 'reconcile'], {
+  const p = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     return {
       conditions: [],
-      errors: [p.stderr.toString().trim() || `hub reconcile exited ${p.exitCode}`],
+      errors: [
+        p.stderr.toString().trim() || `${PLATFORM_SLUG} machine reconcile exited ${p.exitCode}`,
+      ],
     }
   }
   const conditions: MonitorCondition[] = []
@@ -643,7 +642,7 @@ export function reconcileHub(clock: number): { conditions: MonitorCondition[]; e
         since: ageMs == null ? null : new Date(clock - ageMs).toISOString(),
         ageMs,
         detail: `${closed[2]} named a terminal run (${closed[3]}) while remaining open`,
-        action: 'reconciled through hub reconcile',
+        action: `reconciled through ${PLATFORM_SLUG} machine reconcile`,
       })
       continue
     }
@@ -784,7 +783,7 @@ export function retainedRefConditions(clock: number): {
         since: null,
         ageMs: age(null, clock),
         detail: `${item.ref} at ${item.sha} pins ${item.project} run ${item.runId}`,
-        action: `run orch reclaim retained-ref ${item.project}:${item.runId} --dry-run, then orch reclaim retained-ref ${item.project}:${item.runId}`,
+        action: `run ${PLATFORM_SLUG} machine reclaim retained-ref ${item.project}:${item.runId} --dry-run, then ${PLATFORM_SLUG} machine reclaim retained-ref ${item.project}:${item.runId}`,
         affectedProject: item.project,
       },
     ]
@@ -808,7 +807,7 @@ export function refGuardConditions(clock: number): {
         since: null,
         ageMs: age(null, clock),
         detail: `shared ref-guard metadata for ${item.project} run ${item.runId} remains at ${item.path}`,
-        action: `run orch reclaim ref-guard ${item.project}:${item.runId} --dry-run, then orch reclaim ref-guard ${item.project}:${item.runId}`,
+        action: `run ${PLATFORM_SLUG} machine reclaim ref-guard ${item.project}:${item.runId} --dry-run, then ${PLATFORM_SLUG} machine reclaim ref-guard ${item.project}:${item.runId}`,
         affectedProject: item.project,
       },
     ]
@@ -884,7 +883,7 @@ export function orphanSandboxDirectoryConditions(inventory: SandboxDirectoryInve
         since: null,
         ageMs: null,
         detail: `sandbox directory for terminal conversation ${directory.rootId} uses ${directory.sizeBytes} bytes`,
-        action: `run orch reclaim sandbox ${directory.rootId} --dry-run, then orch reclaim sandbox ${directory.rootId}`,
+        action: `run ${PLATFORM_SLUG} machine reclaim sandbox ${directory.rootId} --dry-run, then ${PLATFORM_SLUG} machine reclaim sandbox ${directory.rootId}`,
       },
     ]
   })
@@ -934,7 +933,7 @@ export function staleTrustEntryConditions(inventory: TrustEntryInventory): {
         since: null,
         ageMs: null,
         detail: `run ${entry.runId} recorded Grok trust heading ${entry.heading} after its worktree disappeared`,
-        action: `run orch reclaim trust ${entry.runId} --dry-run, then orch reclaim trust ${entry.runId}`,
+        action: `run ${PLATFORM_SLUG} machine reclaim trust ${entry.runId} --dry-run, then ${PLATFORM_SLUG} machine reclaim trust ${entry.runId}`,
       },
     ]
   })
@@ -1077,7 +1076,7 @@ export function unsettledClaimConditions(
         since: claim.terminalAt,
         ageMs,
         detail: `${claim.kind} claim for terminal conversation ${claim.rootId} remains claimed; allocation key ${allocations}`,
-        action: 'run orch sweep; orch sweep --dry-run prints why a claim is kept',
+        action: `run ${PLATFORM_SLUG} machine sweep; ${PLATFORM_SLUG} machine sweep --dry-run prints why a claim is kept`,
       },
     ]
   })

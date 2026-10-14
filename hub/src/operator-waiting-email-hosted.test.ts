@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import {
   decideOperatorWaitingEmailReclaim,
@@ -21,7 +21,7 @@ const input: OperatorWaitingEmailInput = {
   why: 'The operator asked for email.',
   waiting_since: '2026-09-25T10:00:00.000Z',
   link: 'http://127.0.0.1:7778/inbox/question/7',
-  answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
+  answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
 }
 
 test('rendered HTML contains the decision and obeys email CSS rules', () => {

@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
@@ -458,7 +459,7 @@ test('an adopted install without record configuration records a failed refresh w
     status: 'failed',
   })
   expect(hostedBoardVerificationWarning()).toContain('ORCH_RECORD_API_URL is not configured')
-  expect(hostedBoardVerificationWarning()).toContain('orch record sign-in')
+  expect(hostedBoardVerificationWarning()).toContain(`${PLATFORM_SLUG} record sign-in`)
 })
 
 test('refresh stops at its budget, keeps the last page cursor, and resumes from it', async () => {

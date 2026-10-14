@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   formatProjectWriteModes,
   hostedUnavailableRemedy,
@@ -115,7 +116,7 @@ describe('hosted write mode', () => {
       'Retry when the hosted record is reachable.',
     )
     expect(hostedUnavailableRemedy(undefined)).toContain('Set HUB_HOSTED_URL')
-    expect(hostedUnavailableRemedy(undefined)).toContain('orch record doctor')
+    expect(hostedUnavailableRemedy(undefined)).toContain(`${PLATFORM_SLUG} record doctor`)
     expect(hostedUnavailableRemedy(undefined)).not.toContain('run with no hosted record')
     expect(hostedUnavailableRemedy('https://hub.example')).not.toContain('Set HUB_HOSTED_URL')
   })

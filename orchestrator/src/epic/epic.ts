@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
-
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
 type EpicTaskScore = {
@@ -272,7 +272,7 @@ export function epicScoreboard(
   return {
     epicKey,
     membership: {
-      source: `hub task list --project <project> --parent ${epicKey} --json`,
+      source: `${PLATFORM_SLUG} task list --project <project> --parent ${epicKey} --json`,
       runEvidence:
         'run.launch_key, falling back to a child key embedded in run.branch, then the head commit subject',
       landingEvidence:
@@ -423,7 +423,7 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
   const child = Bun.spawn(
     [
-      ...bottegaEntryArgv('hub'),
+      ...bottegaEntryArgv(PLATFORM_SLUG),
       'task',
       'list',
       '--project',
@@ -452,7 +452,7 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
         !row || typeof row !== 'object' || !('key' in row) || typeof row.key !== 'string',
     )
   ) {
-    throw new Error('hub task list --parent returned an invalid JSON document')
+    throw new Error(`${PLATFORM_SLUG} task list --parent returned an invalid JSON document`)
   }
   return parsed as EpicChild[]
 }

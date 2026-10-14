@@ -2,6 +2,7 @@
 /** Owns public-document project designation policy and owner-role persistence. */
 
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
@@ -34,10 +35,10 @@ export function publicDocDesignationRefusal(facts: PublicDocDesignationFacts): s
   }
   if (facts.action === 'designate' && facts.alreadyDesignated) return null
   if (facts.action === 'clear' && !facts.alreadyDesignated) {
-    return `record project "${facts.projectName}" in space "${facts.spaceSlug}" is not publicly designated; run \`orch record public-doc list\` to see current designations`
+    return `record project "${facts.projectName}" in space "${facts.spaceSlug}" is not publicly designated; run \`${PLATFORM_SLUG} record public-doc list\` to see current designations`
   }
   if (facts.affectedRows !== null && facts.affectedRows !== 1) {
-    return `${facts.action} changed ${facts.affectedRows} public document designations instead of one; run \`orch record public-doc list\` and retry`
+    return `${facts.action} changed ${facts.affectedRows} public document designations instead of one; run \`${PLATFORM_SLUG} record public-doc list\` and retry`
   }
   return null
 }

@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { applyHostedTaskRows } from './task-cache.ts'
@@ -177,7 +178,7 @@ test('pulled document refuses a number held by another UUID', () => {
       }),
     ),
   ).toThrow(
-    'DEV-1/1 belongs to UUID existing-document, not incoming UUID incoming-document; run `hub task doc list DEV-1`',
+    `DEV-1/1 belongs to UUID existing-document, not incoming UUID incoming-document; run \`${PLATFORM_SLUG} task doc list DEV-1\``,
   )
 })
 

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations } from './database/migrations.ts'
 import { importCanon } from './doc/canon-import.ts'
 import { consumeDoc, importDoc, importDocs, removeDoc, restoreDoc, setDoc } from './doc/docs.ts'
@@ -36,7 +37,7 @@ afterEach(() => {
 
 describe('worker shared-text store writes', () => {
   test.each(['ORCH_RUN_ID', 'ORCH_DEPTH'] as const)('refuses when %s marks a worker', (marker) => {
-    const refusal = workerStoreWriteRefusal('workflow', 'orch workflow import', {
+    const refusal = workerStoreWriteRefusal('workflow', `${PLATFORM_SLUG} workflow import`, {
       [marker]: '42',
     })
     expect(refusal).toContain('refusing workflow store write from an orch worker run')
@@ -47,7 +48,7 @@ describe('worker shared-text store writes', () => {
   })
 
   test('allows an architect process', () => {
-    expect(workerStoreWriteRefusal('document', 'orch doc set', {})).toBeNull()
+    expect(workerStoreWriteRefusal('document', `${PLATFORM_SLUG} doc set`, {})).toBeNull()
   })
 
   test('every document-row write service allows an architect and refuses a worker', async () => {

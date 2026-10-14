@@ -1,4 +1,4 @@
-import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { Cards, Cta, PageHero, Panel } from './shared'
 
 const cards = [
@@ -53,7 +53,7 @@ export function ContextPage() {
             </div>
             <Panel eyebrow="Resume brief">
               <pre>
-                $ <b>orch doc list</b> --scope resume{`\n\n`}
+                $ <b>{PLATFORM_SLUG} doc list</b> --scope resume{`\n\n`}
                 <b> atlas · ATL-412</b>{' '}
                 <span className="c">
                   webhook retries{`\n`} open brief · written at the review boundary{`\n\n`}

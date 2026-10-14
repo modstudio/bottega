@@ -24,7 +24,8 @@ function orchAnswers(rows: object[]) {
   return spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
     expect(args).toEqual([
       expect.any(String),
-      'runs',
+      'run',
+      'list',
       '--json',
       '--id',
       '1205',

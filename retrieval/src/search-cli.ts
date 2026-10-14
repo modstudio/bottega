@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 // concern: retrieval-search-cli
 /** Presents the stable semantic document-search contract. */
 import {
@@ -22,7 +23,7 @@ function usage(): never {
 }
 
 async function registeredCodeProject(path: string): Promise<{ name: string; path: string }> {
-  const child = Bun.spawn([...bottegaEntryArgv('orch'), 'project', 'list', '--json'], {
+  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), 'project', 'list', '--json'], {
     stdout: 'pipe',
     stderr: 'pipe',
   })

@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
@@ -178,7 +179,9 @@ export function releaseProject(
   if (!reasonDecision.ok) throw new Error(reasonDecision.message)
   const project = projectByName(projectName)
   if (!project)
-    throw new Error(`no project "${projectName}"; register it with orch project add, then retry`)
+    throw new Error(
+      `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`,
+    )
   const release = project.settings.release
   if (!release)
     throw new Error(`project ${projectName} has no release settings; set release.rungs, then retry`)
@@ -186,7 +189,7 @@ export function releaseProject(
   if ('refusal' in selected) throw new Error(selected.refusal)
   if (!selected.deploy)
     throw new Error(
-      `release rung ${selected.name} has no deploy command; it deploys through the project's CI on push and is outside orch release phase 1`,
+      `release rung ${selected.name} has no deploy command; it deploys through the project's CI on push and is outside ${PLATFORM_SLUG} release run phase 1`,
     )
   const deploy = selected.deploy
 

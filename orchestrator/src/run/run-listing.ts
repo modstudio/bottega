@@ -1,6 +1,7 @@
 // concern: run-listing
 /** Knows run list and state rendering. Must not know run control, transports, routing, the CLI, or worktrees. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
@@ -156,7 +157,7 @@ export async function runListingCommand(
     ),
   ]
   if (requestedIds.length && sinceFlag) {
-    throw new Error('orch runs --id and --since cannot be combined')
+    throw new Error(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
   }
   if (requestedIds.length) {
     const marks = requestedIds.map(() => '?').join(',')

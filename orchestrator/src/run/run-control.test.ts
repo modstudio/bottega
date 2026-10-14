@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -196,7 +197,9 @@ describe('run continuation', () => {
         calls++
         return 'rendered findings'
       }),
-    ).rejects.toThrow(`run ${root} is waiting on 1 question(s): orch answer ${root} ...`)
+    ).rejects.toThrow(
+      `run ${root} is waiting on 1 question(s): ${PLATFORM_SLUG} question answer ${root} ...`,
+    )
     expect(calls).toBe(0)
   })
 

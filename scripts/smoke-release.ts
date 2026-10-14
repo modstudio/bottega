@@ -81,11 +81,11 @@ apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
 sh /install.sh
 ${installedBinary} --version
 /tmp/bin/orch --version
-/tmp/bin/orch jobs
-/tmp/bin/hub task list
-printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' | /tmp/bin/orch mcp | grep '"id":1'
+${installedBinary} agent jobs
+${installedBinary} task list
+printf '%s\\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' | ${installedBinary} mcp serve | grep '"id":1'
 
-doctor_output=$(/tmp/bin/orch doctor 2>&1 || true)
+doctor_output=$(${installedBinary} machine doctor 2>&1 || true)
 printf '%s\\n' "$doctor_output"
 printf '%s\\n' "$doctor_output" | grep -F 'ripgrep (rg) not found'
 printf '%s\\n' "$doctor_output" | grep -F 'bubblewrap (bwrap) not installed'
@@ -94,9 +94,9 @@ printf '%s\\n' "$doctor_output" | grep -F 'socat not installed'
 mkdir -p /tmp/bootstrap-bin /tmp/missing-deps-repository
 printf '%s\\n' '#!/bin/sh' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
 chmod 755 /tmp/bootstrap-bin/git
-PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin /tmp/bin/orch project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete
+PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete
 set +e
-probe_output=$(cd /tmp/missing-deps-repository && PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin /tmp/bin/orch workflow probe -- git status --short 2>&1)
+probe_output=$(cd /tmp/missing-deps-repository && PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} workflow probe -- git status --short 2>&1)
 probe_status=$?
 set -e
 printf '%s\\n' "$probe_output"
@@ -133,14 +133,14 @@ su -s /bin/sh smoke -c '
   export ORCH_RERANK_URL=http://127.0.0.1:1/v1/rerank
   export SMOKE_MCP_STATE=/tmp/mcp-state
   export PATH=/tmp/fake-bin:/tmp/bin:/usr/bin:/bin
-  agent_output=$(/tmp/bin/orch agent list)
+  agent_output=$(${installedBinary} agent show list)
   printf "%s\\n" "$agent_output"
   printf "%s\\n" "$agent_output" | grep "^codex "
   printf "%s\\n" "$agent_output" | grep "^grok "
   cd /tmp/probe-repository
-  /tmp/bin/orch project add /tmp/probe-repository --name release-smoke
-  /tmp/bin/orch workflow probe -- git status --short
-  /tmp/bin/orch do implement --agent codex --base main --follow --cwd /tmp/probe-repository "Make the release smoke fixture commit."
+  ${installedBinary} project add /tmp/probe-repository --name release-smoke
+  ${installedBinary} workflow probe -- git status --short
+  ${installedBinary} run start implement --agent codex --base main --follow --cwd /tmp/probe-repository "Make the release smoke fixture commit."
 '
 writing_worktree=$(cat /tmp/mcp-state/writing-worktree)
 writing_hooks=$(cat /tmp/mcp-state/writing-hooks)

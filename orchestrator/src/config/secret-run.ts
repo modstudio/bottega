@@ -1,12 +1,12 @@
 // concern: config-secret-run
 /** Resolves named secrets into a child environment and runs the requested command. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-connection-env.ts'
-
-export const SECRET_RUN_WORKING_FORM =
-  'orch config secret run --name <KEY> [--name <KEY> ...] -- <argv...>'
+export const SECRET_RUN_WORKING_FORM = `${PLATFORM_SLUG} machine config secret run --name <KEY> [--name <KEY> ...] -- <argv...>`
 
 type SecretRunInvocation = { names: string[]; argv: string[] }
 
@@ -80,7 +80,9 @@ export function childEnvironmentForNamedSecrets(
 
 function namedSecretUnresolvedRefusal(unresolved: readonly string[]): string {
   const keys = unresolved.join(', ')
-  const sets = unresolved.map((key) => `orch config secret set ${key}`).join(', ')
+  const sets = unresolved
+    .map((key) => `${PLATFORM_SLUG} machine config secret set ${key}`)
+    .join(', ')
   return (
     `named secret${unresolved.length === 1 ? '' : 's'} ${keys} not set\n` +
     `cleared by: ${sets}, or add it to an env file the resolver reads`

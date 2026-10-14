@@ -1,6 +1,7 @@
 // concern: workflows
 /** Resolves the registered project facts requested by workflow steps. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   composeIndexSources,
   type InjectionSource,
@@ -33,7 +34,7 @@ function closeShipToFact(
   const closeAction = !remaining ? 'done' : tracker.inReview.state !== 'none' ? 'review' : 'ask'
   if (closeAction === 'done' && !tracker.states.done)
     throw new Error(
-      `project ${projectName} tracker is missing workflow state "done"; set it with: orch project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
+      `project ${projectName} tracker is missing workflow state "done"; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
     )
   return {
     closeAction,
@@ -60,18 +61,18 @@ function shipToFact(
     const cursor = 'cursor' in autonomy ? autonomy.cursor : undefined
     if (!cursor) throw new Error('resolved autonomy has no ship-to level')
     throw new Error(
-      `workflow cursor ${cursor.id}'s stored autonomy has no ship-to level; clear it with: orch workflow abandon --cursor ${cursor.id} --reason "<why>"; then start a new run with: ${cursor.composeCommand}`,
+      `workflow cursor ${cursor.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${cursor.id} --reason "<why>"; then start a new run with: ${cursor.composeCommand}`,
     )
   }
   if (autonomy.shipTo.complete === false)
     throw new Error(
-      `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with orch config set --machine autonomy.ship-to <level>`,
+      `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with ${PLATFORM_SLUG} machine config set --machine autonomy.ship-to <level>`,
     )
   const rungs = project.settings.release?.rungs ?? []
   const depthRung = rungs.find(({ name }) => name === args.depth)
   if (depthRung?.onDemand)
     throw new Error(
-      `ship-to depth "${depthRung.name}" names a rung released on demand with orch release ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
+      `ship-to depth "${depthRung.name}" names a rung released on demand with ${PLATFORM_SLUG} release run ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
     )
   const decision = decideShipToReach(
     autonomy.shipTo.value,

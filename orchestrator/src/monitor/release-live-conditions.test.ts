@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ReleaseLiveObservation, releaseLiveConditions } from './release-live-conditions.ts'
 
 const observation = (
@@ -25,8 +26,7 @@ describe('release live conditions', () => {
         kind: 'release-live-differs',
         subject: 'adanim:production',
         detail: expect.stringMatching(/adanim.*production.*live-commit.*released-commit/),
-        action:
-          'report only; once the cause is understood, run orch release adanim --rung production',
+        action: `report only; once the cause is understood, run ${PLATFORM_SLUG} release run adanim --rung production`,
       }),
     ])
   })

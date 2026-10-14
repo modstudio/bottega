@@ -1,9 +1,10 @@
 // concern: doc-lint
 /** Pure lint rules for stored documents. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocKind, DocScope } from '../../../shared/docs.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
 import { lintProse, type ProseFinding } from '../canon/prose-lint.ts'
-
 export type DocLintFinding = {
   rule: string
   level: DocLintLevel
@@ -246,7 +247,7 @@ export function docLintRefusal(
           `- ${finding.rule} line ${finding.line}: ${finding.message}\n  remedy: ${finding.remedy}`,
       )
       .join('\n') +
-    `\nclear with orch doc set ${doc.slug} --scope ${doc.scope}${doc.subject === null ? '' : ` --subject ${doc.subject}`} --kind ${doc.kind} and a corrected body` +
+    `\nclear with ${PLATFORM_SLUG} doc set ${doc.slug} --scope ${doc.scope}${doc.subject === null ? '' : ` --subject ${doc.subject}`} --kind ${doc.kind} and a corrected body` +
     (doc.kind === 'article' ? '' : `, or use --kind article when this is a product article`)
   )
 }

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -20,7 +21,7 @@ test('tree remove directs an ordinary run through close-out', () => {
   const path = `/no-such-ordinary-tree-${id}`
   db().query('UPDATE run SET worktree=?, cwd=? WHERE id=?').run(path, path, id)
 
-  expect(() => removeHookTree(path)).toThrow(`orch close-out ${id}`)
+  expect(() => removeHookTree(path)).toThrow(`${PLATFORM_SLUG} run close-out ${id}`)
 })
 
 test('tree remove gives an unrecorded project path a git removal command', () => {

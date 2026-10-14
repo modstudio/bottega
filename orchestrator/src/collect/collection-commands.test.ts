@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
@@ -40,7 +41,9 @@ test('result tells the caller how to open a released writing tree', () => {
     },
   })
 
-  expect(lines.join('\n')).toContain(`branch:    DEV-1084-work\n  open tree:  orch tree open ${id}`)
+  expect(lines.join('\n')).toContain(
+    `branch:    DEV-1084-work\n  open tree:  ${PLATFORM_SLUG} tree open ${id}`,
+  )
 })
 
 test('result explains why a released writing branch remains and how to prune it', () => {
@@ -62,6 +65,6 @@ test('result explains why a released writing branch remains and how to prune it'
     "retained:  DEV-1199-orch-1 is kept so this run's commits stay recoverable until the task lands",
   )
   expect(lines.join('\n')).toContain(
-    'prune:     orch branches prune --project fixture-project --key DEV-1199',
+    `prune:     ${PLATFORM_SLUG} tree branch prune --project fixture-project --key DEV-1199`,
   )
 })

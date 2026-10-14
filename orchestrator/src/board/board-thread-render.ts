@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
 import { boardHeaderValue, quoteBoardBody } from './board-render.ts'
 
@@ -17,7 +18,7 @@ export function renderBoardQuestion(message: {
     `Title: ${boardHeaderValue(message.title.slice(0, BOARD_TITLE_MAX_CHARS))}`,
     ...(message.audience ? [`Audience: ${boardHeaderValue(message.audience)}`] : []),
     `Expires: ${boardHeaderValue(message.expiresAt)}`,
-    `Response: ${boardHeaderValue(`reply with orch board reply ${message.id} --body <text>; read with orch board thread ${message.id}`)}`,
+    `Response: ${boardHeaderValue(`reply with ${PLATFORM_SLUG} board reply ${message.id} --body <text>; read with ${PLATFORM_SLUG} board thread ${message.id}`)}`,
     `Tags: ${boardHeaderValue(message.tags.length ? message.tags.join(', ') : 'none')}`,
     quoteBoardBody(message.body),
   ].join('\n')

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -63,7 +64,7 @@ test('project set uses its hosted identity check for a non-member declaration', 
         throw new Error('legacy validation must not decide project set membership')
       },
     ),
-  ).rejects.toThrow('orch record space accept <invitation-id>')
+  ).rejects.toThrow(`${PLATFORM_SLUG} record space accept <invitation-id>`)
   expect(legacyValidationCalls).toBe(0)
   expect(projectByName('space-refusal')?.settings.space).toBeUndefined()
 })
@@ -83,7 +84,9 @@ test('project set attributes an existing hosted row to its own space slug', asyn
     runProject(['project', 'set', 'space-move'], {
       settings: JSON.stringify({ space: 'next-team' }),
     }),
-  ).rejects.toThrow(/record space active-team.*orch record space move-project/)
+  ).rejects.toThrow(
+    new RegExp(`record space active-team.*${PLATFORM_SLUG} record space move-project`),
+  )
   expect(listed).toEqual(['space-active'])
   expect(projectByName('space-move')?.settings.space).toBeUndefined()
 })
@@ -124,7 +127,9 @@ test('fill-absent refuses a hosted row elsewhere before writing hosted or local 
       name: 'fill-space-move',
       fill: { settings: { space: 'next-team' } },
     }),
-  ).rejects.toThrow(/record space active-team.*orch record space move-project/)
+  ).rejects.toThrow(
+    new RegExp(`record space active-team.*${PLATFORM_SLUG} record space move-project`),
+  )
   expect(writes).toBe(0)
   expect(projectByName('fill-space-move')?.settings.space).toBeUndefined()
 })

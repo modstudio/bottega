@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 const staleDocumentMessage =
   'This document changed since you opened it. Reload to see the current version; your edit was not saved.'
@@ -11,7 +12,8 @@ export async function fromOrch<T>(
     return await operation()
   } catch (cause) {
     const raw = cause instanceof Error ? cause.message : String(cause)
-    const message = raw.replace(/^orch \S+ exited \d+:\s*/, '') || raw
+    const message =
+      raw.replace(new RegExp(`^(?:orch|${PLATFORM_SLUG}) \\S+ exited \\d+:\\s*`), '') || raw
     if (classifyStaleRevision && message.includes('refusing stale document update')) {
       throw new TRPCError({ code: 'CONFLICT', message: staleDocumentMessage, cause })
     }

@@ -1,5 +1,7 @@
 // concern: review-commands
 /** Adapts the exceptional completed-review amendment verb to review triage. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { amendFinding, DISPOSITIONS, type Disposition } from './review-triage.ts'
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 
@@ -16,7 +18,7 @@ export function amendReviewFindingCommand(
   const disposition = argv[4] as Disposition
   if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
     throw new Error(
-      `orch review amend <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}] --reason <text>`,
+      `${PLATFORM_SLUG} review amend <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}] --reason <text>`,
     )
   }
   amendFinding(

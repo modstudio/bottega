@@ -1,6 +1,8 @@
 // concern: ruling-file
 /** Renders filed ruling text, titles, slugs, and the operator file-offer hint. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 function yamlLiteral(value: string): string {
   return `|\n${value
     .split('\n')
@@ -64,7 +66,7 @@ export function rulingDocSlug(title: string, questionId: number): string {
 }
 
 export function rulingFileHint(questionId: number): string {
-  return `File this ruling: orch ruling file ${questionId} --as doc|canon`
+  return `File this ruling: ${PLATFORM_SLUG} question ruling file ${questionId} --as doc|canon`
 }
 
 export function operatorAttributedRuling(input: {

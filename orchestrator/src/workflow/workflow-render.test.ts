@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { floorGuidance, floorKinds } from './workflow-floor.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
@@ -38,7 +39,7 @@ describe('workflow rendering', () => {
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      'Evidence for command-exit: run it with `orch workflow exec -- <command>` and pass `--artifact exec:<id>`.',
+      `Evidence for command-exit: run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`.`,
     )
   })
 
@@ -49,7 +50,7 @@ describe('workflow rendering', () => {
 
     expect(rendered).toContain('Exercises generic workflow behavior.')
     expect(rendered).toContain('`get_workflow_step`')
-    expect(rendered).toContain('`orch workflow step flow rebase')
+    expect(rendered).toContain(`${PLATFORM_SLUG} workflow step flow rebase`)
     expect(rendered).toContain('project "fixture"')
     expect(rendered).toContain('mode "default"')
     expect(rendered).toContain(`args ${JSON.stringify(args)}`)
@@ -61,7 +62,7 @@ describe('workflow rendering', () => {
       'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
     )
     expect(rendered).toContain(
-      'At every autonomy, a genuine design or product-direction decision goes to the operator: record it with `orch workflow await` and stop.',
+      `At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`,
     )
   })
 
@@ -99,14 +100,16 @@ describe('workflow rendering', () => {
       'If the work has not been supplied, get it from the operator as a task key or a description before choosing a mode.',
     )
     expect(rendered).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
-    expect(rendered).toContain('`orch workflow compose choose --project fixture --mode <mode>`')
+    expect(rendered).toContain(
+      `${PLATFORM_SLUG} workflow compose choose --project fixture --mode <mode>`,
+    )
     expect(rendered).not.toContain('facts: {}')
     expect(rendered).not.toContain('Work the numbered steps below')
     expect(rendered).not.toContain('Reading a step line:')
     const lastInEveryMode = getWorkflowStep('choose', 'fixture', 'lens', args, d)
     expect(lastInEveryMode.next).toBeNull()
     expect(renderWorkflowStep(lastInEveryMode)).toEndWith(
-      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of choose in every mode that contains it, and closing it finishes the workflow.",
+      `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; this is the last step of choose in every mode that contains it, and closing it finishes the workflow.`,
     )
   })
 
@@ -146,19 +149,19 @@ describe('workflow rendering', () => {
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      'Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).',
+      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(
       renderWorkflowStep(
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toEndWith(
-      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves step 2 lens — Run independent review lenses.",
+      `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; that serves step 2 lens — Run independent review lenses.`,
     )
     expect(
       renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'close', args, d, { mode: 'default' })),
     ).toEndWith(
-      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; this is the last step of flow (default), and closing it finishes the workflow.",
+      `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; this is the last step of flow (default), and closing it finishes the workflow.`,
     )
 
     const draft = setWorkflow(
@@ -181,7 +184,7 @@ describe('workflow rendering', () => {
     )
     promoteWorkflow('forked-next', draft.n, 'publish', 'test', d)
     expect(renderWorkflowStep(getWorkflowStep('forked-next', 'fixture', 'score', {}, d))).toEndWith(
-      "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.",
+      `Next: when this step's floor is met, close it with \`next_workflow_step\` (MCP) or \`${PLATFORM_SLUG} workflow next\`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.`,
     )
   })
 
@@ -207,10 +210,10 @@ describe('workflow rendering', () => {
       next: { n: 11, slug: 'open-pr', title: 'Open the pull request' },
     })
     expect(rendered).toContain(
-      "Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with `orch workflow await` when that is the evidence you use.",
+      `Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`,
     )
     expect(rendered).toContain(
-      'Evidence for ruling: call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`.',
+      `Evidence for ruling: call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`.`,
     )
     expect(rendered).not.toContain('rule yourself')
     expect(rendered).not.toContain('self_ruling')
@@ -239,7 +242,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      'Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).',
+      `Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(rendered).not.toContain('put an operator ruling')
   })

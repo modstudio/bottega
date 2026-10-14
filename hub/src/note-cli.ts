@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
 import {
@@ -53,7 +54,9 @@ function listNoteCommand(options: NoteOptions): void {
   const sessions = [...(options.session ?? [])]
   if (options.kept && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
   if (options.kept && !sessions.length)
-    throw new Error('hub note list --kept requires --session ID or a session environment')
+    throw new Error(
+      `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
+    )
   const session = sessions.length ? sessions : undefined
   const rows = options.actionable
     ? listActionableNotes({ project: options.project, session })
@@ -70,7 +73,7 @@ function listNoteCommand(options: NoteOptions): void {
 
 async function keepNoteCommand(ids: string[], project?: string): Promise<void> {
   const session = noteSessionId()
-  if (!session) throw new Error('hub note keep requires a session environment')
+  if (!session) throw new Error(`${PLATFORM_SLUG} note keep requires a session environment`)
   for (const id of ids) {
     const result = await acknowledgeNote(reference(id, project), session)
     console.log(noteKeepLine(result.note, result.alreadyAcknowledged))
@@ -193,7 +196,8 @@ function registerNoteReferenceCommands(note: Command): void {
     .option('--project <name>', '')
     .action(async (noteReference, options: NoteOptions) => {
       open()
-      if (!options.reason) throw new Error('hub note drop <LABEL|UUID|NUMBER> --reason "..."')
+      if (!options.reason)
+        throw new Error(`${PLATFORM_SLUG} note drop <LABEL|UUID|NUMBER> --reason "..."`)
       console.log(
         noteDropLine(await dropNote(reference(noteReference, options.project), options.reason)),
       )
@@ -271,11 +275,13 @@ export function registerNoteCommands(program: Command): void {
 
 const forgottenNewHint = (text: string) =>
   new Error(
-    `hub note new <text> [--same-as LABEL|UUID|NUMBER|--new]; to file the text "${text}", put new before it`,
+    `${PLATFORM_SLUG} note new <text> [--same-as LABEL|UUID|NUMBER|--new]; to file the text "${text}", put new before it`,
   )
 
 const listAsTextHint = () =>
-  new Error('to file the text "list", use: hub note new "list" [--new|--same-as LABEL|UUID|NUMBER]')
+  new Error(
+    `to file the text "list", use: ${PLATFORM_SLUG} note new "list" [--new|--same-as LABEL|UUID|NUMBER]`,
+  )
 
 export function noteFiledOutput(note: {
   label: string

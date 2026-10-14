@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 export type TaskKeyLookupResult =
   | { state: 'found' }
   | { state: 'not-found' }
@@ -20,7 +21,7 @@ function decideTaskKeyAdmission(input: {
   if (input.lookup.state === 'not-found') {
     const create =
       input.protocol === 'hub'
-        ? `create it with hub task new --project ${input.project}`
+        ? `create it with ${PLATFORM_SLUG} task new --project ${input.project}`
         : `create it in ${input.project}'s tracker`
     return {
       action: 'refuse',

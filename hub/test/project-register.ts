@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 const args = process.argv.slice(2)
 if (args.join('\0') !== ['project', 'list', '--json'].join('\0')) {
-  const orch = fileURLToPath(new URL('../../bin/orch', import.meta.url))
+  const orch = fileURLToPath(new URL(`../../bin/${PLATFORM_SLUG}`, import.meta.url))
   const result = Bun.spawnSync([orch, ...args], {
     env: process.env,
     stdin: await Bun.stdin.bytes(),

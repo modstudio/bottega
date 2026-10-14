@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { deliverOperatorWaitingEmails, dueOperatorWaitingEmails } from './operator-waiting-email.ts'
 
@@ -18,7 +18,7 @@ const item = (patch: Partial<OperatorWaitingItem> = {}): OperatorWaitingItem => 
   why: 'It is safer.',
   waiting_since: '2026-09-25T10:00:00.000Z',
   episode: 'episode-1',
-  answer_command: 'orch answer 42 --q7 --from-operator "<ruling>"',
+  answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
   ...patch,
 })
 

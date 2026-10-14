@@ -1,6 +1,7 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
@@ -596,8 +597,8 @@ function observationError(project: Project, error: unknown): BranchReportProject
   const fix = detail.startsWith('merged pull-request listing')
     ? 'install gh, run gh auth login, and configure a GitHub remote for this checkout'
     : detail.startsWith('git remote get-url origin')
-      ? 'add an origin remote for this checkout, then rerun orch branches'
-      : 'repair the registered checkout and trunk, then rerun orch branches'
+      ? `add an origin remote for this checkout, then rerun ${PLATFORM_SLUG} tree branch`
+      : `repair the registered checkout and trunk, then rerun ${PLATFORM_SLUG} tree branch`
   return {
     project: project.name,
     trunk: project.settings.trunk?.trim() ?? '',

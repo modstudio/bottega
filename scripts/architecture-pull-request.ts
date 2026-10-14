@@ -12,6 +12,7 @@ export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/pr-admission.ts',
     allowed: [
+      '../../../shared/brand.ts',
       'bun:sqlite',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',

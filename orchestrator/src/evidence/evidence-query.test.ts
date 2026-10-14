@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
@@ -55,7 +56,9 @@ describe('the activity window', () => {
     const voided = agedRun(0, { agent: 'grok', job: 'craft' })
     score(voided, 'full', 'right')
     db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .query(
+        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+      )
       .run(voided)
 
     expect(state(null).totals as { scored: number; voided: number }).toEqual(
@@ -67,7 +70,9 @@ describe('the activity window', () => {
     score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
     const noVerdict = agedRun(0, { agent: 'grok', job: 'craft' })
     db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .query(
+        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+      )
       .run(noVerdict)
 
     expect(state(null).totals as { runs: number; scored: number; voided: number }).toEqual(
@@ -118,7 +123,9 @@ describe('evidence totals', () => {
     score(kept, 'full', 'right')
     score(voided, 'full', 'right')
     db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .query(
+        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+      )
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
   })
@@ -127,7 +134,9 @@ describe('evidence totals', () => {
     const voided = addRun({ agent: 'codex', job: 'file-question' })
     score(kept, 'full', 'right')
     db()
-      .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .query(
+        `UPDATE run SET evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
+      )
       .run(voided)
     expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
     expect(state(null).totals).toMatchObject({ runs: 2, scored: 1, voided: 1 })
@@ -136,7 +145,7 @@ describe('evidence totals', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed' })
     db()
       .query(
-        "UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with orch score --void' WHERE id=?",
+        `UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with ${PLATFORM_SLUG} score --void' WHERE id=?`,
       )
       .run(id)
     expect(runTotals()).toMatchObject({ runs: 1, scored: 0, voided: 1, unscored: 0 })

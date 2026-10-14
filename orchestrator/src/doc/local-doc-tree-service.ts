@@ -1,5 +1,7 @@
 // concern: local-doc-tree-service
 /** Applies document tree policy to local-store facts and maps local parents to hosted ids. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudiences } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import { decodeStoredDocAudiences } from './doc-audiences-codec.ts'
@@ -121,7 +123,7 @@ export function localParentRecordId(doc: {
   const recordId = treeDoc(doc.scope, doc.subject, doc.parent_slug!, doc.owner)?.record_id
   if (!recordId) {
     throw new Error(
-      `parent "${doc.parent_slug}" has no hosted record id; cleared by: run orch record push-docs before writing this document`,
+      `parent "${doc.parent_slug}" has no hosted record id; cleared by: run ${PLATFORM_SLUG} record push-docs before writing this document`,
     )
   }
   return recordId
@@ -139,7 +141,7 @@ export function localRestoredParentSlug(input: {
   } | null
   if (!parent) {
     throw new Error(
-      `refusing to restore ${input.scope}/${input.subject ?? '_'}/${input.slug}: revision parent ${input.parentId} no longer exists; cleared by: restore the parent first or run orch doc restore ${input.slug} with a revision recorded without a parent`,
+      `refusing to restore ${input.scope}/${input.subject ?? '_'}/${input.slug}: revision parent ${input.parentId} no longer exists; cleared by: restore the parent first or run ${PLATFORM_SLUG} doc restore ${input.slug} with a revision recorded without a parent`,
     )
   }
   return parent.slug

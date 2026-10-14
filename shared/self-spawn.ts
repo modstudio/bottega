@@ -1,13 +1,15 @@
+import { PLATFORM_SLUG } from './brand.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 
 export const BOTTEGA_ENTRY_PROTOCOL = {
+  [PLATFORM_SLUG]: { compiledArguments: [], usage: 'public' },
   orch: { compiledArguments: ['orch'], usage: 'public' },
   hub: { compiledArguments: ['hub'], usage: 'public' },
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
-  'ask-server': { compiledArguments: ['orch', 'ask-server'], usage: 'nested' },
+  'ask-server': { compiledArguments: ['mcp', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
-  'mcp-reader-proxy': { compiledArguments: ['orch', 'mcp-reader-proxy'], usage: 'hidden' },
+  'mcp-reader-proxy': { compiledArguments: ['mcp', 'reader-proxy'], usage: 'hidden' },
   'retrieval-search': { compiledArguments: ['__retrieval-search'], usage: 'hidden' },
   'check-attribution': { compiledArguments: ['__check-attribution'], usage: 'hidden' },
   'schema-check': { compiledArguments: ['__schema-check'], usage: 'hidden' },
@@ -20,6 +22,8 @@ export type BottegaEntry = keyof typeof BOTTEGA_ENTRY_PROTOCOL
 
 function sourceArguments(entry: BottegaEntry): string[] {
   switch (entry) {
+    case PLATFORM_SLUG:
+      return [assetPath('bin', PLATFORM_SLUG)]
     case 'orch':
       return [assetPath('bin', 'orch')]
     case 'hub':
@@ -31,7 +35,7 @@ function sourceArguments(entry: BottegaEntry): string[] {
         assetPath('orchestrator', 'src', 'run', 'exec.ts'),
       ]
     case 'ask-server':
-      return [assetPath('bin', 'orch'), 'ask-server']
+      return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'ask-server']
     case 'ask-proxy':
       return [
         Bun.which('bun') ?? process.execPath,
@@ -40,7 +44,7 @@ function sourceArguments(entry: BottegaEntry): string[] {
         'ask-server',
       ]
     case 'mcp-reader-proxy':
-      return [assetPath('bin', 'orch'), 'mcp-reader-proxy']
+      return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'reader-proxy']
     case 'retrieval-search':
       return [assetPath('bin', 'retrieval-search')]
     case 'check-attribution':

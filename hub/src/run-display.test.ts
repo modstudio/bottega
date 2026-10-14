@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   matchesRunSearch,
   PROJECT_FALLBACK,
@@ -60,7 +61,7 @@ describe('runs collection search', () => {
     ).toBe(true)
     expect(
       matchesRunSearch(
-        { ...completed, evidence_excluded: 'voided with orch score --void' },
+        { ...completed, evidence_excluded: `voided with ${PLATFORM_SLUG} score --void` },
         'Not routing evidence',
       ),
     ).toBe(true)
@@ -71,7 +72,7 @@ describe('runs collection search', () => {
       ...completed,
       delivery: null,
       quality: null,
-      evidence_excluded: 'voided with orch score --void',
+      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
     }
     expect(matchesRunSearch(voidedUnscored, 'Unscored')).toBe(false)
     expect(matchesRunSearch(voidedUnscored, 'Not routing evidence')).toBe(true)
@@ -82,7 +83,7 @@ describe('runs collection search', () => {
       ...completed,
       delivery: 'full',
       quality: 'right',
-      evidence_excluded: 'voided with orch score --void',
+      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
     }
     expect(matchesRunSearch(voidedFull, 'full')).toBe(true)
     expect(matchesRunSearch(voidedFull, 'right')).toBe(true)

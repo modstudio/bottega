@@ -1,5 +1,7 @@
 // concern: isolation
 /** Owns explicit reclamation command behavior. Must not know CLI grammar. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { type ResidueKind, reclaimResidue } from './reclaim-residue.ts'
@@ -18,10 +20,12 @@ function reclaimFixtureQuestionsCommand(
   dryRun: boolean,
   presentation: { log(value: string): void },
 ): void {
-  if (subject) throw new Error('orch reclaim fixture-questions takes no subject')
+  if (subject)
+    throw new Error(`${PLATFORM_SLUG} machine reclaim fixture-questions takes no subject`)
   const result = Bun.spawnSync(
     [
-      ...bottegaEntryArgv('hub'),
+      ...bottegaEntryArgv(PLATFORM_SLUG),
+      'machine',
       'reclaim-fixture-questions',
       ...(dryRun ? ['--dry-run'] : []),
       '--json',
@@ -56,7 +60,7 @@ export function reclaimCommand(
     reclaimFixtureQuestionsCommand(subject, dryRun, presentation)
     return
   }
-  if (!subject) throw new Error(`orch reclaim ${kind} requires a subject`)
+  if (!subject) throw new Error(`${PLATFORM_SLUG} machine reclaim ${kind} requires a subject`)
   if (kind !== 'worktree' && kind !== 'branch' && !RESIDUE_KINDS.has(kind as ResidueKind)) {
     throw new Error(
       `unknown reclaim kind ${JSON.stringify(kind)}: use worktree, branch, ref-guard, sandbox, retained-ref, trust, process, stale-run, or fixture-questions`,

@@ -5,7 +5,7 @@
  * spawn time. So editing the orchestrator kills every run launched during the
  * edit: the child dies on import, before any of our code runs, before it can
  * fill in the row `detach()` already claimed for it. The caller sees nothing —
- * `orch do` printed an id and exited — and half an hour later the stale sweep
+ * `bottega run start` printed an id and exited — and half an hour later the stale sweep
  * marks the row `interrupted`, which reads as "the room did something" rather
  * than "the orchestrator was mid-edit".
  *

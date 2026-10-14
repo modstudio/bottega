@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
@@ -499,8 +500,7 @@ describe('record API', () => {
     const response = await appWith(null).request('/v1/whoami')
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
-      error: 'record authentication required',
-      remedy: 'record session is missing or expired; run `orch record sign-in --email <email>`',
+      error: 'record authentication required', remedy: `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
     })
   })
 
@@ -513,7 +513,7 @@ describe('record API', () => {
     expect(scoped.status).toBe(409)
     expect(await scoped.json()).toEqual({
       error: 'record session has no active space',
-      remedy: 'run `orch record space switch <slug>` to select an active space',
+      remedy: `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`,
     })
   })
 

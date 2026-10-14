@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -10,9 +11,9 @@ import {
   hubTaskReadRefusal,
 } from './workflow-floor-evidence.ts'
 
-test('missing hub task refusal names the fresh tracker read', () => {
+test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
   expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
-    "--task DEV-1070 was not found in the project's tracker; hub task show DEV-1070 --json --fresh attempted the registered tracker read: no task DEV-1070",
+    `--task DEV-1070 was not found in the project's tracker; ${PLATFORM_SLUG} task show DEV-1070 --json --fresh attempted the registered tracker read: no task DEV-1070`,
   )
 })
 
@@ -22,7 +23,7 @@ test.each([
 ])('fresh tracker refusal withholds sensitive detail: %s', (detail) => {
   const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
   expect(refusal).toBe(
-    "--task DEV-1070 could not be read through the project's tracker by hub task show DEV-1070 --json --fresh: detail withheld",
+    `--task DEV-1070 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1070 --json --fresh: detail withheld`,
   )
   expect(refusal).not.toContain(detail)
 })

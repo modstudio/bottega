@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { flagValue } from '../cli/args.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
@@ -293,5 +294,8 @@ export async function checkCommand(argv: string[], presentation: Presentation): 
   } else if (kind === 'spelling') spellingCommand(argv, presentation)
   else if (kind === 'attribution') await attributionCommand(argv, presentation)
   else if (kind === 'comments') await commentsCommand(argv, presentation)
-  else throw new Error('unknown: orch check. Try --enabled | spelling | attribution | comments')
+  else
+    throw new Error(
+      `unknown: ${PLATFORM_SLUG} gate check. Try --enabled | spelling | attribution | comments`,
+    )
 }

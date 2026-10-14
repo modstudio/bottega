@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { Cards, Check, Cta, PageHero, Panel, Section } from './shared'
 
 const checks = [
@@ -73,7 +74,7 @@ export function DocStorePage() {
               <pre>
                 <span className="c">
                   {'// a person'}
-                  {`\n`} hub serve → browse, search, edit{`\n\n`}
+                  {`\n`} {PLATFORM_SLUG} dashboard start → browse, search, edit{`\n\n`}
                   {'// an agent, mid-run'}
                 </span>
                 {`\n`}
@@ -81,8 +82,8 @@ export function DocStorePage() {
                 <b>get_doc</b>({'{ subject: "payments" }'}){`\n`}
                 <b>project_brief</b>(){`\n\n`}
                 <span className="c">{'// the architect, writing a ruling down'}</span>
-                {`\n`}$ <b>orch doc set</b> --scope project \{`\n`} --subject payments --file
-                ruling.md{`\n\n`}
+                {`\n`}$ <b>{PLATFORM_SLUG} doc set</b> --scope project \{`\n`} --subject payments
+                --file ruling.md{`\n\n`}
                 <span className="c"> revision recorded · readable by both</span>
               </pre>
             </Panel>

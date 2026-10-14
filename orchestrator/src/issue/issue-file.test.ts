@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
 import { boundedIssuePack, parseFiledIssue, seedAnswer, seedFromReport } from './issue-file.ts'
 
@@ -18,7 +19,7 @@ EXPECTED INSTEAD
 it succeeds
 
 HOW TO REPRODUCE
-Command: orch do implement x
+Command: ${PLATFORM_SLUG} run start implement x
 Environment: alephbeis full seed, FORCE_COLOR=1
 
 EVIDENCE
@@ -34,7 +35,7 @@ the cause`,
     expect(issue).toMatchObject({
       key: 'DEV-9',
       reportingProject: 'alephbeis',
-      reproduceCommand: 'orch do implement x',
+      reproduceCommand: `${PLATFORM_SLUG} run start implement x`,
       environment: 'alephbeis full seed, FORCE_COLOR=1',
     })
     const project = {

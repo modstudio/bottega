@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
@@ -154,7 +155,7 @@ describe('tree reseed seed selection', () => {
 
   test('refuses without a supplied or recorded seed and names the remedy and choices', () => {
     expect(() => reseedSeed(undefined, null, ['small', 'full'])).toThrow(
-      'orch tree reseed <seed> (recipe choices: "small", "full")',
+      `${PLATFORM_SLUG} tree reseed <seed> (recipe choices: "small", "full")`,
     )
   })
 

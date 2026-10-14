@@ -1,6 +1,7 @@
 // concern: enforcement-resolution
 /** Resolves declarations and retained legacy settings against the enforcement catalogue. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ProjectSettings } from '../project/project-settings.ts'
 import {
   type EnforcementPoint,
@@ -59,7 +60,7 @@ function legacyOverride(
   const commentTaskKeys = checks?.commentTaskKeys === true
   const commentHistory = Boolean(checks?.commentHistory)
   if (category === 'spelling' && checks?.spelling) {
-    return { tool: 'orch check spelling' }
+    return { tool: `${PLATFORM_SLUG} gate check spelling` }
   }
   if (category === 'attribution-markers' && checks?.attribution) return {}
   if (category === 'comment-hygiene' && (commentTaskKeys || commentHistory)) {
@@ -68,7 +69,7 @@ function legacyOverride(
       commentHistory ? 'commentHistory' : null,
     ].filter(Boolean)
     return {
-      tool: 'orch check comments',
+      tool: `${PLATFORM_SLUG} gate check comments`,
       note: `settings.checks: ${enabled.join(', ')}`,
     }
   }

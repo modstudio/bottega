@@ -1,6 +1,7 @@
 // concern: record-space
 /** Owns record membership and active-space changes. Must not know CLI presentation. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
@@ -118,7 +119,9 @@ export async function inviteToActiveRecordSpace(
 ): Promise<string> {
   const identity = await client.whoami()
   if (!identity.activeSpaceId) {
-    throw new Error('record session has no active space; run `orch record space switch <slug>`')
+    throw new Error(
+      `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``,
+    )
   }
   const invitation = await client.inviteMember({
     email,

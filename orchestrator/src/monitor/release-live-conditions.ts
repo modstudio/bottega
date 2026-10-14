@@ -1,8 +1,8 @@
 // concern: monitor-release-live-conditions
 /** Classifies release-rung live readings against successful ledger commits. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { MonitorCondition } from './monitor-types.ts'
-
 export type ReleaseLiveObservation = {
   project: string
   rung: string
@@ -32,7 +32,7 @@ export function releaseLiveConditions(observations: readonly ReleaseLiveObservat
       since: null,
       ageMs: null,
       detail: `${observation.project} release rung ${observation.rung} live commit ${observation.live.commit} differs from last released commit ${observation.lastReleasedCommit}`,
-      action: `report only; once the cause is understood, run orch release ${observation.project} --rung ${observation.rung}`,
+      action: `report only; once the cause is understood, run ${PLATFORM_SLUG} release run ${observation.project} --rung ${observation.rung}`,
       affectedProject: observation.project,
     })
   }

@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -103,7 +104,7 @@ type HubTaskRead = {
 }
 
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
-  const [hub, ...prefix] = bottegaEntryArgv('hub')
+  const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
   const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json', '--fresh'], {
     cwd,
     encoding: 'utf8',
@@ -121,7 +122,8 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
     comments?: Array<{ id?: number | string }>
     tracker_comments_verifiable?: boolean
   }
-  if (!parsed.task?.key) throw new Error(`--task ${key} was not a hub task show record`)
+  if (!parsed.task?.key)
+    throw new Error(`--task ${key} was not a ${PLATFORM_SLUG} task show record`)
   return {
     key: parsed.task.key,
     status: parsed.task.status ?? null,
@@ -147,7 +149,7 @@ export function hubTaskReadRefusal(
     containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
       ? 'detail withheld'
       : rawDetail
-  const attempted = `hub task show ${key} --json --fresh`
+  const attempted = `${PLATFORM_SLUG} task show ${key} --json --fresh`
   if (
     rawDetail.split('\n').some((line) => {
       const text = line.trim()
@@ -599,7 +601,9 @@ function resolveTaskArtifact(
       `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
     )
   if (!ports.readTask)
-    throw new Error(`--artifact ${raw} needs a hub task read and no reader was provided`)
+    throw new Error(
+      `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
+    )
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)
@@ -706,7 +710,7 @@ function gatherTask(
   if (identity.workflowKey && key !== identity.workflowKey)
     throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   if (!ports.readTask)
-    throw new Error(`--task ${key} needs a hub task read and no reader was provided`)
+    throw new Error(`--task ${key} needs a ${PLATFORM_SLUG} task read and no reader was provided`)
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, {
     fresh: true,
   })
