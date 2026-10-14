@@ -39,6 +39,7 @@ export type DocsDoc = DocsTreeItem & {
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
 }
 
 export type DocsSearchMatch = {

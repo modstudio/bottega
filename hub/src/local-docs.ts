@@ -34,6 +34,7 @@ function localDocContract(row: DocRow, includeBody: boolean) {
     articleSubject: row.articleSubject ?? null,
     relatedSubjects: row.relatedSubjects ?? [],
     sourceFiles: row.sourceFiles ?? [],
+    checkedAgainstCommit: row.checkedAgainstCommit ?? null,
   }
   return includeBody
     ? LocalDocSchema.parse({ ...item, body: row.body })

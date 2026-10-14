@@ -37,6 +37,7 @@ export type Doc = {
   articleSubject: DocArticleSubject | null
   relatedSubjects: DocArticleSubject[]
   sourceFiles: string[]
+  checkedAgainstCommit: string | null
   replacement_slug: string | null
   parent_id: number | null
   parent_slug: string | null
@@ -61,6 +62,7 @@ export type DocMetadata = Pick<
   | 'articleSubject'
   | 'relatedSubjects'
   | 'sourceFiles'
+  | 'checkedAgainstCommit'
   | 'replacement_slug'
   | 'parent_id'
   | 'parent_slug'
@@ -103,6 +105,7 @@ export type DocRevision = {
   articleSubject: DocArticleSubject | null
   relatedSubjects: DocArticleSubject[]
   sourceFiles: string[]
+  checkedAgainstCommit: string | null
   replacement_slug: string | null
   parent_id: number | null
   position: number
@@ -127,6 +130,7 @@ export type DocRevisionMetadata = Pick<
   | 'articleSubject'
   | 'relatedSubjects'
   | 'sourceFiles'
+  | 'checkedAgainstCommit'
 > & { bytes: number }
 
 const LATEST_REVISION_SQL =
@@ -139,6 +143,7 @@ const articleFields = (
     record_id?: string | null
     article_subject_id?: string | null
     source_files?: string
+    checked_against_commit?: string | null
   },
 ) => {
   const own = row.article_subject_id
@@ -159,6 +164,8 @@ const articleFields = (
     articleSubject: own,
     relatedSubjects: related,
     sourceFiles: JSON.parse(row.source_files ?? '[]') as string[],
+    checkedAgainstCommit:
+      row.checked_against_commit == null ? null : String(row.checked_against_commit),
   }
 }
 
@@ -169,6 +176,7 @@ const docRow = <
     record_id?: string | null
     article_subject_id?: string | null
     source_files?: string
+    checked_against_commit?: string | null
   },
 >(
   database: Database,
@@ -385,7 +393,7 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
   const rows = (
     db()
       .query(
-        `SELECT d.id, d.record_id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.form, d.article_subject_id, d.source_files, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
+        `SELECT d.id, d.record_id, d.scope, d.subject, d.slug, d.title, d.audiences, d.featured, d.status, d.kind, d.form, d.article_subject_id, d.source_files, d.checked_against_commit, d.replacement_slug, d.parent_id, p.slug AS parent_slug, d.position, length(CAST(d.body AS BLOB)) AS bytes, d.updated_at, ${LATEST_REVISION_SQL} AS revision
        FROM doc d LEFT JOIN doc p ON p.id=d.parent_id${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
       )
       .all(...queryValues) as Array<DocMetadata & { featured: boolean | number }>

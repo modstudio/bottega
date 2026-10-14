@@ -85,3 +85,20 @@ test('hosted updates may omit delivery so the write service can preserve it', ()
   expect(parsed.success).toBe(true)
   if (parsed.success) expect('delivery' in parsed.data).toBe(false)
 })
+
+test('hosted writes refuse malformed checked-against commits with the remedy', () => {
+  expect(() =>
+    recordDocUpsertSchema.parse({
+      scope: 'project',
+      subject: 'project',
+      slug: 'article',
+      title: 'Article',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      checkedAgainstCommit: 'ABC123',
+      reason: 'test commit validation',
+      author: 'test',
+    }),
+  ).toThrow('use the full lowercase 40-character hexadecimal git commit id')
+})

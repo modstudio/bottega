@@ -364,7 +364,7 @@ function handledReadDocCommand(
   if (has('json')) presentation.log(JSON.stringify(doc))
   else
     presentation.write(
-      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nchecked against: ${doc.checkedAgainstCommit ?? '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
@@ -384,11 +384,14 @@ function articleTreeOptions(flags: DocFlags) {
     throw new Error(`--form must be ${DOC_FORMS.join(' or ')}`)
   if (has('article-subject') && has('no-article-subject'))
     throw new Error('use --article-subject or --no-article-subject, not both')
+  if (has('checked-at') && has('no-checked-at'))
+    throw new Error('use --checked-at or --no-checked-at, not both')
   return {
     form: has('no-form') ? null : (rawForm as DocForm | undefined),
     articleSubject: has('no-article-subject') ? null : flag('article-subject'),
     relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
     sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
+    checkedAgainstCommit: has('no-checked-at') ? null : flag('checked-at'),
   }
 }
 
@@ -404,6 +407,7 @@ function setTreeOptions(flags: DocFlags): {
   articleSubject: string | null | undefined
   relatedSubjects: string[] | undefined
   sourceFiles: string[] | undefined
+  checkedAgainstCommit: string | null | undefined
 } {
   const { has, flag } = flags
   const audiences = docAudiences(flag('audience'))

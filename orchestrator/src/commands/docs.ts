@@ -39,6 +39,28 @@ export function assertUserCanonHydrateAllowed(
   )
 }
 
+async function runDocCommand(args: string[], options: Command): Promise<void> {
+  const argv = ['doc', ...args]
+  const flags = optionFlags(options)
+  await docCommand(
+    argv[1] ?? 'list',
+    argv,
+    flags,
+    {
+      log,
+      error: console.error,
+      write,
+      stdinText: () => Bun.stdin.text(),
+      stdinIsTTY: process.stdin.isTTY,
+      cwd: process.cwd,
+      exitCode: (code) => {
+        process.exitCode = code
+      },
+    },
+    { selectDocWriteTree, collectCanonLintInput },
+  )
+}
+
 export function register(program: Command): void {
   program
     .command('doc [args...]')
@@ -63,6 +85,8 @@ export function register(program: Command): void {
     .addOption(new PresenceOption('--no-related-subjects'))
     .option('--source-file <value>', 'repository-relative source path', collectDocValue)
     .addOption(new PresenceOption('--no-source-files'))
+    .option('--checked-at <commit>', 'full lowercase git commit checked by this article')
+    .addOption(new PresenceOption('--no-checked-at'))
     .option('--position <value>')
     .option('--featured')
     .option('--no-featured')
@@ -75,28 +99,7 @@ export function register(program: Command): void {
     .option('--cwd <value>')
     .option('--k <value>')
     .option('--json')
-    .action(async (args, options) => {
-      const argv = ['doc', ...args]
-      const flags = optionFlags(options)
-      await docCommand(
-        argv[1] ?? 'list',
-        argv,
-        flags,
-        {
-          log,
-          error: console.error,
-          write,
-          stdinText: () => Bun.stdin.text(),
-          stdinIsTTY: process.stdin.isTTY,
-          cwd: process.cwd,
-          exitCode: (code) => {
-            process.exitCode = code
-          },
-        },
-        { selectDocWriteTree, collectCanonLintInput },
-      )
-    })
-
+    .action(runDocCommand)
   program
     .command('canon [args...]')
     .option('--cwd <value>')
@@ -141,7 +144,6 @@ export function register(program: Command): void {
         cwd: process.cwd,
       })
     })
-
   program
     .command('port [args...]')
     .option('--reason <value>')

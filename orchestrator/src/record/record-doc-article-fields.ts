@@ -6,7 +6,7 @@ import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 
-export function hostedDocList(
+function hostedDocList(
   value: unknown,
   input: { document: string; column: string; optional?: boolean },
 ): unknown[] {
@@ -22,6 +22,30 @@ type Fields = {
   articleSubjectId: string | null
   relatedSubjectIds: string[]
   sourceFiles: string[]
+  checkedAgainstCommit: string | null
+}
+
+function checkedAgainstCommitFromRow(row: Row | undefined): string | null {
+  return row?.checked_against_commit == null ? null : String(row.checked_against_commit)
+}
+
+export function storedRevisionArticleFields(row: Row, document: string) {
+  try {
+    return {
+      sourceFiles: hostedDocList(row.source_files, {
+        document,
+        column: 'doc.source_files',
+      }).map(String),
+      checkedAgainstCommit: checkedAgainstCommitFromRow(row),
+    }
+  } catch (error) {
+    if (error instanceof Error) throw new RecordDocError(error.message)
+    throw error
+  }
+}
+
+function formFromRow(row: Row | undefined): DocForm | null {
+  return row?.form == null ? null : (String(row.form) as DocForm)
 }
 
 export type HostedArticleResponse = {
@@ -29,6 +53,7 @@ export type HostedArticleResponse = {
   articleSubject?: { id: string; name: string } | null
   relatedSubjects?: Array<{ id: string; name: string }>
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
 }
 
 export async function hostedArticleProjectId(
@@ -58,16 +83,12 @@ export async function resolveHostedArticleFields(
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
   },
   existing: Row | undefined,
   projectId: string | null,
 ): Promise<Fields & { subjectRows: Row[] }> {
-  const form =
-    input.form === undefined
-      ? existing?.form == null
-        ? null
-        : (String(existing.form) as DocForm)
-      : input.form
+  const form = input.form === undefined ? formFromRow(existing) : input.form
   const articleSubjectId =
     input.articleSubjectId === undefined
       ? existing?.article_subject_id == null
@@ -87,6 +108,10 @@ export async function resolveHostedArticleFields(
       column: 'doc.source_files',
       optional: true,
     }).map(String)
+  const checkedAgainstCommit =
+    input.checkedAgainstCommit === undefined
+      ? checkedAgainstCommitFromRow(existing)
+      : input.checkedAgainstCommit
   assertWrite(
     articleFieldRefusal({
       scope: input.scope,
@@ -95,6 +120,7 @@ export async function resolveHostedArticleFields(
       ownSubjectId: articleSubjectId,
       relatedSubjectIds,
       sourceFiles,
+      checkedAgainstCommit,
     }),
   )
   const attached = new Set(
@@ -119,13 +145,20 @@ export async function resolveHostedArticleFields(
         `subject ${id} is retired; cleared by: orch subject list ${input.subject}`,
       )
   }
-  return { form, articleSubjectId, relatedSubjectIds, sourceFiles, subjectRows }
+  return {
+    form,
+    articleSubjectId,
+    relatedSubjectIds,
+    sourceFiles,
+    checkedAgainstCommit,
+    subjectRows,
+  }
 }
 
 export function restoredArticleFields(revision: Row): Fields {
   const document = `revision ${String(revision.id)} of document ${String(revision.doc_id)}`
   return {
-    form: revision.form == null ? null : (String(revision.form) as DocForm),
+    form: formFromRow(revision),
     articleSubjectId:
       revision.article_subject_id == null ? null : String(revision.article_subject_id),
     relatedSubjectIds: hostedDocList(revision.related_subject_ids, {
@@ -136,6 +169,7 @@ export function restoredArticleFields(revision: Row): Fields {
       document,
       column: 'doc_revision.source_files',
     }).map(String),
+    checkedAgainstCommit: checkedAgainstCommitFromRow(revision),
   }
 }
 
@@ -165,6 +199,7 @@ export async function importedArticleSubjectNames(
       ownSubjectId: doc.articleSubjectId,
       relatedSubjectIds: doc.relatedSubjectIds,
       sourceFiles: doc.sourceFiles,
+      checkedAgainstCommit: doc.checkedAgainstCommit,
     }),
   )
   const ids = [
@@ -197,5 +232,6 @@ export function hostedArticleResponse(fields: Fields, names: Map<string, string>
       : null,
     relatedSubjects: fields.relatedSubjectIds.map((id) => ({ id, name: names.get(id)! })),
     sourceFiles: fields.sourceFiles,
+    checkedAgainstCommit: fields.checkedAgainstCommit,
   }
 }

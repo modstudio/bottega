@@ -233,6 +233,22 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     setDoc({
       scope: 'project',
       subject: 'articles',
+      slug: 'bad-checked-commit',
+      title: 'Bad commit',
+      body: 'Body.',
+      delivery: 'demand',
+      kind: 'article',
+      audiences: ['technical'],
+      checkedAgainstCommit: 'ABC123',
+      reason: 'prove commit refusal',
+    }),
+  ).rejects.toThrow(
+    'invalid checked-against commit: use the full lowercase 40-character hexadecimal git commit id',
+  )
+  await expect(
+    setDoc({
+      scope: 'project',
+      subject: 'articles',
       slug: 'foreign-subject',
       title: 'Wrong',
       body: 'Body.',
@@ -285,6 +301,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     articleSubject: own.id,
     relatedSubjects: [related.id],
     sourceFiles: ['src/one.ts'],
+    checkedAgainstCommit: '1111111111111111111111111111111111111111',
     reason: 'create fields',
   })
   await retireSubject('articles', related.id)
@@ -302,6 +319,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     articleSubject: { id: own.id },
     relatedSubjects: [{ id: related.id }],
     sourceFiles: ['src/one.ts'],
+    checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
   const cleared = await setDoc({
     scope: 'project',
@@ -313,6 +331,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     articleSubject: null,
     relatedSubjects: [],
     sourceFiles: [],
+    checkedAgainstCommit: null,
     reason: 'clear fields',
     expectedRevision: kept.revision!,
   })
@@ -321,6 +340,7 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     articleSubject: null,
     relatedSubjects: [],
     sourceFiles: [],
+    checkedAgainstCommit: null,
   })
   const firstRevision = listDocRevisions('project', 'articles', 'fields').at(-1)!
   const restored = await restoreDoc('project', 'articles', 'fields', firstRevision.id, {
@@ -332,8 +352,12 @@ test('article fields validate, keep omitted values, clear explicitly, and restor
     articleSubject: { id: own.id },
     relatedSubjects: [{ id: related.id }],
     sourceFiles: ['src/one.ts'],
+    checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
   expect(getDocRevision(firstRevision.id)?.sourceFiles).toEqual(['src/one.ts'])
+  expect(getDocRevision(firstRevision.id)?.checkedAgainstCommit).toBe(
+    '1111111111111111111111111111111111111111',
+  )
 })
 
 test('subject filtering lists own-subject documents before related documents', async () => {

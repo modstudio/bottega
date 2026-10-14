@@ -55,12 +55,14 @@ test('an older import keeps populated live article fields and defaults revision 
     articleSubjectId: 'own',
     relatedSubjectIds: ['related'],
     sourceFiles: ['src/article.ts'],
+    checkedAgainstCommit: null,
   })
   expect(normalized.revisions[0]).toMatchObject({
     form: null,
     articleSubjectId: null,
     relatedSubjectIds: [],
     sourceFiles: [],
+    checkedAgainstCommit: null,
   })
 })
 
@@ -100,7 +102,14 @@ test('document row timestamps keep milliseconds when the driver returns Dates', 
     articleSubject: mapped.articleSubject,
     relatedSubjects: mapped.relatedSubjects,
     sourceFiles: mapped.sourceFiles,
-  }).toEqual({ form: null, articleSubject: null, relatedSubjects: [], sourceFiles: [] })
+    checkedAgainstCommit: mapped.checkedAgainstCommit,
+  }).toEqual({
+    form: null,
+    articleSubject: null,
+    relatedSubjects: [],
+    sourceFiles: [],
+    checkedAgainstCommit: null,
+  })
 })
 
 test('revision rows carry the batched author display name', () => {

@@ -56,6 +56,7 @@ test('the registered doc clear options are presence flags', () => {
     'no-article-subject',
     'no-related-subjects',
     'no-source-files',
+    'no-checked-at',
   ]
 
   const absent = optionFlags(parseDocOptions(['set', 'guide']).options)
@@ -75,6 +76,11 @@ test('the registered doc clear options are presence flags', () => {
     parseDocOptions(['set', 'guide', '--source-file', 'docs/guide.md']).options,
   )
   expect(sourceFile.has('no-source-files')).toBeFalse()
+
+  const checkedAt = optionFlags(
+    parseDocOptions(['set', 'guide', '--checked-at', '1'.repeat(40)]).options,
+  )
+  expect(checkedAt.has('no-checked-at')).toBeFalse()
 })
 
 test('an orch worker cannot hydrate user canon but can check it', () => {

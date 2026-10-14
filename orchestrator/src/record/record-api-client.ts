@@ -72,6 +72,7 @@ export type RecordDocUpsertInput = {
   articleSubjectId?: string | null
   relatedSubjectIds?: string[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   projectName?: string | null
   reason: string
@@ -107,6 +108,7 @@ export type RecordDocImportInput = {
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -132,6 +134,7 @@ export type RecordDocImportInput = {
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     author: string
     reason: string

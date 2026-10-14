@@ -24,10 +24,11 @@ function carriedArticleFields(input: {
   articleSubjectId: string | null
   relatedSubjectIds: string[]
   sourceFiles: string[]
+  checkedAgainstCommit: string | null
 }): Partial<
   Pick<
     RecordDocImportInput['doc'],
-    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles'
+    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles' | 'checkedAgainstCommit'
   >
 > {
   return {
@@ -35,6 +36,7 @@ function carriedArticleFields(input: {
     ...(input.articleSubjectId ? { articleSubjectId: input.articleSubjectId } : {}),
     ...(input.relatedSubjectIds.length ? { relatedSubjectIds: input.relatedSubjectIds } : {}),
     ...(input.sourceFiles.length ? { sourceFiles: input.sourceFiles } : {}),
+    ...(input.checkedAgainstCommit ? { checkedAgainstCommit: input.checkedAgainstCommit } : {}),
   }
 }
 
@@ -57,6 +59,7 @@ type LocalDoc = {
   form: DocForm | null
   article_subject_id: string | null
   source_files: string
+  checked_against_commit: string | null
   replacement_slug: string | null
   project_id: number | null
   created_at: string
@@ -85,6 +88,7 @@ type LocalRevision = {
   article_subject_id: string | null
   related_subject_ids: string
   source_files: string
+  checked_against_commit: string | null
   replacement_slug: string | null
   author: string
   reason: string
@@ -153,6 +157,7 @@ function asRevision(
       articleSubjectId: row.article_subject_id,
       relatedSubjectIds: JSON.parse(row.related_subject_ids),
       sourceFiles: JSON.parse(row.source_files),
+      checkedAgainstCommit: row.checked_against_commit,
     }),
     replacementSlug: row.replacement_slug,
     author: row.author,
@@ -197,6 +202,7 @@ function groupFromLive(
           articleSubjectId: doc.article_subject_id,
           relatedSubjectIds: relatedIds,
           sourceFiles: JSON.parse(doc.source_files),
+          checkedAgainstCommit: doc.checked_against_commit,
         }),
         replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
@@ -244,6 +250,7 @@ function groupFromDeleted(
           articleSubjectId: last.article_subject_id,
           relatedSubjectIds: JSON.parse(last.related_subject_ids),
           sourceFiles: JSON.parse(last.source_files),
+          checkedAgainstCommit: last.checked_against_commit,
         }),
         featured: Boolean(last.featured),
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
@@ -262,13 +269,13 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   const names = projectNames(local)
   const docs = local
     .query<LocalDoc, []>(
-      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, replacement_slug, parent_id, position, project_id, created_at, updated_at
+      `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, parent_id, position, project_id, created_at, updated_at
        FROM doc ORDER BY id`,
     )
     .all()
   const revisions = local
     .query<LocalRevision, []>(
-      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, replacement_slug, parent_id, position, author, reason,
+      `SELECT id, doc_id, record_id, scope, subject, owner, slug, op, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, related_subject_ids, source_files, checked_against_commit, replacement_slug, parent_id, position, author, reason,
               session_id, at, project_id
        FROM doc_revision ORDER BY id`,
     )

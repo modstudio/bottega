@@ -43,6 +43,7 @@ export type RecordDoc = {
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   summary?: string
   projectName: string | null
@@ -73,6 +74,7 @@ export type RecordDocRevision = {
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   author: string
   authorName: string | null
@@ -102,6 +104,7 @@ export type RecordDocImportInput = {
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     projectName?: string | null
     createdAt: string
@@ -127,6 +130,7 @@ export type RecordDocImportInput = {
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     author: string
     reason: string
@@ -149,6 +153,7 @@ export type NormalizedRecordDocImport = {
     | 'articleSubjectId'
     | 'relatedSubjectIds'
     | 'sourceFiles'
+    | 'checkedAgainstCommit'
     | 'replacementSlug'
   > & {
     id: string
@@ -162,6 +167,7 @@ export type NormalizedRecordDocImport = {
     articleSubjectId?: string | null
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
+    checkedAgainstCommit?: string | null
     replacementSlug: string | null
   }
   revisions: Array<
@@ -177,6 +183,7 @@ export type NormalizedRecordDocImport = {
       | 'articleSubjectId'
       | 'relatedSubjectIds'
       | 'sourceFiles'
+      | 'checkedAgainstCommit'
       | 'replacementSlug'
     > & {
       audiences: DocAudiences
@@ -189,6 +196,7 @@ export type NormalizedRecordDocImport = {
       articleSubjectId: string | null
       relatedSubjectIds: string[]
       sourceFiles: string[]
+      checkedAgainstCommit: string | null
       replacementSlug: string | null
     }
   >
@@ -229,6 +237,7 @@ export function normalizeRecordDocImport(
       articleSubjectId: revision.articleSubjectId ?? null,
       relatedSubjectIds: revision.relatedSubjectIds ?? [],
       sourceFiles: revision.sourceFiles ?? [],
+      checkedAgainstCommit: revision.checkedAgainstCommit ?? null,
       replacementSlug: revision.replacementSlug ?? null,
     })),
   }
@@ -237,7 +246,7 @@ export function normalizeRecordDocImport(
 export function importedLiveArticleFields(
   incoming: Pick<
     NormalizedRecordDocImport['doc'],
-    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles'
+    'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles' | 'checkedAgainstCommit'
   >,
   existing?: Record<string, unknown>,
   existingRelatedSubjectIds: readonly string[] = [],
@@ -246,6 +255,7 @@ export function importedLiveArticleFields(
   articleSubjectId: string | null
   relatedSubjectIds: string[]
   sourceFiles: string[]
+  checkedAgainstCommit: string | null
 } {
   return {
     form:
@@ -271,6 +281,12 @@ export function importedLiveArticleFields(
         column: 'doc.source_files',
         optional: true,
       }).map(String),
+    checkedAgainstCommit:
+      incoming.checkedAgainstCommit !== undefined
+        ? incoming.checkedAgainstCommit
+        : existing?.checked_against_commit == null
+          ? null
+          : String(existing.checked_against_commit),
   }
 }
 
@@ -343,6 +359,8 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
       column: 'doc.source_files',
       optional: true,
     }).map(String),
+    checkedAgainstCommit:
+      row.checked_against_commit == null ? null : String(row.checked_against_commit),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     summary: docSummary(String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
@@ -391,6 +409,8 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
       column: 'doc_revision.source_files',
       optional: true,
     }).map(String),
+    checkedAgainstCommit:
+      row.checked_against_commit == null ? null : String(row.checked_against_commit),
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     author: String(row.author),
     authorName: row.author_name == null ? null : String(row.author_name),

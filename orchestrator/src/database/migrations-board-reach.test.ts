@@ -36,6 +36,7 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
       '0102_board_reach_heartbeat',
       '0103_board_message_purpose',
       '0104_run_question_record_identity',
+      '0105_doc_checked_against_commit',
     ])
     expect(database.query('SELECT * FROM board_reach_delivery').get()).toEqual({
       id: 1,

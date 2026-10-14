@@ -39,10 +39,14 @@ function getDoc(input: Address): Doc | null {
       `SELECT d.*, p.slug AS parent_slug, ${LATEST_REVISION_SQL} AS revision FROM doc d LEFT JOIN doc p ON p.id=d.parent_id WHERE d.scope=? AND d.subject IS ? AND d.owner IS ? AND d.slug=?`,
     )
     .get(input.scope, input.subject, input.owner, input.slug) as
-    | (Omit<Doc, 'audiences' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles'> & {
+    | (Omit<
+        Doc,
+        'audiences' | 'articleSubject' | 'relatedSubjects' | 'sourceFiles' | 'checkedAgainstCommit'
+      > & {
         featured: boolean | number
         audiences: string
         source_files: string
+        checked_against_commit: string | null
       })
     | null
   return row
@@ -65,6 +69,7 @@ function getDoc(input: Address): Doc | null {
               .all(row.record_id)
           : [],
         sourceFiles: JSON.parse(row.source_files ?? '[]'),
+        checkedAgainstCommit: row.checked_against_commit,
       }
     : null
 }
@@ -84,6 +89,7 @@ type SetInput = Address & {
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   expectedRevision?: string
   requestedOp?: Extract<DocRevisionOp, 'import'>
@@ -106,7 +112,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -122,6 +128,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.form ?? null,
           input.articleSubject?.id ?? null,
           JSON.stringify(input.sourceFiles ?? []),
+          input.checkedAgainstCommit ?? null,
           input.replacementSlug ?? null,
           at,
           input.recordId,
@@ -130,8 +137,8 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, replacement_slug, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -151,6 +158,7 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
           input.form ?? null,
           input.articleSubject?.id ?? null,
           JSON.stringify(input.sourceFiles ?? []),
+          input.checkedAgainstCommit ?? null,
           input.replacementSlug ?? null,
           at,
           at,
@@ -242,6 +250,7 @@ type RestoreInput = Address & {
   articleSubject?: DocArticleSubject | null
   relatedSubjects?: DocArticleSubject[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   expectedRevision?: string
   identity: WriteIdentity
@@ -271,7 +280,7 @@ export function commitDocRestore(
     if (existing) {
       db()
         .query(
-          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
+          'UPDATE doc SET project_id=?, title=?, body=?, delivery=?, audiences=?, parent_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, replacement_slug=?, updated_at=?, record_id=? WHERE id=?',
         )
         .run(
           input.projectId,
@@ -287,6 +296,7 @@ export function commitDocRestore(
           input.form ?? null,
           input.articleSubject?.id ?? null,
           JSON.stringify(input.sourceFiles ?? []),
+          input.checkedAgainstCommit ?? null,
           input.replacementSlug ?? null,
           at,
           input.recordId,
@@ -295,8 +305,8 @@ export function commitDocRestore(
     } else {
       db()
         .query(
-          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, replacement_slug, created_at, updated_at, record_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO doc (scope, subject, owner, project_id, slug, title, body, delivery, audiences, parent_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, created_at, updated_at, record_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           input.scope,
@@ -316,6 +326,7 @@ export function commitDocRestore(
           input.form ?? null,
           input.articleSubject?.id ?? null,
           JSON.stringify(input.sourceFiles ?? []),
+          input.checkedAgainstCommit ?? null,
           input.replacementSlug ?? null,
           at,
           at,

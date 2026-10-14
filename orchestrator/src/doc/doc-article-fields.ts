@@ -4,6 +4,7 @@ import {
   type DocForm,
   type DocKind,
   type DocStatus,
+  normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
@@ -42,6 +43,7 @@ export type DocWriteInput = {
   articleSubject?: string | null
   relatedSubjects?: string[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
   replacementSlug?: string | null
 } & DocWriteContext
 
@@ -52,6 +54,7 @@ type ArticleFieldInput = {
   articleSubject?: string | null
   relatedSubjects?: string[]
   sourceFiles?: string[]
+  checkedAgainstCommit?: string | null
 }
 
 export function resolveLocalDocArticleFields(
@@ -89,6 +92,12 @@ export function resolveLocalDocArticleFields(
     input.sourceFiles === undefined
       ? (prior?.sourceFiles ?? [])
       : normalizeDocSourceFiles(input.sourceFiles)
+  const checkedAgainstCommit =
+    input.checkedAgainstCommit === undefined
+      ? (prior?.checkedAgainstCommit ?? null)
+      : input.checkedAgainstCommit === null
+        ? null
+        : normalizeDocCheckedAgainstCommit(input.checkedAgainstCommit)
   const refusal = articleFieldRefusal({
     scope: input.scope,
     kind,
@@ -96,6 +105,7 @@ export function resolveLocalDocArticleFields(
     ownSubjectId: articleSubject?.id ?? null,
     relatedSubjectIds: relatedSubjects.map(({ id }) => id),
     sourceFiles,
+    checkedAgainstCommit,
   })
   if (refusal) throw new Error(refusal)
   if (!prior && kind === 'article' && input.audiences === undefined) {
@@ -103,7 +113,7 @@ export function resolveLocalDocArticleFields(
       'creating an article requires audiences; pass --audience on the CLI or audiences through MCP/API',
     )
   }
-  return { form, articleSubject, relatedSubjects, sourceFiles }
+  return { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit }
 }
 
 export function hostedArticleWriteFields(
@@ -119,6 +129,9 @@ export function hostedArticleWriteFields(
       ? { relatedSubjectIds: fields.relatedSubjects.map(({ id }) => id) }
       : {}),
     ...(input.sourceFiles !== undefined ? { sourceFiles: fields.sourceFiles } : {}),
+    ...(input.checkedAgainstCommit !== undefined
+      ? { checkedAgainstCommit: fields.checkedAgainstCommit }
+      : {}),
   }
 }
 
@@ -128,6 +141,7 @@ export function localRevisionArticleFields(revision: DocRevision) {
     articleSubject: revision.articleSubject,
     relatedSubjects: revision.relatedSubjects,
     sourceFiles: revision.sourceFiles,
+    checkedAgainstCommit: revision.checkedAgainstCommit,
   }
 }
 
@@ -137,5 +151,6 @@ export function localRevisionArticleReferences(revision: DocRevision) {
     articleSubject: revision.articleSubject?.id ?? null,
     relatedSubjects: revision.relatedSubjects.map(({ id }) => id),
     sourceFiles: revision.sourceFiles,
+    checkedAgainstCommit: revision.checkedAgainstCommit,
   }
 }
