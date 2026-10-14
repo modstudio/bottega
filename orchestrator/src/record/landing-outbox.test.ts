@@ -66,12 +66,6 @@ test('landing evidence backfill enqueues references in order, maps every column,
     .run()
 
   expect(backfillLandingEvidenceRecords(database)).toEqual({
-    mintedLandings: 0,
-    mintedOverrides: 0,
-    mintedCarries: 0,
-    mintedTriageSnapshots: 0,
-    mintedContentions: 0,
-    mintedFlakes: 0,
     enqueuedLandings: 2,
     enqueuedOverrides: 1,
     enqueuedCarries: 1,
@@ -115,12 +109,6 @@ test('landing evidence backfill enqueues references in order, maps every column,
   expect(JSON.parse(rows[5]!.payload).projectName).toBeNull()
 
   expect(backfillLandingEvidenceRecords(database)).toEqual({
-    mintedLandings: 0,
-    mintedOverrides: 0,
-    mintedCarries: 0,
-    mintedTriageSnapshots: 0,
-    mintedContentions: 0,
-    mintedFlakes: 0,
     enqueuedLandings: 0,
     enqueuedOverrides: 0,
     enqueuedCarries: 0,

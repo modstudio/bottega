@@ -57,7 +57,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
     .run(row.record_id, payload, at)
 }
 
-export function backfillReleaseRecords(database: Database): { minted: number; enqueued: number } {
+export function backfillReleaseRecords(database: Database): { enqueued: number } {
   const releases = database
     .query<{ id: number }, []>(
       `SELECT id FROM release_ledger WHERE NOT EXISTS (
@@ -66,5 +66,5 @@ export function backfillReleaseRecords(database: Database): { minted: number; en
     )
     .all()
   for (const row of releases) enqueueReleaseRecord(database, row.id)
-  return { minted: 0, enqueued: releases.length }
+  return { enqueued: releases.length }
 }

@@ -29,7 +29,7 @@ export type RecordSyncResult = {
     scores: number
     reviews: ReviewRecordBackfillResult
     landingEvidence: LandingEvidenceBackfillResult
-    questions: { minted: number; enqueued: number }
+    questions: { enqueued: number }
     releases: ReturnType<typeof backfillReleaseRecords>
   }
 }

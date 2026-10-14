@@ -16,7 +16,6 @@ type LocalRun = Record<string, unknown> & {
 }
 
 export type RunRecordBackfillResult = {
-  minted: number
   enqueued: number
   skippedLive: number
 }
@@ -153,5 +152,5 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { minted: 0, enqueued: terminal.length, skippedLive }
+  return { enqueued: terminal.length, skippedLive }
 }

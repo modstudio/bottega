@@ -77,7 +77,6 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   insert.run(newRecordId(), 5, '2026-09-15T05:00:00.000Z', null, 1, 'running', null, null)
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
-    minted: 0,
     enqueued: 4,
     skippedLive: 1,
   })
@@ -105,7 +104,6 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   expect(payloads[2]).toMatchObject({ parentRunId: runs[0]!.record_id })
   expect(payloads[3]).toMatchObject({ status: 'asking' })
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
-    minted: 0,
     enqueued: 0,
     skippedLive: 1,
   })
@@ -127,7 +125,6 @@ test('backfill leaves hook-tree rows local', () => {
     .run(HOOK_TREE_JOB)
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
-    minted: 0,
     enqueued: 0,
     skippedLive: 0,
   })

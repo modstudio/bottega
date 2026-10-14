@@ -108,7 +108,7 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
   return true
 }
 
-export function backfillQuestionRecords(database: Database): { minted: number; enqueued: number } {
+export function backfillQuestionRecords(database: Database): { enqueued: number } {
   const questions = database
     .query<{ id: number }, []>(
       `SELECT id FROM question WHERE NOT EXISTS (
@@ -117,5 +117,5 @@ export function backfillQuestionRecords(database: Database): { minted: number; e
     )
     .all()
   for (const row of questions) enqueueQuestionRecord(database, row.id)
-  return { minted: 0, enqueued: questions.length }
+  return { enqueued: questions.length }
 }

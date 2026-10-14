@@ -171,8 +171,8 @@ test('release backfill enqueues each existing row once', () => {
               ('01990000-0000-7000-8000-000000000032',?,'production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
     )
     .run(PLATFORM_SLUG, PLATFORM_SLUG)
-  expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 2 })
-  expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 0 })
+  expect(backfillReleaseRecords(database)).toEqual({ enqueued: 2 })
+  expect(backfillReleaseRecords(database)).toEqual({ enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
     count: 2,
   })

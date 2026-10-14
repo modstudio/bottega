@@ -40,7 +40,6 @@ type FindingRestoreReport = {
     rejectionCategory: number
     triagedSeverity: number
     triagedAt: number
-    recordId: number
   }
 }
 
@@ -211,7 +210,6 @@ function restoreReviewFindings(
       rejectionCategory: unusable.length ? 0 : inserts.length,
       triagedSeverity: unusable.length ? 0 : inserts.length,
       triagedAt: unusable.length ? 0 : inserts.length,
-      recordId: 0,
     },
   }
 }

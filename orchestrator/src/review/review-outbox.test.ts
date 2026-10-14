@@ -29,10 +29,6 @@ test('review backfill enqueues the graph once and is idempotent', () => {
     .run()
 
   expect(backfillReviewRecords(database)).toEqual({
-    mintedReviews: 0,
-    mintedLenses: 0,
-    mintedFindings: 0,
-    mintedReads: 0,
     enqueuedReviews: 1,
     enqueuedReads: 0,
   })
@@ -46,10 +42,6 @@ test('review backfill enqueues the graph once and is idempotent', () => {
     records.map((row) => row.record_id).toSorted(),
   )
   expect(backfillReviewRecords(database)).toEqual({
-    mintedReviews: 0,
-    mintedLenses: 0,
-    mintedFindings: 0,
-    mintedReads: 0,
     enqueuedReviews: 0,
     enqueuedReads: 0,
   })

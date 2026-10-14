@@ -7,12 +7,6 @@ import { machineId } from './machine-identity.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
-  mintedLandings: number
-  mintedOverrides: number
-  mintedCarries: number
-  mintedTriageSnapshots: number
-  mintedContentions: number
-  mintedFlakes: number
   enqueuedLandings: number
   enqueuedOverrides: number
   enqueuedCarries: number
@@ -276,12 +270,6 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     return rows.length
   }
   return {
-    mintedLandings: 0,
-    mintedOverrides: 0,
-    mintedCarries: 0,
-    mintedTriageSnapshots: 0,
-    mintedContentions: 0,
-    mintedFlakes: 0,
     enqueuedLandings: backfill('landing', 'landing', (id) => enqueueLanding(database, id)),
     enqueuedOverrides: backfill('landing_override', 'landing_override', (id) =>
       enqueueLandingOverride(database, id),

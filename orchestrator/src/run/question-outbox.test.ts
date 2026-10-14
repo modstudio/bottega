@@ -192,8 +192,8 @@ test('question backfill enqueues all existing rows once', () => {
               ('${newRecordId()}',42,'2026-09-25T10:02:00.000Z','Two?')`,
     )
     .run()
-  expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 2 })
-  expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 0 })
+  expect(backfillQuestionRecords(database)).toEqual({ enqueued: 2 })
+  expect(backfillQuestionRecords(database)).toEqual({ enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 2,
   })

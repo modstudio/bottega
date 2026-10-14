@@ -8,10 +8,6 @@ import { machineId } from '../record/machine-identity.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {
-  mintedReviews: number
-  mintedLenses: number
-  mintedFindings: number
-  mintedReads: number
   enqueuedReviews: number
   enqueuedReads: number
 }
@@ -223,10 +219,6 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     .all()
   for (const row of reads) enqueueReviewRead(database, row.id)
   return {
-    mintedReviews: 0,
-    mintedLenses: 0,
-    mintedFindings: 0,
-    mintedReads: 0,
     enqueuedReviews: reviews.length,
     enqueuedReads: reads.length,
   }
