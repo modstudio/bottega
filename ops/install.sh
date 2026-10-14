@@ -86,6 +86,11 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
+if [[ -z "${HUB_HOSTED_URL:-}" ]]; then
+  hosted_labels="$(grep -l "__HUB_HOSTED_URL__" "$CONCERN"/launchd/*.plist.template | xargs -n1 basename | sed 's/\.plist\.template$//' | paste -sd ' ' -)"
+  echo "warning: HUB_HOSTED_URL is unset for ${hosted_labels}; set HUB_HOSTED_URL and rerun ops/install.sh" >&2
+fi
+
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
@@ -146,7 +151,8 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       -e "s#__FLYCTL__#${FLYCTL}#g" \
       -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
       -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
-      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" "$tmpl" > "$target"
+      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" \
+      -e "s#__HUB_HOSTED_URL__#${HUB_HOSTED_URL:-}#g" "$tmpl" > "$target"
 
   # Load it. A label that still will not load is reported and the rest continue.
   if bootstrap_with_retry "$target"; then
