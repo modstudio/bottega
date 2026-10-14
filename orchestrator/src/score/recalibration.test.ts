@@ -97,6 +97,13 @@ describe('recalibrating the scorer', () => {
         session_id: 'calibration-session',
       })),
     )
+    for (const row of db()
+      .query<{ record_id: string }, []>('SELECT record_id FROM calibration')
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
     expect(db().query('SELECT delivery, quality, fidelity FROM score ORDER BY id').all()).toEqual(
       originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })),
     )

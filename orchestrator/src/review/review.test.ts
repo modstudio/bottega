@@ -114,6 +114,13 @@ describe('review triage', () => {
         at: expect.any(String),
       },
     ])
+    expect(
+      db()
+        .query<{ record_id: string }, [number]>(
+          'SELECT record_id FROM review_finding_amendment WHERE review_id=?',
+        )
+        .get(reviewId)?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({
       completed_at: completed,
     })

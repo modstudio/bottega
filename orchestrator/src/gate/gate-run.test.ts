@@ -160,6 +160,9 @@ test('inserts valid check records in the transaction with the gate row', async (
     exit_code: 0,
     remaining_count: 2,
   })
+  expect(
+    d.query<{ record_id: string }, []>('SELECT record_id FROM check_execution').get()?.record_id,
+  ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 })
 
 test('rolls back the gate row when its check records cannot be inserted', async () => {

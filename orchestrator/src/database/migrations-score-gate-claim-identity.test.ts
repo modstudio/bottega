@@ -186,7 +186,16 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
       })
       const ids = database.query<{ record_id: string }, []>(`SELECT record_id FROM ${table}`).all()
       expect(ids.length).toBe(before[table]!)
+      expect(new Set(ids.map((row) => row.record_id)).size).toBe(ids.length)
       for (const row of ids) expect(row.record_id).toMatch(UUID_V4)
+      expect(
+        database
+          .query<{ unique: number }, []>(
+            `SELECT "unique" FROM pragma_index_list('${table}')
+             WHERE name='${table}_record_id_unique'`,
+          )
+          .get()?.unique,
+      ).toBe(1)
       expect(
         database
           .query<{ notnull: number }, []>(
