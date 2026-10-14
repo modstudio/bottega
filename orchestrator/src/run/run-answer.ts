@@ -81,6 +81,21 @@ function allowsPartialRecordOnly(input: AnswerRunInput, ownersLive: boolean): bo
   return Boolean(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
 }
 
+function incompleteRulingsRefusal(
+  openCount: number,
+  answerCount: number,
+  input: AnswerRunInput,
+  ownersLive: boolean,
+): string | null {
+  if (answerCount === openCount || allowsPartialRecordOnly(input, ownersLive)) return null
+  return (
+    `${openCount} question(s) open but ${answerCount} ruling(s) given. ` +
+    'For multiple questions, pass every --q<id> in a single command. ' +
+    'A worker resumed with a question unanswered will guess, which is the ' +
+    'one thing this is here to prevent.'
+  )
+}
+
 function answerResult(
   outcome: AnswerWaitingResult['outcome'],
   runId: number,
@@ -747,14 +762,8 @@ export async function answerRun(
       })
     }
   }
-  if (answers.length !== open.length && !allowsPartialRecordOnly(input, ownersLive)) {
-    throw new Error(
-      `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
-        'For multiple questions, pass every --q<id> in a single command. ' +
-        'A worker resumed with a question unanswered will guess, which is the ' +
-        'one thing this is here to prevent.',
-    )
-  }
+  const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
+  if (incomplete) throw new Error(incomplete)
 
   if (
     !ownersLive &&
