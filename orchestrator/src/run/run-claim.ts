@@ -454,8 +454,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     const recordCarry = db().query(
       'INSERT INTO run_carried_ruling (record_id,run_id,question_id) VALUES (?,?,?)',
     )
-    for (const questionId of carriedQuestionIds)
-      recordCarry.run(newRecordId(), claimed.id, questionId)
+    for (const id of carriedQuestionIds) recordCarry.run(newRecordId(), claimed.id, id)
     return claimed
   })
   const runToken = randomUUID()

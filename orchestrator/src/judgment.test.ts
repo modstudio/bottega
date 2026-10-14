@@ -369,8 +369,9 @@ describe('score ruling', () => {
     expect(stored!.note).toContain('second')
     expect(db().query<{ n: number }, []>('SELECT count(*) AS n FROM score').get()!.n).toBe(1)
     expect(
-      db().query<{ record_id: string }, []>('SELECT record_id FROM score WHERE run_id=?').get(id)
-        ?.record_id,
+      db()
+        .query<{ record_id: string }, [number]>('SELECT record_id FROM score WHERE run_id=?')
+        .get(id)?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     const outbox = db()
       .query<{ n: number; payload: string }, []>(

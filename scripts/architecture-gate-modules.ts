@@ -32,6 +32,7 @@ export const gateModules: GateModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/check-execution.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/git.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/state-directory.ts',

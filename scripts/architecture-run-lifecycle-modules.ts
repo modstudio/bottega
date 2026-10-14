@@ -214,6 +214,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-terminal.ts', [
+    '../../../shared/record-id.ts',
     '../ask/ask.ts',
     './checkpoint.ts',
     '../confinement/confinement.ts',

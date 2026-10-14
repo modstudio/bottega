@@ -612,8 +612,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     const rows = blockersToRecord({ declared, output })
     if (rows.length) {
       const q = db().query(
-        `INSERT INTO blocker (record_id, run_id, at, what, why, impact, source, kind)
-           VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO blocker (record_id,run_id,at,what,why,impact,source,kind) VALUES (?,?,?,?,?,?,?,?)`,
       )
       for (const r of rows)
         q.run(newRecordId(), claim.id, nowIso(), r.what, r.why, r.impact, r.source, r.kind)
