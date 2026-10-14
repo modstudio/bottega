@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 import {
-  articleSubjectChoices,
   fieldChangeReason,
   fieldWriteInput,
   parentChoices,
+  subjectsExcept,
 } from './doc-field-changes.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 
@@ -82,7 +82,7 @@ test('field reasons spell out the resulting value', () => {
 
 test('article subject choices exclude related subjects', () => {
   expect(
-    articleSubjectChoices(
+    subjectsExcept(
       [
         { id: 'pricing', name: 'Pricing' },
         { id: 'inventory', name: 'Inventory' },

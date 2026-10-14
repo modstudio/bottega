@@ -1,11 +1,11 @@
 import {
-  DOC_AUDIENCES,
   type DocArticleSubject,
   type DocAudience,
   type DocAudiences,
   type DocForm,
   type DocScope,
   type DocStatus,
+  normalizeDocAudiences,
 } from '../../../../shared/docs.ts'
 import {
   DOC_AUDIENCE_LABELS,
@@ -13,7 +13,7 @@ import {
   DOC_FORM_LABELS,
   DOC_STATUS_LABELS,
 } from './filters.ts'
-import type { DocsDoc, DocsSource, DocsTreeItem } from './types.ts'
+import type { DocsDoc, DocsTreeItem } from './types.ts'
 
 export type DocFieldChange =
   | { field: 'status'; value: Extract<DocStatus, 'draft' | 'current'> }
@@ -106,35 +106,58 @@ export function fieldChangeReason(change: DocFieldChange): string {
   }
 }
 
-/** Subjects that can become the article subject without conflicting with its related subjects. */
-export function articleSubjectChoices(
+/**
+ * The subjects still free to choose, leaving out those already taken by the other subject field:
+ * an article's own subject is never also a related subject.
+ */
+export function subjectsExcept(
   subjects: readonly DocArticleSubject[],
-  relatedSubjects: readonly DocArticleSubject[],
+  taken: readonly DocArticleSubject[],
 ): DocArticleSubject[] {
-  const relatedIds = new Set(relatedSubjects.map(({ id }) => id))
-  return subjects.filter(({ id }) => !relatedIds.has(id))
+  const takenIds = new Set(taken.map(({ id }) => id))
+  return subjects.filter(({ id }) => !takenIds.has(id))
 }
 
-function changedField(source: DocsSource, change: DocFieldChange): Record<string, unknown> {
+type LocalFieldPatch = Omit<LocalFieldWrite, keyof WriteBase>
+type HostedFieldPatch = Omit<HostedFieldWrite, keyof WriteBase | 'spaceId'>
+
+function localFieldPatch(change: DocFieldChange): LocalFieldPatch {
+  switch (change.field) {
+    case 'parent':
+      return { parentSlug: change.value?.slug ?? null }
+    case 'articleSubject':
+      return { articleSubject: change.value?.name ?? null }
+    case 'relatedSubjects':
+      return { relatedSubjects: change.value.map(({ name }) => name) }
+    default:
+      return sharedFieldPatch(change)
+  }
+}
+
+function hostedFieldPatch(change: DocFieldChange): HostedFieldPatch {
+  switch (change.field) {
+    case 'parent':
+      return { parentRecordId: change.value?.id ?? null }
+    case 'articleSubject':
+      return { articleSubjectId: change.value?.id ?? null }
+    case 'relatedSubjects':
+      return { relatedSubjectIds: change.value.map(({ id }) => id) }
+    default:
+      return sharedFieldPatch(change)
+  }
+}
+
+/** Fields both sources address the same way. */
+function sharedFieldPatch(
+  change: Exclude<DocFieldChange, { field: 'parent' | 'articleSubject' | 'relatedSubjects' }>,
+): LocalFieldPatch & HostedFieldPatch {
   switch (change.field) {
     case 'status':
       return { status: change.value }
-    case 'parent':
-      return source === 'hosted'
-        ? { parentRecordId: change.value?.id ?? null }
-        : { parentSlug: change.value?.slug ?? null }
     case 'audiences':
       return { audiences: change.value }
     case 'form':
       return { form: change.value }
-    case 'articleSubject':
-      return source === 'hosted'
-        ? { articleSubjectId: change.value?.id ?? null }
-        : { articleSubject: change.value?.name ?? null }
-    case 'relatedSubjects':
-      return source === 'hosted'
-        ? { relatedSubjectIds: change.value.map(({ id }) => id) }
-        : { relatedSubjects: change.value.map(({ name }) => name) }
     case 'sourceFiles':
       return { sourceFiles: change.value }
     case 'delivery':
@@ -170,16 +193,12 @@ export function fieldWriteInput(
     reason: fieldChangeReason(change),
     ...(stored.revision ? { expectedRevision: stored.revision } : {}),
   }
-  return {
-    ...base,
-    ...(source === 'hosted' ? { spaceId: doc.spaceId! } : {}),
-    ...changedField(source, change),
-  }
+  return source === 'hosted'
+    ? { ...base, spaceId: doc.spaceId!, ...hostedFieldPatch(change) }
+    : { ...base, ...localFieldPatch(change) }
 }
 
 /** The audiences ticked in a list, in their canonical order; none at all is not a valid choice. */
 export function audiencesFrom(values: readonly DocAudience[]): DocAudiences | null {
-  const selected = new Set(values)
-  if (!selected.size) return null
-  return DOC_AUDIENCES.filter((value) => selected.has(value)) as DocAudiences
+  return values.length ? normalizeDocAudiences(values) : null
 }

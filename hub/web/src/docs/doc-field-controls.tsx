@@ -15,11 +15,11 @@ import {
   type DocForm,
 } from '../../../../shared/docs.ts'
 import {
-  articleSubjectChoices,
   audiencesFrom,
   type DocFieldChange,
   fieldWriteInput,
   parentChoices,
+  subjectsExcept,
 } from './doc-field-changes.ts'
 import {
   DOC_AUDIENCE_LABELS,
@@ -366,7 +366,7 @@ function ArticleRows({
   field: FieldSave
 }) {
   const { enabled, subjects } = useSubjects(doc, source, field.canAddress)
-  const subjectChoices = articleSubjectChoices(subjects, doc.relatedSubjects ?? [])
+  const subjectChoices = subjectsExcept(subjects, doc.relatedSubjects ?? [])
   const related = doc.relatedSubjects ?? []
   return (
     <>
@@ -417,9 +417,9 @@ function ArticleRows({
         {enabled ? (
           <ChipChoices
             label="Related subjects"
-            options={subjects
-              .filter(({ id }) => id !== doc.articleSubject?.id)
-              .map(({ id, name }) => ({ value: id, label: name }))}
+            options={subjectsExcept(subjects, doc.articleSubject ? [doc.articleSubject] : []).map(
+              ({ id, name }) => ({ value: id, label: name }),
+            )}
             selected={related.map(({ id }) => id)}
             disabled={field.disabled('relatedSubjects')}
             onSave={(ids) =>
