@@ -1,4 +1,4 @@
-import { DOC_AUDIENCES, type DocForm } from '../../../../shared/docs.ts'
+import { DOC_AUDIENCES, type DocForm, type DocStatus } from '../../../../shared/docs.ts'
 import type { DocsAudience, DocsTreeItem } from './types.ts'
 
 export const DOC_AUDIENCE_LABELS: Record<DocsAudience, string> = {
@@ -14,6 +14,15 @@ export const DOC_FORM_LABELS: Record<DocForm, string> = {
   model: 'Model',
   overview: 'Overview',
 }
+
+export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
+  draft: 'Draft',
+  current: 'Current',
+  superseded: 'Superseded',
+  archived: 'Archived',
+}
+
+export const DOC_DELIVERY_LABELS = { inject: 'Inject', demand: 'Demand' } as const
 
 export type FilterKey = 'audience' | 'scope' | 'delivery'
 export type FilterSelection = Record<FilterKey, string | null>

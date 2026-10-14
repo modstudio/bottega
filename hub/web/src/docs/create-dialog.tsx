@@ -7,16 +7,17 @@ import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Select } from '@/ui/listbox/select'
 import { DOC_SCOPE_SUBJECT_KIND, DOC_SCOPES, type DocScope } from '../../../../shared/docs.ts'
+import { DOC_DELIVERY_LABELS } from './filters.ts'
 import { isScope } from './scope.ts'
 
 function needsSubject(scope: DocScope) {
   return DOC_SCOPE_SUBJECT_KIND[scope] !== null
 }
 
-const deliveryOptions = [
-  { value: 'inject', label: 'Inject' },
-  { value: 'demand', label: 'Demand' },
-]
+const deliveryOptions = (['inject', 'demand'] as const).map((value) => ({
+  value,
+  label: DOC_DELIVERY_LABELS[value],
+}))
 
 export function CreateDocDialog({
   open,

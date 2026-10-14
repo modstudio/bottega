@@ -1,13 +1,16 @@
 import { Link } from '@tanstack/react-router'
-import { CalendarDays, CircleDot, Maximize2, Minimize2 } from 'lucide-react'
+import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { readingBody, viewedPaneTitle } from './body.ts'
+import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
+import { DOC_STATUS_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
+import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
-import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
+import type { DocsAudience, DocsDoc, DocsSource, DocsTreeItem } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
@@ -20,13 +23,18 @@ export function savedVersionAuthor(author: string, authorName?: string | null): 
   return !label || label === 'unknown' ? 'System' : label
 }
 
+/** Whether this reading view is one that shows where an article lives in the code. */
+function showsCode(signedIn: boolean, audience: DocsAudience | null): boolean {
+  return signedIn && (audience === null || audience === 'technical')
+}
+
 /** Whether source paths belong in this reading view. */
 export function showSourceFiles(
   signedIn: boolean,
   audience: DocsAudience | null,
   sourceFiles: readonly string[] | undefined,
 ): boolean {
-  return signedIn && Boolean(sourceFiles?.length) && (audience === null || audience === 'technical')
+  return showsCode(signedIn, audience) && Boolean(sourceFiles?.length)
 }
 
 function updatedLabel(value: string) {
@@ -39,8 +47,14 @@ function updatedLabel(value: string) {
   }).format(date)
 }
 
-function statusLabel(status: DocsDoc['status']) {
-  return status.charAt(0).toUpperCase() + status.slice(1)
+function StatusLine({ status }: { status: DocsDoc['status'] }) {
+  const Icon = DOC_STATUS_ICONS[status]
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon size={14} />
+      {DOC_STATUS_LABELS[status]}
+    </span>
+  )
 }
 
 /** Room the sticky article header takes, so the title counts as gone once it is behind it. */
@@ -211,6 +225,7 @@ function ArticleHeading({
   signedIn,
   replacement,
   locationFor,
+  fieldSource,
 }: {
   shown: { title: string; lede: string | null }
   heading: RefObject<HTMLElement | null>
@@ -220,6 +235,7 @@ function ArticleHeading({
   signedIn: boolean
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
+  fieldSource?: DocsSource
 }) {
   return (
     <>
@@ -239,6 +255,9 @@ function ArticleHeading({
         signedIn={signedIn}
         replacement={replacement}
         locationFor={locationFor}
+        statusView={
+          fieldSource ? <EditableStatus key={doc.id} doc={doc} source={fieldSource} /> : undefined
+        }
       />
       {shown.lede && !editing ? (
         <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
@@ -252,20 +271,17 @@ function DocKeyInfo({
   signedIn,
   replacement,
   locationFor,
+  statusView,
 }: {
   doc: DocsDoc
   signedIn: boolean
+  statusView?: ReactNode
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
 }) {
   return (
     <div className="doc-measure mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
-      {signedIn ? (
-        <span className="inline-flex items-center gap-1.5">
-          <CircleDot size={14} />
-          {statusLabel(doc.status)}
-        </span>
-      ) : null}
+      {signedIn ? (statusView ?? <StatusLine status={doc.status} />) : null}
       <span className="inline-flex items-center gap-1.5">
         <CalendarDays size={14} />
         Updated {updatedLabel(doc.updatedAt)}
@@ -297,6 +313,7 @@ export function DocsReading({
   toolbar,
   banner,
   titleView,
+  fieldSource,
 }: {
   doc: DocsDoc | null
   wide: boolean
@@ -318,6 +335,8 @@ export function DocsReading({
   toolbar?: ReactNode
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
+  /** Where the article's fields are saved, set only when this reader may edit them in place. */
+  fieldSource?: DocsSource
 }) {
   const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
   const heading = useRef<HTMLElement>(null)
@@ -354,13 +373,16 @@ export function DocsReading({
             signedIn={signedIn}
             replacement={replacement}
             locationFor={locationFor}
+            fieldSource={fieldSource}
           />
           {bodyView ?? (
             <div className="mt-6">
               <Markdown content={readingBody(doc.body)} />
             </div>
           )}
-          {showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
+          {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
+            <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
+          ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
             <section className="markdown mt-8">
               <h2>In the code</h2>
               <ul>

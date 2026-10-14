@@ -1,22 +1,17 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
-import { ChevronDown, History, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { ChevronDown } from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { relativeTime } from '@/lib/format'
-import { queryClient, trpc } from '@/trpc/client'
-import { Button } from '@/ui/button/button'
-import { Dialog } from '@/ui/dialog/dialog'
-import { Input } from '@/ui/field/input'
+import { trpc } from '@/trpc/client'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import type { DocScope } from '../../../../shared/docs.ts'
-import { isDocReasonReady } from './edit-state.ts'
+import { DocActions } from './doc-actions.tsx'
+import { EditableAbout } from './doc-field-controls.tsx'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
 import { savedVersionAuthor } from './reading.tsx'
-import { isScope } from './scope.ts'
 import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
-import { useStoredDocument } from './use-docs.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -49,6 +44,51 @@ function Contents({ headings }: { headings: readonly DocHeading[] }) {
   )
 }
 
+/**
+ * A collapsible group of the Details tab. Collapsed, its label sits between equal space above and
+ * below; sections after the first are divided by a rule.
+ */
+function FactsSection({
+  label,
+  count,
+  defaultOpen,
+  children,
+}: {
+  label: string
+  count?: ReactNode
+  defaultOpen: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="border-border-default [&:not(:first-child)]:border-t">
+      <button
+        type="button"
+        className={classes(
+          eyebrow,
+          'flex w-full cursor-pointer items-center gap-2 py-3 text-left hover:text-text-primary',
+        )}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{label}</span>
+        {count !== undefined ? (
+          <span className="ml-auto tabular-nums tracking-normal">{count}</span>
+        ) : null}
+        <ChevronDown
+          size={14}
+          className={classes(
+            count === undefined && 'ml-auto',
+            'transition-transform duration-(--duration-fast)',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open ? <div className="pb-4">{children}</div> : null}
+    </section>
+  )
+}
+
 function DocHistory({
   doc,
   source,
@@ -62,7 +102,6 @@ function DocHistory({
   revisionId?: string
   onRevision: (id: number | string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const localHistory = useQuery({
     ...trpc.doc.history.queryOptions({
       scope: doc.scope as DocScope,
@@ -87,55 +126,38 @@ function DocHistory({
       String(right.id).localeCompare(String(left.id)),
   )
   return (
-    <section className="mt-7 border-border-default border-t pt-3">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 py-1 text-md text-text-secondary hover:text-text-primary"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <History size={14} />
-        <span>History</span>
-        <span className="ml-auto tabular-nums text-text-muted">
-          {history.isPending ? '…' : history.isSuccess ? revisions.length : null}
-        </span>
-        <ChevronDown
-          size={14}
-          className={classes(
-            'transition-transform duration-(--duration-fast)',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
+    <FactsSection
+      label="History"
+      defaultOpen={false}
+      count={history.isPending ? '…' : history.isSuccess ? revisions.length : undefined}
+    >
       {history.error ? (
         <p data-tone="error" className="mt-2 text-sm text-status-text">
           {history.error.message}
         </p>
       ) : null}
-      {open ? (
-        <div className="mt-1">
-          {revisions.map((revision) => (
-            <button
-              type="button"
-              key={revision.id}
-              title={`${exactTime(revision.at)} — ${revision.reason}`}
-              aria-current={revisionId === String(revision.id) ? 'true' : undefined}
-              onClick={() => onRevision(revision.id)}
-              className="block w-full cursor-pointer border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
-            >
-              {relativeTime(revision.at)} ·{' '}
-              {savedVersionAuthor(revision.author, revision.authorName)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </section>
+      <div>
+        {revisions.map((revision) => (
+          <button
+            type="button"
+            key={revision.id}
+            title={`${exactTime(revision.at)} — ${revision.reason}`}
+            aria-current={revisionId === String(revision.id) ? 'true' : undefined}
+            onClick={() => onRevision(revision.id)}
+            className="block w-full cursor-pointer border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
+          >
+            {relativeTime(revision.at)} · {savedVersionAuthor(revision.author, revision.authorName)}
+          </button>
+        ))}
+      </div>
+    </FactsSection>
   )
 }
 
 function Details({
   doc,
   signedIn,
+  canManage,
   showHistory,
   source,
   audience,
@@ -144,6 +166,7 @@ function Details({
 }: {
   doc: DocsDoc | null
   signedIn: boolean
+  canManage: boolean
   showHistory: boolean
   source: DocsSource
   audience: DocsAudience | null
@@ -153,35 +176,38 @@ function Details({
   if (!doc) return null
   return (
     <>
-      <section>
-        <span className={eyebrow}>About</span>
-        <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
-          <dt className="text-text-muted">Audience</dt>
-          <dd className="m-0 text-text-secondary">
-            {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
-          </dd>
-          {signedIn && doc.form ? (
-            <>
-              <dt className="text-text-muted">Type</dt>
-              <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
-            </>
-          ) : null}
-          {signedIn && doc.articleSubject ? (
-            <>
-              <dt className="text-text-muted">Subject</dt>
-              <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
-            </>
-          ) : null}
-          {signedIn && doc.relatedSubjects?.length ? (
-            <>
-              <dt className="text-text-muted">Related</dt>
-              <dd className="m-0 text-text-secondary">
-                {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      </section>
+      <FactsSection label="About" defaultOpen>
+        {canManage ? (
+          <EditableAbout key={doc.id} doc={doc} source={source} />
+        ) : (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+            <dt className="text-text-muted">Audience</dt>
+            <dd className="m-0 text-text-secondary">
+              {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
+            </dd>
+            {signedIn && doc.form ? (
+              <>
+                <dt className="text-text-muted">Type</dt>
+                <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
+              </>
+            ) : null}
+            {signedIn && doc.articleSubject ? (
+              <>
+                <dt className="text-text-muted">Subject</dt>
+                <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
+              </>
+            ) : null}
+            {signedIn && doc.relatedSubjects?.length ? (
+              <>
+                <dt className="text-text-muted">Related</dt>
+                <dd className="m-0 text-text-secondary">
+                  {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        )}
+      </FactsSection>
       {showHistory ? (
         <DocHistory
           key={doc.id}
@@ -193,101 +219,6 @@ function Details({
         />
       ) : null}
     </>
-  )
-}
-
-function DocManage({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
-  const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState('')
-  const scoped = isScope(doc.scope)
-  const storedDocument = useStoredDocument(doc, source, open)
-  const expectedRevision = storedDocument?.revision
-  const hostedRevisionMissing = source === 'hosted' && !expectedRevision
-
-  async function removed() {
-    await queryClient.invalidateQueries()
-    await navigate({ to: '/docs' })
-  }
-
-  const localRemove = useMutation({
-    ...trpc.doc.remove.mutationOptions(),
-    onSuccess: removed,
-  })
-  const hostedRemove = useMutation({
-    ...trpc.record.deleteDoc.mutationOptions(),
-    onSuccess: removed,
-  })
-  const removeState = source === 'hosted' ? hostedRemove : localRemove
-  const canSubmit = isDocReasonReady(reason) && !hostedRevisionMissing && !removeState.isPending
-
-  function submit() {
-    if (!canSubmit) return
-    if (source === 'hosted') {
-      if (!doc.spaceId || !expectedRevision) return
-      hostedRemove.mutate({
-        id: doc.id,
-        spaceId: doc.spaceId,
-        reason: reason.trim(),
-        expectedRevision,
-      })
-      return
-    }
-    if (!scoped) return
-    localRemove.mutate({
-      scope: doc.scope as DocScope,
-      subject: doc.subject,
-      slug: doc.slug,
-      reason: reason.trim(),
-      expectedRevision: expectedRevision ?? undefined,
-    })
-  }
-
-  return (
-    <section className="mt-7 border-border-default border-t pt-3">
-      <span className={eyebrow}>Manage</span>
-      <div className="mt-2.5">
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={() => {
-            setReason('')
-            setOpen(true)
-          }}
-        >
-          <Trash2 size={14} />
-          Delete article
-        </Button>
-      </div>
-      <Dialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Delete article?"
-        description="This removes the article. Give a reason to continue."
-        footer={
-          <>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button variant="danger" disabled={!canSubmit} onClick={submit}>
-              Delete article
-            </Button>
-          </>
-        }
-      >
-        <label htmlFor="doc-delete-reason" className="grid gap-1 text-sm">
-          <span className="text-text-muted">Reason</span>
-          <Input
-            id="doc-delete-reason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-        </label>
-        {removeState.error ? (
-          <p data-tone="error" className="mt-2 text-sm text-status-text">
-            {removeState.error.message}
-          </p>
-        ) : null}
-      </Dialog>
-    </section>
   )
 }
 
@@ -339,6 +270,7 @@ export function DocsFacts({
           <Details
             doc={doc}
             signedIn={signedIn}
+            canManage={canManage && Boolean(doc)}
             showHistory={signedIn && source !== 'public'}
             source={source}
             audience={audience}
@@ -346,7 +278,11 @@ export function DocsFacts({
             onRevision={onRevision}
           />
         )}
-        {canManage && doc ? <DocManage doc={doc} source={source} /> : null}
+        {canManage && doc && tab === 'details' ? (
+          <FactsSection label="Actions" defaultOpen>
+            <DocActions key={doc.id} doc={doc} source={source} />
+          </FactsSection>
+        ) : null}
       </div>
     </aside>
   )

@@ -531,6 +531,7 @@ export function useArticleEditor({
   useModSaveHotkey(editing, openSave)
 
   return {
+    source,
     title,
     setTitle,
     body,
@@ -591,6 +592,7 @@ export function editorChrome(
   return {
     editing: activeEditing,
     canManage: mayEdit,
+    fieldSource: mayEdit ? editor.source : undefined,
     viewedRevision: activeEditing ? null : viewedRevision,
     bodyView: activeEditing ? (
       <ArticleEditBody

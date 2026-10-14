@@ -60,6 +60,8 @@ export type DocsViewProps = {
   toolbar?: ReactNode
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
+  /** Where the article's fields are saved, when this reader may edit them in place. */
+  fieldSource?: Docs.DocsSource
   canManage?: boolean
 }
 
