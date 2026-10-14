@@ -1,6 +1,6 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimNotices, claimRunNotices, reapBoardMessages } from './board-service.ts'

@@ -1,6 +1,6 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { rmSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
 import {

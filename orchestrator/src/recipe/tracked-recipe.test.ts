@@ -1,4 +1,3 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import {
   chmodSync,
@@ -13,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'

@@ -1,5 +1,5 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'

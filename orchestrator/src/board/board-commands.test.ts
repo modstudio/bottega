@@ -1,7 +1,7 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { Command } from 'commander'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { registerBoardCommands } from './board-commands.ts'
 import { BOARD_REACH_MAX_HOURS } from './board-reach.ts'

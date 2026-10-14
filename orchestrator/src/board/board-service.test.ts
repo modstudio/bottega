@@ -1,4 +1,3 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
@@ -8,6 +7,7 @@ import {
   BOARD_STANDING_DEFAULT_EXPIRY_MS,
 } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { markMonitorNoticesDelivered } from '../monitor/monitor-notices.ts'
 import { projectAt } from '../project/projects.ts'

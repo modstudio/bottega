@@ -1,6 +1,6 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 // Six of these tests spawn the orch CLI and apply the whole migration journal
 // to scratch stores; each grew past bun's 5 s default as the journal gained

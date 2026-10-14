@@ -1,5 +1,5 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, spyOn, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'

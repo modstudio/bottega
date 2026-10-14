@@ -1,5 +1,5 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   claimCreationDecision,

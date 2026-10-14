@@ -1,7 +1,7 @@
-import { newRecordId } from '../../shared/record-id.ts'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../shared/record-id.ts'
 import { createMemoryRecordApiClient, installRecordApiClient } from '../test/fixtures/record-api.ts'
 import { reviewReply } from '../test/fixtures/replies.ts'
 import { addRun, dir, score as seedScore } from '../test/fixtures/store.ts'

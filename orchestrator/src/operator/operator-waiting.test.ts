@@ -1,6 +1,6 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { notificationCommand } from '../../../shared/operator-notification.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import {
   claimOperatorNotifications,

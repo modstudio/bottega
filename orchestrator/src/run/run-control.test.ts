@@ -1,7 +1,7 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
@@ -71,8 +71,8 @@ describe('inherited resume launch', () => {
     [2, null, 'prefer'],
     [0, null, undefined],
     [null, null, undefined],
-  ] as const)('maps stored mcp %s with error %s to %s', (mcp, mcp_error, expected) => {
-    expect(resumeLaunchFromStored({ ...stored, mcp, mcp_error })).toEqual({
+  ] as const)('maps stored mcp %s with error %s to %s', (mcp, mcpError, expected) => {
+    expect(resumeLaunchFromStored({ ...stored, mcp, mcp_error: mcpError })).toEqual({
       seed: undefined,
       key: undefined,
       base: undefined,

@@ -1,5 +1,5 @@
-import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { latestArchitectRead } from '../review/review-read.ts'
 import {
