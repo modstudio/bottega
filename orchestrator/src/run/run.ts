@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
@@ -432,7 +433,7 @@ export async function run(opts: {
               `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
             )
             .get(
-              ...[randomUUID(), nowIso()],
+              ...[newRecordId(), nowIso()],
               opts.job,
               runProjectName,
               runProjectId,
