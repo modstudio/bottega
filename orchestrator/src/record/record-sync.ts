@@ -175,6 +175,34 @@ function planBatchRow(
   }
 }
 
+function quarantineOversizedRow(input: {
+  row: OutboxRow
+  local: Database
+  attempted: Set<number>
+  emptyRequestBytes: number
+  now: () => string
+}): { oversized: boolean; quarantined: number } {
+  const payloadBytes = utf8Bytes(input.row.payload)
+  const decision = planRecordSyncBatch({
+    rows: [{ id: input.row.id, kind: input.row.kind, payloadBytes, serializedBytes: 0 }],
+    emptyRequestBytes: input.emptyRequestBytes,
+    payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
+    requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
+    countLimit: RECORD_SYNC_BATCH_SIZE,
+  })
+  const oversized = decision.quarantine[0]
+  if (!oversized) return { oversized: false, quarantined: 0 }
+  const changed = quarantineOutboxRow(
+    input.local,
+    input.row.id,
+    input.row.payload,
+    oversized.reason,
+    input.now(),
+  )
+  input.attempted.add(input.row.id)
+  return { oversized: true, quarantined: changed ? 1 : 0 }
+}
+
 function nextBatch(input: {
   local: Database
   attempted: Set<number>
@@ -208,21 +236,15 @@ function nextBatch(input: {
   for (const row of candidates) {
     if (input.attempted.has(row.id)) continue
     const payloadBytes = utf8Bytes(row.payload)
-    const sizeDecision = planRecordSyncBatch({
-      rows: [{ id: row.id, kind: row.kind, payloadBytes, serializedBytes: 0 }],
+    const sizeResult = quarantineOversizedRow({
+      row,
+      local: input.local,
+      attempted: input.attempted,
       emptyRequestBytes,
-      payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
-      requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
-      countLimit: RECORD_SYNC_BATCH_SIZE,
+      now: input.now,
     })
-    const oversized = sizeDecision.quarantine[0]
-    if (oversized) {
-      if (quarantineOutboxRow(input.local, row.id, row.payload, oversized.reason, input.now())) {
-        quarantined++
-      }
-      input.attempted.add(row.id)
-      continue
-    }
+    quarantined += sizeResult.quarantined
+    if (sizeResult.oversized) continue
     const planned = planBatchRow(row, {
       local: input.local,
       hasBatchRows: rows.length > 0,

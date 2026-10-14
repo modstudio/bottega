@@ -15,7 +15,7 @@ export type OversizedRecordSyncRow = {
   reason: string
 }
 
-export function oversizedRecordSyncReason(payloadBytes: number, payloadLimit: number): string {
+function oversizedRecordSyncReason(payloadBytes: number, payloadLimit: number): string {
   return `record sync payload is ${payloadBytes} bytes, exceeding the ${payloadLimit} byte limit; retire its row with \`orch record outbox retire <row-id> --reason <text>\`, then retry \`orch sync\``
 }
 

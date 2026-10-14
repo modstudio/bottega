@@ -833,6 +833,7 @@ export const importBoundaries: ImportBoundary[] = [
       './outbox-quarantine.ts',
       './record-cache.ts',
       './record-api-client.ts',
+      './record-sync-batch.ts',
       './record-sync-contract.ts',
       './record-sync-types.ts',
       '../review/review-outbox.ts',

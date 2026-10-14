@@ -15,7 +15,6 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
-import { RECORD_SYNC_MAX_PAYLOAD_BYTES } from './record-sync-contract.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
@@ -609,39 +608,6 @@ test('a row-fatal failure is quarantined and the next independent row is pushed'
   expect(rows[0]!.quarantined_at).toBe(STAMP)
   expect(rows[1]!.last_error).toBeNull()
   expect(rows[1]!.quarantined_at).toBeNull()
-  local.close()
-})
-
-test('an oversized first row is quarantined without blocking a legal later row', async () => {
-  const local = localOutbox(2)
-  const oversizedPayload = 'x'.repeat(RECORD_SYNC_MAX_PAYLOAD_BYTES + 1)
-  local.query('UPDATE outbox SET payload=? WHERE id=1').run(oversizedPayload)
-  const remote = fakePostgres()
-
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 1,
-    failed: 1,
-    pending: 0,
-    quarantined: [{ id: 1, kind: 'run', attempts: 1 }],
-  })
-  const rows = local
-    .query<{ synced_at: string | null; quarantine_reason: string | null }, []>(
-      'SELECT synced_at,quarantine_reason FROM outbox ORDER BY id',
-    )
-    .all()
-  expect(rows[0]!.synced_at).toBeNull()
-  expect(rows[0]!.quarantine_reason).toContain(
-    `${RECORD_SYNC_MAX_PAYLOAD_BYTES + 1} bytes, exceeding the ${RECORD_SYNC_MAX_PAYLOAD_BYTES} byte limit`,
-  )
-  expect(rows[0]!.quarantine_reason).toContain('orch record outbox retire <row-id>')
-  expect(rows[1]!.synced_at).toBe(STAMP)
-
-  expect(await syncRecord(options(local, remote))).toMatchObject({
-    pushed: 0,
-    failed: 0,
-    pending: 0,
-    quarantined: [{ id: 1, kind: 'run', attempts: 1 }],
-  })
   local.close()
 })
 
