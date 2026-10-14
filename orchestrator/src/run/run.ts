@@ -55,7 +55,7 @@ import {
 import type { OutcomeStatus } from '../outcome.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
-import { workerSharedGitRoots } from '../resources/ref-guard.ts'
+import { ensureWorkerBranchNamespaceDirs, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
@@ -706,6 +706,9 @@ export async function run(opts: {
   // A reader clone keeps all writable Git metadata inside its own tree. Its
   // hooks live outside that root so the worker cannot disable the push guard.
   // Writers remain linked worktrees and retain their existing shared roots.
+  if (repoJob && worktree && writesJob) {
+    ensureWorkerBranchNamespaceDirs(worktree.path, worktree.branch)
+  }
   const writableRoots = [
     scratchDir,
     ...(repoJob && worktree && writesJob

@@ -423,15 +423,45 @@ function sharedRefGuardEnvironment(
   }
 }
 
+function workerBranchNamespaceDirs(
+  cwd: string,
+  branch: string,
+): {
+  objects: string
+  refDir: string
+  reflogDir: string
+  heads: string
+  logHeads: string
+} {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
+  const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
+  const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
+  return {
+    objects: join(paths.commonDir, 'objects'),
+    refDir: dirname(ref),
+    reflogDir: dirname(reflog),
+    heads: resolve(paths.commonDir, 'refs', 'heads'),
+    logHeads: resolve(paths.commonDir, 'logs', 'refs', 'heads'),
+  }
+}
+
 /**
  * Common immutable objects plus the run branch's ref/reflog directories are the only shared writes.
  * A flat branch necessarily grants all of refs/heads and logs/refs/heads. That is acceptable only
  * because the guard is outside those roots and refuses every ref except the worker's exact branch.
  */
 export function workerSharedGitRoots(cwd: string, branch: string): string[] {
-  const paths = linkedWorktreePaths(cwd)
-  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
-  const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
-  const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
-  return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
+  const dirs = workerBranchNamespaceDirs(cwd, branch)
+  return [dirs.objects, dirs.refDir, dirs.reflogDir]
+}
+
+/**
+ * Recursively create the branch namespace directories `workerSharedGitRoots`
+ * names when they are missing. Does not create `refs/heads` or `logs/refs/heads`.
+ */
+export function ensureWorkerBranchNamespaceDirs(cwd: string, branch: string): void {
+  const dirs = workerBranchNamespaceDirs(cwd, branch)
+  if (dirs.refDir !== dirs.heads) mkdirSync(dirs.refDir, { recursive: true })
+  if (dirs.reflogDir !== dirs.logHeads) mkdirSync(dirs.reflogDir, { recursive: true })
 }
