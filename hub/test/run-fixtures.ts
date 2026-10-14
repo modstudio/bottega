@@ -9,6 +9,7 @@ import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { clearOrchCache } from '../src/serve.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
+const fixtureRecordId = (id: number) => `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`
 
 export function resetFixtureStore(assertSafe?: () => void) {
   refreshKeyPrefixes()
@@ -35,24 +36,31 @@ export function resetFixtureStore(assertSafe?: () => void) {
   clearOrchCache()
 }
 
-export const questionFixture = (overrides: Record<string, unknown> = {}) => ({
-  id: 1,
-  run_id: 9001,
-  asked_at: '2026-09-03T00:00:00.000Z',
-  answered_at: null,
-  asked_via: 'reply',
-  answerer_kind: null,
-  answer_channel: null,
-  overturned_at: null,
-  closed_at: null,
-  close_reason: null,
-  deliveries: [],
-  ...overrides,
-})
+export const questionFixture = (overrides: Record<string, unknown> = {}) => {
+  const id = Number(overrides.id ?? 1)
+  const runId = Number(overrides.run_id ?? 9001)
+  return {
+    id,
+    record_id: fixtureRecordId(id),
+    run_id: runId,
+    run_record_id: fixtureRecordId(runId),
+    asked_at: '2026-09-03T00:00:00.000Z',
+    answered_at: null,
+    asked_via: 'reply',
+    answerer_kind: null,
+    answer_channel: null,
+    overturned_at: null,
+    closed_at: null,
+    close_reason: null,
+    deliveries: [],
+    ...overrides,
+  }
+}
 
 export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => {
   const fixture = {
     id: 9001,
+    record_id: fixtureRecordId(Number(overrides.id ?? 9001)),
     started_at: '2026-09-03T00:00:00.000Z',
     agent: 'grok',
     job: 'implement',
@@ -73,16 +81,38 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
     ...overrides,
   }
   if (Array.isArray(fixture.questions)) {
-    fixture.questions = fixture.questions.map((question) => ({
-      asked_via: null,
-      answerer_kind: null,
-      answer_channel: null,
-      overturned_at: null,
-      closed_at: null,
-      close_reason: null,
-      deliveries: [],
-      ...(question as Record<string, unknown>),
-    }))
+    fixture.questions = fixture.questions.map((question) => {
+      const value = question as Record<string, unknown>
+      const questionId = Number(value.id)
+      const runId = Number(value.run_id)
+      return {
+        record_id: fixtureRecordId(questionId),
+        run_record_id: fixtureRecordId(runId),
+        asked_via: null,
+        answerer_kind: null,
+        answer_channel: null,
+        overturned_at: null,
+        closed_at: null,
+        close_reason: null,
+        ...value,
+        deliveries: Array.isArray(value.deliveries)
+          ? value.deliveries.map((delivery) => {
+              const item = delivery as Record<string, unknown>
+              const deliveryRunId = item.run_id === null ? null : Number(item.run_id)
+              return {
+                question_record_id: fixtureRecordId(questionId),
+                run_record_id: deliveryRunId === null ? null : fixtureRecordId(deliveryRunId),
+                ...item,
+              }
+            })
+          : [],
+      }
+    })
+  }
+  if (Array.isArray((fixture as Record<string, unknown>).turns)) {
+    ;(fixture as Record<string, unknown>).turns = (
+      (fixture as Record<string, unknown>).turns as Record<string, unknown>[]
+    ).map((turn) => ({ record_id: fixtureRecordId(Number(turn.id)), ...turn }))
   }
   return fixture as unknown as OrchRun
 }

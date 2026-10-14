@@ -21,7 +21,9 @@ describe('run ingest', () => {
       JSON.stringify([
         {
           id: 8001,
+          record_id: '00000000-0000-4000-8000-000000008001',
           run_id: null,
+          run_record_id: null,
           workflow_cursor_id: 7001,
           workflow_key: 'DEV-964',
           project: 'alpha',
