@@ -424,6 +424,23 @@ function partialOutputDocument(
   )
 }
 
+function listResultArtifacts(finalId: number, presentation: CollectResultPresentation): void {
+  const dir = join(resolveRunsDirectory(process.env), String(finalId), 'artifacts')
+  const files: string[] = []
+  if (existsSync(dir)) {
+    for (const name of readdirSync(dir, { recursive: true })) {
+      const path = join(dir, String(name))
+      try {
+        if (statSync(path).isFile()) files.push(path)
+      } catch {
+        /* raced */
+      }
+    }
+  }
+  if (!files.length) presentation.log('no artifacts')
+  else for (const file of files.sort()) presentation.log(file)
+}
+
 function utf8Tail(text: string, bytes: number): string {
   const encoded = Buffer.from(text)
   if (encoded.byteLength <= bytes) return text
@@ -504,23 +521,7 @@ export function collectResult(
     worktree: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-  if (argv.includes('--artifacts')) {
-    const runsRoot = resolveRunsDirectory(process.env)
-    const dir = join(runsRoot, String(chain.finalId), 'artifacts')
-    const files: string[] = []
-    if (existsSync(dir)) {
-      for (const name of readdirSync(dir, { recursive: true })) {
-        const p = join(dir, String(name))
-        try {
-          if (statSync(p).isFile()) files.push(p)
-        } catch {
-          /* raced */
-        }
-      }
-    }
-    if (!files.length) presentation.log('no artifacts')
-    else for (const file of files.sort()) presentation.log(file)
-  }
+  if (argv.includes('--artifacts')) listResultArtifacts(chain.finalId, presentation)
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)

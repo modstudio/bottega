@@ -201,6 +201,11 @@ type WorkerReporter = {
   launch_key: string | null
 }
 
+const workerReporter = (runId: number) =>
+  db()
+    .query('SELECT id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
+    .get(runId) as WorkerReporter | null
+
 function registeredProject(name: string) {
   const project = projectByName(name)
   if (!project) throw new Error(`unknown project "${name}"`)
@@ -242,9 +247,7 @@ export async function fileIssue(
     if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')
     }
-    worker = db()
-      .query('SELECT id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
-      .get(runId) as WorkerReporter | null
+    worker = workerReporter(runId)
     if (!worker?.launch_cwd) {
       throw new Error('cannot file issue: the reporting worker has no project origin')
     }

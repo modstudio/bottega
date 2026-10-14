@@ -388,7 +388,9 @@ test('the orch waiting client contract accepts a no-project item', () => {
     OperatorWaitingItemSchema.parse({
       kind: 'question',
       id: 7,
+      question_record_id: '00000000-0000-4000-8000-000000000007',
       run_id: 42,
+      run_record_id: '00000000-0000-4000-8000-000000000042',
       project: null,
       task_key: null,
       session_id: null,
@@ -405,6 +407,7 @@ test('the orch waiting client contract accepts a no-project item', () => {
 
 const runFixture = {
   id: 42,
+  record_id: '00000000-0000-4000-8000-000000000042',
   started_at: '2026-09-06T12:00:00.000Z',
   agent: 'codex',
   job: 'implement',
@@ -425,6 +428,7 @@ const runFixture = {
   turns: [
     {
       id: 42,
+      record_id: '00000000-0000-4000-8000-000000000042',
       started_at: '2026-09-06T12:00:00.000Z',
       latency_ms: 100,
       vendor_tokens: 12,

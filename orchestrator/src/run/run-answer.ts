@@ -109,6 +109,40 @@ type OpenQuestion = {
   owner_pid: number | null
 }
 
+type AnswerRootRow = {
+  id: number
+  record_id: string
+  agent: string
+  job: string
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  vendor_session: string | null
+  status: string
+  session_id: string | null
+  turn: number
+  parent_run_id: number | null
+  worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+  evidence_excluded: string | null
+  repo: string | null
+  launch_key: string | null
+}
+
+function answerRoot(requestedId: number): AnswerRootRow | null {
+  return db()
+    .query(
+      `SELECT root.id, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
+          root.base_commit, root.vendor_session, root.status, root.session_id,
+          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
+          root.launch_key
+     FROM run requested
+     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+    WHERE requested.id = ?`,
+    )
+    .get(requestedId) as AnswerRootRow | null
+}
+
 function answeredBy(
   operatorAuthorized: boolean,
   fromOperator: boolean,
@@ -516,36 +550,7 @@ export async function answerRun(
   input: AnswerRunInput,
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
-  const found = db()
-    .query(
-      `SELECT root.id, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
-          root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
-          root.launch_key
-     FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id = ?`,
-    )
-    .get(requestedId) as {
-    id: number
-    record_id: string
-    agent: string
-    job: string
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    vendor_session: string | null
-    status: string
-    session_id: string | null
-    turn: number
-    parent_run_id: number | null
-    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
-    evidence_excluded: string | null
-    repo: string | null
-    launch_key: string | null
-  } | null
-  const row = requireAnswerRun(found, requestedId)
+  const row = requireAnswerRun(answerRoot(requestedId), requestedId)
   await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
   const id = row.id
   refuseEscapedChain(id)

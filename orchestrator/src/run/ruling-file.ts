@@ -286,6 +286,21 @@ type FilingReference = {
   filed_label: string | null
 }
 
+const filingResult = (
+  row: QuestionRow,
+  filedAs: FiledRulingKind,
+  reference: FilingReference,
+  filedAt: string,
+) => ({
+  question_id: row.id,
+  question_record_id: row.record_id,
+  filed_as: filedAs,
+  filed_ref: reference.filed_ref,
+  filed_record_id: reference.filed_record_id,
+  filed_label: reference.filed_label,
+  filed_at: filedAt,
+})
+
 function filingDisplay(row: FilingReference): string {
   if (row.filed_label)
     return row.filed_record_id ? `${row.filed_label} (${row.filed_record_id})` : row.filed_label
@@ -407,13 +422,5 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
       })
     enqueueQuestionRecord(db(), row.id)
   })
-  return {
-    question_id: row.id,
-    question_record_id: row.record_id,
-    filed_as: requested,
-    filed_ref: reference.filed_ref,
-    filed_record_id: reference.filed_record_id,
-    filed_label: reference.filed_label,
-    filed_at: at,
-  }
+  return filingResult(row, requested, reference, at)
 }

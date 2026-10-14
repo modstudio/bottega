@@ -99,6 +99,7 @@ function chain(row: {
 }): Parameters<typeof indexRunAnswers>[0][number] {
   return {
     id: row.id,
+    record_id: `00000000-0000-4000-8000-${String(row.id).padStart(12, '0')}`,
     started_at: '2026-09-03T00:00:00.000Z',
     agent: 'codex',
     job: 'implement',
@@ -114,6 +115,7 @@ function chain(row: {
     status: row.status,
     turns: row.turns.map((turn) => ({
       id: turn.id,
+      record_id: `00000000-0000-4000-8000-${String(turn.id).padStart(12, '0')}`,
       started_at: '2026-09-03T00:00:00.000Z',
       latency_ms: null,
       vendor_tokens: null,
