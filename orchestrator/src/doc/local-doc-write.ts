@@ -168,8 +168,10 @@ export function commitDocSet(input: SetInput & { recordId: string; revisionId: s
     db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)
     for (const subject of input.relatedSubjects ?? []) {
       db()
-        .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
-        .run(newRecordId(), input.recordId, subject.id)
+        .query(
+          'INSERT INTO doc_related_subject (id,record_id,doc_record_id,subject_id) VALUES (?,?,?,?)',
+        )
+        .run(newRecordId(), newRecordId(), input.recordId, subject.id)
     }
     const doc = getDoc(input)!
     insertLocalRevision(
@@ -336,8 +338,10 @@ export function commitDocRestore(
     db().query('DELETE FROM doc_related_subject WHERE doc_record_id=?').run(input.recordId)
     for (const subject of input.relatedSubjects ?? []) {
       db()
-        .query('INSERT INTO doc_related_subject (id,doc_record_id,subject_id) VALUES (?,?,?)')
-        .run(newRecordId(), input.recordId, subject.id)
+        .query(
+          'INSERT INTO doc_related_subject (id,record_id,doc_record_id,subject_id) VALUES (?,?,?,?)',
+        )
+        .run(newRecordId(), newRecordId(), input.recordId, subject.id)
     }
     const doc = getDoc(input)!
     insertLocalRevision(doc, 'restore', input.identity, at, input.revisionId)

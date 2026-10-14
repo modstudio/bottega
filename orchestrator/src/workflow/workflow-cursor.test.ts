@@ -101,17 +101,17 @@ function installEvidence(
     (
       d
         .query<{ id: number }, []>(
-          `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
-           VALUES ('["true"]','/tmp','abc',0,'','2026-09-01') RETURNING id`,
+          `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+           VALUES ('${newRecordId()}','["true"]','/tmp','abc',0,'','2026-09-01') RETURNING id`,
         )
         .get() as { id: number }
     ).id
   const taskKey = key || 'DEV-822'
   d.query(
     `INSERT OR IGNORE INTO branch_landing_record
-      (project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES (?,?,?,?,?,?,?)`,
-  ).run(project, `${taskKey}-work`, 'abc', 1, 'def', '2026-09-01', '2026-09-01')
+      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run(newRecordId(), project, `${taskKey}-work`, 'abc', 1, 'def', '2026-09-01', '2026-09-01')
   const ruling = d
     .query<{ id: number }, (string | number | null)[]>(
       `INSERT INTO question

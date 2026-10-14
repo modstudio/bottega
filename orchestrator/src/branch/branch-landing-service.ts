@@ -1,6 +1,7 @@
 // concern: branch-landing-service
 /** Verifies GitHub landing evidence and persists explicit run-branch landing records. */
 
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -241,14 +242,15 @@ function persistVerifiedBranchLanding(
     db()
       .query(
         `INSERT INTO branch_landing_record
-           (project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
-         VALUES (?,?,?,?,?,?,?,?)
+           (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recording_session,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?)
          ON CONFLICT(project,branch) DO UPDATE SET
            tip=excluded.tip, pr_number=excluded.pr_number, merge_commit=excluded.merge_commit,
            merged_at=excluded.merged_at, recording_session=excluded.recording_session,
            recorded_at=excluded.recorded_at`,
       )
       .run(
+        newRecordId(),
         project.name,
         branch,
         tip,

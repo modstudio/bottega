@@ -1,5 +1,6 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
 
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import type { TransportName } from '../transport/transport.ts'
@@ -67,10 +68,17 @@ export function tellRun(
     const message = db()
       .query(
         `INSERT INTO run_message
-         (direction, root_run_id, run_id, sender_session, body, created_at, delivery)
-       VALUES ('to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
+         (record_id, direction, root_run_id, run_id, sender_session, body, created_at, delivery)
+       VALUES (?, 'to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
       )
-      .get(active.root_id, active.id, authority.actor, messageBody, nowIso()) as RunMessage
+      .get(
+        newRecordId(),
+        active.root_id,
+        active.id,
+        authority.actor,
+        messageBody,
+        nowIso(),
+      ) as RunMessage
     auditRunMutation(authority, 'tell')
     return { ...message, transport: active.transport }
   })
@@ -87,10 +95,17 @@ export function messageArchitect(runId: number, body: string): RunMessage {
   return db()
     .query(
       `INSERT INTO run_message
-       (direction, root_run_id, run_id, sender_session, body, created_at, read_at, delivery)
-     VALUES ('from_worker', ?, ?, ?, ?, ?, NULL, 'worker_tool') RETURNING *`,
+       (record_id, direction, root_run_id, run_id, sender_session, body, created_at, read_at, delivery)
+     VALUES (?, 'from_worker', ?, ?, ?, ?, ?, NULL, 'worker_tool') RETURNING *`,
     )
-    .get(run.root_id, run.id, run.vendor_session, bodyOf(body), nowIso()) as RunMessage
+    .get(
+      newRecordId(),
+      run.root_id,
+      run.id,
+      run.vendor_session,
+      bodyOf(body),
+      nowIso(),
+    ) as RunMessage
 }
 
 /** Read and receipt all context queued for this worker's conversation. */

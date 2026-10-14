@@ -205,6 +205,7 @@ test('review landing release and doc identity migration fills nulls, keeps ident
       '0106_review_landing_release_doc_record_identity',
       '0107_score_gate_claim_audit_record_identity',
       '0108_workflow_lens_port_record_identity',
+      '0109_remaining_store_record_identity',
     ])
     const ids = (table: string) =>
       database

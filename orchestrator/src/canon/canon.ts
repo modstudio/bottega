@@ -6,6 +6,7 @@ import { $ } from 'bun'
 import { CONCERNS, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
@@ -617,9 +618,10 @@ export function recordPack(pack: Pack): void {
     const projectId = pack.project ? (projectByName(pack.project)?.id ?? null) : null
     db()
       .query(`INSERT INTO canon_pack
-      (job,project,project_id,sha256,bytes,canon_bytes,doc_bytes,doc_count,doc_revisions,compiled_at,findings)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      (record_id,job,project,project_id,sha256,bytes,canon_bytes,doc_bytes,doc_count,doc_revisions,compiled_at,findings)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
+        newRecordId(),
         pack.job,
         pack.project,
         projectId,

@@ -79,11 +79,11 @@ describe('worker pack canon', () => {
     ])
     const insert = db().query(
       `INSERT INTO canon_pack
-       (job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
-       VALUES (?,?,?,?,?,?,?,?,0)`,
+       (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+       VALUES (?,?,?,?,?,?,?,?,?,0)`,
     )
-    insert.run('review-lens', null, null, 'global', 1, 1, docs, AT)
-    insert.run('review-lens', PLATFORM_SLUG, projectId, 'project', 1, 1, docs, AT)
+    insert.run(newRecordId(), 'review-lens', null, null, 'global', 1, 1, docs, AT)
+    insert.run(newRecordId(), 'review-lens', PLATFORM_SLUG, projectId, 'project', 1, 1, docs, AT)
 
     expect(storedPackDrift().map(({ job, project }) => [job, project])).toEqual([
       ['review-lens', PLATFORM_SLUG],

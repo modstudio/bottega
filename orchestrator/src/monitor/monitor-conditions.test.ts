@@ -184,19 +184,19 @@ function persistAddressedCondition(
   const invocation = (
     db()
       .query(
-        `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-     VALUES (?,?, 'backstop', 1, 0) RETURNING id`,
+        `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+     VALUES (?,?,?, 'backstop', 1, 0) RETURNING id`,
       )
-      .get(since, since) as { id: number }
+      .get(newRecordId(), since, since) as { id: number }
   ).id
   return (
     db()
       .query(
         `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-     VALUES (?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
+       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+     VALUES (?,?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
       )
-      .get(invocation, kind, subject, since, ownerSession) as { id: number }
+      .get(newRecordId(), invocation, kind, subject, since, ownerSession) as { id: number }
   ).id
 }
 

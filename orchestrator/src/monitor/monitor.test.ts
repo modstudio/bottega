@@ -37,11 +37,22 @@ function insertRun4177PackRows(): string {
   ])
   const insert = db().query(
     `INSERT INTO canon_pack
-     (job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
-     VALUES (?,?,?,?,?,?,?,?,0)`,
+     (record_id,job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+     VALUES (?,?,?,?,?,?,?,?,?,0)`,
   )
-  insert.run('review-lens', null, null, 'global', 1, 1, docs, '2026-09-16T00:00:00.000Z')
   insert.run(
+    newRecordId(),
+    'review-lens',
+    null,
+    null,
+    'global',
+    1,
+    1,
+    docs,
+    '2026-09-16T00:00:00.000Z',
+  )
+  insert.run(
+    newRecordId(),
     'review-lens',
     PLATFORM_SLUG,
     projectId,
@@ -290,18 +301,19 @@ describe('operational monitor conditions', () => {
     const invocation = (
       db()
         .query(
-          `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+          `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
         )
-        .get() as { id: number }
+        .get(newRecordId()) as { id: number }
     ).id
     db()
       .query(
         `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
-       VALUES (?,?,?,?,?,?,?)`,
+       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
+        newRecordId(),
         invocation,
         'stale-run',
         'run:7',

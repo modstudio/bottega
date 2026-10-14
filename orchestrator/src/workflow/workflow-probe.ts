@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
@@ -185,10 +186,11 @@ async function recordWorkflowCommand(
   return writeTransaction(() => {
     const row = d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at,kind)
-         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,withheld,session_id,created_at,kind)
+         VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         storedCommand,
         cwd,
         input.commit === undefined ? headCommit(cwd) : input.commit,

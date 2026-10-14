@@ -239,8 +239,8 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
 test('resolves probe artifacts and task comments through injected ports', () => {
   const d = database()
   d.query(
-    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
-     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01')`,
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+     VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
   d.query(
     `INSERT INTO landing_triage_snapshot
@@ -525,8 +525,8 @@ test('a foreign run is refused and a matching run is allowed', () => {
 test('a foreign probe is refused and a matching probe is allowed', () => {
   const d = database()
   d.query(
-    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
-     VALUES ('["true"]','/other','abc',0,'','2026-09-01')`,
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+     VALUES ('${newRecordId()}','["true"]','/other','abc',0,'','2026-09-01')`,
   ).run()
   expect(() =>
     gather(
@@ -543,8 +543,8 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
   ).toThrow("--artifact probe:1 cwd project is other, not this cursor's fixture")
 
   d.query(
-    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
-     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01')`,
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+     VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01')`,
   ).run()
   expect(gather(d, { artifact: 'probe:2' }).artifact).toEqual({
     ref: 'probe:2',
@@ -555,8 +555,8 @@ test('a foreign probe is refused and a matching probe is allowed', () => {
 test('exec evidence is branch-bound and carries its exit code', () => {
   const d = database()
   d.query(
-    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at,kind)
-     VALUES ('["true"]','/other','abc',0,'','2026-09-01','exec')`,
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}','["true"]','/other','abc',0,'','2026-09-01','exec')`,
   ).run()
   expect(() =>
     gather(
@@ -573,8 +573,8 @@ test('exec evidence is branch-bound and carries its exit code', () => {
   ).toThrow("--artifact exec:1 cwd project is other, not this cursor's fixture")
 
   d.query(
-    `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at,kind)
-     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-01','exec')`,
+    `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
+     VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run()
   expect(gather(d, { artifact: 'exec:2' })).toMatchObject({
     artifact: { ref: 'exec:2', exists: true },
@@ -599,9 +599,9 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
   ).run()
   d.query(
     `INSERT INTO probe
-      (command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
-     VALUES ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','adopting-session'),
-            ('["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
+      (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind,session_id)
+     VALUES ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-02','exec','adopting-session'),
+            ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
   ).run()
 
   expect(gather(d, { artifact: 'exec:1' }).exec).toMatchObject({

@@ -1,5 +1,6 @@
 // concern: worker note request lifecycle
 /** DB-backed handoff from a sandbox ask server to the host run supervisor. */
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import type { WorkerNoteFiledResult, WorkerNoteInput, WorkerNoteRun } from './worker-note.ts'
 
@@ -60,10 +61,11 @@ export async function requestWorkerNote(
   writableDb()
   const request = db()
     .query(
-      `INSERT INTO worker_note_request (run_id,text,project,file,same_as,requested_at,status)
-       VALUES (?,?,?,?,?,?,'requested') RETURNING id`,
+      `INSERT INTO worker_note_request (record_id,run_id,text,project,file,same_as,requested_at,status)
+       VALUES (?,?,?,?,?,?,?,'requested') RETURNING id`,
     )
     .get(
+      newRecordId(),
       run.id,
       input.text,
       input.project ?? null,

@@ -53,7 +53,7 @@ Allowed through:
 DENIAL ONLY HAPPENS ON PreToolUse. SubagentStart cannot carry a permission
 decision and has no prompt to judge, so it is audit-only.
 """
-import json, os, re, sqlite3, subprocess, sys, time
+import json, os, re, sqlite3, subprocess, sys, time, uuid
 
 ALLOW = {"claude-code-guide"}
 
@@ -105,6 +105,8 @@ def log(decision, why, inp, event, payload=None):
     writers it is competing with have.
     """
     row = (
+        # Python is the hook's language-local minter; a Bun process per event would make the gate expensive.
+        str(uuid.uuid7()),
         time.strftime("%Y-%m-%dT%H:%M:%S"),
         session_id(payload),
         os.getcwd(),
@@ -123,8 +125,8 @@ def log(decision, why, inp, event, payload=None):
         db = sqlite3.connect(f"file:{DB}?mode=rw", uri=True, timeout=15)
         db.execute("PRAGMA busy_timeout = 15000")
         db.execute(
-            "INSERT INTO spawn (at, session_id, cwd, event, subagent_type,"
-            " description, prompt_bytes, decision, why) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO spawn (record_id, at, session_id, cwd, event, subagent_type,"
+            " description, prompt_bytes, decision, why) VALUES (?,?,?,?,?,?,?,?,?,?)",
             row,
         )
         db.commit()

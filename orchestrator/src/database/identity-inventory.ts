@@ -11,13 +11,17 @@ export type IdentityInventory = {
 }
 
 const CONVERTED_TABLES = [
+  'agent',
   'blocker',
+  'branch_landing_record',
   'calibration',
+  'canon_pack',
   'canon_eval',
   'check_execution',
   'compared_pair',
   'contention',
   'doc',
+  'doc_related_subject',
   'doc_revision',
   'duel',
   'gate_execution',
@@ -29,6 +33,10 @@ const CONVERTED_TABLES = [
   'lens_profile',
   'lens_profile_revision',
   'lens_revision',
+  'metric',
+  'monitor_condition',
+  'monitor_invocation',
+  'operator_notification',
   'port_baseline',
   'port_doctrine',
   'port_pair',
@@ -37,6 +45,7 @@ const CONVERTED_TABLES = [
   'port_skip',
   'project_lens_profile',
   'project_lens_profile_revision',
+  'probe',
   'question',
   'question_delivery',
   'question_mutation_audit',
@@ -51,17 +60,21 @@ const CONVERTED_TABLES = [
   'run_carried_ruling',
   'run_checkpoint',
   'run_mutation_audit',
+  'run_message',
   'score',
+  'spawn',
   'step_catalogue',
   'step_catalogue_event',
   'step_catalogue_version',
   'test_flake',
+  'subject',
   'workflow',
   'workflow_cursor',
   'workflow_event',
   'workflow_obligation',
   'workflow_step_text',
   'workflow_version',
+  'worker_note_request',
 ] as const
 
 export const EXEMPT_TABLES: readonly IdentityExemption[] = [
@@ -88,7 +101,6 @@ export const EXEMPT_TABLES: readonly IdentityExemption[] = [
 ]
 
 export const IDENTITY_BASELINE = [
-  'agent',
   'board_claim',
   'board_hosted_adoption_ledger',
   'board_hosted_adoption_receipt',
@@ -97,25 +109,14 @@ export const IDENTITY_BASELINE = [
   'board_reach_delivery',
   'board_reach_recording_failure',
   'board_receipt',
-  'branch_landing_record',
-  'canon_pack',
-  'doc_related_subject',
-  'metric',
-  'monitor_condition',
-  'monitor_invocation',
-  'operator_notification',
   'outbox',
   'outbox_quarantine_audit',
   'outbox_redaction_audit',
-  'probe',
   'project',
-  'run_message',
-  'spawn',
-  'subject',
-  'worker_note_request',
 ] as const
 
 const BORROWED_RECORD_ID = new Set(['outbox', 'outbox_quarantine_audit', 'outbox_redaction_audit'])
+const IDENTITY_COLUMNS: Readonly<Record<string, string>> = { subject: 'id' }
 
 export function decideIdentityInventory(
   tables: readonly IdentityTable[],
@@ -174,13 +175,17 @@ function readIdentityTables(database: Database): IdentityTable[] {
     .all()
   return names.map(({ name }) => {
     const columns = database
-      .query<{ name: string; type: string; notnull: number }, []>(`PRAGMA table_info('${name}')`)
+      .query<{ name: string; type: string; notnull: number; pk: number }, []>(
+        `PRAGMA table_info('${name}')`,
+      )
       .all()
+    const identityColumn = IDENTITY_COLUMNS[name] ?? 'record_id'
     const hasRequiredIdentity = columns.some(
       (column) =>
         column.type.toUpperCase() === 'TEXT' &&
-        column.notnull === 1 &&
-        ((column.name === 'record_id' && !BORROWED_RECORD_ID.has(name)) || column.name === 'id'),
+        (column.notnull === 1 || column.pk === 1) &&
+        column.name === identityColumn &&
+        !(identityColumn === 'record_id' && BORROWED_RECORD_ID.has(name)),
     )
     return { name, hasRequiredIdentity }
   })

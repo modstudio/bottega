@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { summary } from './metric.ts'
 
@@ -12,9 +13,9 @@ describe('metric canon headline and calendar halves', () => {
       return `${y}-${m}-${String(d.getDate()).padStart(2, '0')}`
     }
     const insert = db().query(
-      `INSERT INTO metric (day, claude_tokens, cache_read, messages, tasks,
+      `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
                            canon_tokens, other_tokens, collected_at)
-       VALUES (?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?)`,
     )
     const rows: Array<[number, number, number, number]> = [
       [13, 300, 30, 3],
@@ -24,7 +25,17 @@ describe('metric canon headline and calendar halves', () => {
       [1, 150, 15, 3],
     ]
     for (const [ago, canon, other, tasks] of rows)
-      insert.run(day(ago), canon + other, 0, 1, tasks, canon, other, new Date().toISOString())
+      insert.run(
+        newRecordId(),
+        day(ago),
+        canon + other,
+        0,
+        1,
+        tasks,
+        canon,
+        other,
+        new Date().toISOString(),
+      )
 
     const s = summary(14)
     expect(s.canonTokens).toBe(900)
