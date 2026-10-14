@@ -9,13 +9,10 @@ import {
   askingRuns,
   deadRunningProcessConditions,
   idleRunCondition,
-  orphanDockerNetworkConditions,
   orphanRecipeDatabaseConditions,
-  orphanSandboxDirectoryConditions,
   pidBornAfterRun,
   reconcileHub,
   rulingConditions,
-  staleTrustEntryConditions,
   stalledRunConditions,
   terminalConversationTime,
   terminalProcessPgid,
@@ -24,6 +21,11 @@ import {
   unsettledClaimConditions,
   unsettledClaimInventory,
 } from './monitor-conditions.ts'
+import {
+  orphanDockerNetworkConditions,
+  orphanSandboxDirectoryConditions,
+  staleTrustEntryConditions,
+} from './orphan-inventory-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
 import { recordTunnelCondition } from './monitor-record-tunnel.ts'
 

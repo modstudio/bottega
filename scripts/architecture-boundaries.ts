@@ -18,6 +18,7 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
 const landing = '../landing-tree/landing-tree.ts'
 
@@ -990,31 +991,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',
     ['./autonomy.ts'],
   ),
-  boundary(
-    'worktree-attribution-boundary',
-    'orchestrator/src/worktree/worktree-attribution.ts',
-    [
-      'node:fs',
-      'node:path',
-      '../git/checkout-identity.ts',
-      '../database/database-location.ts',
-      '../database/db.ts',
-      '../git/git-environment.ts',
-      './worktree-types.ts',
-    ],
-    'Keep attribution and extraction independent of lifecycle policy and transports.',
-    ['./worktree.ts'],
-  ),
-  boundary(
-    'worktree-mcp-boundary',
-    'orchestrator/src/worktree/worktree-mcp.ts',
-    ['node:fs', 'node:path'],
-    'Keep worker MCP file provisioning independent of lifecycle and policy.',
-  ),
-  boundary(
-    'worktree-template-boundary',
-    'orchestrator/src/worktree/worktree-template.ts',
-    [],
-    'Keep template grammar independent of execution, lifecycle, and policy.',
+  ...worktreeBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
 ]

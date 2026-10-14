@@ -61,6 +61,10 @@ export const hubModuleSpecs = [
     allowed: ['./subject-contract.ts', './orch.ts'],
   },
   {
+    file: 'hub/src/orch-doc-argv.ts',
+    allowed: ['../../shared/docs.ts'],
+  },
+  {
     file: 'hub/src/board-contract.ts',
     allowed: ['zod', '../../shared/board-purpose.ts', '../../shared/record-id.ts'],
   },

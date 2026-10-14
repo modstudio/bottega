@@ -46,16 +46,13 @@ import {
   git,
   hookTreeConditions,
   idleRunConditions,
-  orphanDockerNetworkConditions,
   orphanRecipeDatabaseConditions,
-  orphanSandboxDirectoryConditions,
   reconcileHub,
   refGuardConditions,
   retainedRefConditions,
   rulingConditions,
   sandboxDirectoryInventory,
   staleRunConditions,
-  staleTrustEntryConditions,
   stalledRunConditions,
   terminalCloseOutRuns,
   terminalProcessAliveConditions,
@@ -64,6 +61,11 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
+import {
+  orphanDockerNetworkConditions,
+  orphanSandboxDirectoryConditions,
+  staleTrustEntryConditions,
+} from './orphan-inventory-conditions.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'

@@ -55,6 +55,13 @@ export const monitorModules: MonitorModule[] = [
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
     './database-connection-conditions.ts',
+    './orphan-inventory-conditions.ts',
+  ]),
+  module('orchestrator/src/monitor/orphan-inventory-conditions.ts', [
+    '../../../shared/brand.ts',
+    '../resources/resource-inventory.ts',
+    './monitor-conditions.ts',
+    './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/database-connection-conditions.ts', [
     '../../../shared/brand.ts',
