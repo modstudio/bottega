@@ -4,7 +4,7 @@ import { Database } from 'bun:sqlite'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { DATABASE_RESOLUTION, DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
 import {
   decideFindingRestores,
