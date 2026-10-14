@@ -24,7 +24,7 @@ import {
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { planRecordSyncBatch, type OversizedRecordSyncRow } from './record-sync-batch.ts'
+import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
   RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
@@ -324,7 +324,7 @@ function nextBatch(input: {
   let requestBytes = emptyRequestBytes
   let quarantined = 0
   for (const candidateRow of input.candidates) {
-    const { row, payloadBytes } = candidateRow
+    const { row } = candidateRow
     if (input.attempted.has(row.id)) {
       input.candidates.delete(candidateRow)
       continue
