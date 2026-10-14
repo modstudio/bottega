@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { CalendarDays, CircleDot, Maximize2, Minimize2 } from 'lucide-react'
+import { CalendarDays, Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
@@ -7,6 +7,7 @@ import { classes } from '@/ui/text/classes'
 import { readingBody, viewedPaneTitle } from './body.ts'
 import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
 import type { DocsLocation } from './location.ts'
+import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
 import type { DocsAudience, DocsDoc, DocsSource, DocsTreeItem } from './types.ts'
 
@@ -43,6 +44,16 @@ function updatedLabel(value: string) {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function StatusLine({ status }: { status: DocsDoc['status'] }) {
+  const Icon = DOC_STATUS_ICONS[status]
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon size={14} />
+      {statusLabel(status)}
+    </span>
+  )
 }
 
 function statusLabel(status: DocsDoc['status']) {
@@ -273,14 +284,7 @@ function DocKeyInfo({
 }) {
   return (
     <div className="doc-measure mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
-      {signedIn
-        ? (statusView ?? (
-            <span className="inline-flex items-center gap-1.5">
-              <CircleDot size={14} />
-              {statusLabel(doc.status)}
-            </span>
-          ))
-        : null}
+      {signedIn ? (statusView ?? <StatusLine status={doc.status} />) : null}
       <span className="inline-flex items-center gap-1.5">
         <CalendarDays size={14} />
         Updated {updatedLabel(doc.updatedAt)}

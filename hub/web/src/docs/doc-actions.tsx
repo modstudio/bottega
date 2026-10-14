@@ -11,8 +11,6 @@ import { isScope } from './scope.ts'
 import type { DocsDoc, DocsSource } from './types.ts'
 import { useStoredDocument } from './use-docs.ts'
 
-const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
-
 /** What an editor can do to the article as a whole, apart from editing its fields. */
 export function DocActions({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
   const navigate = useNavigate()
@@ -57,9 +55,8 @@ export function DocActions({ doc, source }: { doc: DocsDoc; source: DocsSource }
   }
 
   return (
-    <section className="mt-7 border-border-default border-t pt-3">
-      <span className={eyebrow}>Actions</span>
-      <div className="mt-2.5">
+    <>
+      <div>
         <Button
           size="sm"
           variant="danger"
@@ -100,6 +97,6 @@ export function DocActions({ doc, source }: { doc: DocsDoc; source: DocsSource }
           </p>
         ) : null}
       </Dialog>
-    </section>
+    </>
   )
 }

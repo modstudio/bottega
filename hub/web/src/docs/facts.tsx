@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, History } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { relativeTime } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Tabs } from '@/ui/tabs/tabs'
@@ -44,6 +44,51 @@ function Contents({ headings }: { headings: readonly DocHeading[] }) {
   )
 }
 
+/**
+ * A collapsible group of the Details tab. Collapsed, its label sits between equal space above and
+ * below; sections after the first are divided by a rule.
+ */
+function FactsSection({
+  label,
+  count,
+  defaultOpen,
+  children,
+}: {
+  label: string
+  count?: ReactNode
+  defaultOpen: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="border-border-default [&:not(:first-child)]:border-t">
+      <button
+        type="button"
+        className={classes(
+          eyebrow,
+          'flex w-full cursor-pointer items-center gap-2 py-3 text-left hover:text-text-primary',
+        )}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{label}</span>
+        {count !== undefined ? (
+          <span className="ml-auto tabular-nums tracking-normal">{count}</span>
+        ) : null}
+        <ChevronDown
+          size={14}
+          className={classes(
+            count === undefined && 'ml-auto',
+            'transition-transform duration-(--duration-fast)',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open ? <div className="pb-4">{children}</div> : null}
+    </section>
+  )
+}
+
 function DocHistory({
   doc,
   source,
@@ -57,7 +102,6 @@ function DocHistory({
   revisionId?: string
   onRevision: (id: number | string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const localHistory = useQuery({
     ...trpc.doc.history.queryOptions({
       scope: doc.scope as DocScope,
@@ -82,49 +126,31 @@ function DocHistory({
       String(right.id).localeCompare(String(left.id)),
   )
   return (
-    <section className="mt-7 border-border-default border-t pt-3">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 py-1 text-md text-text-secondary hover:text-text-primary"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <History size={14} />
-        <span>History</span>
-        <span className="ml-auto tabular-nums text-text-muted">
-          {history.isPending ? '…' : history.isSuccess ? revisions.length : null}
-        </span>
-        <ChevronDown
-          size={14}
-          className={classes(
-            'transition-transform duration-(--duration-fast)',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
+    <FactsSection
+      label="History"
+      defaultOpen={false}
+      count={history.isPending ? '…' : history.isSuccess ? revisions.length : undefined}
+    >
       {history.error ? (
         <p data-tone="error" className="mt-2 text-sm text-status-text">
           {history.error.message}
         </p>
       ) : null}
-      {open ? (
-        <div className="mt-1">
-          {revisions.map((revision) => (
-            <button
-              type="button"
-              key={revision.id}
-              title={`${exactTime(revision.at)} — ${revision.reason}`}
-              aria-current={revisionId === String(revision.id) ? 'true' : undefined}
-              onClick={() => onRevision(revision.id)}
-              className="block w-full cursor-pointer border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
-            >
-              {relativeTime(revision.at)} ·{' '}
-              {savedVersionAuthor(revision.author, revision.authorName)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </section>
+      <div>
+        {revisions.map((revision) => (
+          <button
+            type="button"
+            key={revision.id}
+            title={`${exactTime(revision.at)} — ${revision.reason}`}
+            aria-current={revisionId === String(revision.id) ? 'true' : undefined}
+            onClick={() => onRevision(revision.id)}
+            className="block w-full cursor-pointer border-border-default border-t py-2 text-left text-sm text-text-muted hover:text-text-primary aria-current:font-medium aria-current:text-text-primary"
+          >
+            {relativeTime(revision.at)} · {savedVersionAuthor(revision.author, revision.authorName)}
+          </button>
+        ))}
+      </div>
+    </FactsSection>
   )
 }
 
@@ -150,12 +176,11 @@ function Details({
   if (!doc) return null
   return (
     <>
-      <section>
-        <span className={eyebrow}>About</span>
+      <FactsSection label="About" defaultOpen>
         {canManage ? (
           <EditableAbout key={doc.id} doc={doc} source={source} />
         ) : (
-          <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
             <dt className="text-text-muted">Audience</dt>
             <dd className="m-0 text-text-secondary">
               {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
@@ -182,7 +207,7 @@ function Details({
             ) : null}
           </dl>
         )}
-      </section>
+      </FactsSection>
       {showHistory ? (
         <DocHistory
           key={doc.id}
@@ -253,7 +278,11 @@ export function DocsFacts({
             onRevision={onRevision}
           />
         )}
-        {canManage && doc ? <DocActions key={doc.id} doc={doc} source={source} /> : null}
+        {canManage && doc && tab === 'details' ? (
+          <FactsSection label="Actions" defaultOpen>
+            <DocActions key={doc.id} doc={doc} source={source} />
+          </FactsSection>
+        ) : null}
       </div>
     </aside>
   )

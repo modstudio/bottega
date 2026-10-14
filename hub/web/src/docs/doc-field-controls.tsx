@@ -1,11 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CircleDot, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { queryClient, trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
-import { Select } from '@/ui/listbox/select'
+import { Menu } from '@/ui/menu/menu'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -26,6 +26,7 @@ import {
   DOC_STATUS_LABELS,
 } from './filters.ts'
 import { isScope } from './scope.ts'
+import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { DocsDoc, DocsSource } from './types.ts'
 import { useDocsTree, useStoredDocument } from './use-docs.ts'
 
@@ -127,7 +128,7 @@ function FieldError({ message }: { message?: string }) {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="pt-1 text-text-muted">{label}</dt>
+      <dt className="text-text-muted">{label}</dt>
       <dd className="m-0 min-w-0 text-text-secondary">{children}</dd>
     </>
   )
@@ -147,7 +148,7 @@ function Choices<T extends string>({
   onToggle: (value: T) => void
 }) {
   return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
       {options.map(({ value, label }) => (
         <label
           key={value}
@@ -167,37 +168,77 @@ function Choices<T extends string>({
   )
 }
 
-/** The status on the line under the title; an editor changes it there. */
+/** A field's value shown as text; an editor clicks it to choose another value. */
+function ChoiceText({
+  label,
+  value,
+  options,
+  disabled,
+  onChoose,
+}: {
+  label: string
+  value: string
+  options: readonly { value: string; label: string }[]
+  disabled: boolean
+  onChoose: (value: string) => void
+}) {
+  const current = options.find((option) => option.value === value)?.label ?? 'None'
+  return (
+    <Menu
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          title={`Change ${label.toLowerCase()}`}
+          className="cursor-pointer text-left hover:text-text-primary disabled:cursor-default"
+        >
+          {current}
+        </button>
+      }
+      items={options.map((option) => ({
+        label: option.label,
+        onSelect: () => {
+          if (option.value !== value) onChoose(option.value)
+        },
+      }))}
+    />
+  )
+}
+
+/** The status on the line under the title. An editor clicks it to choose another. */
 export function EditableStatus({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
   const field = useDocFieldSave(doc, source)
+  const Icon = DOC_STATUS_ICONS[doc.status]
+  const label = (
+    <>
+      <Icon size={14} />
+      {DOC_STATUS_LABELS[doc.status]}
+    </>
+  )
   const fixed = !field.canAddress || doc.status === 'superseded' || doc.status === 'archived'
-  if (fixed) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <CircleDot size={14} />
-        {DOC_STATUS_LABELS[doc.status]}
-      </span>
-    )
+  if (fixed) return <span className="inline-flex items-center gap-1.5">{label}</span>
+  const choose = (status: 'draft' | 'current') => () => {
+    if (status !== doc.status) field.save({ field: 'status', value: status })
   }
   return (
     <span className="inline-flex items-center gap-1.5">
-      <CircleDot size={14} />
-      <span className="[&>button]:min-w-24">
-        <Select
-          size="sm"
-          label="Status"
-          value={doc.status}
-          options={(['draft', 'current'] as const).map((value) => ({
-            value,
-            label: DOC_STATUS_LABELS[value],
-          }))}
-          onChange={(value) =>
-            field.disabled('status')
-              ? undefined
-              : field.save({ field: 'status', value: value as 'draft' | 'current' })
-          }
-        />
-      </span>
+      <Menu
+        trigger={
+          <button
+            type="button"
+            disabled={field.disabled('status')}
+            title="Change status"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm hover:text-text-primary disabled:cursor-default"
+          >
+            {label}
+          </button>
+        }
+        items={(['draft', 'current'] as const).map((status) => ({
+          label: DOC_STATUS_LABELS[status],
+          icon: DOC_STATUS_ICONS[status],
+          onSelect: choose(status),
+        }))}
+      />
       <FieldError message={field.error('status')} />
     </span>
   )
@@ -210,21 +251,18 @@ function ParentRow({ doc, source, field }: { doc: DocsDoc; source: DocsSource; f
   return (
     <Row label="Parent">
       {field.canAddress ? (
-        <fieldset disabled={field.disabled('parent')}>
-          <Select
-            size="sm"
-            className="w-full"
-            label="Parent"
-            value={doc.parentId ?? ''}
-            options={[
-              { value: '', label: 'Top level' },
-              ...choices.map((item) => ({ value: item.id, label: item.title })),
-            ]}
-            onChange={(id) =>
-              field.save({ field: 'parent', value: choices.find((item) => item.id === id) ?? null })
-            }
-          />
-        </fieldset>
+        <ChoiceText
+          label="Parent"
+          value={doc.parentId ?? ''}
+          options={[
+            { value: '', label: 'Top level' },
+            ...choices.map((item) => ({ value: item.id, label: item.title })),
+          ]}
+          disabled={field.disabled('parent')}
+          onChoose={(id) =>
+            field.save({ field: 'parent', value: choices.find((item) => item.id === id) ?? null })
+          }
+        />
       ) : (
         title
       )}
@@ -271,21 +309,18 @@ function ArticleRows({
     <>
       <Row label="Type">
         {field.canAddress ? (
-          <fieldset disabled={field.disabled('form')}>
-            <Select
-              size="sm"
-              className="w-full"
-              label="Type"
-              value={doc.form ?? ''}
-              options={[
-                { value: '', label: 'None' },
-                ...DOC_FORMS.map((form) => ({ value: form, label: DOC_FORM_LABELS[form] })),
-              ]}
-              onChange={(value) =>
-                field.save({ field: 'form', value: (value || null) as DocForm | null })
-              }
-            />
-          </fieldset>
+          <ChoiceText
+            label="Type"
+            value={doc.form ?? ''}
+            options={[
+              { value: '', label: 'None' },
+              ...DOC_FORMS.map((form) => ({ value: form, label: DOC_FORM_LABELS[form] })),
+            ]}
+            disabled={field.disabled('form')}
+            onChoose={(value) =>
+              field.save({ field: 'form', value: (value || null) as DocForm | null })
+            }
+          />
         ) : doc.form ? (
           DOC_FORM_LABELS[doc.form]
         ) : (
@@ -295,24 +330,21 @@ function ArticleRows({
       </Row>
       <Row label="Subject">
         {enabled ? (
-          <fieldset disabled={field.disabled('articleSubject')}>
-            <Select
-              size="sm"
-              className="w-full"
-              label="Subject"
-              value={doc.articleSubject?.id ?? ''}
-              options={[
-                { value: '', label: 'None' },
-                ...subjectChoices.map(({ id, name }) => ({ value: id, label: name })),
-              ]}
-              onChange={(id) =>
-                field.save({
-                  field: 'articleSubject',
-                  value: subjectChoices.find((item) => item.id === id) ?? null,
-                })
-              }
-            />
-          </fieldset>
+          <ChoiceText
+            label="Subject"
+            value={doc.articleSubject?.id ?? ''}
+            options={[
+              { value: '', label: 'None' },
+              ...subjectChoices.map(({ id, name }) => ({ value: id, label: name })),
+            ]}
+            disabled={field.disabled('articleSubject')}
+            onChoose={(id) =>
+              field.save({
+                field: 'articleSubject',
+                value: subjectChoices.find((item) => item.id === id) ?? null,
+              })
+            }
+          />
         ) : (
           (doc.articleSubject?.name ?? 'None')
         )}
@@ -351,21 +383,18 @@ function DeliveryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
   return (
     <Row label="Delivery">
       {field.canAddress ? (
-        <fieldset disabled={field.disabled('delivery')}>
-          <Select
-            size="sm"
-            className="w-full"
-            label="Delivery"
-            value={delivery}
-            options={(['inject', 'demand'] as const).map((value) => ({
-              value,
-              label: DOC_DELIVERY_LABELS[value],
-            }))}
-            onChange={(value) =>
-              field.save({ field: 'delivery', value: value as 'inject' | 'demand' })
-            }
-          />
-        </fieldset>
+        <ChoiceText
+          label="Delivery"
+          value={delivery}
+          options={(['inject', 'demand'] as const).map((value) => ({
+            value,
+            label: DOC_DELIVERY_LABELS[value],
+          }))}
+          disabled={field.disabled('delivery')}
+          onChoose={(value) =>
+            field.save({ field: 'delivery', value: value as 'inject' | 'demand' })
+          }
+        />
       ) : (
         DOC_DELIVERY_LABELS[delivery]
       )}
@@ -378,7 +407,7 @@ function DeliveryRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
 export function EditableAbout({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
   const field = useDocFieldSave(doc, source)
   return (
-    <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2.5 text-md">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2.5 text-md">
       <ParentRow doc={doc} source={source} field={field} />
       <AudienceRow doc={doc} field={field} />
       {doc.kind === 'article' ? (
