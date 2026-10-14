@@ -229,7 +229,7 @@ describe('run detail', () => {
       '2026-09-05T02:00:00.000Z',
       'ruled',
     )
-    expect(runDetail(child)!.audit).toEqual([
+    expect(runDetail(child)!.audit).toMatchObject([
       {
         run_id: root,
         root_id: root,

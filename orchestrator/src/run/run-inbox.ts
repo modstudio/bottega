@@ -18,8 +18,11 @@ type RunInboxPresentation = {
 }
 type InboxQuestion = {
   question_id: number
+  question_record_id: string
   run_id: number
+  run_record_id: string
   answer_id: number
+  answer_record_id: string
   job: string
   agent: string
   repo: string | null
@@ -47,6 +50,7 @@ type InboxQuestion = {
 type WorkflowInboxQuestion = {
   kind: 'workflow'
   question_id: number
+  question_record_id: string
   workflow: string
   project: string
   mode: string
@@ -70,7 +74,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
   const defaultProject = !scoped && !input.all ? projectAt(process.cwd()) : null
   const rows = db()
     .query(
-      `SELECT q.id,q.asked_at,q.question,c.id cursor_id,c.project,c.workflow_slug,c.mode_slug,c.args,
+      `SELECT q.id,q.record_id,q.asked_at,q.question,c.id cursor_id,c.project,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.id=q.workflow_cursor_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
@@ -78,6 +82,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     )
     .all() as Array<{
     id: number
+    record_id: string
     asked_at: string
     question: string
     cursor_id: number
@@ -103,6 +108,7 @@ function workflowInboxQuestions(input: InboxQuery): WorkflowInboxQuestion[] {
     return {
       kind: 'workflow',
       question_id: row.id,
+      question_record_id: row.record_id,
       workflow: row.workflow_slug,
       project: row.project,
       mode: row.mode_slug,
@@ -151,11 +157,13 @@ export async function queryInbox(
     : '0'
   const queriedRows = db()
     .query(
-      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
+      `SELECT q.id, q.record_id, q.run_id, r.record_id AS run_record_id,
+            q.asked_at, q.question, q.options, q.recommendation, q.why,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, r.status, r.session_id,
-            root.status root_status, ${voidedSql('root')} root_voided,
+            root.status root_status, root.record_id root_record_id,
+            ${voidedSql('root')} root_voided,
             COALESCE(r.parent_run_id, r.id) root_id, ${sessionRecent} session_recent
        FROM question q JOIN run r ON r.id = q.run_id
        JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
@@ -165,7 +173,9 @@ export async function queryInbox(
     )
     .all(...(hasSessionSeen ? [cutoff] : [])) as Array<{
     id: number
+    record_id: string
     run_id: number
+    run_record_id: string
     asked_at: string
     question: string
     answered_at: string | null
@@ -189,6 +199,7 @@ export async function queryInbox(
     root_status: string
     root_voided: number
     root_id: number
+    root_record_id: string
     session_recent: number
   }>
   const isLive = (question: (typeof queriedRows)[number]) =>
@@ -214,8 +225,11 @@ export async function queryInbox(
       ...visible.map(
         (q): InboxQuestion => ({
           question_id: q.id,
+          question_record_id: q.record_id,
           run_id: q.run_id,
+          run_record_id: q.run_record_id,
           answer_id: q.root_id,
+          answer_record_id: q.root_record_id,
           job: q.job,
           agent: q.agent,
           repo: q.repo,

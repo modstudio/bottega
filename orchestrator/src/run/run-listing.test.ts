@@ -445,7 +445,7 @@ describe('run listing', () => {
         answerer_kind: 'operator',
         answer_channel: 'cli',
         deliveries: [
-          {
+          expect.objectContaining({
             id: expect.any(Number),
             question_id: rootQuestion.id,
             run_id: child,
@@ -453,7 +453,7 @@ describe('run listing', () => {
             outcome: 'delivered',
             at: '2026-09-04T10:06:00.000Z',
             error: null,
-          },
+          }),
         ],
       }),
       expect.objectContaining({
@@ -465,6 +465,13 @@ describe('run listing', () => {
         deliveries: [],
       }),
     ])
+    expect(row.questions.every((question: Record<string, unknown>) => question.record_id)).toBe(true)
+    expect(
+      row.questions[0]!.deliveries.every(
+        (delivery: Record<string, unknown>) =>
+          delivery.question_record_id && delivery.run_record_id,
+      ),
+    ).toBe(true)
     expect(
       row.questions.every(
         (question: object) =>

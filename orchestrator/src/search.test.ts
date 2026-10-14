@@ -55,6 +55,7 @@ describe('record search', () => {
       'output',
     ])
     expect(found.results.every((result) => result.match === 'direct task link')).toBe(true)
+    expect(found.results.map((result) => result.id)).toEqual([1, 1, 1, 1])
     expect(
       found.results.find((result) => result.source === 'output')!.snippet.length,
     ).toBeLessThanOrEqual(242)

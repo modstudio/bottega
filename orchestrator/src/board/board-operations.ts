@@ -140,6 +140,7 @@ export type BoardClaimResult = {
   holder: string
   note: string | null
   runId: string | null
+  run_record_id: string | null
   takenAt: string
   renewedAt: string
   lapsesAt: string
@@ -230,10 +231,19 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 }
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
+  const runRecordId =
+    typeof value.runId === 'number'
+      ? ((
+          db().query('SELECT record_id FROM run WHERE id=?').get(value.runId) as {
+            record_id: string
+          } | null
+        )?.record_id ?? null)
+      : value.runId
   return {
     ...value,
     id: String(value.id),
     runId: stringId(value.runId),
+    run_record_id: runRecordId,
     previousClaimIds: value.previousClaimIds.map(String),
     supersededByClaimId: stringId(value.supersededByClaimId),
   }

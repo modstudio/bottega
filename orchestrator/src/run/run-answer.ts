@@ -59,6 +59,7 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
+import { runRecordId } from './run-identifier.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import {
   decideRetryConversation,
@@ -501,7 +502,7 @@ export async function answerRun(
 ): Promise<AnswerWaitingResult> {
   const found = db()
     .query(
-      `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
+      `SELECT root.id, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
           root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
           root.launch_key
@@ -511,6 +512,7 @@ export async function answerRun(
     )
     .get(requestedId) as {
     id: number
+    record_id: string
     agent: string
     job: string
     cwd: string | null
@@ -831,7 +833,13 @@ export async function answerRun(
           `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
           `or orch abandon ${id}.`,
       )
-    return { outcome: 'recorded', run_id: id, resumed_as: null }
+    return {
+      outcome: 'recorded',
+      run_id: id,
+      record_id: row.record_id,
+      resumed_as: null,
+      resumed_record_id: null,
+    }
   }
 
   if (ownersLive) {
@@ -843,7 +851,13 @@ export async function answerRun(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
       )
-    return { outcome: 'delivered-live', run_id: id, resumed_as: null }
+    return {
+      outcome: 'delivered-live',
+      run_id: id,
+      record_id: row.record_id,
+      resumed_as: null,
+      resumed_record_id: null,
+    }
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -937,7 +951,13 @@ export async function answerRun(
           `\n  --follow            to watch it here instead`,
       )
     }
-    return { outcome: 'resumed', run_id: id, resumed_as: childId }
+    return {
+      outcome: 'resumed',
+      run_id: id,
+      record_id: row.record_id,
+      resumed_as: childId,
+      resumed_record_id: runRecordId(db(), childId),
+    }
   }
   const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
@@ -960,5 +980,11 @@ export async function answerRun(
       ? `\n  STILL ASKING — orch inbox`
       : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
-  return { outcome: 'resumed', run_id: id, resumed_as: childId }
+  return {
+    outcome: 'resumed',
+    run_id: id,
+    record_id: row.record_id,
+    resumed_as: childId,
+    resumed_record_id: runRecordId(db(), childId),
+  }
 }

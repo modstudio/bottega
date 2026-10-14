@@ -70,6 +70,7 @@ export type FileRulingInput = {
 
 type QuestionRow = {
   id: number
+  record_id: string
   run_id: number | null
   root_id: number | null
   workflow_cursor_id: number | null
@@ -203,7 +204,7 @@ function ownerRefusal(
 function loadQuestion(questionId: number): QuestionRow {
   const row = db()
     .query(
-      `SELECT q.id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
+      `SELECT q.id, q.record_id, q.run_id, COALESCE(r.parent_run_id, r.id) root_id,
               q.workflow_cursor_id,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
@@ -409,6 +410,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   })
   return {
     question_id: row.id,
+    question_record_id: row.record_id,
     filed_as: requested,
     filed_ref: reference.filed_ref,
     filed_record_id: reference.filed_record_id,

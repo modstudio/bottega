@@ -394,6 +394,7 @@ function mcpNote(row: {
 function partialOutputDocument(
   row: {
     id: number
+    record_id: string
     status: string
     failure_kind: string | null
     exit_code: number | null
@@ -410,6 +411,7 @@ function partialOutputDocument(
     {
       run: {
         id: row.id,
+        record_id: row.record_id,
         status: row.status,
         complete: false,
         failure_kind: row.failure_kind,
@@ -470,7 +472,7 @@ export function collectResult(
   const chain = resolveFailover(database, id)
   const row = database
     .query(
-      `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
+      `SELECT id, record_id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
             review_provenance, provenance_status, worktree
@@ -478,6 +480,7 @@ export function collectResult(
     )
     .get(chain.finalId) as {
     id: number
+    record_id: string
     agent: string
     job: string
     status: string
@@ -522,6 +525,7 @@ export function collectResult(
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
+  const identityNote = `\n  record_id: ${row.record_id}`
   const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
   if (!outcome.terminal || chain.settling) {
     presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
@@ -574,6 +578,7 @@ export function collectResult(
           ? `\n— run ${id} asking — resumed as run ${asking.runningId}, which is still running`
           : `\n— run ${id} asking — recoverable: orch continue ${asking.rootId}`) +
         baseNote +
+        identityNote +
         mcpNote(row) +
         filedNotesNote(row.id) +
         evidenceNote(row),
@@ -584,6 +589,7 @@ export function collectResult(
     presentation.error(
       `\n— run ${id} ${row.status}: ${failureReason(row)}` +
         baseNote +
+        identityNote +
         mcpNote(row) +
         filedNotesNote(row.id) +
         evidenceNote(row),
@@ -597,6 +603,7 @@ export function collectResult(
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         okOutcomeNote(row) +
+        identityNote +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         branchNote(database, row.id) +
         releasedWritingTreeNote(

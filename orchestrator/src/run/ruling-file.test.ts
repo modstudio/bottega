@@ -188,7 +188,7 @@ describe('file ruling', () => {
         },
       }),
     )
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: '12@rev-1',
@@ -196,6 +196,13 @@ describe('file ruling', () => {
       filed_label: null,
       filed_at: expect.any(String),
     })
+    expect(result.question_record_id).toBe(
+      (
+        db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
+          record_id: string
+        }
+      ).record_id,
+    )
     expect(writes).toEqual([
       {
         scope: 'project',

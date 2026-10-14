@@ -6,6 +6,7 @@ import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { sampleProcesses } from '../idle-kill.ts'
 import { job } from '../jobs/jobs.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { runListingCommand } from '../run/run-listing.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
@@ -31,8 +32,9 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const { runDetail } = await import('../state/serve.ts')
-      const detail = runDetail(Number(id), Boolean(options.receipt))
-      if (!detail) throw new Error(`no run ${Number(id)}`)
+      const runId = resolveRunIdentifier(db(), id)
+      const detail = runDetail(runId, Boolean(options.receipt))
+      if (!detail) throw new Error(`no run ${runId}`)
       log(JSON.stringify(detail))
     })
 
@@ -48,7 +50,17 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)
-      await runListingCommand({ jsonV1: options.json === 'v1' }, flags, {
+      const requested = flags.values('id')
+      const resolvedFlags = requested.length
+        ? {
+            ...flags,
+            values: (name: string) =>
+              name === 'id'
+                ? requested.map((value) => String(resolveRunIdentifier(db(), value)))
+                : flags.values(name),
+          }
+        : flags
+      await runListingCommand({ jsonV1: options.json === 'v1' }, resolvedFlags, {
         log,
         dur: duration,
         chainIsStranded: chainHasPendingDelivery,

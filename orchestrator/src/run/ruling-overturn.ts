@@ -10,6 +10,7 @@ import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-auth
 
 type OverturnRow = {
   id: number
+  record_id: string
   run_id: number | null
   root_id: number | null
   workflow_cursor_id: number | null
@@ -50,7 +51,7 @@ export function overturnRuling(input: {
   writableDb()
   const row = db()
     .query(
-      `SELECT q.id,q.run_id,COALESCE(owner.parent_run_id,owner.id) root_id,
+      `SELECT q.id,q.record_id,q.run_id,COALESCE(owner.parent_run_id,owner.id) root_id,
               q.workflow_cursor_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
               q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
          FROM question q LEFT JOIN run owner ON owner.id=q.run_id
@@ -101,6 +102,7 @@ export function overturnRuling(input: {
   })
   return {
     question_id: row.id,
+    record_id: row.record_id,
     ruling_status: 'overturned',
     overturned_at: at,
     overturned_by: overturnedBy,

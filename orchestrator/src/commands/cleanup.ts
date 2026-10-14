@@ -5,6 +5,8 @@ import { existsSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
+import { db } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { confirmRunProcessTermination, planRecordedRunTermination } from '../run/run-process.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
@@ -74,7 +76,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const flags = optionFlags(options)
-      await discardRun(Number(id), {
+      await discardRun(resolveRunIdentifier(db(), id), {
         force: flags.has('force'),
         auditReason: auditReason(flags),
         presentation,
@@ -86,7 +88,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (id) => {
       await stopRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         { force: false, auditReason: null, presentation },
         {
           lifecycleCheckpoint,
@@ -104,7 +106,7 @@ export function register(program: Command): void {
     .action(async (id, options) => {
       const flags = optionFlags(options)
       await abandonRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         {
           force: flags.has('force'),
           note: flags.flag('note'),

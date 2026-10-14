@@ -5,10 +5,11 @@ import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { writableDb } from '../database/db.ts'
+import { db, writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
 import { collect, log, optionFlags, write } from './support.ts'
 
@@ -80,7 +81,7 @@ export function register(program: Command): void {
       const flags = optionFlags(options)
       writableDb()
       const result = await judgeRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         flags,
         {
           words,
@@ -108,7 +109,7 @@ export function register(program: Command): void {
       const flags = optionFlags(options)
       writableDb()
       await scoreRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         flags,
         {
           words,

@@ -150,13 +150,16 @@ function operatorWaitingWithEpisodes(
 ): Array<{ item: OperatorWaitingItem; episode: string }> {
   const questions = d
     .query(
-      `SELECT q.id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
-              r.repo project,r.launch_key task_key,COALESCE(r.parent_run_id,r.id) root_id
+      `SELECT q.id,q.record_id question_record_id,q.question,q.options,q.recommendation,q.why,q.awaiting_operator_at,
+              r.repo project,r.launch_key task_key,COALESCE(r.parent_run_id,r.id) root_id,
+              root.record_id root_record_id
        FROM question q JOIN run r ON r.id=q.run_id
+       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
        WHERE q.awaiting_operator_at IS NOT NULL AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
     id: number
+    question_record_id: string
     question: string
     options: string | null
     recommendation: string | null
@@ -165,16 +168,18 @@ function operatorWaitingWithEpisodes(
     project: string | null
     task_key: string | null
     root_id: number
+    root_record_id: string
   }>
   const workflows = d
     .query(
-      `SELECT c.id,c.project,q.workflow_key task_key,q.question,q.asked_at waiting_since,
+      `SELECT c.id,c.project,q.record_id question_record_id,q.workflow_key task_key,q.question,q.asked_at waiting_since,
               c.workflow_slug,c.mode_slug,c.args,c.session_id
          FROM workflow_cursor c JOIN question q ON q.workflow_cursor_id=c.id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}`,
     )
     .all() as Array<{
     id: number
+    question_record_id: string
     project: string
     task_key: string | null
     question: string
@@ -190,7 +195,9 @@ function operatorWaitingWithEpisodes(
       item: {
         kind: 'question' as const,
         id: row.id,
+        question_record_id: row.question_record_id,
         run_id: row.root_id,
+        run_record_id: row.root_record_id,
         project: row.project,
         task_key: row.task_key,
         session_id: null,
@@ -213,7 +220,9 @@ function operatorWaitingWithEpisodes(
         item: {
           kind: 'workflow' as const,
           id: row.id,
+          question_record_id: row.question_record_id,
           run_id: null,
+          run_record_id: null,
           project: row.project,
           task_key: row.task_key,
           session_id: row.session_id,

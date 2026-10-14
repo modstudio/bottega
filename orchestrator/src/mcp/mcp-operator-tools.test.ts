@@ -113,22 +113,36 @@ describe('operator MCP tools', () => {
     })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, runId)
     const questionId = addQuestion(runId, 'Which shape?')
+    const runRecordId = (
+      db().query('SELECT record_id FROM run WHERE id=?').get(runId) as { record_id: string }
+    ).record_id
+    const questionRecordId = (
+      db().query('SELECT record_id FROM question WHERE id=?').get(questionId) as {
+        record_id: string
+      }
+    ).record_id
 
     const result = await withClient((client) =>
       client.callTool({
         name: 'answer_questions',
         arguments: {
-          run_id: runId,
-          rulings: [{ question_id: questionId, ruling: 'Use the existing shape.' }],
+          run_id: runRecordId.toUpperCase(),
+          rulings: [
+            { question_id: questionRecordId.toUpperCase(), ruling: 'Use the existing shape.' },
+          ],
         },
       }),
     )
 
     expect(result.isError).not.toBe(true)
-    expect(result.structuredContent).toEqual({
+    expect(result.structuredContent).toMatchObject({
       outcome: 'delivered-live',
       run_id: runId,
       resumed_as: null,
+    })
+    expect(result.structuredContent).toMatchObject({
+      record_id: runRecordId,
+      resumed_record_id: null,
     })
     expect(
       db().query('SELECT answer,answer_channel FROM question WHERE id=?').get(questionId),
@@ -238,7 +252,7 @@ describe('operator MCP tools', () => {
     )
 
     expect(result.isError).not.toBe(true)
-    expect(result.structuredContent).toEqual({
+    expect(result.structuredContent).toMatchObject({
       question_id: questionId,
       ruling_status: 'overturned',
       overturned_at: expect.any(String),
@@ -246,6 +260,7 @@ describe('operator MCP tools', () => {
       overturn_reason: 'The premise changed.',
       replacement: 'Use the replacement.',
     })
+    expect(result.structuredContent).toMatchObject({ record_id: expect.any(String) })
   })
 
   test('file_ruling returns the recorded filing through the same service', async () => {
@@ -278,7 +293,7 @@ describe('operator MCP tools', () => {
     )
 
     expect(result.isError).not.toBe(true)
-    expect(result.structuredContent).toEqual({
+    expect(result.structuredContent).toMatchObject({
       question_id: questionId,
       filed_as: 'doc',
       filed_ref: expect.stringMatching(/@/),
@@ -286,6 +301,7 @@ describe('operator MCP tools', () => {
       filed_label: null,
       filed_at: expect.any(String),
     })
+    expect(result.structuredContent).toMatchObject({ question_record_id: expect.any(String) })
     expect(db().query('SELECT filed_as FROM question WHERE id=?').get(questionId)).toEqual({
       filed_as: 'doc',
     })

@@ -87,7 +87,9 @@ export const OperatorWaitingItemSchema = z
   .object({
     kind: z.enum(['question', 'workflow'] satisfies [OperatorInboxKind, ...OperatorInboxKind[]]),
     id: z.number().int().positive(),
+    question_record_id: z.string().uuid(),
     run_id: z.number().int().positive().nullable(),
+    run_record_id: z.string().uuid().nullable(),
     project: z.string().nullable(),
     task_key: z.string().nullable(),
     session_id: z.string().nullable(),
@@ -113,15 +115,20 @@ export const AnswerWaitingResultSchema = z
   .object({
     outcome: z.enum(['resumed', 'delivered-live', 'recorded']),
     run_id: z.number().int().positive(),
+    record_id: z.string().uuid(),
     resumed_as: z.number().int().positive().nullable(),
+    resumed_record_id: z.string().uuid().nullable(),
   })
   .strict()
 
 const OpenQuestionSchema = z
   .object({
     question_id: z.number().int().positive(),
+    question_record_id: z.string().uuid(),
     run_id: z.number().int().positive(),
+    run_record_id: z.string().uuid(),
     answer_id: z.number().int().positive(),
+    answer_record_id: z.string().uuid(),
     job: z.string(),
     agent: z.string(),
     repo: z.string().nullable(),
@@ -157,6 +164,7 @@ export const ListOpenQuestionsResultSchema = z
 export const OverturnRulingResultSchema = z
   .object({
     question_id: z.number().int().positive(),
+    record_id: z.string().uuid(),
     ruling_status: z.literal('overturned'),
     overturned_at: z.string(),
     overturned_by: z.string(),
@@ -168,6 +176,7 @@ export const OverturnRulingResultSchema = z
 export const FileRulingResultSchema = z
   .object({
     question_id: z.number().int().positive(),
+    question_record_id: z.string().uuid(),
     filed_as: z.enum(['doc', 'canon-proposal']),
     filed_ref: z.string().min(1).nullable(),
     filed_record_id: z.string().uuid().nullable(),
@@ -216,6 +225,7 @@ export const OrchProjectListSchema = z.array(OrchProjectSchema)
 const OrchTurnSchema = z
   .object({
     id: z.number().int(),
+    record_id: z.string().uuid(),
     started_at: z.iso.datetime(),
     latency_ms: nullableNumber,
     vendor_tokens: nullableNumber,
@@ -228,7 +238,9 @@ const OrchTurnSchema = z
 const OrchQuestionSchema = z
   .object({
     id: z.number().int(),
+    record_id: z.string().uuid(),
     run_id: z.number().int(),
+    run_record_id: z.string().uuid(),
     asked_at: z.iso.datetime(),
     answered_at: z.iso.datetime().nullable(),
     asked_via: z.enum(ASKED_VIA_VALUES).nullable(),
@@ -242,7 +254,9 @@ const OrchQuestionSchema = z
         .object({
           id: z.number().int(),
           question_id: z.number().int(),
+          question_record_id: z.string().uuid(),
           run_id: z.number().int().nullable(),
+          run_record_id: z.string().uuid().nullable(),
           mode: z.enum(QUESTION_DELIVERY_MODE_VALUES),
           outcome: z.enum(QUESTION_DELIVERY_OUTCOME_VALUES),
           at: z.iso.datetime(),
@@ -256,7 +270,9 @@ const OrchQuestionSchema = z
 const RulingListRowSchema = z
   .object({
     id: z.number().int().positive(),
+    record_id: z.string().uuid(),
     run_id: z.number().int().positive().nullable(),
+    run_record_id: z.string().uuid().nullable(),
     workflow_cursor_id: z.number().int().positive().nullable(),
     workflow_key: nullableString,
     project: nullableString,
@@ -291,6 +307,7 @@ export type RulingListRow = z.infer<typeof RulingListRowSchema>
 export const OrchRunSchema = z
   .object({
     id: z.number().int(),
+    record_id: z.string().uuid(),
     started_at: z.iso.datetime(),
     agent: z.string(),
     job: z.string(),
@@ -363,7 +380,9 @@ export const OrchStateSchema = z
       z
         .object({
           id: z.number().int(),
+          record_id: z.string().uuid(),
           root_id: z.number().int(),
+          root_record_id: z.string().uuid(),
           agent: z.string(),
           job: z.string(),
           repo: nullableString,

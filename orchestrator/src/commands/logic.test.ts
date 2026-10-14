@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { register } from './logic.ts'
 import { setRawArgv } from './support.ts'
 
@@ -73,4 +75,28 @@ test('continue refuses --findings after the message and names the working order'
   await expect(program.parseAsync(argv)).rejects.toThrow(
     /--findings must appear before the message[\s\S]*working form/,
   )
+})
+
+test('continue resolves a run UUID to the same local row as its number', async () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const recordId = (
+    db().query('SELECT record_id FROM run WHERE id=?').get(id) as { record_id: string }
+  ).record_id
+  const received: number[] = []
+  for (const identifier of [String(id), recordId.toUpperCase()]) {
+    const program = new Command().exitOverride()
+    register(program, {
+      continueCommandDependencies: {
+        continueRun: async (runId) => {
+          received.push(runId)
+          return { childId: 99, job: 'implement' }
+        },
+        reportContinuedRun: async () => {},
+      },
+    })
+    const argv = ['node', 'orch', 'continue', identifier, 'Continue.']
+    setRawArgv(argv.slice(2))
+    await program.parseAsync(argv)
+  }
+  expect(received).toEqual([id, id])
 })

@@ -5,7 +5,7 @@ type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
 type RecordSearchResult = {
   source: RecordSource
-  record_id: number
+  id: number
   run_id: number
   root_run_id: number
   task_key: string | null
@@ -63,7 +63,7 @@ export function searchRecords(
     for (const row of records) {
       rows.push({
         source,
-        record_id: Number(row.record_id),
+        id: Number(row.id),
         run_id: Number(row.run_id),
         root_run_id: Number(row.root_run_id),
         task_key: row.task_key as string | null,
@@ -77,7 +77,7 @@ export function searchRecords(
     'score',
     d
       .query(
-        `SELECT s.id AS record_id, s.run_id, r.id AS root_run_id,
+        `SELECT s.id, s.run_id, r.id AS root_run_id,
             r.launch_key AS task_key, r.started_at, s.note
        FROM score s JOIN run r ON r.id=s.run_id
       WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
@@ -90,7 +90,7 @@ export function searchRecords(
     'ruling',
     d
       .query(
-        `SELECT q.id AS record_id, q.run_id,
+        `SELECT q.id, q.run_id,
             COALESCE(turn.parent_run_id, turn.id) AS root_run_id,
             root.launch_key AS task_key, turn.started_at, q.question, q.options,
             q.recommendation, q.why, q.answer
@@ -110,7 +110,7 @@ export function searchRecords(
     'review',
     d
       .query(
-        `SELECT rf.id AS record_id, rl.run_id,
+        `SELECT rf.id, rl.run_id,
             COALESCE(r.parent_run_id, r.id) AS root_run_id,
             root.launch_key AS task_key, r.started_at,
             rf.severity, rf.location, rf.evidence, rf.proposed_correction,
@@ -150,7 +150,7 @@ export function searchRecords(
       continue
     }
     try {
-      add('output', [{ ...row, record_id: row.run_id }], () => readFileSync(path, 'utf8'))
+      add('output', [{ ...row, id: row.run_id }], () => readFileSync(path, 'utf8'))
     } catch {
       unavailableOutputs++
     }
@@ -164,7 +164,7 @@ export function searchRecords(
       return [
         {
           source: row.source,
-          record_id: row.record_id,
+          id: row.id,
           run_id: row.run_id,
           root_run_id: row.root_run_id,
           task_key: row.task_key,

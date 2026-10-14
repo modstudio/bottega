@@ -399,6 +399,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     holder: 'operator',
     note: null,
     runId: null,
+    run_record_id: null,
     takenAt: '2026-10-05T12:00:00.000Z',
     renewedAt: '2026-10-05T12:00:00.000Z',
     lapsesAt: '2026-10-05T16:00:00.000Z',
@@ -447,6 +448,7 @@ test('claim verbs stringify every id and share the same local and hosted result 
     previousClaimIds: [newRecordId()],
     supersededByClaimId: null,
   }
+  const hostedResult = { ...hostedClaim, run_record_id: hostedClaim.runId }
   const hostedClient = {
     ...createMemoryRecordApiClient(),
     takeBoardClaim: async () => ({ ...hostedClaim, action: 'taken' as const }),
@@ -468,16 +470,16 @@ test('claim verbs stringify every id and share the same local and hosted result 
     { subject: 'resource:hosted', project: 'board-route-project' },
     hostedContext,
   )
-  expect(hosted).toEqual({ ...hostedClaim, action: 'taken' })
-  await expect(boardClaimRenew(hostedClaim.id, hostedContext)).resolves.toEqual(hostedClaim)
+  expect(hosted).toEqual({ ...hostedResult, action: 'taken' })
+  await expect(boardClaimRenew(hostedClaim.id, hostedContext)).resolves.toEqual(hostedResult)
   await expect(boardClaimRelease(hostedClaim.id, hostedContext)).resolves.toEqual({
-    ...hostedClaim,
+    ...hostedResult,
     live: false,
     closedAt: '2026-10-05T12:00:02.000Z',
     closeReason: 'released',
   })
   await expect(boardClaimList('board-route-project', true, hostedContext)).resolves.toEqual({
-    claims: [hostedClaim],
+    claims: [hostedResult],
   })
 })
 
@@ -499,6 +501,10 @@ test('a local claim run id is exposed as an opaque string', async () => {
     },
   )
   expect(result.runId).toBe(String(inserted.id))
+  expect(result.run_record_id).toBe(
+    (db().query('SELECT record_id FROM run WHERE id=?').get(inserted.id) as { record_id: string })
+      .record_id,
+  )
 })
 
 test('hosted take and list use the local claim-project actor decision', async () => {

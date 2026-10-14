@@ -765,7 +765,11 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     },
     { ...helpers, dispatch, dashboardAuthorized: () => true },
   )
-  expect(result).toEqual({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
+  expect(result).toMatchObject({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
+  expect(result.record_id).toBe(
+    (db().query('SELECT record_id FROM run WHERE id=?').get(id) as { record_id: string }).record_id,
+  )
+  expect(result.resumed_record_id).toMatch(/^[0-9a-f-]{36}$/)
   expect(resumedSession).toBe('dispatching-session')
   expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
     session_id: 'dispatching-session',
