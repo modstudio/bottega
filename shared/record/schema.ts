@@ -13,6 +13,8 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
+
+export { newRecordId } from '../record-id.ts'
 /** Stable id and application-owned name for the platform tenant. */
 export const PLATFORM_SPACE_ID = '01990000-0000-7000-8000-000000000001' as const
 export const RECORD_OWNER_ROLE = 'record_owner' as const
@@ -251,13 +253,3 @@ export const seq = pgTable.withRLS(
     ...tenantPolicies('seq', table.spaceId),
   ],
 )
-
-/** IDs are minted before a database connection exists; no id column has a default. */
-let lastRecordId = ''
-
-export function newRecordId(): string {
-  let candidate = Bun.randomUUIDv7()
-  while (candidate <= lastRecordId) candidate = Bun.randomUUIDv7()
-  lastRecordId = candidate
-  return candidate
-}

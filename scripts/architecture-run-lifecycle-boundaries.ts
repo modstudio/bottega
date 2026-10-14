@@ -121,6 +121,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       'node:child_process',
       'node:crypto',
       'node:fs',
+      '../../../shared/record-id.ts',
       '../../../shared/self-spawn.ts',
       '../../../shared/process-identity.ts',
       '../database/db.ts',

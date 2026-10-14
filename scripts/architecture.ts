@@ -444,7 +444,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/sandbox-runtime-assets.ts', []),
-  module('shared/record/schema.ts', ['../brand.ts']),
+  module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,

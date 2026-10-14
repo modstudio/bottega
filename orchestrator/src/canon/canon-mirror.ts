@@ -1,7 +1,7 @@
 // concern: canon-mirror
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
 import type { Database } from 'bun:sqlite'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -260,7 +261,7 @@ function createLifecycleRun(project: Project, key: string): number {
      VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
-        randomUUID(),
+        newRecordId(),
         nowIso(),
         '(architect)',
         CANON_MIRROR_JOB,

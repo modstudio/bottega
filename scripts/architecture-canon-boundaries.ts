@@ -137,6 +137,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'node:fs',
       'node:os',
       'node:path',
+      'shared/record-id.ts',
       `${source}canon-apply.ts`,
       'shared/secret-shaped.ts',
       `${source}canon-empty-store-refusal.ts`,

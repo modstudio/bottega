@@ -72,11 +72,12 @@ test('a post-insert launch failure marks the reserved row failed/harness', async
   expect(
     db()
       .query(
-        `SELECT status, failure_kind, error FROM run
+        `SELECT record_id, status, failure_kind, error FROM run
          WHERE prompt_head='detach handoff fixture' ORDER BY id DESC LIMIT 1`,
       )
       .get(),
   ).toEqual({
+    record_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/i),
     status: 'failed',
     failure_kind: 'harness',
     error: expect.stringContaining('detach handoff failed during await coordinator spawn'),

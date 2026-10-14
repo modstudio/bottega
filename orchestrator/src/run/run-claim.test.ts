@@ -14,6 +14,7 @@ test("a later findings turn inherits its root's implicit review branch", async (
   const reservedRecordId = db()
     .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
     .get(reserved)!.record_id
+  expect(reservedRecordId[14]).toBe('7')
   db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
   const repository = join(runsDir, 'repository')
