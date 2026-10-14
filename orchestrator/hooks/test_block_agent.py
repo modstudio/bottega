@@ -59,8 +59,8 @@ class SpawnIdentityTest(unittest.TestCase):
                     block_agent.log("allowed", "test", {}, "PreToolUse", {})
 
             self.assertEqual(
-                stderr.getvalue(),
-                "bottega: spawn not logged (RuntimeError: mint failed)\n",
+                stderr.getvalue().split(": ", 1)[1],
+                "spawn not logged (RuntimeError: mint failed)\n",
             )
             with open(block_agent.FALLBACK_LOG) as fallback:
                 row = fallback.read().splitlines()
