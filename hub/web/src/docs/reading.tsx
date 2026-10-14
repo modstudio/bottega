@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { CalendarDays, CircleDot, Maximize2, Minimize2 } from 'lucide-react'
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react'
 import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
@@ -11,7 +11,7 @@ import type { DocsAudience, DocsDoc, DocsTreeItem } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
 /** Characters past which a title is set at the smaller size. */
-const LONG_TITLE = 40
+export const LONG_TITLE = 40
 
 export function savedVersionAuthor(author: string, authorName?: string | null): string {
   const name = authorName?.trim()
@@ -81,6 +81,8 @@ function ReadingTop({
   headerAction,
   wide,
   onWide,
+  editing,
+  toolbar,
 }: {
   crumbs: readonly BreadcrumbPart[]
   title: string
@@ -88,6 +90,8 @@ function ReadingTop({
   headerAction?: ReactNode
   wide: boolean
   onWide: (wide: boolean) => void
+  editing?: boolean
+  toolbar?: ReactNode
 }) {
   return (
     <div
@@ -96,25 +100,31 @@ function ReadingTop({
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
-      <div
-        className={classes(
-          eyebrow,
-          'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
-        )}
-      >
-        {crumbs.map((crumb, index) => (
-          <span key={crumb.key} className="contents">
-            {index > 0 ? <span>/</span> : null}
-            <span>{crumb.label}</span>
-          </span>
-        ))}
-        {titleGone ? (
-          <>
-            <span>/</span>
-            <span className="min-w-0 truncate text-text-primary">{title}</span>
-          </>
-        ) : null}
-      </div>
+      {editing ? (
+        <div data-doc-edit-toolbar className="flex min-w-0 items-center">
+          {toolbar}
+        </div>
+      ) : (
+        <div
+          className={classes(
+            eyebrow,
+            'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
+          )}
+        >
+          {crumbs.map((crumb, index) => (
+            <span key={crumb.key} className="contents">
+              {index > 0 ? <span>/</span> : null}
+              <span>{crumb.label}</span>
+            </span>
+          ))}
+          {titleGone ? (
+            <>
+              <span>/</span>
+              <span className="min-w-0 truncate text-text-primary">{title}</span>
+            </>
+          ) : null}
+        </div>
+      )}
       {/* For an article of wide tables: the pane takes the room of the facts column too. */}
       <div className="flex shrink-0 items-center gap-2">
         {headerAction}
@@ -189,6 +199,51 @@ function DocLifecycle({
   )
 }
 
+function ArticleHeading({
+  shown,
+  heading,
+  titleView,
+  editing,
+  doc,
+  signedIn,
+  replacement,
+  locationFor,
+}: {
+  shown: { title: string; lede: string | null }
+  heading: RefObject<HTMLElement | null>
+  titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
+  editing?: boolean
+  doc: DocsDoc
+  signedIn: boolean
+  replacement: DocsTreeItem | null
+  locationFor: (item: DocsTreeItem) => DocsLocation
+}) {
+  return (
+    <>
+      {titleView ? (
+        titleView(heading)
+      ) : (
+        <h1
+          ref={heading as Ref<HTMLHeadingElement>}
+          className="doc-title"
+          data-long={shown.title.length > LONG_TITLE ? '' : undefined}
+        >
+          {shown.title}
+        </h1>
+      )}
+      <DocKeyInfo
+        doc={doc}
+        signedIn={signedIn}
+        replacement={replacement}
+        locationFor={locationFor}
+      />
+      {shown.lede && !editing ? (
+        <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
+      ) : null}
+    </>
+  )
+}
+
 function DocKeyInfo({
   doc,
   signedIn,
@@ -235,6 +290,10 @@ export function DocsReading({
   audience,
   bodyView,
   viewedRevision,
+  editing,
+  toolbar,
+  banner,
+  titleView,
 }: {
   doc: DocsDoc | null
   wide: boolean
@@ -252,10 +311,14 @@ export function DocsReading({
   locationFor: (item: DocsTreeItem) => DocsLocation
   headerAction?: ReactNode
   error?: string | null
+  editing?: boolean
+  toolbar?: ReactNode
+  banner?: ReactNode
+  titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
 }) {
   const shown = doc ? viewedPaneTitle(doc, viewedRevision ?? null) : { title: '', lede: null }
-  const heading = useRef<HTMLHeadingElement>(null)
-  const titleGone = useScrolledPast(heading, doc?.id)
+  const heading = useRef<HTMLElement>(null)
+  const titleGone = useScrolledPast(heading, `${doc?.id ?? ''}:${editing ? '1' : '0'}`)
   return (
     <main
       className="min-w-0 border-border-default bg-surface-page px-6 pt-5 pb-8 md:px-15 md:pt-6 md:pb-9 lg:border-x [.site-docs-chrome_&]:border-b"
@@ -275,23 +338,20 @@ export function DocsReading({
             headerAction={headerAction}
             wide={wide}
             onWide={onWide}
+            editing={editing}
+            toolbar={toolbar}
           />
-          <h1
-            ref={heading}
-            className="doc-title"
-            data-long={shown.title.length > LONG_TITLE ? '' : undefined}
-          >
-            {shown.title}
-          </h1>
-          <DocKeyInfo
+          {banner}
+          <ArticleHeading
+            shown={shown}
+            heading={heading}
+            titleView={titleView}
+            editing={editing}
             doc={doc}
             signedIn={signedIn}
             replacement={replacement}
             locationFor={locationFor}
           />
-          {shown.lede ? (
-            <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
-          ) : null}
           {bodyView ?? (
             <div className="mt-6">
               <Markdown content={readingBody(doc.body)} />
