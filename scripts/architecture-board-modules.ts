@@ -183,7 +183,12 @@ export const boardModules: BoardModule[] = [
     './board-service.ts',
     './board-store.ts',
   ]),
-  module('orchestrator/src/board/board-claim-commands.ts', ['commander', './board-operations.ts']),
+  module('orchestrator/src/board/board-claim-commands.ts', [
+    'commander',
+    '../database/db.ts',
+    '../run/run-identifier.ts',
+    './board-operations.ts',
+  ]),
   module('orchestrator/src/board/board-thread-service.ts', [
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',

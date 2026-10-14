@@ -63,6 +63,38 @@ type WorkflowInboxQuestion = {
   ownership_notice: string | null
 }
 
+type QueriedInboxQuestion = {
+  id: number
+  record_id: string
+  run_id: number
+  run_record_id: string
+  asked_at: string
+  question: string
+  answered_at: string | null
+  overturned_at: string | null
+  overturned_by: string | null
+  overturn_reason: string | null
+  replacement: string | null
+  filed_as: 'doc' | 'canon-proposal' | null
+  filed_ref: string | null
+  filed_record_id: string | null
+  filed_label: string | null
+  filed_at: string | null
+  options: string | null
+  recommendation: string | null
+  why: string | null
+  agent: string
+  job: string
+  repo: string | null
+  status: string
+  session_id: string | null
+  root_status: string
+  root_voided: number
+  root_id: number
+  root_record_id: string
+  session_recent: number
+}
+
 const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 
@@ -171,37 +203,7 @@ export async function queryInbox(
       WHERE q.closed_at IS NULL
       ORDER BY q.run_id, q.id`,
     )
-    .all(...(hasSessionSeen ? [cutoff] : [])) as Array<{
-    id: number
-    record_id: string
-    run_id: number
-    run_record_id: string
-    asked_at: string
-    question: string
-    answered_at: string | null
-    overturned_at: string | null
-    overturned_by: string | null
-    overturn_reason: string | null
-    replacement: string | null
-    filed_as: 'doc' | 'canon-proposal' | null
-    filed_ref: string | null
-    filed_record_id: string | null
-    filed_label: string | null
-    filed_at: string | null
-    options: string | null
-    recommendation: string | null
-    why: string | null
-    agent: string
-    job: string
-    repo: string | null
-    status: string
-    session_id: string | null
-    root_status: string
-    root_voided: number
-    root_id: number
-    root_record_id: string
-    session_recent: number
-  }>
+    .all(...(hasSessionSeen ? [cutoff] : [])) as QueriedInboxQuestion[]
   const isLive = (question: (typeof queriedRows)[number]) =>
     answerRunLivenessRefusal(
       { status: question.root_status, voided: Boolean(question.root_voided) },

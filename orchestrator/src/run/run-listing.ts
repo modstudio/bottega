@@ -17,6 +17,30 @@ import type {
 } from './question-vocabulary.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
+function questionDeliveries(questionId: number) {
+  return db()
+    .query(
+      `SELECT delivery.id, delivery.question_id, question.record_id AS question_record_id,
+              delivery.run_id, delivery_run.record_id AS run_record_id,
+              delivery.mode, delivery.outcome, delivery.at, delivery.error
+         FROM question_delivery delivery
+         JOIN question ON question.id=delivery.question_id
+         LEFT JOIN run delivery_run ON delivery_run.id=delivery.run_id
+        WHERE delivery.question_id=? ORDER BY delivery.id`,
+    )
+    .all(questionId) as {
+    id: number
+    question_id: number
+    question_record_id: string
+    run_id: number | null
+    run_record_id: string | null
+    mode: QuestionDeliveryMode
+    outcome: QuestionDeliveryOutcome
+    at: string
+    error: string | null
+  }[]
+}
+
 type RunListingFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined
@@ -257,27 +281,7 @@ export async function runListingCommand(
           overturned_at: q.overturned_at ?? null,
           closed_at: q.closed_at ?? null,
           close_reason: q.close_reason ?? null,
-          deliveries: db()
-            .query(
-              `SELECT delivery.id, delivery.question_id, question.record_id AS question_record_id,
-                      delivery.run_id, delivery_run.record_id AS run_record_id,
-                      delivery.mode, delivery.outcome, delivery.at, delivery.error
-                 FROM question_delivery delivery
-                 JOIN question ON question.id=delivery.question_id
-                 LEFT JOIN run delivery_run ON delivery_run.id=delivery.run_id
-                WHERE delivery.question_id=? ORDER BY delivery.id`,
-            )
-            .all(q.id) as {
-            id: number
-            question_id: number
-            question_record_id: string
-            run_id: number | null
-            run_record_id: string | null
-            mode: QuestionDeliveryMode
-            outcome: QuestionDeliveryOutcome
-            at: string
-            error: string | null
-          }[],
+          deliveries: questionDeliveries(q.id),
         }))
       : undefined
     return [

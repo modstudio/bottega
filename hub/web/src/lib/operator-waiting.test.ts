@@ -6,7 +6,9 @@ test('maps only the exact active run named by a waiting question', () => {
   const question = {
     kind: 'question' as const,
     id: 7,
+    question_record_id: '00000000-0000-4000-8000-000000000007',
     run_id: 42,
+    run_record_id: '00000000-0000-4000-8000-000000000042',
     project: PLATFORM_NAME.toLowerCase(),
     task_key: 'DEV-943',
     session_id: null,
@@ -23,6 +25,7 @@ test('maps only the exact active run named by a waiting question', () => {
     kind: 'workflow' as const,
     id: 8,
     run_id: null,
+    run_record_id: null,
     session_id: 'session-1',
   }
   const mapped = waitingByRun(

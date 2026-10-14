@@ -33,11 +33,3 @@ export function resolveQuestionIdentifier(database: Database, input: string | nu
     `no question has UUID ${JSON.stringify(String(input))}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`,
   )
 }
-
-export function questionRecordId(database: Database, id: number): string {
-  const row = database
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
-    .get(id)
-  if (!row) throw new Error(`no question ${id}`)
-  return row.record_id
-}

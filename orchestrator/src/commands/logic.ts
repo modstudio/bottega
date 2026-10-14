@@ -58,8 +58,10 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { workflowChildCommandInvocation, workflowCommand } from '../workflow/workflow-commands.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
+
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
+const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const presentation = {
   log,
   error: (...values: unknown[]) => console.error(...values),
@@ -205,9 +207,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('open <run>')
     .option('--seed <value>')
     .allowExcessArguments(false)
-    .action((run, options) =>
-      treeOpenCommand(resolveRunIdentifier(db(), run), options.seed, { log }),
-    )
+    .action((run, options) => treeOpenCommand(localRunId(run), options.seed, { log }))
   tree
     .command('remove <path>')
     .allowExcessArguments(false)
@@ -229,7 +229,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   program
     .command('reconcile <id>')
     .allowExcessArguments(false)
-    .action((id) => reconcileCommand(resolveRunIdentifier(db(), id), presentation))
+    .action((id) => reconcileCommand(localRunId(id), presentation))
   program
     .command('contract <job>')
     .allowExcessArguments(false)
@@ -250,9 +250,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     )
   workflowCommandOptions(program).action((args, options, command) => {
     const resolvedOptions =
-      options.run === undefined
-        ? options
-        : { ...options, run: String(resolveRunIdentifier(db(), options.run)) }
+      options.run === undefined ? options : { ...options, run: String(localRunId(options.run)) }
     const childInvocation = workflowChildCommandInvocation(
       args,
       command.parent?.rawArgs ?? [],
@@ -334,24 +332,14 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--file <value>')
     .option('--ping')
     .action((id, _message, options, command) =>
-      tellCommand(
-        resolveRunIdentifier(db(), id),
-        rawArgv(command).slice(2),
-        Boolean(options.ping),
-        presentation,
-      ),
+      tellCommand(localRunId(id), rawArgv(command).slice(2), Boolean(options.ping), presentation),
     )
   program
     .command('relay <id>')
     .requiredOption('--note <why>')
     .allowUnknownOption(true)
     .action((id, options, command) =>
-      relayCommand(
-        resolveRunIdentifier(db(), id),
-        rawArgv(command).slice(2),
-        options.note,
-        presentation,
-      ),
+      relayCommand(localRunId(id), rawArgv(command).slice(2), options.note, presentation),
     )
   program
     .command('waiting')
@@ -371,7 +359,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((id, options) =>
       peekCommand(
-        resolveRunIdentifier(db(), id),
+        localRunId(id),
         {
           events: options.events === undefined ? undefined : Number(options.events),
           json: Boolean(options.json),
@@ -387,7 +375,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .action((id, options) =>
       resultCommand(
         db(),
-        productArgv('result', [String(resolveRunIdentifier(db(), id))], options),
+        productArgv('result', [String(localRunId(id))], options),
         scoreSuffix,
         presentation,
       ),
@@ -400,7 +388,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         db(),
         productArgv(
           'wait',
-          ids.map((id: string) => String(resolveRunIdentifier(db(), id))),
+          ids.map((id: string) => String(localRunId(id))),
           options,
         ),
       ),
@@ -415,7 +403,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((id, options) =>
       retryCommand(
-        resolveRunIdentifier(db(), id),
+        localRunId(id),
         { agent: options.agent, model: options.model, flags: runFlags(options) },
         presentation,
       ),
@@ -433,7 +421,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json')
     .action((id, _message, options, command) =>
       answerCommand(
-        resolveRunIdentifier(db(), id),
+        localRunId(id),
         rawArgv(command).slice(2),
         Boolean(options.recordOnly),
         Boolean(options.json),
@@ -451,7 +439,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--findings')
     .action((id, _message, options, command) =>
       continueCommand(
-        resolveRunIdentifier(db(), id),
+        localRunId(id),
         rawArgv(command).slice(2),
         Boolean(options.findings),
         runFlags(options),
@@ -564,7 +552,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--non-blocking')
     .allowExcessArguments(false)
     .action((id, options) =>
-      closeOutCommand(resolveRunIdentifier(db(), id), Boolean(options.nonBlocking), presentation),
+      closeOutCommand(localRunId(id), Boolean(options.nonBlocking), presentation),
     )
   program
     .command('spawns')

@@ -786,9 +786,9 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
       )
       .get(id),
   ).toEqual({ actor_session: 'operator:ui', turn_id: result.resumed_as })
-  expect(db().query('SELECT session_id FROM run WHERE id=?').get(result.resumed_as!)).toEqual({
-    session_id: 'dispatching-session',
-  })
+  expect(
+    db().query('SELECT session_id FROM run WHERE record_id=?').get(result.resumed_record_id!),
+  ).toEqual({ session_id: 'dispatching-session' })
 })
 
 test('answer permits an unowned question, warns, and records the answering session', async () => {

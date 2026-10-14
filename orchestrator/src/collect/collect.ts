@@ -525,8 +525,8 @@ export function collectResult(
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
-  const identityNote = `\n  record_id: ${row.record_id}`
-  const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
+  const baseNote =
+    (row.base_commit ? `\n  base:      ${row.base_commit}` : '') + `\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
     presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     presentation.exit(2)
@@ -578,7 +578,6 @@ export function collectResult(
           ? `\n— run ${id} asking — resumed as run ${asking.runningId}, which is still running`
           : `\n— run ${id} asking — recoverable: orch continue ${asking.rootId}`) +
         baseNote +
-        identityNote +
         mcpNote(row) +
         filedNotesNote(row.id) +
         evidenceNote(row),
@@ -589,7 +588,6 @@ export function collectResult(
     presentation.error(
       `\n— run ${id} ${row.status}: ${failureReason(row)}` +
         baseNote +
-        identityNote +
         mcpNote(row) +
         filedNotesNote(row.id) +
         evidenceNote(row),
@@ -603,7 +601,6 @@ export function collectResult(
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         okOutcomeNote(row) +
-        identityNote +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         branchNote(database, row.id) +
         releasedWritingTreeNote(

@@ -35,6 +35,24 @@ const structured = <T extends Record<string, unknown>>(value: T) => ({
 })
 
 const identifier = z.union([z.number().int().positive(), z.string().min(1)])
+const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const localQuestionId = (input: string | number) => resolveQuestionIdentifier(db(), input)
+
+function relayByIdentifier(
+  run: string | number,
+  question: string | number | undefined,
+  note: string,
+) {
+  const questionId = relayQuestion(
+    localRunId(run),
+    question === undefined ? undefined : localQuestionId(question),
+    note,
+  )
+  const row = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
+    .get(questionId)!
+  return text({ question_id: questionId, record_id: row.record_id })
+}
 
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
   return ListOpenQuestionsResultSchema.parse({
@@ -89,12 +107,11 @@ export function registerOperatorTools(server: McpServer): void {
       outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
     async ({ run_id, rulings, from_operator, record_only }) => {
-      const resolvedRunId = resolveRunIdentifier(db(), run_id)
       const result = await answerRun(
-        resolvedRunId,
+        localRunId(run_id),
         {
           rulings: rulings.map(({ question_id, ruling }) => ({
-            questionId: resolveQuestionIdentifier(db(), question_id),
+            questionId: localQuestionId(question_id),
             text: ruling,
           })),
           fromOperator: from_operator ?? false,
@@ -124,7 +141,7 @@ export function registerOperatorTools(server: McpServer): void {
     async ({ question_id, because, replacement, from_operator }) =>
       structured(
         overturnRuling({
-          questionId: resolveQuestionIdentifier(db(), question_id),
+          questionId: localQuestionId(question_id),
           reason: because,
           replacement: replacement ?? null,
           fromOperator: from_operator ?? false,
@@ -150,7 +167,7 @@ export function registerOperatorTools(server: McpServer): void {
       structured(
         await fileRuling(
           {
-            questionId: resolveQuestionIdentifier(db(), question_id),
+            questionId: localQuestionId(question_id),
             as,
             scope,
             subject,
@@ -173,16 +190,6 @@ export function registerOperatorTools(server: McpServer): void {
         note: z.string().trim().min(1),
       }),
     },
-    async ({ run_id, question_id, note }) => {
-      const questionId = relayQuestion(
-        resolveRunIdentifier(db(), run_id),
-        question_id === undefined ? undefined : resolveQuestionIdentifier(db(), question_id),
-        note,
-      )
-      const row = db()
-        .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
-        .get(questionId)!
-      return text({ question_id: questionId, record_id: row.record_id })
-    },
+    async ({ run_id, question_id, note }) => relayByIdentifier(run_id, question_id, note),
   )
 }

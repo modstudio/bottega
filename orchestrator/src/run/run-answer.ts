@@ -76,6 +76,22 @@ type RunAnswerHelpers = {
   dashboardAuthorized?: () => boolean
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+
+function answerResult(
+  outcome: AnswerWaitingResult['outcome'],
+  runId: number,
+  recordId: string,
+  resumedAs: number | null,
+): AnswerWaitingResult {
+  return {
+    outcome,
+    run_id: runId,
+    record_id: recordId,
+    resumed_as: resumedAs,
+    resumed_record_id: resumedAs === null ? null : runRecordId(db(), resumedAs),
+  }
+}
+
 export type AnswerRunInput = {
   rulings: string | { questionId: number; text: string }[]
   fromOperator: boolean
@@ -833,13 +849,7 @@ export async function answerRun(
           `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
           `or orch abandon ${id}.`,
       )
-    return {
-      outcome: 'recorded',
-      run_id: id,
-      record_id: row.record_id,
-      resumed_as: null,
-      resumed_record_id: null,
-    }
+    return answerResult('recorded', id, row.record_id, null)
   }
 
   if (ownersLive) {
@@ -851,13 +861,7 @@ export async function answerRun(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
       )
-    return {
-      outcome: 'delivered-live',
-      run_id: id,
-      record_id: row.record_id,
-      resumed_as: null,
-      resumed_record_id: null,
-    }
+    return answerResult('delivered-live', id, row.record_id, null)
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -951,13 +955,7 @@ export async function answerRun(
           `\n  --follow            to watch it here instead`,
       )
     }
-    return {
-      outcome: 'resumed',
-      run_id: id,
-      record_id: row.record_id,
-      resumed_as: childId,
-      resumed_record_id: runRecordId(db(), childId),
-    }
+    return answerResult('resumed', id, row.record_id, childId)
   }
   const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
@@ -980,11 +978,5 @@ export async function answerRun(
       ? `\n  STILL ASKING — orch inbox`
       : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
-  return {
-    outcome: 'resumed',
-    run_id: id,
-    record_id: row.record_id,
-    resumed_as: childId,
-    resumed_record_id: runRecordId(db(), childId),
-  }
+  return answerResult('resumed', id, row.record_id, childId)
 }
