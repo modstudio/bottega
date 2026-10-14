@@ -249,13 +249,17 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       ),
     )
   workflowCommandOptions(program).action((args, options, command) => {
+    const resolvedOptions =
+      options.run === undefined
+        ? options
+        : { ...options, run: String(resolveRunIdentifier(db(), options.run)) }
     const childInvocation = workflowChildCommandInvocation(
       args,
       command.parent?.rawArgs ?? [],
-      options,
+      resolvedOptions,
     )
     return workflowCommand(
-      childInvocation?.argv ?? productArgv('workflow', args, options),
+      childInvocation?.argv ?? productArgv('workflow', args, resolvedOptions),
       presentation,
       childInvocation?.options,
     )

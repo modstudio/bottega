@@ -465,9 +465,11 @@ describe('run listing', () => {
         deliveries: [],
       }),
     ])
-    expect(row.questions.every((question: Record<string, unknown>) => question.record_id)).toBe(true)
+    expect(row.questions.every((question: Record<string, unknown>) => question.record_id)).toBe(
+      true,
+    )
     expect(
-      row.questions[0]!.deliveries.every(
+      (row.questions[0] as unknown as { deliveries: Record<string, unknown>[] }).deliveries.every(
         (delivery: Record<string, unknown>) =>
           delivery.question_record_id && delivery.run_record_id,
       ),
@@ -476,7 +478,7 @@ describe('run listing', () => {
       row.questions.every(
         (question: object) =>
           Object.keys(question).sort().join() ===
-          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,close_reason,closed_at,deliveries,id,overturned_at,run_id',
+          'answer_channel,answered_at,answerer_kind,asked_at,asked_via,close_reason,closed_at,deliveries,id,overturned_at,record_id,run_id,run_record_id',
       ),
     ).toBe(true)
   })
