@@ -226,17 +226,22 @@ function parserRisks(
   for (const [index, statement] of statements.entries()) {
     for (const deletedTable of destructiveTables(statement)) {
       for (const { dependent } of activeForeignKeys.filter((key) => key.parent === deletedTable)) {
-        const preserved = snapshots.some(
-          (copy) =>
-            copy.source === dependent &&
-            copy.index < index &&
-            restores.some(
-              (write) =>
-                renamedDependentAfter(statements, write.target, write.index) === dependent &&
-                write.snapshot === copy.snapshot &&
-                write.index > index,
-            ),
-        )
+        const rebuiltBeforeDrop =
+          deletedTable === dependent &&
+          restores.some((write) => write.snapshot === dependent && write.index < index)
+        const preserved =
+          rebuiltBeforeDrop ||
+          snapshots.some(
+            (copy) =>
+              copy.source === dependent &&
+              copy.index < index &&
+              restores.some(
+                (write) =>
+                  renamedDependentAfter(statements, write.target, write.index) === dependent &&
+                  write.snapshot === copy.snapshot &&
+                  write.index > index,
+              ),
+          )
         if (!preserved && !isExempt(migration.tag, deletedTable, dependent, exemptions)) {
           risks.push({
             migration: migration.tag,

@@ -111,6 +111,32 @@ test('tracks a renamed parent before it is dropped', () => {
   ])
 })
 
+test('accepts a self-referencing table copied into its replacement before the old table drops', () => {
+  expect(
+    cascadeRisks([
+      {
+        tag: '0000_schema',
+        source: `
+          CREATE TABLE parent (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );`,
+      },
+      {
+        tag: '0001_rebuild',
+        source: `
+          ALTER TABLE parent RENAME TO parent_old;
+          CREATE TABLE parent (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );
+          INSERT INTO parent SELECT * FROM parent_old;
+          DROP TABLE parent_old;`,
+      },
+    ]),
+  ).toEqual([])
+})
+
 test('refuses a restore that occurs before the destructive statement', () => {
   expect(
     cascadeRisks([
