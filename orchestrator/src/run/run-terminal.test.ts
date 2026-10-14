@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import {
   artifactPersistenceOutcome,
   finalizeTerminalChain,
+  insertBlockerRows,
   questionsToInsert,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
@@ -42,6 +43,18 @@ test('a failed non-failover child closes its question before the root inherits f
   expect(db().query('SELECT close_reason FROM question WHERE run_id=?').get(child)).toEqual({
     close_reason: 'chain-terminal',
   })
+})
+
+test('blocker rows mint a version-7 record id', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement' })
+  insertBlockerRows(
+    runId,
+    [{ what: 'missing tool', why: 'why', impact: 'impact', source: 'declared', kind: 'tool' }],
+    '2026-10-14T00:00:00.000Z',
+  )
+  expect(
+    db().query<{ record_id: string }, []>('SELECT record_id FROM blocker').get()?.record_id,
+  ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 })
 
 test('artifact persistence failure retains a completed worker outcome', () => {
