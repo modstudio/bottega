@@ -513,7 +513,7 @@ export async function dispatchCommand(
    * The foreground path runs DETACHED too, and then watches the row.
    *
    * It used to spawn the agent as a child of this process, which meant the
-   * work died with the caller. That is not hypothetical: an `bottega run start` left in
+   * work died with the caller. That is not hypothetical: a `bottega run start` left in
    * the foreground outlives an agent harness's command timeout, the harness
    * kills the process group, run()'s signal handler forwards SIGTERM to the
    * agent, and a run that was minutes from an answer is destroyed having

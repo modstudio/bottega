@@ -100,8 +100,6 @@ import {
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
-export type { DocListFilters, DocRevisionMetadata, DocSetInput, DocSubjects }
-export { docArgv }
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000

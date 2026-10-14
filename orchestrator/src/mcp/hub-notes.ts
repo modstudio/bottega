@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { type BottegaEntry, bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -29,8 +29,8 @@ export type FiledNoteAnchor = {
   session_id: string | null
 }
 
-export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
+async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Promise<string> {
+  const child = Bun.spawn([...bottegaEntryArgv(entry), ...args], {
     cwd,
     env: { ...process.env },
     stdin: 'ignore',
@@ -46,6 +46,10 @@ export async function hubOutput(args: string[], cwd = process.cwd()): Promise<st
     throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
   }
   return stdout
+}
+
+export async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
+  return spawnOutput(PLATFORM_SLUG, args, cwd)
 }
 
 export async function fileNote(
@@ -72,7 +76,7 @@ export async function fileNote(
     ...(options.anchor ? ['--anchor-json', JSON.stringify(options.anchor)] : []),
     '--json',
   ]
-  return parseFiledNoteOutput((await hubOutput(args, cwd)).trim())
+  return parseFiledNoteOutput((await spawnOutput('hub', args, cwd)).trim())
 }
 
 export function parseFiledNoteOutput(output: string) {

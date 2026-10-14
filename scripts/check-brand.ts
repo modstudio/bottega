@@ -51,8 +51,6 @@ const ALLOWED = new Set([
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.
   'scripts/architecture-release.ts',
-  // Historical defect titles quote the front-door command as written; interpolating the slug would change the title.
-  'hub/src/duplicate-matcher.fixture.ts',
   // Shell recipes invoke the front-door executable by its PATH name and cannot import the slug.
   'local-stack/bin/gx10-install.sh',
   'ops/bin/projects-morning-refresh.sh',

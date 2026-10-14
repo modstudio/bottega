@@ -307,7 +307,7 @@ function fixSeedRejection(target: Project, reporting: Project, comments: string[
 function diagnosisPrompt(issue: FiledIssue, priorRecord: string): string {
   return `Independently reproduce and diagnose this filed issue in the reporting project's checkout.
 Call project_brief for ${issue.reportingProject} LIVE before concluding where the cause is.
-Do not edit files. Establish whether the cause is ${PLATFORM_SLUG} doc code, the live register row, or this project's own tool.
+Do not edit files. Establish whether the cause is orch code, the live register row, or this project's own tool.
 NOT REPRODUCIBLE is permitted only after attempting the supplied command in this worktree and environment.
 Return only the bound structured result. The bounded issue pack contains exactly the filing fields, and nothing else:
 ${boundedIssuePack(issue)}${priorRecord ? `\n\nPrior record on this issue, including any ruling - a ruling here is binding:\n${priorRecord}` : ''}`

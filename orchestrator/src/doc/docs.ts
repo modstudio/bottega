@@ -101,7 +101,6 @@ import {
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
-export { parseResumeFrontmatter, resumeAge }
 
 function assertInjectSize(input: {
   scope: string

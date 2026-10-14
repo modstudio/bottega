@@ -24,6 +24,7 @@ import {
   userAddressScope,
   validateUserAddress,
 } from './doc-commands.ts'
+import { parseResumeFrontmatter } from './doc-resume-frontmatter.ts'
 import { selectDocWriteTree } from './doc-write-tree.ts'
 import {
   removeDoc as deleteDoc,
@@ -31,7 +32,6 @@ import {
   docSubjects,
   getDoc,
   listDocRevisions,
-  parseResumeFrontmatter,
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
