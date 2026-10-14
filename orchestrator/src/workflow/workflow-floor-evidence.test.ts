@@ -177,8 +177,8 @@ const insertRun = (
   (
     d
       .query<{ id: number }, (string | number | null)[]>(
-        `INSERT INTO run (started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-         VALUES (?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
+         VALUES ('${newRecordId()}',?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING id`,
       )
       .get(
         input.startedAt ?? '2026-09-01',
@@ -211,8 +211,8 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
   const d = database()
   d.query(
     `INSERT INTO question
-      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
-     VALUES (1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
+      (record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+     VALUES ('${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
     `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
@@ -588,8 +588,8 @@ test("exec evidence recognizes only a cursor's recorded adopting session", () =>
   const d = database()
   d.query(
     `INSERT INTO question
-      (workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
-     VALUES (1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
+      (record_id,workflow_cursor_id,asked_at,question,asked_via,answered_at,answer,workflow_step_ordinal,workflow_step_slug)
+     VALUES ('${newRecordId()}',1,'2026-09-01','Proceed?','workflow','2026-09-01','yes',1,'rebase')`,
   ).run()
   d.query(
     `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)

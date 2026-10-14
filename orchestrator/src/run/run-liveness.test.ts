@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
@@ -103,8 +104,8 @@ describe('reapStale', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
-       VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id, asked_at, question, answer, answered_at)
+       VALUES ('${newRecordId()}',?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso())
     const child = addRun({
@@ -135,8 +136,8 @@ describe('reapStale', () => {
     db()
       .query(
         `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,delivery_pending_at)
-         VALUES (?,?,?,?,?,?)`,
+          (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at)
+         VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
     const child = addRun({

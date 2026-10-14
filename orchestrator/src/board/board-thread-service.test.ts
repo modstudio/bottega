@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimNotices, claimRunNotices, reapBoardMessages } from './board-service.ts'
@@ -80,8 +81,8 @@ test('questions are withheld from run readers and architect broadcasts reject no
   const run = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
+       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
     )
     .get(new Date(clock).toISOString()) as { id: number }
   const workerQuestion = askQuestion(

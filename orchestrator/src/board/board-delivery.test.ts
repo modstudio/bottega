@@ -145,8 +145,8 @@ test('a second chain turn claims and marks hosted and local notices through its 
     .get('2026-10-05T11:00:00.000Z', recordId) as { id: number }
   const turn = db()
     .query(
-      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_id,turn)
-       VALUES (?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING id`,
+      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_id,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING id`,
     )
     .get('2026-10-05T11:30:00.000Z', root.id) as { id: number }
   const local = postNotice(

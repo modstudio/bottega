@@ -90,6 +90,53 @@ test('recognizes a schema-qualified destructive table name', () => {
   ])
 })
 
+test('tracks a renamed parent before it is dropped', () => {
+  expect(
+    cascadeRisks([
+      { tag: '0000_schema', source: schema },
+      {
+        tag: '0001_rebuild',
+        source: `
+          ALTER TABLE parent RENAME TO parent_old;
+          DROP TABLE parent_old;`,
+      },
+    ]),
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent_old',
+      dependentTable: 'child',
+      detectedBy: ['parse'],
+    },
+  ])
+})
+
+test('accepts a self-referencing table copied into its replacement before the old table drops', () => {
+  expect(
+    cascadeRisks([
+      {
+        tag: '0000_schema',
+        source: `
+          CREATE TABLE parent (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );`,
+      },
+      {
+        tag: '0001_rebuild',
+        source: `
+          ALTER TABLE parent RENAME TO parent_old;
+          CREATE TABLE parent (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );
+          INSERT INTO parent SELECT * FROM parent_old;
+          DROP TABLE parent_old;`,
+      },
+    ]),
+  ).toEqual([])
+})
+
 test('refuses a restore that occurs before the destructive statement', () => {
   expect(
     cascadeRisks([
@@ -308,6 +355,55 @@ test('accepts a migration with no destructive statement', () => {
     cascadeRisks([
       { tag: '0000_schema', source: schema },
       { tag: '0001_additive', source: 'CREATE INDEX child_parent ON child(parent_id);' },
+    ]),
+  ).toEqual([])
+})
+
+test('tracks a cascading dependent under its renamed table name', () => {
+  expect(
+    cascadeRisks([
+      {
+        tag: '0000_schema',
+        source: `
+          CREATE TABLE parent (id INTEGER PRIMARY KEY);
+          CREATE TABLE child_new (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );
+          ALTER TABLE child_new RENAME TO child;`,
+      },
+      {
+        tag: '0001_rebuild',
+        source: `
+          CREATE TEMP TABLE parent_before AS SELECT * FROM parent;
+          CREATE TEMP TABLE child_before AS SELECT * FROM child;
+          DELETE FROM child;
+          DROP TABLE parent;
+          CREATE TABLE parent (id INTEGER PRIMARY KEY);
+          INSERT INTO parent SELECT * FROM parent_before;
+          INSERT INTO child SELECT * FROM child_before;`,
+      },
+    ]),
+  ).toEqual([])
+})
+
+test('does not treat a cascading dependent as present before its create statement', () => {
+  expect(
+    cascadeRisks([
+      {
+        tag: '0000_schema',
+        source: 'CREATE TABLE parent (id INTEGER PRIMARY KEY);',
+      },
+      {
+        tag: '0001_rebuild',
+        source: `
+          DROP TABLE parent;
+          CREATE TABLE parent (id INTEGER PRIMARY KEY);
+          CREATE TABLE child (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE
+          );`,
+      },
     ]),
   ).toEqual([])
 })

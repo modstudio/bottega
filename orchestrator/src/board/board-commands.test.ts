@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { Command } from 'commander'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { registerBoardCommands } from './board-commands.ts'
 import { BOARD_REACH_MAX_HOURS } from './board-reach.ts'
@@ -73,14 +74,14 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
     .run(cwd)
   const createRun = db().query(
     `INSERT INTO run
-     (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-     VALUES ('2026-10-05','codex','implement','board-cli-project','sha',1,'prompt','running','cli-owner')
+     (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
+     VALUES (?,'2026-10-05','codex','implement','board-cli-project','sha',1,'prompt','running','cli-owner')
      RETURNING id`,
   )
   const envBefore = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'cli-owner'
   try {
-    const overriddenRun = createRun.get() as { id: number }
+    const overriddenRun = createRun.get(newRecordId()) as { id: number }
     const overridden = suggestBoardPost(overriddenRun.id, {
       title: 'Override path',
       body: 'Use the command path.',
@@ -110,7 +111,7 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
         .all(overriddenRun.id),
     ).toEqual([{ value: 'override/**' }])
 
-    const inheritedRun = createRun.get() as { id: number }
+    const inheritedRun = createRun.get(newRecordId()) as { id: number }
     const inherited = suggestBoardPost(inheritedRun.id, {
       title: 'Keep path',
       body: 'Use the suggestion path.',

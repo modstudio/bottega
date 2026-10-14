@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { ensureLocalHealth, modelHostUrl, tryWake } from '../agent/model-host.ts'
@@ -275,7 +276,6 @@ export async function run(opts: {
   writableDb()
   enableSchemaReload(() => {})
   const startedByUserId = await startedByForRun(opts.reserveId)
-
   const requestedJob = job(opts.job),
     mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
   const resume = resumeFacts(
@@ -430,12 +430,10 @@ export async function run(opts: {
         failedId = (
           db()
             .query(
-              `INSERT INTO run (started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,
-          status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id)
-         VALUES (?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
+              `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,session_id,failure_kind,error,docs_injected,mcp,started_by_user_id) VALUES (?,?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?,?) RETURNING id`,
             )
             .get(
-              nowIso(),
+              ...[newRecordId(), nowIso()],
               opts.job,
               runProjectName,
               runProjectId,

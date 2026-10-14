@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   closeQuestionByOperator,
@@ -32,8 +33,8 @@ function fixture(status = 'ok'): { database: Database; questionId: number } {
     .run(status)
   const question = database
     .query(
-      `INSERT INTO question (run_id,asked_at,question)
-       VALUES (42,'2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
+      `INSERT INTO question (record_id,run_id,asked_at,question)
+       VALUES ('${newRecordId()}',42,'2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
     )
     .get() as { id: number }
   return { database, questionId: question.id }

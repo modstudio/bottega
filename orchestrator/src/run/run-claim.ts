@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import type { TaskBranchCandidate } from '../branch/task-branch.ts'
@@ -161,6 +161,15 @@ export type ClaimInput = {
   carriedQuestionIds: number[]
 }
 
+function recordIdForClaim(reserveId: number | undefined): string {
+  if (!reserveId) return newRecordId()
+  const reservation = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+    .get(reserveId)
+  if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
+  return reservation.record_id
+}
+
 import type { ClaimResult } from './run-claim-types.ts'
 
 export type { ClaimResult } from './run-claim-types.ts'
@@ -257,7 +266,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       : originalSchemaPath
 
   const started = Date.now()
-  const recordId = newRecordId()
+  const recordId = recordIdForClaim(opts.reserveId)
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null

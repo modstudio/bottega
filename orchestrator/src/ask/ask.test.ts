@@ -479,7 +479,9 @@ describe('the live ask channel always answers', () => {
   test('a live question is answerable through the command, not only in SQL', () => {
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
-      .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(live, new Date().toISOString(), 'which table?')
     const answerable = (id: number) => {
       const r = db().query('SELECT status, parent_run_id FROM run WHERE id = ?').get(id) as {
@@ -501,7 +503,9 @@ describe('the live ask channel always answers', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db()
-      .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(child, new Date().toISOString(), 'and now what?')
     const open = db()
       .query(
@@ -515,9 +519,9 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db()
-      .query('SELECT asked_via FROM question WHERE run_id = ? AND answered_at IS NULL')
+      .query('SELECT asked_via,record_id FROM question WHERE run_id = ? AND answered_at IS NULL')
       .get(run)
-    expect(open).toEqual({ asked_via: 'live' })
+    expect(open).toEqual({ asked_via: 'live', record_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
     expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
       { kind: 'run' },
       { kind: 'question' },

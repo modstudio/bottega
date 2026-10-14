@@ -134,6 +134,52 @@ function parsedForeignKeys(tree: Program): ForeignKey[] {
   return result
 }
 
+function renamedTable(statement: AstNode): { from: string; to: string } | null {
+  if (statement.type !== 'alter_table_stmt') return null
+  const action = nodes(statement.actions, 'alter_action_rename')[0]
+  const from = name(statement.table)
+  const to = action ? name(action.newName) : null
+  return from && to ? { from, to } : null
+}
+
+function advanceForeignKeys(
+  relationships: readonly ForeignKey[],
+  statement: AstNode,
+): ForeignKey[] {
+  let next = [...relationships]
+  if (statement.type === 'create_table_stmt') {
+    const table = name(statement.name)
+    if (table) next = next.filter((key) => key.dependent !== table)
+    next.push(...parsedForeignKeys({ type: 'program', statements: [statement] } as Program))
+  }
+  for (const table of destructiveTables(statement)) {
+    if (statement.type === 'drop_table_stmt') {
+      next = next.filter((key) => key.dependent !== table)
+    }
+  }
+  const rename = renamedTable(statement)
+  if (rename) {
+    next = next.map((key) => ({
+      parent: key.parent === rename.from ? rename.to : key.parent,
+      dependent: key.dependent === rename.from ? rename.to : key.dependent,
+    }))
+  }
+  return next
+}
+
+function renamedDependentAfter(
+  statements: readonly AstNode[],
+  table: string,
+  after: number,
+): string {
+  let current = table
+  for (const statement of statements.slice(after + 1)) {
+    const rename = renamedTable(statement)
+    if (rename?.from === current) current = rename.to
+  }
+  return current
+}
+
 function isExempt(
   migration: string,
   deletedTable: string,
@@ -176,20 +222,26 @@ function parserRisks(
     return value ? [{ ...value, index }] : []
   })
   const risks: CascadeRisk[] = []
+  let activeForeignKeys = [...foreignKeys]
   for (const [index, statement] of statements.entries()) {
     for (const deletedTable of destructiveTables(statement)) {
-      for (const { dependent } of foreignKeys.filter((key) => key.parent === deletedTable)) {
-        const preserved = snapshots.some(
-          (copy) =>
-            copy.source === dependent &&
-            copy.index < index &&
-            restores.some(
-              (write) =>
-                write.target === dependent &&
-                write.snapshot === copy.snapshot &&
-                write.index > index,
-            ),
-        )
+      for (const { dependent } of activeForeignKeys.filter((key) => key.parent === deletedTable)) {
+        const rebuiltBeforeDrop =
+          deletedTable === dependent &&
+          restores.some((write) => write.snapshot === dependent && write.index < index)
+        const preserved =
+          rebuiltBeforeDrop ||
+          snapshots.some(
+            (copy) =>
+              copy.source === dependent &&
+              copy.index < index &&
+              restores.some(
+                (write) =>
+                  renamedDependentAfter(statements, write.target, write.index) === dependent &&
+                  write.snapshot === copy.snapshot &&
+                  write.index > index,
+              ),
+          )
         if (!preserved && !isExempt(migration.tag, deletedTable, dependent, exemptions)) {
           risks.push({
             migration: migration.tag,
@@ -200,6 +252,7 @@ function parserRisks(
         }
       }
     }
+    activeForeignKeys = advanceForeignKeys(activeForeignKeys, statement)
   }
   return risks
 }
@@ -555,7 +608,15 @@ function counts(database: Database): Map<string, number> {
 
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
-  if (stripSqlComments(ddl).trim()) database.exec(ddl)
+  if (!stripSqlComments(ddl).trim()) return
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    database.exec(ddl)
+    database.exec('COMMIT')
+  } catch (error) {
+    database.exec('ROLLBACK')
+    throw error
+  }
 }
 
 function probeDestructiveMigration(
@@ -617,21 +678,8 @@ export function probeMigrations(
   return result
 }
 
-function nextForeignKeys(relationships: ForeignKey[], tree: Program, migrationKeys: ForeignKey[]) {
-  const replacedDependents = new Set(migrationKeys.map((key) => key.dependent))
-  for (const statement of tree.statements as AstNode[]) {
-    if (statement.type === 'create_table_stmt') {
-      const table = name(statement.name)
-      if (table) replacedDependents.add(table)
-    }
-    if (statement.type === 'drop_table_stmt') {
-      for (const table of destructiveTables(statement)) replacedDependents.add(table)
-    }
-  }
-  return [
-    ...relationships.filter((key) => !replacedDependents.has(key.dependent)),
-    ...migrationKeys,
-  ]
+function nextForeignKeys(relationships: ForeignKey[], tree: Program) {
+  return (tree.statements as AstNode[]).reduce(advanceForeignKeys, relationships)
 }
 
 export function cascadeRisks(
@@ -643,9 +691,8 @@ export function cascadeRisks(
   const risks: CascadeRisk[] = []
   for (const migration of migrations) {
     const tree = program(migration)
-    const migrationKeys = parsedForeignKeys(tree)
-    risks.push(...parserRisks(migration, tree, [...relationships, ...migrationKeys], exemptions))
-    relationships = nextForeignKeys(relationships, tree, migrationKeys)
+    risks.push(...parserRisks(migration, tree, relationships, exemptions))
+    relationships = nextForeignKeys(relationships, tree)
   }
   risks.push(...probeMigrations(migrations, exemptions).risks)
   const combined = new Map<string, CascadeRisk>()

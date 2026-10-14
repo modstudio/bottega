@@ -33,6 +33,7 @@ import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -103,10 +104,11 @@ function recordQuestion(input: {
   const inserted = db()
     .query(
       `INSERT INTO question
-       (run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id, run_id, asked_at, question, options, recommendation, why, asked_via, awaiting_operator_at)
+       VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       input.runId,
       input.askedAt,
       input.question,

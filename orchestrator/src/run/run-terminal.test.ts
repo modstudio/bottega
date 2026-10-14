@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -21,7 +22,9 @@ test('a failed non-failover child closes its question before the root inherits f
     turn: 2,
   })
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+    )
     .run(child, '2026-09-29', 'What should happen?')
 
   finalizeTerminalChain(db(), {

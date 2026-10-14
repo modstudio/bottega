@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
@@ -42,6 +43,36 @@ export function registrationProbeRequirements(declaredJobs: string[] | null): {
     needs.mcp = true
   }
   return needs
+}
+
+function insertProbeRun(input: {
+  started: number
+  name: string
+  id: string
+  scratch: string
+  prompt: string
+  model?: string
+  transport: string
+}): { id: number } {
+  return writableDb()
+    .query(
+      `INSERT INTO run (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+    )
+    .get(
+      newRecordId(),
+      new Date(input.started).toISOString(),
+      input.name,
+      `agent-probe-${input.id}`,
+      join(input.scratch, 'repo'),
+      createHash('sha256').update(input.prompt).digest('hex'),
+      Buffer.byteLength(input.prompt),
+      input.prompt.slice(0, 240),
+      1,
+      'running',
+      input.model ?? null,
+      input.transport,
+    ) as { id: number }
 }
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
@@ -120,12 +151,10 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   if (!row) throw new Error(`unknown agent "${name}"`)
   const priorCaps = JSON.parse(row.caps) as Caps
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
-  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true) {
+  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true)
     return previous as RegistrationProbeResult
-  }
-  if (!HARNESSES.includes(row.harness as Harness)) {
+  if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
-  }
   const agent = rowAgent(row)
   if (which(agent.bin, { PATH: process.env.PATH }) === null)
     throw new Error(`${agent.harness} harness is not installed`)
@@ -152,25 +181,15 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   const transport = transportFor(agent.defaultTransport)
   const runOne = async (id: string, prompt: string, schema?: string, mcp = false) => {
     const started = Date.now()
-    const inserted = writableDb()
-      .query(
-        `INSERT INTO run
-       (started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-      )
-      .get(
-        new Date(started).toISOString(),
-        name,
-        `agent-probe-${id}`,
-        join(scratch, 'repo'),
-        createHash('sha256').update(prompt).digest('hex'),
-        Buffer.byteLength(prompt),
-        prompt.slice(0, 240),
-        1,
-        'running',
-        agent.model,
-        agent.defaultTransport,
-      ) as { id: number }
+    const inserted = insertProbeRun({
+      started,
+      name,
+      id,
+      scratch,
+      prompt,
+      model: agent.model,
+      transport: agent.defaultTransport,
+    })
     try {
       const handle = await transport.start({
         agent,

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { createDocsMcpServer } from './mcp.ts'
@@ -42,8 +43,8 @@ function addQuestion(runId: number, question: string, waiting = false): number {
   return (
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,awaiting_operator_at)
-         VALUES (?,?,?,?) RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+         VALUES ('${newRecordId()}',?,?,?,?) RETURNING id`,
       )
       .get(runId, at, question, waiting ? at : null) as { id: number }
   ).id

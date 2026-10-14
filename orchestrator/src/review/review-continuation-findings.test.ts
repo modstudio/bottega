@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   type ContinuationFinding,
@@ -34,8 +35,8 @@ function addReview(
   const run = database
     .query<{ id: number }, []>(
       `INSERT INTO run
-         (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-       VALUES ('2026-10-12','codex','review-lens','sha',1,'head','ok','fixture','DEV-1258')
+         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
+       VALUES ('${newRecordId()}','2026-10-12','codex','review-lens','sha',1,'head','ok','fixture','DEV-1258')
        RETURNING id`,
     )
     .get()!

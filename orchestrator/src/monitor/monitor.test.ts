@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -433,7 +434,9 @@ describe('operational monitor conditions', () => {
       startedAt: '2026-09-04T19:30:00.000Z',
     })
     db()
-      .query('INSERT INTO question (id, run_id, asked_at, question) VALUES (?,?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,id, run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?,?)`,
+      )
       .run(2000, runId, '2026-09-04T19:30:00.000Z', 'which way?')
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
     const payload = (staleAfter: string) =>
@@ -534,8 +537,8 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,why,answer,answered_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at)
+         VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
       )
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {

@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
@@ -103,18 +104,16 @@ export function createHookTree(input: {
     )
   }
   writableDb()
-
   const startedAt = nowIso()
-  const evidence = hookTreeEvidenceDecision()
   const prompt = `hook tree ${input.name}`
   const inserted = db()
     .query(
-      `INSERT INTO run
-       (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
-       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       startedAt,
       HOOK_TREE_AGENT,
       HOOK_TREE_JOB,
@@ -130,7 +129,7 @@ export function createHookTree(input: {
       input.base ?? null,
       seedDecision.seed ?? null,
       stackAt(project.path),
-      evidence.evidenceExcluded,
+      hookTreeEvidenceDecision().evidenceExcluded,
       process.pid,
     ) as { id: number }
 

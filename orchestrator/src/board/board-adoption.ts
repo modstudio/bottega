@@ -142,7 +142,7 @@ function runRecordId(localId: number | null, database: Database): string | null 
   if (localId === null) return null
   return (
     database
-      .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
       .get(localId)?.record_id ?? null
   )
 }
@@ -162,11 +162,6 @@ function lastingLocalRefusal(
       : undefined
     if (rootLedger?.state === 'refused')
       return `thread root ${message.thread_root_id} was refused by the hosted service: ${rootLedger.refusal}`
-  }
-  if (candidate.kind === 'claim' && (row as ClaimRow).run_id !== null) {
-    const claim = row as ClaimRow
-    if (!runRecordId(claim.run_id, database))
-      return `claim run ${claim.run_id} has no hosted record id; run orch sync --backfill and rerun orch board adopt`
   }
   return null
 }

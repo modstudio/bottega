@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { startReleaseLedgerEntry } from '../release/release-ledger.ts'
 import { enqueueReview } from '../review/review-outbox.ts'
@@ -75,8 +76,8 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
       VALUES
         (1,'01990000-0000-7000-8000-000000001251','2026-10-12T10:00:00Z',
          'codex','implementation','sha',1,'prompt','asking');
-      INSERT INTO question (run_id,asked_at,question)
-      VALUES (1,'2026-10-12T10:01:00Z','Which?');
+      INSERT INTO question (record_id,run_id,asked_at,question)
+      VALUES ('${newRecordId()}',1,'2026-10-12T10:01:00Z','Which?');
       INSERT INTO review (id,record_id,recorded_at)
       VALUES (1,'01990000-0000-7000-8000-000000001252','2026-10-12T10:02:00Z');
       INSERT INTO landing (id,record_id,project,branch,status,started_at)

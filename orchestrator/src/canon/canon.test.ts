@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 // Six of these tests spawn the orch CLI and apply the whole migration journal
 // to scratch stores; each grew past bun's 5 s default as the journal gained
@@ -454,8 +455,8 @@ describe('schema coexistence', () => {
       (
         d
           .query(
-            `INSERT INTO run (started_at, agent, job, repo, project_id, prompt_sha, prompt_bytes, prompt_head, status)
-         VALUES ('t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING id`,
+            `INSERT INTO run (record_id,started_at, agent, job, repo, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('${newRecordId()}','t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING id`,
           )
           .get(repo, projectId) as { id: number }
       ).id

@@ -1,12 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
-import { enqueueRunRecord } from './run-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
 
@@ -30,8 +30,8 @@ test('question payload contains the hosted shape and replaces a pending mutation
   const question = database
     .query(
       `INSERT INTO question
-       (run_id,asked_at,question,options,recommendation,why,asked_via)
-       VALUES (42,'2026-09-25T10:01:00.000Z','Which?', '["one","two"]','one','safer','live')
+       (record_id,run_id,asked_at,question,options,recommendation,why,asked_via)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','Which?', '["one","two"]','one','safer','live')
        RETURNING id`,
     )
     .get() as { id: number }
@@ -87,8 +87,8 @@ test.each(['quarantined', 'retired'])(
     const database = fixture()
     const question = database
       .query(
-        `INSERT INTO question (run_id,asked_at,question)
-       VALUES (42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
       )
       .get() as { id: number }
     enqueueQuestionRecord(database, question.id)
@@ -119,8 +119,8 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
   const secret = 'Authorization: Bearer top-secret-value'
   const question = database
     .query(
-      `INSERT INTO question (run_id,asked_at,question,answer,answer_basis,answered_at,revision)
-       VALUES (42,'2026-09-25T10:01:00.000Z','Which?',?,?,'2026-09-25T10:02:00.000Z',2)
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answer_basis,answered_at,revision)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','Which?',?,?,'2026-09-25T10:02:00.000Z',2)
        RETURNING id`,
     )
     .get(secret, secret) as { id: number }
@@ -139,31 +139,28 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
   expect(outbox.payload).not.toContain(secret)
 })
 
-test('question enqueue waits for its run enqueue to mint the parent identity', () => {
+test('a question has an identity before its first enqueue', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
     .query(
       `INSERT INTO run
-       (id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,'2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking')`,
+       (record_id,id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking')`,
     )
     .run()
   const question = database
     .query(
-      `INSERT INTO question (run_id,asked_at,question)
-       VALUES (42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+      `INSERT INTO question (record_id,run_id,asked_at,question)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
     )
     .get() as { id: number }
 
-  expect(enqueueQuestionRecord(database, question.id)).toBe(false)
-  expect(database.query('SELECT record_id FROM run WHERE id=42').get()).toEqual({ record_id: null })
-  expect(database.query("SELECT id FROM outbox WHERE kind='question'").all()).toEqual([])
-
-  enqueueRunRecord(database, 42, '01990000-0000-7000-8000-000000000099', '2026-09-25T10:01:00.000Z')
+  expect(database.query('SELECT record_id FROM question WHERE id=?').get(question.id)).toEqual({
+    record_id: expect.any(String),
+  })
   expect(enqueueQuestionRecord(database, question.id)).toBe(true)
   expect(database.query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
-    { kind: 'run' },
     { kind: 'question' },
   ])
 })
@@ -174,8 +171,8 @@ test('question and outbox writes roll back together', () => {
     writeTransaction(() => {
       const question = database
         .query(
-          `INSERT INTO question (run_id,asked_at,question)
-           VALUES (42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+          `INSERT INTO question (record_id,run_id,asked_at,question)
+           VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
         )
         .get() as { id: number }
       enqueueQuestionRecord(database, question.id)
@@ -186,16 +183,16 @@ test('question and outbox writes roll back together', () => {
   expect(database.query("SELECT id FROM outbox WHERE kind='question'").all()).toEqual([])
 })
 
-test('question backfill mints identities once and enqueues all existing rows', () => {
+test('question backfill enqueues all existing rows once', () => {
   const database = fixture()
   database
     .query(
-      `INSERT INTO question (run_id,asked_at,question)
-       VALUES (42,'2026-09-25T10:01:00.000Z','One?'),
-              (42,'2026-09-25T10:02:00.000Z','Two?')`,
+      `INSERT INTO question (record_id,run_id,asked_at,question)
+       VALUES ('${newRecordId()}',42,'2026-09-25T10:01:00.000Z','One?'),
+              ('${newRecordId()}',42,'2026-09-25T10:02:00.000Z','Two?')`,
     )
     .run()
-  expect(backfillQuestionRecords(database)).toEqual({ minted: 2, enqueued: 2 })
+  expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 2 })
   expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 2,

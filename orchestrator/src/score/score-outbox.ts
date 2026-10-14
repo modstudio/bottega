@@ -7,7 +7,7 @@ import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 
 type LocalScore = {
-  record_id: string | null
+  record_id: string
   local_id: number
   project_name: string | null
   delivery: VerdictPayload['delivery']
@@ -58,7 +58,6 @@ export function buildScoreRecordPayload(
   }
 }
 
-/** Returns false when the run has no hosted-record identity and its score remains local-only. */
 export function enqueueScoreRecord(database: Database, runId: number, machineId: string): boolean {
   const row = database
     .query<LocalScore, [number]>(
@@ -73,11 +72,7 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} has no score and cannot be enqueued`)
-  if (row.record_id === null) return false
-  const payload = stringifyOutboxPayload(
-    'score',
-    buildScoreRecordPayload({ ...row, record_id: row.record_id }, machineId),
-  )
+  const payload = stringifyOutboxPayload('score', buildScoreRecordPayload(row, machineId))
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
@@ -110,8 +105,7 @@ export function backfillScoreRecords(database: Database, machineId: string): num
     .query<{ run_id: number }, []>(
       `SELECT s.run_id
          FROM score s JOIN run r ON r.id=s.run_id
-        WHERE r.record_id IS NOT NULL
-          AND NOT EXISTS (
+        WHERE NOT EXISTS (
             SELECT 1 FROM outbox o WHERE o.kind='score' AND o.record_id=r.record_id
           )
         ORDER BY s.run_id`,

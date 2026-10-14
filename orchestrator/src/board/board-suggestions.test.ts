@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { claimNotices } from './board-service.ts'
 import {
@@ -20,8 +21,8 @@ function runFixture(session: string | null, status = 'running') {
   return db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
+       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
+       VALUES ('${newRecordId()}','2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
        RETURNING id`,
     )
     .get(status, session) as { id: number }

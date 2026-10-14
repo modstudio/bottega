@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
@@ -11,8 +12,8 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   const run = database
     .query<{ id: number }, []>(
       `INSERT INTO run
-         (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-       VALUES ('2026-09-25','codex','review-lens','sha',1,'head','ok','fixture','DEV-977')
+         (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
+       VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture','DEV-977')
        RETURNING id`,
     )
     .get()!
@@ -55,8 +56,8 @@ test('a rebase credits the complete round from the same branch and never another
     const run = database
       .query<{ id: number }, [string]>(
         `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
-         VALUES ('2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?)
+           (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch)
+         VALUES ('${newRecordId()}','2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?)
          RETURNING id`,
       )
       .get(branch)!

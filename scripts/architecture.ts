@@ -218,6 +218,7 @@ export const modules: ArchitectureModule[] = [
     './task-branch.ts',
   ]),
   module('orchestrator/src/agent/agent-probe.ts', [
+    '../../../shared/record-id.ts',
     './agent-registry.ts',
     './agents.ts',
     './capabilities.ts',
@@ -228,6 +229,7 @@ export const modules: ArchitectureModule[] = [
     '../transport/transport.ts',
   ]),
   module('orchestrator/src/agent/vendor-probe.ts', [
+    '../../../shared/record-id.ts',
     './agent-registry.ts',
     '../database/db.ts',
     '../failure/failure.ts',
@@ -442,7 +444,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/sandbox-runtime-assets.ts', []),
-  module('shared/record/schema.ts', ['../brand.ts']),
+  module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
@@ -477,6 +479,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
   ]),
+  module('orchestrator/src/database/identity-inventory.ts', ['bun:sqlite']),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
@@ -612,6 +615,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/state/statistics.ts', []),
   module('orchestrator/src/hook-tree/tree-commands.ts', ['./tree.ts', '../landing-tree/tree.ts']),
   module('orchestrator/src/hook-tree/tree.ts', [
+    '../../../shared/record-id.ts',
     'node:crypto',
     'node:fs',
     'node:path',
@@ -630,6 +634,7 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/landing-tree/tree.ts', [
+    '../../../shared/record-id.ts',
     'node:crypto',
     '../close/close-out.ts',
     '../database/db.ts',
