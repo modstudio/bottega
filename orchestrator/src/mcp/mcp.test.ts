@@ -10,6 +10,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
@@ -473,9 +474,9 @@ describe('orch MCP', () => {
     const revision = db()
       .query<{ id: number }, [string]>(
         `INSERT INTO doc_revision
-          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at)
+          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at,record_id)
          VALUES (1,'canon',NULL,?1,'.agents/rules/private.md','create','Private','body',
-           'demand','["technical"]','operator','mcp owner proof','2026-01-01')
+           'demand','["technical"]','operator','mcp owner proof','2026-01-01','${newRecordId()}')
          RETURNING id`,
       )
       .get(owner)!

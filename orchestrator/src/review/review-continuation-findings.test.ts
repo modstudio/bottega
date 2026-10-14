@@ -51,7 +51,7 @@ function addReview(
       `INSERT INTO review_lens
          (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
           could_not_verify,reproduced,coverage,limits,overlap)
-       VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')`
+       VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')
        RETURNING id`,
     )
     .get(reviewId, run.id, lens)!

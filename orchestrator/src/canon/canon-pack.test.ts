@@ -37,10 +37,10 @@ function putCanon(
   db()
     .query(
       `INSERT INTO doc_revision
-       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, status, author, reason, at)
-       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?)`,
+       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, status, author, reason, at, record_id)
+       VALUES (?, 'canon', ?, ?, ?, 'create', ?, ?, 'demand', '["technical"]', ?, 'test', 'test write', ?, ?)`,
     )
-    .run(id, subject, projectId, slug, slug, body, status, AT)
+    .run(id, subject, projectId, slug, slug, body, status, AT, newRecordId())
 }
 
 function operatorPack(cwd: string): string {

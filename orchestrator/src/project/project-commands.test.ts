@@ -6,6 +6,7 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
@@ -169,10 +170,10 @@ test('rename writes hosted once and updates the local name and release ledger', 
   writableDb()
     .query(
       `INSERT INTO release_ledger
-       (project,rung,candidate_commit,rollback,actor,started_at)
-       VALUES ('once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
+       (record_id,project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES (?,'once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
     )
-    .run()
+    .run(newRecordId())
   const hosted: Array<{ name: string; previousName?: string }> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
