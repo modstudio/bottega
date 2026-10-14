@@ -77,7 +77,8 @@ async function hub(args: string[]): Promise<string> {
     new Response(child.stderr).text(),
     child.exited,
   ])
-  if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+  if (code !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
   return stdout.trim()
 }
 

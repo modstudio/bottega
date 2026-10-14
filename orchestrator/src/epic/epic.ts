@@ -443,7 +443,8 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
     new Response(child.stderr).text(),
     child.exited,
   ])
-  if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+  if (code !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
   const parsed = JSON.parse(stdout) as unknown
   if (
     !Array.isArray(parsed) ||
