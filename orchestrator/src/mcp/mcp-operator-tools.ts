@@ -43,15 +43,12 @@ function relayByIdentifier(
   question: string | number | undefined,
   note: string,
 ) {
-  const questionId = relayQuestion(
+  const relayed = relayQuestion(
     localRunId(run),
     question === undefined ? undefined : localQuestionId(question),
     note,
   )
-  const row = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
-    .get(questionId)!
-  return text({ question_id: questionId, record_id: row.record_id })
+  return text({ question_id: relayed.id, record_id: relayed.recordId })
 }
 
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {

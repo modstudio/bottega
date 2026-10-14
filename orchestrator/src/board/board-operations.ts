@@ -9,6 +9,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type {
   HostedBoardClaim,
@@ -232,13 +233,7 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
   const runRecordId =
-    typeof value.runId === 'number'
-      ? ((
-          db().query('SELECT record_id FROM run WHERE id=?').get(value.runId) as {
-            record_id: string
-          } | null
-        )?.record_id ?? null)
-      : value.runId
+    typeof value.runId === 'number' ? runRecordIdOrNull(db(), value.runId) : value.runId
   return {
     ...value,
     id: String(value.id),

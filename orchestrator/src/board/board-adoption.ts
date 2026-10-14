@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -140,11 +141,7 @@ function candidateRows(
 
 function runRecordId(localId: number | null, database: Database): string | null {
   if (localId === null) return null
-  return (
-    database
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-      .get(localId)?.record_id ?? null
-  )
+  return runRecordIdOrNull(database, localId)
 }
 
 function lastingLocalRefusal(

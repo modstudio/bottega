@@ -4,13 +4,12 @@ import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { gitToplevel } from '../../../shared/git.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
@@ -106,7 +105,7 @@ function resolveTierTarget(
   branch: string
   project: NonNullable<ReturnType<typeof projectAt>>
 } {
-  if (/^\d+$/.test(value) || hasRecordIdShape(value)) {
+  if (classifyRunIdentifier(value)) {
     return (() => {
       const runId = resolveRunIdentifier(db(), value)
       const row = db()

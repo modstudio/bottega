@@ -33,7 +33,7 @@ export function relayCommand(
   const unknown = args.filter((arg) => !accepted.has(arg))
   if (unknown.length) throw new Error(`unrecognized relay argument ${unknown[0]}`)
   if (questions.length > 1) throw new Error('pass at most one --q<id>')
-  const id = relayQuestion(runId, questions[0], note.trim())
+  const { id } = relayQuestion(runId, questions[0], note.trim())
   presentation.log(`question ${id} is waiting on the operator`)
 }
 

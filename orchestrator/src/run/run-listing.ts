@@ -343,6 +343,7 @@ export async function runListingCommand(
         .map((requested) => ({
           ...row,
           requested_id: requested.requested_id,
+          requested_record_id: requested.requested_record_id,
           resolved_from: requested.requested_id === Number(row.id) ? 'root' : 'turn',
         })),
     )

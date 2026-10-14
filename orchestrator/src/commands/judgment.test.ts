@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dir } from '../../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
-import { scoreNote } from './judgment.ts'
+import { db } from '../database/db.ts'
+import { resolveComparisonRunIds, scoreNote } from './judgment.ts'
 
 const trackResidue = trackedTestResidue()
 
@@ -28,4 +29,35 @@ test('a note file is content and bypasses shell-fragment checks', () => {
 
 test('a lone inline backtick is refused as an unexpanded shell fragment', () => {
   expect(() => scoreNote(flags({ note: '`' }))).toThrow('unexpanded shell fragment')
+})
+
+test('comparison flags resolve mixed run numbers and UUIDs and deduplicate by row', () => {
+  const first = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const second = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const secondRecordId = (
+    db().query('SELECT record_id FROM run WHERE id=?').get(second) as { record_id: string }
+  ).record_id
+  const mixed = resolveComparisonRunIds({
+    has: () => false,
+    values: () => [],
+    flag: (name) => (name === 'better-than' ? `${first},${secondRecordId}` : undefined),
+  })
+  expect(mixed.flag('better-than')).toBe(`${first},${second}`)
+  expect(() =>
+    resolveComparisonRunIds({
+      has: () => false,
+      values: () => [],
+      flag: (name) => (name === 'same-as' ? `${second},${secondRecordId}` : undefined),
+    }).flag('same-as'),
+  ).toThrow('same run more than once')
+})
+
+test('comparison flags refuse an unknown run UUID', () => {
+  expect(() =>
+    resolveComparisonRunIds({
+      has: () => false,
+      values: () => [],
+      flag: (name) => (name === 'worse-than' ? '01990000-0000-7000-8000-000000000099' : undefined),
+    }).flag('worse-than'),
+  ).toThrow('no run has UUID')
 })

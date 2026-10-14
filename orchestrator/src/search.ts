@@ -7,7 +7,9 @@ type RecordSearchResult = {
   source: RecordSource
   id: number
   run_id: number
+  run_record_id: string
   root_run_id: number
+  root_run_record_id: string
   task_key: string | null
   started_at: string
   match: 'direct task link' | 'literal text match (weak relevance)'
@@ -65,7 +67,9 @@ export function searchRecords(
         source,
         id: Number(row.id),
         run_id: Number(row.run_id),
+        run_record_id: String(row.run_record_id),
         root_run_id: Number(row.root_run_id),
+        root_run_record_id: String(row.root_run_record_id),
         task_key: row.task_key as string | null,
         started_at: String(row.started_at),
         text: text(row),
@@ -77,9 +81,11 @@ export function searchRecords(
     'score',
     d
       .query(
-        `SELECT s.id, s.run_id, r.id AS root_run_id,
-            r.launch_key AS task_key, r.started_at, s.note
+        `SELECT s.id, s.run_id, r.record_id AS run_record_id,
+            root.id AS root_run_id, root.record_id AS root_run_record_id,
+            root.launch_key AS task_key, r.started_at, s.note
        FROM score s JOIN run r ON r.id=s.run_id
+       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
       WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
       )
       .all() as Record<string, unknown>[],
@@ -90,8 +96,9 @@ export function searchRecords(
     'ruling',
     d
       .query(
-        `SELECT q.id, q.run_id,
+        `SELECT q.id, q.run_id, turn.record_id AS run_record_id,
             COALESCE(turn.parent_run_id, turn.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, turn.started_at, q.question, q.options,
             q.recommendation, q.why, q.answer
        FROM question q
@@ -110,8 +117,9 @@ export function searchRecords(
     'review',
     d
       .query(
-        `SELECT rf.id, rl.run_id,
+        `SELECT rf.id, rl.run_id, r.record_id AS run_record_id,
             COALESCE(r.parent_run_id, r.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at,
             rf.severity, rf.location, rf.evidence, rf.proposed_correction,
             rf.disposition, rf.rejection_category
@@ -137,7 +145,9 @@ export function searchRecords(
   let unavailableOutputs = 0
   const outputRows = d
     .query(
-      `SELECT r.id AS run_id, COALESCE(r.parent_run_id, r.id) AS root_run_id,
+      `SELECT r.id AS run_id, r.record_id AS run_record_id,
+            COALESCE(r.parent_run_id, r.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at, r.output_path
        FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id, r.id)
       WHERE r.output_path IS NOT NULL`,
@@ -166,7 +176,9 @@ export function searchRecords(
           source: row.source,
           id: row.id,
           run_id: row.run_id,
+          run_record_id: row.run_record_id,
           root_run_id: row.root_run_id,
+          root_run_record_id: row.root_run_record_id,
           task_key: row.task_key,
           started_at: row.started_at,
           match: directlyLinked

@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { HarnessHealthSchema, OrchAgentDefinitionSchema, OrchStateSchema } from './orch-contract.ts'
+import {
+  HarnessHealthSchema,
+  OrchAgentDefinitionSchema,
+  OrchRunDetailSchema,
+  OrchStateSchema,
+} from './orch-contract.ts'
 
 test('agent snapshot parsing preserves who operates the endpoint', () => {
   const parsed = OrchAgentDefinitionSchema.parse({
@@ -104,4 +109,40 @@ test('orch state accepts a constructed cooling string and caps.contextTokens num
   expect(parsed.health[1]!.cooling).toBeNull()
   expect(parsed.agents[0]!.caps.contextTokens).toBe(131072)
   expect(parsed.agents[1]!.caps.contextTokens).toBeNull()
+})
+
+test('run detail accepts a child-turn request with both run UUIDs', () => {
+  const payload = {
+    id: 12,
+    record_id: '01990000-0000-7000-8000-000000000012',
+    root_id: 10,
+    root_record_id: '01990000-0000-7000-8000-000000000010',
+    requested_id: 12,
+    resolved_from: 'turn',
+    agent: 'codex',
+    job: 'implement',
+    project: 'bottega',
+    latency_ms: 12,
+    vendor_tokens: 34,
+    status: 'ok',
+    failure_kind: null,
+    probe: false,
+    evidence_excluded: null,
+    error: null,
+    prompt: 'spec',
+    output: 'reply',
+    delivery: 'full',
+    quality: 'right',
+    fidelity: 'faithful',
+    note: null,
+    scored_at: '2026-10-14T00:00:00.000Z',
+    scoreAxes: ['delivery', 'quality', 'fidelity'],
+    reviews: [],
+  }
+  expect(OrchRunDetailSchema.parse(payload)).toMatchObject({
+    id: 12,
+    record_id: payload.record_id,
+    root_id: 10,
+    root_record_id: payload.root_record_id,
+  })
 })

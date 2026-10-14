@@ -94,6 +94,7 @@ function answerResult(
 
 export type AnswerRunInput = {
   rulings: string | { questionId: number; text: string }[]
+  allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
   recordOnly: boolean
@@ -742,7 +743,10 @@ export async function answerRun(
       })
     }
   }
-  if (answers.length !== open.length) {
+  if (
+    answers.length !== open.length &&
+    !(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
+  ) {
     throw new Error(
       `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
         'For multiple questions, pass every --q<id> in a single command. ' +
@@ -810,22 +814,22 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    open.forEach((q, i) => {
+    answers.forEach((answer) => {
       upd.run(
-        answers[i]!.answer,
+        answer.answer,
         now,
         answeringIdentity,
         answererKindFromAnsweredBy(answeringIdentity),
         input.channel,
         ownersLive ? null : now,
-        q.id,
+        answer.id,
       )
-      enqueueQuestionRecord(db(), q.id)
+      enqueueQuestionRecord(db(), answer.id)
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     if (skipResume) {
       appendQuestionDeliveries(
-        open.map((question) => question.id),
+        answers.map((answer) => answer.id),
         {
           runId: null,
           mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
@@ -834,9 +838,10 @@ export async function answerRun(
         },
       )
     } else if (ownersLive) {
-      for (const question of open) {
-        appendQuestionDeliveries([question.id], {
-          runId: question.owner_id,
+      for (const answer of answers) {
+        const owner = open.find((question) => question.id === answer.id)!
+        appendQuestionDeliveries([answer.id], {
+          runId: owner.owner_id,
           mode: QUESTION_DELIVERY_MODE_LIVE,
           outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
           at: now,

@@ -102,8 +102,13 @@ export function runDetail(id: number, receipt = false) {
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
   const identity = db()
-    .query('SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?')
-    .get(id) as { parent_run_id: number | null; root_id: number }
+    .query(
+      `SELECT subject.parent_run_id, COALESCE(subject.parent_run_id, subject.id) root_id,
+              root.record_id root_record_id
+         FROM run subject JOIN run root ON root.id=COALESCE(subject.parent_run_id, subject.id)
+        WHERE subject.id=?`,
+    )
+    .get(id) as { parent_run_id: number | null; root_id: number; root_record_id: string }
   const rootId = identity.root_id
   const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
   const audit = db()
@@ -135,6 +140,7 @@ export function runDetail(id: number, receipt = false) {
     requested_id: id,
     resolved_from: identity.parent_run_id === null ? 'root' : 'turn',
     root_id: rootId,
+    root_record_id: identity.root_record_id,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
     project: typeof row.cwd === 'string' ? (projectAt(row.cwd)?.name ?? null) : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo

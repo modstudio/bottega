@@ -622,7 +622,9 @@ export const HarnessHealthSchema = z.object({
 export const OrchRunDetailSchema = z
   .object({
     id: z.number().int(),
+    record_id: z.string().uuid(),
     root_id: z.number().int(),
+    root_record_id: z.string().uuid(),
     agent: z.string(),
     job: z.string(),
     project: nullableString,

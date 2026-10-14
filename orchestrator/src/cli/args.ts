@@ -169,7 +169,7 @@ export async function readMessageText(
   if (opts.optional) return undefined
   throw new Error(opts.missing)
 }
-type QuestionTextSource = { id: number; file?: string; text?: string }
+type QuestionTextSource = { identifier: string; file?: string; text?: string }
 
 export type AnswerTextSources = {
   byId: QuestionTextSource[]
@@ -249,26 +249,26 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
-    if (questions) {
-      const equals = arg.match(/^--q(\d+)=(.*)$/)
+    if (questions && !booleans.has(arg)) {
+      const equals = arg.match(/^--q([^=]+)=(.*)$/)
       if (equals) {
-        byId.push({ id: Number(equals[1]), text: equals[2] })
+        byId.push({ identifier: equals[1]!, text: equals[2]! })
         continue
       }
-      const flagged = arg.match(/^--q(\d+)$/)
+      const flagged = arg.match(/^--q(.+)$/)
       if (flagged) {
-        const id = Number(flagged[1])
+        const identifier = flagged[1]!
         const next = args[i + 1]
         if (next === '--file' || next?.startsWith('--file=')) {
           const taken = takeFilePath(args, i + 1, usage)
-          byId.push({ id, file: taken.path })
+          byId.push({ identifier, file: taken.path })
           i = taken.next - 1
           continue
         }
         if (next === undefined || booleans.has(next)) {
           throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
         }
-        byId.push({ id, text: next })
+        byId.push({ identifier, text: next })
         i++
         continue
       }

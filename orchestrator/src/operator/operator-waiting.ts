@@ -107,7 +107,7 @@ export function relayQuestion(
   note: string,
   d: Database = db(),
   notify: (kind: OperatorInboxKind, id: number, d: Database) => void = notifyWaitingItem,
-): number {
+): { id: number; recordId: string } {
   let { authority, rows } = openQuestions(runId, d)
   if (questionId !== undefined) {
     const named = rows.find((row) => row.id === questionId)
@@ -139,7 +139,10 @@ export function relayQuestion(
     enqueueQuestionRecord(d, id)
   }, d)
   notify('question', id, d)
-  return id
+  const recordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM question WHERE id=?')
+    .get(id)!.record_id
+  return { id, recordId }
 }
 
 const shellWord = (value: string) =>
