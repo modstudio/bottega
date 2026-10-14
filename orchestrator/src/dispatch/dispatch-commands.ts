@@ -280,6 +280,10 @@ function recordTaskKeyWarning(
   if (warning) record(runId, warning)
 }
 
+function detachedRunCollectRemedy(id: number): string {
+  return `detached as run ${id}: ${PLATFORM_SLUG} run wait ${id}, then ${PLATFORM_SLUG} run result ${id}`
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -492,9 +496,7 @@ export async function dispatchCommand(
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
     printRunId(id)
     if (!has('quiet') && !porcelain) {
-      error(
-        `detached as run ${id}: ${PLATFORM_SLUG} run wait ${id}, then ${PLATFORM_SLUG} run result ${id}`,
-      )
+      error(detachedRunCollectRemedy(id))
     }
     if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
       error(

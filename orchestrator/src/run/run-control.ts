@@ -501,6 +501,10 @@ function producedContinuationMessage(
   return produceMessage ? produceMessage() : message
 }
 
+function openQuestionContinueRemedy(id: number, n: number): string {
+  return `run ${id} is waiting on ${n} question(s): ${PLATFORM_SLUG} question answer ${id} ...`
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 export async function continueRun(
   id: number,
@@ -563,10 +567,7 @@ export async function continueRun(
   // one would resume it with its question unanswered, and a worker resumed
   // with an open question guesses — the single thing this design exists to
   // prevent.
-  if (open.n)
-    throw new Error(
-      `run ${id} is waiting on ${open.n} question(s): ${PLATFORM_SLUG} question answer ${id} ...`,
-    )
+  if (open.n) throw new Error(openQuestionContinueRemedy(id, open.n))
   const continuationMessage = producedContinuationMessage(message, produceMessage)
   const { latest, nextTurn } = continuationTurn(
     id,

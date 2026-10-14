@@ -586,6 +586,10 @@ function handledReadOrRevisionDocCommand(
   )
 }
 
+function docConsumeUsage(): string {
+  return `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`
+}
+
 export async function docCommand(
   sub: string,
   argv: string[],
@@ -605,10 +609,7 @@ export async function docCommand(
     return
   if (sub === 'consume') {
     const slug = argv[2]
-    if (!slug || !scope)
-      throw new Error(
-        `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
-      )
+    if (!slug || !scope) throw new Error(docConsumeUsage())
     const result = await consumeDoc(scope, subject, slug, {
       reason: flag('reason') ?? 'consumed by session',
       author: flag('author'),

@@ -168,6 +168,10 @@ function releaseLiveCommit(command: string, cwd: string, purpose: string, rung: 
   return reading.commit
 }
 
+function unregisteredReleaseProjectRemedy(projectName: string): string {
+  return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
+}
+
 export function releaseProject(
   projectName: string,
   requestedRung: string | undefined,
@@ -178,10 +182,7 @@ export function releaseProject(
   )
   if (!reasonDecision.ok) throw new Error(reasonDecision.message)
   const project = projectByName(projectName)
-  if (!project)
-    throw new Error(
-      `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`,
-    )
+  if (!project) throw new Error(unregisteredReleaseProjectRemedy(projectName))
   const release = project.settings.release
   if (!release)
     throw new Error(`project ${projectName} has no release settings; set release.rungs, then retry`)

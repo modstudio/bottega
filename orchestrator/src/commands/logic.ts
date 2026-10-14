@@ -168,6 +168,10 @@ function workflowCommandOptions(program: Command): Command {
     .option('--json')
 }
 
+function epicRegisteredProjectWorkingDirectoryRefusal(): string {
+  return `${PLATFORM_SLUG} workflow epic requires a registered project working directory`
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   program
     .command('enforcement')
@@ -594,10 +598,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((key, options) => {
       const project = projectAt(process.cwd())
-      if (!project)
-        throw new Error(
-          `${PLATFORM_SLUG} workflow epic requires a registered project working directory`,
-        )
+      if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
       return epicCommand(project.name, key, Boolean(options.json), presentation)
     })
   program

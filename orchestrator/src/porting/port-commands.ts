@@ -36,6 +36,10 @@ type PortPresentation = {
   exitCode(code: number): void
 }
 
+function refusePortUsage(usage: string): never {
+  throw new Error(`${PLATFORM_SLUG} doc port ${usage}`)
+}
+
 export async function portCommand(
   group: string | undefined,
   action: string | undefined,
@@ -242,9 +246,7 @@ export async function portCommand(
     const clear = has('clear')
     const rawCommit = argv[5]
     if (!sourceName || !targetName || (!clear && !rawCommit)) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc port baseline set <source> <target> <commit> [--json] | --clear`,
-      )
+      refusePortUsage('baseline set <source> <target> <commit> [--json] | --clear')
     }
     const commit = clear ? null : (rawCommit ?? null)
     const { pair } = namedPair(sourceName, targetName, true)
@@ -279,9 +281,7 @@ export async function portCommand(
     const candidate = argv[5]
     const reason = flag('reason')
     if (!sourceName || !targetName || !candidate || reason === undefined) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc port skip add <source> <target> <candidate> --reason TEXT [--json]`,
-      )
+      refusePortUsage('skip add <source> <target> <candidate> --reason TEXT [--json]')
     }
     const { pair } = namedPair(sourceName, targetName)
     if (!pair)
@@ -340,9 +340,7 @@ export async function portCommand(
     const note = flag('note')
     const projectName = flag('project')
     if (!taskKey || !projectName || sourceJson === undefined || note === undefined) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc port ref set <task-key> --project PROJECT --sources JSON --note TEXT [--json]`,
-      )
+      refusePortUsage('ref set <task-key> --project PROJECT --sources JSON --note TEXT [--json]')
     }
     let raw: unknown
     try {
@@ -402,9 +400,7 @@ export async function portCommand(
     const taskKey = argv[3]
     const projectName = flag('project')
     if (!taskKey || !projectName)
-      throw new Error(
-        `${PLATFORM_SLUG} doc port ref delete-error <task-key> --project PROJECT [--json]`,
-      )
+      refusePortUsage('ref delete-error <task-key> --project PROJECT [--json]')
     const removed = removeLedgerRef(namedProject(projectName).id, taskKey)
     output(
       { removed },
@@ -433,9 +429,7 @@ export async function portCommand(
     const number = Number(argv[3])
     const title = flag('title')
     if (!Number.isInteger(number) || number <= 0 || title === undefined) {
-      throw new Error(
-        `${PLATFORM_SLUG} doc port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]`,
-      )
+      refusePortUsage('doctrine add <number> --title TEXT (--file F | body on stdin) [--json]')
     }
     const body = flag('file')
       ? readFileSync(flag('file')!, 'utf8')

@@ -42,6 +42,10 @@ function hostedCommand<T>(command: string, action: () => T): T {
   return action()
 }
 
+function hostedRecord<T>(verb: string, action: () => T): T {
+  return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
+}
+
 export function register(program: Command): void {
   const record = program.command('record')
   const presentation = { log }
@@ -67,9 +71,7 @@ export function register(program: Command): void {
     .action(() => hostedCommand(`${PLATFORM_SLUG} record whoami`, () => whoamiCommand({ log })))
   record
     .command('migrate')
-    .action(() =>
-      hostedCommand(`${PLATFORM_SLUG} record migrate`, () => recordMigrateCommand(presentation)),
-    )
+    .action(() => hostedRecord('migrate', () => recordMigrateCommand(presentation)))
   const publicDoc = record.command('public-doc')
   publicDoc
     .command('designate')
@@ -139,11 +141,7 @@ export function register(program: Command): void {
   const space = record.command('space')
   space
     .command('list')
-    .action(() =>
-      hostedCommand(`${PLATFORM_SLUG} record space list`, () =>
-        recordSpaceListCommand(presentation),
-      ),
-    )
+    .action(() => hostedRecord('space list', () => recordSpaceListCommand(presentation)))
   space
     .command('create')
     .requiredOption('--name <name>')
