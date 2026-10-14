@@ -574,6 +574,7 @@ describe('hub migration journal', () => {
 
     const run = {
       id: 7001,
+      record_id: '00000000-0000-4000-8000-000000007001',
       started_at: askedAt,
       agent: 'fixture',
       job: 'implement',
@@ -593,7 +594,9 @@ describe('hub migration journal', () => {
       questions: [
         {
           id: 7001,
+          record_id: '00000000-0000-4000-8000-000000007001',
           run_id: 7001,
+          run_record_id: '00000000-0000-4000-8000-000000007001',
           asked_at: askedAt,
           answered_at: new Date(Date.now() - 6 * 86_400_000).toISOString(),
           asked_via: 'reply',
@@ -604,7 +607,9 @@ describe('hub migration journal', () => {
             {
               id: 1,
               question_id: 7001,
+              question_record_id: '00000000-0000-4000-8000-000000007001',
               run_id: 7001,
+              run_record_id: '00000000-0000-4000-8000-000000007001',
               mode: 'resume',
               outcome: 'delivered',
               at: new Date(Date.now() - 6 * 86_400_000).toISOString(),

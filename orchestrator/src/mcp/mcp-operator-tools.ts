@@ -11,11 +11,14 @@ import {
   ListOpenQuestionsResultSchema,
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
+import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
+import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { answerRun } from '../run/run-answer.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { queryInbox } from '../run/run-inbox.ts'
 import { answerRunHelpers } from '../run/run-message-commands.ts'
 import { fileNote } from './hub-notes.ts'
@@ -30,6 +33,23 @@ const structured = <T extends Record<string, unknown>>(value: T) => ({
   ...text(value),
   structuredContent: value,
 })
+
+const identifier = z.union([z.number().int().positive(), z.string().min(1)])
+const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
+const localQuestionId = (input: string | number) => resolveQuestionIdentifier(db(), input)
+
+function relayByIdentifier(
+  run: string | number,
+  question: string | number | undefined,
+  note: string,
+) {
+  const relayed = relayQuestion(
+    localRunId(run),
+    question === undefined ? undefined : localQuestionId(question),
+    note,
+  )
+  return text({ question_id: relayed.id, record_id: relayed.recordId })
+}
 
 async function listOpenQuestions(): Promise<ListOpenQuestionsResult> {
   return ListOpenQuestionsResultSchema.parse({
@@ -67,12 +87,12 @@ export function registerOperatorTools(server: McpServer): void {
     {
       description: 'Answer every open question on a run and resume it detached by default.',
       inputSchema: z.object({
-        run_id: z.number().int().positive(),
+        run_id: identifier,
         rulings: z
           .array(
             z
               .object({
-                question_id: z.number().int().positive(),
+                question_id: identifier,
                 ruling: z.string().trim().min(1),
               })
               .strict(),
@@ -85,10 +105,10 @@ export function registerOperatorTools(server: McpServer): void {
     },
     async ({ run_id, rulings, from_operator, record_only }) => {
       const result = await answerRun(
-        run_id,
+        localRunId(run_id),
         {
           rulings: rulings.map(({ question_id, ruling }) => ({
-            questionId: question_id,
+            questionId: localQuestionId(question_id),
             text: ruling,
           })),
           fromOperator: from_operator ?? false,
@@ -108,7 +128,7 @@ export function registerOperatorTools(server: McpServer): void {
     {
       description: 'Overturn an existing ruling with the same authority as the orch CLI.',
       inputSchema: z.object({
-        question_id: z.number().int().positive(),
+        question_id: identifier,
         because: z.string().trim().min(1),
         replacement: z.string().trim().min(1).optional(),
         from_operator: z.boolean().optional(),
@@ -118,7 +138,7 @@ export function registerOperatorTools(server: McpServer): void {
     async ({ question_id, because, replacement, from_operator }) =>
       structured(
         overturnRuling({
-          questionId: question_id,
+          questionId: localQuestionId(question_id),
           reason: because,
           replacement: replacement ?? null,
           fromOperator: from_operator ?? false,
@@ -131,7 +151,7 @@ export function registerOperatorTools(server: McpServer): void {
     {
       description: 'File an answered ruling as a doc or as a canon proposal note.',
       inputSchema: z.object({
-        question_id: z.number().int().positive(),
+        question_id: identifier,
         as: z.enum(['doc', 'canon']),
         scope: z.enum(FILING_DOC_SCOPES).optional(),
         subject: z.string().trim().min(1).optional(),
@@ -144,7 +164,7 @@ export function registerOperatorTools(server: McpServer): void {
       structured(
         await fileRuling(
           {
-            questionId: question_id,
+            questionId: localQuestionId(question_id),
             as,
             scope,
             subject,
@@ -162,12 +182,11 @@ export function registerOperatorTools(server: McpServer): void {
     {
       description: 'Mark an open run question as waiting on the operator.',
       inputSchema: z.object({
-        run_id: z.number().int().positive(),
-        question_id: z.number().int().positive().optional(),
+        run_id: identifier,
+        question_id: identifier.optional(),
         note: z.string().trim().min(1),
       }),
     },
-    async ({ run_id, question_id, note }) =>
-      text({ question_id: relayQuestion(run_id, question_id, note) }),
+    async ({ run_id, question_id, note }) => relayByIdentifier(run_id, question_id, note),
   )
 }

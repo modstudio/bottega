@@ -194,11 +194,17 @@ export function fileIssueTaskKey(stdout: string, project: Project): string {
 
 type WorkerReporter = {
   id: number
+  record_id: string
   job: string
   agent: string
   launch_cwd: string | null
   launch_key: string | null
 }
+
+const workerReporter = (runId: number) =>
+  db()
+    .query('SELECT id, record_id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
+    .get(runId) as WorkerReporter | null
 
 function registeredProject(name: string) {
   const project = projectByName(name)
@@ -230,9 +236,8 @@ export async function fileIssue(
   reporter: IssueReporter = { kind: 'session' },
   reportingProject?: string,
 ) {
-  if (reporter.kind !== 'session' && reporter.kind !== 'monitor') {
+  if (reporter.kind !== 'session' && reporter.kind !== 'monitor')
     throw new Error('unknown issue reporter kind')
-  }
   const session = reporter.kind === 'session' ? sessionId() : null
   let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''
@@ -242,9 +247,7 @@ export async function fileIssue(
     if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')
     }
-    worker = db()
-      .query('SELECT id, job, agent, launch_cwd, launch_key FROM run WHERE id=?')
-      .get(runId) as WorkerReporter | null
+    worker = workerReporter(runId)
     if (!worker?.launch_cwd) {
       throw new Error('cannot file issue: the reporting worker has no project origin')
     }
@@ -370,6 +373,7 @@ export async function fileIssue(
     reporter: worker ? 'worker' : reporter.kind,
     reporter_id: reporterId,
     worker_run_id: worker?.id ?? null,
+    worker_run_record_id: worker?.record_id ?? null,
     ...(worker ? { origin: worker.launch_key } : {}),
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
     ...(duplicateSearch.duplicates === null

@@ -519,6 +519,56 @@ test('multi-question answer mixes positional --q text with per-question --file',
   ])
 })
 
+test('a UUID selector answers only the named question', async () => {
+  const id = insert('asking')
+  db()
+    .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
+    .run('orch-test-session', 'vendor', id)
+  const add = db().query(
+    `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (?,?,?,?) RETURNING id,record_id`,
+  )
+  const first = add.get(newRecordId(), id, new Date().toISOString(), 'one?') as {
+    id: number
+    record_id: string
+  }
+  const second = add.get(newRecordId(), id, new Date().toISOString(), 'two?') as {
+    id: number
+    record_id: string
+  }
+  await answerRun(
+    id,
+    { argv: [`--q${second.record_id}`, 'second only'], recordOnly: true, flags },
+    helpers,
+  )
+  expect(db().query('SELECT id,answer FROM question WHERE run_id=? ORDER BY id').all(id)).toEqual([
+    { id: first.id, answer: null },
+    { id: second.id, answer: 'second only' },
+  ])
+})
+
+test('malformed and unknown UUID question selectors refuse without writing', async () => {
+  const id = insert('asking')
+  db()
+    .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
+    .run('orch-test-session', 'vendor', id)
+  db().query(newQuestionSql()).run(id, new Date().toISOString(), 'which?')
+  await expect(
+    answerRun(id, { argv: ['--qnot-an-id', 'no'], recordOnly: true, flags }, helpers),
+  ).rejects.toThrow('invalid question identifier')
+  await expect(
+    answerRun(
+      id,
+      {
+        argv: ['--q01990000-0000-7000-8000-000000000099', 'no'],
+        recordOnly: true,
+        flags,
+      },
+      helpers,
+    ),
+  ).rejects.toThrow('no question has UUID')
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
+
 test('a multi-word positional ruling is stored whole, not just the first word', async () => {
   const id = insert('asking')
   db()
@@ -645,7 +695,7 @@ test('answer stdin refuses whitespace-only input', async () => {
   )
 })
 
-test('a partial multi-question ruling names the single-command rule', async () => {
+test('a partial numeric multi-question ruling names the single-command rule', async () => {
   const id = insert('asking')
   db()
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
@@ -765,7 +815,11 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     },
     { ...helpers, dispatch, dashboardAuthorized: () => true },
   )
-  expect(result).toEqual({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
+  expect(result).toMatchObject({ outcome: 'resumed', run_id: id, resumed_as: expect.any(Number) })
+  expect(result.record_id).toBe(
+    (db().query('SELECT record_id FROM run WHERE id=?').get(id) as { record_id: string }).record_id,
+  )
+  expect(result.resumed_record_id).toMatch(/^[0-9a-f-]{36}$/)
   expect(resumedSession).toBe('dispatching-session')
   expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({
     session_id: 'dispatching-session',
@@ -782,9 +836,9 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
       )
       .get(id),
   ).toEqual({ actor_session: 'operator:ui', turn_id: result.resumed_as })
-  expect(db().query('SELECT session_id FROM run WHERE id=?').get(result.resumed_as!)).toEqual({
-    session_id: 'dispatching-session',
-  })
+  expect(
+    db().query('SELECT session_id FROM run WHERE record_id=?').get(result.resumed_record_id!),
+  ).toEqual({ session_id: 'dispatching-session' })
 })
 
 test('answer permits an unowned question, warns, and records the answering session', async () => {

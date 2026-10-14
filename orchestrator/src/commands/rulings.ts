@@ -9,8 +9,10 @@ import {
   ANSWER_CHANNEL_VALUES,
   type AnswerChannel,
 } from '../../../shared/question-vocabulary.ts'
+import { db } from '../database/db.ts'
 import { setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
+import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
 import { listRulings } from '../run/ruling-list.ts'
@@ -58,10 +60,7 @@ export function register(program: Command): void {
     .requiredOption('--reason <text>')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      const questionId = Number(id)
-      if (!Number.isSafeInteger(questionId) || questionId <= 0) {
-        throw new Error('question id must be a positive integer')
-      }
+      const questionId = resolveQuestionIdentifier(db(), id)
       const { closeQuestionByOperator } = await import('../run/question-close.ts')
       closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
@@ -96,7 +95,7 @@ export function register(program: Command): void {
           ? (options.replacement ?? null)
           : readFileSync(options.replacementFile, 'utf8')
       const result = overturnRuling({
-        questionId: Number(questionId),
+        questionId: resolveQuestionIdentifier(db(), questionId),
         reason: requiredText(options.because, '--because'),
         replacement: replacement === null ? null : requiredText(replacement, 'replacement'),
         fromOperator: Boolean(options.fromOperator),
@@ -124,7 +123,7 @@ export function register(program: Command): void {
     .action(async (questionId, options) => {
       const result = await fileRuling(
         {
-          questionId: Number(questionId),
+          questionId: resolveQuestionIdentifier(db(), questionId),
           as: rulingFileAs(options.as),
           scope: filingScope(options.scope),
           subject: options.subject,

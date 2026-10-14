@@ -9,6 +9,7 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
@@ -104,9 +105,9 @@ function resolveTierTarget(
   branch: string
   project: NonNullable<ReturnType<typeof projectAt>>
 } {
-  if (/^\d+$/.test(value)) {
+  if (classifyRunIdentifier(value)) {
     return (() => {
-      const runId = Number(value)
+      const runId = resolveRunIdentifier(db(), value)
       const row = db()
         .query('SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?')
         .get(runId) as {
@@ -398,8 +399,8 @@ export async function reviewCommand(
     return
   }
   if (sub === 'record') {
-    const runIds = argv.slice(2).map(Number)
-    if (!runIds.length || runIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    const runIds = argv.slice(2).map((value) => resolveRunIdentifier(db(), value))
+    if (!runIds.length) {
       throw new Error('orch review record <run-id>...')
     }
     const entries = runIds.map((runId) => {

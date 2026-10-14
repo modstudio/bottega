@@ -45,11 +45,13 @@ function orchAnswers(rows: object[]) {
 function runLine(row: object): string {
   if ('unknown' in row) return JSON.stringify({ schema_version: 2, kind: 'run', data: row })
   const value = row as { id: number; status: string }
+  const recordId = `00000000-0000-4000-8000-${String(value.id).padStart(12, '0')}`
   return JSON.stringify({
     schema_version: 2,
     kind: 'run',
     data: {
       id: value.id,
+      record_id: recordId,
       started_at: '2026-09-03T00:00:00.000Z',
       agent: 'codex',
       job: 'implement',
@@ -70,6 +72,7 @@ function runLine(row: object): string {
       turns: [
         {
           id: value.id,
+          record_id: recordId,
           started_at: '2026-09-03T00:00:00.000Z',
           latency_ms: null,
           vendor_tokens: null,
@@ -99,6 +102,7 @@ function chain(row: {
 }): Parameters<typeof indexRunAnswers>[0][number] {
   return {
     id: row.id,
+    record_id: `00000000-0000-4000-8000-${String(row.id).padStart(12, '0')}`,
     started_at: '2026-09-03T00:00:00.000Z',
     agent: 'codex',
     job: 'implement',
@@ -114,6 +118,7 @@ function chain(row: {
     status: row.status,
     turns: row.turns.map((turn) => ({
       id: turn.id,
+      record_id: `00000000-0000-4000-8000-${String(turn.id).padStart(12, '0')}`,
       started_at: '2026-09-03T00:00:00.000Z',
       latency_ms: null,
       vendor_tokens: null,

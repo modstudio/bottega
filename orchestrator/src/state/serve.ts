@@ -37,9 +37,10 @@ const jsonArray = (value: unknown) =>
 function reviewsForRun(runId: number) {
   const lenses = db()
     .query(
-      `SELECT l.*, r.project_id AS review_project_id, r.recorded_at, r.completed_at,
+      `SELECT l.*, run.record_id AS run_record_id,
+              r.project_id AS review_project_id, r.recorded_at, r.completed_at,
               r.tier, r.patch_id, r.commit_message
-         FROM review_lens l JOIN review r ON r.id=l.review_id
+         FROM review_lens l JOIN review r ON r.id=l.review_id JOIN run ON run.id=l.run_id
         WHERE l.run_id=? ORDER BY r.recorded_at DESC, l.id DESC`,
     )
     .all(runId) as Record<string, unknown>[]
@@ -47,6 +48,7 @@ function reviewsForRun(runId: number) {
     id: lens.id,
     reviewId: lens.review_id,
     runId: lens.run_id,
+    runRecordId: lens.run_record_id,
     lens: lens.lens,
     agent: lens.agent,
     model: lens.model,
@@ -85,7 +87,7 @@ function reviewsForRun(runId: number) {
 export function runDetail(id: number, receipt = false) {
   const row = db()
     .query(
-      `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
+      `SELECT r.id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
             r.changed_paths, r.review_ref, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
@@ -100,21 +102,33 @@ export function runDetail(id: number, receipt = false) {
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
   const eventsPath = runEventsPath(id)
   const identity = db()
-    .query('SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?')
-    .get(id) as { parent_run_id: number | null; root_id: number }
+    .query(
+      `SELECT subject.parent_run_id, COALESCE(subject.parent_run_id, subject.id) root_id,
+              root.record_id root_record_id
+         FROM run subject JOIN run root ON root.id=COALESCE(subject.parent_run_id, subject.id)
+        WHERE subject.id=?`,
+    )
+    .get(id) as { parent_run_id: number | null; root_id: number; root_record_id: string }
   const rootId = identity.root_id
   const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
   const audit = db()
     .query(
-      `SELECT run_id, root_id, action,
+      `SELECT audit.run_id, subject.record_id AS run_record_id,
+              audit.root_id, root.record_id AS root_record_id,
+              audit.turn_id, turn.record_id AS turn_record_id, action,
             COALESCE(actor_session, 'anonymous (no session id)') actor_session,
             at, reason
-       FROM run_mutation_audit WHERE root_id=? ORDER BY at, rowid`,
+       FROM run_mutation_audit audit
+       JOIN run subject ON subject.id=audit.run_id
+       JOIN run root ON root.id=audit.root_id
+       LEFT JOIN run turn ON turn.id=audit.turn_id
+       WHERE audit.root_id=? ORDER BY at, audit.rowid`,
     )
     .all(rootId)
   const questions = db()
     .query(
-      `SELECT q.id,q.run_id,q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
+      `SELECT q.id,q.record_id,q.run_id,owner.record_id AS run_record_id,
+              q.asked_at,q.question,q.answer,q.answered_at,q.answered_by,
               q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
               q.filed_as,q.filed_ref,q.filed_record_id,q.filed_label,q.filed_at
          FROM question q JOIN run owner ON owner.id=q.run_id
@@ -126,6 +140,7 @@ export function runDetail(id: number, receipt = false) {
     requested_id: id,
     resolved_from: identity.parent_run_id === null ? 'root' : 'turn',
     root_id: rootId,
+    root_record_id: identity.root_record_id,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
     project: typeof row.cwd === 'string' ? (projectAt(row.cwd)?.name ?? null) : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
@@ -196,12 +211,17 @@ export function state(sinceDays: number | null = null) {
    */
   const live = d
     .query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, repo, cwd, started_at, COALESCE(label, prompt_head) AS prompt_head, status,
+      `SELECT run.id, run.record_id,
+            COALESCE(run.parent_run_id,run.id) root_id,
+            root.record_id root_record_id,
+            run.agent, run.job, run.repo, run.cwd, run.started_at,
+            COALESCE(run.label, run.prompt_head) AS prompt_head, run.status,
             (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND ${questionOpenSql('q')}) AS open_questions,
-            (status = 'asking' AND (SELECT COUNT(*) FROM question q
+            (run.status = 'asking' AND (SELECT COUNT(*) FROM question q
               WHERE q.run_id = run.id AND ${questionOpenSql('q')}) > 0) AS waiting
-       FROM run WHERE status IN ('running','asking') ORDER BY waiting DESC, id DESC`,
+       FROM run JOIN run root ON root.id=COALESCE(run.parent_run_id,run.id)
+       WHERE run.status IN ('running','asking') ORDER BY waiting DESC, run.id DESC`,
     )
     .all()
 

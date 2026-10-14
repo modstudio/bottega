@@ -54,11 +54,15 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { workflowChildCommandInvocation, workflowCommand } from '../workflow/workflow-commands.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
+
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 
+const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const presentation = {
   log,
   error: (...values: unknown[]) => console.error(...values),
@@ -81,6 +85,28 @@ const runFlags = (options: OptionValues) => ({
   follow: Boolean(options.follow),
   quiet: Boolean(options.quiet),
 })
+const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
+  tellCommand(localRunId(id), rawArgv(command).slice(2), ping, presentation)
+const relayByIdentifier = (id: string, command: Command, note: string) =>
+  relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
+    resolveQuestionIdentifier(db(), question),
+  )
+const resultByIdentifier = (id: string, options: OptionValues) =>
+  resultCommand(
+    db(),
+    productArgv('result', [String(localRunId(id))], options),
+    scoreSuffix,
+    presentation,
+  )
+const waitByIdentifiers = (ids: string[], options: OptionValues) =>
+  waitCommand(
+    db(),
+    productArgv(
+      'wait',
+      ids.map((id) => String(localRunId(id))),
+      options,
+    ),
+  )
 
 type LogicDependencies = {
   continuationFindingsForRun?: typeof continuationFindingsForRun
@@ -204,7 +230,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('open <run>')
     .option('--seed <value>')
     .allowExcessArguments(false)
-    .action((run, options) => treeOpenCommand(Number(run), options.seed, { log }))
+    .action((run, options) => treeOpenCommand(localRunId(run), options.seed, { log }))
   tree
     .command('remove <path>')
     .allowExcessArguments(false)
@@ -226,7 +252,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   program
     .command('reconcile <id>')
     .allowExcessArguments(false)
-    .action((id) => reconcileCommand(Number(id), presentation))
+    .action((id) => reconcileCommand(localRunId(id), presentation))
   program
     .command('contract <job>')
     .allowExcessArguments(false)
@@ -246,13 +272,15 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       ),
     )
   workflowCommandOptions(program).action((args, options, command) => {
+    const resolvedOptions =
+      options.run === undefined ? options : { ...options, run: String(localRunId(options.run)) }
     const childInvocation = workflowChildCommandInvocation(
       args,
       command.parent?.rawArgs ?? [],
-      options,
+      resolvedOptions,
     )
     return workflowCommand(
-      childInvocation?.argv ?? productArgv('workflow', args, options),
+      childInvocation?.argv ?? productArgv('workflow', args, resolvedOptions),
       presentation,
       childInvocation?.options,
     )
@@ -327,15 +355,13 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--file <value>')
     .option('--ping')
     .action((id, _message, options, command) =>
-      tellCommand(Number(id), rawArgv(command).slice(2), Boolean(options.ping), presentation),
+      tellByIdentifier(id, command, Boolean(options.ping)),
     )
   program
     .command('relay <id>')
     .requiredOption('--note <why>')
     .allowUnknownOption(true)
-    .action((id, options, command) =>
-      relayCommand(Number(id), rawArgv(command).slice(2), options.note, presentation),
-    )
+    .action((id, options, command) => relayByIdentifier(id, command, options.note))
   program
     .command('waiting')
     .option('--json')
@@ -354,7 +380,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((id, options) =>
       peekCommand(
-        Number(id),
+        localRunId(id),
         {
           events: options.events === undefined ? undefined : Number(options.events),
           json: Boolean(options.json),
@@ -367,13 +393,11 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--quiet')
     .option('--artifacts')
     .allowExcessArguments(false)
-    .action((id, options) =>
-      resultCommand(db(), productArgv('result', [id], options), scoreSuffix, presentation),
-    )
+    .action((id, options) => resultByIdentifier(id, options))
   program
     .command('wait <ids...>')
     .option('--timeout <value>')
-    .action(async (ids, options) => waitCommand(db(), productArgv('wait', ids, options)))
+    .action(async (ids, options) => waitByIdentifiers(ids, options))
   program
     .command('retry <id>')
     .option('--agent <value>')
@@ -384,7 +408,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .allowExcessArguments(false)
     .action((id, options) =>
       retryCommand(
-        Number(id),
+        localRunId(id),
         { agent: options.agent, model: options.model, flags: runFlags(options) },
         presentation,
       ),
@@ -402,7 +426,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json')
     .action((id, _message, options, command) =>
       answerCommand(
-        Number(id),
+        localRunId(id),
         rawArgv(command).slice(2),
         Boolean(options.recordOnly),
         Boolean(options.json),
@@ -420,7 +444,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--findings')
     .action((id, _message, options, command) =>
       continueCommand(
-        Number(id),
+        localRunId(id),
         rawArgv(command).slice(2),
         Boolean(options.findings),
         runFlags(options),
@@ -533,7 +557,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--non-blocking')
     .allowExcessArguments(false)
     .action((id, options) =>
-      closeOutCommand(Number(id), Boolean(options.nonBlocking), presentation),
+      closeOutCommand(localRunId(id), Boolean(options.nonBlocking), presentation),
     )
   program
     .command('spawns')

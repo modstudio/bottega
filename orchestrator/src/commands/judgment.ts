@@ -5,11 +5,13 @@ import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../cleanup/cleanup.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
-import { writableDb } from '../database/db.ts'
+import { db, writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
+import type { CliFlags } from './support.ts'
 import { collect, log, optionFlags, write } from './support.ts'
 
 const commonValueFlags = [
@@ -24,6 +26,23 @@ const commonValueFlags = [
   '--limits',
   '--overlap',
 ] as const
+
+const comparisonFlags = new Set(['better-than', 'worse-than', 'same-as'])
+
+export function resolveComparisonRunIds(flags: CliFlags): CliFlags {
+  return {
+    ...flags,
+    flag: (name) => {
+      const value = flags.flag(name)
+      if (value === undefined || !comparisonFlags.has(name)) return value
+      const ids = value.split(',').map((part) => resolveRunIdentifier(db(), part))
+      if (new Set(ids).size !== ids.length) {
+        throw new Error(`--${name} names the same run more than once`)
+      }
+      return ids.join(',')
+    },
+  }
+}
 
 export function scoreNote(flags: ReturnType<typeof optionFlags>): string | null {
   const inline = flags.flag('note')
@@ -77,10 +96,10 @@ function addJudgmentOptions(command: Command, judge: boolean): Command {
 export function register(program: Command): void {
   addJudgmentOptions(program.command('judge <run-id> [words...]'), true).action(
     async (id, words, options) => {
-      const flags = optionFlags(options)
+      const flags = resolveComparisonRunIds(optionFlags(options))
       writableDb()
       const result = await judgeRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         flags,
         {
           words,
@@ -105,10 +124,10 @@ export function register(program: Command): void {
 
   addJudgmentOptions(program.command('score <run-id> [words...]'), false).action(
     async (id, words, options) => {
-      const flags = optionFlags(options)
+      const flags = resolveComparisonRunIds(optionFlags(options))
       writableDb()
       await scoreRun(
-        Number(id),
+        resolveRunIdentifier(db(), id),
         flags,
         {
           words,

@@ -17,6 +17,7 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
+import { runRecordIdOrNull } from '../run/run-identifier.ts'
 import {
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
@@ -140,6 +141,7 @@ export type BoardClaimResult = {
   holder: string
   note: string | null
   runId: string | null
+  run_record_id: string | null
   takenAt: string
   renewedAt: string
   lapsesAt: string
@@ -230,10 +232,13 @@ function hostedThread(value: HostedBoardThread): BoardThreadResult {
 }
 
 function claimResult(value: ClaimView | HostedBoardClaim): BoardClaimResult {
+  const runRecordId =
+    typeof value.runId === 'number' ? runRecordIdOrNull(db(), value.runId) : value.runId
   return {
     ...value,
     id: String(value.id),
     runId: stringId(value.runId),
+    run_record_id: runRecordId,
     previousClaimIds: value.previousClaimIds.map(String),
     supersededByClaimId: stringId(value.supersededByClaimId),
   }

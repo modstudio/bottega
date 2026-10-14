@@ -91,10 +91,12 @@ test('every registered top-level command is recognized as canon', () => {
   expect(isCliCommand('nosuch')).toBeFalse()
 })
 
-test('bare question selectors accept only --q followed by an id', () => {
-  expect(bareQuestionSelector('--q42')).toBe(42)
+test('bare question selectors take the identifier after --q and leave resolution to the caller', () => {
+  expect(bareQuestionSelector('--q42')).toBe('42')
+  expect(bareQuestionSelector('--q01a11f04-7887-7000-920d-06b4b5b0a08d')).toBe(
+    '01a11f04-7887-7000-920d-06b4b5b0a08d',
+  )
   expect(bareQuestionSelector('--q42=answer')).toBeNull()
-  expect(bareQuestionSelector('--question42')).toBeNull()
 })
 
 test('the singleton reader refuses duplicates while the plural reader preserves them', () => {
@@ -145,8 +147,8 @@ describe('answer text sources', () => {
       parseAnswerTextSources(['--q264', '--file', 'a.txt', '--q265', '--file', 'b.txt']),
     ).toEqual({
       byId: [
-        { id: 264, file: 'a.txt' },
-        { id: 265, file: 'b.txt' },
+        { identifier: '264', file: 'a.txt' },
+        { identifier: '265', file: 'b.txt' },
       ],
       commandFile: undefined,
       positionals: [],
@@ -157,13 +159,37 @@ describe('answer text sources', () => {
     expect(parseAnswerTextSources(['--q264', 'use option A', '--q265', '--file', 'b.txt'])).toEqual(
       {
         byId: [
-          { id: 264, text: 'use option A' },
-          { id: 265, file: 'b.txt' },
+          { identifier: '264', text: 'use option A' },
+          { identifier: '265', file: 'b.txt' },
         ],
         commandFile: undefined,
         positionals: [],
       },
     )
+  })
+
+  test('UUID question selectors keep text, equals, and file forms', () => {
+    const first = '01990000-0000-7000-8000-000000000041'
+    const second = '01990000-0000-7000-8000-000000000042'
+    const third = '01990000-0000-7000-8000-000000000043'
+    expect(
+      parseAnswerTextSources([
+        `--q${first}`,
+        'text ruling',
+        `--q${second}=equals ruling`,
+        `--q${third}`,
+        '--file',
+        'ruling.txt',
+      ]),
+    ).toEqual({
+      byId: [
+        { identifier: first, text: 'text ruling' },
+        { identifier: second, text: 'equals ruling' },
+        { identifier: third, file: 'ruling.txt' },
+      ],
+      commandFile: undefined,
+      positionals: [],
+    })
   })
 
   test('a command-level --file is distinct from a per-question --file', () => {
@@ -181,7 +207,7 @@ describe('answer text sources', () => {
       positionals: ['--literal is intended'],
     })
     expect(parseAnswerTextSources(['--q31', '--literal is intended'])).toEqual({
-      byId: [{ id: 31, text: '--literal is intended' }],
+      byId: [{ identifier: '31', text: '--literal is intended' }],
       commandFile: undefined,
       positionals: [],
     })

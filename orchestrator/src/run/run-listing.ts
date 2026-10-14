@@ -17,6 +17,30 @@ import type {
 } from './question-vocabulary.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
 
+function questionDeliveries(questionId: number) {
+  return db()
+    .query(
+      `SELECT delivery.id, delivery.question_id, question.record_id AS question_record_id,
+              delivery.run_id, delivery_run.record_id AS run_record_id,
+              delivery.mode, delivery.outcome, delivery.at, delivery.error
+         FROM question_delivery delivery
+         JOIN question ON question.id=delivery.question_id
+         LEFT JOIN run delivery_run ON delivery_run.id=delivery.run_id
+        WHERE delivery.question_id=? ORDER BY delivery.id`,
+    )
+    .all(questionId) as {
+    id: number
+    question_id: number
+    question_record_id: string
+    run_id: number | null
+    run_record_id: string | null
+    mode: QuestionDeliveryMode
+    outcome: QuestionDeliveryOutcome
+    at: string
+    error: string | null
+  }[]
+}
+
 type RunListingFlags = {
   has(name: string): boolean
   flag(name: string): string | undefined
@@ -167,10 +191,11 @@ export async function runListingCommand(
   let rows = db()
     .query(
       `${unscoredCte}
-     SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
+     SELECT r.id, r.record_id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
-            current_run.id AS live_member_id, current_run.agent AS current_agent,
+            current_run.id AS live_member_id, current_run.record_id AS live_member_record_id,
+            current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,
             s.delivery, s.quality,
@@ -211,7 +236,7 @@ export async function runListingCommand(
     const turns = json
       ? db()
           .query(
-            `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox
+            `SELECT id, record_id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox
          FROM run WHERE id = ? OR parent_run_id = ?
         ORDER BY turn, id`,
           )
@@ -221,7 +246,8 @@ export async function runListingCommand(
       ? (
           db()
             .query(
-              `SELECT q.id, q.run_id, q.asked_at, q.answered_at, q.asked_via,
+              `SELECT q.id, q.record_id, q.run_id, owner.record_id AS run_record_id,
+                      q.asked_at, q.answered_at, q.asked_via,
                       q.answerer_kind, q.answer_channel, q.overturned_at,
                       q.closed_at, q.close_reason
          FROM question q JOIN run owner ON owner.id = q.run_id
@@ -230,7 +256,9 @@ export async function runListingCommand(
             )
             .all(Number(r.id), Number(r.id)) as {
             id: number
+            record_id: string
             run_id: number
+            run_record_id: string
             asked_at: string
             answered_at: string | null
             asked_via: AskedVia | null
@@ -242,7 +270,9 @@ export async function runListingCommand(
           }[]
         ).map((q) => ({
           id: q.id,
+          record_id: q.record_id,
           run_id: q.run_id,
+          run_record_id: q.run_record_id,
           asked_at: q.asked_at,
           answered_at: q.answered_at ?? null,
           asked_via: q.asked_via ?? null,
@@ -251,20 +281,7 @@ export async function runListingCommand(
           overturned_at: q.overturned_at ?? null,
           closed_at: q.closed_at ?? null,
           close_reason: q.close_reason ?? null,
-          deliveries: db()
-            .query(
-              `SELECT id, question_id, run_id, mode, outcome, at, error
-                 FROM question_delivery WHERE question_id=? ORDER BY id`,
-            )
-            .all(q.id) as {
-            id: number
-            question_id: number
-            run_id: number | null
-            mode: QuestionDeliveryMode
-            outcome: QuestionDeliveryOutcome
-            at: string
-            error: string | null
-          }[],
+          deliveries: questionDeliveries(q.id),
         }))
       : undefined
     return [
@@ -305,15 +322,20 @@ export async function runListingCommand(
       (
         db()
           .query(
-            `SELECT id requested_id, COALESCE(parent_run_id, id) root_id
+            `SELECT id requested_id, record_id requested_record_id,
+                    COALESCE(parent_run_id, id) root_id
          FROM run WHERE id IN (${requestedIds.map(() => '?').join(',')})`,
           )
-          .all(...requestedIds) as { requested_id: number; root_id: number }[]
-      ).map((requested) => [requested.requested_id, requested.root_id]),
+          .all(...requestedIds) as {
+          requested_id: number
+          requested_record_id: string
+          root_id: number
+        }[]
+      ).map((requested) => [requested.requested_id, requested]),
     )
-    const requestedRoots = requestedIds.flatMap((requested_id) => {
-      const root_id = rootByRequested.get(requested_id)
-      return root_id === undefined ? [] : [{ requested_id, root_id }]
+    const requestedRoots = requestedIds.flatMap((requestedId) => {
+      const requested = rootByRequested.get(requestedId)
+      return requested === undefined ? [] : [requested]
     })
     rows = rows.flatMap((row) =>
       requestedRoots
@@ -321,6 +343,7 @@ export async function runListingCommand(
         .map((requested) => ({
           ...row,
           requested_id: requested.requested_id,
+          requested_record_id: requested.requested_record_id,
           resolved_from: requested.requested_id === Number(row.id) ? 'root' : 'turn',
         })),
     )

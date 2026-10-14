@@ -59,6 +59,7 @@ import {
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
+import { runRecordId } from './run-identifier.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import {
   decideRetryConversation,
@@ -75,8 +76,44 @@ type RunAnswerHelpers = {
   dashboardAuthorized?: () => boolean
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+
+function allowsPartialRecordOnly(input: AnswerRunInput, ownersLive: boolean): boolean {
+  return Boolean(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
+}
+
+function incompleteRulingsRefusal(
+  openCount: number,
+  answerCount: number,
+  input: AnswerRunInput,
+  ownersLive: boolean,
+): string | null {
+  if (answerCount === openCount || allowsPartialRecordOnly(input, ownersLive)) return null
+  return (
+    `${openCount} question(s) open but ${answerCount} ruling(s) given. ` +
+    'For multiple questions, pass every --q<id> in a single command. ' +
+    'A worker resumed with a question unanswered will guess, which is the ' +
+    'one thing this is here to prevent.'
+  )
+}
+
+function answerResult(
+  outcome: AnswerWaitingResult['outcome'],
+  runId: number,
+  recordId: string,
+  resumedAs: number | null,
+): AnswerWaitingResult {
+  return {
+    outcome,
+    run_id: runId,
+    record_id: recordId,
+    resumed_as: resumedAs,
+    resumed_record_id: resumedAs === null ? null : runRecordId(db(), resumedAs),
+  }
+}
+
 export type AnswerRunInput = {
   rulings: string | { questionId: number; text: string }[]
+  allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
   recordOnly: boolean
@@ -90,6 +127,40 @@ type OpenQuestion = {
   owner_id: number
   owner_status: string
   owner_pid: number | null
+}
+
+type AnswerRootRow = {
+  id: number
+  record_id: string
+  agent: string
+  job: string
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  vendor_session: string | null
+  status: string
+  session_id: string | null
+  turn: number
+  parent_run_id: number | null
+  worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+  evidence_excluded: string | null
+  repo: string | null
+  launch_key: string | null
+}
+
+function answerRoot(requestedId: number): AnswerRootRow | null {
+  return db()
+    .query(
+      `SELECT root.id, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
+          root.base_commit, root.vendor_session, root.status, root.session_id,
+          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
+          root.launch_key
+     FROM run requested
+     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+    WHERE requested.id = ?`,
+    )
+    .get(requestedId) as AnswerRootRow | null
 }
 
 function answeredBy(
@@ -499,35 +570,7 @@ export async function answerRun(
   input: AnswerRunInput,
   helpers: RunAnswerHelpers,
 ): Promise<AnswerWaitingResult> {
-  const found = db()
-    .query(
-      `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
-          root.base_commit, root.vendor_session, root.status, root.session_id,
-          root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded, root.repo,
-          root.launch_key
-     FROM run requested
-     JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-    WHERE requested.id = ?`,
-    )
-    .get(requestedId) as {
-    id: number
-    agent: string
-    job: string
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    vendor_session: string | null
-    status: string
-    session_id: string | null
-    turn: number
-    parent_run_id: number | null
-    worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
-    evidence_excluded: string | null
-    repo: string | null
-    launch_key: string | null
-  } | null
-  const row = requireAnswerRun(found, requestedId)
+  const row = requireAnswerRun(answerRoot(requestedId), requestedId)
   await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
   const id = row.id
   refuseEscapedChain(id)
@@ -540,9 +583,8 @@ export async function answerRun(
     (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     answerAuthority,
   )
-  if (authorityDecision.kind === 'allow-as-operator') {
+  if (authorityDecision.kind === 'allow-as-operator')
     answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }
-  }
 
   /**
    * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
@@ -720,14 +762,8 @@ export async function answerRun(
       })
     }
   }
-  if (answers.length !== open.length) {
-    throw new Error(
-      `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
-        'For multiple questions, pass every --q<id> in a single command. ' +
-        'A worker resumed with a question unanswered will guess, which is the ' +
-        'one thing this is here to prevent.',
-    )
-  }
+  const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
+  if (incomplete) throw new Error(incomplete)
 
   if (
     !ownersLive &&
@@ -788,22 +824,22 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    open.forEach((q, i) => {
+    answers.forEach((answer) => {
       upd.run(
-        answers[i]!.answer,
+        answer.answer,
         now,
         answeringIdentity,
         answererKindFromAnsweredBy(answeringIdentity),
         input.channel,
         ownersLive ? null : now,
-        q.id,
+        answer.id,
       )
-      enqueueQuestionRecord(db(), q.id)
+      enqueueQuestionRecord(db(), answer.id)
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     if (skipResume) {
       appendQuestionDeliveries(
-        open.map((question) => question.id),
+        answers.map((answer) => answer.id),
         {
           runId: null,
           mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
@@ -812,9 +848,10 @@ export async function answerRun(
         },
       )
     } else if (ownersLive) {
-      for (const question of open) {
-        appendQuestionDeliveries([question.id], {
-          runId: question.owner_id,
+      for (const answer of answers) {
+        const owner = open.find((question) => question.id === answer.id)!
+        appendQuestionDeliveries([answer.id], {
+          runId: owner.owner_id,
           mode: QUESTION_DELIVERY_MODE_LIVE,
           outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
           at: now,
@@ -831,7 +868,7 @@ export async function answerRun(
           `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
           `or orch abandon ${id}.`,
       )
-    return { outcome: 'recorded', run_id: id, resumed_as: null }
+    return answerResult('recorded', id, row.record_id, null)
   }
 
   if (ownersLive) {
@@ -843,7 +880,7 @@ export async function answerRun(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
       )
-    return { outcome: 'delivered-live', run_id: id, resumed_as: null }
+    return answerResult('delivered-live', id, row.record_id, null)
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -937,7 +974,7 @@ export async function answerRun(
           `\n  --follow            to watch it here instead`,
       )
     }
-    return { outcome: 'resumed', run_id: id, resumed_as: childId }
+    return answerResult('resumed', id, row.record_id, childId)
   }
   const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
   if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
@@ -960,5 +997,5 @@ export async function answerRun(
       ? `\n  STILL ASKING — orch inbox`
       : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
   )
-  return { outcome: 'resumed', run_id: id, resumed_as: childId }
+  return answerResult('resumed', id, row.record_id, childId)
 }

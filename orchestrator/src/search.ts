@@ -5,9 +5,11 @@ type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
 type RecordSearchResult = {
   source: RecordSource
-  record_id: number
+  id: number
   run_id: number
+  run_record_id: string
   root_run_id: number
+  root_run_record_id: string
   task_key: string | null
   started_at: string
   match: 'direct task link' | 'literal text match (weak relevance)'
@@ -25,6 +27,23 @@ export type RecordSearch = {
 type Candidate = Omit<RecordSearchResult, 'match' | 'snippet'> & { text: string }
 
 const SNIPPET_LENGTH = 240
+
+function matchedResult(row: Candidate, query: string, includeFull: boolean): RecordSearchResult {
+  const directlyLinked = row.task_key?.toLocaleLowerCase() === query.toLocaleLowerCase()
+  return {
+    source: row.source,
+    id: row.id,
+    run_id: row.run_id,
+    run_record_id: row.run_record_id,
+    root_run_id: row.root_run_id,
+    root_run_record_id: row.root_run_record_id,
+    task_key: row.task_key,
+    started_at: row.started_at,
+    match: directlyLinked ? 'direct task link' : 'literal text match (weak relevance)',
+    snippet: searchSnippet(row.text, query, directlyLinked),
+    ...(includeFull ? { content: row.text } : {}),
+  }
+}
 
 /** A compact excerpt around the first literal match. Never returns the whole record by default. */
 export function searchSnippet(text: string, query: string, directlyLinked: boolean): string {
@@ -63,9 +82,11 @@ export function searchRecords(
     for (const row of records) {
       rows.push({
         source,
-        record_id: Number(row.record_id),
+        id: Number(row.id),
         run_id: Number(row.run_id),
+        run_record_id: String(row.run_record_id),
         root_run_id: Number(row.root_run_id),
+        root_run_record_id: String(row.root_run_record_id),
         task_key: row.task_key as string | null,
         started_at: String(row.started_at),
         text: text(row),
@@ -77,9 +98,11 @@ export function searchRecords(
     'score',
     d
       .query(
-        `SELECT s.id AS record_id, s.run_id, r.id AS root_run_id,
-            r.launch_key AS task_key, r.started_at, s.note
+        `SELECT s.id, s.run_id, r.record_id AS run_record_id,
+            root.id AS root_run_id, root.record_id AS root_run_record_id,
+            root.launch_key AS task_key, r.started_at, s.note
        FROM score s JOIN run r ON r.id=s.run_id
+       JOIN run root ON root.id=COALESCE(r.parent_run_id,r.id)
       WHERE s.note IS NOT NULL AND trim(s.note) <> ''`,
       )
       .all() as Record<string, unknown>[],
@@ -90,8 +113,9 @@ export function searchRecords(
     'ruling',
     d
       .query(
-        `SELECT q.id AS record_id, q.run_id,
+        `SELECT q.id, q.run_id, turn.record_id AS run_record_id,
             COALESCE(turn.parent_run_id, turn.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, turn.started_at, q.question, q.options,
             q.recommendation, q.why, q.answer
        FROM question q
@@ -110,8 +134,9 @@ export function searchRecords(
     'review',
     d
       .query(
-        `SELECT rf.id AS record_id, rl.run_id,
+        `SELECT rf.id, rl.run_id, r.record_id AS run_record_id,
             COALESCE(r.parent_run_id, r.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at,
             rf.severity, rf.location, rf.evidence, rf.proposed_correction,
             rf.disposition, rf.rejection_category
@@ -137,7 +162,9 @@ export function searchRecords(
   let unavailableOutputs = 0
   const outputRows = d
     .query(
-      `SELECT r.id AS run_id, COALESCE(r.parent_run_id, r.id) AS root_run_id,
+      `SELECT r.id AS run_id, r.record_id AS run_record_id,
+            COALESCE(r.parent_run_id, r.id) AS root_run_id,
+            root.record_id AS root_run_record_id,
             root.launch_key AS task_key, r.started_at, r.output_path
        FROM run r JOIN run root ON root.id=COALESCE(r.parent_run_id, r.id)
       WHERE r.output_path IS NOT NULL`,
@@ -150,7 +177,7 @@ export function searchRecords(
       continue
     }
     try {
-      add('output', [{ ...row, record_id: row.run_id }], () => readFileSync(path, 'utf8'))
+      add('output', [{ ...row, id: row.run_id }], () => readFileSync(path, 'utf8'))
     } catch {
       unavailableOutputs++
     }
@@ -161,21 +188,7 @@ export function searchRecords(
     .flatMap((row) => {
       const directlyLinked = row.task_key?.toLocaleLowerCase() === folded
       if (!directlyLinked && !row.text.toLocaleLowerCase().includes(folded)) return []
-      return [
-        {
-          source: row.source,
-          record_id: row.record_id,
-          run_id: row.run_id,
-          root_run_id: row.root_run_id,
-          task_key: row.task_key,
-          started_at: row.started_at,
-          match: directlyLinked
-            ? ('direct task link' as const)
-            : ('literal text match (weak relevance)' as const),
-          snippet: searchSnippet(row.text, query, directlyLinked),
-          ...(includeFull ? { content: row.text } : {}),
-        },
-      ]
+      return [matchedResult(row, query, includeFull)]
     })
     .sort((a, b) => {
       if (a.match !== b.match) return a.match === 'direct task link' ? -1 : 1

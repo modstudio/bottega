@@ -289,8 +289,11 @@ describe('collection records', () => {
 
   test('result rendering is byte-identical when an ok run has no outcome note', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
+    const recordId = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+      .get(id)!.record_id
     expect(recordedResult(id).errors).toEqual([
-      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  orch score ${id} <none|partial|full> [wrong|mixed|right] --note "..."`,
+      `\n— run ${id} · codex · 1.0s · vendor tokens not reported\n  score it:  orch score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
 

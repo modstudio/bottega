@@ -8,6 +8,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { withWorktreeLease } from '../project/project-lock.ts'
 import { latestArchitectRead } from '../review/review-read.ts'
 import { commitAt, commitsBetween, isAncestor, runDiffCommand } from '../run/run-diff.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { runInboxCommand } from '../run/run-inbox.ts'
 import { observedChangesIn } from '../worktree/worktree-remove.ts'
 import { duration, log, optionFlags, write } from './support.ts'
@@ -55,7 +56,8 @@ export function register(program: Command): void {
     .option('--since-read')
     .allowExcessArguments(false)
     .action(async (id, options) => {
-      await runDiffCommand(Number(id), optionFlags(options), {
+      const runId = resolveRunIdentifier(db(), id)
+      await runDiffCommand(runId, optionFlags(options), {
         error: console.error,
         write,
         usage: (): never => {
@@ -72,7 +74,7 @@ export function register(program: Command): void {
           withWorktreeLease(
             repoRoot,
             worktreePath,
-            { session: sessionId(), what: `diff ${id}` },
+            { session: sessionId(), what: `diff ${runId}` },
             action,
           ),
         writesRepo: (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo),

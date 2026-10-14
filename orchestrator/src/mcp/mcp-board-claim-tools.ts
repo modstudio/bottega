@@ -7,6 +7,8 @@ import {
   boardClaimRenew,
   boardClaimTake,
 } from '../board/board-operations.ts'
+import { db } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 
 const result = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -20,7 +22,7 @@ export function registerBoardClaimTools(server: McpServer): void {
       inputSchema: z.object({
         subject: z.string().min(1),
         duration_ms: z.number().int().positive().optional(),
-        run_id: z.number().int().positive().optional(),
+        run_id: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
         note: z.string().optional(),
         project: z.string().min(1).optional(),
         force: z.boolean().optional(),
@@ -31,7 +33,7 @@ export function registerBoardClaimTools(server: McpServer): void {
         await boardClaimTake({
           subject: input.subject,
           durationMs: input.duration_ms,
-          runId: input.run_id,
+          runId: input.run_id === undefined ? undefined : resolveRunIdentifier(db(), input.run_id),
           note: input.note,
           project: input.project,
           force: input.force,

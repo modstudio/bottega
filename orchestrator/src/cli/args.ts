@@ -169,7 +169,8 @@ export async function readMessageText(
   if (opts.optional) return undefined
   throw new Error(opts.missing)
 }
-type QuestionTextSource = { id: number; file?: string; text?: string }
+type QuestionTextSource = { identifier: string; file?: string; text?: string }
+type QuestionSelector = { identifier: string; text?: string }
 
 export type AnswerTextSources = {
   byId: QuestionTextSource[]
@@ -191,6 +192,13 @@ function takeFilePath(
   const path = args[index + 1]
   if (path === undefined) throw new Error(`argument --file needs a value\nworking form: ${usage}`)
   return { path, next: index + 2 }
+}
+
+function questionSelector(arg: string): QuestionSelector | null {
+  const equals = arg.match(/^--q([^=]+)=(.*)$/)
+  if (equals) return { identifier: equals[1]!, text: equals[2]! }
+  const flagged = arg.match(/^--q(.+)$/)
+  return flagged ? { identifier: flagged[1]! } : null
 }
 
 /**
@@ -249,29 +257,25 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
-    if (questions) {
-      const equals = arg.match(/^--q(\d+)=(.*)$/)
-      if (equals) {
-        byId.push({ id: Number(equals[1]), text: equals[2] })
+    const selector = questions && !booleans.has(arg) ? questionSelector(arg) : null
+    if (selector) {
+      if ('text' in selector) {
+        byId.push(selector)
         continue
       }
-      const flagged = arg.match(/^--q(\d+)$/)
-      if (flagged) {
-        const id = Number(flagged[1])
-        const next = args[i + 1]
-        if (next === '--file' || next?.startsWith('--file=')) {
-          const taken = takeFilePath(args, i + 1, usage)
-          byId.push({ id, file: taken.path })
-          i = taken.next - 1
-          continue
-        }
-        if (next === undefined || booleans.has(next)) {
-          throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
-        }
-        byId.push({ id, text: next })
-        i++
+      const next = args[i + 1]
+      if (next === '--file' || next?.startsWith('--file=')) {
+        const taken = takeFilePath(args, i + 1, usage)
+        byId.push({ identifier: selector.identifier, file: taken.path })
+        i = taken.next - 1
         continue
       }
+      if (next === undefined || booleans.has(next)) {
+        throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
+      }
+      byId.push({ identifier: selector.identifier, text: next })
+      i++
+      continue
     }
     if (arg === '--file' || arg.startsWith('--file=')) {
       const taken = takeFilePath(args, i, usage)
@@ -290,10 +294,10 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
   return parseWorkerMessageArgs(args, { booleans: ANSWER_BOOLEANS, questions: true })
 }
 
-/** Match the bare question selector shared by thin command surfaces. */
-export function bareQuestionSelector(arg: string): number | null {
-  const match = arg.match(/^--q(\d+)$/)
-  return match ? Number(match[1]) : null
+/** Match the bare question selector shared by thin command surfaces; the caller resolves the identifier. */
+export function bareQuestionSelector(arg: string): string | null {
+  const match = arg.match(/^--q([^=]+)$/)
+  return match ? match[1]! : null
 }
 
 /** Every documented seed spelling is accepted by the CLI argument parser. */

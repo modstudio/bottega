@@ -1,4 +1,6 @@
 import type { Command } from 'commander'
+import { db } from '../database/db.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   boardClaimList,
   boardClaimRelease,
@@ -25,7 +27,7 @@ export function registerBoardClaimCommands(
           await boardClaimTake({
             subject,
             durationMs: options.for ? parseDuration(options.for) : undefined,
-            runId: options.run === undefined ? undefined : Number(options.run),
+            runId: options.run === undefined ? undefined : resolveRunIdentifier(db(), options.run),
             note: options.note,
             project: options.project,
             force: Boolean(options.force),

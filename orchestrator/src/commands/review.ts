@@ -4,8 +4,10 @@ import type { Command } from 'commander'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
+import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { dispatchReviewCommand } from '../review/review-command-dispatcher.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
   formatConfinementReport,
   parseConfinementJobSelector,
@@ -92,7 +94,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action((runId: string | undefined, options) => {
       const flags = optionFlags(options)
-      const id = Number(runId)
+      const id = runId === undefined ? Number.NaN : resolveRunIdentifier(db(), runId)
       const writer = flags.flag('writer')?.trim()
       const note = flags.flag('note')?.trim()
       if (!id || !writer || !note) throw new Error(CLEAR_USAGE)

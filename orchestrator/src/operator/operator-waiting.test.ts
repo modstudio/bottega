@@ -128,7 +128,8 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
     )
     .run(cursor.id)
 
-  expect(operatorWaiting()).toEqual([
+  const waiting = operatorWaiting()
+  expect(waiting).toMatchObject([
     {
       kind: 'question',
       id: question.id,
@@ -161,6 +162,11 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
         'orch workflow rule fixture-workflow --project fixture --mode default --arg key=DEV-943 --ruling "<ruling>" --from-operator',
     },
   ])
+  expect(waiting.every((item) => /^[0-9a-f-]{36}$/.test(item.question_record_id))).toBe(true)
+  expect(waiting[0]?.run_record_id).toBe(
+    (db().query('SELECT record_id FROM run WHERE id=?').get(owner.id) as { record_id: string })
+      .record_id,
+  )
 })
 
 test('notification claims return each waiting episode once', () => {

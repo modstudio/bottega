@@ -21,7 +21,9 @@ describe('run ingest', () => {
       JSON.stringify([
         {
           id: 8001,
+          record_id: '00000000-0000-4000-8000-000000008001',
           run_id: null,
+          run_record_id: null,
           workflow_cursor_id: 7001,
           workflow_key: 'DEV-964',
           project: 'alpha',
@@ -258,9 +260,9 @@ describe('run ingest', () => {
     ]
     const latencies = [63_855, 11_127, 200_636, 52_916, 704_156]
     const tokens = [260_552, 62_612, 1_904_392, 261_452, 9_309_615]
-    const turns = starts.map((started_at, index) => ({
+    const turns = starts.map((startedAt, index) => ({
       id: [1168, 1169, 1173, 1210, 1217][index]!,
-      started_at,
+      started_at: startedAt,
       latency_ms: latencies[index]!,
       vendor_tokens: tokens[index]!,
       vendor_cost_usd: null,
@@ -480,7 +482,9 @@ describe('run ingest', () => {
         {
           id: 3,
           question_id: 50,
+          question_record_id: base.questions[0]!.record_id,
           run_id: null,
+          run_record_id: null,
           mode: 'record-only' as const,
           outcome: 'delivered' as const,
           at: '2026-09-04T19:04:00.000Z',

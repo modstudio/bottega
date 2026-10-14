@@ -20,6 +20,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -75,6 +76,7 @@ export async function answerInputFromArgv(
   const channelArgs = parseAnswerChannelArgs(argv)
   const parsed = parseAnswerTextSources(channelArgs.argv)
   let rulings: AnswerRunInput['rulings']
+  let allowPartialRecordOnly = false
   const cliRuling = (text: string) => {
     if (text) assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
     return text
@@ -86,12 +88,16 @@ export async function answerInputFromArgv(
           `working forms:\n${ANSWER_WORKING_FORMS}`,
       )
     }
-    rulings = parsed.byId.map((source) => ({
-      questionId: source.id,
-      text: cliRuling(
-        source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
-      ),
-    }))
+    rulings = parsed.byId.map((source) => {
+      const parsedIdentifier = parseQuestionIdentifier(source.identifier)
+      if (parsedIdentifier.kind === 'record-id') allowPartialRecordOnly = true
+      return {
+        questionId: resolveQuestionIdentifier(db(), source.identifier),
+        text: cliRuling(
+          source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
+        ),
+      }
+    })
   } else if (
     parsed.commandFile !== undefined ||
     (!parsed.positionals.length && !process.stdin.isTTY)
@@ -108,6 +114,7 @@ export async function answerInputFromArgv(
   }
   return {
     rulings,
+    allowPartialRecordOnly,
     fromOperator: channelArgs.argv.includes('--from-operator'),
     channel: channelArgs.channel,
     recordOnly,

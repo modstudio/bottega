@@ -6,7 +6,9 @@ import { createOperatorRouter } from './operator.ts'
 const item: OperatorWaitingItem = {
   kind: 'question',
   id: 7,
+  question_record_id: '00000000-0000-4000-8000-000000000007',
   run_id: 42,
+  run_record_id: '00000000-0000-4000-8000-000000000042',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
   session_id: null,
@@ -25,12 +27,19 @@ test('waiting query and answer mutation use the orch seam', async () => {
     waiting: async () => [item],
     answer: async (...args) => {
       calls.push(args)
-      return { outcome: 'resumed' as const, run_id: 42, resumed_as: 43 }
+      return {
+        outcome: 'resumed' as const,
+        run_id: 42,
+        record_id: '00000000-0000-4000-8000-000000000042',
+        resumed_as: 43,
+        resumed_record_id: '00000000-0000-4000-8000-000000000043',
+      }
     },
     file: async (input) => {
       calls.push(['file', input])
       return {
         question_id: input.questionId,
+        question_record_id: '00000000-0000-4000-8000-000000000007',
         filed_as: input.as === 'canon' ? ('canon-proposal' as const) : ('doc' as const),
         filed_ref: '12@rev-1',
         filed_record_id: null,
@@ -46,10 +55,13 @@ test('waiting query and answer mutation use the orch seam', async () => {
   expect(await caller.answer({ runId: 42, rulings: [{ questionId: 7, ruling: 'A' }] })).toEqual({
     outcome: 'resumed',
     run_id: 42,
+    record_id: '00000000-0000-4000-8000-000000000042',
     resumed_as: 43,
+    resumed_record_id: '00000000-0000-4000-8000-000000000043',
   })
   expect(await caller.file({ questionId: 7, as: 'doc' })).toEqual({
     question_id: 7,
+    question_record_id: '00000000-0000-4000-8000-000000000007',
     filed_as: 'doc',
     filed_ref: '12@rev-1',
     filed_record_id: null,
