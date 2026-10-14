@@ -177,13 +177,9 @@ export function fieldWriteInput(
   }
 }
 
-export function toggledAudiences(
-  current: DocAudiences,
-  audience: DocAudience,
-): DocAudiences | null {
-  const selected = new Set(current)
-  if (selected.has(audience)) selected.delete(audience)
-  else selected.add(audience)
+/** The audiences ticked in a list, in their canonical order; none at all is not a valid choice. */
+export function audiencesFrom(values: readonly DocAudience[]): DocAudiences | null {
+  const selected = new Set(values)
   if (!selected.size) return null
   return DOC_AUDIENCES.filter((value) => selected.has(value)) as DocAudiences
 }

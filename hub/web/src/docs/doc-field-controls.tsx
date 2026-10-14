@@ -2,10 +2,12 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { queryClient, trpc } from '@/trpc/client'
+import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
 import { Menu } from '@/ui/menu/menu'
+import { Popover } from '@/ui/popover/popover'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -14,10 +16,10 @@ import {
 } from '../../../../shared/docs.ts'
 import {
   articleSubjectChoices,
+  audiencesFrom,
   type DocFieldChange,
   fieldWriteInput,
   parentChoices,
-  toggledAudiences,
 } from './doc-field-changes.ts'
 import {
   DOC_AUDIENCE_LABELS,
@@ -134,40 +136,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Choices<T extends string>({
-  name,
-  options,
-  checked,
-  disabled,
-  onToggle,
-}: {
-  name: string
-  options: readonly { value: T; label: string }[]
-  checked: (value: T) => boolean
-  disabled: boolean
-  onToggle: (value: T) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-      {options.map(({ value, label }) => (
-        <label
-          key={value}
-          htmlFor={`${name}-${value}`}
-          className="inline-flex items-center gap-1.5"
-        >
-          <Checkbox
-            id={`${name}-${value}`}
-            checked={checked(value)}
-            disabled={disabled}
-            onChange={() => onToggle(value)}
-          />
-          <span>{label}</span>
-        </label>
-      ))}
-    </div>
-  )
-}
-
 /** A field's value shown as text; an editor clicks it to choose another value. */
 function ChoiceText({
   label,
@@ -202,6 +170,100 @@ function ChoiceText({
         },
       }))}
     />
+  )
+}
+
+/** How many chosen values show as chips before the rest fold into a count. */
+const VISIBLE_CHIPS = 2
+
+/**
+ * Several values shown as chips, the rest folded into "+N". An editor clicks them to tick values
+ * in a list; the choice is saved once, as one revision, when the list closes.
+ */
+function ChipChoices<T extends string>({
+  label,
+  options,
+  selected,
+  disabled,
+  required = false,
+  onSave,
+}: {
+  label: string
+  options: readonly { value: T; label: string }[]
+  selected: readonly T[]
+  disabled: boolean
+  /** At least one value must stay chosen. */
+  required?: boolean
+  onSave: (values: T[]) => void
+}) {
+  const [draft, setDraft] = useState<T[] | null>(null)
+  const chosen = draft ?? [...selected]
+  const labelOf = (value: T) => options.find((option) => option.value === value)?.label ?? value
+  const shown = chosen.slice(0, VISIBLE_CHIPS)
+  const hidden = chosen.length - shown.length
+  const toggle = (value: T) => {
+    const next = chosen.includes(value)
+      ? chosen.filter((item) => item !== value)
+      : [...chosen, value]
+    if (required && next.length === 0) return
+    setDraft(options.map((option) => option.value).filter((item) => next.includes(item)))
+  }
+  const changed = (values: readonly T[]) =>
+    values.length !== selected.length || values.some((value) => !selected.includes(value))
+  return (
+    <Popover
+      label={label}
+      onOpenChange={(open) => {
+        if (open) {
+          setDraft([...selected])
+          return
+        }
+        if (draft && changed(draft)) onSave(draft)
+        setDraft(null)
+      }}
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          title={`Change ${label.toLowerCase()}`}
+          className="flex min-h-6 cursor-pointer flex-wrap items-center gap-1 text-left hover:text-text-primary disabled:cursor-default"
+        >
+          {chosen.length ? (
+            <>
+              {shown.map((value) => (
+                <Badge key={value} icon={false}>
+                  {labelOf(value)}
+                </Badge>
+              ))}
+              {hidden > 0 ? (
+                <Badge icon={false} title={chosen.slice(VISIBLE_CHIPS).map(labelOf).join(', ')}>
+                  {`+${hidden}`}
+                </Badge>
+              ) : null}
+            </>
+          ) : (
+            <span className="text-text-muted">None</span>
+          )}
+        </button>
+      }
+    >
+      <div className="grid gap-1.5">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            htmlFor={`${label}-${option.value}`}
+            className="flex items-center gap-2 text-md text-text-secondary"
+          >
+            <Checkbox
+              id={`${label}-${option.value}`}
+              checked={chosen.includes(option.value)}
+              onChange={() => toggle(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    </Popover>
   )
 }
 
@@ -275,13 +337,14 @@ function AudienceRow({ doc, field }: { doc: DocsDoc; field: FieldSave }) {
   return (
     <Row label="Audience">
       {field.canAddress ? (
-        <Choices
-          name="doc-audience"
+        <ChipChoices
+          label="Audience"
           options={DOC_AUDIENCES.map((value) => ({ value, label: DOC_AUDIENCE_LABELS[value] }))}
-          checked={(value) => doc.audiences.includes(value)}
+          selected={doc.audiences}
           disabled={field.disabled('audiences')}
-          onToggle={(audience) => {
-            const value = toggledAudiences(doc.audiences, audience)
+          required
+          onSave={(values) => {
+            const value = audiencesFrom(values)
             if (value) field.save({ field: 'audiences', value })
           }}
         />
@@ -352,22 +415,21 @@ function ArticleRows({
       </Row>
       <Row label="Related">
         {enabled ? (
-          <Choices
-            name="related-subject"
+          <ChipChoices
+            label="Related subjects"
             options={subjects
               .filter(({ id }) => id !== doc.articleSubject?.id)
               .map(({ id, name }) => ({ value: id, label: name }))}
-            checked={(id) => related.some((subject) => subject.id === id)}
+            selected={related.map(({ id }) => id)}
             disabled={field.disabled('relatedSubjects')}
-            onToggle={(id) => {
-              const next = related.some((subject) => subject.id === id)
-                ? related.filter((subject) => subject.id !== id)
-                : [...related, ...subjects.filter((subject) => subject.id === id)]
+            onSave={(ids) =>
               field.save({
                 field: 'relatedSubjects',
-                value: [...next].sort((left, right) => left.name.localeCompare(right.name)),
+                value: subjects
+                  .filter(({ id }) => ids.includes(id))
+                  .sort((left, right) => left.name.localeCompare(right.name)),
               })
-            }}
+            }
           />
         ) : (
           related.map(({ name }) => name).join(', ') || 'None'
