@@ -383,24 +383,39 @@ async function proveStringShapedSourceFileMutations(
   headers: Record<string, string>,
   spaceId: string,
 ): Promise<void> {
+  const projectId = newRecordId()
+  const projectName = `source-file-mutation-proof-${projectId}`
+  succeeds(
+    'postgres',
+    'postgres',
+    `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+     VALUES ('${projectId}','${spaceId}','${projectName}',ARRAY['SOURCE'],now());`,
+  )
   const create = async (slug: string, body: string) => {
     const response = await fetch(`${origin}/v1/docs`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
-        scope: 'machine',
-        subject: null,
+        scope: 'project',
+        subject: projectName,
         slug,
         title: slug,
         body,
-        delivery: 'inject',
+        delivery: 'demand',
+        audiences: ['internal'],
+        kind: 'article',
         sourceFiles: [`src/${slug}.ts`],
+        projectName,
         reason: 'source-file mutation proof',
         author: 'proof',
       }),
     })
+    const responseBody = await response.text()
+    if (!response.ok) {
+      throw new Error(`PUT /v1/docs for ${slug} returned ${response.status}: ${responseBody}`)
+    }
     expect(response.status).toBe(200)
-    return (await response.json()) as { id: string }
+    return JSON.parse(responseBody) as { id: string }
   }
   const storeString = (id: string, sourceFile: string) =>
     succeeds(
