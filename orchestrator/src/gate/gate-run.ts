@@ -149,14 +149,12 @@ function readCheckExecutions(path: string, write: (chunk: string) => void): Chec
   return records
 }
 
-export async function runArchitectGate(input: {
+/** Who may run the gate, in which registered project and checkout, with which command. */
+function architectGateTarget(input: {
   cwd?: string
   d?: Database
-  runner?: ArchitectGateRunner
-  gitState?: ArchitectGateGitState
   topLevel?: ArchitectGateTopLevel
-  write?: (chunk: string) => void
-}): Promise<ArchitectGateRecord> {
+}) {
   if (process.env.ORCH_DEPTH !== undefined)
     throw new Error(
       `${PLATFORM_SLUG} gate run is reserved for architect sessions; ORCH_DEPTH is set`,
@@ -181,6 +179,18 @@ export async function runArchitectGate(input: {
       `${PLATFORM_SLUG} gate run: could not resolve the checkout top level for ${cwd}; run ${PLATFORM_SLUG} gate run from inside the checkout to gate`,
     )
   }
+  return { caller, project, gate, checkoutTopLevel }
+}
+
+export async function runArchitectGate(input: {
+  cwd?: string
+  d?: Database
+  runner?: ArchitectGateRunner
+  gitState?: ArchitectGateGitState
+  topLevel?: ArchitectGateTopLevel
+  write?: (chunk: string) => void
+}): Promise<ArchitectGateRecord> {
+  const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
   ensureMainStackStarted({
     projectId: project.id,
     projectName: project.name,
