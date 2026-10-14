@@ -6,6 +6,7 @@ import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { readingBody, viewedPaneTitle } from './body.ts'
 import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
+import { DOC_STATUS_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
 import { DOC_STATUS_ICONS } from './status-icon.ts'
 import type { BreadcrumbPart } from './tree.ts'
@@ -51,13 +52,9 @@ function StatusLine({ status }: { status: DocsDoc['status'] }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Icon size={14} />
-      {statusLabel(status)}
+      {DOC_STATUS_LABELS[status]}
     </span>
   )
-}
-
-function statusLabel(status: DocsDoc['status']) {
-  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 /** Room the sticky article header takes, so the title counts as gone once it is behind it. */
