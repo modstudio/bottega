@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { resolveFailover } from '../collect/collect.ts'
@@ -369,9 +370,9 @@ describe('routing counts failures as evidence', () => {
     // last run had failed `unreachable`.
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
+        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                         status, failure_kind)
-       VALUES (datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
+       VALUES ('${newRecordId()}',datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
                'failed','unreachable')`,
       )
       .run()

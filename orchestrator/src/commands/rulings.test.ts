@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -35,8 +36,8 @@ function answeredQuestion(project: string): number {
     db()
       .query(
         `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES (?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
+          (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES ('${newRecordId()}',?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
          RETURNING id`,
       )
       .get(runId, SESSION) as { id: number }

@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { notificationCommand } from '../../../shared/operator-notification.ts'
 import { db } from '../database/db.ts'
@@ -24,8 +25,8 @@ function run(status = 'asking') {
   return db()
     .query(
       `INSERT INTO run
-        (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943')
+        (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
+       VALUES ('${newRecordId()}','2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943')
        RETURNING id`,
     )
     .get(status) as { id: number }
@@ -59,8 +60,8 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,answer,answered_at)
-         VALUES (?,'2026-09-25','Which?','This.','2026-09-25') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at)
+         VALUES ('${newRecordId()}',?,'2026-09-25','Which?','This.','2026-09-25') RETURNING id`,
       )
       .get(owner.id) as { id: number }
     expect(() => relayQuestion(owner.id, question.id, 'operator must decide')).toThrow(
@@ -72,8 +73,8 @@ describe('relay', () => {
     const owner = run()
     const question = db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question)
-         VALUES (?,'2026-09-25','Which?') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question)
+         VALUES ('${newRecordId()}',?,'2026-09-25','Which?') RETURNING id`,
       )
       .get(owner.id) as { id: number }
     const noNotification = () => {}
@@ -105,8 +106,8 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   const question = db()
     .query(
       `INSERT INTO question
-        (run_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
-       VALUES (?,'2026-09-25','Run question?', '["a","b"]','a','because','2026-09-25')
+        (record_id,run_id,asked_at,question,options,recommendation,why,awaiting_operator_at)
+       VALUES ('${newRecordId()}',?,'2026-09-25','Run question?', '["a","b"]','a','because','2026-09-25')
        RETURNING id`,
     )
     .get(owner.id) as { id: number }
@@ -122,8 +123,8 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   db()
     .query(
       `INSERT INTO question
-      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES (?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
+      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-25','Workflow question?','workflow','2026-09-25')`,
     )
     .run(cursor.id)
 
@@ -166,8 +167,8 @@ test('notification claims return each waiting episode once', () => {
   const owner = run()
   const question = db()
     .query(
-      `INSERT INTO question (run_id,asked_at,question,awaiting_operator_at)
-       VALUES (?,'2026-09-25','Question?','2026-09-25') RETURNING id`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+       VALUES ('${newRecordId()}',?,'2026-09-25','Question?','2026-09-25') RETURNING id`,
     )
     .get(owner.id) as { id: number }
   const cursor = db()
@@ -182,8 +183,8 @@ test('notification claims return each waiting episode once', () => {
   db()
     .query(
       `INSERT INTO question
-      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES (?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
+      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-25','Workflow?','workflow','2026-09-25')`,
     )
     .run(cursor.id)
   const first = claimOperatorNotifications(db())
@@ -212,8 +213,8 @@ test('notification claims return each waiting episode once', () => {
   db()
     .query(
       `INSERT INTO question
-      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
-     VALUES (?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
+      (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at)
+     VALUES ('${newRecordId()}',?,'DEV-943','2026-09-27','Again?','workflow','2026-09-27')`,
     )
     .run(cursor.id)
   expect(
@@ -231,8 +232,8 @@ test('a no-project question lists and notifies without a project label', () => {
   db().query('UPDATE run SET repo=NULL,launch_key=NULL WHERE id=?').run(owner.id)
   const question = db()
     .query(
-      `INSERT INTO question (run_id,asked_at,question,awaiting_operator_at)
-       VALUES (?,'2026-09-25','No project?','2026-09-25') RETURNING id`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at)
+       VALUES ('${newRecordId()}',?,'2026-09-25','No project?','2026-09-25') RETURNING id`,
     )
     .get(owner.id) as { id: number }
 

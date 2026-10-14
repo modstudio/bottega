@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
@@ -114,9 +115,9 @@ function installEvidence(
   const ruling = d
     .query<{ id: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+        (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
+       VALUES ('${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
     )
     .get(
       row.id,

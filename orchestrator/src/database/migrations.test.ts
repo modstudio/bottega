@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -290,8 +291,8 @@ test('note UUID reference migration preserves rows and turns old integers into d
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('2026-10-09','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('${newRecordId()}','2026-10-09','codex','implement','sha',1,'prompt','ok') RETURNING id`,
       )
       .get() as { id: number }
     database
@@ -310,8 +311,8 @@ test('note UUID reference migration preserves rows and turns old integers into d
       .run()
     database
       .query(
-        `INSERT INTO question (run_id,asked_at,question,filed_as,filed_ref)
-         VALUES (?,'2026-10-09','Canon?','canon-proposal','73'),
+        `INSERT INTO question (record_id,run_id,asked_at,question,filed_as,filed_ref)
+         VALUES ('${newRecordId()}',?,'2026-10-09','Canon?','canon-proposal','73'),
                 (?,'2026-10-09','Doc?','doc','12@rev-1')`,
       )
       .run(run.id, run.id)
@@ -599,16 +600,18 @@ test('workflow question migration preserves run questions and backfills an await
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('2026-09-20','codex','implement','sha',1,'prompt','asking') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('${newRecordId()}','2026-09-20','codex','implement','sha',1,'prompt','asking') RETURNING id`,
       )
       .get() as { id: number }
     const question = database
-      .query(`INSERT INTO question (run_id,asked_at,question,asked_via) VALUES (?,?,?,'reply')`)
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES ('${newRecordId()}',?,?,?,'reply')`,
+      )
       .run(run.id, '2026-09-20', 'Run question?').lastInsertRowid
     database
       .query(
-        `INSERT INTO question (id,run_id,asked_at,question) VALUES (99,?,'2026-09-20','deleted')`,
+        `INSERT INTO question (record_id,id,run_id,asked_at,question) VALUES ('${newRecordId()}',99,?,'2026-09-20','deleted')`,
       )
       .run(run.id)
     database.query('DELETE FROM question WHERE id=99').run()
@@ -738,8 +741,8 @@ test('workflow question migration preserves run questions and backfills an await
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const next = database
       .query(
-        `INSERT INTO question (run_id,asked_at,question,asked_via)
-         VALUES (?,'2026-09-24','Next?','reply') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,asked_via)
+         VALUES ('${newRecordId()}',?,'2026-09-24','Next?','reply') RETURNING id`,
       )
       .get(run.id) as { id: number }
     expect(next.id).toBeGreaterThan(99)
@@ -767,8 +770,8 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES ('2026-09-20','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('${newRecordId()}','2026-09-20','codex','implement','sha',1,'prompt','ok') RETURNING id`,
       )
       .get() as { id: number }
     database

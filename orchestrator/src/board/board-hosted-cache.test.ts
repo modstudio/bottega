@@ -253,8 +253,8 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .run('2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z')
   database
     .query(
-      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
-       VALUES (?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
+      `INSERT INTO run(record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
+       VALUES ('${newRecordId()}',?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
     )
     .run(
       '2026-10-05T11:30:00.000Z',
@@ -858,14 +858,14 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     )
   const earlyRun = database
     .query(
-      `INSERT INTO run(started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
     )
     .get('2026-10-05T11:00:00.000Z') as { id: number }
   const lateRun = database
     .query(
-      `INSERT INTO run(started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run(record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
     )
     .get('2026-10-05T13:00:00.000Z') as { id: number }
   const cached = message()

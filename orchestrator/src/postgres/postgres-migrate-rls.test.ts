@@ -125,12 +125,12 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${PLATFORM_PROJECT}', '${PLATFORM_SPACE_ID}', '${PLATFORM_SLUG}', ARRAY['DEV'], now());
       INSERT INTO machine (id, user_id, name, registered_at, last_seen)
         VALUES ('${MACHINE_A}', '${USER_A}', 'proof-machine', now(), now());
-      INSERT INTO run (
+      INSERT INTO run (record_id,
         id, space_id, project_id, machine_id, local_id, started_at, agent, job,
         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
         automatic_failover, work_preserved, created_at, updated_at
       ) VALUES
-        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
+        ('${newRecordId()}','${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
         ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
@@ -246,12 +246,12 @@ realPostgres('RLS proof against real Postgres', () => {
        INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
-       INSERT INTO run (
+       INSERT INTO run (record_id,
          id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
          work_preserved,created_at,updated_at
        ) VALUES
-        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+        ('${newRecordId()}','${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
         ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
@@ -676,12 +676,12 @@ realPostgres('RLS proof against real Postgres', () => {
       'postgres',
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
            VALUES ('${httpProject}','${identity.activeSpaceId}','auth-http-project',ARRAY['HTTP'],now());
-         INSERT INTO run (
+         INSERT INTO run (record_id,
            id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
            prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
            work_preserved,created_at,updated_at
          ) VALUES
-           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
+           ('${newRecordId()}','${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
            ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',104,now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());

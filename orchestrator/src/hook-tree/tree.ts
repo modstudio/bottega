@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'

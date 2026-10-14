@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -21,8 +22,8 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES (?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
+          (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES ('${newRecordId()}',?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
          RETURNING id`,
       )
       .get(run) as { id: number }
@@ -63,9 +64,9 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
            answerer_kind,answer_channel,asked_via)
-         VALUES (?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
+         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
                  'owner-session','agent','cli','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
@@ -96,8 +97,8 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
-         VALUES (?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING id`,
+          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
     db()

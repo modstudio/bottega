@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
@@ -165,8 +166,8 @@ describe('stalled run monitor condition', () => {
 function insertAnsweredQuestion(runId: number): void {
   db()
     .query(
-      `INSERT INTO question (run_id,asked_at,question,why,answer,answered_at)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at)
+       VALUES ('${newRecordId()}',?,?,?,?,?,?)`,
     )
     .run(runId, nowIso(), 'which way?', 'needed', 'go left', nowIso())
 }
@@ -794,7 +795,9 @@ describe('operational monitor conditions', () => {
       turn: 2,
     })
     db()
-      .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(child, nowIso(), 'and now what?')
     expect(askingRuns().map((run) => run.id)).toEqual([])
   })

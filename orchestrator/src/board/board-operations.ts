@@ -617,15 +617,13 @@ function hostedClaimRunId(runId: number | undefined, env: Environment): string |
   if (runId === undefined) return undefined
   const actor = boardActor(env)
   const row = db()
-    .query<{ record_id: string | null; session_id: string | null }, [number]>(
+    .query<{ record_id: string; session_id: string | null }, [number]>(
       'SELECT record_id,session_id FROM run WHERE id=?',
     )
     .get(runId)
   if (!row) throw new Error(`no run ${runId}; use a run owned by this session`)
   if (!actor.session || row.session_id !== actor.session)
     throw new Error(`run ${runId} is not owned by the claim holder's session`)
-  if (!row.record_id)
-    throw new Error(`run ${runId} has no hosted record id; sync the run with orch sync and retry`)
   return row.record_id
 }
 

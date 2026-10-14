@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -20,8 +21,8 @@ function answeredQuestion(
   db()
     .query(
       `INSERT INTO question
-         (run_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
-       VALUES (?,'2026-09-01',?,'answer',?,'agent',?,?)`,
+         (record_id,run_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
+       VALUES ('${newRecordId()}',?,'2026-09-01',?,'answer',?,'agent',?,?)`,
     )
     .run(runId, question, answeredAt, overturn?.at ?? null, overturn?.replacement ?? null)
 }
@@ -60,8 +61,8 @@ describe('task ruling candidate query', () => {
     db()
       .query(
         `INSERT INTO question
-        (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
-       VALUES (?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
+        (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
+       VALUES ('${newRecordId()}',?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)

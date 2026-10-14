@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
 import { classify, type FailureKind } from '../failure/failure.ts'
 import {

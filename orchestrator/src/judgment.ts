@@ -2,7 +2,6 @@
 /** Knows run rows, reviews and findings, score arithmetic, duel persistence, and judgeability. Must not know transports, worktrees, routing, the CLI, durable execution, dispatch, or cleanup. */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { newRecordId } from '../../shared/record/schema.ts'
 import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
@@ -103,18 +102,6 @@ function recordScoreVerdict(
                                        scored_at=excluded.scored_at`,
     )
     .run(id, delivery, quality, fidelity, note, scoredAt, scorer)
-}
-
-function hostedRunId(id: number): string {
-  const row = db()
-    .query<{ record_id: string | null }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(id)
-  if (!row) throw new Error(`no run ${id}`)
-  return row.record_id ?? newRecordId()
-}
-
-function persistHostedRunId(id: number, recordId: string): void {
-  db().query('UPDATE run SET record_id=? WHERE id=?').run(recordId, id)
 }
 
 type JudgeableRun = {
@@ -297,11 +284,9 @@ function recordEvidenceExclusion(
   const excludedReason = blocked
     ? `blocked by its tree: ${options.note!.trim()}`
     : VOID_EXCLUSION_REASON
-  const recordId = hostedRunId(id)
   const scoredAt = nowIso()
   const recordedBy = flags.flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
   writeTransaction(() => {
-    persistHostedRunId(id, recordId)
     authority = reauthorizeRunMutation(authority, 'void')
     authority = adoptRunMutation(authority, 'void')
     db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excludedReason, id)
@@ -545,9 +530,7 @@ export async function judgeRun(
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
   const scorer = process.env.ORCH_SCORER ?? 'claude'
   const scoredFidelity = writes && delivery !== 'none' ? (fidelity ?? null) : null
-  const recordId = hostedRunId(id)
   writeTransaction(() => {
-    persistHostedRunId(id, recordId)
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
       reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
@@ -902,9 +885,7 @@ export async function scoreRun(
   const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
   const scoredAt = nowIso()
   const recordedBy = scorer ?? process.env.ORCH_SCORER ?? 'claude'
-  const recordId = hostedRunId(id)
   writeTransaction(() => {
-    persistHostedRunId(id, recordId)
     if (!dashboardAuthorized && !(flags.has('force') && !scoreAuthority.actor)) {
       scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
     }

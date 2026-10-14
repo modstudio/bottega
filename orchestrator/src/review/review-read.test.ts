@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -48,8 +49,8 @@ test('only the root run session owns architect reads for its branch', () => {
   applyMigrations(d)
   d.query(
     `INSERT INTO run
-      (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+     VALUES ('${newRecordId()}','2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
   ).run()
   expect(requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'owner-session')).toBe('owner-session')
   expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'foreign-session')).toThrow(
@@ -114,8 +115,8 @@ test('the read command records the branch and tip from --cwd', () => {
     db()
       .query(
         `INSERT INTO run
-          (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-         VALUES ('2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
+          (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+         VALUES ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
       )
       .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
 
@@ -162,8 +163,8 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run('fixture', cwd, '{}')
   d.query(
     `INSERT INTO run
-      (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
-     VALUES ('2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
+      (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+     VALUES ('${newRecordId()}','2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
   ).run()
   const runGit = (_cwd: string, args: string[]): string => {
     if (args[0] === 'branch') return 'DEV-1068-work'

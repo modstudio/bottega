@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -640,8 +641,8 @@ test('the plan and upload include only receipts for readers that are still aroun
   const finishedRun = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
     )
     .get(new Date(NOW - 1_000).toISOString()) as { id: number }
   const notice = postNotice(

@@ -66,7 +66,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../project/project-lock.ts',
     '../project/projects.ts',
     '../dispatch/prompt-retarget.ts',
-    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
     '../resources/resource-claims.ts',
     '../resources/main-stack.ts',
     '../resources/resource-ownership.ts',

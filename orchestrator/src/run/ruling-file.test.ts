@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -38,8 +39,8 @@ function addAnsweredQuestion(
     db()
       .query(
         `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES (?,'2026-09-20',?,?, '2026-09-21',?,?, 'cli')
+          (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
+         VALUES ('${newRecordId()}',?,'2026-09-20',?,?, '2026-09-21',?,?, 'cli')
          RETURNING id`,
       )
       .get(
@@ -101,9 +102,9 @@ describe('file ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
+          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
            answerer_kind,answer_channel,asked_via)
-         VALUES (?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','owner-session',
+         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','owner-session',
                  'agent','cli','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
@@ -149,8 +150,8 @@ describe('file ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question
-          (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
-         VALUES (?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING id`,
+          (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via)
+         VALUES ('${newRecordId()}',?,'DEV-964','2026-09-20','Proceed?','Yes.','2026-09-21','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
     db()
@@ -302,7 +303,7 @@ describe('file ruling', () => {
     const questionId = (
       db()
         .query(
-          `INSERT INTO question (run_id,asked_at,question) VALUES (?,'2026-09-20','Which?')
+          `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,'2026-09-20','Which?')
            RETURNING id`,
         )
         .get(run) as { id: number }

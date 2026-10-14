@@ -15,7 +15,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
   module('orchestrator/src/run/question-mutation.ts', [
     'bun:sqlite',
-    '../../../shared/record/schema.ts',
+    '../../../shared/record-id.ts',
     '../caller-classification.ts',
     '../database/db.ts',
     './question-open.ts',

@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -280,8 +281,8 @@ test('ordinary sync pushes an asking run before its live question', async () => 
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (run_id,asked_at,question,asked_via)
-       VALUES (42,?,'Which?','live')`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via)
+       VALUES ('${newRecordId()}',42,?,'Which?','live')`,
     )
     .run(STAMP)
   local
@@ -649,7 +650,11 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
-  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
+  local
+    .query(
+      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+    )
+    .run(STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
@@ -789,7 +794,11 @@ test('a dependent reports a retired parent without attempting delivery', async (
        VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
-  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
+  local
+    .query(
+      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',42,?,'Which?')`,
+    )
+    .run(STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)

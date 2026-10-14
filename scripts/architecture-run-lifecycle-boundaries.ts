@@ -27,7 +27,6 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       'node:fs',
       '../../../shared/orch-contract.ts',
       '../../../shared/process-identity.ts',
-      '../../../shared/record/schema.ts',
       '../agent/agent-registry.ts',
       '../cli/args.ts',
       '../contract/contract.ts',

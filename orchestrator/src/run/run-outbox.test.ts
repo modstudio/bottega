@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
@@ -55,10 +56,10 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     )
     .run()
   const insert = database.query(
-    `INSERT INTO run (
+    `INSERT INTO run (record_id,
        id, started_at, last_event_at, agent, job, project_id, prompt_sha, prompt_bytes,
        prompt_head, status, retry_of, parent_run_id
-     ) VALUES (?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
+     ) VALUES ('${newRecordId()}',?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
   )
   insert.run(1, '2026-09-15T01:00:00.000Z', '2026-09-15T01:01:00.000Z', null, 'ok', null, null)
   insert.run(2, '2026-09-15T02:00:00.000Z', null, 1, 'failed', 1, null)
@@ -111,8 +112,8 @@ test('backfill leaves hook-tree rows local', () => {
   database
     .query(
       `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-       VALUES ('2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
+       VALUES ('${newRecordId()}','2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
     )
     .run(HOOK_TREE_JOB)
 

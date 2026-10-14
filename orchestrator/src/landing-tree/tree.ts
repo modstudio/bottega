@@ -2,7 +2,7 @@
 /** Opens an architect-owned, project-provisioned tree on a finished run branch. */
 
 import { createHash } from 'node:crypto'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { branchOf, checkedOutWorktree, gitContext } from '../git/git-environment.ts'

@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
@@ -137,8 +138,8 @@ test('a tied claim follows the chain latest turn and renewal restarts its lease'
   const root = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES (?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
     .run(new Date(clock).toISOString())
   const runId = Number(root.lastInsertRowid)
@@ -219,8 +220,8 @@ test('task audience reaches its claim holder, current architect, and live launch
   const run = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
-       VALUES (?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
     )
     .run(new Date(clock).toISOString())
   const posted = postNotice(
@@ -269,8 +270,8 @@ test('a task claim tied to an ended chain does not put its holder in the task au
   const root = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES (?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
+       VALUES ('${newRecordId()}',?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
     .run(new Date(clock).toISOString())
   const runId = Number(root.lastInsertRowid)

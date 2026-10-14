@@ -90,6 +90,27 @@ test('recognizes a schema-qualified destructive table name', () => {
   ])
 })
 
+test('tracks a renamed parent before it is dropped', () => {
+  expect(
+    cascadeRisks([
+      { tag: '0000_schema', source: schema },
+      {
+        tag: '0001_rebuild',
+        source: `
+          ALTER TABLE parent RENAME TO parent_old;
+          DROP TABLE parent_old;`,
+      },
+    ]),
+  ).toEqual([
+    {
+      migration: '0001_rebuild',
+      deletedTable: 'parent_old',
+      dependentTable: 'child',
+      detectedBy: ['parse'],
+    },
+  ])
+})
+
 test('refuses a restore that occurs before the destructive statement', () => {
   expect(
     cascadeRisks([

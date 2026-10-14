@@ -83,12 +83,7 @@ CREATE TABLE run_record_identity (
   ),
   close_out_detail TEXT, close_out_attempted_at TEXT, agent_pgid INTEGER,
   agent_start_time TEXT, keep_tree_until TEXT, keep_tree_reason TEXT, recipe_snapshot TEXT,
-  record_id TEXT NOT NULL DEFAULT (
-    lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
-    substr(lower(hex(randomblob(2))), 2) || '-' ||
-    substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
-    lower(hex(randomblob(6)))
-  ), started_by_user_id TEXT, task_record_id TEXT,
+  record_id TEXT NOT NULL, started_by_user_id TEXT, task_record_id TEXT,
   gate_requests_closed INTEGER NOT NULL DEFAULT 0 CHECK (gate_requests_closed IN (0,1)),
   resource_teardown TEXT CHECK (resource_teardown IN ('pending','done'))
 );
@@ -153,12 +148,7 @@ CREATE TABLE question_record_identity (
   filed_at TEXT,
   closed_at TEXT,
   close_reason TEXT,
-  record_id TEXT NOT NULL DEFAULT (
-    lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
-    substr(lower(hex(randomblob(2))), 2) || '-' ||
-    substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
-    lower(hex(randomblob(6)))
-  ),
+  record_id TEXT NOT NULL,
   revision INTEGER NOT NULL DEFAULT 1,
   workflow_step_ordinal INTEGER,
   workflow_step_slug TEXT,

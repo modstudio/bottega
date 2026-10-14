@@ -2,7 +2,7 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
 import { questionOpenSql } from './question-open.ts'

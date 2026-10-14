@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
 import { latestArchitectRead } from '../review/review-read.ts'
@@ -93,10 +94,10 @@ test('live since-read sends the recorded tip through the service to the observed
   const run = database
     .query<{ id: number }, []>(
       `INSERT INTO run
-        (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,cwd,worktree,
+        (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,cwd,worktree,
          branch,base_commit)
        VALUES
-        ('2026-10-12','codex','implementation','sha',1,'head','running',
+        ('${newRecordId()}','2026-10-12','codex','implementation','sha',1,'head','running',
          'diff-service-fixture','/repo/tree','/repo/tree','DEV-1257-work','base-tip')
        RETURNING id`,
     )

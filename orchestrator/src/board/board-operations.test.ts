@@ -485,8 +485,8 @@ test('a local claim run id is exposed as an opaque string', async () => {
   const inserted = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-       VALUES ('2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
+       (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
+       VALUES ('${newRecordId()}','2026-10-05','codex','implement','board-route-architect','sha',1,'prompt',
                'running','claim-route-session') RETURNING id`,
     )
     .get() as { id: number }

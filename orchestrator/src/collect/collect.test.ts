@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -363,7 +364,9 @@ describe('collection records', () => {
     const ok = addRun({ agent: 'codex', job: 'file-question' })
     const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(asking, new Date().toISOString(), 'which?')
     const logs: string[] = []
     const spy = spyOn(console, 'log').mockImplementation((...parts) => {
@@ -402,7 +405,9 @@ describe('collection records', () => {
       turn: 2,
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(child, new Date().toISOString(), 'which?')
     const logs: string[] = []
     const spy = spyOn(console, 'log').mockImplementation((...parts) => {
@@ -436,7 +441,9 @@ describe('collection records', () => {
     writeFileSync(output, 'partial answer')
     db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(id, new Date().toISOString(), 'which?')
     const logs: string[] = []
     const errors: string[] = []

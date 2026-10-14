@@ -160,7 +160,7 @@ function advanceForeignKeys(
   const rename = renamedTable(statement)
   if (rename) {
     next = next.map((key) => ({
-      parent: key.parent,
+      parent: key.parent === rename.from ? rename.to : key.parent,
       dependent: key.dependent === rename.from ? rename.to : key.dependent,
     }))
   }

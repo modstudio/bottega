@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -77,8 +78,8 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     db()
       .query(
         `INSERT INTO run
-          (started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
-         VALUES (?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
+          (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
       )
       .get(
         new Date().toISOString(),

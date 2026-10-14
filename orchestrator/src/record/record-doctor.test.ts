@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
@@ -182,8 +183,8 @@ describe('record doctor decisions', () => {
     addRun.run(4, '01990000-0000-7000-8000-000000000004', 3)
     database
       .query(
-        `INSERT INTO question (run_id,asked_at,question) VALUES
-         (1,'2026-09-25','default'),
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES
+         ('${newRecordId()}',1,'2026-09-25','default'),
          (2,'2026-09-25','unsynced'),
          (3,'2026-09-25','other'),
          (4,'2026-09-25','unknown')`,
@@ -200,8 +201,8 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO question (workflow_cursor_id,asked_at,question)
-         VALUES (last_insert_rowid(),'2026-09-25','workflow')`,
+        `INSERT INTO question (record_id,workflow_cursor_id,asked_at,question)
+         VALUES ('${newRecordId()}',last_insert_rowid(),'2026-09-25','workflow')`,
       )
       .run()
     database
@@ -238,7 +239,9 @@ describe('record doctor decisions', () => {
       )
       .run()
     database
-      .query("INSERT INTO question (run_id,asked_at,question) VALUES (1,'2026-09-25','no project')")
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',1,'2026-09-25','no project')`,
+      )
       .run()
     database
       .query(

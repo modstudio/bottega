@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -294,8 +295,8 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     writableDb()
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
-         VALUES ('t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
+        `INSERT INTO run (record_id,started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('${newRecordId()}','t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
       )
       .run(project.id)
     expect(() => removeProject('kept-run')).toThrow(

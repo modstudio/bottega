@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
@@ -19,8 +20,8 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
       .get()!
     db()
       .query(`INSERT INTO run
-        (started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
-        VALUES ('2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
+        (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
+        VALUES ('${newRecordId()}','2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
       .run(project.id)
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-branch',

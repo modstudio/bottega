@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, test } from 'bun:test'
 import { runJson } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
@@ -77,7 +78,9 @@ describe('run listing', () => {
   test('runs shows asking in the status column', async () => {
     const id = insert('asking')
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(id, new Date().toISOString(), 'which shape?')
     expect((await command()).join('\n')).toMatch(
       new RegExp(`\\b${id}\\s+codex\\s+implement\\s+asking\\b`),
@@ -246,7 +249,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(id, '2026-09-04T19:55:00.000Z', 'need a ruling')
     const row = runJson((await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!)
     expect(row).toMatchObject({
@@ -263,7 +268,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question,answered_at) VALUES (?,?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question,answered_at) VALUES ('${newRecordId()}',?,?,?,?)`,
+      )
       .run(id, '2026-09-04T16:00:00.000Z', 'need a ruling', '2026-09-04T19:55:00.000Z')
     const question = runJson(
       (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!,
@@ -281,8 +288,8 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
-         VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason)
+         VALUES ('${newRecordId()}',?,?,?,?,?)`,
       )
       .run(
         id,
@@ -304,8 +311,8 @@ describe('run listing', () => {
     const id = insert('ok')
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
-         VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason)
+         VALUES ('${newRecordId()}',?,?,?,?,?)`,
       )
       .run(
         id,
@@ -329,7 +336,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(id, '2026-09-04T16:00:00.000Z', 'still waiting')
     expect(
       (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))
@@ -401,8 +410,8 @@ describe('run listing', () => {
     db()
       .query(
         `INSERT INTO question
-           (run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
-         VALUES (?,?,?,?,?,?,?)`,
+           (record_id,run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
+         VALUES ('${newRecordId()}',?,?,?,?,?,?,?)`,
       )
       .run(
         root,
@@ -414,7 +423,9 @@ describe('run listing', () => {
         'cli',
       )
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('${newRecordId()}',?,?,?)`,
+      )
       .run(child, '2026-09-04T10:10:00.000Z', 'child q')
     const rootQuestion = db().query('SELECT id FROM question WHERE run_id=?').get(root) as {
       id: number

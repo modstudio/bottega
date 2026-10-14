@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { expect, test } from 'bun:test'
 import {
   chmodSync,
@@ -33,7 +34,9 @@ test('heartbeat reports both an answerable question and a stalled current turn',
     )
     .run(sleeper.pid, sleeper.pid, sleeper.pid, birth, '2026-09-22T12:00:00.000Z', turn)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question,why) VALUES (?,?,?,?)')
+    .query(
+      `INSERT INTO question (record_id,run_id,asked_at,question,why) VALUES ('${newRecordId()}',?,?,?,?)`,
+    )
     .run(root, new Date().toISOString(), 'which way?', 'the fixture needs both conditions')
 
   const fakeBin = join(dir, 'heartbeat-bin')

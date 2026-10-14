@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -198,8 +199,8 @@ describe('run mailbox', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (run_id, asked_at, question)
-       VALUES (?, ?, 'which interface?')`,
+        `INSERT INTO question (record_id,run_id, asked_at, question)
+       VALUES ('${newRecordId()}',?, ?, 'which interface?')`,
       )
       .run(root, new Date().toISOString())
 

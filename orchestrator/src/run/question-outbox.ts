@@ -33,10 +33,8 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
   return row
 }
 
-/** Returns false while a parent run has no hosted identity. */
 export function enqueueQuestionRecord(database: Database, questionId: number): boolean {
   const row = loadQuestion(database, questionId)
-  if (row.run_id !== null && row.run_record_id === null) return false
   const recordId = row.record_id!
   const at = nowIso()
   const audits = database
