@@ -23,6 +23,12 @@ export const floorGuidance = {
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
+export function evidenceGuidance(kind: FloorKind, operatorRuling: boolean): string {
+  if (kind === 'ruling' && operatorRuling)
+    return 'call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`'
+  return floorGuidance[kind]
+}
+
 export const DEFAULT_EXPECTED_EXIT_CODE = 0
 export const DEFAULT_EXPECTED_STATUS = 'done'
 
@@ -134,7 +140,7 @@ export type FloorSatisfactionInput = {
   openObligations: OpenObligation[]
 }
 
-function flagForFloor(kind: FloorKind): string {
+export function flagForFloor(kind: FloorKind): string {
   if (kind === 'ruling') return '--ruling <question id> or --review <review id>'
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'

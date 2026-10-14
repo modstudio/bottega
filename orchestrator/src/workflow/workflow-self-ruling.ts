@@ -2,10 +2,18 @@
 /** Pure authority decision for an agent closing a workflow step with its own ruling. */
 
 import type { AutonomyValue } from './autonomy.ts'
-import type { Floor } from './workflow-floor.ts'
+import { type Floor, flagForFloor } from './workflow-floor.ts'
 
 const remedy =
   'use `orch workflow await` and `orch workflow rule` instead, with `--from-operator` where the operator rules'
+
+function operatorRulingRefusal(floors: Pick<Floor, 'kind' | 'operatorRuling'>[]): string {
+  const alternatives = floors.filter((floor) => floor.kind !== 'ruling')
+  if (alternatives.length === 0)
+    return `self-ruling is refused because this step's floor requires an operator ruling; ${remedy}`
+  const named = alternatives.map((floor) => flagForFloor(floor.kind)).join('; ')
+  return `self-ruling is refused because this step's ruling floor requires an operator ruling; close with no ruling using ${named}; an operator ruling is needed only when that other evidence does not close the step — ${remedy}`
+}
 
 export function selfRulingRefusal(
   resolvedAutonomy: AutonomyValue,
@@ -17,7 +25,7 @@ export function selfRulingRefusal(
   if (resolvedAutonomy !== 'auto' && resolvedAutonomy !== 'review')
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))
-    return `self-ruling is refused because this step's floor requires an operator ruling; ${remedy}`
+    return operatorRulingRefusal(floors)
   if (!basis.trim())
     return 'self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with `orch workflow await` and `orch workflow rule --from-operator`'
   return null
