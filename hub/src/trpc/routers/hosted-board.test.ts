@@ -232,6 +232,35 @@ test('hosted board post applies the shared default durations', async () => {
   })
 })
 
+test('hosted board defaults an acknowledgement-required post to request', async () => {
+  let posted: Record<string, unknown> | undefined
+  const client = {
+    boardList: async () => ({ messages: [], truncated: false }),
+    boardThread: async () => ({ root, replies: [] }),
+    boardStatus: async () => ({ message: root, receipts: [] }),
+    boardPost: async (input: Record<string, unknown>) => {
+      posted = input
+      return { ...root, id: mintedPostId, kind: 'notice' }
+    },
+    boardReply: async () => ({ ...root, id: replyId, threadRootId: rootId }),
+    boardAccept: async () => ({ root, replies: [] }),
+    boardWithdraw: async () => root,
+  }
+  const caller = createHostedBoardRouter({
+    clientFor: () => client,
+    clock: () => now,
+    newId: () => mintedPostId,
+  }).createCaller({})
+
+  await caller.post({
+    audience: 'architects',
+    title: 'Required notice',
+    body: 'Body',
+    ackRequired: true,
+  })
+  expect(posted).toMatchObject({ purpose: 'request', ackRequired: true })
+})
+
 test('hosted board reports an incompatible shared response as an internal error', async () => {
   const client = {
     boardList: async () => ({ messages: [], truncated: false }),

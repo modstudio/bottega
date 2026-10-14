@@ -5,7 +5,7 @@ import {
   boardDefaultExpiryMs,
   parseBoardDuration,
 } from '../../../../shared/board-duration.ts'
-import { parseBoardPurpose } from '../../../../shared/board-purpose.ts'
+import { defaultBoardPurpose } from '../../../../shared/board-purpose.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
 import {
   BoardAcceptInputSchema,
@@ -112,7 +112,7 @@ export function createHostedBoardRouter(
       call(async () => {
         const id = deps.newId()
         const now = deps.clock()
-        const purpose = parseBoardPurpose(input.purpose)
+        const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
         const message = await deps.clientFor(ctx).boardPost({
           id,
           kind: 'notice',

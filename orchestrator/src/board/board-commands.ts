@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
+import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
 import {
@@ -153,7 +154,7 @@ function registerBoardPostCommand(board: Command): void {
             audience: options.audience,
             title: options.title,
             body: options.body,
-            purpose: options.purpose,
+            purpose: defaultBoardPurpose(options.purpose, Boolean(options.ackRequired)),
             task: options.task,
             paths: options.path,
             topics: options.topic,

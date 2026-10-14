@@ -3,7 +3,7 @@ import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
-import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
+import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -97,7 +97,8 @@ function rootPurpose(
   actor: BoardActor,
   authorProject: string | null,
 ): BoardPurpose {
-  const purpose = kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)
+  const purpose =
+    kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const refusal =
     acknowledgementRefusal({
       ackRequired: Boolean(input.ackRequired),

@@ -18,7 +18,11 @@ import { SettingBlock } from '@/ui/form-layout/form-layout'
 import { Select } from '@/ui/listbox/select'
 import { PageHeader } from '@/ui/page-header/page-header'
 import { Segmented } from '@/ui/segmented/segmented'
-import { BOARD_PURPOSES, type BoardPurpose } from '../../../../shared/board-purpose.ts'
+import {
+  BOARD_PURPOSES,
+  type BoardPurpose,
+  defaultBoardPurpose,
+} from '../../../../shared/board-purpose.ts'
 import type { AppRouter } from '../../../src/trpc/router.ts'
 
 type BoardOutputs = inferRouterOutputs<AppRouter>['board']
@@ -315,7 +319,7 @@ function NewMessageDialog({
   const [project, setProject] = useState('')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [purpose, setPurpose] = useState<BoardPurpose>('information')
+  const [purpose, setPurpose] = useState<BoardPurpose | undefined>()
   const [ackRequired, setAckRequired] = useState(false)
   const [deadline, setDeadline] = useState('')
   const [expires, setExpires] = useState('')
@@ -337,7 +341,7 @@ function NewMessageDialog({
         setProject('')
         setTitle('')
         setBody('')
-        setPurpose('information')
+        setPurpose(undefined)
         setAckRequired(false)
         setDeadline('')
         setExpires('')
@@ -356,7 +360,7 @@ function NewMessageDialog({
       ...(hosted && project ? { project } : {}),
       title,
       body,
-      purpose,
+      purpose: defaultBoardPurpose(purpose, ackRequired),
       ...(task ? { task } : {}),
       ...(splitValues(paths) ? { paths: splitValues(paths) } : {}),
       ...(splitValues(topics) ? { topics: splitValues(topics) } : {}),
@@ -403,7 +407,7 @@ function NewMessageDialog({
           label="Body"
           control={<Textarea value={body} onChange={(event) => setBody(event.target.value)} />}
         />
-        <PurposeSetting value={purpose} onChange={setPurpose} />
+        <PurposeSetting value={defaultBoardPurpose(purpose, ackRequired)} onChange={setPurpose} />
         <label
           htmlFor="ack-required"
           className="flex items-center gap-2 text-sm text-text-secondary"

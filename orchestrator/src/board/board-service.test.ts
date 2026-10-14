@@ -26,6 +26,27 @@ import {
 } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
+test('local posts default acknowledgement-required messages to request', () => {
+  const posted = postNotice({
+    audience: 'operator',
+    title: 'Compatibility request',
+    body: 'A previous sender omitted purpose.',
+    ackRequired: true,
+  })
+  expect(
+    db().query('SELECT purpose,ack_required FROM board_message WHERE id=?').get(posted.id),
+  ).toEqual({ purpose: 'request', ack_required: 1 })
+  expect(() =>
+    postNotice({
+      audience: 'operator',
+      title: 'Explicit information',
+      body: 'This combination remains invalid.',
+      purpose: 'information',
+      ackRequired: true,
+    }),
+  ).toThrow(/use purpose request or standing/)
+})
+
 function postingProject() {
   const cwd = resolve(import.meta.dir, '../../..')
   db()

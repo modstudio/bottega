@@ -18,6 +18,7 @@ import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch
 import {
   answerWaitingArgv,
   boardList,
+  boardPostArgv,
   configArgv,
   configDeleteArgv,
   contextArgv,
@@ -38,6 +39,19 @@ import {
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('board post bridge carries its resolved purpose', () => {
+  const argv = boardPostArgv({
+    audience: 'operator',
+    title: 'Required notice',
+    body: 'Body',
+    purpose: 'request',
+    ackRequired: true,
+  })
+  const purpose = argv.indexOf('--purpose')
+  expect(purpose).toBeGreaterThan(-1)
+  expect(argv[purpose + 1]).toBe('request')
+})
 
 test('machine bridge schemas parse the CLI output shapes', () => {
   expect(

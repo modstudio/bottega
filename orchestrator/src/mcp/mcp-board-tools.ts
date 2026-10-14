@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { BOARD_PURPOSES } from '../../../shared/board-purpose.ts'
+import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import {
   boardAccept,
@@ -50,7 +50,7 @@ function registerBoardPostTool(server: McpServer): void {
           audience: input.audience,
           title: input.title,
           body: input.body,
-          purpose: input.purpose,
+          purpose: defaultBoardPurpose(input.purpose, Boolean(input.ack_required)),
           task: input.task,
           paths: input.path,
           topics: input.topic,

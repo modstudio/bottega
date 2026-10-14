@@ -4,7 +4,7 @@ import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
-import { parseBoardPurpose } from '../../../shared/board-purpose.ts'
+import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -347,7 +347,8 @@ function hostedPostInput(
 ) {
   const actor = authorFacts(c.env)
   const project = projectAt(c.cwd)?.name
-  const purpose = kind === 'question' ? 'request' : parseBoardPurpose(input.purpose)
+  const purpose =
+    kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const expiresAt = new Date(
     c.clock + (input.expiresMs ?? boardDefaultExpiryMs(purpose)),
   ).toISOString()
@@ -379,7 +380,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   const c = context(inputContext)
   const actor = boardActor(c.env)
   const audience = parseAudience(input.audience)
-  const purpose = parseBoardPurpose(input.purpose)
+  const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const refusal = acknowledgementRefusal({
     ackRequired: Boolean(input.ackRequired),
     purpose,

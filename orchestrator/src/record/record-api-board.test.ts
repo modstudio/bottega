@@ -119,7 +119,7 @@ test('board post accepts every purpose, defaults a missing purpose, and refuses 
       return { id: input.id }
     },
   })
-  const post = (purpose?: string) =>
+  const post = (purpose?: string, ackRequired = false) =>
     app.request('/v1/board/messages', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -130,16 +130,18 @@ test('board post accepts every purpose, defaults a missing purpose, and refuses 
         title: 'Purpose',
         body: 'Body',
         expiresAt,
+        ...(ackRequired ? { ackRequired: true } : {}),
         ...(purpose === undefined ? {} : { purpose }),
       }),
     })
   for (const purpose of ['information', 'request', 'standing'])
     expect((await post(purpose)).status).toBe(200)
   expect((await post()).status).toBe(200)
+  expect((await post(undefined, true)).status).toBe(200)
   const unknown = await post('unknown')
   expect(unknown.status).toBe(400)
   expect(await unknown.json()).toEqual({ error: 'invalid board message' })
-  expect(purposes).toEqual(['information', 'request', 'standing', 'information'])
+  expect(purposes).toEqual(['information', 'request', 'standing', 'information', 'request'])
 })
 
 test('board status binds the caller tenant and returns the service view', async () => {

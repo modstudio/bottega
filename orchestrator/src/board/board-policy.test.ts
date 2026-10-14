@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   acknowledgementRefusal,
@@ -16,6 +17,13 @@ import {
   validatePostNoticeInput,
 } from './board-policy.ts'
 import { boardActor } from './board-store.ts'
+
+test('an omitted purpose defaults from acknowledgement while an explicit purpose wins', () => {
+  expect(defaultBoardPurpose(undefined, false)).toBe('information')
+  expect(defaultBoardPurpose(undefined, true)).toBe('request')
+  expect(defaultBoardPurpose('information', false)).toBe('information')
+  expect(defaultBoardPurpose('information', true)).toBe('information')
+})
 
 test('notice header fields refuse every line separator', () => {
   expect(() => validatePostNoticeInput({ title: 'bad\nvalue', body: 'body' })).toThrow(
