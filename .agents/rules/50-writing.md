@@ -26,12 +26,12 @@ When a check or configuration enforces a rule, state the rule once and name
 the enforcement. Do not restate the configuration.
 
 Do not maintain command-reference tables. Name the verb needed by a rule;
-`orch --help`, `orch <verb> --help` and `hub --help` own flags and usage.
+`bottega --help` and `bottega <group> <verb> --help` own flags and usage.
 
 Every cited repository path, symbol, code name and package script must resolve
 on the tree. Find and cite the current location or drop a stale citation while
 preserving the rule.
 
-Every new canon file must have no `orch canon lint` findings. Regenerate
+Every new canon file must have no `bottega doc canon lint` findings. Regenerate
 `scripts/quality/canon-lint.json` so it records only findings in files outside
 the change. Never add a changed file's finding to the baseline.

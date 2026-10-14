@@ -29,7 +29,7 @@ code does not duplicate it.
 
 ## Bottega serves the other projects
 
-Workflow and lifecycle capability belongs here and is exposed through `orch`,
+Workflow and lifecycle capability belongs here and is exposed through `bottega`,
 the MCP surface and the project register. Do not copy a Bottega mechanism into
 a project when that project can call Bottega. A project's worktree lifecycle
 takes one of three modes. Managed with project hooks is the default: Bottega
@@ -40,7 +40,7 @@ recipe step that runs project code runs the tree's own copy, never the main
 checkout's, so the recipe and the code it calls are one version.
 
 A project may keep its own task tracker, doc store, workflows or review
-pipeline. The project register, read with `orch project list --json`, is the
+pipeline. The project register, read with `bottega project list --json`, is the
 authority on which concerns it keeps, its key prefixes, landing branch,
 worktree recipes and project notes. Read it before assuming which system
 applies or that a project lacks a capability. Pull requests target the declared
@@ -56,7 +56,7 @@ log or to a database the dashboard serves. Only whether a reference resolves
 may be reported. Gitleaks gates the repository, and its allowlist is limited to
 named fake fixture credentials in `.gitleaks.toml`.
 
-Summaries go through `orch`; do not add a metered provider key for them.
+Summaries go through `bottega`; do not add a metered provider key for them.
 
 ## This machine
 
@@ -90,12 +90,12 @@ is not a rate.
 ## Tasks
 
 Work in progress is tracked in `hub`, and every task, branch and commit subject
-carries its project task key. Use `hub task` to manage tasks. Work without a key
-cannot later be attributed to its task. `orch do` requires the key.
+carries its project task key. Use `bottega task` to manage tasks. Work without a key
+cannot later be attributed to its task. `bottega run start` requires the key.
 
 The project register is authoritative for task-key prefixes and worktree
 recipes. Its project update verbs verify declared branches and refuse a
-mismatch; `orch doctor` reports a checkout on the wrong branch as a register
+mismatch; `bottega machine doctor` reports a checkout on the wrong branch as a register
 question rather than a run failure.
 
 ## Canon
@@ -103,11 +103,11 @@ question rather than a run failure.
 Canon has four tiers. This entry and `.agents/rules/` are always on; context
 files are path-scoped; a directory `AGENTS.md` is its folder card; demand
 references live in the doc store. Canon rows use doc-store scope
-`canon` and reach the tree through `orch canon hydrate`. Research and plans
+`canon` and reach the tree through `bottega doc canon hydrate`. Research and plans
 live in the doc store, not always-on files.
 
-An architect edits canon in the store with `orch doc set` at scope `canon`,
-syncs it into a worktree with `orch canon hydrate`, then commits the files
+An architect edits canon in the store with `bottega doc set` at scope `canon`,
+syncs it into a worktree with `bottega doc canon hydrate`, then commits the files
 hydrate wrote. A worker instead writes the intended hydrated file in its tree
 and states the exact store change in its reply. After review, the architect
 applies that store change before the final gate; hydration must then reproduce
@@ -115,7 +115,7 @@ the reviewed tree file. An unreported tree edit is overwritten at the next
 hydrate and never becomes canon.
 
 Every `AGENTS.md` has a sibling `CLAUDE.md` symlink. `.claude/rules` exposes the
-always-on rules. `orch canon lint` gates tier budgets, metadata, writing rules
+always-on rules. `bottega doc canon lint` gates tier budgets, metadata, writing rules
 and citations.
 
 ---
@@ -546,13 +546,13 @@ When a check or configuration enforces a rule, state the rule once and name
 the enforcement. Do not restate the configuration.
 
 Do not maintain command-reference tables. Name the verb needed by a rule;
-`orch --help`, `orch <verb> --help` and `hub --help` own flags and usage.
+`bottega --help` and `bottega <group> <verb> --help` own flags and usage.
 
 Every cited repository path, symbol, code name and package script must resolve
 on the tree. Find and cite the current location or drop a stale citation while
 preserving the rule.
 
-Every new canon file must have no `orch canon lint` findings. Regenerate
+Every new canon file must have no `bottega doc canon lint` findings. Regenerate
 `scripts/quality/canon-lint.json` so it records only findings in files outside
 the change. Never add a changed file's finding to the baseline.
 
@@ -572,25 +572,25 @@ Inbox zero forbids speculative rows, not the rule that a filer owns disposition.
 
 ## Suggestions are observations, not tasks
 
-File an observation with `orch note`. A note is one line of free text; project,
+File an observation with `bottega note new`. A note is one line of free text; project,
 run, branch, session, commit and any file anchor are derived at write time. Do
 not use a shared document as a suggestion ledger.
 
-Search for near entries when filing. Mark a repeated observation through `hub
+Search for near entries when filing. Mark a repeated observation through `bottega
 note same`, which increments its count and adds a sighting. Never run scheduled
 text-similarity merging, because similar findings may be distinct. Repetition
 with cost is the promotion signal.
 
 Staleness is mechanical: anchors disappear when their file location, run,
-branch or commit range disappears. `hub note stale` marks vanished anchors and
+branch or commit range disappears. `bottega note stale` marks vanished anchors and
 reaps only stale singleton notes untouched through the staleness window and
-never promoted. `hub note curate` runs curation, and `hub note curator`
+never promoted. `bottega note curate` runs curation, and `bottega note curator`
 controls scheduled curation. All other disposition is human.
 
-Promotion is always a human act through `hub note promote`; the task carries
+Promotion is always a human act through `bottega note promote`; the task carries
 the note body and sightings as evidence. Scheduled work never promotes and the
-board never grows by itself. Filing belongs to `orch note`, while keeping,
-promoting, dropping and merging belong to `hub note`.
+board never grows by itself. `bottega note new` files a note; `bottega note same`,
+`keep`, `promote` and `drop` dispose of it.
 
 If an entry needs fields beyond text, tags and sightings, it is a task. Promote
 it instead of building another tracker inside notes.
@@ -604,7 +604,7 @@ always: true
 
 ## Score dispatched work
 
-Read and score every run you dispatched, and never score a run you did not read. Unscored work cannot improve routing, while a guessed verdict teaches it something false. Use `orch pending` to find your runs and `orch score` or `orch judge` to close them. An unscored run whose owner session has gone unseen past `UNJUDGED_OWNER_WINDOW_MS`, or that has no owner, is expired by `orch sweep` as evidence-excluded with no verdict, because nobody remains who read it; a verdict its owner records later lifts that exclusion.
+Read and score every run you dispatched, and never score a run you did not read. Unscored work cannot improve routing, while a guessed verdict teaches it something false. Use `bottega score pending` to find your runs and `bottega score` or `bottega score judge` to close them. An unscored run whose owner session has gone unseen past `UNJUDGED_OWNER_WINDOW_MS`, or that has no owner, is expired by `bottega machine sweep` as evidence-excluded with no verdict, because nobody remains who read it; a verdict its owner records later lifts that exclusion.
 
 ## Arm the heartbeat
 
@@ -612,18 +612,18 @@ When you dispatch work that you will not collect immediately, run `orchestrator/
 
 ## Stop at unanswered questions
 
-Never continue or land a chain while its worker has an unanswered question, because resuming it would force a guess. Use `orch answer` before `orch continue`.
+Never continue or land a chain while its worker has an unanswered question, because resuming it would force a guess. Use `bottega question answer` before `bottega run continue`.
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `orch pr create`, and merge it with `orch pr merge`. `orch pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `orch pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. It merges exactly the commit it admitted and proved. The local gate proves the commit; the pull request admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and merge it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. It merges exactly the commit it admitted and proved. The local gate proves the commit; the pull request admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
-On a machine where Bottega is developed, the installed copy is the `main` checkout and stays on its registered landing branch. Run `orch release check` before tagging, then cut a release by tagging the release commit and pushing the tag; never check out the tag in the development checkout. The pushed tag runs the same version check again before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
+On a machine where Bottega is developed, the installed copy is the `main` checkout and stays on its registered landing branch. Run `bottega release check` before tagging, then cut a release by tagging the release commit and pushing the tag; never check out the tag in the development checkout. The pushed tag runs the same version check again before publishing. The version in `package.json` must match the tag. The per-user store migrates only forward, so a copy older than the store refuses to open it.
 
 On any other machine, install a release in its own directory and update it by replacing that directory.
 
 ## Close out the session
 
-Release terminal worktrees with `orch close-out`, prune landed run branches with `orch branches prune`, which sweep also runs, close landed tasks with `hub task`, and offer a resume brief through `orch doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.
+Release terminal worktrees with `bottega run close-out`, prune landed run branches with `bottega tree branch prune`, which sweep also runs, close landed tasks with `bottega task`, and offer a resume brief through `bottega doc`. A session with held trees, unscored runs, or unclosed landed tasks is paused rather than finished.

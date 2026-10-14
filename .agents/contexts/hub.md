@@ -104,10 +104,10 @@ project because it is the blind spot in every task denominator.
 
 # Orchestrator boundary and schema
 
-Hub reads orchestrator data through the `orch runs` CLI interface and never opens
+Hub reads orchestrator data through the `bottega run list` CLI interface and never opens
 `orch.db`. Concerns do not share a local store.
 
-Opening `hub.db` never changes its schema. `hub migrate` is the only schema writer and
+Opening `hub.db` never changes its schema. `bottega machine migrate` is the only schema writer and
 applies the ordered, checksummed journal in `hub/migrations`. Ordinary opens refuse stores
 whose journal is behind or ahead, and write transactions refuse a schema version different
 from the one the process opened. `SCHEMA_INVARIANT`, `CONNECTION_SCHEMA_INVARIANT`, and
@@ -147,7 +147,7 @@ the window belongs under also worked on. Determine closure from an observed stat
 transition, falling back to the tracker's update timestamp where observation history is
 unavailable. The send floor measures engaged time rather than conversation gaps.
 
-Summaries go through `orch`. An unusable summary removes optional sentences, never the
+Summaries go through `bottega`. An unusable summary removes optional sentences, never the
 report, because task titles remain authoritative. A report brief supplies stakes absent
 from a title; an exclusion removes matched work from the email without removing it from
 measurement.
