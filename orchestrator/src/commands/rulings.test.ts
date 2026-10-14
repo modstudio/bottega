@@ -34,9 +34,7 @@ function answeredQuestion(project: string): number {
   return (
     db()
       .query(
-        `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel)
-         VALUES (?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
+        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-10-01','Which shape?','Keep it.','2026-10-01',?,'operator','cli')
          RETURNING id`,
       )
       .get(runId, SESSION) as { id: number }

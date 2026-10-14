@@ -198,8 +198,7 @@ describe('run mailbox', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db()
       .query(
-        `INSERT INTO question (run_id, asked_at, question)
-       VALUES (?, ?, 'which interface?')`,
+        `INSERT INTO question (record_id,run_id, asked_at, question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?, ?, 'which interface?')`,
       )
       .run(root, new Date().toISOString())
 

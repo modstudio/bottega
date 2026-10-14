@@ -25,9 +25,8 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
-                         repo, cwd, worktree)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
+        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
+                         repo, cwd, worktree) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
       )
       .get(new Date().toISOString(), job, status, dir, dir) as { id: number }
   ).id
@@ -184,7 +183,9 @@ describe('run continuation', () => {
   test('an open question refuses before a continuation message callback is called', async () => {
     const root = insert('asking')
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(root, new Date().toISOString(), 'Which correction should be applied?')
     let calls = 0
 

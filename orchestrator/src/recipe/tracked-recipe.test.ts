@@ -102,9 +102,7 @@ describe('tracked recipe execution', () => {
     const runId = Number(
       database
         .query(
-          `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-           VALUES (?,'codex','implement','sha',1,'compose ownership','running',?,1)`,
+          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'compose ownership','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
     )
@@ -189,9 +187,7 @@ describe('tracked recipe execution', () => {
         .run(repoRoot).lastInsertRowid,
     )
     const insertRun = database.query(
-      `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES (?,'codex','implement','sha',1,'required provision','running',?,1)`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'required provision','running',?,1)`,
     )
     const runId = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
     const unrelatedRunId = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
@@ -495,9 +491,7 @@ describe('tracked recipe execution', () => {
     const runId = Number(
       database
         .query(
-          `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-           VALUES (?,'codex','implement','sha',1,'shared claims','running',?,1)`,
+          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'shared claims','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
     )
@@ -568,9 +562,7 @@ describe('tracked recipe execution', () => {
     const rootId = Number(
       database
         .query(
-          `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,recipe_snapshot)
-           VALUES (?,'codex','implement','sha',1,'root','asking',?,1,?)`,
+          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,recipe_snapshot) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'root','asking',?,1,?)`,
         )
         .run(
           nowIso(),
@@ -585,9 +577,7 @@ describe('tracked recipe execution', () => {
     const turnId = Number(
       database
         .query(
-          `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,parent_run_id)
-           VALUES (?,'codex','implement','sha',1,'resume','running',?,2,?)`,
+          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn,parent_run_id) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'resume','running',?,2,?)`,
         )
         .run(nowIso(), projectId, rootId).lastInsertRowid,
     )
@@ -608,9 +598,7 @@ describe('tracked recipe execution', () => {
     const runId = Number(
       database
         .query(
-          `INSERT INTO run
-           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-           VALUES (?,'codex','implement','sha',1,'tracked databases','running',?,1)`,
+          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'tracked databases','running',?,1)`,
         )
         .run(nowIso(), projectId).lastInsertRowid,
     )
@@ -764,9 +752,7 @@ describe('tracked recipe execution', () => {
         .lastInsertRowid,
     )
     const insertRun = database.query(
-      `INSERT INTO run
-       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
-       VALUES (?,'codex','implement','sha',1,'database teardown','running',?,1)`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'database teardown','running',?,1)`,
     )
     const successfulRun = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
     const failedRun = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)

@@ -103,8 +103,7 @@ describe('reapStale', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
-       VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id, asked_at, question, answer, answered_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso())
     const child = addRun({
@@ -134,9 +133,7 @@ describe('reapStale', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()
       .query(
-        `INSERT INTO question
-          (run_id,asked_at,question,answer,answered_at,delivery_pending_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,?)`,
       )
       .run(root, nowIso(), 'answered', 'the ruling', nowIso(), nowIso())
     const child = addRun({

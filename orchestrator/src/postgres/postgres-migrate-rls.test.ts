@@ -129,8 +129,7 @@ realPostgres('RLS proof against real Postgres', () => {
         id, space_id, project_id, machine_id, local_id, started_at, agent, job,
         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
         automatic_failover, work_preserved, created_at, updated_at
-      ) VALUES
-        ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
+      ) VALUES ('${RUN_A}', '${SPACE_A}', '${PROJECT_A}', '${MACHINE_A}', 1, now(), 'proof', 'proof',
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
         ('${RUN_B}', '${SPACE_B}', '${PROJECT_B}', '${MACHINE_A}', 2, now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
@@ -250,8 +249,7 @@ realPostgres('RLS proof against real Postgres', () => {
          id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
          work_preserved,created_at,updated_at
-       ) VALUES
-        ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+       ) VALUES ('${authRunA}','${authSpaceA}','${authProjectA}','${MACHINE_A}',101,now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
         ('${authRunB}','${authSpaceB}','${authProjectB}','${MACHINE_A}',102,now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
@@ -680,8 +678,7 @@ realPostgres('RLS proof against real Postgres', () => {
            id,space_id,project_id,machine_id,local_id,started_at,agent,job,prompt_sha,
            prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
            work_preserved,created_at,updated_at
-         ) VALUES
-           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
+         ) VALUES ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',103,now(),
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
            ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${MACHINE_A}',104,now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());

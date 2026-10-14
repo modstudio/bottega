@@ -77,7 +77,9 @@ describe('run listing', () => {
   test('runs shows asking in the status column', async () => {
     const id = insert('asking')
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'which shape?')
     expect((await command()).join('\n')).toMatch(
       new RegExp(`\\b${id}\\s+codex\\s+implement\\s+asking\\b`),
@@ -246,7 +248,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, '2026-09-04T19:55:00.000Z', 'need a ruling')
     const row = runJson((await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!)
     expect(row).toMatchObject({
@@ -263,7 +267,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question,answered_at) VALUES (?,?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question,answered_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?)",
+      )
       .run(id, '2026-09-04T16:00:00.000Z', 'need a ruling', '2026-09-04T19:55:00.000Z')
     const question = runJson(
       (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))[0]!,
@@ -281,8 +287,7 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
-         VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?)`,
       )
       .run(
         id,
@@ -304,8 +309,7 @@ describe('run listing', () => {
     const id = insert('ok')
     db()
       .query(
-        `INSERT INTO question (run_id,asked_at,question,closed_at,close_reason)
-         VALUES (?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?)`,
       )
       .run(
         id,
@@ -329,7 +333,9 @@ describe('run listing', () => {
       startedAt: '2026-09-04T15:00:00.000Z',
     })
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, '2026-09-04T16:00:00.000Z', 'still waiting')
     expect(
       (await command({ json: true, since: ['2026-09-04T18:00:00.000Z'] }))
@@ -400,9 +406,7 @@ describe('run listing', () => {
     db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
     db()
       .query(
-        `INSERT INTO question
-           (run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel)
-         VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,?,?)`,
       )
       .run(
         root,
@@ -414,7 +418,9 @@ describe('run listing', () => {
         'cli',
       )
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(child, '2026-09-04T10:10:00.000Z', 'child q')
     const rootQuestion = db().query('SELECT id FROM question WHERE run_id=?').get(root) as {
       id: number

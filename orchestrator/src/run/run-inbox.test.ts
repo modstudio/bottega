@@ -64,7 +64,9 @@ test('scoped inbox JSON identifies an unregistered cwd', async () => {
 })
 const question = (run: number, text: string) =>
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+    )
     .get(run, new Date().toISOString(), text) as { id: number }
 
 test('inbox names the canonical root in its answer footer', async () => {
@@ -100,9 +102,7 @@ test('inbox shows an overturned ruling and its reason', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
-      `INSERT INTO question
-        (run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
-       VALUES (?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
     )
     .run(run)
   const output = await inbox({ all: true })
@@ -112,9 +112,7 @@ test('inbox shows a filed ruling ref', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
-      `INSERT INTO question
-        (run_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at)
-       VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,filed_as,filed_ref,filed_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
     )
     .run(run)
   const output = await inbox({ all: true })
@@ -127,9 +125,7 @@ test('inbox shows a canon filing label and UUID', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
-      `INSERT INTO question
-        (run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
-       VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
                '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
     )
     .run(run)
@@ -196,9 +192,7 @@ test('inbox lists workflow questions with their identity and answer command', as
     .run()
   const inserted = db()
     .query<{ id: number }, []>(
-      `INSERT INTO question
-      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES (1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING id`,
+      `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix') RETURNING id`,
     )
     .get()!
 
@@ -237,9 +231,7 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
     .run()
   db()
     .query(
-      `INSERT INTO question
-      (workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
-     VALUES (1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
+      `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),1,'DEV-1069','2026-10-01','Which fix?','workflow',3,'fix')`,
     )
     .run()
 
@@ -316,7 +308,9 @@ test('inbox --all --active --json includes active foreign and omits terminal que
   })
   question(active, 'active?')
   db()
-    .query('INSERT INTO question (run_id,asked_at,question,answer,answered_at) VALUES (?,?,?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?)",
+    )
     .run(active, new Date().toISOString(), 'already answered?', 'ruled', new Date().toISOString())
   question(terminal, 'terminal?')
   const rows = JSON.parse(await inbox({ all: true, active: true, json: true }))
@@ -408,7 +402,7 @@ test('inbox marks an answered-but-undelivered chain stranded', async () => {
   })
   db()
     .query(
-      'INSERT INTO question (run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES (?,?,?,?,?,?)',
+      "INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?,?)",
     )
     .run(
       id,
@@ -429,7 +423,7 @@ test('close-out retires a stale chain pending delivery from the inbox', async ()
   })
   db()
     .query(
-      'INSERT INTO question (run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES (?,?,?,?,?,?)',
+      "INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,delivery_pending_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?,?)",
     )
     .run(
       id,

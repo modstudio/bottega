@@ -369,9 +369,8 @@ describe('routing counts failures as evidence', () => {
     // last run had failed `unreachable`.
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
-                        status, failure_kind)
-       VALUES (datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
+        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
+                        status, failure_kind) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
                'failed','unreachable')`,
       )
       .run()

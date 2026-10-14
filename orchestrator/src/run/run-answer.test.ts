@@ -84,8 +84,7 @@ function insert(status: string, job = 'file-question'): number {
   return (
     db()
       .query(
-        `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
-     VALUES (?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING id`,
+        `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING id`,
       )
       .get(new Date().toISOString(), job, status, dir) as { id: number }
   ).id
@@ -120,7 +119,7 @@ describe('run answers', () => {
       .run('orch-test-session', 'valid-session', prompt, dir, id)
     db()
       .query(
-        'INSERT INTO question (run_id,asked_at,question,awaiting_operator_at) VALUES (?,?,?,?)',
+        "INSERT INTO question (record_id,run_id,asked_at,question,awaiting_operator_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?)",
       )
       .run(id, new Date().toISOString(), 'which shape?', new Date().toISOString())
     await answerRun(
@@ -160,7 +159,9 @@ describe('run answers', () => {
       .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
       .run('orch-test-session', 'vendor', id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'which shape?')
     let childId = 0
     const dispatch: typeof detach = async (_job, _prompt, spec) => {
@@ -193,7 +194,9 @@ describe('run answers', () => {
       .query('UPDATE run SET session_id=?,vendor_session=?,record_id=? WHERE id=?')
       .run('orch-test-session', 'vendor', '01990000-0000-7000-8000-000000000042', id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'which shape?')
     const dispatch: typeof detach = async () => {
       throw new Error('fixture dispatch failed')
@@ -249,7 +252,9 @@ describe('run answers', () => {
       .query('UPDATE run SET session_id=?,vendor_session=?,record_id=? WHERE id=?')
       .run('orch-test-session', 'vendor', '01990000-0000-7000-8000-000000000043', id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'which shape?')
     const dispatch: typeof detach = async () => {
       db()
@@ -287,7 +292,9 @@ describe('run answers', () => {
     const body = 'x'.repeat(190_000)
     for (let i = 1; i <= 6; i++)
       db()
-        .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+        .query(
+          "INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+        )
         .run(id, new Date().toISOString(), `q${i}?`)
     const questions = db()
       .query('SELECT id, question FROM question WHERE run_id=? ORDER BY id')
@@ -330,7 +337,7 @@ describe('run answers', () => {
     })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
     const addQuestion = db().query(
-      'INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)',
+      "INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
     )
     addQuestion.run(root, new Date().toISOString(), 'root question?')
     addQuestion.run(child, new Date().toISOString(), 'child question?')
@@ -346,7 +353,9 @@ describe('run answers', () => {
     const id = insert('stopped', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
     db()
-      .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'still answerable?')
     await expect(
       answerRun(id, { argv: ['yes'], recordOnly: false, flags }, helpers),
@@ -373,7 +382,9 @@ describe('run answers', () => {
       })
       if (excluded) db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excluded, id)
       db()
-        .query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+        .query(
+          "INSERT INTO question (record_id,run_id, asked_at, question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+        )
         .run(id, new Date().toISOString(), `${status} question?`)
       const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
       await expect(
@@ -392,7 +403,9 @@ describe('run answers', () => {
 test('answer says an existing ruling stuck and reports the current status', async () => {
   const id = insert('failed', 'implement')
   db()
-    .query('INSERT INTO question (run_id,question,answer,asked_at,answered_at) VALUES (?,?,?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,question,answer,asked_at,answered_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?)",
+    )
     .run(id, 'which way?', 'the ruled way', new Date().toISOString(), new Date().toISOString())
   await expect(
     answerRun(id, { argv: ['again'], recordOnly: false, flags }, helpers),
@@ -407,7 +420,9 @@ test('answer delivers an asking child ruling under an ok root without resuming t
     .run('orch-test-session', 'vendor', root)
   db().query('UPDATE run SET parent_run_id=?,turn=2,pid=? WHERE id=?').run(root, process.pid, child)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(child, new Date().toISOString(), 'which shape?')
   await answerRun(root, { argv: ['the direct shape'], recordOnly: false, flags }, helpers)
   expect(
@@ -426,7 +441,9 @@ test('answer reads a ruling from a file without shell interpretation', async () 
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['--file', path], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({
@@ -440,7 +457,9 @@ test('answer reads a ruling from stdin without shell interpretation', async () =
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   const stdinHelpers = {
     ...helpers,
@@ -463,7 +482,9 @@ test('answer --q<id> --file reads the file and never stores the flag name', asyn
     .run('orch-test-session', 'vendor', id)
   const q = (
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+      )
       .get(id, new Date().toISOString(), 'which?') as { id: number }
   ).id
   const path = trackResidue(join(dir, `q-${q}.txt`))
@@ -480,7 +501,9 @@ test('a ruling of --file alone is refused and not stored', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await expect(
     answerRun(id, { argv: ['--file'], recordOnly: true, flags }, helpers),
@@ -494,7 +517,9 @@ test('a ruling containing backticks and command substitution is stored byte-for-
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   const path = trackResidue(join(dir, `shell-${id}.txt`))
   const ruling = '`echo literal` and $(still literal)'
@@ -511,7 +536,7 @@ test('multi-question answer mixes positional --q text with per-question --file',
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    'INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id',
+    "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
   )
   const first = (add.get(id, new Date().toISOString(), 'one?') as { id: number }).id
   const second = (add.get(id, new Date().toISOString(), 'two?') as { id: number }).id
@@ -538,7 +563,9 @@ test('a multi-word positional ruling is stored whole, not just the first word', 
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['all', 'the', 'words'], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({
@@ -552,7 +579,9 @@ test('a two-word message beginning with -- is accepted as a ruling', async () =>
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['--literal', 'value'], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({
@@ -568,12 +597,16 @@ test('a --q naming a question that is not open on this chain refuses the whole c
     .run('orch-test-session', 'vendor', id, other)
   const own = (
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+      )
       .get(id, new Date().toISOString(), 'own?') as { id: number }
   ).id
   const foreign = (
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+      )
       .get(other, new Date().toISOString(), 'foreign?') as { id: number }
   ).id
   await expect(
@@ -593,7 +626,9 @@ test('a closed or duplicate --q refuses the whole command', async () => {
     .run('orch-test-session', 'vendor', id)
   const q = (
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+      )
       .get(id, new Date().toISOString(), 'own?') as { id: number }
   ).id
   await expect(
@@ -612,7 +647,9 @@ test('answer --file refuses invalid UTF-8 at the byte offset', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   const path = trackResidue(join(dir, `invalid-${id}.txt`))
   writeFileSync(path, new Uint8Array([0x61, 0xff]))
@@ -627,7 +664,9 @@ test('answer stdin refuses invalid UTF-8 at the byte offset', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   const stdinHelpers = {
     ...helpers,
@@ -645,7 +684,9 @@ test('answer keeps flag-shaped words after the message starts', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['use', '--file', 'literally'], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({
@@ -659,7 +700,9 @@ test('answer stdin refuses whitespace-only input', async () => {
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   const stdinHelpers = {
     ...helpers,
@@ -680,7 +723,7 @@ test('a partial multi-question ruling names the single-command rule', async () =
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('orch-test-session', 'vendor', id)
   const add = db().query(
-    'INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id',
+    "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
   )
   const first = (add.get(id, new Date().toISOString(), 'one?') as { id: number }).id
   add.get(id, new Date().toISOString(), 'two?')
@@ -701,7 +744,9 @@ test('a leaf id answers the open question in its conversation', async () => {
     .run('orch-test-session', 'vendor', root)
   db().query('UPDATE run SET parent_run_id=?,turn=2,pid=? WHERE id=?').run(root, process.pid, child)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(child, new Date().toISOString(), 'which?')
   await answerRun(child, { argv: ['the existing shape'], recordOnly: false, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(child)).toEqual({
@@ -713,7 +758,9 @@ test('answer rejects a fixture ruling from a non-owning session without writing 
   const id = insert('asking', 'implement')
   db().query('UPDATE run SET session_id=? WHERE id=?').run('owning-session', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await expect(
     answerRun(id, { argv: ['foreign ruling'], recordOnly: false, flags }, helpers),
@@ -727,7 +774,9 @@ test('a plain operator answers a run whose owner is gone', async () => {
     .query('UPDATE run SET session_id=?,started_at=?,last_event_at=? WHERE id=?')
     .run('gone-owner', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   delete process.env.CLAUDE_CODE_SESSION_ID
 
@@ -748,7 +797,9 @@ test('a plain operator answers a run whose owner is gone', async () => {
 test('UI operator answers require the hub dashboard capability', async () => {
   const id = insert('asking', 'implement')
   const question = db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+    )
     .get(id, new Date().toISOString(), 'which?') as { id: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
   delete process.env.ORCH_DEPTH
@@ -774,7 +825,9 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?')
     .run('dispatching-session', 'vendor', id)
   const question = db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?) RETURNING id",
+    )
     .get(id, new Date().toISOString(), 'which?') as { id: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
   delete process.env.ORCH_DEPTH
@@ -826,7 +879,9 @@ test('answer permits an unowned question, warns, and records the answering sessi
   const id = insert('running', 'implement')
   db().query('UPDATE run SET session_id=NULL,pid=? WHERE id=?').run(process.pid, id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['the existing shape'], recordOnly: false, flags }, helpers)
   expect(db().query('SELECT answer,answered_by FROM question WHERE run_id=?').get(id)).toEqual({
@@ -842,7 +897,9 @@ test('answer refuses an asking run with no vendor session without recording the 
   const id = insert('asking', 'implement')
   db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
   await expect(
     answerRun(id, { argv: ['use the existing shape'], recordOnly: false, flags }, helpers),
@@ -856,7 +913,9 @@ test('answer refuses a missing continuation checkout before recording the ruling
     .query('UPDATE run SET session_id=?,vendor_session=?,repo=NULL WHERE id=?')
     .run('orch-test-session', 'vendor-session', id)
   db()
-    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+    .query(
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+    )
     .run(id, new Date().toISOString(), 'which?')
 
   await expect(
@@ -918,7 +977,9 @@ describe('retry command', () => {
     const id = failed('implement')
     db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
     db()
-      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
+      .query(
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
+      )
       .run(id, new Date().toISOString(), 'Which retained shape?')
     await expect(retry(id, { agent: 'codex' })).rejects.toThrow(
       `run ${id} is asking with open questions: q`,
@@ -950,9 +1011,7 @@ describe('retry command', () => {
     const questionId = (
       db()
         .query(
-          `INSERT INTO question
-             (run_id, asked_at, question, answer, answered_at, delivery_pending_at)
-           VALUES (?,?,?,?,?,?) RETURNING id`,
+          `INSERT INTO question (record_id,run_id, asked_at, question, answer, answered_at, delivery_pending_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,?) RETURNING id`,
         )
         .get(
           id,

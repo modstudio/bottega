@@ -790,9 +790,7 @@ describe('record cache pull', () => {
     const unvoidAt = '2026-09-24T12:02:00.000Z'
     db()
       .query(
-        `INSERT INTO run
-          (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         localId,

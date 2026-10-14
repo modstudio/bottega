@@ -79,9 +79,7 @@ test('questions are withheld from run readers and architect broadcasts reject no
   const clock = Date.now() + 200_000
   const run = db()
     .query(
-      `INSERT INTO run
-       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES (?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
+      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING id`,
     )
     .get(new Date(clock).toISOString()) as { id: number }
   const workerQuestion = askQuestion(

@@ -155,7 +155,7 @@ export async function detach(
         `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session, started_by_user_id)
-       SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
           AND NOT EXISTS (

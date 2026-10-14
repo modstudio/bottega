@@ -16,9 +16,9 @@ test('landing evidence backfill mints references in order, maps every column, an
   applyMigrations(database)
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
-    .query(`INSERT INTO run
-      (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-      VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok')`)
+    .query(
+      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok')`,
+    )
     .run()
   database
     .query(

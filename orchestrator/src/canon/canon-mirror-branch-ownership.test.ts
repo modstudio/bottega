@@ -18,9 +18,9 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
       .query<{ id: number }, []>("SELECT id FROM project WHERE name='cm-foreign-branch'")
       .get()!
     db()
-      .query(`INSERT INTO run
-        (started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
-        VALUES ('2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
+      .query(
+        `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`,
+      )
       .run(project.id)
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-branch',
