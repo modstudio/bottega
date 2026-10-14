@@ -25,12 +25,15 @@ function fixture(status = 'ok'): { database: Database; questionId: number } {
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (42,'01990000-0000-7000-8000-000000000042','2026-09-29','codex','implement','sha',3,'ask',?)`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,'01990000-0000-7000-8000-000000000042','2026-09-29','codex','implement','sha',3,'ask',?)`,
     )
     .run(status)
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
+      `INSERT INTO question (run_id,asked_at,question)
+       VALUES (42,'2026-09-29T10:01:00.000Z','Which?') RETURNING id`,
     )
     .get() as { id: number }
   return { database, questionId: question.id }

@@ -766,9 +766,7 @@ describe('voided output evidence', () => {
   test('score --void leaves an asking chain and its question open', async () => {
     const id = insert('asking', 'review-lens')
     db()
-      .query(
-        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
-      )
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
       .run(id, '2026-09-29', 'Which behavior is correct?')
 
     await score(id, [], { void: true })
@@ -858,9 +856,7 @@ describe('voided output evidence', () => {
     writeFileSync(outputPath, 'the retained answer')
     const id = insert('ok', 'review-lens')
     db()
-      .query(
-        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
-      )
+      .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
       .run(id, '2026-09-29', 'still relevant?')
     const partner = addRun({
       agent: 'grok',

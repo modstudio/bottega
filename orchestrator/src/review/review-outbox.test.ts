@@ -7,7 +7,9 @@ test('review backfill mints parent rows before children, enqueues the graph, and
   const database = new Database(':memory:')
   applyMigrations(database)
   database
-    .query(`INSERT INTO run (id, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status) VALUES (1, '01990000-0000-7000-8000-000000000010', '2026-09-15T00:00:00Z',
+    .query(`INSERT INTO run
+    (id, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
+    VALUES (1, '01990000-0000-7000-8000-000000000010', '2026-09-15T00:00:00Z',
       'codex', 'review-lens', 'sha', 1, 'head', 'ok')`)
     .run()
   database.query("INSERT INTO review (id, recorded_at) VALUES (1, '2026-09-15T01:00:00Z')").run()

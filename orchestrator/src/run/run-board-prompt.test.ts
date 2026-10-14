@@ -44,7 +44,9 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   const clock = Date.now() + 400_000
   const run = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
+      `INSERT INTO run
+       (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
+       VALUES (?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
        RETURNING id`,
     )
     .get(new Date(clock).toISOString()) as { id: number }
@@ -62,7 +64,8 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
 test('dispatch and later-turn injection each combine hosted and local once with a refresh warning', async () => {
   const root = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING id`,
+      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
+       VALUES (?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING id`,
     )
     .get('2026-10-05T11:00:00.000Z') as { id: number }
   const hosted = (id = newRecordId()): HostedBoardMessage => ({

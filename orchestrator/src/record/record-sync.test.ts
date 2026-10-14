@@ -165,7 +165,9 @@ function localScoreOutbox(): Database {
   applyMigrations(local)
   local
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
     )
     .run(RECORD_ID)
   local
@@ -271,12 +273,15 @@ test('ordinary sync pushes an asking run before its live question', async () => 
   applyMigrations(local)
   local
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?','live')`,
+      `INSERT INTO question (run_id,asked_at,question,asked_via)
+       VALUES (42,?,'Which?','live')`,
     )
     .run(STAMP)
   local
@@ -639,14 +644,12 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   applyMigrations(local)
   local
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
-  local
-    .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?')",
-    )
-    .run(STAMP)
+  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)
@@ -781,14 +784,12 @@ test('a dependent reports a retired parent without attempting delivery', async (
   applyMigrations(local)
   local
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
     )
     .run(RECORD_ID)
-  local
-    .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?')",
-    )
-    .run(STAMP)
+  local.query("INSERT INTO question (run_id,asked_at,question) VALUES (42,?,'Which?')").run(STAMP)
   local
     .query("INSERT OR REPLACE INTO schema_meta (key,value) VALUES ('machine_id',?)")
     .run(MACHINE_ID)

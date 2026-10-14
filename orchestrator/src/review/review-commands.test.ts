@@ -86,8 +86,10 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     }
     const run = db()
       .query<{ id: number }, [string, string, string]>(
-        `INSERT INTO run (record_id,started_at,agent,job,repo,branch,base_commit,input_tree,head_commit,
-            prompt_sha,prompt_bytes,prompt_head,status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-27','codex','implement','tier-fixture','DEV-992-fixture',?,?,?,
+        `INSERT INTO run
+           (started_at,agent,job,repo,branch,base_commit,input_tree,head_commit,
+            prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-09-27','codex','implement','tier-fixture','DEV-992-fixture',?,?,?,
                  'sha',1,'head','ok')
          RETURNING id`,
       )
@@ -159,8 +161,10 @@ test('review tier reports stack and generic profile sources resolved for its pro
     })
     const run = db()
       .query<{ id: number }, [string, string, string]>(
-        `INSERT INTO run (record_id,started_at,agent,job,repo,base_commit,input_tree,head_commit,
-            prompt_sha,prompt_bytes,prompt_head,status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
+        `INSERT INTO run
+           (started_at,agent,job,repo,base_commit,input_tree,head_commit,
+            prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
                  'sha',1,'head','ok')
          RETURNING id`,
       )

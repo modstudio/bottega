@@ -139,12 +139,14 @@ test('a second chain turn claims and marks hosted and local notices through its 
   const recordId = newRecordId()
   const root = db()
     .query(
-      `INSERT INTO run (started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn) VALUES (?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1) RETURNING id`,
+      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn)
+       VALUES (?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1) RETURNING id`,
     )
     .get('2026-10-05T11:00:00.000Z', recordId) as { id: number }
   const turn = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING id`,
+      `INSERT INTO run(started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_id,turn)
+       VALUES (?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING id`,
     )
     .get('2026-10-05T11:30:00.000Z', root.id) as { id: number }
   const local = postNotice(

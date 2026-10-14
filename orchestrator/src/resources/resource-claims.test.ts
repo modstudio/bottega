@@ -116,7 +116,9 @@ describe('resource claim decisions', () => {
   test('database allocation reserves the lowest port and reuses it on a later turn', () => {
     const database = db()
     const insertRun = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'port allocation','running',?,?)`,
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn)
+       VALUES (?,'codex','implement','sha',1,'port allocation','running',?,?)`,
     )
     const root = Number(insertRun.run(nowIso(), null, 1).lastInsertRowid)
     const turn = Number(insertRun.run(nowIso(), root, 2).lastInsertRowid)
@@ -154,7 +156,9 @@ describe('resource claim decisions', () => {
   test('database allocation reports a full band and its live claim count', () => {
     const database = db()
     const insertRun = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'full port band','running',1)`,
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+       VALUES (?,'codex','implement','sha',1,'full port band','running',1)`,
     )
     const first = Number(insertRun.run(nowIso()).lastInsertRowid)
     const second = Number(insertRun.run(nowIso()).lastInsertRowid)
@@ -180,7 +184,9 @@ describe('resource claim decisions', () => {
     const root = Number(
       database
         .query(
-          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'named ports','running',1)`,
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+           VALUES (?,'codex','implement','sha',1,'named ports','running',1)`,
         )
         .run(nowIso()).lastInsertRowid,
     )
@@ -216,7 +222,9 @@ describe('resource claim decisions', () => {
         .lastInsertRowid,
     )
     const insertRun = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'index allocation','running',?,1)`,
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'index allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(nowIso(), projectOne).lastInsertRowid)
     const second = Number(insertRun.run(nowIso(), projectOne).lastInsertRowid)
@@ -251,7 +259,9 @@ describe('resource claim decisions', () => {
         .lastInsertRowid,
     )
     const insertRun = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'string allocation','running',?,1)`,
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'string allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
     const second = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
@@ -284,7 +294,9 @@ describe('resource claim decisions', () => {
         .run().lastInsertRowid,
     )
     const insertRun = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'database allocation','running',?,1)`,
+      `INSERT INTO run
+       (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_id,turn)
+       VALUES (?,'codex','implement','sha',1,'database allocation','running',?,1)`,
     )
     const first = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
     const second = Number(insertRun.run(nowIso(), projectId).lastInsertRowid)
@@ -316,7 +328,9 @@ describe('resource claim decisions', () => {
     const root = Number(
       database
         .query(
-          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'settlement','running',1)`,
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+           VALUES (?,'codex','implement','sha',1,'settlement','running',1)`,
         )
         .run(nowIso()).lastInsertRowid,
     )
@@ -356,7 +370,9 @@ describe('resource claim decisions', () => {
     const root = Number(
       database
         .query(
-          `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'failure release','running',1)`,
+          `INSERT INTO run
+           (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
+           VALUES (?,'codex','implement','sha',1,'failure release','running',1)`,
         )
         .run(nowIso()).lastInsertRowid,
     )

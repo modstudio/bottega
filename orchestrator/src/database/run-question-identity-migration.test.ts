@@ -30,7 +30,9 @@ test('run and question identity migration fills nulls, keeps identities, and pre
     database.exec('PRAGMA foreign_keys=ON')
     applyMigrations(database, folder)
     const runInsert = database.query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (?,'2026-10-13','codex','implement','sha',1,'prompt','asking') RETURNING id`,
+      `INSERT INTO run
+       (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+       VALUES (?,'2026-10-13','codex','implement','sha',1,'prompt','asking') RETURNING id`,
     )
     const missingRun = runInsert.get(null) as { id: number }
     const keptRunId = '01990000-0000-7000-8000-000000000401'

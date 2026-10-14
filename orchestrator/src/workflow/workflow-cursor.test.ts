@@ -113,8 +113,10 @@ function installEvidence(
   ).run(project, `${taskKey}-work`, 'abc', 1, 'def', '2026-09-01', '2026-09-01')
   const ruling = d
     .query<{ id: number }, (string | number | null)[]>(
-      `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
-         workflow_step_ordinal,workflow_step_slug) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
+      `INSERT INTO question
+        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
+         workflow_step_ordinal,workflow_step_slug)
+       VALUES (?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
     )
     .get(
       row.id,

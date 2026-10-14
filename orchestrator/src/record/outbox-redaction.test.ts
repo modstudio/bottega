@@ -39,7 +39,9 @@ function seeded(): { database: Database; urlUserinfo: string; base64: string } {
   const planted = plantedValues()
   database
     .query(
-      `INSERT INTO run (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label) VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?)`,
+      `INSERT INTO run
+       (id,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
+       VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?)`,
     )
     .run(STAMP, planted.urlUserinfo, planted.base64)
   database

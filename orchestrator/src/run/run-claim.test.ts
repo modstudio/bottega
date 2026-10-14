@@ -10,10 +10,6 @@ import { claimRun } from './run-claim.ts'
 
 test("a later findings turn inherits its root's implicit review branch", async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
-  const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
-  const reservedRecordId = db()
-    .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
-    .get(reserved)!.record_id
   db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-1147-reviewed', root)
   const runsDir = mkdtempSync(join(tmpdir(), 'later-findings-claim-'))
   const repository = join(runsDir, 'repository')
@@ -42,7 +38,6 @@ test("a later findings turn inherits its root's implicit review branch", async (
     const claimed = await claimRun({
       opts: {
         job: 'review-lens',
-        reserveId: reserved,
         resume: {
           kind: 'continue',
           parent: root,
@@ -88,10 +83,8 @@ test("a later findings turn inherits its root's implicit review branch", async (
       carriedQuestionIds: [],
     })
 
-    expect(claimed.claim.id).toBe(reserved)
-    expect(db().query('SELECT branch,record_id FROM run WHERE id=?').get(claimed.claim.id)).toEqual({
+    expect(db().query('SELECT branch FROM run WHERE id=?').get(claimed.claim.id)).toEqual({
       branch: 'DEV-1147-reviewed',
-      record_id: reservedRecordId,
     })
   } finally {
     rmSync(runsDir, { recursive: true, force: true })

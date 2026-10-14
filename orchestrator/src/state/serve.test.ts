@@ -39,9 +39,7 @@ test('live child turns publish their chain root for hub badge matching', () => {
     turn: 2,
   })
   db()
-    .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
-    )
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
     .run(child, nowIso(), 'Which?')
   const live = state(null).live as { id: number; root_id: number }[]
   expect(live.find((row) => row.id === child)).toMatchObject({ id: child, root_id: root })
@@ -102,7 +100,9 @@ describe('run detail', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
+        `INSERT INTO question
+          (run_id,asked_at,question,answer,answered_at,overturned_at,overturned_by,overturn_reason)
+         VALUES (?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
       )
       .run(id)
     expect(runDetail(id)!.questions).toEqual([
@@ -119,7 +119,9 @@ describe('run detail', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
+        `INSERT INTO question
+          (run_id,asked_at,question,answer,answered_at,filed_as,filed_record_id,filed_label,filed_at)
+         VALUES (?,'2026-09-20','Which?','Keep it.','2026-09-21','canon-proposal',
                  '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
       )
       .run(id)

@@ -294,7 +294,8 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     writableDb()
     db()
       .query(
-        `INSERT INTO run (record_id,started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
+        `INSERT INTO run (started_at, agent, job, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('t', 'a', 'understand', ?, 'sha', 1, 'h', 'ok')`,
       )
       .run(project.id)
     expect(() => removeProject('kept-run')).toThrow(

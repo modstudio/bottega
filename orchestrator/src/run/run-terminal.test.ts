@@ -21,9 +21,7 @@ test('a failed non-failover child closes its question before the root inherits f
     turn: 2,
   })
   db()
-    .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?)",
-    )
+    .query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)')
     .run(child, '2026-09-29', 'What should happen?')
 
   finalizeTerminalChain(db(), {

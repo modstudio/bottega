@@ -19,7 +19,9 @@ function answeredQuestion(
 ): void {
   db()
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-01',?,'answer',?,'agent',?,?)`,
+      `INSERT INTO question
+         (run_id,asked_at,question,answer,answered_at,answerer_kind,overturned_at,replacement)
+       VALUES (?,'2026-09-01',?,'answer',?,'agent',?,?)`,
     )
     .run(runId, question, answeredAt, overturn?.at ?? null, overturn?.replacement ?? null)
 }
@@ -57,7 +59,9 @@ describe('task ruling candidate query', () => {
       .get(PLATFORM_SLUG) as { id: number }
     db()
       .query(
-        `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
+        `INSERT INTO question
+        (workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answerer_kind,asked_via)
+       VALUES (?,'DEV-960','2026-09-01','workflow ruling','workflow answer',
                '2026-10-05T12:00:00.000Z','agent','workflow')`,
       )
       .run(cursor.id)

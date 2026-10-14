@@ -47,7 +47,9 @@ test('only the root run session owns architect reads for its branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
+    `INSERT INTO run
+      (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+     VALUES ('2026-09-27','codex','implementation','sha',1,'head','running','fixture','DEV-977-work','owner-session')`,
   ).run()
   expect(requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'owner-session')).toBe('owner-session')
   expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-977-work', 'foreign-session')).toThrow(
@@ -111,7 +113,9 @@ test('the read command records the branch and tip from --cwd', () => {
     upsertProject({ name: 'read-command-fixture', path: cwd, settings: { trunk: 'main' } })
     db()
       .query(
-        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
+        `INSERT INTO run
+          (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+         VALUES ('2026-10-12','codex','implementation','sha',1,'head','running',?,?,?)`,
       )
       .run('read-command-fixture', 'DEV-1262-review-read-fixture', 'owner-session')
 
@@ -157,7 +161,9 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   const cwd = resolve(import.meta.dir, '../../..')
   d.query('INSERT INTO project (name,path,settings) VALUES (?,?,?)').run('fixture', cwd, '{}')
   d.query(
-    `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
+    `INSERT INTO run
+      (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch,session_id)
+     VALUES ('2026-10-02','codex','implementation','sha',1,'head','running','fixture','DEV-1068-work','owner-session')`,
   ).run()
   const runGit = (_cwd: string, args: string[]): string => {
     if (args[0] === 'branch') return 'DEV-1068-work'
