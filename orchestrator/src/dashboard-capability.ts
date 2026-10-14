@@ -21,6 +21,13 @@ export function dashboardServeCommand(command: string): boolean {
     ) {
       return true
     }
+    if (
+      (word === 'cli/bottega.ts' || word.endsWith('/cli/bottega.ts')) &&
+      next === 'dashboard' &&
+      after === 'start'
+    ) {
+      return true
+    }
     return (
       (word === 'hub' ||
         word.endsWith('/bin/hub') ||

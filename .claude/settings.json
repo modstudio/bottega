@@ -98,7 +98,8 @@
       "Bash(*hub task set *)",
       "Bash(*bottega task set *)",
       "Bash(git push origin main)"
-    ]
+    ],
+    "deny": ["Bash(*bottega score judge*)", "Bash(*bottega score recalibrate*)"]
   },
   "hooks": {
     "PreToolUse": [

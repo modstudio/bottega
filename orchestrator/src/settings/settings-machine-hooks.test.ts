@@ -66,13 +66,15 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(16)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(18)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
-  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(4)
+  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(6)
   expect(commands).toContain(`Bash(${PLATFORM_SLUG} run start:*)`)
+  expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain('Bash(orch do:*)')
+  expect(commands).toContain('Bash(./bin/orch do:*)')
   expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/orch do:*)`)
 })
 

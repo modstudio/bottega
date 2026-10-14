@@ -68,6 +68,12 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   {
     event: 'PostToolUse',
     matcher: 'Bash',
+    if: `Bash(./bin/${PLATFORM_SLUG} run start:*)`,
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
     if: { absoluteBottega: 'run start' },
     script: 'heartbeat-remind.py',
   },
@@ -75,6 +81,12 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     event: 'PostToolUse',
     matcher: 'Bash',
     if: 'Bash(orch do:*)',
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: 'Bash(./bin/orch do:*)',
     script: 'heartbeat-remind.py',
   },
   {
@@ -113,8 +125,8 @@ function scriptPath(assetRoot: string, file: ScriptFile): string {
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
   if (typeof value === 'string' || value === undefined) return value
   if ('absoluteBottega' in value)
-    return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} run start:*)`
-  return `Bash(${join(assetRoot, 'bin', 'orch')} do:*)`
+    return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} ${value.absoluteBottega}:*)`
+  return `Bash(${join(assetRoot, 'bin', 'orch')} ${value.absoluteOrch}:*)`
 }
 
 function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string): string {
