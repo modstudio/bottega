@@ -191,6 +191,8 @@ describe('workflow rendering', () => {
       title: "Check the task's acceptance criteria",
       body: 'Write a table of every criterion.',
       floor: ['recorded-artifact', 'ruling'],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
       job: null,
       autonomy: 'auto',
       needs: [],
