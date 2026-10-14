@@ -261,30 +261,21 @@ test("a filtered project still receives done rows that would fall below the cap 
     since: boardRecentSince(now),
   }
   const unfiltered = projectBoard(input)
-  const filtered = projectBoard({ ...input, filters: { project: 'segnavia', source: '' } })
-  expect(unfiltered.cards.map((card) => card.key)).toEqual(['DEV-1', 'DEV-2', 'DEV-3'])
-  expect(filtered.cards.map((card) => card.key)).toEqual(['SEGNA-1'])
-  expect(filtered.totals).toEqual(unfiltered.totals)
-  expect(Object.keys(filtered.totals.project).sort()).toEqual(['segnavia', 'workshop'])
-})
-
-test('the unfiltered board still caps at the cap', () => {
-  const rows = [1, 2, 3, 4, 5].map((n) =>
-    boardRow({ key: `DEV-${n}`, updated_at: `2026-09-17T1${n}:00:00.000Z` }),
-  )
-  const board = projectBoard({
-    rows,
-    recentKeys: [],
-    liveKeys: [],
-    projects: project,
-    cap: 2,
-    since: boardRecentSince(now),
-    filters: { project: '', source: '' },
-  })
-  expect(board.cards).toHaveLength(2)
-  expect(board.cap).toBe(2)
-  expect(board.cards.map((card) => card.key)).toEqual(['DEV-5', 'DEV-4'])
-  expect(board.totals.status.active).toBe(5)
+  const cases = [
+    { filters: undefined, keys: ['DEV-1', 'DEV-2', 'DEV-3'] },
+    { filters: { project: 'segnavia', source: '' }, keys: ['SEGNA-1'] },
+    { filters: { project: '', source: 'segnavia' }, keys: ['SEGNA-1'] },
+    { filters: { project: '', source: 'hub' }, keys: ['DEV-1', 'DEV-2', 'DEV-3'] },
+  ]
+  for (const { filters, keys } of cases) {
+    const board = filters ? projectBoard({ ...input, filters }) : unfiltered
+    expect(board.cards.map((card) => card.key)).toEqual(keys)
+    expect(board.cap).toBe(cap)
+    expect(board.sourceFacetProjects).toEqual(['segnavia'])
+    expect(board.totals).toEqual(unfiltered.totals)
+  }
+  expect(unfiltered.cards).toHaveLength(cap)
+  expect(Object.keys(unfiltered.totals.project).sort()).toEqual(['segnavia', 'workshop'])
 })
 
 test('a done row with no interval is eligible when closed inside the window', () => {

@@ -567,6 +567,13 @@ export function projectBoardCards(
   })
 }
 
+export type ProjectBoard = {
+  cards: ReturnType<typeof projectBoardCards>
+  totals: { status: Record<string, number>; project: Record<string, number> }
+  cap: number
+  sourceFacetProjects: string[]
+}
+
 export function projectBoard(input: {
   rows: BoardSourceRow[]
   recentKeys: string[]
@@ -575,7 +582,7 @@ export function projectBoard(input: {
   cap: number
   since: string
   filters?: BoardFilters
-}) {
+}): ProjectBoard {
   const recent = new Set(input.recentKeys)
   const eligible = input.rows.filter(
     (row) =>
@@ -621,10 +628,13 @@ export function projectBoard(input: {
       project: count((row) => row.project ?? 'elsewhere'),
     },
     cap: input.cap,
-    sourceFacetProjects: ranked
-      .slice(0, input.cap)
-      .filter((row) => row.source !== 'local')
-      .map((row) => row.project)
-      .filter((value): value is string => Boolean(value)),
+    sourceFacetProjects: [
+      ...new Set(
+        eligible
+          .filter((row) => row.source !== 'local')
+          .map((row) => row.project)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ],
   }
 }
