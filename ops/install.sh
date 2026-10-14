@@ -87,7 +87,8 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
 if [[ -z "${HUB_HOSTED_URL:-}" ]]; then
-  echo "warning: HUB_HOSTED_URL is unset for com.user.hub-note-maintenance, com.user.orch-fix-defect, and com.user.orch-monitor; set HUB_HOSTED_URL and rerun ops/install.sh" >&2
+  hosted_labels="$(grep -l "__HUB_HOSTED_URL__" "$CONCERN"/launchd/*.plist.template | xargs -n1 basename | sed 's/\.plist\.template$//' | paste -sd ' ' -)"
+  echo "warning: HUB_HOSTED_URL is unset for ${hosted_labels}; set HUB_HOSTED_URL and rerun ops/install.sh" >&2
 fi
 
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
