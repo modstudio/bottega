@@ -26,10 +26,6 @@ import {
   DOC_SCOPES,
   DOC_STATUSES,
   type DocAudience,
-  type DocAudiences,
-  type DocForm,
-  type DocKind,
-  type DocStatus,
   type FilingDocScope,
 } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
@@ -106,14 +102,7 @@ import {
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
-export type {
-  DocArgvInput,
-  DocListFilters,
-  DocOp,
-  DocRevisionMetadata,
-  DocSetInput,
-  DocSubjects,
-}
+export type { DocArgvInput, DocListFilters, DocOp, DocRevisionMetadata, DocSetInput, DocSubjects }
 export { docArgv }
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null

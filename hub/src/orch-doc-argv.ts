@@ -1,13 +1,7 @@
 // concern: orch-doc-argv
 /** Builds the orchestrator document command argv hub uses; it does not spawn. */
 
-import type {
-  DocAudience,
-  DocAudiences,
-  DocForm,
-  DocKind,
-  DocStatus,
-} from '../../shared/docs.ts'
+import type { DocAudience, DocAudiences, DocForm, DocKind, DocStatus } from '../../shared/docs.ts'
 
 export type DocSubjects = {
   project: string[]

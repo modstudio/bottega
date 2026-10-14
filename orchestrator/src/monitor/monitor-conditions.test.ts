@@ -21,13 +21,13 @@ import {
   unsettledClaimConditions,
   unsettledClaimInventory,
 } from './monitor-conditions.ts'
+import { claimMonitorNotices } from './monitor-notices.ts'
+import { recordTunnelCondition } from './monitor-record-tunnel.ts'
 import {
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
   staleTrustEntryConditions,
 } from './orphan-inventory-conditions.ts'
-import { claimMonitorNotices } from './monitor-notices.ts'
-import { recordTunnelCondition } from './monitor-record-tunnel.ts'
 
 describe('record tunnel monitor condition', () => {
   test('is absent when the tunnel is not configured', () => {

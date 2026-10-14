@@ -61,11 +61,6 @@ import {
   unsettledClaimInventory,
   worktreeDatabaseConditions,
 } from './monitor-conditions.ts'
-import {
-  orphanDockerNetworkConditions,
-  orphanSandboxDirectoryConditions,
-  staleTrustEntryConditions,
-} from './orphan-inventory-conditions.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
@@ -81,6 +76,11 @@ import type {
   MonitorResult,
   UnaddressedMonitorCondition,
 } from './monitor-types.ts'
+import {
+  orphanDockerNetworkConditions,
+  orphanSandboxDirectoryConditions,
+  staleTrustEntryConditions,
+} from './orphan-inventory-conditions.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 
