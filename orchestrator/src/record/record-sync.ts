@@ -19,6 +19,7 @@ import {
   deferOutboxRow,
   markOutboxRowSynced,
   outboxRowIsEligible,
+  outboxRowPlannedParentKeys,
   outboxRowWaitsForParent,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
@@ -33,6 +34,10 @@ import {
   type RecordSyncRequestRow,
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
+import {
+  type RecordSyncBatchDependency,
+  recordSyncResultTreatments,
+} from './record-sync-result-decision.ts'
 import type {
   BlockedOutboxRow,
   OutboxRow,
@@ -136,7 +141,7 @@ function syncRouteError(error: unknown): never {
 }
 
 type PlannedBatchRow =
-  | { disposition: 'include'; request: RecordSyncRequestRow }
+  | { disposition: 'include'; request: RecordSyncRequestRow; parentKeys: string[] }
   | { disposition: 'skip' }
   | { disposition: 'stop' }
 
@@ -155,14 +160,15 @@ function planBatchRow(
     hasBatchRows: boolean
     memberships: ReturnType<typeof parseRecordSpaceMemberships>
     blocked: BlockedOutboxRow[]
+    plannedParents: ReadonlySet<string>
     projectSpaces?: Record<string, string>
   },
 ): PlannedBatchRow {
   const { row, parsed } = candidate
-  if (parsed && outboxRowWaitsForParent(input.local, row, parsed)) {
+  if (parsed && outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)) {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
-  if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked))
+  if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked, input.plannedParents))
     return { disposition: 'skip' }
   if (!outboxRowIsEligible(input.local, row)) return { disposition: 'skip' }
   const projectName = outboxProjectName(row.kind, parsed, input.local)
@@ -172,6 +178,9 @@ function planBatchRow(
   const membership = declared ? recordSpaceMembership(declared, input.memberships) : undefined
   return {
     disposition: 'include',
+    parentKeys: parsed
+      ? outboxRowPlannedParentKeys(input.local, row, parsed, input.plannedParents)
+      : [],
     request: {
       id: row.id,
       kind: row.kind,
@@ -274,6 +283,9 @@ function addPlannedRow(input: {
   attempted: Set<number>
   rows: RecordSyncRequestRow[]
   localRows: Map<number, OutboxRow>
+  dependencies: RecordSyncBatchDependency[]
+  plannedParents: Set<string>
+  plannedParentRows: Map<string, number>
   requestBytes: number
   now: () => string
 }): { disposition: 'stop' } | { disposition: 'sent'; requestBytes: number; quarantined: number } {
@@ -300,6 +312,13 @@ function addPlannedRow(input: {
   if (!decision.send.length) return { disposition: 'stop' }
   input.rows.push(input.planned.request)
   input.localRows.set(row.id, row)
+  input.dependencies.push({
+    id: row.id,
+    sameBatchParentIds: input.planned.parentKeys.map((key) => input.plannedParentRows.get(key)!),
+  })
+  const rowKey = `${row.kind}:${row.record_id}`
+  input.plannedParents.add(rowKey)
+  input.plannedParentRows.set(rowKey, row.id)
   return { disposition: 'sent', requestBytes: decision.requestBytes, quarantined: 0 }
 }
 
@@ -315,12 +334,16 @@ function nextBatch(input: {
 }): {
   request: RecordSyncRequest
   localRows: Map<number, OutboxRow>
+  dependencies: RecordSyncBatchDependency[]
   quarantined: number
 } {
   const machine = { ...input.identity, seenAt: input.now() }
   const emptyRequestBytes = utf8Bytes(JSON.stringify({ machine, rows: [] }))
   const rows: RecordSyncRequestRow[] = []
   const localRows = new Map<number, OutboxRow>()
+  const dependencies: RecordSyncBatchDependency[] = []
+  const plannedParents = new Set<string>()
+  const plannedParentRows = new Map<string, number>()
   let requestBytes = emptyRequestBytes
   let quarantined = 0
   for (const candidateRow of input.candidates) {
@@ -347,6 +370,7 @@ function nextBatch(input: {
       hasBatchRows: rows.length > 0,
       memberships: input.memberships,
       blocked: input.blocked,
+      plannedParents,
       projectSpaces: input.projectSpaces,
     })
     if (planned.disposition === 'stop') break
@@ -359,6 +383,9 @@ function nextBatch(input: {
       attempted: input.attempted,
       rows,
       localRows,
+      dependencies,
+      plannedParents,
+      plannedParentRows,
       requestBytes,
       now: input.now,
     })
@@ -367,7 +394,7 @@ function nextBatch(input: {
     requestBytes = added.requestBytes
     if (rows.length === RECORD_SYNC_BATCH_SIZE) break
   }
-  return { request: { machine, rows }, localRows, quarantined }
+  return { request: { machine, rows }, localRows, dependencies, quarantined }
 }
 
 function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyncResponse): void {
@@ -401,18 +428,22 @@ function applyBatchResults(input: {
   local: Database
   batch: RecordSyncRequestRow[]
   localRows: Map<number, OutboxRow>
+  dependencies: RecordSyncBatchDependency[]
   response: RecordSyncResponse
   attempted: Set<number>
   readOnlyDeferred: Map<string, number>
   now: () => string
 }): { pushed: number; failed: number } {
   validateBatchResults(input.batch, input.response)
+  const treatments = recordSyncResultTreatments(input.dependencies, input.response.results)
   let pushed = 0
   let failed = 0
   for (let index = 0; index < input.batch.length; index++) {
     const row = input.batch[index]!
     const result = input.response.results[index]!
+    const treatment = treatments[index]!
     input.attempted.add(row.id)
+    if (treatment.treatment === 'pending') continue
     if (result.status === 'synced') {
       markOutboxRowSynced(input.local, input.localRows.get(row.id)!, input.now())
       pushed++
@@ -457,6 +488,7 @@ async function sendSyncBatch(input: {
     local: input.local,
     batch: input.batch.request.rows,
     localRows: input.batch.localRows,
+    dependencies: input.batch.dependencies,
     response,
     attempted: input.attempted,
     readOnlyDeferred: input.readOnlyDeferred,

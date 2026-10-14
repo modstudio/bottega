@@ -216,8 +216,28 @@ export function outboxRowWaitsForParent(
   database: Database,
   row: OutboxRow,
   payload: Payload,
+  plannedParents?: ReadonlySet<string>,
 ): boolean {
-  return outboxDependency(row, payload, database).disposition === 'deferred'
+  return outboxDependency(row, payload, database, plannedParents).disposition === 'deferred'
+}
+
+export function outboxRowPlannedParentKeys(
+  database: Database,
+  row: OutboxRow,
+  payload: Payload,
+  plannedParents: ReadonlySet<string>,
+): string[] {
+  const parents = new Map(
+    outboxParentRecordIds(row, payload, database).map((parent) => [
+      `${parent.kind}:${parent.recordId}`,
+      parent,
+    ]),
+  )
+  return [...parents].flatMap(([key, parent]) =>
+    plannedParents.has(key) && outboxDependencyState(database, [parent]).disposition === 'deferred'
+      ? [key]
+      : [],
+  )
 }
 
 export function outboxRowIsEligible(database: Database, row: OutboxRow): boolean {

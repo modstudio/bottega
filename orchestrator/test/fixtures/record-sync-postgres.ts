@@ -58,6 +58,7 @@ export function fakePostgres(
   let transaction = -1
   let scoreWritten = false
   let runWrites = 0
+  let runReferenceAvailable = true
   const transactionSpaceIds: string[] = []
   const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const source = parts.join('?')
@@ -109,14 +110,24 @@ export function fakePostgres(
     const operation = (async (): Promise<Record<string, unknown>[]> => {
       statements.push(source)
       parameters.push(values ?? [])
-      if (source.includes('owned_reference')) return [{ id: values?.[0] }]
+      if (source.includes('owned_reference'))
+        return runReferenceAvailable ? [{ id: values?.[0] }] : []
       if (source.toLowerCase().includes('insert into "run"')) {
         runWrites++
         await onRunWrite?.(runWrites)
       }
       if (failFirstRun && !failed && source.toLowerCase().includes('insert into "run"')) {
         failed = true
+        runReferenceAvailable = false
         throw failFirstRun
+      }
+      if (source.toLowerCase().includes('insert into "run"')) runReferenceAvailable = true
+      if (
+        !runReferenceAvailable &&
+        source.toLowerCase().includes('insert into') &&
+        source.toLowerCase().includes('returning')
+      ) {
+        return []
       }
       if (!scoreWritten && source.toLowerCase().includes('insert into "run_score"')) {
         scoreWritten = true
