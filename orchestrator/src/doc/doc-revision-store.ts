@@ -91,7 +91,7 @@ export function currentDocRevision(
     .query(
       'SELECT record_id FROM doc_revision WHERE scope=? AND subject IS ? AND owner IS ? AND slug=? ORDER BY id DESC LIMIT 1',
     )
-    .get(scope, subject, owner, slug) as { record_id: string | null } | null
+    .get(scope, subject, owner, slug) as { record_id: string } | null
   return row?.record_id ?? null
 }
 

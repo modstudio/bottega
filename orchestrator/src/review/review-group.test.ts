@@ -19,15 +19,15 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
     .get()!
   const review = database
     .query<{ id: number }, []>(
-      `INSERT INTO review (recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES ('2026-09-25','2026-09-25','stable-patch','["a.ts"]',1) RETURNING id`,
+      `INSERT INTO review (record_id,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES ('${newRecordId()}','2026-09-25','2026-09-25','stable-patch','["a.ts"]',1) RETURNING id`,
     )
     .get()!
   database
     .query(
       `INSERT INTO review_lens
-         (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
+         (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
     .run(review.id, run.id)
 
@@ -63,15 +63,15 @@ test('a rebase credits the complete round from the same branch and never another
       .get(branch)!
     database
       .query(
-        `INSERT INTO review (id,recorded_at,completed_at,patch_id,path_set,tier)
-         VALUES (?,'2026-09-25T00:00:00Z','2026-09-25T01:00:00Z','pre-rebase','["a.ts"]',2)`,
+        `INSERT INTO review (id,record_id,recorded_at,completed_at,patch_id,path_set,tier)
+         VALUES (?,'${newRecordId()}','2026-09-25T00:00:00Z','2026-09-25T01:00:00Z','pre-rebase','["a.ts"]',2)`,
       )
       .run(reviewId)
     database
       .query(
         `INSERT INTO review_lens
-           (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
-         VALUES (?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
+           (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
       )
       .run(reviewId, run.id, lens)
   }

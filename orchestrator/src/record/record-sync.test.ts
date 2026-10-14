@@ -668,19 +668,23 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     )
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)
-  local.query('INSERT INTO review (id,recorded_at) VALUES (1,?)').run(STAMP)
+  local
+    .query(
+      "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000041',?)",
+    )
+    .run(STAMP)
   local
     .query(
       `INSERT INTO review_lens
-       (id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (1,1,42,'craft','codex','[]','[]','[]','[]')`,
+       (id,record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (1,'01990000-0000-7000-8000-000000000042',1,42,'craft','codex','[]','[]','[]','[]')`,
     )
     .run()
   local
     .query(
       `INSERT INTO review_finding
-       (id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
-       VALUES (1,1,1,1,'major','a.ts:1','evidence','correct it')`,
+       (id,record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction)
+       VALUES (1,'01990000-0000-7000-8000-000000000043',1,1,1,'major','a.ts:1','evidence','correct it')`,
     )
     .run()
   backfillReviewRecords(local)

@@ -1,18 +1,12 @@
 // concern: landing-outbox
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { machineId } from './machine-identity.ts'
 
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
-  mintedLandings: number
-  mintedOverrides: number
-  mintedCarries: number
-  mintedTriageSnapshots: number
-  mintedContentions: number
-  mintedFlakes: number
   enqueuedLandings: number
   enqueuedOverrides: number
   enqueuedCarries: number
@@ -179,7 +173,7 @@ function enqueueLanding(database: Database, id: number, at = nowIso()): void {
        LEFT JOIN landing cause ON cause.id=landing.causing_landing_id WHERE landing.id=?`,
     )
     .get(id)
-  if (!row?.record_id) throw new Error(`landing ${id} has no record id`)
+  if (!row) throw new Error(`landing ${id} does not exist and cannot be enqueued`)
   if (row.causing_landing_id != null && row.causing_landing_record_id == null)
     throw new Error(`landing ${id} has a causing landing without a record id`)
   const value = buildLandingRecordPayload(row, machineId(), at)
@@ -193,7 +187,7 @@ export function enqueueLandingOverride(database: Database, id: number, at = nowI
        LEFT JOIN project ON project.id=landing_override.project_id WHERE landing_override.id=?`,
     )
     .get(id)
-  if (!row?.record_id) throw new Error(`landing override ${id} has no record id`)
+  if (!row) throw new Error(`landing override ${id} does not exist and cannot be enqueued`)
   const value = buildLandingOverrideRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_override', String(row.record_id), value, at)
 }
@@ -234,9 +228,7 @@ function enqueueLandingReviewCarry(database: Database, id: number, at = nowIso()
        JOIN review ON review.id=carry.review_id WHERE carry.id=?`,
     )
     .get(id)
-  if (!row?.record_id) throw new Error(`landing review carry ${id} has no record id`)
-  if (!row.review_record_id)
-    throw new Error(`landing review carry ${id} has a review without a record id`)
+  if (!row) throw new Error(`landing review carry ${id} does not exist and cannot be enqueued`)
   const value = buildLandingReviewCarryRecordPayload(row, machineId(), at)
   enqueue(database, 'landing_review_carry', String(row.record_id), value, at)
 }
@@ -250,7 +242,7 @@ export function enqueueContention(database: Database, id: number, at = nowIso())
        LEFT JOIN landing ON landing.id=contention.landing_id WHERE contention.id=?`,
     )
     .get(id)
-  if (!row?.record_id) throw new Error(`contention ${id} has no record id`)
+  if (!row) throw new Error(`contention ${id} does not exist and cannot be enqueued`)
   if (row.run_id != null && row.run_record_id == null)
     throw new Error(`contention ${id} has a run without a record id`)
   if (row.landing_id != null && row.landing_record_id == null)
@@ -261,26 +253,12 @@ export function enqueueContention(database: Database, id: number, at = nowIso())
 
 function enqueueTestFlake(database: Database, id: number, at = nowIso()): void {
   const row = database.query<LocalRow, [number]>('SELECT * FROM test_flake WHERE id=?').get(id)
-  if (!row?.record_id) throw new Error(`test flake ${id} has no record id`)
+  if (!row) throw new Error(`test flake ${id} does not exist and cannot be enqueued`)
   const value = buildTestFlakeRecordPayload(row, machineId(), at)
   enqueue(database, 'test_flake', String(row.record_id), value, at)
 }
 
 export function backfillLandingEvidenceRecords(database: Database): LandingEvidenceBackfillResult {
-  const mint = (table: string) => {
-    const rows = database
-      .query<{ id: number }, []>(`SELECT id FROM ${table} WHERE record_id IS NULL ORDER BY id`)
-      .all()
-    for (const row of rows)
-      database.query(`UPDATE ${table} SET record_id=? WHERE id=?`).run(newRecordId(), row.id)
-    return rows.length
-  }
-  const mintedLandings = mint('landing')
-  const mintedOverrides = mint('landing_override')
-  const mintedCarries = mint('landing_review_carry')
-  const mintedTriageSnapshots = mint('landing_triage_snapshot')
-  const mintedContentions = mint('contention')
-  const mintedFlakes = mint('test_flake')
   const backfill = (table: string, kind: string, enqueueRow: (id: number) => void) => {
     const rows = database
       .query<{ id: number }, [string]>(
@@ -292,12 +270,6 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     return rows.length
   }
   return {
-    mintedLandings,
-    mintedOverrides,
-    mintedCarries,
-    mintedTriageSnapshots,
-    mintedContentions,
-    mintedFlakes,
     enqueuedLandings: backfill('landing', 'landing', (id) => enqueueLanding(database, id)),
     enqueuedOverrides: backfill('landing_override', 'landing_override', (id) =>
       enqueueLandingOverride(database, id),

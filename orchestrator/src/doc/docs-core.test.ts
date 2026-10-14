@@ -62,6 +62,9 @@ describe('scoped operator docs', () => {
       delivery: 'demand',
       reason: 'create local document',
     })
+    expect(created.revision).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
     const updated = await writeDoc({
       scope: 'global',
       subject: null,
@@ -292,7 +295,7 @@ describe('scoped operator docs', () => {
       reason: 'create missing revision fixture',
       allowCanonBootstrap: true,
     })
-    db().query('UPDATE doc_revision SET record_id=NULL WHERE doc_id=?').run(created.id)
+    db().query('DELETE FROM doc_revision WHERE doc_id=?').run(created.id)
     await expect(
       deleteDoc('canon', null, created.slug, { reason: 'remove broken fixture' }),
     ).rejects.toThrow(

@@ -42,16 +42,16 @@ function addReview(
     .get()!
   database
     .query(
-      `INSERT INTO review (id,recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES (?,'2026-10-12','2026-10-12','current-patch','["one.ts"]',2)`,
+      `INSERT INTO review (id,record_id,recorded_at,completed_at,patch_id,path_set,tier)
+       VALUES (?,'${newRecordId()}','2026-10-12','2026-10-12','current-patch','["one.ts"]',2)`,
     )
     .run(reviewId)
   const reviewLens = database
     .query<{ id: number }, [number, number, string]>(
       `INSERT INTO review_lens
-         (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
+         (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
           could_not_verify,reproduced,coverage,limits,overlap)
-       VALUES (?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')
+       VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["one.ts"]','[]','[]','all','adequate','absent','none')
        RETURNING id`,
     )
     .get(reviewId, run.id, lens)!
@@ -59,9 +59,9 @@ function addReview(
     database
       .query(
         `INSERT INTO review_finding
-           (review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
+           (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
             disposition,triaged_severity)
-         VALUES (?,?,?,?,?,?,?, ?,?)`,
+         VALUES ('${newRecordId()}',?,?,?,?,?,?,?, ?,?)`,
       )
       .run(
         reviewId,

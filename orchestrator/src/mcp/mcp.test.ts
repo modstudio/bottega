@@ -6,6 +6,7 @@ import {
   type JSONRPCRequest,
 } from '@modelcontextprotocol/client'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
@@ -473,9 +474,9 @@ describe('orch MCP', () => {
     const revision = db()
       .query<{ id: number }, [string]>(
         `INSERT INTO doc_revision
-          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at)
+          (doc_id,scope,subject,owner,slug,op,title,body,delivery,audiences,author,reason,at,record_id)
          VALUES (1,'canon',NULL,?1,'.agents/rules/private.md','create','Private','body',
-           'demand','["technical"]','operator','mcp owner proof','2026-01-01')
+           'demand','["technical"]','operator','mcp owner proof','2026-01-01','${newRecordId()}')
          RETURNING id`,
       )
       .get(owner)!

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -169,10 +170,10 @@ test('rename writes hosted once and updates the local name and release ledger', 
   writableDb()
     .query(
       `INSERT INTO release_ledger
-       (project,rung,candidate_commit,rollback,actor,started_at)
-       VALUES ('once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
+       (record_id,project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES (?,'once-src','production','candidate-sha',0,'operator','2026-10-12T00:00:00.000Z')`,
     )
-    .run()
+    .run(newRecordId())
   const hosted: Array<{ name: string; previousName?: string }> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),

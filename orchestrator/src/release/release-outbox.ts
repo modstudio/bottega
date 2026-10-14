@@ -1,20 +1,19 @@
 // concern: release-outbox
 /** Knows how local release ledger rows become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
-type ReleaseRow = Record<string, unknown> & { id: number; record_id: string | null }
+type ReleaseRow = Record<string, unknown> & { id: number; record_id: string }
 
 export function enqueueReleaseRecord(database: Database, releaseId: number): void {
   const row = database
     .query<ReleaseRow, [number]>('SELECT * FROM release_ledger WHERE id=?')
     .get(releaseId)
   if (!row) throw new Error(`release ${releaseId} does not exist and cannot be enqueued`)
-  if (!row.record_id) throw new Error(`release ${releaseId} has no record id`)
   const at = nowIso()
   const payload = stringifyOutboxPayload('release', {
     id: row.record_id,
@@ -58,12 +57,7 @@ export function enqueueReleaseRecord(database: Database, releaseId: number): voi
     .run(row.record_id, payload, at)
 }
 
-export function backfillReleaseRecords(database: Database): { minted: number; enqueued: number } {
-  const missing = database
-    .query<{ id: number }, []>('SELECT id FROM release_ledger WHERE record_id IS NULL ORDER BY id')
-    .all()
-  for (const row of missing)
-    database.query('UPDATE release_ledger SET record_id=? WHERE id=?').run(newRecordId(), row.id)
+export function backfillReleaseRecords(database: Database): { enqueued: number } {
   const releases = database
     .query<{ id: number }, []>(
       `SELECT id FROM release_ledger WHERE NOT EXISTS (
@@ -72,5 +66,5 @@ export function backfillReleaseRecords(database: Database): { minted: number; en
     )
     .all()
   for (const row of releases) enqueueReleaseRecord(database, row.id)
-  return { minted: missing.length, enqueued: releases.length }
+  return { enqueued: releases.length }
 }

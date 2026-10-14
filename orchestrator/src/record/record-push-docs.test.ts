@@ -80,8 +80,8 @@ function insertRevision(row: {
     db()
       .query(
         `INSERT INTO doc_revision
-         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id)
-         VALUES (?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?) RETURNING id`,
+         (doc_id, scope, subject, project_id, slug, op, title, body, delivery, audiences, author, reason, session_id, at, parent_id, record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,'["technical"]',?,?,?,?,?,?) RETURNING id`,
       )
       .get(
         row.docId,
@@ -98,6 +98,7 @@ function insertRevision(row: {
         row.sessionId ?? null,
         row.at,
         row.parentId ?? null,
+        newRecordId(),
       ) as { id: number }
   ).id
 }

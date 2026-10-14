@@ -269,12 +269,12 @@ test('a foreign review is refused and a matching review is allowed', () => {
     launchKey: 'DEV-1',
     branch: 'other-branch',
   })
-  d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
-    projectId(d, 'other'),
-  )
   d.query(
-    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES (1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+  ).run(projectId(d, 'other'))
+  d.query(
+    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(foreignRun)
   expect(() => gather(d, { review: 1 })).toThrow(
     "--review 1 project is other, not this cursor's fixture",
@@ -285,12 +285,12 @@ test('a foreign review is refused and a matching review is allowed', () => {
     launchKey: 'DEV-977',
     branch: 'DEV-977-work',
   })
-  d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
-    projectId(d, 'fixture'),
-  )
   d.query(
-    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES (2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+  ).run(projectId(d, 'fixture'))
+  d.query(
+    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',2,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(matchingRun)
   expect(gather(d, { review: 2 }).review).toEqual({
     id: 2,
@@ -308,20 +308,20 @@ test('review evidence covers every review of the same change on the branch', () 
   ]
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,recorded_at,project_id,patch_id,path_set) VALUES
-      (1,'2026-09-01',?,'same-patch','["src/change.ts"]'),
-      (2,'2026-09-01',?,'same-patch','["src/change.ts"]'),
-      (3,'2026-09-01',?,'other-patch','["src/other.ts"]')`,
+    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+      (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
+      (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
+      (3,'${newRecordId()}','2026-09-01',?,'other-patch','["src/other.ts"]')`,
   ).run(project, project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
-  insertLens.run(1, runIds[0]!, 'all', 'adequate', 'named', 'unique')
-  insertLens.run(2, runIds[1]!, null, null, null, null)
-  insertLens.run(3, runIds[2]!, null, null, null, null)
+  insertLens.run(newRecordId(), 1, runIds[0]!, 'all', 'adequate', 'named', 'unique')
+  insertLens.run(newRecordId(), 2, runIds[1]!, null, null, null, null)
+  insertLens.run(newRecordId(), 3, runIds[2]!, null, null, null, null)
 
   expect(gather(d, { review: 1 }).review).toEqual({
     id: 1,
@@ -348,12 +348,12 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
     launchKey: 'DEV-1',
     branch: 'other-branch',
   })
-  d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
-    projectId(d, 'fixture'),
-  )
   d.query(
-    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES (1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+  ).run(projectId(d, 'fixture'))
+  d.query(
+    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(() => gather(d, { review: 1 })).toThrow(
     '--review 1 has no lens run on branch DEV-977-work or launch_key DEV-977',
@@ -367,12 +367,12 @@ test('a review matches when a lens run carries the workflow key on another branc
     launchKey: 'DEV-977',
     branch: 'other-branch',
   })
-  d.query(`INSERT INTO review (recorded_at,project_id) VALUES ('2026-09-01',?)`).run(
-    projectId(d, 'fixture'),
-  )
   d.query(
-    `INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
-     VALUES (1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
+    `INSERT INTO review (record_id,recorded_at,project_id) VALUES ('${newRecordId()}','2026-09-01',?)`,
+  ).run(projectId(d, 'fixture'))
+  d.query(
+    `INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+     VALUES ('${newRecordId()}',1,?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(gather(d, { review: 1 }).review?.id).toBe(1)
 })
@@ -391,18 +391,18 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
   })
   const project = projectId(d, 'fixture')
   d.query(
-    `INSERT INTO review (id,recorded_at,project_id,patch_id,path_set) VALUES
-      (1,'2026-09-01',?,'same-patch','["src/change.ts"]'),
-      (2,'2026-09-01',?,'same-patch','["src/change.ts"]')`,
+    `INSERT INTO review (id,record_id,recorded_at,project_id,patch_id,path_set) VALUES
+      (1,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]'),
+      (2,'${newRecordId()}','2026-09-01',?,'same-patch','["src/change.ts"]')`,
   ).run(project, project)
   const insertLens = d.query(
     `INSERT INTO review_lens
-      (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
+      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,
        reproduced,coverage,limits,overlap)
-     VALUES (?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
+     VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]',?,?,?,?)`,
   )
-  insertLens.run(1, namedRun, 'all', 'adequate', 'named', 'unique')
-  insertLens.run(2, siblingRun, null, null, null, null)
+  insertLens.run(newRecordId(), 1, namedRun, 'all', 'adequate', 'named', 'unique')
+  insertLens.run(newRecordId(), 2, siblingRun, null, null, null, null)
 
   expect(gather(d, { review: 1 }).review).toEqual({
     id: 1,

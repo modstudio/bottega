@@ -4,6 +4,7 @@ import { Database } from 'bun:sqlite'
 import { realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { DATABASE_RESOLUTION, DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
 import {
   decideFindingRestores,
@@ -39,7 +40,6 @@ type FindingRestoreReport = {
     rejectionCategory: number
     triagedSeverity: number
     triagedAt: number
-    recordId: number
   }
 }
 
@@ -67,13 +67,11 @@ function restoreFacts(database: Database): RestoreFindingFacts {
     )
     .all()
   const reviews = database
-    .query<{ id: number; record_id: string }, []>(
-      'SELECT id, record_id FROM review WHERE record_id IS NOT NULL',
-    )
+    .query<{ id: number; record_id: string }, []>('SELECT id, record_id FROM review')
     .all()
   const lenses = database
     .query<{ id: number; review_id: number; record_id: string }, []>(
-      'SELECT id, review_id, record_id FROM review_lens WHERE record_id IS NOT NULL',
+      'SELECT id, review_id, record_id FROM review_lens',
     )
     .all()
   return {
@@ -177,13 +175,14 @@ function restoreReviewFindings(
   if (write && !unusable.length) {
     const insert = database.query(
       `INSERT INTO review_finding
-       (id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, record_id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     writeTransaction(() => {
       for (const row of inserts) {
         insert.run(
           row.id,
+          newRecordId(),
           row.reviewId,
           row.reviewLensId,
           row.ordinal,
@@ -211,7 +210,6 @@ function restoreReviewFindings(
       rejectionCategory: unusable.length ? 0 : inserts.length,
       triagedSeverity: unusable.length ? 0 : inserts.length,
       triagedAt: unusable.length ? 0 : inserts.length,
-      recordId: unusable.length ? 0 : inserts.length,
     },
   }
 }

@@ -146,8 +146,7 @@ function latestSource(database: Database, findingId: number): SourceLookup {
   }
 }
 
-function recordIdReferenced(database: Database, recordId: string | null): boolean {
-  if (!recordId) return false
+function recordIdReferenced(database: Database, recordId: string): boolean {
   return Boolean(
     database
       .query<{ present: number }, [string]>(
@@ -243,18 +242,6 @@ function restoreReview(
         !recordIdReferenced
       )
     })
-    const restoredIds = new Set(restorations.map(({ finding }) => finding.id))
-    const hasMissingRecordId = snapshot.findings.some(
-      ({ finding }) => finding.recordId === null && !restoredIds.has(finding.id),
-    )
-    if (hasMissingRecordId) {
-      return snapshot.candidates.map(({ finding, outboxId }) => ({
-        findingId: finding.id,
-        outboxId,
-        action: 'skip',
-        reason: TRIAGE_RESTORE_SKIP_REASONS.missingRecordId,
-      }))
-    }
 
     const results = snapshot.candidates.map(({ finding, decision, outboxId }) =>
       decision.action === 'skip'

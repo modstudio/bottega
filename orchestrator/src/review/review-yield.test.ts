@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reviewYield } from './review-yield.ts'
@@ -10,8 +11,10 @@ function addReview(
   pathSet: string | null = null,
 ): number {
   db()
-    .query('INSERT INTO review (recorded_at,completed_at,patch_id,path_set) VALUES (?,?,?,?)')
-    .run(recordedAt, completed ? recordedAt : null, patchId, pathSet)
+    .query(
+      'INSERT INTO review (record_id,recorded_at,completed_at,patch_id,path_set) VALUES (?,?,?,?,?)',
+    )
+    .run(newRecordId(), recordedAt, completed ? recordedAt : null, patchId, pathSet)
   return Number((db().query('SELECT last_insert_rowid() AS id').get() as { id: number }).id)
 }
 
@@ -45,9 +48,17 @@ function addLens(
     )
   db()
     .query(`INSERT INTO review_lens
-    (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
-    VALUES (?,?,?,?,?,'[]','[]','[]','[]',?)`)
-    .run(reviewId, runId, input.lens, input.agent, input.model, input.overlap ?? null)
+    (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,overlap)
+    VALUES (?,?,?,?,?,?,'[]','[]','[]','[]',?)`)
+    .run(
+      newRecordId(),
+      reviewId,
+      runId,
+      input.lens,
+      input.agent,
+      input.model,
+      input.overlap ?? null,
+    )
   return Number((db().query('SELECT last_insert_rowid() AS id').get() as { id: number }).id)
 }
 
@@ -61,9 +72,9 @@ function addFinding(
 ) {
   db()
     .query(`INSERT INTO review_finding
-    (review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,disposition,triaged_severity)
-    VALUES (?,?,?,?,'file.ts:1','evidence','fix',?,?)`)
-    .run(reviewId, lensId, ordinal, severity, disposition, triagedSeverity)
+    (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,disposition,triaged_severity)
+    VALUES (?,?,?,?,?,'file.ts:1','evidence','fix',?,?)`)
+    .run(newRecordId(), reviewId, lensId, ordinal, severity, disposition, triagedSeverity)
 }
 
 function fixture() {

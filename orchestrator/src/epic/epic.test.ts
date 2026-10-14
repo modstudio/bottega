@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reapStale } from '../run/run-liveness.ts'
@@ -74,27 +75,28 @@ describe('epic scoreboard', () => {
       last_event_at='2026-09-08T08:30:00.000Z',agent_pid=4194304 WHERE id=?`)
       .run(ghost)
     db()
-      .query(`INSERT INTO review (recorded_at,completed_at,outdated_at,outdated_reason)
-      VALUES ('2026-09-08T10:06:00.000Z','2026-09-08T10:07:00.000Z','2026-09-08T10:08:00.000Z','changed')`)
-      .run()
+      .query(`INSERT INTO review (record_id,recorded_at,completed_at,outdated_at,outdated_reason)
+      VALUES (?,'2026-09-08T10:06:00.000Z','2026-09-08T10:07:00.000Z','2026-09-08T10:08:00.000Z','changed')`)
+      .run(newRecordId())
     const reviewId = Number(
       (db().query('SELECT last_insert_rowid() id').get() as { id: number }).id,
     )
     db()
       .query(`INSERT INTO review_lens
-      (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-      VALUES (?,?,'correctness','grok','[]','[]','[]','[]')`)
-      .run(reviewId, lens)
+      (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      VALUES (?,?,?,'correctness','grok','[]','[]','[]','[]')`)
+      .run(newRecordId(), reviewId, lens)
     db()
       .query(`INSERT INTO landing
-      (project,branch,status,error,started_at,finished_at,steps)
-      VALUES ('fixture','DEV-501-orch-1','refused','gate failed\nfull detail','2026-09-08T10:09:00Z','2026-09-08T10:10:00Z','[]')`)
-      .run()
+      (record_id,project,branch,status,error,started_at,finished_at,steps)
+      VALUES (?,'fixture','DEV-501-orch-1','refused','gate failed\nfull detail','2026-09-08T10:09:00Z','2026-09-08T10:10:00Z','[]')`)
+      .run(newRecordId())
     db()
       .query(`INSERT INTO landing
-      (project,branch,status,started_at,finished_at,steps)
-      VALUES ('fixture','DEV-501-orch-1','landed','2026-09-08T10:11:00Z','2026-09-08T10:12:00Z',?)`)
+      (record_id,project,branch,status,started_at,finished_at,steps)
+      VALUES (?,'fixture','DEV-501-orch-1','landed','2026-09-08T10:11:00Z','2026-09-08T10:12:00Z',?)`)
       .run(
+        newRecordId(),
         JSON.stringify([{ name: '_flags', unreviewed: 'tier 0', strandLive: 'operator accepted' }]),
       )
 

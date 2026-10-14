@@ -11,7 +11,7 @@ const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS =
 const CONTENTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.contention.columns
 const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.test_flake.columns
 
-test('landing evidence backfill mints references in order, maps every column, and is idempotent', () => {
+test('landing evidence backfill enqueues references in order, maps every column, and is idempotent', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
@@ -27,48 +27,45 @@ test('landing evidence backfill mints references in order, maps every column, an
     .run()
   database
     .query(`INSERT INTO landing
-      (id,project,branch,tip,trunk_before,status,error,session_id,started_at,finished_at,
+      (id,record_id,project,branch,tip,trunk_before,status,error,session_id,started_at,finished_at,
        heartbeat_delivered_at,path_set,requested_at,steps,claim_pid,claim_session)
-      VALUES (1,'fixture','DEV-1','tip','trunk','landed',NULL,'session','2026-09-15T00:02:00Z',
-       '2026-09-15T00:03:00Z','2026-09-15T00:04:00Z','["a.ts"]','2026-09-15T00:01:00Z',
-       '["gate"]',42,'claim')`)
+      VALUES (1,'01990000-0000-7000-8000-000000000021','fixture','DEV-1','tip','trunk','landed',NULL,
+       'session','2026-09-15T00:02:00Z','2026-09-15T00:03:00Z','2026-09-15T00:04:00Z','["a.ts"]',
+       '2026-09-15T00:01:00Z','["gate"]',42,'claim')`)
     .run()
   database
     .query(`INSERT INTO landing
-      (id,project,branch,status,started_at,causing_landing_id)
-      VALUES (2,'fixture','DEV-2','refused','2026-09-15T00:05:00Z',1)`)
+      (id,record_id,project,branch,status,started_at,causing_landing_id)
+      VALUES (2,'01990000-0000-7000-8000-000000000022','fixture','DEV-2','refused',
+       '2026-09-15T00:05:00Z',1)`)
     .run()
   database
     .query(`INSERT INTO landing_override
-      (id,project,branch,tip,tree,patch_id,path_set,reason,session_id,at)
-      VALUES (1,'fixture','DEV-1','tip','tree','patch','["a.ts"]','reason','session',
-       '2026-09-15T00:06:00Z')`)
+      (id,record_id,project,branch,tip,tree,patch_id,path_set,reason,session_id,at)
+      VALUES (1,'01990000-0000-7000-8000-000000000023','fixture','DEV-1','tip','tree','patch',
+       '["a.ts"]','reason','session','2026-09-15T00:06:00Z')`)
     .run()
   database
     .query(`INSERT INTO landing_review_carry
-      (id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
        old_base,new_base,session_id,at)
-      VALUES (1,'fixture','DEV-1','tip','tree',1,'commit','reviewed-tree','patch',
-       'old','new','session','2026-09-15T00:07:00Z')`)
+      VALUES (1,'01990000-0000-7000-8000-000000000024','fixture','DEV-1','tip','tree',1,'commit',
+       'reviewed-tree','patch','old','new','session','2026-09-15T00:07:00Z')`)
     .run()
   database
     .query(`INSERT INTO contention
-      (id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_id,landing_id)
-      VALUES (1,'2026-09-15T00:08:00Z','session','lock','resource','wait',12,'cause',1,1)`)
+      (id,record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_id,landing_id)
+      VALUES (1,'01990000-0000-7000-8000-000000000025','2026-09-15T00:08:00Z','session','lock',
+       'resource','wait',12,'cause',1,1)`)
     .run()
   database
     .query(`INSERT INTO test_flake
-      (id,test,file,load_at_failure,signal,at)
-      VALUES (1,'test name','test.ts','{"load":1}','SIGTERM','2026-09-15T00:09:00Z')`)
+      (id,record_id,test,file,load_at_failure,signal,at)
+      VALUES (1,'01990000-0000-7000-8000-000000000026','test name','test.ts','{"load":1}','SIGTERM',
+       '2026-09-15T00:09:00Z')`)
     .run()
 
   expect(backfillLandingEvidenceRecords(database)).toEqual({
-    mintedLandings: 2,
-    mintedOverrides: 1,
-    mintedCarries: 1,
-    mintedTriageSnapshots: 0,
-    mintedContentions: 1,
-    mintedFlakes: 1,
     enqueuedLandings: 2,
     enqueuedOverrides: 1,
     enqueuedCarries: 1,
@@ -112,12 +109,6 @@ test('landing evidence backfill mints references in order, maps every column, an
   expect(JSON.parse(rows[5]!.payload).projectName).toBeNull()
 
   expect(backfillLandingEvidenceRecords(database)).toEqual({
-    mintedLandings: 0,
-    mintedOverrides: 0,
-    mintedCarries: 0,
-    mintedTriageSnapshots: 0,
-    mintedContentions: 0,
-    mintedFlakes: 0,
     enqueuedLandings: 0,
     enqueuedOverrides: 0,
     enqueuedCarries: 0,

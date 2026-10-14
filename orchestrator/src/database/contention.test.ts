@@ -22,7 +22,16 @@ describe('contention ledger', () => {
       )
       .get()!
     expect(outbox.kind).toBe('contention')
+    const row = db()
+      .query<{ record_id: string }, []>(
+        "SELECT record_id FROM contention WHERE resource_key='fixture'",
+      )
+      .get()!
+    expect(row.record_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
     expect(JSON.parse(outbox.payload)).toMatchObject({
+      id: row.record_id,
       resourceKind: 'cpu',
       resourceKey: 'fixture',
       eventKind: 'timeout',

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -38,11 +39,17 @@ function addEvidence(input: {
   deliveryNone?: boolean
 }): void {
   const review = db()
-    .query<{ id: number }, [string, number | null, string | null, string]>(
-      `INSERT INTO review (recorded_at,tier,patch_id,path_set)
-       VALUES (?,?,?,?) RETURNING id`,
+    .query<{ id: number }, [string, string, number | null, string | null, string]>(
+      `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
+       VALUES (?,?,?,?,?) RETURNING id`,
     )
-    .get(input.at, input.tier, input.patch, JSON.stringify([input.path ?? 'change.ts']))!
+    .get(
+      newRecordId(),
+      input.at,
+      input.tier,
+      input.patch,
+      JSON.stringify([input.path ?? 'change.ts']),
+    )!
   const run = addRun({
     agent: 'codex',
     job: 'review-lens',
@@ -59,10 +66,10 @@ function addEvidence(input: {
   db()
     .query(
       `INSERT INTO review_lens
-       (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+       (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
     )
-    .run(review.id, run)
+    .run(newRecordId(), review.id, run)
 }
 
 describe('review budget query', () => {

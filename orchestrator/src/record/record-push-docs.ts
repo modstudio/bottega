@@ -69,7 +69,7 @@ type LocalDoc = {
 type LocalRevision = {
   id: number
   doc_id: number
-  record_id: string | null
+  record_id: string
   scope: string
   subject: string | null
   owner: string | null

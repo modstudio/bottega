@@ -1,17 +1,13 @@
 // concern: review-outbox
 /** Knows how local reviews become ordered hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {
-  mintedReviews: number
-  mintedLenses: number
-  mintedFindings: number
-  mintedReads: number
   enqueuedReviews: number
   enqueuedReads: number
 }
@@ -39,7 +35,6 @@ export function enqueueReview(database: Database, reviewId: number): void {
     )
     .get(reviewId)
   if (!row) throw new Error(`review ${reviewId} does not exist and cannot be enqueued`)
-  if (!row.record_id) throw new Error(`review ${reviewId} has no record id`)
   enqueue(
     database,
     'review',
@@ -93,9 +88,6 @@ export function enqueueReviewLens(
     )
     .get(lensId)
   if (!row) throw new Error(`review lens ${lensId} does not exist and cannot be enqueued`)
-  if (!row.record_id) throw new Error(`review lens ${lensId} has no record id`)
-  if (!row.review_record_id)
-    throw new Error(`review lens ${lensId} has a review without a record id`)
   if (!row.run_record_id) throw new Error(`review lens ${lensId} has a run without a record id`)
   enqueue(
     database,
@@ -149,11 +141,6 @@ export function enqueueReviewFinding(
     )
     .get(findingId)
   if (!row) throw new Error(`review finding ${findingId} does not exist and cannot be enqueued`)
-  if (!row.record_id) throw new Error(`review finding ${findingId} has no record id`)
-  if (!row.review_record_id)
-    throw new Error(`review finding ${findingId} has a review without a record id`)
-  if (!row.review_lens_record_id)
-    throw new Error(`review finding ${findingId} has a lens without a record id`)
   enqueue(
     database,
     'review_finding',
@@ -217,18 +204,6 @@ export function enqueueReviewRead(database: Database, readId: number): void {
 }
 
 export function backfillReviewRecords(database: Database): ReviewRecordBackfillResult {
-  const mint = (table: 'review' | 'review_lens' | 'review_finding' | 'review_read') => {
-    const rows = database
-      .query<{ id: number }, []>(`SELECT id FROM ${table} WHERE record_id IS NULL ORDER BY id`)
-      .all()
-    for (const row of rows)
-      database.query(`UPDATE ${table} SET record_id=? WHERE id=?`).run(newRecordId(), row.id)
-    return rows.length
-  }
-  const mintedReviews = mint('review')
-  const mintedLenses = mint('review_lens')
-  const mintedFindings = mint('review_finding')
-  const mintedReads = mint('review_read')
   const reviews = database
     .query<{ id: number }, []>(
       `SELECT id FROM review WHERE NOT EXISTS
@@ -244,10 +219,6 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     .all()
   for (const row of reads) enqueueReviewRead(database, row.id)
   return {
-    mintedReviews,
-    mintedLenses,
-    mintedFindings,
-    mintedReads,
     enqueuedReviews: reviews.length,
     enqueuedReads: reads.length,
   }

@@ -8,17 +8,16 @@ export const TRIAGE_RESTORE_SKIP_REASONS = {
   identityMismatch: 'identity mismatch',
   openReview: 'review is not completed',
   hostedDivergence: 'hosted identity already diverged',
-  missingRecordId: 'review has a finding with no record id',
 } as const
 
 export type TriageRestoreFinding = {
   id: number
-  reviewRecordId: string | null
+  reviewRecordId: string
   ordinal: number
   severity: string
   location: string
   evidence: string
-  recordId: string | null
+  recordId: string
   completedAt: string | null
 }
 

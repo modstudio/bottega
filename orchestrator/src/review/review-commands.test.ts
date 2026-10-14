@@ -99,15 +99,15 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
 
     const review = db()
       .query<{ id: number }, [string, string]>(
-        `INSERT INTO review (recorded_at,tier,patch_id,path_set)
-         VALUES ('2026-09-28',0,?,?) RETURNING id`,
+        `INSERT INTO review (record_id,recorded_at,tier,patch_id,path_set)
+         VALUES ('${newRecordId()}','2026-09-28',0,?,?) RETURNING id`,
       )
       .get(currentIdentity.patchId, serializePathSet(currentIdentity.paths))!
     db()
       .query(
         `INSERT INTO review_lens
-         (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-         VALUES (?,?,'correctness','codex','[]','[]','[]','[]')`,
+         (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES ('${newRecordId()}',?,?,'correctness','codex','[]','[]','[]','[]')`,
       )
       .run(review.id, run.id)
 
