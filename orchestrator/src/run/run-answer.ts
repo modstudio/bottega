@@ -558,9 +558,8 @@ export async function answerRun(
     (helpers.dashboardAuthorized ?? dashboardCapabilityAuthorized)(),
     answerAuthority,
   )
-  if (authorityDecision.kind === 'allow-as-operator') {
+  if (authorityDecision.kind === 'allow-as-operator')
     answerAuthority = { ...answerAuthority, actor: authorityDecision.actor }
-  }
 
   /**
    * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.

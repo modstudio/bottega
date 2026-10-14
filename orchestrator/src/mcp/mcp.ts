@@ -231,9 +231,8 @@ export async function fileIssue(
   reporter: IssueReporter = { kind: 'session' },
   reportingProject?: string,
 ) {
-  if (reporter.kind !== 'session' && reporter.kind !== 'monitor') {
+  if (reporter.kind !== 'session' && reporter.kind !== 'monitor')
     throw new Error('unknown issue reporter kind')
-  }
   const session = reporter.kind === 'session' ? sessionId() : null
   let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''

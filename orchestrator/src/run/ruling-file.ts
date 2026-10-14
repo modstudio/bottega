@@ -356,9 +356,8 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
   const decision = decideFiling(row, questionAuthority, input, requested)
   const denied = refusal(row, questionAuthority, decision)
   if (denied) throw new Error(denied)
-  if (decision.kind === 'allow' && decision.operator && input.channel === 'ui') {
-    if (authority) authority = { ...authority, actor: 'operator:ui' }
-  }
+  if (decision.kind === 'allow' && decision.operator && input.channel === 'ui' && authority)
+    authority = { ...authority, actor: 'operator:ui' }
   const ruling = effectiveRuling({
     answer: row.answer,
     overturnedAt: row.overturned_at,

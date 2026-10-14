@@ -84,6 +84,26 @@ const runFlags = (options: OptionValues) => ({
   follow: Boolean(options.follow),
   quiet: Boolean(options.quiet),
 })
+const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
+  tellCommand(localRunId(id), rawArgv(command).slice(2), ping, presentation)
+const relayByIdentifier = (id: string, command: Command, note: string) =>
+  relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation)
+const resultByIdentifier = (id: string, options: OptionValues) =>
+  resultCommand(
+    db(),
+    productArgv('result', [String(localRunId(id))], options),
+    scoreSuffix,
+    presentation,
+  )
+const waitByIdentifiers = (ids: string[], options: OptionValues) =>
+  waitCommand(
+    db(),
+    productArgv(
+      'wait',
+      ids.map((id) => String(localRunId(id))),
+      options,
+    ),
+  )
 
 type LogicDependencies = {
   continuationFindingsForRun?: typeof continuationFindingsForRun
@@ -332,15 +352,13 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--file <value>')
     .option('--ping')
     .action((id, _message, options, command) =>
-      tellCommand(localRunId(id), rawArgv(command).slice(2), Boolean(options.ping), presentation),
+      tellByIdentifier(id, command, Boolean(options.ping)),
     )
   program
     .command('relay <id>')
     .requiredOption('--note <why>')
     .allowUnknownOption(true)
-    .action((id, options, command) =>
-      relayCommand(localRunId(id), rawArgv(command).slice(2), options.note, presentation),
-    )
+    .action((id, options, command) => relayByIdentifier(id, command, options.note))
   program
     .command('waiting')
     .option('--json')
@@ -372,27 +390,11 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--quiet')
     .option('--artifacts')
     .allowExcessArguments(false)
-    .action((id, options) =>
-      resultCommand(
-        db(),
-        productArgv('result', [String(localRunId(id))], options),
-        scoreSuffix,
-        presentation,
-      ),
-    )
+    .action((id, options) => resultByIdentifier(id, options))
   program
     .command('wait <ids...>')
     .option('--timeout <value>')
-    .action(async (ids, options) =>
-      waitCommand(
-        db(),
-        productArgv(
-          'wait',
-          ids.map((id: string) => String(localRunId(id))),
-          options,
-        ),
-      ),
-    )
+    .action(async (ids, options) => waitByIdentifiers(ids, options))
   program
     .command('retry <id>')
     .option('--agent <value>')

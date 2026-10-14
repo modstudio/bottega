@@ -504,7 +504,6 @@ export function collectResult(
     worktree: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
-
   if (argv.includes('--artifacts')) {
     const runsRoot = resolveRunsDirectory(process.env)
     const dir = join(runsRoot, String(chain.finalId), 'artifacts')
@@ -525,8 +524,7 @@ export function collectResult(
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
-  const baseNote =
-    (row.base_commit ? `\n  base:      ${row.base_commit}` : '') + `\n  record_id: ${row.record_id}`
+  const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
     presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     presentation.exit(2)
