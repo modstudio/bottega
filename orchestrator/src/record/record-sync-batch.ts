@@ -54,10 +54,9 @@ function considerRecordSyncCandidate(input: {
     }
   }
   if (input.sendCount === input.countLimit) return { disposition: 'stop' }
+  // A row after the first also costs the comma that separates it from the row before.
   const nextRequestBytes =
-    input.sendCount === 0
-      ? input.requestBytes - 2 + row.serializedBytes
-      : input.requestBytes + 1 + row.serializedBytes
+    input.requestBytes + (input.sendCount === 0 ? 0 : 1) + row.serializedBytes
   if (nextRequestBytes > input.requestLimit) {
     if (input.sendCount > 0) return { disposition: 'stop' }
     return {

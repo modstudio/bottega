@@ -55,7 +55,7 @@ test('classifies every row until a non-empty batch reaches a boundary', () => {
 
   expect(result.quarantine.map((row) => row.id)).toEqual([1, 2])
   expect(result.quarantine[1]!.reason).toContain(
-    'serialized row is 1001 bytes and requires a 1009 byte request, exceeding the 1000 byte client request budget',
+    'serialized row is 1001 bytes and requires a 1011 byte request, exceeding the 1000 byte client request budget',
   )
   expect(result.quarantine[1]!.reason).toContain('orch record outbox retire <row-id>')
   expect(result.send.map((row) => row.id)).toEqual([3])
