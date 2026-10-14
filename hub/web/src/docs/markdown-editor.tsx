@@ -4,27 +4,36 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
-import { tags as t } from '@lezer/highlight'
+import { styleTags, Tag, tags as t } from '@lezer/highlight'
 import { GFM } from '@lezer/markdown'
 import { useEffect, useRef } from 'react'
 
+const inlineCode = Tag.define(t.monospace)
+
 const highlight = HighlightStyle.define([
   { tag: t.comment, class: 'doc-ed-comment' },
-  { tag: t.name, class: 'doc-ed-keyword' },
   { tag: t.keyword, class: 'doc-ed-keyword' },
-  { tag: t.literal, class: 'doc-ed-literal' },
+  { tag: t.string, class: 'doc-ed-string' },
+  { tag: t.number, class: 'doc-ed-number' },
+  { tag: [t.bool, t.atom], class: 'doc-ed-atom' },
+  { tag: t.definition(t.variableName), class: 'doc-ed-definition' },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], class: 'doc-ed-function' },
+  { tag: [t.className, t.typeName], class: 'doc-ed-type' },
   { tag: t.variableName, class: 'doc-ed-name' },
   { tag: t.propertyName, class: 'doc-ed-name' },
-  { tag: t.typeName, class: 'doc-ed-name' },
   { tag: t.operator, class: 'doc-ed-name' },
-  { tag: t.punctuation, class: 'doc-ed-mark' },
+  { tag: [t.punctuation, t.bracket], class: 'doc-ed-punctuation' },
+  { tag: t.regexp, class: 'doc-ed-regexp' },
+  { tag: t.invalid, class: 'doc-ed-invalid' },
   { tag: t.heading, class: 'doc-ed-heading' },
   { tag: t.emphasis, class: 'doc-ed-emphasis' },
   { tag: t.strong, class: 'doc-ed-strong' },
   { tag: t.link, class: 'doc-ed-link' },
   { tag: t.url, class: 'doc-ed-url' },
+  { tag: inlineCode, class: 'doc-ed-inline-code' },
   { tag: t.monospace, class: 'doc-ed-code' },
   { tag: t.quote, class: 'doc-ed-quote' },
+  { tag: t.labelName, class: 'doc-ed-mark' },
   { tag: t.processingInstruction, class: 'doc-ed-mark' },
   { tag: t.meta, class: 'doc-ed-mark' },
   { tag: t.contentSeparator, class: 'doc-ed-mark' },
@@ -48,7 +57,10 @@ function editorExtensions(onChange: (value: string) => void, onModSave: () => vo
     ),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     EditorView.lineWrapping,
-    markdown({ extensions: GFM, codeLanguages: languages }),
+    markdown({
+      extensions: [GFM, { props: [styleTags({ InlineCode: inlineCode })] }],
+      codeLanguages: languages,
+    }),
     syntaxHighlighting(highlight),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString())

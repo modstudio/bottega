@@ -278,6 +278,9 @@
   --docs-diagram-text: 14px;
   /* The docs tab row, which the side panels and article header stick beneath. */
   --docs-chrome-h: 2.8125rem;
+  /* The article's own sticky header: a small control, its vertical padding and its rule. The edit
+     tools stick beneath it. */
+  --docs-reading-top: calc(var(--control-h-sm) + 1.25rem + 1px);
   --sheet-w: min(34rem, 100vw);
   --sheet-w-wide: min(46rem, 100vw);
   --sheet-w-document: min(64rem, 100vw);

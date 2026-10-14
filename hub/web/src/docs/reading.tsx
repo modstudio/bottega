@@ -57,9 +57,6 @@ function StatusLine({ status }: { status: DocsDoc['status'] }) {
   )
 }
 
-/** Room the sticky article header takes, so the title counts as gone once it is behind it. */
-const READING_TOP_HEIGHT = 44
-
 /** Whether the element has scrolled up behind the article's sticky header. */
 function useScrolledPast(target: RefObject<HTMLElement | null>, watch: unknown): boolean {
   const [past, setPast] = useState(false)
@@ -72,11 +69,13 @@ function useScrolledPast(target: RefObject<HTMLElement | null>, watch: unknown):
     }
     const sticky = node.previousElementSibling
     const line = sticky ? Number.parseFloat(getComputedStyle(sticky).top) || 0 : 0
+    // The header's own height, so the title counts as gone once it is behind it.
+    const header = sticky ? sticky.getBoundingClientRect().height : 0
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry) setPast(!entry.isIntersecting && entry.boundingClientRect.top < line + 200)
       },
-      { rootMargin: `-${line + READING_TOP_HEIGHT}px 0px 0px 0px` },
+      { rootMargin: `-${line + header}px 0px 0px 0px` },
     )
     observer.observe(node)
     return () => observer.disconnect()
@@ -95,8 +94,6 @@ function ReadingTop({
   headerAction,
   wide,
   onWide,
-  editing,
-  toolbar,
 }: {
   crumbs: readonly BreadcrumbPart[]
   title: string
@@ -104,8 +101,6 @@ function ReadingTop({
   headerAction?: ReactNode
   wide: boolean
   onWide: (wide: boolean) => void
-  editing?: boolean
-  toolbar?: ReactNode
 }) {
   return (
     <div
@@ -114,43 +109,34 @@ function ReadingTop({
         titleGone ? 'border-border-default' : 'border-transparent',
       )}
     >
-      {editing ? (
-        <div data-doc-edit-toolbar className="flex min-w-0 items-center">
-          {toolbar}
-        </div>
-      ) : (
-        <div
-          className={classes(
-            eyebrow,
-            'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
-          )}
-        >
-          {crumbs.map((crumb, index) => (
-            <span key={crumb.key} className="contents">
-              {index > 0 ? <span>/</span> : null}
-              <span>{crumb.label}</span>
-            </span>
-          ))}
-          {titleGone ? (
-            <>
-              <span>/</span>
-              <span className="min-w-0 truncate text-text-primary">{title}</span>
-            </>
-          ) : null}
-        </div>
-      )}
+      <div
+        className={classes(
+          eyebrow,
+          'flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap',
+        )}
+      >
+        {crumbs.map((crumb, index) => (
+          <span key={crumb.key} className="contents">
+            {index > 0 ? <span>/</span> : null}
+            <span>{crumb.label}</span>
+          </span>
+        ))}
+        {titleGone ? (
+          <>
+            <span>/</span>
+            <span className="min-w-0 truncate text-text-primary">{title}</span>
+          </>
+        ) : null}
+      </div>
       {/* For an article of wide tables: the pane takes the room of the facts column too. */}
       <div className="flex shrink-0 items-center gap-2">
         {headerAction}
-        {/* While editing, the toolbar needs the room; width is chosen while reading. */}
-        {editing ? null : (
-          <span className="hidden lg:inline-flex">
-            <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
-              {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              {wide ? 'Reading width' : 'Wide'}
-            </Button>
-          </span>
-        )}
+        <span className="hidden lg:inline-flex">
+          <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
+            {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {wide ? 'Reading width' : 'Wide'}
+          </Button>
+        </span>
       </div>
     </div>
   )
@@ -226,6 +212,7 @@ function ArticleHeading({
   replacement,
   locationFor,
   fieldSource,
+  editBand,
 }: {
   shown: { title: string; lede: string | null }
   heading: RefObject<HTMLElement | null>
@@ -236,6 +223,7 @@ function ArticleHeading({
   replacement: DocsTreeItem | null
   locationFor: (item: DocsTreeItem) => DocsLocation
   fieldSource?: DocsSource
+  editBand?: ReactNode
 }) {
   return (
     <>
@@ -250,15 +238,17 @@ function ArticleHeading({
           {shown.title}
         </h1>
       )}
-      <DocKeyInfo
-        doc={doc}
-        signedIn={signedIn}
-        replacement={replacement}
-        locationFor={locationFor}
-        statusView={
-          fieldSource ? <EditableStatus key={doc.id} doc={doc} source={fieldSource} /> : undefined
-        }
-      />
+      {editBand ?? (
+        <DocKeyInfo
+          doc={doc}
+          signedIn={signedIn}
+          replacement={replacement}
+          locationFor={locationFor}
+          statusView={
+            fieldSource ? <EditableStatus key={doc.id} doc={doc} source={fieldSource} /> : undefined
+          }
+        />
+      )}
       {shown.lede && !editing ? (
         <p className="doc-measure mt-3.5 text-lg text-text-muted">{shown.lede}</p>
       ) : null}
@@ -280,7 +270,7 @@ function DocKeyInfo({
   locationFor: (item: DocsTreeItem) => DocsLocation
 }) {
   return (
-    <div className="doc-measure mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
+    <div className="doc-measure mt-3 flex min-h-control-sm flex-wrap items-center gap-x-4 gap-y-2 text-md text-text-muted">
       {signedIn ? (statusView ?? <StatusLine status={doc.status} />) : null}
       <span className="inline-flex items-center gap-1.5">
         <CalendarDays size={14} />
@@ -310,7 +300,7 @@ export function DocsReading({
   bodyView,
   viewedRevision,
   editing,
-  toolbar,
+  editBand,
   banner,
   titleView,
   fieldSource,
@@ -332,7 +322,8 @@ export function DocsReading({
   headerAction?: ReactNode
   error?: string | null
   editing?: boolean
-  toolbar?: ReactNode
+  /** While editing, the tools that take the place of the status line under the title. */
+  editBand?: ReactNode
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
   /** Where the article's fields are saved, set only when this reader may edit them in place. */
@@ -360,8 +351,6 @@ export function DocsReading({
             headerAction={headerAction}
             wide={wide}
             onWide={onWide}
-            editing={editing}
-            toolbar={toolbar}
           />
           {banner}
           <ArticleHeading
@@ -374,6 +363,7 @@ export function DocsReading({
             replacement={replacement}
             locationFor={locationFor}
             fieldSource={fieldSource}
+            editBand={editBand}
           />
           {bodyView ?? (
             <div className="mt-6">
