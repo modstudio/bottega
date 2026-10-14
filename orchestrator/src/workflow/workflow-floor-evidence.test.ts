@@ -141,10 +141,10 @@ const database = () => {
   )
   d.query(
     `INSERT INTO workflow_cursor
-      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
+     VALUES ('${newRecordId()}','fixture','flow','default','DEV-977','','s',1,1,'{}',0,'rebase','running','[]',NULL,
              1,'2026-09-01','2026-09-01','floors')`,
   ).run()
   return d
@@ -816,8 +816,8 @@ test('an obligation preserves its operator ruling requirement', () => {
   const d = database()
   d.query(
     `INSERT INTO workflow_obligation
-      (cursor_id,step_ordinal,step_slug,floor,operator_ruling,floor_deferrable,reason,created_at)
-     VALUES (1,1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
+      (record_id,cursor_id,step_ordinal,step_slug,floor,operator_ruling,floor_deferrable,reason,created_at)
+     VALUES ('${newRecordId()}',1,1,'rebase','ruling',1,1,'operator decides','2026-09-01')`,
   ).run()
 
   expect(gather(d, { satisfies: 1 }).satisfy).toMatchObject({

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/trackers.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
@@ -204,9 +205,9 @@ test('promoting a stored pre-validator draft revalidates before changing product
   }
   d.query(
     `INSERT INTO step_catalogue_version
-      (catalogue_id,n,status,definition,author,reason,created_at)
-      VALUES (?,2,'draft',?,'legacy','pre-validator draft','2026-01-01T00:00:00.000Z')`,
-  ).run(production.owner_id, JSON.stringify(invalid))
+      (record_id,catalogue_id,n,status,definition,author,reason,created_at)
+      VALUES (?,?,2,'draft',?,'legacy','pre-validator draft','2026-01-01T00:00:00.000Z')`,
+  ).run(newRecordId(), production.owner_id, JSON.stringify(invalid))
 
   expect(() => promoteStepCatalogue(2, 'promote legacy', 'architect', d)).toThrow(
     `step "diagnose" dispatch "${PLATFORM_SLUG} run start diagnose --key {{key}}" must include --file or a double-quoted argument`,

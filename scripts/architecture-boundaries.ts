@@ -982,6 +982,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/workflow/workflow-seeds.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
       '../database/db.ts',
       '../review/review-vocabulary.ts',
       './step-catalogue.ts',

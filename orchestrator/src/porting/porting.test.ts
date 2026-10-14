@@ -17,7 +17,10 @@ import {
   setLedgerRef,
 } from './porting.ts'
 
-const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
+const listPairs = () =>
+  db()
+    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .all() as PortPair[]
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
@@ -49,6 +52,15 @@ describe('porting data model', () => {
     expect(listSkips(pair.id)).toMatchObject([
       { candidate: 'candidate-one', reason: 'not applicable' },
     ])
+    for (const row of db()
+      .query<{ record_id: string }, []>(
+        'SELECT record_id FROM port_pair UNION ALL SELECT record_id FROM port_baseline UNION ALL SELECT record_id FROM port_skip',
+      )
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
   })
   test('keeps the same task label distinct in two target projects', () => {
     upsertProject({ name: 'source-one-invented', path: '/w/source-one', settings: {} })
@@ -142,6 +154,11 @@ describe('porting data model', () => {
   })
   test('retires doctrine without freeing its stable number', () => {
     addDoctrineRule(7, 'Invented rule', 'Keep the example invented.', '2026-09-01T00:00:00.000Z')
+    expect(
+      db()
+        .query<{ record_id: string }, []>('SELECT record_id FROM port_doctrine WHERE number=7')
+        .get()?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     expect(retireDoctrineRule(7, '2026-09-02T00:00:00.000Z')).toBe(true)
     expect(listDoctrineRules(false)).toEqual([])
     expect(listDoctrineRules()).toMatchObject([

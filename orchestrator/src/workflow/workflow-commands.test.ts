@@ -154,15 +154,15 @@ test('workflow attach reads text from stdin and prints its close reference', asy
     process.env.CLAUDE_CODE_SESSION_ID = 'workflow-attach-cli'
     const cursor = (
       db()
-        .query<{ id: number }, [string | null]>(
+        .query<{ id: number }, [string, string | null]>(
           `INSERT INTO workflow_cursor
-            (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+            (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
              workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
              total_steps,created_at,updated_at,enforcement)
-           VALUES ('fixture','attach-cli','default','','',?,1,1,'{}',0,'research','running',
+           VALUES (?,'fixture','attach-cli','default','','',?,1,1,'{}',0,'research','running',
                    '[]',NULL,1,'2026-10-05','2026-10-05','floors') RETURNING id`,
         )
-        .get(sessionId()) as { id: number }
+        .get(newRecordId(), sessionId()) as { id: number }
     ).id
     const lines: string[] = []
     await workflowCommand(['workflow', 'attach', '--cursor', String(cursor)], presentation(lines), {

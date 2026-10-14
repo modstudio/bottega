@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectAt } from '../project/projects.ts'
@@ -170,14 +171,15 @@ function insertCursor(
     : undefined
   d.query(
     `INSERT INTO workflow_cursor
-      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES (?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
   ).run(
+    newRecordId(),
     composition.project,
     composition.workflow.slug,
     composition.mode!.slug,
@@ -548,11 +550,12 @@ function persistFloorClose(
     const inserted = d
       .query<{ id: number }, (string | number | null)[]>(
         `INSERT INTO workflow_obligation
-          (cursor_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
+          (record_id,cursor_id,step_ordinal,step_slug,floor,require_pull_request,operator_ruling,
            expected_exit_code,expected_status,floor_deferrable,reason,session_id,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         row.id,
         row.ordinal + 1,
         row.step_slug,
@@ -1004,7 +1007,10 @@ export function listWorkflowCursors(
     values.push(options.session)
   }
   const rows = d
-    .query(`SELECT * FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
+    .query(`SELECT id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       ordinal,step_slug,state,workflow_version,catalogue_version,args,autonomy,closed,question,
+       total_steps,created_at,updated_at,enforcement
+       FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,id`)
     .all(...values) as CursorRow[]
   return rows.map((row) => {
     const open = openWorkflowObligations(row.id, d)

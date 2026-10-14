@@ -198,6 +198,10 @@ describe('workflow text lifecycle', () => {
     const d = database()
     const cursor = open(d)
     const reference = attachWorkflowTextByHandle(cursor, 'research body', context, d)
+    expect(
+      d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_step_text').get()
+        ?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     const rendered = nextWorkflowStep(
       'text-fixture',
       'fixture',

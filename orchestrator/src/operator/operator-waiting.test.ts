@@ -115,9 +115,9 @@ test('waiting JSON model includes run questions and workflow rulings', () => {
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-        (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
+        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,session_id)
-       VALUES ('fixture','fixture-workflow','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
+       VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-943','',1,1,'{"key":"DEV-943"}',0,'rebase',
                'awaiting-ruling','[]','Workflow question?',1,'2026-09-24','2026-09-25','session-1') RETURNING id`,
     )
     .get() as { id: number }
@@ -180,9 +180,9 @@ test('notification claims return each waiting episode once', () => {
   const cursor = db()
     .query(
       `INSERT INTO workflow_cursor
-        (project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
+        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,workflow_version,catalogue_version,
          args,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at)
-       VALUES ('fixture','fixture-workflow','default','DEV-943','',1,1,'{}',0,'rebase','awaiting-ruling',
+       VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-943','',1,1,'{}',0,'rebase','awaiting-ruling',
                '[]','Workflow?',1,'2026-09-25','2026-09-25') RETURNING id`,
     )
     .get() as { id: number }

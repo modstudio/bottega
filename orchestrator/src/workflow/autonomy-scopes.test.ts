@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { answerRulingRefusal, combineRulingsSnapshots, parseAutonomy } from './autonomy.ts'
 import {
@@ -279,12 +280,13 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
+      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version,
        catalogue_version,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES ('fixture','flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES (?,'fixture','flow','default','DEV-866',?,NULL,1,1,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
+    newRecordId(),
     'older',
     JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }),
     'running',
@@ -292,6 +294,7 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     '1',
   )
   insert.run(
+    newRecordId(),
     'newer',
     JSON.stringify({ rulings: { value: 'user', scope: 'session' } }),
     'awaiting-ruling',
@@ -303,6 +306,7 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     scope: 'session',
   })
   insert.run(
+    newRecordId(),
     'incomplete',
     JSON.stringify({
       rulings: {

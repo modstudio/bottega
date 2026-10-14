@@ -192,9 +192,9 @@ describe('record doctor decisions', () => {
     database
       .query(
         `INSERT INTO workflow_cursor
-         (project,workflow_slug,mode_slug,instance_id,session_id,workflow_version,catalogue_version,
+         (record_id,project,workflow_slug,mode_slug,instance_id,session_id,workflow_version,catalogue_version,
           args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
-         VALUES ('default','test','default','','session',1,1,'{}',0,'step','awaiting-ruling','[]',1,
+         VALUES ('${newRecordId()}','default','test','default','','session',1,1,'{}',0,'step','awaiting-ruling','[]',1,
                  '2026-09-25','2026-09-25')`,
       )
       .run()

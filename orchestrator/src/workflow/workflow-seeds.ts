@@ -3,6 +3,7 @@
  * Must not know workflow commands, adapters, execution, or project state. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
 import { type FloorKind, validateStepCatalogue } from './step-catalogue.ts'
@@ -198,14 +199,16 @@ function seedCatalogue(d: Database, now: string): void {
   } | null
   if (!catalogue) {
     catalogue = d
-      .query("INSERT INTO step_catalogue (slug,created_at) VALUES ('shared',?) RETURNING id")
-      .get(now) as { id: number }
+      .query(
+        "INSERT INTO step_catalogue (record_id,slug,created_at) VALUES (?,'shared',?) RETURNING id",
+      )
+      .get(newRecordId(), now) as { id: number }
     d.query(
-      `INSERT INTO step_catalogue_version (catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,1,'production',?,'seed',?,?,?)`,
-    ).run(catalogue.id, seededDefinition, reason, now, now)
+      `INSERT INTO step_catalogue_version (record_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,1,'production',?,'seed',?,?,?)`,
+    ).run(newRecordId(), catalogue.id, seededDefinition, reason, now, now)
     d.query(
-      `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,1,'set','seed',?,NULL,?)`,
-    ).run(catalogue.id, reason, now)
+      `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,1,'set','seed',?,NULL,?)`,
+    ).run(newRecordId(), catalogue.id, reason, now)
     return
   }
   if (
@@ -246,18 +249,18 @@ function seedCatalogue(d: Database, now: string): void {
       "UPDATE step_catalogue_version SET status='retired',retired_at=? WHERE catalogue_id=? AND status='production'",
     ).run(now, catalogue.id)
     d.query(
-      `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'retire','seed',?,NULL,?)`,
-    ).run(catalogue.id, prior.n, reason, now)
+      `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'retire','seed',?,NULL,?)`,
+    ).run(newRecordId(), catalogue.id, prior.n, reason, now)
   }
   d.query(
-    `INSERT INTO step_catalogue_version (catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,'production',?,'seed',?,?,?)`,
-  ).run(catalogue.id, n, definition, reason, now, now)
+    `INSERT INTO step_catalogue_version (record_id,catalogue_id,n,status,definition,author,reason,created_at,promoted_at) VALUES (?,?,?,'production',?,'seed',?,?,?)`,
+  ).run(newRecordId(), catalogue.id, n, definition, reason, now, now)
   d.query(
-    `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'set','seed',?,NULL,?)`,
-  ).run(catalogue.id, n, reason, now)
+    `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'set','seed',?,NULL,?)`,
+  ).run(newRecordId(), catalogue.id, n, reason, now)
   d.query(
-    `INSERT INTO step_catalogue_event (catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'promote','seed',?,NULL,?)`,
-  ).run(catalogue.id, n, reason, now)
+    `INSERT INTO step_catalogue_event (record_id,catalogue_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'promote','seed',?,NULL,?)`,
+  ).run(newRecordId(), catalogue.id, n, reason, now)
 }
 
 function requireValidSeedCatalogue(definition: unknown): void {
@@ -320,11 +323,12 @@ export function seedWorkflows(d: Database): void {
       } | null
       if (!workflow) {
         workflow = d
-          .query('INSERT INTO workflow (slug, created_at) VALUES (?, ?) RETURNING id')
-          .get(seed.slug, now) as { id: number }
+          .query('INSERT INTO workflow (record_id, slug, created_at) VALUES (?, ?, ?) RETURNING id')
+          .get(newRecordId(), seed.slug, now) as { id: number }
         d.query(`INSERT INTO workflow_version
-          (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
-          VALUES (?,1,'production',?,'seed',?,?,?)`).run(
+          (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+          VALUES (?,?,1,'production',?,'seed',?,?,?)`).run(
+          newRecordId(),
           workflow.id,
           seedDefinition(workflowDefinition(seed)),
           reason,
@@ -332,8 +336,8 @@ export function seedWorkflows(d: Database): void {
           now,
         )
         d.query(`INSERT INTO workflow_event
-          (workflow_id,version_n,event,author,reason,session_id,at)
-          VALUES (?,1,'set','seed',?,NULL,?)`).run(workflow.id, reason, now)
+          (record_id,workflow_id,version_n,event,author,reason,session_id,at)
+          VALUES (?,?,1,'set','seed',?,NULL,?)`).run(newRecordId(), workflow.id, reason, now)
         continue
       }
       if (
@@ -357,12 +361,19 @@ export function seedWorkflows(d: Database): void {
           "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND status='production'",
         ).run(now, workflow.id)
         d.query(`INSERT INTO workflow_event
-          (workflow_id,version_n,event,author,reason,session_id,at)
-          VALUES (?,?,'retire','seed',?,NULL,?)`).run(workflow.id, prior.n, reason, now)
+          (record_id,workflow_id,version_n,event,author,reason,session_id,at)
+          VALUES (?,?,?,'retire','seed',?,NULL,?)`).run(
+          newRecordId(),
+          workflow.id,
+          prior.n,
+          reason,
+          now,
+        )
       }
       d.query(`INSERT INTO workflow_version
-        (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
-        VALUES (?,?,'production',?,'seed',?,?,?)`).run(
+        (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+        VALUES (?,?,?,'production',?,'seed',?,?,?)`).run(
+        newRecordId(),
         workflow.id,
         n,
         seedDefinition(workflowDefinition(seed)),
@@ -371,11 +382,11 @@ export function seedWorkflows(d: Database): void {
         now,
       )
       d.query(`INSERT INTO workflow_event
-        (workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,?,'set','seed',?,NULL,?)`).run(workflow.id, n, reason, now)
+        (record_id,workflow_id,version_n,event,author,reason,session_id,at)
+        VALUES (?,?,?,'set','seed',?,NULL,?)`).run(newRecordId(), workflow.id, n, reason, now)
       d.query(`INSERT INTO workflow_event
-        (workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,?,'promote','seed',?,NULL,?)`).run(workflow.id, n, reason, now)
+        (record_id,workflow_id,version_n,event,author,reason,session_id,at)
+        VALUES (?,?,?,'promote','seed',?,NULL,?)`).run(newRecordId(), workflow.id, n, reason, now)
     }
   }, d)
 }

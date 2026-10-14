@@ -36,7 +36,10 @@ import {
   setDoc as writeDoc,
 } from './docs.ts'
 
-const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
+const listPairs = () =>
+  db()
+    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .all() as PortPair[]
 
 test('user document addressing refuses a subject', () => {
   expect(() => validateUserAddress(true, true)).toThrow('--user cannot be used with --subject')

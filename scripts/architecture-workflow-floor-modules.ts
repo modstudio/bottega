@@ -81,6 +81,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-text.ts', [
     'bun:sqlite',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-transition.ts',
@@ -103,6 +104,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     'node:crypto',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../operator/operator-waiting.ts',

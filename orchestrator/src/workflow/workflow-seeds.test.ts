@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, migrationJournal } from '../database/migrations.ts'
 import {
   forkStepCatalogue,
@@ -120,8 +121,9 @@ describe('workflow projection and seeds', () => {
     d.query('DELETE FROM workflow_version WHERE workflow_id=?').run(id)
     for (let version = 1; version <= n; version++)
       d.query(
-        `INSERT INTO workflow_version (workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?, ?,?,?,?, ?,?)`,
+        `INSERT INTO workflow_version (record_id,workflow_id,n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?, ?,?,?,?, ?,?,?)`,
       ).run(
+        newRecordId(),
         id,
         version,
         version === n ? 'production' : 'retired',
@@ -133,12 +135,12 @@ describe('workflow projection and seeds', () => {
         version === n ? null : at,
       )
     d.query(
-      `INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,1,'set','seed','DEV-257 seed',NULL,?)`,
-    ).run(id, at)
+      `INSERT INTO workflow_event (record_id,workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,1,'set','seed','DEV-257 seed',NULL,?)`,
+    ).run(newRecordId(), id, at)
     if (n > 1)
       d.query(
-        `INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'set',?,'operator edit',NULL,?)`,
-      ).run(id, n, author, at)
+        `INSERT INTO workflow_event (record_id,workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,'set',?,'operator edit',NULL,?)`,
+      ).run(newRecordId(), id, n, author, at)
   }
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
@@ -154,6 +156,15 @@ describe('workflow projection and seeds', () => {
       'ship',
     ])
     expect(listWorkflows(d).map(({ slug }) => slug)).toEqual(['fix-defect'])
+    for (const row of d
+      .query<{ record_id: string }, []>(
+        'SELECT record_id FROM workflow UNION ALL SELECT record_id FROM step_catalogue',
+      )
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
     for (const [slug, revision] of [['fix-defect', 5]] as const) {
       const version = showWorkflow(slug, 1, d)
       expect(version.status).toBe('production')

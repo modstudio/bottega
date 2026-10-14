@@ -1,6 +1,7 @@
 // concern: workflows
 /** Owns cursor-local text attachments and the pure decisions governing their lifetime. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
@@ -137,11 +138,11 @@ function attachSelectedWorkflowText(
   })
   if (decision.action === 'refuse') throw new Error(decision.message)
   const inserted = d
-    .query<{ id: number }, [number, number, string, string, string]>(
-      `INSERT INTO workflow_step_text(cursor_id,step_ordinal,step_slug,body,created_at)
-       VALUES (?,?,?,?,?) RETURNING id`,
+    .query<{ id: number }, [string, number, number, string, string, string]>(
+      `INSERT INTO workflow_step_text(record_id,cursor_id,step_ordinal,step_slug,body,created_at)
+       VALUES (?,?,?,?,?,?) RETURNING id`,
     )
-    .get(row.id, row.ordinal + 1, row.step_slug, body, nowIso())
+    .get(newRecordId(), row.id, row.ordinal + 1, row.step_slug, body, nowIso())
   if (!inserted) throw new Error('workflow text was not attached; retry the attach call')
   return `attached-text:${inserted.id}`
 }
