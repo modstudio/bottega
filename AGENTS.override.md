@@ -589,8 +589,8 @@ controls scheduled curation. All other disposition is human.
 
 Promotion is always a human act through `bottega note promote`; the task carries
 the note body and sightings as evidence. Scheduled work never promotes and the
-board never grows by itself. `bottega note new` files; the other `bottega note`
-verbs keep, promote, drop and merge.
+board never grows by itself. `bottega note new` files a note; `bottega note same`,
+`keep`, `promote` and `drop` dispose of it.
 
 If an entry needs fields beyond text, tags and sightings, it is a task. Promote
 it instead of building another tracker inside notes.
