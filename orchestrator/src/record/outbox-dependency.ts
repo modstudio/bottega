@@ -73,7 +73,6 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
     case 'score':
       return [{ kind: 'run', recordId: row.record_id }]
     case 'question':
-    case 'contention':
       return nullableString(payload.runId) ? [{ kind: 'run', recordId: String(payload.runId) }] : []
     case 'review':
       return reviewRunIds(database, row.record_id).map((recordId) => ({ kind: 'run', recordId }))
@@ -97,6 +96,24 @@ function outboxParentRecordIds(row: OutboxRow, payload: Payload, database: Datab
         { kind: 'run', recordId: lens.runId },
       ].filter((value): value is ParentRef => value.recordId !== null)
     }
+    case 'landing':
+      return nullableString(payload.causingLandingId)
+        ? [{ kind: 'landing', recordId: String(payload.causingLandingId) }]
+        : []
+    case 'landing_review_carry':
+      return nullableString(payload.reviewId)
+        ? [{ kind: 'review', recordId: String(payload.reviewId) }]
+        : []
+    case 'landing_triage_snapshot':
+      return [
+        { kind: 'review_read', recordId: nullableString(payload.readId) },
+        { kind: 'landing_override', recordId: nullableString(payload.overrideId) },
+      ].filter((value): value is ParentRef => value.recordId !== null)
+    case 'contention':
+      return [
+        { kind: 'run', recordId: nullableString(payload.runId) },
+        { kind: 'landing', recordId: nullableString(payload.landingId) },
+      ].filter((value): value is ParentRef => value.recordId !== null)
     default:
       return []
   }

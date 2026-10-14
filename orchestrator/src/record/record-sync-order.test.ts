@@ -13,6 +13,9 @@ test('outbox ordering sends run rows before run-dependent rows', () => {
     { kind: 'review_finding', id: 21654 },
     { kind: 'contention', id: 21655 },
     { kind: 'test_flake', id: 21656 },
+    { kind: 'review_read', id: 21657 },
+    { kind: 'landing_triage_snapshot', id: 21640 },
+    { kind: 'landing_review_carry', id: 21641 },
   ]
 
   const ordered = rows.toSorted((left, right) => {
@@ -32,5 +35,8 @@ test('outbox ordering sends run rows before run-dependent rows', () => {
     { kind: 'review_lens', id: 21653 },
     { kind: 'review_finding', id: 21654 },
     { kind: 'contention', id: 21655 },
+    { kind: 'review_read', id: 21657 },
+    { kind: 'landing_triage_snapshot', id: 21640 },
+    { kind: 'landing_review_carry', id: 21641 },
   ])
 })
