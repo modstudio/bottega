@@ -19,17 +19,6 @@ import {
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 
-export const NOTE_USAGE = `hub note new "<text>" [--project NAME] [--same-as LABEL|UUID|NUMBER|--new] [--area AREA]
-  hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
-  hub note same <LABEL|UUID|NUMBER> <LABEL|UUID|NUMBER>
-  hub note keep <LABEL|UUID|NUMBER>...
-  hub note promote <LABEL|UUID|NUMBER>
-  hub note drop <LABEL|UUID|NUMBER> --reason "..."
-  hub note stale              mark vanished anchors and reap eligible notes
-  hub note curate [--scheduled]
-  hub note curator [--enable|--disable]
-  hub note push [--dry-run]   migrate and verify the local note cache`
-
 type NoteOptions = {
   actionable?: boolean
   anchorJson?: string
@@ -50,219 +39,42 @@ type NoteOptions = {
 }
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
+const open = () => requireDatabase()
+const reference = (value: string, project?: string) =>
+  resolveNoteReference(value, project ?? projectOf(process.cwd()))
 
-function noteArgv(subcommand: string, positionals: string[], options: NoteOptions): string[] {
-  const argv = ['note', subcommand, ...positionals]
-  const values: Array<[keyof NoteOptions, string]> = [
-    ['anchorJson', 'anchor-json'],
-    ['area', 'area'],
-    ['project', 'project'],
-    ['reason', 'reason'],
-    ['sameAs', 'same-as'],
-    ['task', 'task'],
-  ]
-  for (const [key, flag] of values) if (typeof options[key] === 'string') argv.push(`--${flag}`, options[key])
-  for (const session of options.session ?? []) argv.push('--session', session)
-  const booleans: Array<[keyof NoteOptions, string]> = [
-    ['actionable', 'actionable'],
-    ['disable', 'disable'],
-    ['dryRun', 'dry-run'],
-    ['enable', 'enable'],
-    ['json', 'json'],
-    ['kept', 'kept'],
-    ['new', 'new'],
-    ['scheduled', 'scheduled'],
-    ['stale', 'stale'],
-  ]
-  for (const [key, flag] of booleans) if (options[key]) argv.push(`--${flag}`)
-  return argv
-}
-
-function registerNoteAction(command: Command, subcommand: string): void {
-  command.action(async (...args: unknown[]) => {
-    requireDatabase()
-    const commander = args.at(-1) as Command
-    const options = commander.opts() as NoteOptions
-    const positionals = args
-      .slice(0, -2)
-      .flatMap((value) => (Array.isArray(value) ? value.map(String) : [String(value)]))
-    await runNoteCommand(noteArgv(subcommand, positionals, options))
-  })
-}
-
-export function registerNoteCommands(program: Command): void {
-  const note = program.command('note').description('manage observations')
-  const create = note
-    .command('new <text>')
-    .option('--project <name>', '')
-    .option('--same-as <reference>', '')
-    .option('--new', '')
-    .option('--area <area>', '')
-    .option('--anchor-json <json>', '')
-    .option('--json', '')
-  registerNoteAction(create, 'new')
-  const list = note
-    .command('list')
-    .option('--project <X>', '')
-    .option('--stale', '')
-    .option('--session <ID>', '', repeat, [])
-    .option('--actionable', '')
-    .option('--kept', '')
-    .option('--json', '')
-  registerNoteAction(list, 'list')
-  registerNoteAction(note.command('same <target> <source>'), 'same')
-  registerNoteAction(note.command('keep <references...>'), 'keep')
-  const promote = note.command('promote <reference>').option('--task <key>', '')
-  registerNoteAction(promote, 'promote')
-  const drop = note.command('drop <reference>').option('--reason <reason>', '')
-  registerNoteAction(drop, 'drop')
-  registerNoteAction(note.command('stale').description('mark vanished anchors and reap eligible notes'), 'stale')
-  const curate = note.command('curate').option('--scheduled', '')
-  registerNoteAction(curate, 'curate')
-  const curator = note.command('curator').option('--enable', '').option('--disable', '')
-  registerNoteAction(curator, 'curator')
-  const push = note
-    .command('push')
-    .description('migrate and verify the local note cache')
-    .option('--dry-run', '')
-  registerNoteAction(push, 'push')
-}
-
-const NOTE_VALUE_FLAGS = new Set([
-  '--anchor-json',
-  '--area',
-  '--project',
-  '--reason',
-  '--same-as',
-  '--session',
-  '--task',
-])
-
-export function noteHelpRequested(argv: readonly string[]): boolean {
-  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') return true
-  let expectingValue = false
-  for (const token of argv.slice(1)) {
-    if (expectingValue) {
-      expectingValue = false
-      continue
-    }
-    if (token === '--help' || token === '-h') return true
-    expectingValue = NOTE_VALUE_FLAGS.has(token)
-  }
-  return false
-}
-
-const option = (argv: string[], name: string) => {
-  const index = argv.indexOf(`--${name}`)
-  return index >= 0 ? argv[index + 1] : undefined
-}
-const options = (argv: string[], name: string) =>
-  argv.flatMap((value, index) =>
-    value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
-  )
-const hasOption = (argv: string[], name: string) => argv.includes(`--${name}`)
-
-function explicitNoteAnchor(argv: string[]): Parameters<typeof createNote>[0]['anchor'] {
-  const value = option(argv, 'anchor-json')
+function explicitNoteAnchor(value: string | undefined): Parameters<typeof createNote>[0]['anchor'] {
   return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
 }
 
-export async function runNoteCommand(argv: string[]): Promise<void> {
-  const sub = argv[1]
-  const context = noteCliContext(argv)
-  refuseAmbiguousNoteVerb(argv, sub)
-  switch (sub) {
-    case 'push':
-      return pushNoteCache(argv)
-    case 'list':
-      return listNoteCommand(context)
-    case 'keep':
-      return keepNoteCommand(context)
-    case 'same':
-      return sameNoteCommand(context)
-    case 'promote':
-      return promoteNote(context)
-    case 'drop':
-      return dropNoteCommand(context)
-    case 'stale':
-      return staleNoteCommand()
-    case 'curate':
-      return curateNoteCommand(context)
-    case 'curator':
-      return curatorNoteCommand(context)
-    case 'new':
-      return newNoteCommand(context)
-    default:
-      throw new Error(
-        `hub note new <text> [--same-as LABEL|UUID|NUMBER|--new]; to file the text "${sub ?? ''}", put new before it`,
-      )
-  }
-}
-
-type NoteCliContext = {
-  argv: string[]
-  flag: (name: string) => string | undefined
-  has: (name: string) => boolean
-  reference: (value: string) => string
-}
-
-function noteCliContext(argv: string[]): NoteCliContext {
-  const targetProject = option(argv, 'project') ?? projectOf(process.cwd())
-  return {
-    argv,
-    flag: (name) => option(argv, name),
-    has: (name) => hasOption(argv, name),
-    reference: (value) => resolveNoteReference(value, targetProject),
-  }
-}
-
-function listNoteCommand({ argv, flag, has }: NoteCliContext): void {
-  if (argv[2] && !argv[2]!.startsWith('--')) {
-    throw new Error(
-      'to file the text "list", use: hub note new "list" [--new|--same-as LABEL|UUID|NUMBER]',
-    )
-  }
-  if (has('actionable') && has('kept'))
+function listNoteCommand(options: NoteOptions): void {
+  if (options.actionable && options.kept)
     throw new Error('--actionable and --kept are mutually exclusive')
-  const sessions = options(argv, 'session')
-  if (has('kept') && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
-  if (has('kept') && !sessions.length)
+  const sessions = [...(options.session ?? [])]
+  if (options.kept && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
+  if (options.kept && !sessions.length)
     throw new Error('hub note list --kept requires --session ID or a session environment')
   const session = sessions.length ? sessions : undefined
-  const rows = has('actionable')
-    ? listActionableNotes({ project: flag('project'), session })
-    : listNotes({ project: flag('project'), stale: has('stale'), session, kept: has('kept') })
-  if (has('json')) console.log(JSON.stringify(rows))
+  const rows = options.actionable
+    ? listActionableNotes({ project: options.project, session })
+    : listNotes({
+        project: options.project,
+        stale: Boolean(options.stale),
+        session,
+        kept: Boolean(options.kept),
+      })
+  if (options.json) console.log(JSON.stringify(rows))
   else if (!rows.length) console.log('no notes')
   else for (const row of rows) console.log(noteListLine(row))
 }
 
-async function keepNoteCommand({ argv, reference }: NoteCliContext): Promise<void> {
-  const ids = argv.slice(2).filter((value) => !value.startsWith('--'))
-  if (!ids.length) throw new Error('hub note keep <LABEL|UUID|NUMBER>...')
+async function keepNoteCommand(ids: string[], project?: string): Promise<void> {
   const session = noteSessionId()
   if (!session) throw new Error('hub note keep requires a session environment')
   for (const id of ids) {
-    const result = await acknowledgeNote(reference(id), session)
+    const result = await acknowledgeNote(reference(id, project), session)
     console.log(noteKeepLine(result.note, result.alreadyAcknowledged))
   }
-}
-
-async function sameNoteCommand({ argv, reference }: NoteCliContext): Promise<void> {
-  const row = await mergeNote(reference(argv[2] ?? ''), reference(argv[3] ?? ''))
-  console.log(noteSameLine(row))
-}
-
-async function promoteNote({ argv, flag, has, reference }: NoteCliContext): Promise<void> {
-  const row = await promoteNoteCommand(reference(argv[2] ?? ''), flag('task'), has('task'))
-  console.log(`${row.promoted_task}`)
-}
-
-async function dropNoteCommand({ argv, flag, reference }: NoteCliContext): Promise<void> {
-  const reason = flag('reason')
-  if (!reason) throw new Error('hub note drop <LABEL|UUID|NUMBER> --reason "..."')
-  const row = await dropNote(reference(argv[2] ?? ''), reason)
-  console.log(noteDropLine(row))
 }
 
 async function staleNoteCommand(): Promise<void> {
@@ -271,38 +83,36 @@ async function staleNoteCommand(): Promise<void> {
   console.log(`${result.marked} marked stale; ${result.deleted} deleted`)
 }
 
-async function curateNoteCommand({ has }: NoteCliContext): Promise<void> {
-  const results = await curateNotes(has('scheduled'))
-  if (has('scheduled') && !curatorEnabled()) {
+async function curateNoteCommand(scheduled: boolean): Promise<void> {
+  const results = await curateNotes(scheduled)
+  if (scheduled && !curatorEnabled()) {
     console.log('note curator is disabled')
     return
   }
   for (const result of results) console.log(`${result.project}: ${result.result}`)
 }
 
-function curatorNoteCommand({ has }: NoteCliContext): void {
-  if (has('enable') === has('disable')) {
+function curatorNoteCommand(options: NoteOptions): void {
+  if (Boolean(options.enable) === Boolean(options.disable)) {
     console.log(`note curator is ${curatorEnabled() ? 'enabled' : 'disabled'}`)
     return
   }
-  console.log(`note curator ${setCuratorEnabled(has('enable')) ? 'enabled' : 'disabled'}`)
+  console.log(`note curator ${setCuratorEnabled(Boolean(options.enable)) ? 'enabled' : 'disabled'}`)
 }
 
-async function newNoteCommand(context: NoteCliContext): Promise<void> {
-  const { argv, flag, has, reference } = context
-  const text = argv[2] ?? ''
-  const same = flag('same-as')
+async function newNoteCommand(text: string, options: NoteOptions): Promise<void> {
+  const same = options.sameAs
   let result = await createNote({
     text,
-    area: flag('area'),
-    sameAs: same ? reference(same) : undefined,
-    forceNew: has('new'),
-    anchor: explicitNoteAnchor(argv),
-    project: flag('project'),
+    area: options.area,
+    sameAs: same ? reference(same, options.project) : undefined,
+    forceNew: Boolean(options.new),
+    anchor: explicitNoteAnchor(options.anchorJson),
+    project: options.project,
   })
-  if (!result.note) result = await resolveDuplicateNote(context, text, result)
+  if (!result.note) result = await resolveDuplicateNote(text, options, result)
   if (!result.note) return
-  if (has('json')) console.log(JSON.stringify(noteFiledJson(result.note, result.candidates)))
+  if (options.json) console.log(JSON.stringify(noteFiledJson(result.note, result.candidates)))
   else {
     for (const candidate of result.candidates) console.log(`near ${noteCandidateLine(candidate)}`)
     for (const line of noteFiledOutput(result.note)) console.log(line)
@@ -310,40 +120,123 @@ async function newNoteCommand(context: NoteCliContext): Promise<void> {
 }
 
 async function resolveDuplicateNote(
-  { flag, has, reference }: NoteCliContext,
   text: string,
+  options: NoteOptions,
   result: Awaited<ReturnType<typeof createNote>>,
 ): Promise<Awaited<ReturnType<typeof createNote>>> {
-  if (has('json')) {
+  if (options.json) {
     console.log(JSON.stringify(noteFiledJson(null, result.candidates)))
     return result
   }
   const lines = result.candidates.map(noteCandidateLine)
-  if (!process.stdin.isTTY) {
+  if (!process.stdin.isTTY)
     throw new Error(
       `possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <LABEL|UUID|NUMBER> or --new.`,
     )
-  }
   console.log(`possible duplicate notes:\n${lines.join('\n')}`)
   const answer = prompt(NOTE_DUPLICATE_PROMPT)?.trim() ?? ''
   const filed =
     answer && answer !== 'new'
       ? await createNote({
           text,
-          area: flag('area'),
-          sameAs: reference(answer),
-          project: flag('project'),
+          area: options.area,
+          sameAs: reference(answer, options.project),
+          project: options.project,
         })
       : answer === 'new'
-        ? await createNote({
-            text,
-            area: flag('area'),
-            forceNew: true,
-            project: flag('project'),
-          })
+        ? await createNote({ text, area: options.area, forceNew: true, project: options.project })
         : result
   if (!filed.note) throw new Error('note not filed')
   return filed
+}
+
+export function registerNoteCommands(program: Command): void {
+  const note = program.command('note')
+  note
+    .command('new <text>')
+    .option('--project <name>', '')
+    .option('--same-as <reference>', '')
+    .option('--new', '')
+    .option('--area <area>', '')
+    .option('--anchor-json <json>', '')
+    .option('--json', '')
+    .action(async (text, options: NoteOptions) => {
+      open()
+      await newNoteCommand(text, options)
+    })
+  note
+    .command('list')
+    .option('--project <X>', '')
+    .option('--stale', '')
+    .option('--session <ID>', '', repeat, [])
+    .option('--actionable', '')
+    .option('--kept', '')
+    .option('--json', '')
+    .action((options: NoteOptions) => {
+      open()
+      listNoteCommand(options)
+    })
+  note.command('same <target> <source>').action(async (target, source) => {
+    open()
+    const row = await mergeNote(reference(target), reference(source))
+    console.log(noteSameLine(row))
+  })
+  note.command('keep <references...>').action(async (references) => {
+    open()
+    await keepNoteCommand(references)
+  })
+  note
+    .command('promote <reference>')
+    .option('--task <key>', '')
+    .action(async (noteReference, options: NoteOptions) => {
+      open()
+      const row = await promoteNoteCommand(
+        reference(noteReference),
+        options.task,
+        options.task !== undefined,
+      )
+      console.log(`${row.promoted_task}`)
+    })
+  note
+    .command('drop <reference>')
+    .option('--reason <reason>', '')
+    .action(async (noteReference, options: NoteOptions) => {
+      open()
+      if (!options.reason) throw new Error('hub note drop <LABEL|UUID|NUMBER> --reason "..."')
+      console.log(noteDropLine(await dropNote(reference(noteReference), options.reason)))
+    })
+  note
+    .command('stale')
+    .description('mark vanished anchors and reap eligible notes')
+    .action(async () => {
+      open()
+      await staleNoteCommand()
+    })
+  note
+    .command('curate')
+    .option('--scheduled', '')
+    .action(async (options: NoteOptions) => {
+      open()
+      await curateNoteCommand(Boolean(options.scheduled))
+    })
+  note
+    .command('curator')
+    .option('--enable', '')
+    .option('--disable', '')
+    .action((options: NoteOptions) => {
+      open()
+      curatorNoteCommand(options)
+    })
+  note
+    .command('push')
+    .description('migrate and verify the local note cache')
+    .option('--dry-run', '')
+    .action(async (options: NoteOptions) => {
+      open()
+      const result = await pushNotes({ dryRun: Boolean(options.dryRun) })
+      console.log(JSON.stringify(result, null, 2))
+      if (result.match === false) process.exitCode = 1
+    })
 }
 
 export function noteFiledOutput(note: {
@@ -382,29 +275,4 @@ export function noteFiledJson(
     sightings: note?.sightings ?? null,
     candidates,
   }
-}
-
-function refuseAmbiguousNoteVerb(argv: string[], sub: string | undefined): void {
-  const verbs = new Set([
-    'list',
-    'same',
-    'keep',
-    'promote',
-    'drop',
-    'stale',
-    'curate',
-    'curator',
-    'push',
-  ])
-  if (sub && verbs.has(sub) && (hasOption(argv, 'new') || option(argv, 'same-as'))) {
-    throw new Error(
-      `to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as LABEL|UUID|NUMBER]`,
-    )
-  }
-}
-
-async function pushNoteCache(argv: string[]): Promise<void> {
-  const result = await pushNotes({ dryRun: hasOption(argv, 'dry-run') })
-  console.log(JSON.stringify(result, null, 2))
-  if (result.match === false) process.exitCode = 1
 }

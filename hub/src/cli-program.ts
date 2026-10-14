@@ -40,6 +40,26 @@ function exitCodeFor(error: unknown): number {
   return error.code === 'commander.helpDisplayed' ? 0 : 1
 }
 
+function legacyTaskHelpFailure(argv: string[]): boolean {
+  if (argv[0] !== 'task') return false
+  let command = program
+  let offset = 0
+  while (offset < argv.length) {
+    const child = command.commands.find(
+      (candidate) =>
+        candidate.name() === argv[offset] || candidate.aliases().includes(argv[offset]!),
+    )
+    if (!child) break
+    command = child
+    offset += 1
+  }
+  const helpIndex = argv.findIndex(
+    (value, index) => index >= offset && (value === '--help' || value === '-h'),
+  )
+  const required = command.registeredArguments.filter((argument) => argument.required).length
+  return helpIndex >= offset && helpIndex - offset < required
+}
+
 export async function run(argv: string[]): Promise<number> {
   try {
     await program.parseAsync(['bun', 'hub', ...(argv.length ? argv : ['--help'])])
@@ -47,7 +67,8 @@ export async function run(argv: string[]): Promise<number> {
   } catch (error) {
     if (!(error instanceof CommanderError))
       console.error(error instanceof Error ? error.message : String(error))
-    return exitCodeFor(error)
+    const code = exitCodeFor(error)
+    return code === 0 && legacyTaskHelpFailure(argv) ? 1 : code
   } finally {
     if (argv.includes('--verbose')) console.error(`hub ${argv[0]} done at ${nowIso()}`)
   }

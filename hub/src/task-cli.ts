@@ -53,16 +53,19 @@ type TaskOptions = {
 const open = () => requireDatabase()
 const required = (options: TaskOptions, name: keyof TaskOptions): string => {
   const value = options[name]
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`--${camelToDash(name)} is required`)
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(`--${camelToDash(name)} is required`)
   return value
 }
 const optional = (options: TaskOptions, name: keyof TaskOptions): string | undefined => {
   const value = options[name]
   if (value === undefined) return undefined
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`--${camelToDash(name)} is required`)
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(`--${camelToDash(name)} is required`)
   return value
 }
-const camelToDash = (value: string) => value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+const camelToDash = (value: string) =>
+  value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
 
 function taskBody(options: TaskOptions): string | undefined {
   if (options.body !== undefined && options.bodyFile !== undefined)
@@ -146,7 +149,9 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     console.log('\ndocuments:')
     for (const document of shown.documents) {
       const role = document.role ? ` [${document.role}]` : ''
-      console.log(`  ${document.label}${role}  ${document.title} — hub task doc show ${document.label}`)
+      console.log(
+        `  ${document.label}${role}  ${document.title} — hub task doc show ${document.label}`,
+      )
     }
   }
   for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
@@ -154,7 +159,8 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
 
 async function importTasks(file: string): Promise<void> {
   const project = projectOf(fileURLToPath(new URL('../..', import.meta.url)))
-  const prefix = projects().find((candidate) => candidate.name === project)?.settings.keyPrefixes?.[0]
+  const prefix = projects().find((candidate) => candidate.name === project)?.settings
+    .keyPrefixes?.[0]
   if (!project || !prefix) throw new Error('the local project must declare a key prefix')
   const items = JSON.parse(readFileSync(file, 'utf8')) as {
     title: string
@@ -212,7 +218,9 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
   printTaskRow(closed)
   if (claimReleaseError) {
     console.error(`claim release failed: ${claimReleaseError.message}`)
-    console.error(`retry: orch board claim release-task ${closed.key} --project ${closed.project} --json`)
+    console.error(
+      `retry: orch board claim release-task ${closed.key} --project ${closed.project} --json`,
+    )
     process.exitCode = 1
   }
   if (pruneError) {
@@ -233,11 +241,27 @@ function taskOptions(command: Command): TaskOptions {
   return command.opts() as TaskOptions
 }
 
+function preserveTaskParseErrors(command: Command, syntax: string): Command {
+  command.configureOutput({
+    outputError: (message, write) => {
+      const missing = message.match(/^error: missing required argument '[^']+'/)
+      const unknown = message.match(/^error: unknown option '([^']+)'/)
+      const missingValue = message.match(/^error: option '([^ ]+) [^']+' argument missing/)
+      if (missing) write(`missing positional: <end of arguments>\nvalid syntax: ${syntax}\n`)
+      else if (unknown) write(`unknown flag: ${unknown[1]}\nvalid syntax: ${syntax}\n`)
+      else if (missingValue)
+        write(`value flag has no value: ${missingValue[1]}\nvalid syntax: ${syntax}\n`)
+      else write(message)
+    },
+  })
+  return command
+}
+
 const commonBody = (command: Command) =>
   command.option('--body <text>', '').option('--body-file <path>', '')
 
 export function registerTaskCommands(program: Command): void {
-  const task = program.command('task').description('manage tasks')
+  const task = program.command('task')
   commonBody(
     task
       .command('new')
@@ -266,10 +290,7 @@ export function registerTaskCommands(program: Command): void {
       console.log(JSON.stringify(rows))
     })
   commonBody(
-    task
-      .command('tracker-new')
-      .option('--project <X>', '')
-      .option('--title <text>', ''),
+    task.command('tracker-new').option('--project <X>', '').option('--title <text>', ''),
   ).action(async (_options, command) => {
     open()
     const options = taskOptions(command)
@@ -277,7 +298,8 @@ export function registerTaskCommands(program: Command): void {
     if (!project) throw new Error(`unknown project '${options.project}'`)
     const tracker = project.settings.tracker
     const env = tracker?.envPrefix ?? project.settings.envPrefix
-    if (!tracker || !env) throw new Error(`project ${project.name} has no usable tracker configured`)
+    if (!tracker || !env)
+      throw new Error(`project ${project.name} has no usable tracker configured`)
     const auth = await credentials(env)
     if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
     const status = tracker.openStatuses?.[0]
@@ -296,29 +318,37 @@ export function registerTaskCommands(program: Command): void {
       await client.close()
     }
   })
-  task
-    .command('list')
-    .option('--project <X>', '')
-    .option('--status <Y>', '')
-    .option('--parent <key>', '')
-    .option('--json', '')
-    .action((_options, command) => {
-      open()
-      const options = taskOptions(command)
-      const rows = listTasks({ project: options.project, status: options.status, parent: options.parent })
-      if (options.json) console.log(JSON.stringify(rows))
-      else if (!rows.length) console.log('no tasks')
-      else rows.forEach(printTaskRow)
+  preserveTaskParseErrors(
+    task
+      .command('list')
+      .option('--project <X>', '')
+      .option('--status <Y>', '')
+      .option('--parent <key>', '')
+      .option('--json', ''),
+    'hub task list [--project X] [--status Y] [--parent KEY] [--json]',
+  ).action((_options, command) => {
+    open()
+    const options = taskOptions(command)
+    const rows = listTasks({
+      project: options.project,
+      status: options.status,
+      parent: options.parent,
     })
-  task
-    .command('show <key>')
-    .option('--project <X>', '')
-    .option('--json', '')
-    .option('--fresh', '')
-    .action(async (key, _options, command) => {
-      open()
-      await showTaskCommand(key, taskOptions(command))
-    })
+    if (options.json) console.log(JSON.stringify(rows))
+    else if (!rows.length) console.log('no tasks')
+    else rows.forEach(printTaskRow)
+  })
+  preserveTaskParseErrors(
+    task
+      .command('show <key>')
+      .option('--project <X>', '')
+      .option('--json', '')
+      .option('--fresh', ''),
+    'hub task show <KEY> [--project X] [--json] [--fresh]',
+  ).action(async (key, _options, command) => {
+    open()
+    await showTaskCommand(key, taskOptions(command))
+  })
   commonBody(
     task
       .command('set <key>')
@@ -399,7 +429,7 @@ export function registerTaskCommands(program: Command): void {
       await runHostedTaskMaintenance('prune-foreign', taskOptions(command))
     })
 
-  const document = task.command('doc').alias('document').description('manage task documents')
+  const document = task.command('doc').alias('document')
   commonBody(
     document
       .command('new <key>')
@@ -439,7 +469,9 @@ export function registerTaskCommands(program: Command): void {
       const item = getTaskDocument(reference, { project: options.project })
       if (options.json) console.log(JSON.stringify(item))
       else {
-        console.log(`${item.label}  ${item.task_key}${item.role ? ` [${item.role}]` : ''}  ${item.title}`)
+        console.log(
+          `${item.label}  ${item.task_key}${item.role ? ` [${item.role}]` : ''}  ${item.title}`,
+        )
         console.log(`version: ${item.version}`)
         if (item.body) console.log(`\n${item.body}`)
       }
@@ -469,7 +501,9 @@ export function registerTaskCommands(program: Command): void {
       ...(options.version !== undefined ? { expectedVersion: required(options, 'version') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task doc set requires a field to change')
-    const updated = await updateTaskDocument(reference, changes, { scope: { project: options.project } })
+    const updated = await updateTaskDocument(reference, changes, {
+      scope: { project: options.project },
+    })
     console.log(`${updated.label} updated; version ${updated.version}`)
   })
   document

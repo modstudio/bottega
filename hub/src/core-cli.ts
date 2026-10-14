@@ -7,12 +7,7 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import { collectOnce, formatCollectLeg, releaseLease, watch, withLease } from './collect.ts'
-import {
-  formatMigrationRepairSummary,
-  migrateDatabase,
-  nowIso,
-  requireDatabase,
-} from './db.ts'
+import { formatMigrationRepairSummary, migrateDatabase, nowIso, requireDatabase } from './db.ts'
 import { hubDoctorLines } from './doctor.ts'
 import { reclaimFixtureQuestions } from './fixture-question-reclaim.ts'
 import { LocalHubAuth } from './local-auth.ts'
@@ -36,7 +31,11 @@ import {
 import { startRevisionMonitor } from './service-revision.ts'
 import { hoursAgo } from './time.ts'
 
-async function collect(guard: import('./collect.ts').LeaseGuard | undefined, since?: string, only?: string) {
+async function collect(
+  guard: import('./collect.ts').LeaseGuard | undefined,
+  since?: string,
+  only?: string,
+) {
   const t0 = Date.now()
   const results = await collectOnce(since ?? hoursAgo(24 * 30), only, guard)
   for (const result of results) console.log(formatCollectLeg(result))
@@ -80,7 +79,9 @@ function printRulingStats(days: number | undefined): void {
   console.log(`ruling loop, last ${stats.window.days} days`)
   console.log(
     `questions asked: ${stats.questions_asked.total}  ` +
-      ASKED_VIA_VALUES.map((via) => `${via} ${stats.questions_asked.by_asked_via[via]}`).join('  ') +
+      ASKED_VIA_VALUES.map((via) => `${via} ${stats.questions_asked.by_asked_via[via]}`).join(
+        '  ',
+      ) +
       `  unknown ${stats.questions_asked.by_asked_via.unknown}`,
   )
   console.log(
@@ -106,7 +107,9 @@ function printRulingStats(days: number | undefined): void {
       `retry ${stats.delivery.stopped_turn.retry}` +
       ` (${retry == null ? 'n/a' : `${(retry * 100).toFixed(1)}%`})`,
   )
-  console.log(`open: ${stats.open.count}  older than ${payload.stale_after}: ${stats.open.older_than_stale}`)
+  console.log(
+    `open: ${stats.open.count}  older than ${payload.stale_after}: ${stats.open.older_than_stale}`,
+  )
   console.log(
     `operator answers: ${stats.operator_answers.count}  ` +
       `median wait ${wait(stats.operator_answers.median_wait_ms)}`,
@@ -152,7 +155,12 @@ export function registerCoreCommands(program: Command): void {
         console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
         const holder = `collect:${process.pid}`
         let stop = async () => {}
-        startRevisionMonitor('collect', holder, () => stop(), () => releaseLease(holder))
+        startRevisionMonitor(
+          'collect',
+          holder,
+          () => stop(),
+          () => releaseLease(holder),
+        )
         stop = watch(holder, (error) => console.error(`hub: collect failed: ${error.message}`))
         await new Promise(() => {})
       }
@@ -180,7 +188,9 @@ export function registerCoreCommands(program: Command): void {
     .description('print a one-time local dashboard login URL')
     .option('--port <N>', '')
     .action((options: { port?: string }) =>
-      console.log(new LocalHubAuth().mintLoginUrl(Number(options.port ?? readMachineValue('hub.port')))),
+      console.log(
+        new LocalHubAuth().mintLoginUrl(Number(options.port ?? readMachineValue('hub.port'))),
+      ),
     )
   program
     .command('serve')
@@ -232,13 +242,19 @@ export function registerCoreCommands(program: Command): void {
     .action(async (options: { dryRun?: boolean; json?: boolean }) => {
       requireDatabase()
       const registered = new Set(projects().map((project) => project.name))
-      const { rows, intervals, tasks } = await reclaimFixtureQuestions(Boolean(options.dryRun), registered)
+      const { rows, intervals, tasks } = await reclaimFixtureQuestions(
+        Boolean(options.dryRun),
+        registered,
+      )
       if (options.json) console.log(JSON.stringify({ rows, intervals, tasks }))
       else {
         const verb = options.dryRun ? 'would remove' : 'removed'
-        for (const row of rows) console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
-        for (const interval of intervals) console.log(`${verb} interval ${interval.record_id} ${interval.ref}`)
-        for (const task of tasks) console.log(`${verb} task ${task.key} ${task.project} ${task.title}`)
+        for (const row of rows)
+          console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
+        for (const interval of intervals)
+          console.log(`${verb} interval ${interval.record_id} ${interval.ref}`)
+        for (const task of tasks)
+          console.log(`${verb} task ${task.key} ${task.project} ${task.title}`)
       }
     })
   program
@@ -251,7 +267,8 @@ export function registerCoreCommands(program: Command): void {
       requireDatabase()
       if (options.stats) {
         const days = Number(options.days)
-        if (!Number.isInteger(days) || days <= 0) throw new Error('--days must be a positive integer')
+        if (!Number.isInteger(days) || days <= 0)
+          throw new Error('--days must be a positive integer')
         if (options.json) console.log(JSON.stringify(rulingsStatsPayload(days)))
         else printRulingStats(days)
         return
