@@ -63,7 +63,7 @@ CREATE TABLE run_record_identity (
   worktree_source TEXT CHECK (worktree_source IN ('recipe','git','clone','readonly_recipe')),
   vendor_session TEXT, base_commit TEXT, carry_happened INTEGER, carry_base_commit TEXT,
   carry_tracked_paths TEXT, carry_untracked_paths TEXT,
-  parent_run_id INTEGER REFERENCES run_record_identity(id),
+  parent_run_id INTEGER REFERENCES run(id),
   turn INTEGER NOT NULL DEFAULT 1, files_changed INTEGER, changed_paths TEXT,
   lines_added INTEGER, lines_removed INTEGER, tests_ran INTEGER, tests_passed INTEGER,
   deviations INTEGER, escalations INTEGER, stack TEXT, model TEXT, run_token TEXT,

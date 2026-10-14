@@ -411,8 +411,9 @@ export async function run(opts: {
     readOnlyBase,
   })
   const originalPrompt = opts.prompt
-  const { schema: generatedSchema, schemaName, parse } = resolveReplyDialect(requestedJob)
-  const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : schemaName
+  const resolvedDialect = resolveReplyDialect(requestedJob)
+  const generatedSchema = resolvedDialect.schema
+  const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
   const runProjectId = runProjectName ? (projectByName(runProjectName)?.id ?? null) : null
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
@@ -1060,7 +1061,7 @@ export async function run(opts: {
       boundMs,
       started,
       textReplyContract,
-      resolvedDialect: { schema: generatedSchema, schemaName, parse },
+      resolvedDialect,
       mcpSetupHeader,
       initialBoardNoticeIds: initialBoard.noticeIds,
     }))
@@ -1109,7 +1110,7 @@ export async function run(opts: {
         checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
         output,
         confinementEvent,
-        resolvedDialect: { schema: generatedSchema, schemaName, parse },
+        resolvedDialect,
         runProjectName,
         mcpConnection,
         mcpMode,

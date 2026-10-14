@@ -15,11 +15,6 @@ type LocalRun = Record<string, unknown> & {
   parent_record_id: string | null
 }
 
-type EnqueueRun = LocalRun & {
-  retry_of: number | null
-  parent_run_id: number | null
-}
-
 export type RunRecordBackfillResult = {
   minted: number
   enqueued: number
@@ -112,7 +107,7 @@ export function enqueueRunRecord(
   evidenceUnvoid: { note: string } | null = null,
 ): void {
   const row = database
-    .query<EnqueueRun, [number]>(
+    .query<LocalRun, [number]>(
       `SELECT r.*, project.name AS project_name,
               retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
          FROM run r
@@ -123,12 +118,6 @@ export function enqueueRunRecord(
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} does not exist and cannot be enqueued`)
-  if (row.retry_of !== null && row.retry_record_id === null) {
-    throw new Error(`run ${runId} has retry_of ${row.retry_of} without a record id`)
-  }
-  if (row.parent_run_id !== null && row.parent_record_id === null) {
-    throw new Error(`run ${runId} has parent_run_id ${row.parent_run_id} without a record id`)
-  }
   const payload = stringifyOutboxPayload(
     'run',
     buildRunRecordPayload(
