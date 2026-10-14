@@ -768,6 +768,15 @@ describe('scoped operator docs', () => {
     ])
   })
 
+  test('a dispatch citation naming an unknown job is flagged in either command spelling', () => {
+    const options = { repoRoot: '/fixture', trackedFiles: new Set<string>() }
+    for (const token of ['orch do nosuchjob', `${PLATFORM_SLUG} run start nosuchjob`])
+      expect(checkDoc(`\`${token}\``, options).map((finding) => finding.kind)).toContain('job')
+    expect(checkDoc('`orch do implement`', options).map((finding) => finding.kind)).not.toContain(
+      'job',
+    )
+  })
+
   test('document path brace expansion is bounded before expansion', () => {
     const token = `scripts/${'{a,b}'.repeat(16)}.php`
     expect(braceExpansionUpperBound(token)).toBe(65_536)

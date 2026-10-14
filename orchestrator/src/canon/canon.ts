@@ -546,7 +546,10 @@ export function checkDoc(
           line,
           message: `line ${line}: \`${token}\` names no orch subcommand`,
         })
-      const doJob = token.match(new RegExp(`^${PLATFORM_SLUG} run start\\s+([a-z][\\w-]*)$`))
+      // Canon cites dispatch both ways until it is rewritten to the bottega spelling.
+      const doJob = token.match(
+        new RegExp(`^(?:orch do|${PLATFORM_SLUG} run start)\\s+([a-z][\\w-]*)$`),
+      )
       if (doJob && !JOBS[doJob[1]!])
         findings.push({
           kind: 'job',

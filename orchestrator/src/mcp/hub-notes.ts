@@ -43,7 +43,7 @@ async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Pr
     child.exited,
   ])
   if (exitCode !== 0) {
-    throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   }
   return stdout
 }

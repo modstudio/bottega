@@ -34,7 +34,7 @@ export function classifyHubTaskLookup(
   stderr: string,
 ): TaskKeyLookupResult {
   if (code === 0) return { state: 'found' }
-  const detail = stderr.trim() || stdout.trim() || `hub exited ${code}`
+  const detail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`
   if (detail.split('\n').some((line) => line.trim() === `no task ${key}`)) {
     return { state: 'not-found' }
   }

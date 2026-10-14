@@ -144,7 +144,7 @@ export function hubTaskReadRefusal(
   stderr: string,
   stdout: string,
 ): string {
-  const rawDetail = stderr.trim() || stdout.trim() || `hub exited ${status}`
+  const rawDetail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${status}`
   const detail =
     containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
       ? 'detail withheld'
