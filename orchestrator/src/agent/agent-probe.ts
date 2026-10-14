@@ -121,12 +121,10 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   if (!row) throw new Error(`unknown agent "${name}"`)
   const priorCaps = JSON.parse(row.caps) as Caps
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
-  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true) {
+  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true)
     return previous as RegistrationProbeResult
-  }
-  if (!HARNESSES.includes(row.harness as Harness)) {
+  if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
-  }
   const agent = rowAgent(row)
   if (which(agent.bin, { PATH: process.env.PATH }) === null)
     throw new Error(`${agent.harness} harness is not installed`)
@@ -155,8 +153,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     const started = Date.now()
     const inserted = writableDb()
       .query(
-        `INSERT INTO run
-       (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+        `INSERT INTO run (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(

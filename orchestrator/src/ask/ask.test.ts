@@ -515,9 +515,9 @@ describe('the live ask channel always answers', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db()
-      .query('SELECT asked_via FROM question WHERE run_id = ? AND answered_at IS NULL')
+      .query('SELECT asked_via,record_id FROM question WHERE run_id = ? AND answered_at IS NULL')
       .get(run)
-    expect(open).toEqual({ asked_via: 'live' })
+    expect(open).toEqual({ asked_via: 'live', record_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
     expect(db().query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
       { kind: 'run' },
       { kind: 'question' },

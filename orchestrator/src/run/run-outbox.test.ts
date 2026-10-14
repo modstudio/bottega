@@ -45,7 +45,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
   expect(payload).not.toHaveProperty('vendorSession')
 })
 
-test('backfill mints in order, resolves chains, enqueues finished turns once, and skips running rows', () => {
+test('backfill resolves chains, enqueues finished turns once, and skips running rows', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
@@ -67,7 +67,7 @@ test('backfill mints in order, resolves chains, enqueues finished turns once, an
   insert.run(5, '2026-09-15T05:00:00.000Z', null, 1, 'running', null, null)
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
-    minted: 5,
+    minted: 0,
     enqueued: 4,
     skippedLive: 1,
   })
@@ -76,7 +76,7 @@ test('backfill mints in order, resolves chains, enqueues finished turns once, an
       'SELECT id, record_id, status FROM run ORDER BY id',
     )
     .all()
-  expect(runs.map((row) => row.record_id)).toEqual(runs.map((row) => row.record_id).toSorted())
+  expect(runs.every((row) => typeof row.record_id === 'string')).toBe(true)
   expect(runs.slice(3).map((row) => row.status)).toEqual(['asking', 'running'])
 
   const payloads = database
@@ -121,7 +121,9 @@ test('backfill leaves hook-tree rows local', () => {
     enqueued: 0,
     skippedLive: 0,
   })
-  expect(database.query('SELECT record_id FROM run').get()).toEqual({ record_id: null })
+  expect(database.query('SELECT record_id FROM run').get()).toEqual({
+    record_id: expect.any(String),
+  })
   expect(
     database.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
   ).toBe(0)

@@ -132,8 +132,8 @@ function resolveLandingTarget(runId: number, root: RunRow, latest: RunRow) {
 }
 
 export function openLandingTree(runId: number, seed?: string): OpenedLandingTree {
-  const { root, latest } = sourceRun(runId)
-  const { project, branch, plan } = resolveLandingTarget(runId, root, latest)
+  const { root, latest } = sourceRun(runId),
+    { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
   const lifecycle = resolveWorktreeLifecycle(tool)
   const seedDecision = projectSeedPreflight(
@@ -172,8 +172,7 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const prompt = `landing tree for run ${runId}`
   const inserted = db()
     .query(
-      `INSERT INTO run
-       (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+      `INSERT INTO run (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
        VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )

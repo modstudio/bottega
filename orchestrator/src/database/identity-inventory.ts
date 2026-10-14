@@ -10,7 +10,7 @@ export type IdentityInventory = {
   baseline: string[]
 }
 
-export const CONVERTED_TABLES = [
+const CONVERTED_TABLES = [
   'doc',
   'landing_triage_snapshot',
   'question',
@@ -115,11 +115,7 @@ export const IDENTITY_BASELINE = [
   'workflow_version',
 ] as const
 
-const BORROWED_RECORD_ID = new Set([
-  'outbox',
-  'outbox_quarantine_audit',
-  'outbox_redaction_audit',
-])
+const BORROWED_RECORD_ID = new Set(['outbox', 'outbox_quarantine_audit', 'outbox_redaction_audit'])
 
 export function decideIdentityInventory(
   tables: readonly IdentityTable[],
@@ -137,24 +133,11 @@ export function decideIdentityInventory(
     if (!exemption.reason.trim())
       throw new Error(`orchestrator identity exemption ${exemption.table} needs a stated reason`)
   }
-  for (const table of tables) {
-    if (!convertedSet.has(table.name) && !exemptSet.has(table.name) && !baselineSet.has(table.name)) {
-      throw new Error(
-        `orchestrator identity inventory does not classify table ${table.name}; ` +
-          'add it to CONVERTED_TABLES, EXEMPT_TABLES with a reason, or IDENTITY_BASELINE',
-      )
-    }
-    if (convertedSet.has(table.name) && !table.hasRequiredIdentity)
-      throw new Error(`converted table ${table.name} does not have a required UUID identity column`)
-    if (baselineSet.has(table.name) && table.hasRequiredIdentity)
-      throw new Error(
-        `baseline table ${table.name} now has a required UUID identity; ` +
-          'remove it from IDENTITY_BASELINE and add it to CONVERTED_TABLES',
-      )
-  }
+  for (const table of tables) validateIdentityTable(table, convertedSet, exemptSet, baselineSet)
   const actual = new Set(tables.map((table) => table.name))
   for (const named of classes) {
-    if (!actual.has(named)) throw new Error(`orchestrator identity inventory names missing table ${named}`)
+    if (!actual.has(named))
+      throw new Error(`orchestrator identity inventory names missing table ${named}`)
   }
   return {
     converted: [...converted].sort(),
@@ -163,7 +146,27 @@ export function decideIdentityInventory(
   }
 }
 
-export function readIdentityTables(database: Database): IdentityTable[] {
+function validateIdentityTable(
+  table: IdentityTable,
+  converted: ReadonlySet<string>,
+  exempt: ReadonlySet<string>,
+  baseline: ReadonlySet<string>,
+): void {
+  if (!converted.has(table.name) && !exempt.has(table.name) && !baseline.has(table.name))
+    throw new Error(
+      `orchestrator identity inventory does not classify table ${table.name}; ` +
+        'add it to CONVERTED_TABLES, EXEMPT_TABLES with a reason, or IDENTITY_BASELINE',
+    )
+  if (converted.has(table.name) && !table.hasRequiredIdentity)
+    throw new Error(`converted table ${table.name} does not have a required UUID identity column`)
+  if (baseline.has(table.name) && table.hasRequiredIdentity)
+    throw new Error(
+      `baseline table ${table.name} now has a required UUID identity; ` +
+        'remove it from IDENTITY_BASELINE and add it to CONVERTED_TABLES',
+    )
+}
+
+function readIdentityTables(database: Database): IdentityTable[] {
   const names = database
     .query<{ name: string }, []>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",

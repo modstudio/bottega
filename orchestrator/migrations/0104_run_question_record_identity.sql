@@ -23,7 +23,12 @@ CREATE TEMP TABLE run_parent_before_record_identity AS
 SELECT id,parent_run_id FROM run WHERE parent_run_id IS NOT NULL;
 --> statement-breakpoint
 CREATE TEMP TABLE blocker_before_record_identity AS SELECT * FROM blocker;
+CREATE TEMP TABLE board_claim_before_record_identity AS SELECT * FROM board_claim;
+CREATE TEMP TABLE board_message_before_record_identity AS SELECT * FROM board_message;
+CREATE TEMP TABLE board_message_tag_before_record_identity AS SELECT * FROM board_message_tag;
+CREATE TEMP TABLE board_receipt_before_record_identity AS SELECT * FROM board_receipt;
 CREATE TEMP TABLE calibration_before_record_identity AS SELECT * FROM calibration;
+CREATE TEMP TABLE canon_eval_before_record_identity AS SELECT * FROM canon_eval;
 CREATE TEMP TABLE check_execution_before_record_identity AS SELECT * FROM check_execution;
 CREATE TEMP TABLE compared_pair_before_record_identity AS SELECT * FROM compared_pair;
 CREATE TEMP TABLE duel_before_record_identity AS SELECT * FROM duel;
@@ -33,9 +38,11 @@ CREATE TEMP TABLE question_delivery_before_record_identity AS SELECT * FROM ques
 CREATE TEMP TABLE question_mutation_audit_before_record_identity AS SELECT * FROM question_mutation_audit;
 CREATE TEMP TABLE review_finding_before_record_identity AS SELECT * FROM review_finding;
 CREATE TEMP TABLE review_lens_before_record_identity AS SELECT * FROM review_lens;
+CREATE TEMP TABLE resource_claim_before_record_identity AS SELECT * FROM resource_claim;
 CREATE TEMP TABLE run_carried_ruling_before_record_identity AS SELECT * FROM run_carried_ruling;
 CREATE TEMP TABLE run_checkpoint_before_record_identity AS SELECT * FROM run_checkpoint;
 CREATE TEMP TABLE run_message_before_record_identity AS SELECT * FROM run_message;
+CREATE TEMP TABLE run_mutation_audit_before_record_identity AS SELECT * FROM run_mutation_audit;
 CREATE TEMP TABLE score_before_record_identity AS SELECT * FROM score;
 CREATE TEMP TABLE worker_note_request_before_record_identity AS SELECT * FROM worker_note_request;
 --> statement-breakpoint
@@ -76,7 +83,12 @@ CREATE TABLE run_record_identity (
   ),
   close_out_detail TEXT, close_out_attempted_at TEXT, agent_pgid INTEGER,
   agent_start_time TEXT, keep_tree_until TEXT, keep_tree_reason TEXT, recipe_snapshot TEXT,
-  record_id TEXT NOT NULL, started_by_user_id TEXT, task_record_id TEXT,
+  record_id TEXT NOT NULL DEFAULT (
+    lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+    substr(lower(hex(randomblob(2))), 2) || '-' ||
+    substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
+    lower(hex(randomblob(6)))
+  ), started_by_user_id TEXT, task_record_id TEXT,
   gate_requests_closed INTEGER NOT NULL DEFAULT 0 CHECK (gate_requests_closed IN (0,1)),
   resource_teardown TEXT CHECK (resource_teardown IN ('pending','done'))
 );
@@ -89,6 +101,13 @@ DELETE FROM review_finding;
 DELETE FROM review_lens;
 DELETE FROM question_delivery;
 DELETE FROM question_mutation_audit;
+DELETE FROM board_claim;
+DELETE FROM board_message_tag;
+DELETE FROM board_receipt;
+DELETE FROM board_message;
+DELETE FROM canon_eval;
+DELETE FROM resource_claim;
+DELETE FROM run_mutation_audit;
 DELETE FROM run_carried_ruling;
 DELETE FROM question;
 DELETE FROM blocker;
@@ -102,6 +121,7 @@ DELETE FROM worker_note_request;
 --> statement-breakpoint
 UPDATE run_record_identity SET parent_run_id=NULL;
 UPDATE run SET parent_run_id=NULL;
+--> statement-breakpoint
 DROP TABLE run;
 ALTER TABLE run_record_identity RENAME TO run;
 --> statement-breakpoint
@@ -133,7 +153,12 @@ CREATE TABLE question_record_identity (
   filed_at TEXT,
   closed_at TEXT,
   close_reason TEXT,
-  record_id TEXT NOT NULL,
+  record_id TEXT NOT NULL DEFAULT (
+    lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+    substr(lower(hex(randomblob(2))), 2) || '-' ||
+    substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
+    lower(hex(randomblob(6)))
+  ),
   revision INTEGER NOT NULL DEFAULT 1,
   workflow_step_ordinal INTEGER,
   workflow_step_slug TEXT,
@@ -144,6 +169,7 @@ CREATE TABLE question_record_identity (
 );
 --> statement-breakpoint
 INSERT INTO question_record_identity SELECT * FROM question_before_record_identity ORDER BY id;
+--> statement-breakpoint
 DROP TABLE question;
 ALTER TABLE question_record_identity RENAME TO question;
 --> statement-breakpoint
@@ -161,7 +187,12 @@ CREATE INDEX question_workflow_cursor ON question(workflow_cursor_id);
 CREATE UNIQUE INDEX question_record_id_unique ON question(record_id);
 --> statement-breakpoint
 INSERT INTO blocker SELECT * FROM blocker_before_record_identity;
+INSERT INTO board_claim SELECT * FROM board_claim_before_record_identity;
+INSERT INTO board_message SELECT * FROM board_message_before_record_identity;
+INSERT INTO board_message_tag SELECT * FROM board_message_tag_before_record_identity;
+INSERT INTO board_receipt SELECT * FROM board_receipt_before_record_identity;
 INSERT INTO calibration SELECT * FROM calibration_before_record_identity;
+INSERT INTO canon_eval SELECT * FROM canon_eval_before_record_identity;
 INSERT INTO compared_pair SELECT * FROM compared_pair_before_record_identity;
 INSERT INTO duel SELECT * FROM duel_before_record_identity;
 INSERT INTO gate_execution SELECT * FROM gate_execution_before_record_identity;
@@ -170,9 +201,11 @@ INSERT INTO question_delivery SELECT * FROM question_delivery_before_record_iden
 INSERT INTO question_mutation_audit SELECT * FROM question_mutation_audit_before_record_identity;
 INSERT INTO review_lens SELECT * FROM review_lens_before_record_identity;
 INSERT INTO review_finding SELECT * FROM review_finding_before_record_identity;
+INSERT INTO resource_claim SELECT * FROM resource_claim_before_record_identity;
 INSERT INTO run_carried_ruling SELECT * FROM run_carried_ruling_before_record_identity;
 INSERT INTO run_checkpoint SELECT * FROM run_checkpoint_before_record_identity;
 INSERT INTO run_message SELECT * FROM run_message_before_record_identity;
+INSERT INTO run_mutation_audit SELECT * FROM run_mutation_audit_before_record_identity;
 INSERT INTO score SELECT * FROM score_before_record_identity;
 INSERT INTO worker_note_request SELECT * FROM worker_note_request_before_record_identity;
 --> statement-breakpoint
@@ -185,7 +218,12 @@ SELECT 'question',MAX(saved.seq,COALESCE((SELECT MAX(id) FROM question),0))
 FROM question_sequence_before_record_identity saved;
 --> statement-breakpoint
 DROP TABLE blocker_before_record_identity;
+DROP TABLE board_claim_before_record_identity;
+DROP TABLE board_message_before_record_identity;
+DROP TABLE board_message_tag_before_record_identity;
+DROP TABLE board_receipt_before_record_identity;
 DROP TABLE calibration_before_record_identity;
+DROP TABLE canon_eval_before_record_identity;
 DROP TABLE check_execution_before_record_identity;
 DROP TABLE compared_pair_before_record_identity;
 DROP TABLE duel_before_record_identity;
@@ -195,9 +233,11 @@ DROP TABLE question_delivery_before_record_identity;
 DROP TABLE question_mutation_audit_before_record_identity;
 DROP TABLE review_finding_before_record_identity;
 DROP TABLE review_lens_before_record_identity;
+DROP TABLE resource_claim_before_record_identity;
 DROP TABLE run_carried_ruling_before_record_identity;
 DROP TABLE run_checkpoint_before_record_identity;
 DROP TABLE run_message_before_record_identity;
+DROP TABLE run_mutation_audit_before_record_identity;
 DROP TABLE score_before_record_identity;
 DROP TABLE worker_note_request_before_record_identity;
 DROP TABLE run_sequence_before_record_identity;

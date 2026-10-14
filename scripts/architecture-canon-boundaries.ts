@@ -31,6 +31,7 @@ const canonEditGuardBoundarySpecs: ImportBoundary[] = [
     file: `${source}canon-edit-hook-handler.ts`,
     allowed: [
       'node:path',
+      '../../../shared/record/schema.ts',
       `${source}canon-edit-bash.ts`,
       `${source}canon-edit-guard.ts`,
       `${source}canon-edit-transcript.ts`,

@@ -113,7 +113,6 @@ export async function detach(
   // running turn already linked to its chain.
   const claimed = writeTransaction(() => {
     const identity = claimIdentity(spec.resume)
-    const continuationParent = identity.parent_run_id
     const projectName = spec.repo ?? repoOf(cwd)
     const projectId = projectName ? (projectByName(projectName)?.id ?? null) : null
     if (spec.resume?.kind === 'retry-root') {
@@ -152,10 +151,9 @@ export async function detach(
     }
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
-                      prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
+        `INSERT INTO run (record_id, started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session, started_by_user_id)
-       SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -179,15 +177,15 @@ export async function detach(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        continuationParent,
+        identity.parent_run_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
-        continuationParent,
-        continuationParent,
-        continuationParent,
-        continuationParent,
+        identity.parent_run_id,
+        identity.parent_run_id,
+        identity.parent_run_id,
+        identity.parent_run_id,
       ) as { id: number } | null
     const deliveryRoot =
       spec.resume?.parent ??

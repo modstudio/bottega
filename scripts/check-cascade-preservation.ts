@@ -47,6 +47,24 @@ const EXEMPTIONS: readonly CascadeExemption[] = [
     dependentTable: 'review_finding',
     remedy: 'DEV-852: restore review_finding rows lost by the applied migration from outbox',
   },
+  {
+    migration: '0104_run_question_record_identity',
+    deletedTable: 'run',
+    dependentTable: 'question_new',
+    remedy: 'DEV-1214: question_new is a transient name replaced before this migration runs',
+  },
+  {
+    migration: '0104_run_question_record_identity',
+    deletedTable: 'run',
+    dependentTable: 'gate_execution_new',
+    remedy: 'DEV-1214: gate_execution_new is a transient name replaced before this migration runs',
+  },
+  {
+    migration: '0104_run_question_record_identity',
+    deletedTable: 'run',
+    dependentTable: 'question_record_identity',
+    remedy: 'DEV-1214: question_record_identity is created after the run rebuild completes',
+  },
 ]
 
 function program(migration: Migration): Program {
@@ -555,7 +573,15 @@ function counts(database: Database): Map<string, number> {
 
 function execute(database: Database, migration: Migration): void {
   const ddl = splitMigrationSource(migration.source).ddl.trim()
-  if (stripSqlComments(ddl).trim()) database.exec(ddl)
+  if (!stripSqlComments(ddl).trim()) return
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    database.exec(ddl)
+    database.exec('COMMIT')
+  } catch (error) {
+    database.exec('ROLLBACK')
+    throw error
+  }
 }
 
 function probeDestructiveMigration(

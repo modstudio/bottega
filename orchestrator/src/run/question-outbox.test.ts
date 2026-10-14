@@ -6,7 +6,6 @@ import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
-import { enqueueRunRecord } from './run-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
 
@@ -139,7 +138,7 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
   expect(outbox.payload).not.toContain(secret)
 })
 
-test('question enqueue waits for its run enqueue to mint the parent identity', () => {
+test('a question has an identity before its first enqueue', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
@@ -156,14 +155,11 @@ test('question enqueue waits for its run enqueue to mint the parent identity', (
     )
     .get() as { id: number }
 
-  expect(enqueueQuestionRecord(database, question.id)).toBe(false)
-  expect(database.query('SELECT record_id FROM run WHERE id=42').get()).toEqual({ record_id: null })
-  expect(database.query("SELECT id FROM outbox WHERE kind='question'").all()).toEqual([])
-
-  enqueueRunRecord(database, 42, '01990000-0000-7000-8000-000000000099', '2026-09-25T10:01:00.000Z')
+  expect(database.query('SELECT record_id FROM question WHERE id=?').get(question.id)).toEqual({
+    record_id: expect.any(String),
+  })
   expect(enqueueQuestionRecord(database, question.id)).toBe(true)
   expect(database.query('SELECT kind FROM outbox ORDER BY id').all()).toEqual([
-    { kind: 'run' },
     { kind: 'question' },
   ])
 })
@@ -186,7 +182,7 @@ test('question and outbox writes roll back together', () => {
   expect(database.query("SELECT id FROM outbox WHERE kind='question'").all()).toEqual([])
 })
 
-test('question backfill mints identities once and enqueues all existing rows', () => {
+test('question backfill enqueues all existing rows once', () => {
   const database = fixture()
   database
     .query(
@@ -195,7 +191,7 @@ test('question backfill mints identities once and enqueues all existing rows', (
               (42,'2026-09-25T10:02:00.000Z','Two?')`,
     )
     .run()
-  expect(backfillQuestionRecords(database)).toEqual({ minted: 2, enqueued: 2 })
+  expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 2 })
   expect(backfillQuestionRecords(database)).toEqual({ minted: 0, enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 2,
