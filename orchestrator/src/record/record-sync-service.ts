@@ -227,10 +227,8 @@ function evidenceReferences(kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS, row: Pa
     case 'landing_review_carry':
       return reference('review', row.reviewId, 'carried review')
     case 'landing_triage_snapshot':
+      // `reviewIds` holds the machine's local review numbers, not record ids, so it names no row.
       return [
-        ...(Array.isArray(row.reviewIds)
-          ? row.reviewIds.flatMap((id) => reference('review', id, 'triaged review'))
-          : []),
         ...reference('review_read', row.readId, 'triage read'),
         ...reference('landing_override', row.overrideId, 'triage override'),
       ]
