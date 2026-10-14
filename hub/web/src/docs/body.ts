@@ -27,11 +27,22 @@ export function viewedPaneTitle(
   return paneTitle(shown.title, shown.body)
 }
 
-export function readingBody(body: string): string {
+/**
+ * A body split at its leading level-one ATX heading: `prefix` is the exact source up to the end
+ * of that heading line (blank lines before it included), `rest` everything after it. Without such
+ * a heading `prefix` is empty and `rest` is the whole body.
+ */
+export function splitLeadingHeading(body: string): { prefix: string; rest: string } {
   const lines = body.split('\n')
   let index = 0
   while (index < lines.length && lines[index]!.trim() === '') index += 1
   const first = lines[index]
-  if (first === undefined || !/^#(?!#)[ \t]+/.test(first)) return body
-  return lines.slice(index + 1).join('\n')
+  if (first === undefined || !/^#(?!#)[ \t]+/.test(first)) return { prefix: '', rest: body }
+  const prefix = lines.slice(0, index + 1).join('\n')
+  return { prefix, rest: body.slice(prefix.length) }
+}
+
+export function readingBody(body: string): string {
+  const { prefix, rest } = splitLeadingHeading(body)
+  return prefix ? rest.slice(1) : body
 }

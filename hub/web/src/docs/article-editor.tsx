@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
+import type { Editor } from '@tiptap/core'
 import { TRPCClientError } from '@trpc/client'
 import { Pencil, Save, X } from 'lucide-react'
 import {
@@ -12,14 +13,24 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Markdown } from '@/components/markdown/markdown'
 import { queryClient, trpc } from '@/trpc/client'
 import { Button, TextButton } from '@/ui/button/button'
 import { Dialog } from '@/ui/dialog/dialog'
+import { useStoredState } from '@/ui/dom/use-stored-state'
 import { Input } from '@/ui/field/input'
 import { Popover } from '@/ui/popover/popover'
+import { Segmented } from '@/ui/segmented/segmented'
 import type { DocScope } from '../../../../shared/docs.ts'
+import { readingBody } from './body.ts'
 import { docLeaveNeedsConfirmation, isDocReasonReady, isDocSaveEnabled } from './edit-state.ts'
 import { LONG_TITLE } from './reading.tsx'
+import {
+  DOC_EDITOR_MODE_DEFAULT,
+  DOC_EDITOR_MODE_KEY,
+  DOC_EDITOR_MODES,
+  type DocEditorMode,
+} from './rich-mode.ts'
 import { isScope } from './scope.ts'
 import type { DocsDoc, DocsSource } from './types.ts'
 import { type StoredDocument, useStoredDocument } from './use-docs.ts'
@@ -32,6 +43,13 @@ type MarkdownEditorProps = {
   value: string
   onChange: (value: string) => void
   onModSave: () => void
+}
+
+type RichEditorProps = {
+  value: string
+  onChange: (value: string) => void
+  onReady: (editor: Editor | null) => void
+  onSwitchToMarkdown: () => void
 }
 
 type Draft = { title: string; body: string }
@@ -64,24 +82,54 @@ function ArticleEditTitle({
   )
 }
 
-function ArticleEditBody({ value, onChange, onModSave }: MarkdownEditorProps) {
-  const [Editor, setEditor] = useState<null | ((props: MarkdownEditorProps) => ReactNode)>(null)
+function ArticleEditBody({
+  value,
+  onChange,
+  onModSave,
+  mode,
+  onReady,
+  onSwitchToMarkdown,
+}: MarkdownEditorProps & {
+  mode: DocEditorMode
+  onReady: (editor: Editor | null) => void
+  onSwitchToMarkdown: () => void
+}) {
+  const [MarkdownUi, setMarkdownUi] = useState<null | ((props: MarkdownEditorProps) => ReactNode)>(
+    null,
+  )
+  const [RichUi, setRichUi] = useState<null | ((props: RichEditorProps) => ReactNode)>(null)
   useEffect(() => {
     let live = true
-    void import('./markdown-editor.tsx').then((mod) => {
-      if (live) setEditor(() => mod.MarkdownEditor)
-    })
+    if (mode === 'markdown') {
+      void import('./markdown-editor.tsx').then((mod) => {
+        if (live) setMarkdownUi(() => mod.MarkdownEditor)
+      })
+    } else {
+      void import('./rich-editor.tsx').then((mod) => {
+        if (live) setRichUi(() => mod.RichEditor)
+      })
+    }
     return () => {
       live = false
     }
-  }, [])
+  }, [mode])
   return (
     <div className="mt-6">
-      {Editor ? (
-        <Editor value={value} onChange={onChange} onModSave={onModSave} />
+      {mode === 'markdown' ? (
+        MarkdownUi ? (
+          <MarkdownUi value={value} onChange={onChange} onModSave={onModSave} />
+        ) : (
+          <div className="doc-editor-loading">{value}</div>
+        )
+      ) : RichUi ? (
+        <RichUi
+          value={value}
+          onChange={onChange}
+          onReady={onReady}
+          onSwitchToMarkdown={onSwitchToMarkdown}
+        />
       ) : (
-        // Holds the editor's place, in its own type, while its code loads.
-        <div className="doc-editor-loading">{value}</div>
+        <Markdown content={readingBody(value)} />
       )}
     </div>
   )
@@ -120,6 +168,7 @@ function ArticleEditActions({
   onSave,
   popoverRef,
   reasonRef,
+  modeSwitch,
 }: {
   saveEnabled: boolean
   saving: boolean
@@ -129,6 +178,7 @@ function ArticleEditActions({
   onSave: () => void
   popoverRef: RefObject<HTMLDivElement | null>
   reasonRef: RefObject<HTMLInputElement | null>
+  modeSwitch?: ReactNode
 }) {
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -137,6 +187,7 @@ function ArticleEditActions({
   }
   return (
     <>
+      {modeSwitch}
       <Button size="sm" variant="secondary" onClick={onCancel}>
         <X size={14} />
         Cancel
@@ -381,6 +432,32 @@ function useReloadArticle(
   }
 }
 
+function useEditorMode(editing: boolean) {
+  const [mode, setMode] = useStoredState(
+    DOC_EDITOR_MODE_KEY,
+    DOC_EDITOR_MODE_DEFAULT,
+    DOC_EDITOR_MODES,
+  )
+  const [richEditor, setRichEditor] = useState<Editor | null>(null)
+  const [RichToolbar, setRichToolbar] = useState<null | ((props: { editor: Editor }) => ReactNode)>(
+    null,
+  )
+  useEffect(() => {
+    if (!editing || mode !== 'rich') {
+      setRichEditor(null)
+      return
+    }
+    let live = true
+    void import('./rich-editor.tsx').then((mod) => {
+      if (live) setRichToolbar(() => mod.RichToolbar)
+    })
+    return () => {
+      live = false
+    }
+  }, [editing, mode])
+  return { mode, setMode, richEditor, setRichEditor, RichToolbar }
+}
+
 function useModSaveHotkey(editing: boolean, openSave: () => void) {
   useEffect(() => {
     if (!editing) return
@@ -412,6 +489,7 @@ export function useArticleEditor({
     editing,
   )
   const notice = useReloadArticle(doc, source, editing, setTitle, setBody, setLoaded)
+  const editorMode = useEditorMode(editing)
   const popoverRef = useRef<HTMLDivElement>(null)
   const reasonRef = useRef<HTMLInputElement>(null)
   const expectedRevision = storedDocument?.revision
@@ -493,6 +571,7 @@ export function useArticleEditor({
       />
     ),
     askReload: () => notice.setConfirmingReload(true),
+    ...editorMode,
   }
 }
 
@@ -508,15 +587,27 @@ export function editorChrome(
   viewedRevision?: { title: string; body: string } | null,
 ) {
   const activeEditing = editing && editor.ready
+  const Toolbar = editor.RichToolbar
   return {
     editing: activeEditing,
     canManage: mayEdit,
     viewedRevision: activeEditing ? null : viewedRevision,
     bodyView: activeEditing ? (
-      <ArticleEditBody value={editor.body} onChange={editor.setBody} onModSave={editor.openSave} />
+      <ArticleEditBody
+        value={editor.body}
+        onChange={editor.setBody}
+        onModSave={editor.openSave}
+        mode={editor.mode}
+        onReady={editor.setRichEditor}
+        onSwitchToMarkdown={() => editor.setMode('markdown')}
+      />
     ) : (
       revisionBody
     ),
+    toolbar:
+      activeEditing && editor.mode === 'rich' && Toolbar && editor.richEditor ? (
+        <Toolbar editor={editor.richEditor} />
+      ) : undefined,
     banner: activeEditing ? (
       <ArticleEditBanner
         conflict={editor.conflict}
@@ -543,6 +634,20 @@ export function editorChrome(
         onSave={editor.save}
         popoverRef={editor.popoverRef}
         reasonRef={editor.reasonRef}
+        modeSwitch={
+          <Segmented
+            label="Editor mode"
+            size="sm"
+            value={editor.mode}
+            options={[
+              { value: 'rich', label: 'Rich' },
+              { value: 'markdown', label: 'Markdown' },
+            ]}
+            onChange={(value) => {
+              if (value === 'rich' || value === 'markdown') editor.setMode(value)
+            }}
+          />
+        }
       />
     ) : mayEdit ? (
       <Button size="sm" variant="secondary" onClick={onEnterEdit}>

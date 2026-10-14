@@ -288,6 +288,10 @@
   min-width: 100%;
   border-collapse: collapse;
 }
+.markdown > table,
+.markdown .tableWrapper {
+  margin: 0.75rem 0 0;
+}
 .markdown td,
 .markdown th {
   min-width: 7rem;
@@ -312,6 +316,11 @@
   line-height: 1.55;
   text-align: left;
   vertical-align: top;
+}
+.markdown li > p,
+.markdown th p,
+.markdown td p {
+  margin: 0;
 }
 .markdown th {
   color: var(--text-primary);
