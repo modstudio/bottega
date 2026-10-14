@@ -23,6 +23,7 @@ import {
   type realQuestions,
   type WorkerReply,
 } from '../contract/contract.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'
@@ -611,10 +612,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     const rows = blockersToRecord({ declared, output })
     if (rows.length) {
       const q = db().query(
-        `INSERT INTO blocker (run_id, at, what, why, impact, source, kind)
-           VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO blocker (record_id, run_id, at, what, why, impact, source, kind)
+           VALUES (?,?,?,?,?,?,?,?)`,
       )
-      for (const r of rows) q.run(claim.id, nowIso(), r.what, r.why, r.impact, r.source, r.kind)
+      for (const r of rows)
+        q.run(newRecordId(), claim.id, nowIso(), r.what, r.why, r.impact, r.source, r.kind)
     }
   } catch (e) {
     // Never let recording a blocker fail a run that otherwise succeeded.

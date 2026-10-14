@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -117,10 +118,18 @@ export function checkpointRun(input: {
   if (!commit.ok) return refusal(commit.error)
   input.database
     .query(
-      `INSERT INTO run_checkpoint (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
-     VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO run_checkpoint (record_id,run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+     VALUES (?,?,?,?,?,?,?)`,
     )
-    .run(input.runId, checkpointNo, commit.out, taskPointer, input.final ? 1 : 0, nowIso())
+    .run(
+      newRecordId(),
+      input.runId,
+      checkpointNo,
+      commit.out,
+      taskPointer,
+      input.final ? 1 : 0,
+      nowIso(),
+    )
   return { created: true, commit: commit.out, checkpointNo, taskPointer, error: null }
 }
 

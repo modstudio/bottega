@@ -2,6 +2,7 @@
 /** Knows when and how an unanswered question is closed. Must not know CLI grammar. */
 
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { auditQuestionMutation } from './question-mutation.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -99,10 +100,10 @@ export function retireRunChainQuestionDeliveries(
     if (update.run(questionId).changes !== 1) continue
     database
       .query(
-        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
-         VALUES (?,NULL,'record-only','retired',?,?)`,
+        `INSERT INTO question_delivery (record_id,question_id,run_id,mode,outcome,at,error)
+         VALUES (?,? ,NULL,'record-only','retired',?,?)`.replace('? ,', '?,')
       )
-      .run(questionId, at, reason)
+      .run(newRecordId(), questionId, at, reason)
     enqueueQuestionRecord(database, questionId)
     retired += 1
   }
