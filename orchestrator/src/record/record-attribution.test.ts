@@ -8,7 +8,9 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { signedInRecordUserId } from './record-attribution.ts'
+import { db } from '../database/db.ts'
+import { recordAttributionFailure, signedInRecordUserId } from './record-attribution.ts'
+import { diagnoseRecord } from './record-doctor.ts'
 
 let priorApiUrl: string | undefined
 let priorDirectUrl: string | undefined
@@ -37,11 +39,13 @@ describe('run attribution identity resolution', () => {
 
     expect(await signedInRecordUserId()).toBe('01990000-0000-7000-8000-000000000001')
     expect(process.env.ORCH_RECORD_URL).toBeUndefined()
+    expect(recordAttributionFailure()).toBeNull()
   })
 
   test('returns null without a stored session', async () => {
     const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
     expect(await signedInRecordUserId(readOnly)).toBeNull()
+    expect(recordAttributionFailure()).toBeNull()
     readOnly.close()
   })
 
@@ -50,10 +54,33 @@ describe('run attribution identity resolution', () => {
     const readOnly = new Database(process.env.ORCH_DB!, { readonly: true })
 
     expect(await signedInRecordUserId(readOnly)).toBe('01990000-0000-7000-8000-000000000001')
+    expect(recordAttributionFailure()).toBeNull()
     readOnly.close()
   })
 
-  test('returns null for an unreachable API', async () => {
+  test('a successful lookup clears a stored attribution failure', async () => {
+    session.setToken('fixture-session')
+    db()
+      .query('INSERT INTO schema_meta (key, value) VALUES (?, ?)')
+      .run('record_attribution_failure', 'earlier failure')
+
+    expect(await signedInRecordUserId()).toBe('01990000-0000-7000-8000-000000000001')
+    expect(recordAttributionFailure()).toBeNull()
+  })
+
+  test('records a stored-session read failure for record doctor', async () => {
+    installRecordSessionRunner(() => ({
+      exitCode: 1,
+      stdout: new Uint8Array(),
+      stderr: new TextEncoder().encode('keychain unavailable'),
+    }))
+
+    expect(await signedInRecordUserId()).toBeNull()
+    expect(recordAttributionFailure()).toContain('stored record session:')
+    expect(recordAttributionFailure()).toContain('keychain unavailable')
+  })
+
+  test('returns null and records an unreachable API for record doctor', async () => {
     session.setToken('fixture-session')
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
@@ -63,6 +90,14 @@ describe('run attribution identity resolution', () => {
     })
 
     expect(await signedInRecordUserId()).toBeNull()
+    expect(recordAttributionFailure(db())).toBe('record API: connection refused')
+    expect(await diagnoseRecord({ recordUrl: '', migrateUrl: '' })).toContainEqual({
+      name: 'last run attribution resolution',
+      status: 'fail',
+      detail:
+        'record API: connection refused; check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      section: 'customer',
+    })
   })
 
   test('does not require ORCH_RECORD_URL when the API resolves the user', async () => {

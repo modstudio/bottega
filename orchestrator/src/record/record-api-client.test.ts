@@ -310,7 +310,7 @@ describe('record API client test safety', () => {
           body: 'B',
           expiresAt: '2026-10-06T00:00:00.000Z',
         }),
-      ).rejects.toThrow(/resolve the named request or record-space permission refusal/)
+      ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
       expect(calls[0]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false',
         method: 'GET',

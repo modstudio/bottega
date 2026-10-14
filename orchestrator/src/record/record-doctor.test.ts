@@ -15,6 +15,7 @@ describe('record doctor decisions', () => {
     apiConfigured: true,
     apiReachable: true,
     sessionAccepted: true,
+    attributionFailure: null,
     activeSpaceId: 'space-1',
     memberships: [
       { spaceId: 'space-1', slug: 'workshop', permission: 'write' },
@@ -36,6 +37,7 @@ describe('record doctor decisions', () => {
       'hosted API address configured',
       'hosted API reachable',
       'stored session accepted',
+      'last run attribution resolution',
       'session active space',
       'membership workshop',
       'membership library',
@@ -45,6 +47,34 @@ describe('record doctor decisions', () => {
     ])
     expect(JSON.stringify(checks)).not.toContain('ORCH_RECORD_URL')
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
+  })
+
+  test('a stored-session attribution failure directs the customer to sign in', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      attributionFailure: 'stored record session: keychain unavailable',
+    })
+    expect(checks).toContainEqual({
+      name: 'last run attribution resolution',
+      status: 'fail',
+      detail:
+        'stored record session: keychain unavailable; record session is missing or expired; run `orch record sign-in --email <email>`',
+      section: 'customer',
+    })
+  })
+
+  test('a hosted-call attribution failure directs the customer to API reachability', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      attributionFailure: 'record API: connection refused',
+    })
+    expect(checks).toContainEqual({
+      name: 'last run attribution resolution',
+      status: 'fail',
+      detail:
+        'record API: connection refused; check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      section: 'customer',
+    })
   })
 
   test('an unreachable API fails with its remedy', () => {

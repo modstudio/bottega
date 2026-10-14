@@ -23,6 +23,7 @@ import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/p
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import { recordAttributionFailure } from './record-attribution.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -48,6 +49,7 @@ export type RecordDoctorFacts = {
   apiFailure?: string
   sessionAccepted: boolean
   sessionFailure?: string
+  attributionFailure: string | null
   activeSpaceId: string | null
   memberships: readonly RecordSpaceMembership[]
   projects: ReadonlyArray<{ name: string; space: string | null }>
@@ -63,6 +65,24 @@ const API_REACHABILITY_REMEDY =
 
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
+}
+
+function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
+  if (!failure)
+    return {
+      name: 'last run attribution resolution',
+      status: 'pass',
+      section: 'customer',
+    }
+  const remedy = failure.startsWith('stored record session:')
+    ? RECORD_SIGN_IN_REMEDY
+    : API_REACHABILITY_REMEDY
+  return {
+    name: 'last run attribution resolution',
+    status: 'fail',
+    detail: `${failure}; ${remedy}`,
+    section: 'customer',
+  }
 }
 
 function membershipChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
@@ -148,6 +168,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
         },
   ]
   const active = facts.memberships.find((membership) => membership.spaceId === facts.activeSpaceId)
+  checks.push(attributionFailureCheck(facts.attributionFailure))
   checks.push(
     active
       ? {
@@ -308,6 +329,7 @@ async function customerFacts(
     apiFailure,
     sessionAccepted,
     sessionFailure,
+    attributionFailure: recordAttributionFailure(database),
     userId: identity?.user.id ?? null,
     activeSpaceId: identity?.activeSpaceId ?? null,
     memberships: parseRecordSpaceMemberships(identity?.memberships),
