@@ -35,7 +35,7 @@ import type { StreamEvent } from '../events.ts'
 import { assessEvidencePrompt } from '../evidence/evidence.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
-import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { isReaderJob, job, jobBoundInstruction, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
@@ -55,7 +55,6 @@ import {
 import type { OutcomeStatus } from '../outcome.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
-import { ensureWorkerBranchNamespaceDirs, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
@@ -104,6 +103,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import {
   assertWorkerGitGuardOutsideWritableRoots,
+  provisionWriterSharedGitRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport } from './run-launch.ts'
@@ -706,14 +706,9 @@ export async function run(opts: {
   // A reader clone keeps all writable Git metadata inside its own tree. Its
   // hooks live outside that root so the worker cannot disable the push guard.
   // Writers remain linked worktrees and retain their existing shared roots.
-  if (repoJob && worktree && writesJob) {
-    ensureWorkerBranchNamespaceDirs(worktree.path, worktree.branch)
-  }
   const writableRoots = [
     scratchDir,
-    ...(repoJob && worktree && writesJob
-      ? [worktreeGitDir(worktree.path), ...workerSharedGitRoots(worktree.path, worktree.branch)]
-      : []),
+    ...provisionWriterSharedGitRoots(worktree, repoJob && writesJob),
   ]
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
