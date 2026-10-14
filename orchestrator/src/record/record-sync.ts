@@ -24,8 +24,12 @@ import {
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
+  RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
+  RECORD_SYNC_MAX_PAYLOAD_BYTES,
+  type RecordSyncRequest,
   type RecordSyncRequestRow,
   type RecordSyncResponse,
 } from './record-sync-contract.ts'
@@ -136,8 +140,16 @@ type PlannedBatchRow =
   | { disposition: 'skip' }
   | { disposition: 'stop' }
 
+type PreparedOutboxRow = {
+  row: OutboxRow
+  parsed: Payload | null
+  payloadBytes: number
+}
+
+const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength
+
 function planBatchRow(
-  row: OutboxRow,
+  candidate: PreparedOutboxRow,
   input: {
     local: Database
     hasBatchRows: boolean
@@ -146,7 +158,7 @@ function planBatchRow(
     projectSpaces?: Record<string, string>
   },
 ): PlannedBatchRow {
-  const parsed = parsedPayload(row.payload)
+  const { row, parsed } = candidate
   if (parsed && outboxRowWaitsForParent(input.local, row, parsed)) {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
@@ -169,14 +181,8 @@ function planBatchRow(
   }
 }
 
-function nextBatch(input: {
-  local: Database
-  attempted: Set<number>
-  memberships: ReturnType<typeof parseRecordSpaceMemberships>
-  blocked: BlockedOutboxRow[]
-  projectSpaces?: Record<string, string>
-}): { rows: RecordSyncRequestRow[]; localRows: Map<number, OutboxRow> } {
-  const candidates = input.local
+function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
+  const rows = local
     .query<OutboxRow, []>(
       `SELECT id, kind, record_id, payload FROM outbox
        WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
@@ -187,11 +193,156 @@ function nextBatch(input: {
       const [rightPhase, rightId] = outboxOrder(right.kind, right.id)
       return leftPhase - rightPhase || leftId - rightId
     })
+    .map((row) => ({
+      row,
+      parsed: parsedPayload(row.payload),
+      payloadBytes: utf8Bytes(row.payload),
+    }))
+  return new Set(rows)
+}
+
+function quarantineOversizedRow(input: {
+  row: OutboxRow
+  oversized: OversizedRecordSyncRow
+  local: Database
+  attempted: Set<number>
+  now: () => string
+}): number {
+  const changed = quarantineOutboxRow(
+    input.local,
+    input.row.id,
+    input.row.payload,
+    input.oversized.reason,
+    input.now(),
+  )
+  input.attempted.add(input.row.id)
+  return changed ? 1 : 0
+}
+
+function planTransportCandidate(
+  row: OutboxRow,
+  payloadBytes: number,
+  serializedBytes: number,
+  requestBytes: number,
+  sendCount: number,
+) {
+  return planRecordSyncBatch({
+    rows: [{ id: row.id, kind: row.kind, payloadBytes, serializedBytes }],
+    emptyRequestBytes: requestBytes,
+    initialSendCount: sendCount,
+    payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
+    requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
+    countLimit: RECORD_SYNC_BATCH_SIZE,
+  })
+}
+
+function quarantinePayloadIfOversized(input: {
+  candidateRow: PreparedOutboxRow
+  candidates: Set<PreparedOutboxRow>
+  local: Database
+  attempted: Set<number>
+  requestBytes: number
+  sendCount: number
+  now: () => string
+}): number | null {
+  const { row, payloadBytes } = input.candidateRow
+  if (payloadBytes <= RECORD_SYNC_MAX_PAYLOAD_BYTES) return null
+  const oversized = planTransportCandidate(
+    row,
+    payloadBytes,
+    0,
+    input.requestBytes,
+    input.sendCount,
+  ).quarantine[0]
+  if (!oversized) throw new Error('oversized payload was not refused')
+  const quarantined = quarantineOversizedRow({
+    row,
+    oversized,
+    local: input.local,
+    attempted: input.attempted,
+    now: input.now,
+  })
+  input.candidates.delete(input.candidateRow)
+  return quarantined
+}
+
+function addPlannedRow(input: {
+  candidateRow: PreparedOutboxRow
+  planned: Extract<PlannedBatchRow, { disposition: 'include' }>
+  candidates: Set<PreparedOutboxRow>
+  local: Database
+  attempted: Set<number>
+  rows: RecordSyncRequestRow[]
+  localRows: Map<number, OutboxRow>
+  requestBytes: number
+  now: () => string
+}): { disposition: 'stop' } | { disposition: 'sent'; requestBytes: number; quarantined: number } {
+  const { row, payloadBytes } = input.candidateRow
+  const decision = planTransportCandidate(
+    row,
+    payloadBytes,
+    utf8Bytes(JSON.stringify(input.planned.request)),
+    input.requestBytes,
+    input.rows.length,
+  )
+  const oversized = decision.quarantine[0]
+  if (oversized) {
+    const quarantined = quarantineOversizedRow({
+      row,
+      oversized,
+      local: input.local,
+      attempted: input.attempted,
+      now: input.now,
+    })
+    input.candidates.delete(input.candidateRow)
+    return { disposition: 'sent', requestBytes: input.requestBytes, quarantined }
+  }
+  if (!decision.send.length) return { disposition: 'stop' }
+  input.rows.push(input.planned.request)
+  input.localRows.set(row.id, row)
+  return { disposition: 'sent', requestBytes: decision.requestBytes, quarantined: 0 }
+}
+
+function nextBatch(input: {
+  local: Database
+  candidates: Set<PreparedOutboxRow>
+  attempted: Set<number>
+  identity: { id: string; name: string }
+  now: () => string
+  memberships: ReturnType<typeof parseRecordSpaceMemberships>
+  blocked: BlockedOutboxRow[]
+  projectSpaces?: Record<string, string>
+}): {
+  request: RecordSyncRequest
+  localRows: Map<number, OutboxRow>
+  quarantined: number
+} {
+  const machine = { ...input.identity, seenAt: input.now() }
+  const emptyRequestBytes = utf8Bytes(JSON.stringify({ machine, rows: [] }))
   const rows: RecordSyncRequestRow[] = []
   const localRows = new Map<number, OutboxRow>()
-  for (const row of candidates) {
-    if (input.attempted.has(row.id)) continue
-    const planned = planBatchRow(row, {
+  let requestBytes = emptyRequestBytes
+  let quarantined = 0
+  for (const candidateRow of input.candidates) {
+    const { row } = candidateRow
+    if (input.attempted.has(row.id)) {
+      input.candidates.delete(candidateRow)
+      continue
+    }
+    const payloadQuarantine = quarantinePayloadIfOversized({
+      candidateRow,
+      candidates: input.candidates,
+      local: input.local,
+      attempted: input.attempted,
+      requestBytes,
+      sendCount: rows.length,
+      now: input.now,
+    })
+    if (payloadQuarantine !== null) {
+      quarantined += payloadQuarantine
+      continue
+    }
+    const planned = planBatchRow(candidateRow, {
       local: input.local,
       hasBatchRows: rows.length > 0,
       memberships: input.memberships,
@@ -200,11 +351,23 @@ function nextBatch(input: {
     })
     if (planned.disposition === 'stop') break
     if (planned.disposition === 'skip') continue
-    rows.push(planned.request)
-    localRows.set(row.id, row)
+    const added = addPlannedRow({
+      candidateRow,
+      planned,
+      candidates: input.candidates,
+      local: input.local,
+      attempted: input.attempted,
+      rows,
+      localRows,
+      requestBytes,
+      now: input.now,
+    })
+    if (added.disposition === 'stop') break
+    quarantined += added.quarantined
+    requestBytes = added.requestBytes
     if (rows.length === RECORD_SYNC_BATCH_SIZE) break
   }
-  return { rows, localRows }
+  return { request: { machine, rows }, localRows, quarantined }
 }
 
 function validateBatchResults(batch: RecordSyncRequestRow[], response: RecordSyncResponse): void {
@@ -278,7 +441,6 @@ function noBatchRemaining(rowCount: number, sentBatch: boolean): boolean {
 
 async function sendSyncBatch(input: {
   client: { sync: NonNullable<ReturnType<typeof recordApiClient>['sync']> }
-  identity: { id: string; name: string }
   batch: ReturnType<typeof nextBatch>
   local: Database
   attempted: Set<number>
@@ -287,16 +449,13 @@ async function sendSyncBatch(input: {
 }): Promise<{ pushed: number; failed: number }> {
   let response: RecordSyncResponse
   try {
-    response = await input.client.sync!({
-      machine: { ...input.identity, seenAt: input.now() },
-      rows: input.batch.rows,
-    })
+    response = await input.client.sync!(input.batch.request)
   } catch (error) {
     syncRouteError(error)
   }
   return applyBatchResults({
     local: input.local,
-    batch: input.batch.rows,
+    batch: input.batch.request.rows,
     localRows: input.batch.localRows,
     response,
     attempted: input.attempted,
@@ -340,19 +499,23 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   let failed = 0
   const readOnlyDeferred = new Map<string, number>()
   const attempted = new Set<number>()
+  const candidates = preparePendingRows(writableLocal)
   let sentBatch = false
   for (;;) {
     const batch = nextBatch({
       local: writableLocal,
+      candidates,
       attempted,
+      identity,
+      now: options.now ?? nowIso,
       memberships,
       blocked,
       projectSpaces: options.projectSpaces,
     })
-    if (noBatchRemaining(batch.rows.length, sentBatch)) break
+    failed += batch.quarantined
+    if (noBatchRemaining(batch.request.rows.length, sentBatch)) break
     const applied = await sendSyncBatch({
       client: { sync: client.sync },
-      identity,
       batch,
       local: writableLocal,
       attempted,
@@ -362,7 +525,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     sentBatch = true
     pushed += applied.pushed
     failed += applied.failed
-    if (!batch.rows.length) break
+    if (!batch.request.rows.length) break
   }
   if (!options.client) await pullRecordCache(writableLocal)
   rememberHostedRecord(writableLocal)
