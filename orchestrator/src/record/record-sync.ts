@@ -24,11 +24,7 @@ import {
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
-import {
-  considerRecordSyncCandidate,
-  type OversizedRecordSyncRow,
-  type RecordSyncBatchCandidate,
-} from './record-sync-batch.ts'
+import { considerRecordSyncCandidate, type OversizedRecordSyncRow } from './record-sync-batch.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
   RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
