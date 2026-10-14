@@ -24,7 +24,7 @@ import {
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { pullRecordCache } from './record-cache.ts'
-import { considerRecordSyncCandidate, type OversizedRecordSyncRow } from './record-sync-batch.ts'
+import { planRecordSyncBatch, type OversizedRecordSyncRow } from './record-sync-batch.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
   RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
@@ -219,6 +219,90 @@ function quarantineOversizedRow(input: {
   return changed ? 1 : 0
 }
 
+function planTransportCandidate(
+  row: OutboxRow,
+  payloadBytes: number,
+  serializedBytes: number,
+  requestBytes: number,
+  sendCount: number,
+) {
+  return planRecordSyncBatch({
+    rows: [{ id: row.id, kind: row.kind, payloadBytes, serializedBytes }],
+    emptyRequestBytes: requestBytes,
+    initialSendCount: sendCount,
+    payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
+    requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
+    countLimit: RECORD_SYNC_BATCH_SIZE,
+  })
+}
+
+function quarantinePayloadIfOversized(input: {
+  candidateRow: PreparedOutboxRow
+  candidates: Set<PreparedOutboxRow>
+  local: Database
+  attempted: Set<number>
+  requestBytes: number
+  sendCount: number
+  now: () => string
+}): number | null {
+  const { row, payloadBytes } = input.candidateRow
+  if (payloadBytes <= RECORD_SYNC_MAX_PAYLOAD_BYTES) return null
+  const oversized = planTransportCandidate(
+    row,
+    payloadBytes,
+    0,
+    input.requestBytes,
+    input.sendCount,
+  ).quarantine[0]
+  if (!oversized) throw new Error('oversized payload was not refused')
+  const quarantined = quarantineOversizedRow({
+    row,
+    oversized,
+    local: input.local,
+    attempted: input.attempted,
+    now: input.now,
+  })
+  input.candidates.delete(input.candidateRow)
+  return quarantined
+}
+
+function addPlannedRow(input: {
+  candidateRow: PreparedOutboxRow
+  planned: Extract<PlannedBatchRow, { disposition: 'include' }>
+  candidates: Set<PreparedOutboxRow>
+  local: Database
+  attempted: Set<number>
+  rows: RecordSyncRequestRow[]
+  localRows: Map<number, OutboxRow>
+  requestBytes: number
+  now: () => string
+}): { disposition: 'stop' } | { disposition: 'sent'; requestBytes: number; quarantined: number } {
+  const { row, payloadBytes } = input.candidateRow
+  const decision = planTransportCandidate(
+    row,
+    payloadBytes,
+    utf8Bytes(JSON.stringify(input.planned.request)),
+    input.requestBytes,
+    input.rows.length,
+  )
+  const oversized = decision.quarantine[0]
+  if (oversized) {
+    const quarantined = quarantineOversizedRow({
+      row,
+      oversized,
+      local: input.local,
+      attempted: input.attempted,
+      now: input.now,
+    })
+    input.candidates.delete(input.candidateRow)
+    return { disposition: 'sent', requestBytes: input.requestBytes, quarantined }
+  }
+  if (!decision.send.length) return { disposition: 'stop' }
+  input.rows.push(input.planned.request)
+  input.localRows.set(row.id, row)
+  return { disposition: 'sent', requestBytes: decision.requestBytes, quarantined: 0 }
+}
+
 function nextBatch(input: {
   local: Database
   candidates: Set<PreparedOutboxRow>
@@ -245,24 +329,17 @@ function nextBatch(input: {
       input.candidates.delete(candidateRow)
       continue
     }
-    if (payloadBytes > RECORD_SYNC_MAX_PAYLOAD_BYTES) {
-      const step = considerRecordSyncCandidate({
-        row: { id: row.id, kind: row.kind, payloadBytes, serializedBytes: 0 },
-        requestBytes,
-        sendCount: rows.length,
-        payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
-        requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
-        countLimit: RECORD_SYNC_BATCH_SIZE,
-      })
-      if (step.disposition !== 'quarantine') throw new Error('oversized payload was not refused')
-      quarantined += quarantineOversizedRow({
-        row,
-        oversized: step.row,
-        local: input.local,
-        attempted: input.attempted,
-        now: input.now,
-      })
-      input.candidates.delete(candidateRow)
+    const payloadQuarantine = quarantinePayloadIfOversized({
+      candidateRow,
+      candidates: input.candidates,
+      local: input.local,
+      attempted: input.attempted,
+      requestBytes,
+      sendCount: rows.length,
+      now: input.now,
+    })
+    if (payloadQuarantine !== null) {
+      quarantined += payloadQuarantine
       continue
     }
     const planned = planBatchRow(candidateRow, {
@@ -274,35 +351,20 @@ function nextBatch(input: {
     })
     if (planned.disposition === 'stop') break
     if (planned.disposition === 'skip') continue
-    const candidate = {
-      id: row.id,
-      kind: row.kind,
-      payloadBytes,
-      serializedBytes: utf8Bytes(JSON.stringify(planned.request)),
-    }
-    const step = considerRecordSyncCandidate({
-      row: candidate,
+    const added = addPlannedRow({
+      candidateRow,
+      planned,
+      candidates: input.candidates,
+      local: input.local,
+      attempted: input.attempted,
+      rows,
+      localRows,
       requestBytes,
-      sendCount: rows.length,
-      payloadLimit: RECORD_SYNC_MAX_PAYLOAD_BYTES,
-      requestLimit: RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
-      countLimit: RECORD_SYNC_BATCH_SIZE,
+      now: input.now,
     })
-    if (step.disposition === 'stop') break
-    if (step.disposition === 'quarantine') {
-      quarantined += quarantineOversizedRow({
-        row,
-        oversized: step.row,
-        local: input.local,
-        attempted: input.attempted,
-        now: input.now,
-      })
-      input.candidates.delete(candidateRow)
-      continue
-    }
-    requestBytes = step.requestBytes
-    rows.push(planned.request)
-    localRows.set(row.id, row)
+    if (added.disposition === 'stop') break
+    quarantined += added.quarantined
+    requestBytes = added.requestBytes
     if (rows.length === RECORD_SYNC_BATCH_SIZE) break
   }
   return { request: { machine, rows }, localRows, quarantined }

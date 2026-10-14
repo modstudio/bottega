@@ -15,7 +15,7 @@ export type OversizedRecordSyncRow = {
   reason: string
 }
 
-export type RecordSyncBatchStep =
+type RecordSyncBatchStep =
   | { disposition: 'send'; requestBytes: number }
   | { disposition: 'quarantine'; row: OversizedRecordSyncRow }
   | { disposition: 'stop' }
@@ -33,7 +33,7 @@ function oversizedRecordSyncRequestReason(
 }
 
 /** Classifies one row against the current batch without reading or parsing any stored data. */
-export function considerRecordSyncCandidate(input: {
+function considerRecordSyncCandidate(input: {
   row: RecordSyncBatchCandidate
   requestBytes: number
   sendCount: number
@@ -80,10 +80,15 @@ export function considerRecordSyncCandidate(input: {
 export function planRecordSyncBatch(input: {
   rows: RecordSyncBatchCandidate[]
   emptyRequestBytes: number
+  initialSendCount?: number
   payloadLimit: number
   requestLimit: number
   countLimit: number
-}): { quarantine: OversizedRecordSyncRow[]; send: RecordSyncBatchCandidate[] } {
+}): {
+  quarantine: OversizedRecordSyncRow[]
+  send: RecordSyncBatchCandidate[]
+  requestBytes: number
+} {
   // Unless a non-empty batch has reached a boundary, every supplied row is classified as
   // either sent or quarantined. In particular, a row that cannot fit by itself is quarantined.
   const quarantine: OversizedRecordSyncRow[] = []
@@ -93,7 +98,7 @@ export function planRecordSyncBatch(input: {
     const step = considerRecordSyncCandidate({
       row,
       requestBytes,
-      sendCount: send.length,
+      sendCount: (input.initialSendCount ?? 0) + send.length,
       payloadLimit: input.payloadLimit,
       requestLimit: input.requestLimit,
       countLimit: input.countLimit,
@@ -106,5 +111,5 @@ export function planRecordSyncBatch(input: {
     send.push(row)
     requestBytes = step.requestBytes
   }
-  return { quarantine, send }
+  return { quarantine, send, requestBytes }
 }
