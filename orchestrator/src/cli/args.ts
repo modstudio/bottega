@@ -294,10 +294,10 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
   return parseWorkerMessageArgs(args, { booleans: ANSWER_BOOLEANS, questions: true })
 }
 
-/** Match the bare question selector shared by thin command surfaces. */
-export function bareQuestionSelector(arg: string): number | null {
-  const match = arg.match(/^--q(\d+)$/)
-  return match ? Number(match[1]) : null
+/** Match the bare question selector shared by thin command surfaces; the caller resolves the identifier. */
+export function bareQuestionSelector(arg: string): string | null {
+  const match = arg.match(/^--q([^=]+)$/)
+  return match ? match[1]! : null
 }
 
 /** Every documented seed spelling is accepted by the CLI argument parser. */

@@ -18,22 +18,19 @@ export function relayCommand(
   args: string[],
   note: string | undefined,
   presentation: Presentation,
+  resolveQuestion: (identifier: string) => number,
 ): void {
   if (!note?.trim()) throw new Error('--note is required')
-  const questions = args.flatMap((arg) => {
+  const accepted = new Set([`--note=${note}`, '--note', note])
+  const selectors = args.filter((arg) => !accepted.has(arg))
+  const questions = selectors.map((arg) => {
     const question = bareQuestionSelector(arg)
-    return question === null ? [] : [question]
+    if (question === null) throw new Error(`unrecognized relay argument ${arg}`)
+    return question
   })
-  const accepted = new Set([
-    `--note=${note}`,
-    '--note',
-    note,
-    ...questions.map((question) => `--q${question}`),
-  ])
-  const unknown = args.filter((arg) => !accepted.has(arg))
-  if (unknown.length) throw new Error(`unrecognized relay argument ${unknown[0]}`)
   if (questions.length > 1) throw new Error('pass at most one --q<id>')
-  const { id } = relayQuestion(runId, questions[0], note.trim())
+  const question = questions[0] === undefined ? undefined : resolveQuestion(questions[0])
+  const { id } = relayQuestion(runId, question, note.trim())
   presentation.log(`question ${id} is waiting on the operator`)
 }
 

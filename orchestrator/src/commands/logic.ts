@@ -54,6 +54,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
 import { workflowChildCommandInvocation, workflowCommand } from '../workflow/workflow-commands.ts'
@@ -87,7 +88,9 @@ const runFlags = (options: OptionValues) => ({
 const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
   tellCommand(localRunId(id), rawArgv(command).slice(2), ping, presentation)
 const relayByIdentifier = (id: string, command: Command, note: string) =>
-  relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation)
+  relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
+    resolveQuestionIdentifier(db(), question),
+  )
 const resultByIdentifier = (id: string, options: OptionValues) =>
   resultCommand(
     db(),
