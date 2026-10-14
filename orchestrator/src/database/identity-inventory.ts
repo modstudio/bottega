@@ -115,11 +115,7 @@ export const IDENTITY_BASELINE = [
   'workflow_version',
 ] as const
 
-const BORROWED_RECORD_ID = new Set([
-  'outbox',
-  'outbox_quarantine_audit',
-  'outbox_redaction_audit',
-])
+const BORROWED_RECORD_ID = new Set(['outbox', 'outbox_quarantine_audit', 'outbox_redaction_audit'])
 
 export function decideIdentityInventory(
   tables: readonly IdentityTable[],
@@ -138,7 +134,11 @@ export function decideIdentityInventory(
       throw new Error(`orchestrator identity exemption ${exemption.table} needs a stated reason`)
   }
   for (const table of tables) {
-    if (!convertedSet.has(table.name) && !exemptSet.has(table.name) && !baselineSet.has(table.name)) {
+    if (
+      !convertedSet.has(table.name) &&
+      !exemptSet.has(table.name) &&
+      !baselineSet.has(table.name)
+    ) {
       throw new Error(
         `orchestrator identity inventory does not classify table ${table.name}; ` +
           'add it to CONVERTED_TABLES, EXEMPT_TABLES with a reason, or IDENTITY_BASELINE',
@@ -154,7 +154,8 @@ export function decideIdentityInventory(
   }
   const actual = new Set(tables.map((table) => table.name))
   for (const named of classes) {
-    if (!actual.has(named)) throw new Error(`orchestrator identity inventory names missing table ${named}`)
+    if (!actual.has(named))
+      throw new Error(`orchestrator identity inventory names missing table ${named}`)
   }
   return {
     converted: [...converted].sort(),

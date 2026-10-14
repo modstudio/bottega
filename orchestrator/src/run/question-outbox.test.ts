@@ -27,7 +27,7 @@ test('question payload contains the hosted shape and replaces a pending mutation
   const database = fixture()
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,options,recommendation,why,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?', '["one","two"]','one','safer','live')
+      `INSERT INTO question (record_id,run_id,asked_at,question,options,recommendation,why,asked_via) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?', '["one","two"]','one','safer','live')
        RETURNING id`,
     )
     .get() as { id: number }
@@ -83,7 +83,7 @@ test.each(['quarantined', 'retired'])(
     const database = fixture()
     const question = database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
       )
       .get() as { id: number }
     enqueueQuestionRecord(database, question.id)
@@ -114,7 +114,7 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
   const secret = 'Authorization: Bearer top-secret-value'
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answer_basis,answered_at,revision) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?',?,?,'2026-09-25T10:02:00.000Z',2)
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer,answer_basis,answered_at,revision) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?',?,?,'2026-09-25T10:02:00.000Z',2)
        RETURNING id`,
     )
     .get(secret, secret) as { id: number }
@@ -139,7 +139,7 @@ test('question and outbox writes roll back together', () => {
     writeTransaction(() => {
       const question = database
         .query(
-          `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
+          `INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,'2026-09-25T10:01:00.000Z','Which?') RETURNING id`,
         )
         .get() as { id: number }
       enqueueQuestionRecord(database, question.id)

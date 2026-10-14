@@ -89,10 +89,12 @@ test("a later findings turn inherits its root's implicit review branch", async (
     })
 
     expect(claimed.claim.id).toBe(reserved)
-    expect(db().query('SELECT branch,record_id FROM run WHERE id=?').get(claimed.claim.id)).toEqual({
-      branch: 'DEV-1147-reviewed',
-      record_id: reservedRecordId,
-    })
+    expect(db().query('SELECT branch,record_id FROM run WHERE id=?').get(claimed.claim.id)).toEqual(
+      {
+        branch: 'DEV-1147-reviewed',
+        record_id: reservedRecordId,
+      },
+    )
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

@@ -20,7 +20,7 @@ describe('overturn ruling', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner-session' })
     const question = db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
+        `INSERT INTO question (record_id,run_id,asked_at,question,answer,answered_at,answered_by,answerer_kind,answer_channel) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'2026-09-20','Which way?','Old ruling','2026-09-21','owner-session','agent','cli')
          RETURNING id`,
       )
       .get(run) as { id: number }
@@ -61,7 +61,7 @@ describe('overturn ruling', () => {
     const question = db()
       .query(
         `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,answered_by,
-           answerer_kind,answer_channel,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
+           answerer_kind,answer_channel,asked_via) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'DEV-964','2026-09-20','Which way?','Old','2026-09-21',
                  'owner-session','agent','cli','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
@@ -91,7 +91,7 @@ describe('overturn ruling', () => {
       .get() as { id: number }
     const question = db()
       .query(
-        `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING id`,
+        `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,answer,answered_at,asked_via) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'DEV-964','2026-09-20','Which?','Old','2026-09-21','workflow') RETURNING id`,
       )
       .get(cursor.id) as { id: number }
     db()

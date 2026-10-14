@@ -10,7 +10,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
   applyMigrations(database)
   const run = database
     .query<{ id: number }, []>(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture','DEV-977')
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture','DEV-977')
        RETURNING id`,
     )
     .get()!
@@ -52,7 +52,7 @@ test('a rebase credits the complete round from the same branch and never another
   const addReview = (branch: string, reviewId: number, lens: string) => {
     const run = database
       .query<{ id: number }, [string]>(
-        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?)
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,branch) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-09-25','codex','review-lens','sha',1,'head','ok','fixture',?)
          RETURNING id`,
       )
       .get(branch)!

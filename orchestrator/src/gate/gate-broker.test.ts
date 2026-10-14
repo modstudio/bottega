@@ -76,7 +76,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
   const runId = (
     db()
       .query(
-        `INSERT INTO run (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,project_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING id`,
       )
       .get(
         new Date().toISOString(),
