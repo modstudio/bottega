@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -21,7 +22,7 @@ test('one sync pushes a review read before its dependent triage snapshot', async
   Object.assign(read, {
     id: READ_ID,
     spaceId: SPACE_ID,
-    projectName: 'bottega',
+    projectName: PLATFORM_SLUG,
     machineId: identity.id,
     localId: 41,
     branch: 'DEV-1307-proof',
@@ -40,7 +41,7 @@ test('one sync pushes a review read before its dependent triage snapshot', async
   Object.assign(snapshot, {
     id: SNAPSHOT_ID,
     spaceId: SPACE_ID,
-    projectName: 'bottega',
+    projectName: PLATFORM_SLUG,
     machineId: identity.id,
     localId: 42,
     branch: 'DEV-1307-proof',
@@ -72,13 +73,13 @@ test('one sync pushes a review read before its dependent triage snapshot', async
       await syncRecord({
         local,
         identity,
-        projectSpaces: { bottega: SPACE_ID },
+        projectSpaces: { [PLATFORM_SLUG]: SPACE_ID },
         client: {
           whoami: async () => ({
             user: { id: USER_ID },
             activeSpaceId: SPACE_ID,
             personalSpaceId: SPACE_ID,
-            memberships: [{ space_id: SPACE_ID, slug: 'bottega', permission: 'write' }],
+            memberships: [{ space_id: SPACE_ID, slug: PLATFORM_SLUG, permission: 'write' }],
           }),
           sync: async (request) => {
             batches.push(request.rows.map((row) => row.kind))
