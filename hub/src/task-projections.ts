@@ -527,7 +527,7 @@ export type BoardSourceRow = {
 
 /** The board's recent window: worked on, or closed, inside this span. */
 export const BOARD_RECENT_WINDOW_DAYS = 14
-export const BOARD_RECENT_WINDOW_MS = BOARD_RECENT_WINDOW_DAYS * 86_400_000
+const BOARD_RECENT_WINDOW_MS = BOARD_RECENT_WINDOW_DAYS * 86_400_000
 
 export function boardRecentSince(now: number, windowMs = BOARD_RECENT_WINDOW_MS): string {
   return new Date(now - windowMs).toISOString()
