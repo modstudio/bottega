@@ -377,4 +377,49 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       )
     }
   })
+
+  // Every other proof syncs a run. A kind without a starting user takes a
+  // different ownership lookup, which Postgres rejects if it is given a
+  // parameter its statement never uses.
+  test('hosted sync writes and replays a kind that carries no starting user', async () => {
+    const id = newRecordId()
+    const at = '2026-10-13T01:00:00.000Z'
+    const flake = Object.fromEntries(
+      OUTBOX_PAYLOAD_CONTRACTS.test_flake.columns.map((column) => [column, null]),
+    )
+    Object.assign(flake, {
+      id,
+      spaceId: input.writeSpaceId,
+      projectName: input.writeProjectName,
+      machineId: input.machineId,
+      localId: nextLocalId++,
+      test: 'proof flake',
+      file: 'proof.test.ts',
+      loadAtFailure: {},
+      at,
+      createdAt: at,
+      updatedAt: at,
+    })
+    const insert =
+      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'test_flake',?,?,?)"
+    const sync = async (rowId: number) => {
+      const local = new Database(':memory:')
+      applyMigrations(local)
+      local.query(insert).run(rowId, id, JSON.stringify(flake), at)
+      try {
+        return await withoutDirectRecordCredentials(() =>
+          syncRecord({
+            local,
+            identity: { id: input.machineId, name: 'proof-machine' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+          }),
+        )
+      } finally {
+        local.close()
+      }
+    }
+    expect(await sync(1)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    expect(await sync(1)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    expect(input.admin(`SELECT machine_id FROM test_flake WHERE id='${id}';`)).toBe(input.machineId)
+  })
 }

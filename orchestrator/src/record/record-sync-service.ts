@@ -43,6 +43,7 @@ import {
   recordSyncMachineOwnershipDecision,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
+import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -171,13 +172,8 @@ async function existingEvidenceOwned(
   machineId: string,
   principal: RecordPrincipal,
 ): Promise<boolean> {
-  const userClause = table === 'run' ? ' AND started_by_user_id=$4::uuid' : ''
-  const rows = await tx.unsafe(
-    `SELECT id FROM ${table}
-     WHERE id=$1::uuid AND space_id=$2::uuid AND machine_id=$3::uuid${userClause}
-     FOR UPDATE`,
-    [id, principal.spaceId, machineId, principal.userId],
-  )
+  const lookup = ownedEvidenceLookup({ ...principal, table, id, machineId, suffix: 'FOR UPDATE' })
+  const rows = await tx.unsafe(lookup.text, lookup.values)
   if (rows.length > 0) return true
   const collision = await tx.unsafe(`SELECT id FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])
   if (collision.length > 0) throw evidenceCollision(table, id)
@@ -260,13 +256,14 @@ async function assertEvidenceReferencesOwned(input: {
   await input.postgres.begin(async (tx) => {
     await bindPrincipal(tx, input.principal)
     for (const reference of references) {
-      const userClause = reference.table === 'run' ? ' AND started_by_user_id=$4::uuid' : ''
-      const rows = await tx.unsafe(
-        `SELECT id FROM ${reference.table}
-         WHERE id=$1::uuid AND space_id=$2::uuid AND machine_id=$3::uuid${userClause}
-         /* owned_reference */`,
-        [reference.id, input.principal.spaceId, input.machineId, input.principal.userId],
-      )
+      const lookup = ownedEvidenceLookup({
+        ...input.principal,
+        table: reference.table,
+        id: reference.id,
+        machineId: input.machineId,
+        suffix: '/* owned_reference */',
+      })
+      const rows = await tx.unsafe(lookup.text, lookup.values)
       if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')
     }
   })
