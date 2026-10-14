@@ -60,9 +60,9 @@ function legacyTaskHelpFailure(argv: string[]): boolean {
   return helpIndex >= offset && helpIndex - offset < required
 }
 
-export async function run(argv: string[]): Promise<number> {
+export async function run(command: Command, argv: string[]): Promise<number> {
   try {
-    await program.parseAsync(['bun', 'hub', ...(argv.length ? argv : ['--help'])])
+    await command.parseAsync(['bun', 'hub', ...(argv.length ? argv : ['--help'])])
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError))

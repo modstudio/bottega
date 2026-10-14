@@ -122,7 +122,7 @@ function printRulingStats(days: number | undefined): void {
     )
 }
 
-export function registerCoreCommands(program: Command): void {
+function registerCollectionCommands(program: Command): void {
   program
     .command('migrate')
     .description('apply pending checksummed schema migrations')
@@ -183,6 +183,9 @@ export function registerCoreCommands(program: Command): void {
       requireDatabase()
       printTasks(options.hours)
     })
+}
+
+function registerServeCommands(program: Command): void {
   program
     .command('login')
     .description('print a one-time local dashboard login URL')
@@ -226,6 +229,9 @@ export function registerCoreCommands(program: Command): void {
         process.exitCode = 2
       } else if (!reportServeDown(port, await checkServeDown(port))) process.exitCode = 1
     })
+}
+
+function registerMaintenanceCommands(program: Command): void {
   program
     .command('reconcile')
     .description('close open intervals whose orch runs are terminal using exact run ids')
@@ -257,6 +263,9 @@ export function registerCoreCommands(program: Command): void {
           console.log(`${verb} task ${task.key} ${task.project} ${task.title}`)
       }
     })
+}
+
+function registerRulingCommands(program: Command): void {
   program
     .command('rulings')
     .description('open questions ingested from orch, with age')
@@ -286,4 +295,11 @@ export function registerCoreCommands(program: Command): void {
               `session ${row.session_id ?? 'unknown'}  since ${row.asked_at}  age ${human(row.age)}`,
           )
     })
+}
+
+export function registerCoreCommands(program: Command): void {
+  registerCollectionCommands(program)
+  registerServeCommands(program)
+  registerMaintenanceCommands(program)
+  registerRulingCommands(program)
 }

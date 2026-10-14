@@ -260,8 +260,7 @@ function preserveTaskParseErrors(command: Command, syntax: string): Command {
 const commonBody = (command: Command) =>
   command.option('--body <text>', '').option('--body-file <path>', '')
 
-export function registerTaskCommands(program: Command): void {
-  const task = program.command('task')
+function registerTaskCreationCommands(task: Command): void {
   commonBody(
     task
       .command('new')
@@ -318,6 +317,9 @@ export function registerTaskCommands(program: Command): void {
       await client.close()
     }
   })
+}
+
+function registerTaskQueryCommands(task: Command): void {
   preserveTaskParseErrors(
     task
       .command('list')
@@ -385,6 +387,9 @@ export function registerTaskCommands(program: Command): void {
       }),
     )
   })
+}
+
+function registerTaskLifecycleCommands(task: Command): void {
   task
     .command('close <key>')
     .option('--project <X>', '')
@@ -428,8 +433,9 @@ export function registerTaskCommands(program: Command): void {
     .action(async (_options, command) => {
       await runHostedTaskMaintenance('prune-foreign', taskOptions(command))
     })
+}
 
-  const document = task.command('doc').alias('document')
+function registerTaskDocumentReadCommands(document: Command): void {
   commonBody(
     document
       .command('new <key>')
@@ -476,6 +482,9 @@ export function registerTaskCommands(program: Command): void {
         if (item.body) console.log(`\n${item.body}`)
       }
     })
+}
+
+function registerTaskDocumentWriteCommands(document: Command): void {
   commonBody(
     document
       .command('set <reference>')
@@ -515,4 +524,14 @@ export function registerTaskCommands(program: Command): void {
       const removed = await deleteTaskDocument(reference, { scope: { project: options.project } })
       console.log(`${removed.label} removed from ${removed.task_key}`)
     })
+}
+
+export function registerTaskCommands(program: Command): void {
+  const task = program.command('task')
+  registerTaskCreationCommands(task)
+  registerTaskQueryCommands(task)
+  registerTaskLifecycleCommands(task)
+  const document = task.command('doc').alias('document')
+  registerTaskDocumentReadCommands(document)
+  registerTaskDocumentWriteCommands(document)
 }
