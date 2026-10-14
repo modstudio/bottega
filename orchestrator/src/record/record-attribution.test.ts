@@ -10,7 +10,6 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { recordAttributionFailure, signedInRecordUserId } from './record-attribution.ts'
-import { diagnoseRecord } from './record-doctor.ts'
 
 let priorApiUrl: string | undefined
 let priorDirectUrl: string | undefined
@@ -68,7 +67,7 @@ describe('run attribution identity resolution', () => {
     expect(recordAttributionFailure()).toBeNull()
   })
 
-  test('returns null and records an unreachable API for record doctor', async () => {
+  test('returns null and records an unreachable API diagnostic', async () => {
     session.setToken('fixture-session')
     installRecordApiClient({
       ...createMemoryRecordApiClient(),
@@ -79,11 +78,6 @@ describe('run attribution identity resolution', () => {
 
     expect(await signedInRecordUserId()).toBeNull()
     expect(recordAttributionFailure(db())).toBe('record API: connection refused')
-    expect(await diagnoseRecord({ recordUrl: '', migrateUrl: '' })).toContainEqual({
-      name: 'last run attribution resolution',
-      status: 'fail',
-      detail: 'record API: connection refused',
-    })
   })
 
   test('does not require ORCH_RECORD_URL when the API resolves the user', async () => {

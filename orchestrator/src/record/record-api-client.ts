@@ -53,6 +53,8 @@ import type { RecordSubject } from './record-subjects.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
+const RECORD_API_REFUSAL_REMEDY =
+  'cleared by: resolve the named request or record-space permission refusal, then retry'
 
 export type RecordDocUpsertInput = {
   scope: string
@@ -415,7 +417,7 @@ function recordApiError(body: unknown, status: number, headers: Headers = new He
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused', status)
   if (status >= 400 && status < 500)
-    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused', status)
+    return new RecordApiRequestError(`${message}\n${RECORD_API_REFUSAL_REMEDY}`, 'refused', status)
   return recordApiUnreachable(new Error(message))
 }
 

@@ -603,6 +603,7 @@ realPostgres('RLS proof against real Postgres', () => {
         name: 'schema public owned by record_owner',
         status: 'fail',
         detail: 'schema public is not owned by record_owner',
+        section: 'operator',
       })
     } finally {
       succeeds('postgres', 'postgres', `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`)

@@ -274,8 +274,11 @@ export async function recordDoctorCommand(
   projects: Array<{ name: string; space: string | null }> = [],
 ): Promise<void> {
   const checks = await diagnoseRecord({ projects })
+  let section: (typeof checks)[number]['section']
   for (const check of checks) {
+    if (check.section === 'operator' && section !== 'operator') presentation.log('operator checks:')
     presentation.log(`${check.name}: ${check.status}${check.detail ? ` — ${check.detail}` : ''}`)
+    section = check.section
   }
   presentation.exitCode?.(recordDoctorExitCode(checks))
 }

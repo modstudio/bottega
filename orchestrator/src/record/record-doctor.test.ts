@@ -2,35 +2,94 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import {
-  decideRecordDoctorAvailability,
+  decideRecordDoctorChecks,
   localQuestionCountForSpace,
-  outboxQuarantineCheck,
-  outboxRetiredParentCheck,
   recordDoctorExitCode,
   redactRecordPasswords,
   unattributedShare,
 } from './record-doctor.ts'
 
 describe('record doctor decisions', () => {
-  test('a never-bound install treats hosted checks as not applicable', () => {
-    expect(decideRecordDoctorAvailability({ installBound: false, recordUrlSet: false })).toEqual({
-      endpoint: {
-        name: 'hosted record configured',
-        status: 'skipped',
-        detail: 'no hosted record is configured for this install',
-      },
-      hostedChecksDetail: 'not applicable: no hosted record is configured for this install',
-    })
+  const healthyFacts = {
+    apiConfigured: true,
+    apiReachable: true,
+    sessionAccepted: true,
+    activeSpaceId: 'space-1',
+    memberships: [
+      { spaceId: 'space-1', name: 'Workshop', slug: 'workshop', permission: 'write' },
+      { spaceId: 'space-2', name: 'Library', slug: 'library', permission: 'read' },
+    ],
+    projects: [
+      { name: 'bottega', space: 'workshop' },
+      { name: 'local-only', space: null },
+    ],
+    pendingOutboxRows: 2,
+    quarantinedOutboxRows: [],
+    operatorConnectionPresent: false,
+  } as const
+
+  test('a healthy customer machine needs no operator connection or secret', () => {
+    const checks = decideRecordDoctorChecks(healthyFacts)
+    expect(recordDoctorExitCode(checks)).toBe(0)
+    expect(checks.map((check) => check.name)).toEqual([
+      'hosted API address configured',
+      'hosted API reachable',
+      'stored session accepted',
+      'session active space',
+      'membership workshop',
+      'membership library',
+      'project bottega declared space',
+      'local outbox pending rows',
+      'local outbox quarantined rows',
+    ])
+    expect(JSON.stringify(checks)).not.toContain('ORCH_RECORD_URL')
+    expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
   })
 
-  test('fails its exit code exactly when a named check fails', () => {
-    expect(recordDoctorExitCode([{ name: 'ready', status: 'pass' }])).toBe(0)
+  test('an unreachable API fails with its remedy', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      apiReachable: false,
+      apiFailure: 'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      sessionAccepted: false,
+      activeSpaceId: null,
+      memberships: [],
+    })
+    expect(checks[1]).toEqual({
+      name: 'hosted API reachable',
+      status: 'fail',
+      detail: 'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      section: 'customer',
+    })
+    expect(recordDoctorExitCode(checks)).toBe(1)
+  })
+
+  test('a project declaring an unavailable space fails and names it', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      projects: [{ name: 'foreign', space: 'outside' }],
+    })
+    expect(checks).toContainEqual({
+      name: 'project foreign declared space',
+      status: 'fail',
+      detail: "outside is not one of the signed-in user's memberships; join it with an invitation",
+      section: 'customer',
+    })
+    expect(recordDoctorExitCode(checks)).toBe(1)
+  })
+
+  test('operator checks appear only when the actor connection is present', () => {
+    const operatorCheck = { name: 'record connection works', status: 'pass' as const }
     expect(
-      recordDoctorExitCode([
-        { name: 'optional', status: 'skipped', detail: 'not configured' },
-        { name: 'owner', status: 'fail' },
-      ]),
-    ).toBe(1)
+      decideRecordDoctorChecks({ ...healthyFacts, operatorChecks: [operatorCheck] }),
+    ).not.toContainEqual(expect.objectContaining({ section: 'operator' }))
+    expect(
+      decideRecordDoctorChecks({
+        ...healthyFacts,
+        operatorConnectionPresent: true,
+        operatorChecks: [operatorCheck],
+      }),
+    ).toContainEqual({ ...operatorCheck, section: 'operator' })
   })
 
   test('redacts URL passwords from diagnostics', () => {
@@ -43,80 +102,6 @@ describe('record doctor decisions', () => {
   test('reports unattributed rows rather than presenting a clean estate', () => {
     expect(unattributedShare(3, 4)).toBe('3/4 (75.0%) unattributed')
     expect(unattributedShare(0, 0)).toBe('0/0 (0.0%) unattributed')
-  })
-
-  test('fails while an outbox row is quarantined', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
-    database
-      .query(
-        `INSERT INTO outbox
-         (id,kind,record_id,payload,created_at,quarantined_at,quarantine_reason)
-         VALUES (12,'score','record-12','{}','2026-09-28','2026-09-28','verdict refused')`,
-      )
-      .run()
-    const check = outboxQuarantineCheck(database)
-    expect(check).toMatchObject({ name: 'outbox quarantine is empty', status: 'fail' })
-    expect(check.detail).toContain('12 score')
-    expect(recordDoctorExitCode([check])).toBe(1)
-    database.close()
-  })
-
-  test('fails while an active outbox row is blocked by a retired parent', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
-    database
-      .query(
-        `INSERT INTO outbox
-         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
-         VALUES (11,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
-                (12,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
-      )
-      .run()
-    const check = outboxRetiredParentCheck(database)
-    expect(check).toMatchObject({
-      name: 'outbox has no rows blocked by a retired parent',
-      status: 'fail',
-    })
-    expect(check.detail).toContain('12 run (parent parent)')
-    expect(recordDoctorExitCode([check])).toBe(1)
-    database.close()
-  })
-
-  test('a synced parent stays ready after a later snapshot is retired', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
-    database
-      .query(
-        `INSERT INTO outbox
-         (id,kind,record_id,payload,created_at,synced_at,retired_at,retirement_reason)
-         VALUES (10,'run','parent','{}','2026-09-28','2026-09-28',NULL,NULL),
-                (11,'run','parent','{}','2026-09-28',NULL,'2026-09-28','later snapshot'),
-                (12,'run','child','{"retryOf":"parent"}','2026-09-28',NULL,NULL,NULL)`,
-      )
-      .run()
-    expect(outboxRetiredParentCheck(database)).toEqual({
-      name: 'outbox has no rows blocked by a retired parent',
-      status: 'pass',
-    })
-    database.close()
-  })
-
-  test('reports a malformed retired lens payload as an unreadable parent', () => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
-    database
-      .query(
-        `INSERT INTO outbox
-         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
-         VALUES (11,'review_lens','lens-parent','{','2026-09-28','2026-09-28','bad payload'),
-                (12,'review_finding','finding','{"reviewId":"review","reviewLensId":"lens-parent"}','2026-09-28',NULL,NULL)`,
-      )
-      .run()
-    const check = outboxRetiredParentCheck(database)
-    expect(check).toMatchObject({ status: 'fail' })
-    expect(check.detail).toContain('unreadable stored payload')
-    database.close()
   })
 
   test('counts synced questions for projects whose effective space is active', () => {
