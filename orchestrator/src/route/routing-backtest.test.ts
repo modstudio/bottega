@@ -256,9 +256,7 @@ describe('routing backtest statistics', () => {
       )
       .run(newRecordId(), id)
     db()
-      .query(
-        `UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`,
-      )
+      .query(`UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?`)
       .run(id)
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)
