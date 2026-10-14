@@ -1,6 +1,7 @@
 // concern: workflows
 /** Shared draft/promote/retire/event mechanics for versioned operator-owned JSON stores. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 
@@ -39,6 +40,12 @@ const required = (value: string | undefined, name: string) => {
 }
 const author = (value?: string) => value?.trim() || sessionId() || 'unknown'
 
+function insertOwner(d: Database, table: string, slug: string, at: string): { id: number } {
+  return d
+    .query(`INSERT INTO ${table} (record_id,slug,created_at) VALUES (?,?,?) RETURNING id`)
+    .get(newRecordId(), slug, at) as { id: number }
+}
+
 export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   const assertWorkerStoreWriteAllowed = (operation: VersionEvent) => {
     const refusal = workerStoreWriteRefusal('workflow', `${operation} ${config.noun}`, process.env)
@@ -58,7 +65,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
         : `AND v.n=?`
     const found = d
       .query(
-        `SELECT v.*,v.${config.foreignKey} owner_id,i.slug FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? ${suffix}`,
+        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? ${suffix}`,
       )
       .get(...(n === undefined ? [slug] : [slug, n])) as Row | null
     if (!found)
@@ -76,7 +83,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   const production = (slug: string, d: Database) => {
     const found = d
       .query(
-        `SELECT v.*,v.${config.foreignKey} owner_id,i.slug FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND v.status='production'`,
+        `SELECT v.id,v.${config.foreignKey} owner_id,i.slug,v.n,v.status,v.definition,v.author,v.reason,v.created_at,v.promoted_at,v.retired_at FROM ${config.versionTable} v JOIN ${config.identityTable} i ON i.id=v.${config.foreignKey} WHERE i.slug=? AND v.status='production'`,
       )
       .get(slug) as Row | null
     if (!found) throw new Error(`${config.noun} "${slug}" has no production version; promote one`)
@@ -93,9 +100,9 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
   ) =>
     d
       .query(
-        `INSERT INTO ${config.eventTable} (${config.foreignKey},version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`,
+        `INSERT INTO ${config.eventTable} (record_id,${config.foreignKey},version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)`,
       )
-      .run(id, n, kind, by, reason, sessionId(), at)
+      .run(newRecordId(), id, n, kind, by, reason, sessionId(), at)
 
   const write = (
     slug: string,
@@ -114,10 +121,7 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
       let identity = d.query(`SELECT id FROM ${config.identityTable} WHERE slug=?`).get(slug) as {
         id: number
       } | null
-      if (!identity)
-        identity = d
-          .query(`INSERT INTO ${config.identityTable} (slug,created_at) VALUES (?,?) RETURNING id`)
-          .get(slug, at) as { id: number }
+      if (!identity) identity = insertOwner(d, config.identityTable, slug, at)
       const max = d
         .query(
           `SELECT COALESCE(MAX(n),0) n FROM ${config.versionTable} WHERE ${config.foreignKey}=?`,
@@ -125,8 +129,8 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
         .get(identity.id) as { n: number }
       const n = max.n + 1
       d.query(
-        `INSERT INTO ${config.versionTable} (${config.foreignKey},n,status,definition,author,reason,created_at) VALUES (?,?,'draft',?,?,?,?)`,
-      ).run(identity.id, n, JSON.stringify(definition), by, why, at)
+        `INSERT INTO ${config.versionTable} (record_id,${config.foreignKey},n,status,definition,author,reason,created_at) VALUES (?,?,?,'draft',?,?,?,?)`,
+      ).run(newRecordId(), identity.id, n, JSON.stringify(definition), by, why, at)
       event(d, identity.id, n, kind, by, why, at)
       return show(slug, n, d)
     }, d)

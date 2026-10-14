@@ -40,6 +40,15 @@ describe('versioned lifecycle retirement', () => {
       promoted_at: null,
       retired_at: expect.any(String),
     })
+    for (const row of d
+      .query<{ record_id: string }, []>(
+        "SELECT record_id FROM workflow WHERE slug='withdraw-draft' UNION ALL SELECT record_id FROM workflow_version WHERE workflow_id=(SELECT id FROM workflow WHERE slug='withdraw-draft') UNION ALL SELECT record_id FROM workflow_event WHERE workflow_id=(SELECT id FROM workflow WHERE slug='withdraw-draft')",
+      )
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
     expect(workflowVersions('withdraw-draft', d)[0]!.events).toContainEqual(
       expect.objectContaining({ event: 'retire', reason: 'superseded', author: 'architect' }),
     )

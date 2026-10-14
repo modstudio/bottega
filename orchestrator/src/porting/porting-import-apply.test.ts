@@ -12,7 +12,10 @@ import {
 } from './porting.ts'
 import { applyImport, ImportRefusalError, planImport, sourceCoverage } from './porting-import.ts'
 
-const listPairs = () => db().query('SELECT * FROM port_pair ORDER BY id').all() as PortPair[]
+const listPairs = () =>
+  db()
+    .query('SELECT id,source_project_id,target_project_id,created_at FROM port_pair ORDER BY id')
+    .all() as PortPair[]
 
 describe('port importer', () => {
   const registered = () => {

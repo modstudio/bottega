@@ -121,6 +121,15 @@ describe('lens catalogue', () => {
       reason: 'custom section fixture',
     })
     expect(resolveLens('custom-sections', null)!.body).toBe('LOOKS FOR\nBoundary leaks.')
+    for (const row of db()
+      .query<{ record_id: string }, []>(
+        "SELECT record_id FROM lens WHERE id='custom-sections' UNION ALL SELECT record_id FROM lens_profile WHERE lens_id='custom-sections'",
+      )
+      .all()) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
   })
 
   test('profile validation refuses undeclared slots and project selection binds one shared row', () => {

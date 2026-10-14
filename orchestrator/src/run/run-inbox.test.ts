@@ -189,10 +189,10 @@ test('inbox lists workflow questions with their identity and answer command', as
   db()
     .query(
       `INSERT INTO workflow_cursor
-      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','fixture-workflow','default','DEV-1069','','orch-test-session',1,1,
+     VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-1069','','orch-test-session',1,1,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
              '2026-10-01','2026-10-01','floors')`,
     )
@@ -229,10 +229,10 @@ test('inbox gives no answer command for a foreign-owned workflow question', asyn
   db()
     .query(
       `INSERT INTO workflow_cursor
-      (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
        workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES ('fixture','fixture-workflow','default','DEV-1069','','foreign-session',1,1,
+     VALUES ('${newRecordId()}','fixture','fixture-workflow','default','DEV-1069','','foreign-session',1,1,
              '{"key":"DEV-1069"}',2,'fix','awaiting-ruling','[]','Which fix?',4,
              '2026-10-01','2026-10-01','floors')`,
     )

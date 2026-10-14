@@ -1,3 +1,4 @@
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 
 export type PortPair = {
@@ -47,7 +48,9 @@ export type DoctrineRule = {
 
 export function pairByProjects(sourceProjectId: number, targetProjectId: number): PortPair | null {
   return db()
-    .query('SELECT * FROM port_pair WHERE source_project_id=? AND target_project_id=?')
+    .query(
+      'SELECT id,source_project_id,target_project_id,created_at FROM port_pair WHERE source_project_id=? AND target_project_id=?',
+    )
     .get(sourceProjectId, targetProjectId) as PortPair | null
 }
 
@@ -56,24 +59,24 @@ export function addPair(sourceProjectId: number, targetProjectId: number, at = n
   writeTransaction(() => {
     db()
       .query(
-        `INSERT INTO port_pair (source_project_id, target_project_id, created_at)
-       VALUES (?,?,?) ON CONFLICT(source_project_id, target_project_id) DO NOTHING`,
+        `INSERT INTO port_pair (record_id, source_project_id, target_project_id, created_at)
+       VALUES (?,?,?,?) ON CONFLICT(source_project_id, target_project_id) DO NOTHING`,
       )
-      .run(sourceProjectId, targetProjectId, at)
+      .run(newRecordId(), sourceProjectId, targetProjectId, at)
     const pair = pairByProjects(sourceProjectId, targetProjectId)!
     db()
       .query(
-        `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,NULL,NULL)
+        `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,NULL,NULL)
        ON CONFLICT(pair_id) DO NOTHING`,
       )
-      .run(pair.id)
+      .run(newRecordId(), pair.id)
   })
   return pairByProjects(sourceProjectId, targetProjectId)!
 }
 
 export function baselineForPair(pairId: number): PortBaseline | null {
   return db()
-    .query('SELECT * FROM port_baseline WHERE pair_id=?')
+    .query('SELECT pair_id,source_commit,scanned_at FROM port_baseline WHERE pair_id=?')
     .get(pairId) as PortBaseline | null
 }
 
@@ -85,16 +88,20 @@ export function setBaseline(
   writableDb()
   db()
     .query(
-      `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,?,?)
+      `INSERT INTO port_baseline (record_id, pair_id, source_commit, scanned_at) VALUES (?,?,?,?)
      ON CONFLICT(pair_id) DO UPDATE SET
        source_commit=excluded.source_commit, scanned_at=excluded.scanned_at`,
     )
-    .run(pairId, sourceCommit, scannedAt)
+    .run(newRecordId(), pairId, sourceCommit, scannedAt)
   return baselineForPair(pairId)!
 }
 
 export function listSkips(pairId: number): PortSkip[] {
-  return db().query('SELECT * FROM port_skip WHERE pair_id=? ORDER BY id').all(pairId) as PortSkip[]
+  return db()
+    .query(
+      'SELECT id,pair_id,candidate,reason,skipped_at FROM port_skip WHERE pair_id=? ORDER BY id',
+    )
+    .all(pairId) as PortSkip[]
 }
 
 export function addSkip(
@@ -107,12 +114,14 @@ export function addSkip(
   const id = (
     db()
       .query(
-        `INSERT INTO port_skip (pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?)
+        `INSERT INTO port_skip (record_id, pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?,?)
      RETURNING id`,
       )
-      .get(pairId, candidate, reason, skippedAt) as { id: number }
+      .get(newRecordId(), pairId, candidate, reason, skippedAt) as { id: number }
   ).id
-  return db().query('SELECT * FROM port_skip WHERE id=?').get(id) as PortSkip
+  return db()
+    .query('SELECT id,pair_id,candidate,reason,skipped_at FROM port_skip WHERE id=?')
+    .get(id) as PortSkip
 }
 
 function parseStringArray(value: string): string[] {
@@ -125,7 +134,9 @@ function parseStringArray(value: string): string[] {
 
 export function ledgerRef(targetProjectId: number, taskKey: string): LedgerRef | null {
   const ref = db()
-    .query('SELECT * FROM port_ref WHERE target_project_id=? AND task_key=?')
+    .query(
+      'SELECT task_key,target_project_id,note,created_at,resolved_at FROM port_ref WHERE target_project_id=? AND task_key=?',
+    )
     .get(targetProjectId, taskKey) as Omit<LedgerRef, 'sources'> | null
   if (!ref) return null
   const rows = db()
@@ -176,19 +187,26 @@ export function setLedgerRef(input: {
   writeTransaction(() => {
     db()
       .query(
-        `INSERT INTO port_ref (task_key, target_project_id, note, created_at) VALUES (?,?,?,?)
+        `INSERT INTO port_ref (record_id, task_key, target_project_id, note, created_at) VALUES (?,?,?,?,?)
        ON CONFLICT(target_project_id,task_key) DO UPDATE SET note=excluded.note`,
       )
-      .run(input.taskKey, input.targetProjectId, input.note, input.createdAt ?? nowIso())
+      .run(
+        newRecordId(),
+        input.taskKey,
+        input.targetProjectId,
+        input.note,
+        input.createdAt ?? nowIso(),
+      )
     db()
       .query('DELETE FROM port_ref_source WHERE target_project_id=? AND task_key=?')
       .run(input.targetProjectId, input.taskKey)
     const insert = db().query(
       `INSERT INTO port_ref_source
-         (task_key, target_project_id, source_project_id, commits, paths, note) VALUES (?,?,?,?,?,?)`,
+         (record_id, task_key, target_project_id, source_project_id, commits, paths, note) VALUES (?,?,?,?,?,?,?)`,
     )
     for (const source of input.sources) {
       insert.run(
+        newRecordId(),
         input.taskKey,
         input.targetProjectId,
         source.source_project_id,
@@ -229,7 +247,7 @@ export function resolveLedgerRef(
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
   return db()
     .query(
-      `SELECT * FROM port_doctrine${includeRetired ? '' : ' WHERE retired_at IS NULL'} ORDER BY number`,
+      `SELECT number,title,body,created_at,retired_at FROM port_doctrine${includeRetired ? '' : ' WHERE retired_at IS NULL'} ORDER BY number`,
     )
     .all() as DoctrineRule[]
 }
@@ -242,9 +260,13 @@ export function addDoctrineRule(
 ): DoctrineRule {
   writableDb()
   db()
-    .query(`INSERT INTO port_doctrine (number, title, body, created_at) VALUES (?,?,?,?)`)
-    .run(number, title, body, createdAt)
-  return db().query('SELECT * FROM port_doctrine WHERE number=?').get(number) as DoctrineRule
+    .query(
+      `INSERT INTO port_doctrine (record_id, number, title, body, created_at) VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), number, title, body, createdAt)
+  return db()
+    .query('SELECT number,title,body,created_at,retired_at FROM port_doctrine WHERE number=?')
+    .get(number) as DoctrineRule
 }
 
 export function retireDoctrineRule(number: number, retiredAt = nowIso()): boolean {

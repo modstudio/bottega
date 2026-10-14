@@ -92,10 +92,10 @@ describe('file ruling', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
            workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
+         VALUES ('${newRecordId()}','workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
                  'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
       )
       .get() as { id: number }
@@ -140,10 +140,10 @@ describe('file ruling', () => {
     const cursor = db()
       .query(
         `INSERT INTO workflow_cursor
-          (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+          (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
            workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
            total_steps,created_at,updated_at)
-         VALUES ('workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
+         VALUES ('${newRecordId()}','workflow-fixture','fixture-workflow','default','DEV-964','','owner-session',1,1,'{}',0,
                  'build','running','[]',NULL,1,'2026-09-20','2026-09-21') RETURNING id`,
       )
       .get() as { id: number }

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 
@@ -150,11 +151,16 @@ export function listLenses(database: Database = db()): NonNullable<ReturnType<ty
     ({ id }) => showLens(id, database)!,
   )
 }
+const LENS_COLUMNS = 'id,title,question,excludes,slots,version,enabled,requires_execution' as const
+const PROFILE_COLUMNS = 'id,lens_id,axis,name,version,body,enabled' as const
+
 export function showLens(id: string, database: Database = db()) {
-  const row = database.query('SELECT * FROM lens WHERE id=?').get(id) as CoreRow | null
+  const row = database
+    .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`)
+    .get(id) as CoreRow | null
   if (!row) return null
   const profiles = database
-    .query('SELECT * FROM lens_profile WHERE lens_id=? ORDER BY axis,name')
+    .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? ORDER BY axis,name`)
     .all(id) as ProfileRow[]
   return {
     ...row,
@@ -183,11 +189,14 @@ export function setLens(input: {
   slotNames(input.slots)
   const d = db()
   writeTransaction(() => {
-    const prior = d.query('SELECT * FROM lens WHERE id=?').get(input.id) as CoreRow | null
+    const prior = d
+      .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`)
+      .get(input.id) as CoreRow | null
     if (!prior)
       d.query(
-        'INSERT INTO lens (id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,1,?,?)',
+        'INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution) VALUES (?,?,?,?,?,?,1,?,?)',
       ).run(
+        newRecordId(),
         input.id,
         input.title,
         input.question,
@@ -198,8 +207,16 @@ export function setLens(input: {
       )
     else {
       d.query(
-        'INSERT INTO lens_revision (lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?)',
-      ).run(input.id, prior.version, coreSnapshot(prior), input.reason, sessionId(), nowIso())
+        'INSERT INTO lens_revision (record_id,lens_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+      ).run(
+        newRecordId(),
+        input.id,
+        prior.version,
+        coreSnapshot(prior),
+        input.reason,
+        sessionId(),
+        nowIso(),
+      )
       d.query(
         'UPDATE lens SET title=?,question=?,excludes=?,slots=?,version=version+1,enabled=?,requires_execution=? WHERE id=?',
       ).run(
@@ -218,14 +235,14 @@ export function setLens(input: {
 export function listProfiles(lensId?: string, database: Database = db()) {
   const rows = database
     .query(
-      `SELECT * FROM lens_profile ${lensId ? 'WHERE lens_id=?' : ''} ORDER BY lens_id,axis,name`,
+      `SELECT ${PROFILE_COLUMNS} FROM lens_profile ${lensId ? 'WHERE lens_id=?' : ''} ORDER BY lens_id,axis,name`,
     )
     .all(...(lensId ? [lensId] : [])) as ProfileRow[]
   return rows.map((row) => ({ ...row, enabled: !!row.enabled, body: JSON.parse(row.body) }))
 }
 export function showProfile(lensId: string, axis: string, name: string, database: Database = db()) {
   const row = database
-    .query('SELECT * FROM lens_profile WHERE lens_id=? AND axis=? AND name=?')
+    .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=?`)
     .get(lensId, axisValue(axis), name) as ProfileRow | null
   return row ? { ...row, enabled: !!row.enabled, body: JSON.parse(row.body) } : null
 }
@@ -242,21 +259,31 @@ export function setProfile(input: {
   nonempty(input.reason, 'reason')
   const axis = axisValue(input.axis)
   const d = db()
-  const core = d.query('SELECT * FROM lens WHERE id=?').get(input.lensId) as CoreRow | null
+  const core = d
+    .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`)
+    .get(input.lensId) as CoreRow | null
   if (!core) throw new Error(`no lens "${input.lensId}"`)
   profileValues(input.body, core.slots)
   writeTransaction(() => {
     const prior = d
-      .query('SELECT * FROM lens_profile WHERE lens_id=? AND axis=? AND name=?')
+      .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=?`)
       .get(input.lensId, axis, input.name) as ProfileRow | null
     if (!prior)
       d.query(
-        'INSERT INTO lens_profile (lens_id,axis,name,version,body,enabled) VALUES (?,?,?,1,?,?)',
-      ).run(input.lensId, axis, input.name, input.body, input.enabled ? 1 : 0)
+        'INSERT INTO lens_profile (record_id,lens_id,axis,name,version,body,enabled) VALUES (?,?,?,?,1,?,?)',
+      ).run(newRecordId(), input.lensId, axis, input.name, input.body, input.enabled ? 1 : 0)
     else {
       d.query(
-        'INSERT INTO lens_profile_revision (profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?)',
-      ).run(prior.id, prior.version, profileSnapshot(prior), input.reason, sessionId(), nowIso())
+        'INSERT INTO lens_profile_revision (record_id,profile_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?)',
+      ).run(
+        newRecordId(),
+        prior.id,
+        prior.version,
+        profileSnapshot(prior),
+        input.reason,
+        sessionId(),
+        nowIso(),
+      )
       d.query('UPDATE lens_profile SET version=version+1,body=?,enabled=? WHERE id=?').run(
         input.body,
         input.enabled ? 1 : 0,
@@ -306,20 +333,22 @@ export function selectProjectProfile(input: {
   let cores: CoreRow[]
   if (input.lensId) {
     const core = d
-      .query('SELECT * FROM lens WHERE id=? AND enabled=1')
+      .query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=? AND enabled=1`)
       .get(input.lensId) as CoreRow | null
     if (!core) throw new Error(`no enabled lens "${input.lensId}"`)
     cores = [core]
   } else
     cores = d
       .query(
-        `SELECT DISTINCT l.* FROM lens l JOIN lens_profile p ON p.lens_id=l.id WHERE l.enabled=1 AND p.axis=? ORDER BY l.id`,
+        `SELECT DISTINCT l.id,l.title,l.question,l.excludes,l.slots,l.version,l.enabled,l.requires_execution FROM lens l JOIN lens_profile p ON p.lens_id=l.id WHERE l.enabled=1 AND p.axis=? ORDER BY l.id`,
       )
       .all(axis) as CoreRow[]
   const missing: string[] = []
   for (const core of cores) {
     const p = d
-      .query('SELECT * FROM lens_profile WHERE lens_id=? AND axis=? AND name=? AND enabled=1')
+      .query(
+        `SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=? AND enabled=1`,
+      )
       .get(core.id, axis, input.name) as ProfileRow | null
     if (!p) {
       missing.push(core.id)
@@ -346,8 +375,9 @@ export function selectProjectProfile(input: {
       profile_name: string
       selected_version: number | null
     } | null
-    d.query(`INSERT INTO project_lens_profile (project_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?)
+    d.query(`INSERT INTO project_lens_profile (record_id,project_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?,?)
       ON CONFLICT DO UPDATE SET profile_name=excluded.profile_name,selected_version=excluded.selected_version`).run(
+      newRecordId(),
       project.id,
       input.lensId ?? null,
       axis,
@@ -358,7 +388,8 @@ export function selectProjectProfile(input: {
       .query('SELECT id FROM project_lens_profile WHERE project_id=? AND lens_id IS ? AND axis=?')
       .get(project.id, input.lensId ?? null, axis) as { id: number }
     d.query(`INSERT INTO project_lens_profile_revision
-      (selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?)`).run(
+      (record_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`).run(
+      newRecordId(),
       selection.id,
       prior?.profile_name ?? null,
       prior?.selected_version ?? null,
@@ -381,7 +412,7 @@ const disabledLensRefusal = (id: string, what: string) =>
   `${what}\ninvariant: A disabled catalogue lens or selected profile never dispatches.\ncleared by: enable ${id} or select an enabled profile`
 
 export function resolveLens(id: string, projectName: string | null, d: Database = db()) {
-  const core = d.query('SELECT * FROM lens WHERE id=?').get(id) as CoreRow | null
+  const core = d.query(`SELECT ${LENS_COLUMNS} FROM lens WHERE id=?`).get(id) as CoreRow | null
   if (!core) return null
   if (!core.enabled) throw new Error(disabledLensRefusal(id, `lens "${id}" is disabled`))
   const project = projectName ? projectByName(projectName, d) : null
@@ -423,7 +454,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
       stack: project?.stack ?? null,
     })
     const profile = d
-      .query('SELECT * FROM lens_profile WHERE lens_id=? AND axis=? AND name=?')
+      .query(`SELECT ${PROFILE_COLUMNS} FROM lens_profile WHERE lens_id=? AND axis=? AND name=?`)
       .get(id, axis, choice.name) as ProfileRow | null
     if (!profile)
       throw new Error(

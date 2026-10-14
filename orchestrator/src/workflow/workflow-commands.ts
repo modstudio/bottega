@@ -27,10 +27,10 @@ import {
   getWorkflowStepWithCursor,
   listWorkflowCursors,
   nextWorkflowStep,
-  renderWorkflowCursorLine,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import {
   resolveWorkflowCursorMode,
   selectWorkflowCursor,

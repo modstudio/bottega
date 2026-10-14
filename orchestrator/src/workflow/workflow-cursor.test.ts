@@ -354,6 +354,9 @@ describe('workflow cursor adapter', () => {
   test('compose creates once and recompose reports an advanced cursor', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    expect(
+      d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
@@ -801,9 +804,9 @@ describe('workflow cursor adapter', () => {
     }
     d.query(
       `INSERT INTO workflow_obligation
-        (cursor_id,step_ordinal,step_slug,floor,floor_deferrable,reason,session_id,created_at)
-       VALUES (?,1,'rebase','command-exit',1,'merge later','session-one','2026-09-01')`,
-    ).run(cursor.id)
+        (record_id,cursor_id,step_ordinal,step_slug,floor,floor_deferrable,reason,session_id,created_at)
+       VALUES (?,?,1,'rebase','command-exit',1,'merge later','session-one','2026-09-01')`,
+    ).run(newRecordId(), cursor.id)
     abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     expect(
       d

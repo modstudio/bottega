@@ -30,3 +30,23 @@ export const shellWord = (value: string) =>
 
 export const cursorName = (slug: string, mode: string, key: string, capitalized = false) =>
   `${capitalized ? 'Workflow' : 'workflow'} ${slug}${key ? ` for ${key}` : ` (${mode})`}`
+
+/** One listed cursor as a single line of command output. */
+export function renderWorkflowCursorLine(row: {
+  id: number
+  workflow_slug: string
+  mode_slug: string
+  workflow_key: string | null
+  project: string | null
+  ordinal: number
+  total_steps: number
+  step_slug: string
+  state: string
+  next_slug: string
+  question?: string | null
+  obligations?: string
+}): string {
+  const question = row.question ? ` question: ${row.question}` : ''
+  const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
+  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
+}

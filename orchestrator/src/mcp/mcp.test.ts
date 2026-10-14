@@ -24,10 +24,10 @@ describe('orch MCP', () => {
     db()
       .query(
         `INSERT INTO workflow_cursor
-        (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES ('fixture','fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
+       VALUES ('${newRecordId()}','fixture','fix-defect','default','DEV-1069','',NULL,1,1,'{"key":"DEV-1069"}',
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run()
@@ -302,16 +302,22 @@ describe('orch MCP', () => {
     const args = (key: string) => ({ key, branch: `${key}-work`, worktree: `/tmp/${key}` })
     const insert = db().prepare(
       `INSERT INTO workflow_cursor
-        (project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+        (record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
          workflow_version,catalogue_version,args,ordinal,step_slug,state,closed,question,
          total_steps,created_at,updated_at,enforcement)
-       VALUES (?,'fix-defect','default',?,'',NULL,1,1,?,0,'diagnose','running','[]',NULL,
+       VALUES (?,?,'fix-defect','default',?,'',NULL,1,1,?,0,'diagnose','running','[]',NULL,
                3,'2026-10-01','2026-10-01','note-only') RETURNING id`,
     )
-    const first = insert.get(project, 'DEV-1082-MCP-A', JSON.stringify(args('DEV-1082-MCP-A'))) as {
+    const first = insert.get(
+      newRecordId(),
+      project,
+      'DEV-1082-MCP-A',
+      JSON.stringify(args('DEV-1082-MCP-A')),
+    ) as {
       id: number
     }
     const second = insert.get(
+      newRecordId(),
       project,
       'DEV-1082-MCP-B',
       JSON.stringify(args('DEV-1082-MCP-B')),
@@ -323,8 +329,8 @@ describe('orch MCP', () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    const call = async (name: string, arguments_: Record<string, unknown>) => {
-      const result = await client.callTool({ name, arguments: arguments_ })
+    const call = async (name: string, toolArgs: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
         throw new Error(
           `${name}: ${(result.content as { text: string }[])[0]?.text ?? 'unknown error'}`,
