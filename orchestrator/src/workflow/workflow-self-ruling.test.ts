@@ -20,8 +20,15 @@ test('only auto and review autonomy permit an agent self-ruling', () => {
 })
 
 test('an operator-ruling floor refuses an agent self-ruling', () => {
-  expect(selfRulingRefusal('auto', [ruling(true)], 'specification line 4')).toContain(
-    'requires an operator ruling',
+  expect(selfRulingRefusal('auto', [ruling(true)], 'specification line 4')).toBe(
+    "self-ruling is refused because this step's floor requires an operator ruling; use `orch workflow await` and `orch workflow rule` instead, with `--from-operator` where the operator rules",
+  )
+})
+
+test('an operator-ruling floor with another alternative names that floor and omits a self-ruling close', () => {
+  const artifact: Floor = { ...ruling(), kind: 'recorded-artifact' }
+  expect(selfRulingRefusal('auto', [artifact, ruling(true)], 'all criteria met')).toBe(
+    "self-ruling is refused because this step's ruling floor requires an operator ruling; close with no ruling using --artifact <doc id | task:<KEY> | task:<KEY>#comment:<id> | run id | probe:<id> | exec:<id> | attached-text:<id>>; an operator ruling is needed only when that other evidence does not close the step — use `orch workflow await` and `orch workflow rule` instead, with `--from-operator` where the operator rules",
   )
 })
 

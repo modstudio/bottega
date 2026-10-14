@@ -184,4 +184,34 @@ describe('workflow rendering', () => {
       "Next: when this step's floor is met, close it with `next_workflow_step` (MCP) or `orch workflow next`, giving a one-line note of how the floor was met; that serves the following step from the workflow's step list.",
     )
   })
+
+  test('an operator-only ruling floor does not tell the agent to rule itself or pass self-ruling', () => {
+    const rendered = renderWorkflowStep({
+      slug: 'acceptance',
+      title: "Check the task's acceptance criteria",
+      body: 'Write a table of every criterion.',
+      floor: ['recorded-artifact', 'ruling'],
+      job: null,
+      autonomy: 'auto',
+      needs: [],
+      operatorRuling: true,
+      resolvedAutonomy: { value: 'auto', scope: 'built-in' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: { n: 11, slug: 'open-pr', title: 'Open the pull request' },
+    })
+    expect(rendered).toContain(
+      "Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with `orch workflow await` when that is the evidence you use.",
+    )
+    expect(rendered).toContain(
+      'Evidence for ruling: call `await_workflow_ruling` (or `orch workflow await`), answer it with `rule_workflow`, then pass `--ruling <the returned question id>`.',
+    )
+    expect(rendered).not.toContain('rule yourself')
+    expect(rendered).not.toContain('self_ruling')
+    expect(rendered).not.toContain('--self-ruling')
+  })
 })

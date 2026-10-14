@@ -3,7 +3,7 @@ import {
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
-import { type FloorKind, floorGuidance } from './workflow-floor.ts'
+import { evidenceGuidance, type FloorKind } from './workflow-floor.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
@@ -125,14 +125,20 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
   ].join('\n')
 }
 
-function autonomyInstruction(
-  resolved: WorkflowStep['resolvedAutonomy']['value'],
-  declared: WorkflowStep['autonomy'],
-  maySelfRule: boolean,
-): string {
+function operatorRulingAutonomy(hasOtherFloor: boolean): string {
+  return hasOtherFloor
+    ? "this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with `orch workflow await` when that is the evidence you use."
+    : 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
+}
+
+function autonomyInstruction(step: WorkflowStep): string {
+  const resolved = step.resolvedAutonomy.value
+  const maySelfRule = step.floor.includes('ruling') && !step.operatorRuling
+  if (step.operatorRuling)
+    return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'
-  if (resolved === 'auto' && declared === 'ask')
+  if (resolved === 'auto' && step.autonomy === 'ask')
     return maySelfRule
       ? 'rule this step yourself and record it while closing with `next_workflow_step` inputs `self_ruling` and `self_ruling_basis` or `orch workflow next --self-ruling --basis`; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
       : 'rule this step yourself and record the ruling; a decision that changes what the user sees, or product direction, still goes to the operator (`orch workflow await`).'
@@ -146,11 +152,7 @@ function autonomyInstruction(
 }
 
 export function renderWorkflowStep(step: WorkflowStep): string {
-  const autonomy = autonomyInstruction(
-    step.resolvedAutonomy.value,
-    step.autonomy,
-    step.floor.includes('ruling') && !step.operatorRuling,
-  )
+  const autonomy = autonomyInstruction(step)
   const reference = step.cursor ? workflowCursorReference(step.cursor) : null
   const cursor = reference ? ` with ${reference.mcp}` : ''
   const cliCursor = reference?.cli ?? ''
@@ -164,7 +166,8 @@ export function renderWorkflowStep(step: WorkflowStep): string {
           ? `${close} this is the last step of ${step.workflow} (${step.mode}), and closing it finishes the workflow.`
           : `${close} this is the last step of ${step.workflow} in every mode that contains it, and closing it finishes the workflow.`
   const guidance = step.floor.map(
-    (kind) => `Evidence for ${kind}: ${floorGuidance[kind as FloorKind]}.`,
+    (kind) =>
+      `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
   return `${notice}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${pointer}`
