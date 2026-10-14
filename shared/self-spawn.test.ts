@@ -2,12 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from './brand.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
-import {
-  BOTTEGA_ENTRY_PROTOCOL,
-  type BottegaEntry,
-  bottegaEntryArgv,
-  INTERNAL_SELF_SPAWN_MARKER,
-} from './self-spawn.ts'
+import { BOTTEGA_ENTRY_PROTOCOL, type BottegaEntry, bottegaEntryArgv } from './self-spawn.ts'
 
 const entries: BottegaEntry[] = [
   'orch',
@@ -21,8 +16,8 @@ const entries: BottegaEntry[] = [
 afterEach(() => registerEmbeddedAssets(null))
 
 test('source entries preserve their current argv prefixes', () => {
-  expect(bottegaEntryArgv('orch')).toEqual([assetPath('bin', 'orch'), INTERNAL_SELF_SPAWN_MARKER])
-  expect(bottegaEntryArgv('hub')).toEqual([assetPath('bin', 'hub'), INTERNAL_SELF_SPAWN_MARKER])
+  expect(bottegaEntryArgv('orch')).toEqual([assetPath('bin', 'orch')])
+  expect(bottegaEntryArgv('hub')).toEqual([assetPath('bin', 'hub')])
   expect(bottegaEntryArgv('run-exec')).toEqual([
     process.env.ORCH_EXEC_PATH ?? process.execPath,
     '--no-env-file',

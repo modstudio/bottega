@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { BOTTEGA_ENTRY_PROTOCOL, INTERNAL_SELF_SPAWN_MARKER } from '../shared/self-spawn.ts'
-import { recordLegacyCall, reportLegacyCalls } from './legacy-calls.ts'
+import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
+import { INTERNAL_CALL_ENV, recordLegacyCall, reportLegacyCalls } from './legacy-calls.ts'
 import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
@@ -46,10 +46,10 @@ async function legacy(
   argv: string[],
   entries: BinaryEntries,
 ): Promise<number> {
-  const internal = argv[0] === INTERNAL_SELF_SPAWN_MARKER
-  const forwarded = internal ? argv.slice(1) : argv
-  recordLegacyCall(oldName, forwarded, internal ? 'internal' : 'external')
-  return entries[oldName](forwarded)
+  const internal = process.env[INTERNAL_CALL_ENV] === '1'
+  recordLegacyCall(oldName, argv, internal ? 'internal' : 'external')
+  process.env[INTERNAL_CALL_ENV] = '1'
+  return entries[oldName](argv)
 }
 
 async function composite(
@@ -75,15 +75,11 @@ export async function dispatchBinary(
 ): Promise<number> {
   const executable = basename(invokedAs)
   if (executable === 'orch' || executable === 'hub') return legacy(executable, argv, entries)
-  const internal = argv[0] === INTERNAL_SELF_SPAWN_MARKER
-  const input = internal ? argv.slice(1) : argv
+  const input = argv
   if (input[0] === 'orch' || input[0] === 'hub') {
-    return legacy(
-      input[0],
-      internal ? [INTERNAL_SELF_SPAWN_MARKER, ...input.slice(1)] : input.slice(1),
-      entries,
-    )
+    return legacy(input[0], input.slice(1), entries)
   }
+  process.env[INTERNAL_CALL_ENV] = '1'
   if (input.length === 1 && input[0] === '--version') {
     console.log(version())
     return 0

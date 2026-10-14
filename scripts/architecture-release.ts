@@ -78,4 +78,13 @@ export const releaseModules = [
     file: 'cli/legacy-calls.ts',
     allowed: ['node:fs', 'node:path', 'shared/brand.ts', 'shared/state-directory.ts'],
   },
+  {
+    file: 'cli/routes.test.ts',
+    allowed: [
+      'commander',
+      'hub/src/cli-program.ts',
+      'orchestrator/src/cli/program.ts',
+      'cli/routes.ts',
+    ],
+  },
 ]

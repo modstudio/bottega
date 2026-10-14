@@ -35,6 +35,9 @@
     "cli": {
       "name": "@bottega/cli",
       "version": "0.1.0",
+      "devDependencies": {
+        "commander": "15.0.0",
+      },
     },
     "hub": {
       "name": "@bottega/hub",

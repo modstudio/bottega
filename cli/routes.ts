@@ -1,4 +1,4 @@
-export type RouteOwner = 'orch' | 'hub' | 'local' | 'composite'
+type RouteOwner = 'orch' | 'hub' | 'local' | 'composite'
 
 export type CommandRoute = {
   command: readonly string[]

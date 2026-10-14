@@ -4,6 +4,7 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import { cliConcernEntries, concernIsolationRule } from './architecture-cli.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
@@ -68,15 +69,7 @@ const concerns: ConcernManifest = {
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
     },
-    ...[
-      'hub/src/cli.ts',
-      'orchestrator/src/ask/ask-proxy.ts',
-      'orchestrator/src/check/check-attribution.ts',
-      'orchestrator/src/check/check-strict-schema.ts',
-      'orchestrator/src/cli/orch.ts',
-      'orchestrator/src/run/exec.ts',
-      'retrieval/src/search-cli.ts',
-    ].map((to) => ({
+    ...cliConcernEntries.map((to) => ({
       from: 'cli',
       to,
       dependencyTypes: ['local'],
@@ -823,15 +816,7 @@ export function architectureRules() {
   const exception = concerns.exceptions[0]!
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
-    {
-      name: 'concern-isolation',
-      severity: 'error',
-      from: { path: `^(${concerns.roots.join('|')})/` },
-      to: {
-        path: `^(?!$1/|shared/)(${concerns.roots.join('|')})/`,
-        pathNot: concerns.exceptions.slice(1).map((entry) => exactArchitecturePath(entry.to)),
-      },
-    },
+    concernIsolationRule(concerns.roots, concerns.exceptions, exactArchitecturePath),
     {
       name: 'shared-is-independent',
       severity: 'error',

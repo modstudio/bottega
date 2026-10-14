@@ -338,7 +338,7 @@ if (
     './scripts/build-release-artifacts.test.ts',
     './scripts/publish-release.test.ts',
     './cli/dispatch.test.ts',
-    './scripts/cli-routes.test.ts',
+    './cli/routes.test.ts',
     './cli/legacy-calls.test.ts',
     './shared/self-spawn.test.ts',
     './scripts/quality/dead-code.test.ts',

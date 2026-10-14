@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { resolveStateRoot, type StateEnvironment } from '../shared/state-directory.ts'
 
+export const INTERNAL_CALL_ENV = `${PLATFORM_SLUG.toUpperCase()}_INTERNAL_CALL`
+
 type LegacyCall = {
   time: string
   oldName: 'orch' | 'hub'
