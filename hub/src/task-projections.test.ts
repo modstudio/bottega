@@ -217,7 +217,9 @@ test('local projection keeps one shared label separate by task record id', () =>
   ])
 })
 
-function boardRow(overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>): BoardSourceRow {
+function boardRow(
+  overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>,
+): BoardSourceRow {
   return {
     project: 'workshop',
     title: overrides.key,
