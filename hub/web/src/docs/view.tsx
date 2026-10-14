@@ -584,6 +584,7 @@ export function DocsView({
           error={error}
           bodyView={bodyView}
           viewedRevision={viewedRevision}
+          fieldSource={canManage && visible ? source : undefined}
           {...readingEdit}
         />
         {wide ? null : (

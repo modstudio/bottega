@@ -4,7 +4,7 @@ import {
   fieldChangeReason,
   fieldWriteInput,
   parentChoices,
-} from './manage-fields.ts'
+} from './doc-field-changes.ts'
 import type { DocsDoc, DocsTreeItem } from './types.ts'
 
 const doc: DocsDoc = {

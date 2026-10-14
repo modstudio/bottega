@@ -6,9 +6,10 @@ import { trpc } from '@/trpc/client'
 import { Tabs } from '@/ui/tabs/tabs'
 import { classes } from '@/ui/text/classes'
 import type { DocScope } from '../../../../shared/docs.ts'
+import { DocActions } from './doc-actions.tsx'
+import { EditableAbout } from './doc-field-controls.tsx'
 import { DOC_AUDIENCE_LABELS, DOC_FORM_LABELS } from './filters.ts'
 import type { DocHeading } from './headings.ts'
-import { DocManage } from './manage.tsx'
 import { savedVersionAuthor } from './reading.tsx'
 import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
 import { useHeldPanel } from './use-held-panel.ts'
@@ -130,6 +131,7 @@ function DocHistory({
 function Details({
   doc,
   signedIn,
+  canManage,
   showHistory,
   source,
   audience,
@@ -138,6 +140,7 @@ function Details({
 }: {
   doc: DocsDoc | null
   signedIn: boolean
+  canManage: boolean
   showHistory: boolean
   source: DocsSource
   audience: DocsAudience | null
@@ -149,32 +152,36 @@ function Details({
     <>
       <section>
         <span className={eyebrow}>About</span>
-        <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
-          <dt className="text-text-muted">Audience</dt>
-          <dd className="m-0 text-text-secondary">
-            {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
-          </dd>
-          {signedIn && doc.form ? (
-            <>
-              <dt className="text-text-muted">Type</dt>
-              <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
-            </>
-          ) : null}
-          {signedIn && doc.articleSubject ? (
-            <>
-              <dt className="text-text-muted">Subject</dt>
-              <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
-            </>
-          ) : null}
-          {signedIn && doc.relatedSubjects?.length ? (
-            <>
-              <dt className="text-text-muted">Related</dt>
-              <dd className="m-0 text-text-secondary">
-                {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
-              </dd>
-            </>
-          ) : null}
-        </dl>
+        {canManage ? (
+          <EditableAbout key={doc.id} doc={doc} source={source} />
+        ) : (
+          <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+            <dt className="text-text-muted">Audience</dt>
+            <dd className="m-0 text-text-secondary">
+              {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}
+            </dd>
+            {signedIn && doc.form ? (
+              <>
+                <dt className="text-text-muted">Type</dt>
+                <dd className="m-0 text-text-secondary">{DOC_FORM_LABELS[doc.form]}</dd>
+              </>
+            ) : null}
+            {signedIn && doc.articleSubject ? (
+              <>
+                <dt className="text-text-muted">Subject</dt>
+                <dd className="m-0 text-text-secondary">{doc.articleSubject.name}</dd>
+              </>
+            ) : null}
+            {signedIn && doc.relatedSubjects?.length ? (
+              <>
+                <dt className="text-text-muted">Related</dt>
+                <dd className="m-0 text-text-secondary">
+                  {doc.relatedSubjects.map((subject) => subject.name).join(', ')}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        )}
       </section>
       {showHistory ? (
         <DocHistory
@@ -238,6 +245,7 @@ export function DocsFacts({
           <Details
             doc={doc}
             signedIn={signedIn}
+            canManage={canManage && Boolean(doc)}
             showHistory={signedIn && source !== 'public'}
             source={source}
             audience={audience}
@@ -245,7 +253,7 @@ export function DocsFacts({
             onRevision={onRevision}
           />
         )}
-        {canManage && doc ? <DocManage key={doc.id} doc={doc} source={source} /> : null}
+        {canManage && doc ? <DocActions key={doc.id} doc={doc} source={source} /> : null}
       </div>
     </aside>
   )
