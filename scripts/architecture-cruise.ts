@@ -13,7 +13,7 @@ export const ARCHITECTURE_CRUISE_ROOTS = [
   'ops',
   'local-stack',
   'retrieval',
-  'release',
+  'cli',
   'scripts',
 ] as const
 

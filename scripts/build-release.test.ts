@@ -2,11 +2,12 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { PLATFORM_NAME } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import { DIST_MANIFEST } from '../shared/install-root.ts'
 import {
   DECLARED_PAYLOAD_PATHS,
   distributionManifest,
+  PRODUCT_CLI_ENTRYPOINT,
   releaseVersion,
   run,
 } from './build-release.ts'
@@ -15,6 +16,7 @@ test('the payload has only the declared runtime paths', () => {
   expect(DECLARED_PAYLOAD_PATHS).toEqual([
     'orchestrator/src/cli/orch',
     'hub/src/cli.ts',
+    PRODUCT_CLI_ENTRYPOINT,
     'orchestrator/src/run/exec.ts',
     'orchestrator/src/database/store-write-lock.c',
     'retrieval/src/search-cli.ts',
@@ -36,6 +38,7 @@ test('the payload has only the declared runtime paths', () => {
     DIST_MANIFEST,
     'bin/orch',
     'bin/hub',
+    `bin/${PLATFORM_SLUG}`,
     'bin/retrieval-search',
   ])
 })

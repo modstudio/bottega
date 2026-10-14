@@ -1,9 +1,12 @@
+import { PLATFORM_SLUG } from './brand.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 
+export const INTERNAL_SELF_SPAWN_MARKER = `__${PLATFORM_SLUG}-internal-self-spawn`
+
 export const BOTTEGA_ENTRY_PROTOCOL = {
-  orch: { compiledArguments: ['orch'], usage: 'public' },
-  hub: { compiledArguments: ['hub'], usage: 'public' },
+  orch: { compiledArguments: [INTERNAL_SELF_SPAWN_MARKER, 'orch'], usage: 'public' },
+  hub: { compiledArguments: [INTERNAL_SELF_SPAWN_MARKER, 'hub'], usage: 'public' },
   'run-exec': { compiledArguments: ['__run-exec'], usage: 'hidden' },
   'ask-server': { compiledArguments: ['orch', 'ask-server'], usage: 'nested' },
   'ask-proxy': { compiledArguments: ['__ask-proxy'], usage: 'hidden' },
@@ -21,9 +24,9 @@ export type BottegaEntry = keyof typeof BOTTEGA_ENTRY_PROTOCOL
 function sourceArguments(entry: BottegaEntry): string[] {
   switch (entry) {
     case 'orch':
-      return [assetPath('bin', 'orch')]
+      return [assetPath('bin', 'orch'), INTERNAL_SELF_SPAWN_MARKER]
     case 'hub':
-      return [assetPath('bin', 'hub')]
+      return [assetPath('bin', 'hub'), INTERNAL_SELF_SPAWN_MARKER]
     case 'run-exec':
       return [
         process.env.ORCH_EXEC_PATH ?? process.execPath,

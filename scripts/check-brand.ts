@@ -44,6 +44,9 @@ const ALLOWED = new Set([
   ...workspaces.map((workspace) => `${workspace}/package.json`),
   // The checkout-free installer must name the private repository before it can load brand code.
   'install.sh',
+  'bin/bottega',
+  'bin/orch',
+  'bin/hub',
   // This policy test intentionally uses a project whose name happens to match the platform slug.
   'orchestrator/src/run/run-mcp-attachment.test.ts',
   // The architecture manifest must name the platform-derived release entry by its exact path.

@@ -68,6 +68,20 @@ const concerns: ConcernManifest = {
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
     },
+    ...[
+      'hub/src/cli.ts',
+      'orchestrator/src/ask/ask-proxy.ts',
+      'orchestrator/src/check/check-attribution.ts',
+      'orchestrator/src/check/check-strict-schema.ts',
+      'orchestrator/src/cli/orch.ts',
+      'orchestrator/src/run/exec.ts',
+      'retrieval/src/search-cli.ts',
+    ].map((to) => ({
+      from: 'cli',
+      to,
+      dependencyTypes: ['local'],
+      reason: 'The product command composition root imports one declared executable entry.',
+    })),
   ],
 }
 
@@ -813,7 +827,10 @@ export function architectureRules() {
       name: 'concern-isolation',
       severity: 'error',
       from: { path: `^(${concerns.roots.join('|')})/` },
-      to: { path: `^(?!$1/|shared/)(${concerns.roots.join('|')})/` },
+      to: {
+        path: `^(?!$1/|shared/)(${concerns.roots.join('|')})/`,
+        pathNot: concerns.exceptions.slice(1).map((entry) => exactArchitecturePath(entry.to)),
+      },
     },
     {
       name: 'shared-is-independent',

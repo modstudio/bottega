@@ -36,12 +36,12 @@
         "shared/record/schema-hub.ts!",
         "shared/record/schema-snapshots.ts!",
         ".githooks/*!",
-        "bin/{hub,orch,retrieval-search}!",
+        "bin/{bottega,hub,orch,retrieval-search}!",
         "hub/bin/*.sh!",
         "local-stack/bin/*.sh!",
         "ops/install.sh!",
         "ops/bin/*.sh!",
-        "release/bottega.ts!",
+        "cli/bottega.ts!",
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
@@ -66,6 +66,10 @@
       "drizzle": { "config": ["shared/record/drizzle.config.ts"] },
       // Invoked through node_modules/.bin/depcruise in scripts/architecture-cruise.ts.
       "ignoreDependencies": ["dependency-cruiser"]
+    },
+    "cli": {
+      "entry": ["bottega.ts!"],
+      "project": ["**/*.ts!", "!**/*.test.ts"]
     },
     "orchestrator": {
       "entry": [

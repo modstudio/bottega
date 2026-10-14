@@ -50,7 +50,7 @@ export const releaseModules = [
     ],
   },
   {
-    file: 'release/bottega.ts',
+    file: 'cli/bottega.ts',
     allowed: [
       'hub/src/cli.ts',
       'orchestrator/src/ask/ask-proxy.ts',
@@ -61,11 +61,21 @@ export const releaseModules = [
       'retrieval/src/search-cli.ts',
       'shared/brand.ts',
       'shared/install-root.ts',
-      'release/dispatch.ts',
+      'cli/dispatch.ts',
     ],
   },
   {
-    file: 'release/dispatch.ts',
-    allowed: ['node:path', 'shared/brand.ts', 'shared/self-spawn.ts'],
+    file: 'cli/dispatch.ts',
+    allowed: [
+      'node:path',
+      'shared/brand.ts',
+      'shared/self-spawn.ts',
+      'cli/legacy-calls.ts',
+      'cli/routes.ts',
+    ],
+  },
+  {
+    file: 'cli/legacy-calls.ts',
+    allowed: ['node:fs', 'node:path', 'shared/brand.ts', 'shared/state-directory.ts'],
   },
 ]
