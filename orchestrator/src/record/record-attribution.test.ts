@@ -68,6 +68,18 @@ describe('run attribution identity resolution', () => {
     expect(recordAttributionFailure()).toBeNull()
   })
 
+  test('records a stored-session read failure for record doctor', async () => {
+    installRecordSessionRunner(() => ({
+      exitCode: 1,
+      stdout: new Uint8Array(),
+      stderr: new TextEncoder().encode('keychain unavailable'),
+    }))
+
+    expect(await signedInRecordUserId()).toBeNull()
+    expect(recordAttributionFailure()).toContain('stored record session:')
+    expect(recordAttributionFailure()).toContain('keychain unavailable')
+  })
+
   test('returns null and records an unreachable API for record doctor', async () => {
     session.setToken('fixture-session')
     installRecordApiClient({
@@ -82,7 +94,9 @@ describe('run attribution identity resolution', () => {
     expect(await diagnoseRecord({ recordUrl: '', migrateUrl: '' })).toContainEqual({
       name: 'last run attribution resolution',
       status: 'fail',
-      detail: 'record API: connection refused',
+      detail:
+        'record API: connection refused; check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry',
+      section: 'customer',
     })
   })
 

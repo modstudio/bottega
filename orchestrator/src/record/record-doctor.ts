@@ -1,5 +1,5 @@
 // concern: record-doctor
-/** Diagnoses record connectivity, identity, migrations, ownership, and grants. */
+/** Diagnoses customer record access through the hosted API and optional operator connections. */
 
 import type { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
@@ -8,28 +8,31 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
+  type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import { describeRecordInstallBinding, readRecordInstallBinding } from './install-binding.ts'
 import { machineId } from './machine-identity.ts'
-import { blockedByRetiredParentRows } from './outbox-dependency.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
+import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import { bearerHeaders, RECORD_SIGN_IN_REMEDY, recordAuth } from './record-auth.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
 
 async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<void> {
   const principals = await postgres`SELECT current_user AS principal`
-  if (principals[0]?.principal === RECORD_OWNER_ROLE) {
+  if (principals[0]?.principal === RECORD_OWNER_ROLE)
     throw new Error(
       `record ${operation} refuses ${RECORD_OWNER_ROLE} credentials; set ORCH_RECORD_URL to the ${RECORD_ACTOR_ROLE} connection`,
     )
-  }
 }
 
 type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
@@ -37,75 +40,182 @@ export type RecordDoctorCheck = {
   name: string
   status: RecordDoctorStatus
   detail?: string
+  section?: 'customer' | 'operator'
 }
+type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
+export type RecordDoctorFacts = {
+  apiConfigured: boolean
+  apiReachable: boolean
+  apiFailure?: string
+  sessionAccepted: boolean
+  sessionFailure?: string
+  attributionFailure: string | null
+  activeSpaceId: string | null
+  memberships: readonly RecordSpaceMembership[]
+  projects: ReadonlyArray<{ name: string; space: string | null }>
+  pendingOutboxRows: number
+  quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
+  operatorConnectionPresent: boolean
+  operatorChecks?: readonly RecordDoctorCheck[]
+}
+
+const API_CONFIGURATION_REMEDY = 'set ORCH_RECORD_API_URL to the hosted record API address'
+const API_REACHABILITY_REMEDY =
+  'check ORCH_RECORD_API_URL and make the hosted record API reachable, then retry'
 
 export function recordDoctorExitCode(checks: readonly RecordDoctorCheck[]): 0 | 1 {
   return checks.some((check) => check.status === 'fail') ? 1 : 0
 }
 
-export function decideRecordDoctorAvailability(input: {
-  installBound: boolean
-  recordUrlSet: boolean
-}): { endpoint: RecordDoctorCheck; hostedChecksDetail: string } {
-  if (input.recordUrlSet) {
+function attributionFailureCheck(failure: string | null): RecordDoctorCheck {
+  if (!failure)
     return {
-      endpoint: { name: 'ORCH_RECORD_URL set', status: 'pass' },
-      hostedChecksDetail: '',
+      name: 'last run attribution resolution',
+      status: 'pass',
+      section: 'customer',
     }
+  const remedy = failure.startsWith('stored record session:')
+    ? RECORD_SIGN_IN_REMEDY
+    : API_REACHABILITY_REMEDY
+  return {
+    name: 'last run attribution resolution',
+    status: 'fail',
+    detail: `${failure}; ${remedy}`,
+    section: 'customer',
   }
-  if (input.installBound) {
-    return {
-      endpoint: {
-        name: 'ORCH_RECORD_URL set',
+}
+
+function membershipChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
+  if (!facts.sessionAccepted)
+    return [
+      {
+        name: 'user memberships',
         status: 'fail',
-        detail: 'ORCH_RECORD_URL not set',
+        detail: RECORD_SIGN_IN_REMEDY,
+        section: 'customer',
       },
-      hostedChecksDetail: 'ORCH_RECORD_URL not set',
-    }
-  }
-  return {
-    endpoint: {
-      name: 'hosted record configured',
-      status: 'skipped',
-      detail: 'no hosted record is configured for this install',
-    },
-    hostedChecksDetail: 'not applicable: no hosted record is configured for this install',
-  }
-}
-
-function recordOwnerDoctorAvailability(
-  migrateUrl: string | undefined,
-  hostedChecksDetail: string,
-): { url: string | null; detail: string } {
-  if (hostedChecksDetail.startsWith('not applicable:')) {
-    return { url: null, detail: hostedChecksDetail }
-  }
-  return {
-    url: migrateUrl ?? null,
-    detail: migrateUrl ? '' : 'ORCH_RECORD_MIGRATE_URL not set',
-  }
-}
-
-export function outboxQuarantineCheck(database: Database): RecordDoctorCheck {
-  const rows = quarantinedOutboxRows(database)
-  return rows.length
-    ? {
-        name: 'outbox quarantine is empty',
+    ]
+  if (!facts.memberships.length)
+    return [
+      {
+        name: 'user memberships',
         status: 'fail',
-        detail: `${rows.length} quarantined: ${rows.map((row) => `${row.id} ${row.kind}`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
-      }
-    : { name: 'outbox quarantine is empty', status: 'pass' }
+        detail: 'the signed-in user has no record space membership; join one with an invitation',
+        section: 'customer',
+      },
+    ]
+  return facts.memberships.map((membership) => ({
+    name: `membership ${membership.slug}`,
+    status: 'pass',
+    detail: `${membership.permission} (${membership.spaceId})`,
+    section: 'customer',
+  }))
 }
 
-export function outboxRetiredParentCheck(database: Database): RecordDoctorCheck {
-  const rows = blockedByRetiredParentRows(database)
-  return rows.length
-    ? {
-        name: 'outbox has no rows blocked by a retired parent',
-        status: 'fail',
-        detail: `${rows.length} blocked: ${rows.map((row) => `${row.id} ${row.kind} (${row.reason ?? `parent ${row.parentRecordId}`})`).join(', ')}; inspect the parent retirement, then run \`orch record outbox retire <row-id> --reason <text>\` or replace the dependent row`,
-      }
-    : { name: 'outbox has no rows blocked by a retired parent', status: 'pass' }
+function projectSpaceChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
+  if (!facts.sessionAccepted) return []
+  return facts.projects.flatMap((project) => {
+    if (!project.space) return []
+    const membership = recordSpaceMembership(project.space, facts.memberships)
+    return [
+      membership
+        ? {
+            name: `project ${project.name} declared space`,
+            status: 'pass' as const,
+            detail: `${membership.slug}: ${membership.permission}`,
+            section: 'customer' as const,
+          }
+        : {
+            name: `project ${project.name} declared space`,
+            status: 'fail' as const,
+            detail: `${project.space} is not one of the signed-in user's memberships; join it with an invitation`,
+            section: 'customer' as const,
+          },
+    ]
+  })
+}
+
+/** Turns already gathered facts into the complete, ordered doctor presentation. */
+export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
+  const checks: RecordDoctorCheck[] = [
+    facts.apiConfigured
+      ? {
+          name: 'hosted API address configured',
+          status: 'pass',
+          section: 'customer',
+        }
+      : {
+          name: 'hosted API address configured',
+          status: 'fail',
+          detail: API_CONFIGURATION_REMEDY,
+          section: 'customer',
+        },
+    facts.apiReachable
+      ? { name: 'hosted API reachable', status: 'pass', section: 'customer' }
+      : {
+          name: 'hosted API reachable',
+          status: 'fail',
+          detail: facts.apiFailure ?? API_REACHABILITY_REMEDY,
+          section: 'customer',
+        },
+    facts.sessionAccepted
+      ? { name: 'stored session accepted', status: 'pass', section: 'customer' }
+      : {
+          name: 'stored session accepted',
+          status: 'fail',
+          detail: facts.sessionFailure ?? RECORD_SIGN_IN_REMEDY,
+          section: 'customer',
+        },
+  ]
+  const active = facts.memberships.find((membership) => membership.spaceId === facts.activeSpaceId)
+  checks.push(attributionFailureCheck(facts.attributionFailure))
+  checks.push(
+    active
+      ? {
+          name: 'session active space',
+          status: 'pass',
+          detail: `${active.slug} (${active.spaceId})`,
+          section: 'customer',
+        }
+      : {
+          name: 'session active space',
+          status: 'fail',
+          detail: facts.sessionAccepted ? RECORD_ACTIVE_SPACE_REMEDY : RECORD_SIGN_IN_REMEDY,
+          section: 'customer',
+        },
+  )
+
+  checks.push(...membershipChecks(facts), ...projectSpaceChecks(facts))
+  checks.push({
+    name: 'local outbox pending rows',
+    status: 'pass',
+    detail: String(facts.pendingOutboxRows),
+    section: 'customer',
+  })
+  checks.push(
+    facts.quarantinedOutboxRows.length
+      ? {
+          name: 'local outbox quarantined rows',
+          status: 'fail',
+          detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
+          section: 'customer',
+        }
+      : {
+          name: 'local outbox quarantined rows',
+          status: 'pass',
+          detail: '0',
+          section: 'customer',
+        },
+  )
+
+  if (facts.operatorConnectionPresent)
+    checks.push(
+      ...(facts.operatorChecks ?? []).map((check) => ({
+        ...check,
+        section: 'operator' as const,
+      })),
+    )
+  return checks
 }
 
 export function unattributedShare(missing: number, total: number): string {
@@ -130,25 +240,14 @@ function failureDetail(error: unknown, urls: readonly string[]): string {
   return redactRecordPasswords(error instanceof Error ? error.message : String(error), urls)
 }
 
-function attributionResolutionCheck(failure: string | null): RecordDoctorCheck {
-  return failure
-    ? { name: 'last run attribution resolution', status: 'fail', detail: failure }
+function questionCountCheck(name: string, local: number, hosted: number): RecordDoctorCheck {
+  return local === hosted
+    ? { name, status: 'pass', detail: `${local} each` }
     : {
-        name: 'last run attribution resolution',
-        status: 'skipped',
-        detail: 'no resolution failure recorded',
+        name,
+        status: 'fail',
+        detail: `${local} local; ${hosted} hosted`,
       }
-}
-
-function questionCountCheck(local: number, hosted: number): RecordDoctorCheck {
-  if (local === hosted) {
-    return { name: 'local versus hosted questions', status: 'pass', detail: `${local} each` }
-  }
-  return {
-    name: 'local versus hosted questions',
-    status: 'fail',
-    detail: `${local} local; ${hosted} hosted`,
-  }
 }
 
 export function localQuestionCountForSpace(
@@ -160,14 +259,14 @@ export function localQuestionCountForSpace(
   const rows = database
     .query<{ project: string | null }, []>(
       `SELECT COALESCE(run_project.name,cursor.project) AS project
-         FROM question q
-         LEFT JOIN run r ON r.id=q.run_id
-         LEFT JOIN project run_project ON run_project.id=r.project_id
-         LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
-        WHERE q.run_id IS NULL OR EXISTS (
-          SELECT 1 FROM outbox o
-           WHERE o.kind='run' AND o.record_id=r.record_id AND o.synced_at IS NOT NULL
-        )`,
+       FROM question q
+       LEFT JOIN run r ON r.id=q.run_id
+       LEFT JOIN project run_project ON run_project.id=r.project_id
+       LEFT JOIN workflow_cursor cursor ON cursor.id=q.workflow_cursor_id
+      WHERE q.run_id IS NULL OR EXISTS (
+        SELECT 1 FROM outbox o
+         WHERE o.kind='run' AND o.record_id=r.record_id AND o.synced_at IS NOT NULL
+      )`,
     )
     .all()
   return rows.filter((row) => {
@@ -177,59 +276,86 @@ export function localQuestionCountForSpace(
   }).length
 }
 
-async function declaredProjectSpaceChecks(
-  actor: SQL,
-  current: { user: { id: string } } | undefined,
-  activeSpaceId: string | null | undefined,
-  projects: Array<{ name: string; space: string | null }>,
-): Promise<RecordDoctorCheck[]> {
-  if (!current) return []
-  const memberships = await actor.begin(async (tx) => {
-    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-    await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
-    return tx`
-      SELECT m.space_id, s.slug FROM membership m JOIN space s ON s.id=m.space_id
-      WHERE m.user_id=${current.user.id}::uuid
-    `
-  })
-  return projects.flatMap((project) => {
-    if (!project.space) return []
-    const reachable = recordSpaceMembership(project.space, parseRecordSpaceMemberships(memberships))
-    return [
-      reachable
-        ? {
-            name: `project ${project.name} declared space`,
-            status: 'pass' as const,
-            detail: `${reachable.slug} (${reachable.spaceId})`,
-          }
-        : {
-            name: `project ${project.name} declared space`,
-            status: 'fail' as const,
-            detail: `${project.space} is not reachable by the signed-in user; join it with an invitation`,
-          },
-    ]
-  })
+function pendingOutboxCount(database: Database): number {
+  return database
+    .query<{ count: number }, []>(
+      `SELECT count(*) AS count FROM outbox
+     WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+    )
+    .get()!.count
 }
 
-export async function diagnoseRecord(
-  input: {
-    recordUrl?: string
-    migrateUrl?: string
-    projects?: Array<{ name: string; space: string | null }>
-  } = {},
-): Promise<RecordDoctorCheck[]> {
-  const recordUrl = input.recordUrl ?? process.env.ORCH_RECORD_URL
-  const migrateUrl = input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL
-  const urls = [recordUrl, migrateUrl].filter((url): url is string => Boolean(url))
+type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'operatorChecks'> & {
+  userId: string | null
+}
+
+async function customerFacts(
+  projects: Array<{ name: string; space: string | null }>,
+  database: Database,
+): Promise<CustomerFacts> {
+  const apiConfigured = Boolean(resolveRecordApiUrl()?.trim())
+  // Doctor is observational: legacy session migration is left to sign-in and other write paths.
+  const token = storedRecordToken(database, undefined, false)
+  let apiReachable = false
+  let sessionAccepted = false
+  let apiFailure: string | undefined
+  let sessionFailure: string | undefined
+  let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
+  if (!apiConfigured) {
+    apiFailure = API_CONFIGURATION_REMEDY
+    sessionFailure = RECORD_SIGN_IN_REMEDY
+  } else if (!token) {
+    apiFailure = `reachability requires a stored session; ${RECORD_SIGN_IN_REMEDY}`
+    sessionFailure = RECORD_SIGN_IN_REMEDY
+  } else {
+    try {
+      identity = await recordApiClient().whoami()
+      apiReachable = true
+      sessionAccepted = true
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (error instanceof RecordApiRequestError && error.kind === 'refused') {
+        apiReachable = true
+        sessionFailure = detail
+      } else {
+        apiFailure = `${detail}; ${API_REACHABILITY_REMEDY}`
+        sessionFailure = RECORD_SIGN_IN_REMEDY
+      }
+    }
+  }
+  return {
+    apiConfigured,
+    apiReachable,
+    apiFailure,
+    sessionAccepted,
+    sessionFailure,
+    attributionFailure: recordAttributionFailure(database),
+    userId: identity?.user.id ?? null,
+    activeSpaceId: identity?.activeSpaceId ?? null,
+    memberships: parseRecordSpaceMemberships(identity?.memberships),
+    projects,
+    pendingOutboxRows: pendingOutboxCount(database),
+    quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      reason: row.error,
+    })),
+  }
+}
+
+async function operatorRecordChecks(input: {
+  recordUrl: string
+  migrateUrl?: string
+  identity: {
+    userId: string
+    activeSpaceId: string
+    activeSpaceSlug: string
+  } | null
+  projects: Array<{ name: string; space: string | null }>
+  database: Database
+}): Promise<RecordDoctorCheck[]> {
+  const urls = [input.recordUrl, input.migrateUrl].filter((url): url is string => Boolean(url))
   const checks: RecordDoctorCheck[] = []
-  const binding = readRecordInstallBinding(db())
-  checks.push({
-    name: 'install binding',
-    status: 'pass',
-    detail: describeRecordInstallBinding(binding),
-  })
-  checks.push(outboxQuarantineCheck(db()))
-  checks.push(outboxRetiredParentCheck(db()))
   const run = async <T>(name: string, action: () => Promise<T>): Promise<T | undefined> => {
     try {
       const result = await action()
@@ -239,193 +365,171 @@ export async function diagnoseRecord(
       checks.push({ name, status: 'fail', detail: failureDetail(error, urls) })
     }
   }
-  const skip = (name: string, detail: string) => checks.push({ name, status: 'skipped', detail })
-
-  checks.push(attributionResolutionCheck(recordAttributionFailure()))
-
-  const availability = decideRecordDoctorAvailability({
-    installBound: binding.bound,
-    recordUrlSet: Boolean(recordUrl),
-  })
-  checks.push(availability.endpoint)
-
-  if (!recordUrl) {
-    for (const name of [
-      'record connection works',
-      'record connection is not record_owner',
-      'stored session exists and is valid',
-      'active space exists',
-      'active space membership exists',
-      'runs with no started_by',
-      'session intervals with no session identity',
-      'local versus hosted questions',
-    ])
-      skip(name, availability.hostedChecksDetail)
-  } else {
-    const actor = new SQL(recordUrl)
-    await run('record connection works', async () => {
+  const actor = new SQL(input.recordUrl)
+  const identityNames = [
+    'runs with no started_by',
+    'local versus hosted questions',
+    'session intervals with no session identity',
+  ] as const
+  try {
+    const connected = await run('record connection works', async () => {
       await actor`SELECT 1`
+      return true
     })
     await run('record connection is not record_owner', () => refuseOwnerConnection(actor, 'doctor'))
-    try {
-      const token = storedRecordToken()
-      const current = await run('stored session exists and is valid', async () => {
-        if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
-        const session = await recordAuth(recordUrl).api.getSession({
-          headers: bearerHeaders(token),
-        })
-        if (!session) throw new Error(RECORD_SIGN_IN_REMEDY)
-        return session
-      })
-      const activeSpaceId = current?.session.activeOrganizationId
-      if (activeSpaceId) checks.push({ name: 'active space exists', status: 'pass' })
-      else
-        checks.push({
-          name: 'active space exists',
-          status: 'fail',
-          detail: 'record session has no active space',
-        })
-      if (!current || !activeSpaceId) {
-        skip('active space membership exists', 'active space unavailable')
-        skip('runs with no started_by', 'active space unavailable')
-        skip('session intervals with no session identity', 'active space unavailable')
-        skip('local versus hosted questions', 'active space unavailable')
-      } else {
-        await run('active space membership exists', async () => {
-          const memberships = await actor.begin(async (tx) => {
-            await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-            await tx`SELECT set_config('app.space_id', ${activeSpaceId}, true)`
-            return tx`
-              SELECT 1 FROM membership
-              WHERE user_id=${current.user.id}::uuid AND space_id=${activeSpaceId}::uuid
-            `
-          })
-          if (memberships.length !== 1)
-            throw new Error('signed-in user is not a member of the active space')
-        })
+    if (!connected || !input.identity) {
+      const detail = connected
+        ? 'accepted active session unavailable'
+        : 'record connection unavailable'
+      for (const name of identityNames) checks.push({ name, status: 'skipped', detail })
+    } else {
+      const identity = input.identity
+      try {
         const attribution = await actor.begin(async (tx) => {
-          await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-          await tx`SELECT set_config('app.space_id', ${activeSpaceId}, true)`
-          const runs = await tx`
-            SELECT count(*)::int AS total,
-                   count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing
-            FROM run WHERE space_id=${activeSpaceId}::uuid
-          `
-          const intervals = await tx`
-            SELECT count(*)::int AS total,
-                   count(*) FILTER (WHERE session_id IS NULL)::int AS missing
-            FROM hub_interval WHERE space_id=${activeSpaceId}::uuid AND source='claude'
-          `
-          const questions = await tx`
-            SELECT count(*)::int AS total FROM question
-            WHERE space_id=${activeSpaceId}::uuid AND machine_id=${machineId()}::uuid
-          `
-          const spaces = await tx`SELECT slug FROM space WHERE id=${activeSpaceId}::uuid`
+          await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
+          await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
+          const runs =
+            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
+          const intervals =
+            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
+          const questions =
+            await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
           return {
             runs: runs[0]!,
             intervals: intervals[0]!,
             questions: questions[0]!,
-            activeSpaceSlug: String(spaces[0]?.slug ?? ''),
           }
         })
         checks.push({
-          name: 'runs with no started_by',
+          name: identityNames[0],
           status: 'pass',
           detail: unattributedShare(
             Number(attribution.runs.missing),
             Number(attribution.runs.total),
           ),
         })
-        const localQuestions = localQuestionCountForSpace(db(), input.projects ?? [], {
-          id: activeSpaceId,
-          slug: attribution.activeSpaceSlug,
-        })
-        const hostedQuestions = Number(attribution.questions.total)
-        checks.push(questionCountCheck(localQuestions, hostedQuestions))
+        checks.push(
+          questionCountCheck(
+            identityNames[1],
+            localQuestionCountForSpace(input.database, input.projects, {
+              id: identity.activeSpaceId,
+              slug: identity.activeSpaceSlug,
+            }),
+            Number(attribution.questions.total),
+          ),
+        )
         checks.push({
-          name: 'session intervals with no session identity',
+          name: identityNames[2],
           status: 'pass',
           detail: unattributedShare(
             Number(attribution.intervals.missing),
             Number(attribution.intervals.total),
           ),
         })
+      } catch (error) {
+        const detail = failureDetail(error, urls)
+        for (const name of identityNames) checks.push({ name, status: 'fail', detail })
       }
-      checks.push(
-        ...(await declaredProjectSpaceChecks(actor, current, activeSpaceId, input.projects ?? [])),
-      )
-    } finally {
-      await actor.close()
     }
+  } finally {
+    await actor.close()
   }
 
-  const ownerChecks = [
+  const ownerNames = [
     'record roles exist',
     'schema public owned by record_owner',
     'applied migrations equal shipped migrations',
     'record_actor representative grants',
   ]
-  const ownerAvailability = recordOwnerDoctorAvailability(
-    migrateUrl,
-    availability.hostedChecksDetail,
-  )
-  const ownerUrl = ownerAvailability.url
-  if (!ownerUrl) {
-    for (const name of ownerChecks) skip(name, ownerAvailability.detail)
+  if (!input.migrateUrl) {
+    for (const name of ownerNames)
+      checks.push({
+        name,
+        status: 'skipped',
+        detail: 'ORCH_RECORD_MIGRATE_URL not set',
+      })
     return checks
   }
-  const owner = new SQL(ownerUrl)
+  const owner = new SQL(input.migrateUrl)
   try {
-    await run(ownerChecks[0]!, async () => {
-      const rows = await owner`
-        SELECT rolname FROM pg_roles
-        WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})
-      `
+    await run(ownerNames[0]!, async () => {
+      const rows =
+        await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
       if (rows.length !== 3) throw new Error('one or more record roles are absent')
     })
-    await run(ownerChecks[1]!, async () => {
-      const rows = await owner`
-        SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'
-      `
-      if (rows[0]?.owner !== RECORD_OWNER_ROLE) {
+    await run(ownerNames[1]!, async () => {
+      const rows =
+        await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
+      if (rows[0]?.owner !== RECORD_OWNER_ROLE)
         throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
-      }
     })
-    await run(ownerChecks[2]!, async () => {
-      const applied = await appliedRecordMigrationCount(ownerUrl)
+    await run(ownerNames[2]!, async () => {
+      const applied = await appliedRecordMigrationCount(input.migrateUrl!)
       const shipped = recordMigrationCount()
       if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
     })
-    await run(ownerChecks[3]!, async () => {
+    await run(ownerNames[3]!, async () => {
       const rows = await owner`
-        SELECT
-          CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name,
-          privilege
+        SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
         FROM (VALUES
-          ('project', 'SELECT'),
-          ('project', 'INSERT'),
-          ('project', 'UPDATE'),
-          ('project', 'DELETE'),
-          ('invitation', 'SELECT'),
-          ('invitation', 'INSERT'),
-          ('invitation', 'UPDATE'),
-          ('invitation', 'DELETE'),
-          ('"user"', 'SELECT'),
-          ('"user"', 'INSERT'),
-          ('"user"', 'UPDATE')
+          ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
+          ('invitation', 'SELECT'), ('invitation', 'INSERT'), ('invitation', 'UPDATE'), ('invitation', 'DELETE'),
+          ('"user"', 'SELECT'), ('"user"', 'INSERT'), ('"user"', 'UPDATE')
         ) AS required(table_name, privilege)
         WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
-        ORDER BY table_name, privilege
-      `
-      if (rows.length) {
-        const missing = rows.map((row: Record<string, unknown>) => {
-          return `${String(row.table_name)} ${String(row.privilege)}`
-        })
-        throw new Error(missing.join(', '))
-      }
+        ORDER BY table_name, privilege`
+      if (rows.length)
+        throw new Error(
+          rows
+            .map(
+              (row: Record<string, unknown>) =>
+                `${String(row.table_name)} ${String(row.privilege)}`,
+            )
+            .join(', '),
+        )
     })
   } finally {
     await owner.close()
   }
   return checks
+}
+
+export async function diagnoseRecord(
+  input: {
+    recordUrl?: string
+    migrateUrl?: string
+    projects?: Array<{ name: string; space: string | null }>
+  } = {},
+): Promise<RecordDoctorCheck[]> {
+  const database = db()
+  const projects = input.projects ?? []
+  const customer = await customerFacts(projects, database)
+  const recordUrl = input.recordUrl ?? process.env.ORCH_RECORD_URL
+  let operatorChecks: RecordDoctorCheck[] | undefined
+  if (recordUrl) {
+    const active = customer.memberships.find(
+      (membership) => membership.spaceId === customer.activeSpaceId,
+    )
+    const identity =
+      customer.sessionAccepted && customer.userId && customer.activeSpaceId && active
+        ? {
+            userId: customer.userId,
+            activeSpaceId: customer.activeSpaceId,
+            activeSpaceSlug: active.slug,
+          }
+        : null
+    operatorChecks = await operatorRecordChecks({
+      recordUrl,
+      migrateUrl: input.migrateUrl ?? process.env.ORCH_RECORD_MIGRATE_URL,
+      identity,
+      projects,
+      database,
+    })
+  }
+  const { userId: _userId, ...customerDecisionFacts } = customer
+  return decideRecordDoctorChecks({
+    ...customerDecisionFacts,
+    operatorConnectionPresent: Boolean(recordUrl),
+    operatorChecks,
+  })
 }

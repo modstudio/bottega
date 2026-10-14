@@ -414,8 +414,7 @@ function recordApiError(body: unknown, status: number, headers: Headers = new He
     return new RecordApiRequestError(message, 'refused', status)
   if (message.includes(MISSING_HOSTED_REVISION_REMEDY))
     return new RecordApiRequestError(message, 'refused', status)
-  if (status >= 400 && status < 500)
-    return new RecordApiRequestError(`${message}\n${RECORD_WRITE_REMEDY}`, 'refused', status)
+  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused', status)
   return recordApiUnreachable(new Error(message))
 }
 
