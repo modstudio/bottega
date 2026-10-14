@@ -5,11 +5,11 @@ test('same-batch failures hold their children pending transitively', () => {
   expect(
     recordSyncResultTreatments(
       [
-        { id: 1, sameBatchParentIds: [] },
-        { id: 2, sameBatchParentIds: [1] },
-        { id: 3, sameBatchParentIds: [2] },
-        { id: 4, sameBatchParentIds: [] },
-        { id: 5, sameBatchParentIds: [4] },
+        { id: 1, sameBatchParentIdGroups: [] },
+        { id: 2, sameBatchParentIdGroups: [[1]] },
+        { id: 3, sameBatchParentIdGroups: [[2]] },
+        { id: 4, sameBatchParentIdGroups: [] },
+        { id: 5, sameBatchParentIdGroups: [[4]] },
       ],
       [
         { id: 1, status: 'quarantined', reason: 'parent refused' },
@@ -28,17 +28,26 @@ test('same-batch failures hold their children pending transitively', () => {
   ])
 })
 
-test('a synced child of an unsynced same-batch parent violates the contract', () => {
-  expect(() =>
+test('parent identity groups accept any synced copy and require every identity', () => {
+  expect(
     recordSyncResultTreatments(
       [
-        { id: 10, sameBatchParentIds: [] },
-        { id: 11, sameBatchParentIds: [10] },
+        { id: 10, sameBatchParentIdGroups: [] },
+        { id: 11, sameBatchParentIdGroups: [] },
+        { id: 12, sameBatchParentIdGroups: [[10, 11]] },
+        { id: 13, sameBatchParentIdGroups: [[10], [11]] },
       ],
       [
-        { id: 10, status: 'quarantined', reason: 'parent refused' },
-        { id: 11, status: 'synced' },
+        { id: 10, status: 'synced' },
+        { id: 11, status: 'quarantined', reason: 'duplicate refused' },
+        { id: 12, status: 'synced' },
+        { id: 13, status: 'quarantined', reason: 'one identity refused' },
       ],
     ),
-  ).toThrow('record sync contract violation: row 11')
+  ).toEqual([
+    { id: 10, treatment: 'apply' },
+    { id: 11, treatment: 'apply' },
+    { id: 12, treatment: 'apply' },
+    { id: 13, treatment: 'pending' },
+  ])
 })

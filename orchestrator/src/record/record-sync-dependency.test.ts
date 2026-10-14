@@ -241,6 +241,106 @@ test('a deferred same-batch parent leaves its child pending', async () => {
     { attempts: 1 },
     { attempts: 0 },
   ])
+
+  const retryBatches: number[][] = []
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(retryBatches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+  expect(retryBatches).toEqual([[1, 2]])
+  expect(local.query('SELECT synced_at FROM outbox ORDER BY id').all()).toEqual([
+    { synced_at: STAMP },
+    { synced_at: STAMP },
+  ])
+})
+
+test('a synced copy satisfies a parent identity when a later copy is refused', async () => {
+  using local = new Database(':memory:')
+  applyMigrations(local)
+  insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
+  insertOutboxRow(local, 2, 'review', 'review-1', { id: 'review-1' })
+  insertOutboxRow(local, 3, 'review_lens', 'lens-1', {
+    id: 'lens-1',
+    reviewId: 'review-1',
+    runId: null,
+  })
+  const batches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(batches, (id) =>
+        id === 2 ? { status: 'quarantined', reason: 'duplicate refused' } : { status: 'synced' },
+      ),
+    }),
+  ).toMatchObject({ pushed: 2, failed: 1, pending: 0 })
+  expect(batches).toEqual([[1, 2, 3]])
+  expect(local.query('SELECT id,synced_at,quarantined_at FROM outbox ORDER BY id').all()).toEqual([
+    { id: 1, synced_at: STAMP, quarantined_at: null },
+    { id: 2, synced_at: null, quarantined_at: STAMP },
+    { id: 3, synced_at: STAMP, quarantined_at: null },
+  ])
+})
+
+test('a child stays pending when every copy of its parent identity is refused', async () => {
+  using local = new Database(':memory:')
+  applyMigrations(local)
+  insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
+  insertOutboxRow(local, 2, 'review', 'review-1', { id: 'review-1' })
+  insertOutboxRow(local, 3, 'review_lens', 'lens-1', {
+    id: 'lens-1',
+    reviewId: 'review-1',
+    runId: null,
+  })
+  const batches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(batches, () => ({ status: 'quarantined', reason: 'refused' })),
+    }),
+  ).toMatchObject({ pushed: 0, failed: 2, pending: 1 })
+  expect(batches).toEqual([[1, 2, 3]])
+  expect(local.query('SELECT id,quarantined_at,attempts FROM outbox ORDER BY id').all()).toEqual([
+    { id: 1, quarantined_at: STAMP, attempts: 1 },
+    { id: 2, quarantined_at: STAMP, attempts: 1 },
+    { id: 3, quarantined_at: null, attempts: 0 },
+  ])
+})
+
+test('a child is not sent while another parent identity remains outside the batch', async () => {
+  using local = new Database(':memory:')
+  applyMigrations(local)
+  insertOutboxRow(local, 1, 'review', 'review-1', { id: 'review-1' })
+  insertOutboxRow(local, 2, 'review_finding', 'finding-1', {
+    id: 'finding-1',
+    reviewId: 'review-1',
+    reviewLensId: 'lens-1',
+  })
+  insertOutboxRow(local, 3, 'review_lens', 'lens-1', {
+    id: 'lens-1',
+    reviewId: 'review-1',
+    runId: null,
+  })
+  const batches: number[][] = []
+
+  expect(
+    await syncRecord({
+      local,
+      now: () => STAMP,
+      identity: { id: machineId(), name: 'test-machine' },
+      client: dependencyClient(batches, () => ({ status: 'synced' })),
+    }),
+  ).toMatchObject({ pushed: 3, failed: 0, pending: 0 })
+  expect(batches).toEqual([[1], [3], [2]])
 })
 
 test('a synced child of a quarantined same-batch parent fails without marking the child', async () => {

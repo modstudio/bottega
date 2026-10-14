@@ -4,7 +4,7 @@ import type { RecordSyncRowResult } from './record-sync-contract.ts'
 
 export type RecordSyncBatchDependency = {
   id: number
-  sameBatchParentIds: readonly number[]
+  sameBatchParentIdGroups: readonly (readonly number[])[]
 }
 
 export type RecordSyncResultTreatment = {
@@ -19,7 +19,9 @@ export function recordSyncResultTreatments(
   const parentSynced = new Map<number, boolean>()
   return rows.map((row, index) => {
     const result = results[index]!
-    const waiting = row.sameBatchParentIds.some((parentId) => !parentSynced.get(parentId))
+    const waiting = row.sameBatchParentIdGroups.some(
+      (parentIds) => !parentIds.some((parentId) => parentSynced.get(parentId)),
+    )
     if (waiting && result.status === 'synced') {
       throw new Error(
         `record sync contract violation: row ${row.id} was reported synced after a same-batch parent did not sync`,

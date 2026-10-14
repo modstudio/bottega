@@ -18,6 +18,7 @@ import { machineId, machineName } from './machine-identity.ts'
 import {
   deferOutboxRow,
   markOutboxRowSynced,
+  outboxParentIdentityKey,
   outboxRowIsEligible,
   outboxRowPlannedParentKeys,
   outboxRowWaitsForParent,
@@ -160,7 +161,7 @@ function planBatchRow(
     hasBatchRows: boolean
     memberships: ReturnType<typeof parseRecordSpaceMemberships>
     blocked: BlockedOutboxRow[]
-    plannedParents: ReadonlySet<string>
+    plannedParents: ReadonlyMap<string, readonly number[]>
     projectSpaces?: Record<string, string>
   },
 ): PlannedBatchRow {
@@ -284,8 +285,7 @@ function addPlannedRow(input: {
   rows: RecordSyncRequestRow[]
   localRows: Map<number, OutboxRow>
   dependencies: RecordSyncBatchDependency[]
-  plannedParents: Set<string>
-  plannedParentRows: Map<string, number>
+  plannedParents: Map<string, number[]>
   requestBytes: number
   now: () => string
 }): { disposition: 'stop' } | { disposition: 'sent'; requestBytes: number; quarantined: number } {
@@ -314,11 +314,14 @@ function addPlannedRow(input: {
   input.localRows.set(row.id, row)
   input.dependencies.push({
     id: row.id,
-    sameBatchParentIds: input.planned.parentKeys.map((key) => input.plannedParentRows.get(key)!),
+    sameBatchParentIdGroups: input.planned.parentKeys.map((key) => [
+      ...input.plannedParents.get(key)!,
+    ]),
   })
-  const rowKey = `${row.kind}:${row.record_id}`
-  input.plannedParents.add(rowKey)
-  input.plannedParentRows.set(rowKey, row.id)
+  const rowKey = outboxParentIdentityKey(row.kind, row.record_id)
+  const identityRows = input.plannedParents.get(rowKey)
+  if (identityRows) identityRows.push(row.id)
+  else input.plannedParents.set(rowKey, [row.id])
   return { disposition: 'sent', requestBytes: decision.requestBytes, quarantined: 0 }
 }
 
@@ -342,8 +345,7 @@ function nextBatch(input: {
   const rows: RecordSyncRequestRow[] = []
   const localRows = new Map<number, OutboxRow>()
   const dependencies: RecordSyncBatchDependency[] = []
-  const plannedParents = new Set<string>()
-  const plannedParentRows = new Map<string, number>()
+  const plannedParents = new Map<string, number[]>()
   let requestBytes = emptyRequestBytes
   let quarantined = 0
   for (const candidateRow of input.candidates) {
@@ -385,7 +387,6 @@ function nextBatch(input: {
       localRows,
       dependencies,
       plannedParents,
-      plannedParentRows,
       requestBytes,
       now: input.now,
     })
