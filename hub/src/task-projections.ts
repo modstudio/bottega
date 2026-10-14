@@ -522,6 +522,15 @@ export type BoardSourceRow = {
   source: string
   updated_at: string | null
   last_seen: string
+  closed_at: string | null
+}
+
+/** The board's recent window: worked on, or closed, inside this span. */
+export const BOARD_RECENT_WINDOW_DAYS = 14
+export const BOARD_RECENT_WINDOW_MS = BOARD_RECENT_WINDOW_DAYS * 86_400_000
+
+export function boardRecentSince(now: number, windowMs = BOARD_RECENT_WINDOW_MS): string {
+  return new Date(now - windowMs).toISOString()
 }
 
 export function projectBoardCards(
@@ -564,6 +573,7 @@ export function projectBoard(input: {
   liveKeys: string[]
   projects: ProjectionProject[]
   cap: number
+  since: string
   filters?: BoardFilters
 }) {
   const recent = new Set(input.recentKeys)
@@ -578,6 +588,7 @@ export function projectBoard(input: {
           project: row.project,
         }),
       ) ||
+      (row.closed_at != null && row.closed_at >= input.since) ||
       (row.source === 'local' && !['done', 'dropped'].includes(row.status_category ?? '')),
   )
   const count = (bucket: (row: BoardSourceRow) => string) =>

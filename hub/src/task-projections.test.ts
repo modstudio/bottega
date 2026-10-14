@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   type BoardSourceRow,
+  boardRecentSince,
   combineMachineDays,
   projectBoard,
   projectBoardCards,
@@ -176,6 +177,7 @@ test('board bucketing fields and live state are shaped outside either database a
         source: 'local',
         updated_at: null,
         last_seen: '2026-09-17T11:00:00.000Z',
+        closed_at: null,
       },
     ],
     ['task-record-701'],
@@ -229,6 +231,7 @@ function boardRow(
     source: 'local',
     updated_at: '2026-09-17T12:00:00.000Z',
     last_seen: '2026-09-17T12:00:00.000Z',
+    closed_at: null,
     ...overrides,
   }
 }
@@ -249,7 +252,14 @@ test("a filtered project still receives done rows that would fall below the cap 
     }),
   ]
   const recentKeys = ['unattributed:segnavia:SEGNA-1']
-  const input = { rows, recentKeys, liveKeys: [] as string[], projects: project, cap }
+  const input = {
+    rows,
+    recentKeys,
+    liveKeys: [] as string[],
+    projects: project,
+    cap,
+    since: boardRecentSince(now),
+  }
   const unfiltered = projectBoard(input)
   const filtered = projectBoard({ ...input, filters: { project: 'segnavia', source: '' } })
   expect(unfiltered.cards.map((card) => card.key)).toEqual(['DEV-1', 'DEV-2', 'DEV-3'])
@@ -268,10 +278,55 @@ test('the unfiltered board still caps at the cap', () => {
     liveKeys: [],
     projects: project,
     cap: 2,
+    since: boardRecentSince(now),
     filters: { project: '', source: '' },
   })
   expect(board.cards).toHaveLength(2)
   expect(board.cap).toBe(2)
   expect(board.cards.map((card) => card.key)).toEqual(['DEV-5', 'DEV-4'])
   expect(board.totals.status.active).toBe(5)
+})
+
+test('a done row with no interval is eligible when closed inside the window', () => {
+  const since = boardRecentSince(now)
+  const board = projectBoard({
+    rows: [
+      boardRow({
+        key: 'SEGNA-7',
+        project: 'segnavia',
+        status: 'done',
+        status_category: 'done',
+        source: 'mcp',
+        closed_at: '2026-09-16T12:00:00.000Z',
+      }),
+    ],
+    recentKeys: [],
+    liveKeys: [],
+    projects: project,
+    cap: 250,
+    since,
+  })
+  expect(board.cards.map((card) => card.key)).toEqual(['SEGNA-7'])
+})
+
+test('a done row closed outside the window is not eligible', () => {
+  const since = boardRecentSince(now)
+  const board = projectBoard({
+    rows: [
+      boardRow({
+        key: 'SEGNA-8',
+        project: 'segnavia',
+        status: 'done',
+        status_category: 'done',
+        source: 'mcp',
+        closed_at: '2026-08-01T12:00:00.000Z',
+      }),
+    ],
+    recentKeys: [],
+    liveKeys: [],
+    projects: project,
+    cap: 250,
+    since,
+  })
+  expect(board.cards).toHaveLength(0)
 })

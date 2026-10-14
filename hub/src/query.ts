@@ -6,7 +6,9 @@ import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 import {
+  BOARD_RECENT_WINDOW_DAYS,
   type BoardFilters,
+  boardRecentSince,
   combineMachineDays,
   type DayIntervalRow,
   intervalEndMs,
@@ -349,18 +351,19 @@ export type Board = {
 }
 
 export function boardTasks(
-  windowDays = 14,
+  windowDays = BOARD_RECENT_WINDOW_DAYS,
   cap = 250,
   filters?: BoardFilters,
 ): Board & { sourceFacetProjects: string[] } {
-  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+  const since = boardRecentSince(Date.now(), windowDays * 86_400_000)
 
   /**
-   * RECENCY COMES FROM WORK, NEVER FROM A TIMESTAMP ON THE TASK.
+   * Recency is work in the window, or a close in that same window.
    *
-   * `updated_at` and `last_seen` describe when the tracker or collector observed
-   * a task, not when work happened. The `interval` table is the record of work
-   * actually happening, and it is what "recent" means here.
+   * `updated_at` and `last_seen` are when the tracker or collector observed a
+   * task. `interval.start_at` is when work happened. `closed_at` is when the
+   * task closed, so a done row with no interval still belongs on the board
+   * when that close falls in the window `boardRecentSince` names.
    */
   /**
    * SPEND THE BUDGET ON OPEN WORK — also borrowed from that sibling project, and the reason a capped
@@ -384,11 +387,12 @@ export function boardTasks(
         source: string
         updated_at: string | null
         last_seen: string
+        closed_at: string | null
       },
       []
     >(
       `SELECT t.key, t.record_id, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
-            t.updated_at, t.last_seen
+            t.updated_at, t.last_seen, t.closed_at
        FROM task t`,
     )
     .all()
@@ -431,6 +435,7 @@ export function boardTasks(
     liveKeys: [...live],
     projects: projects(),
     cap,
+    since,
     filters,
   })
 }

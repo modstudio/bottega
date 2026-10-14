@@ -30,7 +30,7 @@ import {
   type SearchableLiveRun,
 } from './run-display.ts'
 import { startRevisionMonitor } from './service-revision.ts'
-import { projectFlightDone } from './task-projections.ts'
+import { BOARD_RECENT_WINDOW_DAYS, projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
@@ -317,7 +317,10 @@ export async function view(
      * tracker sit side by side — distinguished, never blended, because a reader
      * has to know which they can act on here.
      */
-    const b = boardTasks(14, 250, { project: f.project, source: f.source ?? '' })
+    const b = boardTasks(BOARD_RECENT_WINDOW_DAYS, 250, {
+      project: f.project,
+      source: f.source ?? '',
+    })
     /**
      * Facets from the REGISTER, not from the cards.
      *
