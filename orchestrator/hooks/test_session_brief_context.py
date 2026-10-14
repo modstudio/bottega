@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate the SessionStart additionalContext budget without calling orch."""
+"""Gate the SessionStart additionalContext budget without calling bottega."""
 import importlib.util
 import io
 import json
@@ -86,7 +86,7 @@ class AssembleAdditionalContext(unittest.TestCase):
             {"autonomy": "protected" * 8}, full, titles, count, budget=90
         )
         self.assertEqual(mode, "count")
-        self.assertEqual(notice, "1 board message is waiting; orch board read shows them.")
+        self.assertEqual(notice, "1 board message is waiting; bottega board read shows them.")
         self.assertNotIn("Important title", context)
         output = {"hookSpecificOutput": {"additionalContext": context}}
         self.assertEqual(session_brief._emitted_board_ids(output, full, ids), [])
@@ -98,7 +98,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(
             session_brief._withheld_board_notice(withheld),
             "3 unexpired board messages posted before this session were withheld; "
-            "orch board read shows them.",
+            "bottega board read shows them.",
         )
 
     def test_board_start_slice_accepts_string_ids_for_post_emit_delivery(self):
@@ -150,12 +150,12 @@ class AssembleAdditionalContext(unittest.TestCase):
             returncode=0,
             stdout=json.dumps([{"id": "not-an-id", "text": "notice", "oneLine": "title"}]),
         )
-        self.assertEqual(session_brief._board_start_slice(completed)[0], "Board could not be read; orch board read shows it.")
+        self.assertEqual(session_brief._board_start_slice(completed)[0], "Board could not be read; bottega board read shows it.")
 
     def test_board_start_slice_reports_a_timed_out_claim(self):
         completed = SimpleNamespace(returncode=-1, stdout="")
         full, ids, titles, count, withheld = session_brief._board_start_slice(completed)
-        self.assertEqual(full, "Board could not be read; orch board read shows it.")
+        self.assertEqual(full, "Board could not be read; bottega board read shows it.")
         self.assertEqual((ids, titles, count, withheld), ([], full, 0, 0))
 
     def test_board_dropped_for_budget_has_no_post_emit_delivery_ids(self):
@@ -188,7 +188,7 @@ class AssembleAdditionalContext(unittest.TestCase):
 
     def test_drops_filed_issues_first(self):
         text = self.assemble(
-            100,
+            115,
             resume_offer="resume offer",
             resume_table="",
             inbox="inbox detail",
@@ -200,8 +200,8 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertIn("resume offer", text)
         self.assertIn("inbox detail", text)
         self.assertNotIn("x" * 80, text)
-        self.assertIn("Dropped filed issues (orch fix-defect --waiting).", text)
-        self.assertNotIn("inbox detail (orch inbox)", text)
+        self.assertIn("Dropped filed issues (bottega workflow fix-defect --waiting).", text)
+        self.assertNotIn("inbox detail (bottega question inbox)", text)
 
     def test_drops_inbox_after_issues_and_never_drops_autonomy_or_resume_offer(self):
         text = self.assemble(
@@ -240,7 +240,7 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(
             text,
             "autonomy slice\nresume offer\nresume table row\n"
-            "Dropped heartbeat and monitor extra (orch monitor).",
+            "Dropped heartbeat and monitor extra (bottega machine monitor).",
         )
 
     def test_drops_resume_table_after_extra(self):
@@ -261,8 +261,8 @@ class AssembleAdditionalContext(unittest.TestCase):
         self.assertEqual(
             text,
             "autonomy slice\nresume offer\n"
-            "Dropped heartbeat and monitor extra (orch monitor) and "
-            "resume table (orch doc resumes).",
+            "Dropped heartbeat and monitor extra (bottega machine monitor) and "
+            "resume table (bottega doc resumes).",
         )
 
     def test_empty_droppables_add_no_drop_note(self):
@@ -359,8 +359,8 @@ class MonitorDelivery(unittest.TestCase):
 
     def test_session_start_monitor_explicitly_skips_board_refresh(self):
         self.assertEqual(
-            session_brief._monitor_notice_command("/bin/orch", skip_board_refresh=True),
-            ["/bin/orch", "monitor", "--notices", "--json", "--skip-board-refresh"],
+            session_brief._monitor_notice_command("/bin/bottega", skip_board_refresh=True),
+            ["/bin/bottega", "machine", "monitor", "--notices", "--json", "--skip-board-refresh"],
         )
 
 
@@ -417,7 +417,7 @@ class SettingsApplyNotice(unittest.TestCase):
                 with mock.patch.object(
                     session_brief.subprocess, "Popen", return_value=process
                 ) as popen:
-                    started, log_path, offset = session_brief._start_settings_apply("/bin/orch")
+                    started, log_path, offset = session_brief._start_settings_apply("/bin/bottega")
         self.assertIs(started, process)
         self.assertEqual(log_path, f"{state}/orchestrator/settings-apply.log")
         self.assertEqual(offset, 0)
@@ -461,7 +461,7 @@ class SettingsApplyNotice(unittest.TestCase):
             RuntimeError,
             "BOTTEGA_STATE_HOME must be an absolute state root; set it to an absolute path",
         ) as raised:
-            session_brief._start_settings_apply("/bin/orch", environment)
+            session_brief._start_settings_apply("/bin/bottega", environment)
         notice = session_brief._settings_apply_start_failure(raised.exception)
         self.assertEqual(
             notice,
@@ -480,7 +480,7 @@ class SettingsApplyNotice(unittest.TestCase):
 
             with self.assertRaises(OSError) as raised:
                 session_brief._start_settings_apply(
-                    "/bin/orch", {"BOTTEGA_STATE_HOME": state}
+                    "/bin/bottega", {"BOTTEGA_STATE_HOME": state}
                 )
 
             self.assertIn(str(log_path), str(raised.exception))
@@ -494,7 +494,7 @@ class SettingsApplyNotice(unittest.TestCase):
         process = mock.Mock()
         process.poll.return_value = 0
         process.returncode = 0
-        process.args = ["/bin/orch", "settings", "apply"]
+        process.args = ["/bin/bottega", "machine", "settings", "apply"]
         with tempfile.TemporaryDirectory() as state:
             target = Path(state, "target.log")
             target.write_text("settings target: applied; backup elsewhere\n", encoding="utf-8")

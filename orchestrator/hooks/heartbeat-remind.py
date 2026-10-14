@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostToolUse hook: detached work without a watcher disappears from view.
 
-`orch do` returns before its worker does. Unless the session arms the heartbeat
+`bottega run start` returns before its worker does. Unless the session arms the heartbeat
 under Monitor, waiting work and a worker asking for a ruling look exactly like
 an abandoned session to the operator. Dispatch creates that obligation, so this
 hook puts the runnable command back in the model's context at that moment.
@@ -13,6 +13,12 @@ import os
 import shlex
 import subprocess
 import sys
+
+
+DETACHED_DISPATCHES = {
+    ("bottega", "run", "start"): ("run start", 3),
+    ("orch", "do"): ("do", 2),
+}
 
 
 def heartbeat_path() -> str:
@@ -46,7 +52,7 @@ def heartbeat_armed(session_id: str) -> bool | None:
 
 
 def detached_dispatch(command: object):
-    """'do', 'land', or None -- which kind of detached work this command starts."""
+    """Return the detached dispatch spelling, or None for a blocking command."""
     if not isinstance(command, str):
         return None
     try:
@@ -55,22 +61,26 @@ def detached_dispatch(command: object):
         words = list(lexer)
     except ValueError:
         return None
-    for index, word in enumerate(words[:-1]):
-        if not (word == "orch" or os.path.basename(word) == "orch"):
+    for index, word in enumerate(words):
+        executable = os.path.basename(word)
+        match = next(
+            (
+                value
+                for prefix, value in DETACHED_DISPATCHES.items()
+                if executable == prefix[0]
+                and tuple(words[index + 1 : index + len(prefix)]) == prefix[1:]
+            ),
+            None,
+        )
+        if match is None:
             continue
-        verb = words[index + 1]
-        if verb not in ("do", "land"):
-            continue
+        kind, width = match
         args = []
-        for arg in words[index + 2:]:
+        for arg in words[index + width :]:
             if arg in (";", "&", "|", "&&", "||"):
                 break
             args.append(arg)
-        if verb == "do":
-            return "do" if "--follow" not in args else None
-        # `orch land` enqueues and returns exactly as `orch do` detaches. --wait
-        # blocks and needs no watcher; --status and --drain dispatch nothing.
-        return "land" if not ({"--wait", "--status", "--drain"} & set(args)) else None
+        return kind if "--follow" not in args else None
     return None
 
 

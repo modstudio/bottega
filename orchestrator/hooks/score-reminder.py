@@ -20,14 +20,9 @@ DB = os.environ.get("ORCH_DB") or subprocess.check_output(
 ).strip()
 
 
-def hub_bin():
+def bottega_bin():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "hub")
-
-
-def orch_bin():
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "orch")
+    return os.path.join(root, "bin", "bottega")
 
 
 def main() -> int:
@@ -39,7 +34,7 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except Exception as e:
-        print(f"orch: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
+        print(f"bottega: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
         return 0
 
     # Never loop: if this hook already asked once and Claude is stopping again,
@@ -57,7 +52,7 @@ def main() -> int:
     # score them, which is the one thing this file exists to prevent.
     # Remote Control can make the payload identity differ from the shell's.
     # Notes belong to either observed identity, and an acknowledgement by
-    # either one suppresses the reminder, so carry the ordered set to hub.
+    # either one suppresses the reminder, so carry the ordered set to the note owner.
     session_ids = list(dict.fromkeys(filter(None, [
         payload.get("session_id"), os.environ.get("CLAUDE_CODE_SESSION_ID")
     ])))
@@ -84,14 +79,14 @@ def main() -> int:
                   AND COALESCE(r.probe, 0) = 0
                   -- A CONVERSATION IS ONE UNIT OF WORK. A worker that stopped to ask
                   -- a design question produces one row per turn, and only the root is
-                  -- the thing anybody judged: `orch score` refuses a child outright,
+                  -- the thing anybody judged: `bottega score` refuses a child outright,
                   -- naming the root instead.
                   --
                   -- This predicate is a SECOND COPY of db.ts's UNSCORED_WHERE, in a
                   -- language that cannot import it, and it did exactly what a second
                   -- copy always does - the TypeScript one learned about turns and this
                   -- one did not, so the hook spent a session demanding verdicts on two
-                  -- runs that `orch score` would refuse to take. The same failure this
+                  -- runs that `bottega score` would refuse to take. The same failure this
                   -- canon already records for the router and the dashboard drifting
                   -- apart on what a score was.
                   AND r.parent_run_id IS NULL
@@ -181,7 +176,7 @@ def main() -> int:
             break
         try:
             result = subprocess.run(
-                [orch_bin(), "close-out", str(root_id), "--non-blocking"], capture_output=True,
+                [bottega_bin(), "run", "close-out", str(root_id), "--non-blocking"], capture_output=True,
                 text=True, timeout=remaining,
             )
             report = (result.stdout or result.stderr).strip()
@@ -201,7 +196,7 @@ def main() -> int:
 
     if cleanup_deferred:
         print(
-            "orch: Stop cleanup left run(s) {} for sweep".format(
+            "bottega: Stop cleanup left run(s) {} for sweep".format(
                 ", ".join(str(root) for root in dict.fromkeys(cleanup_deferred))
             ),
             file=sys.stderr,
@@ -211,7 +206,7 @@ def main() -> int:
 
     notes = []
     try:
-        note_args = [hub_bin(), "note", "list"]
+        note_args = [bottega_bin(), "note", "list"]
         for session_id in session_ids:
             note_args.extend(["--session", session_id])
         note_args.extend(["--actionable", "--json"])
@@ -230,7 +225,7 @@ def main() -> int:
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
-    # is how a session came to run a command orch then rejected. The hook cannot
+    # is how a session came to run a command bottega then rejected. The hook cannot
     # import the job table (it is TypeScript), so the jobs that write are named
     # here — and the reminder is generated from the same list rather than a
     # fixed string, so adding one means adding it here too.
@@ -274,7 +269,7 @@ def main() -> int:
             missing.append(f"--better-than {ids} | --worse-than {ids} | --same-as {ids}")
         suffix = "  rescore" if delivery is not None else ""
         lines.append(
-            f'  orch judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
+            f'  bottega score judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
             .replace("  --note", " --note")
         )
         for partner, agent, reason in run_pairs:
@@ -287,19 +282,19 @@ def main() -> int:
             axes += " " + pair_entry["quality"]
         if pair_entry["job"] in WRITING_JOBS and axes != "none":
             axes += " " + pair_entry["fidelity"]
-        lines.append(f"  orch judge {current} {axes} --better-than {ids} | --worse-than {ids} | --same-as {ids}")
+        lines.append(f"  bottega score judge {current} {axes} --better-than {ids} | --worse-than {ids} | --same-as {ids}")
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     con.close()
     if notes:
         if lines:
             lines.append("")
-        lines.append(f"{len(notes)} notes filed; keep, drop or promote with hub note:")
+        lines.append(f"{len(notes)} notes filed; keep, drop or promote with bottega note:")
         for note_label, note_text in notes:
             lines.append(
                 f"  {note_label}  {note_text[:80]}\n"
-                f"    hub note keep {note_label} | hub note drop {note_label} --reason \"...\" | "
-                f"hub note promote {note_label}"
+                f"    bottega note keep {note_label} | bottega note drop {note_label} --reason \"...\" | "
+                f"bottega note promote {note_label}"
             )
     if cleanup_holds:
         if lines:

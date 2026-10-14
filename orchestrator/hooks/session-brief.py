@@ -13,9 +13,9 @@ import uuid
 from datetime import datetime, timezone
 
 
-def _start(orch, *args, env=None, cwd=None):
+def _start(bottega, *args, env=None, cwd=None):
     return subprocess.Popen(
-        [orch, *args],
+        [bottega, *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -44,7 +44,7 @@ def _state_root(env=None):
     return os.path.join(home, ".local", "state", state_slug)
 
 
-def _start_settings_apply(orch, env=None):
+def _start_settings_apply(bottega, env=None):
     log_path = os.path.join(_state_root(env), "orchestrator", "settings-apply.log")
     os.makedirs(os.path.dirname(log_path), mode=0o700, exist_ok=True)
     descriptor = os.open(
@@ -56,7 +56,7 @@ def _start_settings_apply(orch, env=None):
     offset = os.lseek(descriptor, 0, os.SEEK_END)
     try:
         proc = subprocess.Popen(
-            [orch, "settings", "apply"],
+            [bottega, "machine", "settings", "apply"],
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -117,20 +117,20 @@ def _resume_sentence(source, open_briefs):
         if continuation:
             return (
                 f"Open resume brief `{slug}`. Offer to resume from it; "
-                "fetch with get_doc only after they agree, then run orch doc consume."
+                "fetch with get_doc only after they agree, then run bottega doc consume."
             )
         return (
             f"Open resume brief `{slug}`. Ask whether to load it before fetching with get_doc; "
-            "after they agree and it is loaded, run orch doc consume."
+            "after they agree and it is loaded, run bottega doc consume."
         )
     if continuation:
         return (
             "Open resume briefs above. Offer to resume from one of them; "
-            "fetch with get_doc only after they agree, then run orch doc consume."
+            "fetch with get_doc only after they agree, then run bottega doc consume."
         )
     return (
         "Open resume briefs above. Ask which (if any) to load before fetching with get_doc; "
-        "after they agree and one is loaded, run orch doc consume."
+        "after they agree and one is loaded, run bottega doc consume."
     )
 
 
@@ -139,11 +139,11 @@ HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
 # Least important first. Board notices are separately droppable at lowest priority.
 _HOOK_CONTEXT_DROPPABLE = (
-    ("board", "board notices", "orch board read --all"),
-    ("issues", "filed issues", "orch fix-defect --waiting"),
-    ("inbox", "inbox detail", "orch inbox"),
-    ("extra", "heartbeat and monitor extra", "orch monitor"),
-    ("resume_table", "resume table", "orch doc resumes"),
+    ("board", "board notices", "bottega board read --all"),
+    ("issues", "filed issues", "bottega workflow fix-defect --waiting"),
+    ("inbox", "inbox detail", "bottega question inbox"),
+    ("extra", "heartbeat and monitor extra", "bottega machine monitor"),
+    ("resume_table", "resume table", "bottega doc resumes"),
 )
 _HOOK_CONTEXT_REST = ("resume_table", "inbox", "issues", "extra", "board")
 
@@ -216,12 +216,12 @@ def _board_start_slice(completed):
     if completed is None:
         return "", [], "", 0, 0
     if completed.returncode != 0:
-        failure = "Board could not be read; orch board read shows it."
+        failure = "Board could not be read; bottega board read shows it."
         return failure, [], failure, 0, 0
     try:
         rows, warning, withheld = _board_payload(completed)
     except ValueError:
-        failure = "Board could not be read; orch board read shows it."
+        failure = "Board could not be read; bottega board read shows it."
         return failure, [], failure, 0, 0
     full = "\n\n".join([*(row["text"] for row in rows), *([warning] if warning else [])])
     compact = [row["oneLine"] for row in rows]
@@ -235,7 +235,7 @@ def _withheld_board_notice(count):
     noun = "message" if count == 1 else "messages"
     return (
         f"{count} unexpired board {noun} posted before this session were withheld; "
-        "orch board read shows them."
+        "bottega board read shows them."
     )
 
 
@@ -285,8 +285,8 @@ def _monitor_delivery(stdout, owner_session):
     return rows, warning
 
 
-def _monitor_notice_command(orch, skip_board_refresh=False):
-    command = [orch, "monitor", "--notices", "--json"]
+def _monitor_notice_command(bottega, skip_board_refresh=False):
+    command = [bottega, "machine", "monitor", "--notices", "--json"]
     if skip_board_refresh:
         command.append("--skip-board-refresh")
     return command
@@ -345,7 +345,7 @@ def assemble_session_start_context(
     context = assemble_additional_context(**{**sections, "board": ""}, budget=budget)
     noun = "message" if board_count == 1 else "messages"
     verb = "is" if board_count == 1 else "are"
-    notice = f"{board_count} board {noun} {verb} waiting; orch board read shows them."
+    notice = f"{board_count} board {noun} {verb} waiting; bottega board read shows them."
     return context, "count", notice
 
 
@@ -413,7 +413,7 @@ def main() -> int:
     withheld_board_count = 0
     board_mode = "full"
     cwd = None
-    orch = None
+    bottega = None
     monitor_notices = []
     monitor_warning = None
     inbox_env = None
@@ -426,9 +426,9 @@ def main() -> int:
         if not cwd:
             return 0
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
-        orch = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
-        if not os.access(orch, os.X_OK):
-            message = f"Inbox command is missing or not executable: {orch}; question state is unknown."
+        bottega = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
+        if not os.access(bottega, os.X_OK):
+            message = f"Inbox command is missing or not executable: {bottega}; question state is unknown."
             output = {
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
@@ -437,23 +437,23 @@ def main() -> int:
                 "systemMessage": message,
             }
             return 0
-        resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd, "--json")
+        resumes_p = _start(bottega, "doc", "resumes", "--cwd", cwd, "--json")
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
             subprocess.run(
-                [orch, "board", "presence", "--started-at", session_started_at],
+                [bottega, "board", "presence", "--started-at", session_started_at],
                 env=inbox_env, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, timeout=1, check=False, cwd=cwd
             )
-            board_p = _start(orch, "board", "read", "--claim", env=inbox_env, cwd=cwd)
+            board_p = _start(bottega, "board", "read", "--claim", env=inbox_env, cwd=cwd)
         inbox_p = _start(
-            orch, "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
+            bottega, "question", "inbox", "--all", "--active", "--cwd", cwd, "--json", env=inbox_env
         )
-        waiting_p = _start(orch, "fix-defect", "--waiting", "--cwd", cwd, "--json")
-        context_p = _start(orch, "context", "--cwd", cwd, "--json")
+        waiting_p = _start(bottega, "workflow", "fix-defect", "--waiting", "--cwd", cwd, "--json")
+        context_p = _start(bottega, "agent", "context", "--cwd", cwd, "--json")
         try:
-            settings_p, settings_log_path, settings_log_offset = _start_settings_apply(orch)
+            settings_p, settings_log_path, settings_log_offset = _start_settings_apply(bottega)
         except Exception as error:
             settings_start_failure = _settings_apply_start_failure(error)
         monitor_failure = None
@@ -468,7 +468,7 @@ def main() -> int:
                 inbox_env["ORCH_MONITOR_CAPABILITY_PATH"] = capability_path
                 inbox_env["ORCH_MONITOR_CAPABILITY_TOKEN"] = capability_token
                 monitor_p = _start(
-                    *_monitor_notice_command(orch, skip_board_refresh=True), env=inbox_env
+                    *_monitor_notice_command(bottega, skip_board_refresh=True), env=inbox_env
                 )
                 notice_deadline = time.monotonic() + notice_timeout
             except Exception:
@@ -735,14 +735,14 @@ def main() -> int:
         if unworked_issues:
             keys = ", ".join(item["key"] for item in unworked_issues)
             message = (
-                f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run orch fix-defect"
+                f"{len(unworked_issues)} filed issue(s) not yet worked: {keys} - run bottega workflow fix-defect"
             )
             notices.append(message)
             issues_lines.append(message)
         if unscored_loop_runs:
             ids = ", ".join(str(item["runId"]) for item in unscored_loop_runs)
             message = (
-                f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with orch result <id>, score with orch judge <id>"
+                f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with bottega run result <id>, score with bottega score judge <id>"
             )
             notices.append(message)
             issues_lines.append(message)
@@ -879,11 +879,11 @@ def main() -> int:
         emitted_board_ids = (
             _emitted_board_ids(output, board_text, board_ids) if board_mode == "full" else []
         )
-        if emitted_board_ids and inbox_env is not None and orch is not None:
+        if emitted_board_ids and inbox_env is not None and bottega is not None:
             try:
                 subprocess.run(
                     [
-                        orch, "board", "delivered",
+                        bottega, "board", "delivered",
                         ",".join(str(item) for item in emitted_board_ids),
                         "--session", sid, "--point", "session-start",
                         "--emission", board_emission_id,
@@ -900,7 +900,7 @@ def main() -> int:
         if monitor_notices and inbox_env is not None:
             try:
                 subprocess.run(
-                    [orch, "monitor", "--ack-notices", ",".join(
+                    [bottega, "machine", "monitor", "--ack-notices", ",".join(
                         str(item["noticeId"]) for item in monitor_notices
                     )],
                     env=inbox_env,

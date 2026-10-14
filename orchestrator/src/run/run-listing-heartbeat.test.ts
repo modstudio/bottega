@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { dir } from '../../test/preload.ts'
@@ -94,15 +95,15 @@ test('heartbeat termination reaps an active guarded call and its watchdog', asyn
     fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url)),
     join(hooks, 'orch-heartbeat.sh'),
   )
-  const orch = join(bin, 'orch')
+  const frontDoor = join(bin, PLATFORM_SLUG)
   writeFileSync(
-    orch,
+    frontDoor,
     `#!/bin/sh
-if [ "$1" = "inbox" ]; then
+if [ "$1" = "question" ] && [ "$2" = "inbox" ]; then
   echo '[]'
-elif [ "$1" = "runs" ]; then
+elif [ "$1" = "run" ] && [ "$2" = "list" ]; then
   echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"termination-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
-elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
+elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--notices" ]; then
   echo "$$" > "$TARGET_PID_PATH"
   exec /bin/sleep 30
 else
@@ -110,7 +111,7 @@ else
 fi
 `,
   )
-  chmodSync(orch, 0o755)
+  chmodSync(frontDoor, 0o755)
   const sleep = join(bin, 'sleep')
   writeFileSync(
     sleep,
@@ -187,17 +188,17 @@ test('heartbeat announces an unchanged notice query failure once with its reason
     fileURLToPath(new URL('../../hooks/orch-heartbeat.sh', import.meta.url)),
     join(hooks, 'orch-heartbeat.sh'),
   )
-  const orch = join(bin, 'orch')
+  const frontDoor = join(bin, PLATFORM_SLUG)
   writeFileSync(
-    orch,
+    frontDoor,
     `#!/bin/sh
 if [ "$1" = "board" ]; then
   exit 0
-elif [ "$1" = "inbox" ]; then
+elif [ "$1" = "question" ] && [ "$2" = "inbox" ]; then
   echo '[]'
-elif [ "$1" = "runs" ]; then
+elif [ "$1" = "run" ] && [ "$2" = "list" ]; then
   echo '{"id":42,"live_member_id":42,"job":"implement","agent":"codex","status":"running","session_id":"notice-failure-session","started_at":"2026-09-22T12:00:00.000Z","latency_ms":null,"failure_kind":null,"idle":null,"stall_state":"healthy","stall":null}'
-elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
+elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--notices" ]; then
   count=0
   [ ! -f "$COUNTER_PATH" ] || count=$(<"$COUNTER_PATH")
   count=$((count + 1))
@@ -245,14 +246,14 @@ elif [ "$1" = "monitor" ] && [ "$2" = "--notices" ]; then
     printf 'hosted\tnotice query unavailable\nignored second line\n' >&2
   fi
   exit 7
-elif [ "$1" = "monitor" ] && [ "$2" = "--lock-holder" ]; then
+elif [ "$1" = "machine" ] && [ "$2" = "monitor" ] && [ "$3" = "--lock-holder" ]; then
   echo '{}'
 else
   exit 2
 fi
 `,
   )
-  chmodSync(orch, 0o755)
+  chmodSync(frontDoor, 0o755)
 
   try {
     const runScenario = (

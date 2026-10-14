@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -182,7 +183,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     )
     expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
     expect(hook).toContain('deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS')
-    expect(hook).toContain('[orch_bin(), "close-out", str(root_id), "--non-blocking"]')
+    expect(hook).toContain('[bottega_bin(), "run", "close-out", str(root_id), "--non-blocking"]')
     expect(hook).toContain('elif report.startswith("kept "):')
     expect(hook).toContain('print(report, file=sys.stderr)')
     expect(hook).toContain('cleanup_roots[index:]')
@@ -196,9 +197,9 @@ describe('the Stop hook and orch agree on what is unscored', () => {
       'utf8',
     )
     expect(hook).toContain('row["label"]')
-    expect(hook).toContain('hub note keep {note_label}')
-    expect(hook).toContain('hub note drop {note_label}')
-    expect(hook).toContain('hub note promote {note_label}')
+    expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
+    expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
+    expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label}`)
   })
 
   const predicateDrift = (tsWhere: string, hookWhere: string) => {

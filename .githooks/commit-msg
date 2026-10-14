@@ -5,7 +5,7 @@
 # Both checks always run so one cannot mask the other.
 status=0
 
-if ! orch check attribution --message "$1"; then
+if ! bottega gate check attribution --message "$1"; then
   status=1
 fi
 
@@ -15,7 +15,7 @@ Merge\ *|fixup!*|squash!*) ;;
 *)
   if ! printf '%s\n' "$subject" | grep -qE 'DEV-[0-9]+'; then
     echo "commit-msg: subject must contain a DEV-<digits> task key" >&2
-    echo "commit-msg: hub task new --project bottega --title \"...\"" >&2
+    echo "commit-msg: bottega task new --project bottega --title \"...\"" >&2
     status=1
   fi
   ;;

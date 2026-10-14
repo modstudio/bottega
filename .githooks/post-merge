@@ -16,11 +16,8 @@ case "$changed" in
     # A caller may carry the live-store override used by linked worktrees.
     # The main checkout migrates the stores resolved by its own binaries.
     unset ORCH_DB ORCH_DEPTH
-    if ! (cd "$root" && ./bin/orch migrate); then
-      echo "post-merge: orchestrator migration failed; run by hand: cd '$root' && ./bin/orch migrate" >&2
-    fi
-    if ! (cd "$root" && ./bin/hub migrate); then
-      echo "post-merge: hub migration failed; run by hand: cd '$root' && ./bin/hub migrate" >&2
+    if ! (cd "$root" && ./bin/bottega machine migrate); then
+      echo "post-merge: migration failed; run by hand: cd '$root' && ./bin/bottega machine migrate" >&2
     fi
     ;;
 esac

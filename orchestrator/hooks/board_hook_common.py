@@ -77,7 +77,7 @@ def pending(
     exclude_acknowledgements: bool = False,
 ):
     binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
+        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
     )
     command = [binary, "board", "pending", "--session", session, "--json"]
     if recently_injected:
@@ -116,7 +116,7 @@ def mark_delivered(
     if not ids:
         return
     binary = os.environ.get("ORCH_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch")
+        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
     )
     command = [
         binary, "board", "delivered", ",".join(ids), "--session", session,

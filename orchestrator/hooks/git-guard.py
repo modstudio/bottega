@@ -106,6 +106,7 @@ BRANCH_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
 # directory other than the one resolved below. A compound is left alone: the
 # harness matches each of its segments against the permission rules already.
 UNSAFE = ("&&", "||", ";", "|", "\n", "\r", "`", "$(", "${", ">", "<", "&")
+WORKFLOW_EXEC_PREFIXES = (("bottega", "workflow", "exec"), ("orch", "workflow", "exec"))
 
 
 def decide(decision, reason):
@@ -181,12 +182,12 @@ def git_invocation(payload):
     if not argv:
         return None
     cwd = payload.get("cwd") or os.getcwd()
-    # `orch workflow exec [flags] -- git ...` records the exit of the command
-    # after `--`; judge that command in the directory exec will use.
+    # Workflow exec records the exit of the command after `--`; judge that
+    # command in the directory exec will use. Keep both spellings while legacy
+    # callers remain.
     if (
         len(argv) > 3
-        and os.path.basename(argv[0]) == "orch"
-        and argv[1:3] == ["workflow", "exec"]
+        and (os.path.basename(argv[0]), *argv[1:3]) in WORKFLOW_EXEC_PREFIXES
         and "--" in argv
     ):
         split = argv.index("--")

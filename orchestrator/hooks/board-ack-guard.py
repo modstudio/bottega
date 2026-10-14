@@ -31,7 +31,7 @@ def notice_summary(notices, stopping: bool = False) -> str:
     count = len(notices)
     state = "is stopping with" if stopping else "has"
     noun = "notice" if count == 1 else "notices"
-    commands = "\n".join(f"orch board ack {item['id']}" for item in notices)
+    commands = "\n".join(f"bottega board ack {item['id']}" for item in notices)
     lead = (
         f"This architect session {state} {count} unacknowledged board {noun}. "
         "Acknowledge with:\n"

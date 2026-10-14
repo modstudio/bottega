@@ -84,10 +84,10 @@ def main():
         return unchecked(path or "<unknown test file>", "tool input is not a supported editor shape")
 
     install_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    orch = os.path.join(install_root, "bin", "orch")
+    bottega = os.path.join(install_root, "bin", "bottega")
     try:
         result = subprocess.run(
-            [orch, "test-substance", "judge", "--tool-input"],
+            [bottega, "gate", "test-substance", "judge", "--tool-input"],
             input=json.dumps(payload),
             capture_output=True,
             env=judge_environment(),

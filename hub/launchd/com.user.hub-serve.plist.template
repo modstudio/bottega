@@ -10,8 +10,9 @@
          be up whether or not anyone started it by hand. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__INSTALL_ROOT__/bin/hub</string>
-        <string>serve</string>
+        <string>__INSTALL_ROOT__/bin/bottega</string>
+        <string>dashboard</string>
+        <string>start</string>
         <string>--port</string>
         <string>__HUB_PORT__</string>
     </array>
@@ -25,7 +26,7 @@
     <key>ThrottleInterval</key>
     <integer>30</integer>
 
-    <!-- PATH is not inherited under launchd, and the dashboard shells `orch`
+    <!-- PATH is not inherited under launchd, and the dashboard shells `bottega`
          and `bun`. -->
     <key>EnvironmentVariables</key>
     <dict>
