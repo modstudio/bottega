@@ -621,7 +621,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
-
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,

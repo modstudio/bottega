@@ -529,10 +529,6 @@ export const modules: ArchitectureModule[] = [
     '../run/run-alive.ts',
     '../run/run-lease.ts',
   ]),
-  module('orchestrator/src/resources/resource-claims.ts', [
-    '../../../shared/record-id.ts',
-    '../run/synthetic-lifecycle-job.ts',
-  ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
