@@ -15,6 +15,7 @@
 !hub/web/package.json
 # A workspace member's manifest, needed by the frozen install even though the
 # image never runs its code.
+!cli/package.json
 !retrieval/package.json
 !hub/deploy/site/package.json
 !hub/web/tsconfig.json
