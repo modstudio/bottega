@@ -84,7 +84,7 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     )
     expect(applyMigrations(database)).toEqual(['0109_remaining_store_record_identity'])
     for (const table of TABLES) {
-      expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
+      expect(database.query(`SELECT count(*) AS n FROM ${table}`).get(), table).toEqual({
         n: before[table],
       })
       const ids = database.query<{ record_id: string }, []>(`SELECT record_id FROM ${table}`).all()
@@ -115,6 +115,14 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     })
     expect(database.query('SELECT invocation_id FROM monitor_condition').get()).toEqual({
       invocation_id: 1,
+    })
+    expect(database.query("SELECT collected_at,canon_tokens FROM metric WHERE day='2026-10-14'").get()).toEqual({
+      collected_at: '2026-10-14',
+      canon_tokens: 0,
+    })
+    expect(database.query('SELECT delivery,read_by FROM run_message').get()).toEqual({
+      delivery: 'architect_cli',
+      read_by: null,
     })
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const fresh = new Database(':memory:')

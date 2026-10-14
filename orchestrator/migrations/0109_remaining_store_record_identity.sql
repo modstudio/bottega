@@ -102,14 +102,21 @@ CREATE INDEX doc_related_subject_subject ON doc_related_subject(subject_id);
 --> statement-breakpoint
 CREATE TABLE metric_record_identity (
   day TEXT PRIMARY KEY, claude_tokens INTEGER NOT NULL, cache_read INTEGER NOT NULL,
-  messages INTEGER NOT NULL, tasks INTEGER NOT NULL, canon_tokens INTEGER NOT NULL DEFAULT 0,
+  messages INTEGER NOT NULL, tasks INTEGER NOT NULL, collected_at TEXT NOT NULL,
+  canon_tokens INTEGER NOT NULL DEFAULT 0,
   other_tokens INTEGER NOT NULL DEFAULT 0, commits INTEGER NOT NULL DEFAULT 0,
   files INTEGER NOT NULL DEFAULT 0, lines_product INTEGER NOT NULL DEFAULT 0,
   lines_test INTEGER NOT NULL DEFAULT 0, lines_docs INTEGER NOT NULL DEFAULT 0,
   lines_config INTEGER NOT NULL DEFAULT 0, lines_generated INTEGER NOT NULL DEFAULT 0,
-  collected_at TEXT NOT NULL, record_id TEXT NOT NULL
+  record_id TEXT NOT NULL
 );
-INSERT INTO metric_record_identity SELECT *, lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))) FROM metric_before_record_identity ORDER BY day;
+INSERT INTO metric_record_identity
+  (day,claude_tokens,cache_read,messages,tasks,collected_at,canon_tokens,other_tokens,commits,
+   files,lines_product,lines_test,lines_docs,lines_config,lines_generated,record_id)
+SELECT day,claude_tokens,cache_read,messages,tasks,collected_at,canon_tokens,other_tokens,commits,
+       files,lines_product,lines_test,lines_docs,lines_config,lines_generated,
+       lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))
+FROM metric_before_record_identity ORDER BY day;
 DROP TABLE metric;
 ALTER TABLE metric_record_identity RENAME TO metric;
 --> statement-breakpoint
@@ -164,11 +171,15 @@ CREATE TABLE run_message_record_identity (
   root_run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
   run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE, sender_session TEXT,
   body TEXT NOT NULL CHECK (length(trim(body)) > 0), created_at TEXT NOT NULL,
-  read_at TEXT, read_by TEXT,
-  delivery TEXT NOT NULL CHECK (delivery IN ('architect_cli','worker_tool')),
+  read_at TEXT, delivery TEXT NOT NULL CHECK (delivery IN ('architect_cli','worker_tool')),
+  read_by TEXT,
   record_id TEXT NOT NULL
 );
-INSERT INTO run_message_record_identity SELECT *, lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))) FROM run_message_before_record_identity ORDER BY id;
+INSERT INTO run_message_record_identity
+  (id,direction,root_run_id,run_id,sender_session,body,created_at,read_at,delivery,read_by,record_id)
+SELECT id,direction,root_run_id,run_id,sender_session,body,created_at,read_at,delivery,read_by,
+       lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))
+FROM run_message_before_record_identity ORDER BY id;
 DROP TABLE run_message;
 ALTER TABLE run_message_record_identity RENAME TO run_message;
 CREATE INDEX run_message_root ON run_message(root_run_id, id);
