@@ -1,12 +1,25 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { HighlightStyle, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { styleTags, Tag, tags as t } from '@lezer/highlight'
 import { GFM } from '@lezer/markdown'
 import { useEffect, useRef } from 'react'
+
+const mermaidLanguage = LanguageDescription.of({
+  name: 'Mermaid',
+  alias: ['mermaid'],
+  load() {
+    return import('codemirror-lang-mermaid').then((mod) => mod.mermaid())
+  },
+})
+
+function codeLanguages(info: string) {
+  if (info.toLowerCase() === 'mermaid') return mermaidLanguage
+  return LanguageDescription.matchLanguageName(languages, info, true)
+}
 
 const inlineCode = Tag.define(t.monospace)
 
@@ -59,7 +72,7 @@ function editorExtensions(onChange: (value: string) => void, onModSave: () => vo
     EditorView.lineWrapping,
     markdown({
       extensions: [GFM, { props: [styleTags({ InlineCode: inlineCode })] }],
-      codeLanguages: languages,
+      codeLanguages,
     }),
     syntaxHighlighting(highlight),
     EditorView.updateListener.of((update) => {
