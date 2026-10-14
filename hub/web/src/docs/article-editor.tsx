@@ -22,7 +22,7 @@ import { docLeaveNeedsConfirmation, isDocReasonReady, isDocSaveEnabled } from '.
 import { LONG_TITLE } from './reading.tsx'
 import { isScope } from './scope.ts'
 import type { DocsDoc, DocsSource } from './types.ts'
-import { useExpectedRevision } from './use-docs.ts'
+import { type StoredDocument, useStoredDocument } from './use-docs.ts'
 
 function isConflictError(error: unknown): boolean {
   return error instanceof TRPCClientError && error.data?.code === 'CONFLICT'
@@ -35,6 +35,13 @@ type MarkdownEditorProps = {
 }
 
 type Draft = { title: string; body: string }
+
+export function articleDraftSource(
+  _pageDocument: Pick<DocsDoc, 'title' | 'body'> | null,
+  storedDocument: Pick<StoredDocument, 'title' | 'body'> | undefined,
+): Draft | null {
+  return storedDocument ? { title: storedDocument.title, body: storedDocument.body } : null
+}
 
 function ArticleEditTitle({
   title,
@@ -283,39 +290,49 @@ function writeArticle(
 
 async function fetchCurrentArticle(source: DocsSource, doc: DocsDoc): Promise<Draft | null> {
   if (source === 'hosted') {
-    const next = await queryClient.fetchQuery(trpc.record.doc.queryOptions({ id: doc.id }))
+    // A conflict means the cached copy is out of date, so both reads go to the server.
+    const next = await queryClient.fetchQuery({
+      ...trpc.record.doc.queryOptions({ id: doc.id }),
+      staleTime: 0,
+    })
     return { title: next.title, body: next.body }
   }
   if (!isScope(doc.scope)) return null
-  const next = await queryClient.fetchQuery(
-    trpc.doc.read.queryOptions({
+  const next = await queryClient.fetchQuery({
+    ...trpc.doc.get.queryOptions({
       scope: doc.scope,
       subject: doc.subject,
       slug: doc.slug,
     }),
-  )
+    staleTime: 0,
+  })
   return { title: next.title, body: next.body }
 }
 
-function useArticleDraft(doc: DocsDoc | null, editing: boolean) {
-  const [title, setTitle] = useState(doc?.title ?? '')
-  const [body, setBody] = useState(doc?.body ?? '')
-  const [loaded, setLoaded] = useState<Draft>({ title: doc?.title ?? '', body: doc?.body ?? '' })
+function useArticleDraft(
+  doc: DocsDoc | null,
+  storedDocument: StoredDocument | undefined,
+  editing: boolean,
+) {
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [loaded, setLoaded] = useState<Draft>({ title: '', body: '' })
   const [session, setSession] = useState<string | null>(null)
   const allowLeave = useRef(false)
+  const source = articleDraftSource(doc, storedDocument)
   // A new edit session starts from the document during render, so the first painted
   // frame of the editor already shows its title and body.
-  const current = editing && doc ? doc.id : null
+  const current = editing && doc && source ? doc.id : null
   if (current !== session) {
     setSession(current)
-    if (doc && current) {
-      setTitle(doc.title)
-      setBody(doc.body)
-      setLoaded({ title: doc.title, body: doc.body })
+    if (source && current) {
+      setTitle(source.title)
+      setBody(source.body)
+      setLoaded(source)
       allowLeave.current = false
     }
   }
-  return { title, setTitle, body, setBody, loaded, setLoaded, allowLeave }
+  return { title, setTitle, body, setBody, loaded, setLoaded, allowLeave, ready: Boolean(current) }
 }
 
 function useReloadArticle(
@@ -388,17 +405,18 @@ export function useArticleEditor({
   editing: boolean
   onLeave: () => void
 }) {
-  const { title, setTitle, body, setBody, loaded, setLoaded, allowLeave } = useArticleDraft(
+  const storedDocument = useStoredDocument(doc, source, editing)
+  const { title, setTitle, body, setBody, loaded, setLoaded, allowLeave, ready } = useArticleDraft(
     doc,
+    storedDocument,
     editing,
   )
   const notice = useReloadArticle(doc, source, editing, setTitle, setBody, setLoaded)
   const popoverRef = useRef<HTMLDivElement>(null)
   const reasonRef = useRef<HTMLInputElement>(null)
-  const expectedRevision = useExpectedRevision(doc, source, editing)
-  const hostedRevisionMissing = source === 'hosted' && !expectedRevision
+  const expectedRevision = storedDocument?.revision
   const draft = { title, body }
-  const saveEnabled = Boolean(doc) && isDocSaveEnabled(loaded, draft) && !hostedRevisionMissing
+  const saveEnabled = ready && isDocSaveEnabled(loaded, draft)
   const blocker = useArticleLeave(editing, docLeaveNeedsConfirmation(loaded, draft), allowLeave)
 
   function failed(error: unknown) {
@@ -439,6 +457,7 @@ export function useArticleEditor({
     setTitle,
     body,
     setBody,
+    ready,
     saveEnabled,
     saving,
     reason: notice.reason,
@@ -488,23 +507,24 @@ export function editorChrome(
   revisionBody?: ReactNode,
   viewedRevision?: { title: string; body: string } | null,
 ) {
+  const activeEditing = editing && editor.ready
   return {
-    editing,
+    editing: activeEditing,
     canManage: mayEdit,
-    viewedRevision: editing ? null : viewedRevision,
-    bodyView: editing ? (
+    viewedRevision: activeEditing ? null : viewedRevision,
+    bodyView: activeEditing ? (
       <ArticleEditBody value={editor.body} onChange={editor.setBody} onModSave={editor.openSave} />
     ) : (
       revisionBody
     ),
-    banner: editing ? (
+    banner: activeEditing ? (
       <ArticleEditBanner
         conflict={editor.conflict}
         message={editor.errorMessage}
         onReload={editor.askReload}
       />
     ) : null,
-    titleView: editing
+    titleView: activeEditing
       ? (headingRef: Ref<HTMLElement | null>) => (
           <ArticleEditTitle
             title={editor.title}
@@ -513,7 +533,7 @@ export function editorChrome(
           />
         )
       : undefined,
-    headerAction: editing ? (
+    headerAction: activeEditing ? (
       <ArticleEditActions
         saveEnabled={editor.saveEnabled}
         saving={editor.saving}

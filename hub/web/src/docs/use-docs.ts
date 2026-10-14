@@ -109,8 +109,14 @@ export function useDocsSearch(
   return { items, isPending: enabled && result.isFetching, error: result.error }
 }
 
-/** The revision a write must name to replace the document as loaded; fetched only while `enabled`. */
-export function useExpectedRevision(doc: DocsDoc | null, source: DocsSource, enabled: boolean) {
+export type StoredDocument = { title: string; body: string; revision: string | null }
+
+/** The unprojected document a write replaces; fetched only while `enabled`. */
+export function useStoredDocument(
+  doc: DocsDoc | null,
+  source: DocsSource,
+  enabled: boolean,
+): StoredDocument | undefined {
   const scoped = Boolean(doc && isScope(doc.scope))
   const localDoc = useQuery({
     ...trpc.doc.get.queryOptions({
@@ -120,11 +126,27 @@ export function useExpectedRevision(doc: DocsDoc | null, source: DocsSource, ena
     }),
     enabled: enabled && source === 'local' && scoped,
   })
+  const hostedDoc = useQuery({
+    ...trpc.record.doc.queryOptions({
+      id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
+    }),
+    enabled: enabled && source === 'hosted' && Boolean(doc?.id),
+  })
   const hostedRevisions = useQuery({
     ...trpc.record.docRevisions.queryOptions({
       id: doc?.id ?? '00000000-0000-4000-8000-000000000000',
     }),
     enabled: enabled && source === 'hosted' && Boolean(doc?.id),
   })
-  return source === 'hosted' ? hostedRevisions.data?.items[0]?.id : localDoc.data?.revision
+  if (source === 'hosted') {
+    const revision = hostedRevisions.data?.items[0]?.id
+    if (!hostedDoc.data || !revision) return undefined
+    return { title: hostedDoc.data.title, body: hostedDoc.data.body, revision }
+  }
+  if (source !== 'local' || !localDoc.data) return undefined
+  return {
+    title: localDoc.data.title,
+    body: localDoc.data.body,
+    revision: localDoc.data.revision,
+  }
 }
