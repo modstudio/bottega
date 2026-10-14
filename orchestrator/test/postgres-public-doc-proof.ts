@@ -43,22 +43,22 @@ export function registerPublicDocProofs(input: {
     input.admin(`
       INSERT INTO doc (
         id, space_id, scope, subject, owner_user_id, slug, title, body, delivery,
-        audiences, featured, project_id, created_at, updated_at, deleted_at
+        audiences, featured, project_id, kind, created_at, updated_at, deleted_at
       ) VALUES
         ('${PUBLIC_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'public-guide', 'Public guide', E'public searchable body\n:::section{audience="internal"}\nhiddenmargin\n:::', 'demand', ARRAY['technical','internal','customer'], true, '${publicProjectId}', now(), now(), NULL),
+         'public-guide', 'Public guide', E'public searchable body\n:::section{audience="internal"}\nhiddenmargin\n:::', 'demand', ARRAY['technical','internal','customer'], true, '${publicProjectId}', 'article', now(), now(), NULL),
         ('${TECHNICAL_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', ARRAY['technical'], false, '${publicProjectId}', now(), now(), NULL),
+         'technical-guide', 'Technical guide', 'hidden technical body', 'demand', ARRAY['technical'], false, '${publicProjectId}', 'article', now(), now(), NULL),
         ('${OWNED_DOC}', '${publicSpaceId}', 'canon', NULL, '${input.ownerUserId}',
-         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', ARRAY['customer'], false, '${publicProjectId}', now(), now(), NULL),
+         'owned-guide', 'Owned guide', 'hidden owned body', 'demand', ARRAY['customer'], false, '${publicProjectId}', 'article', now(), now(), NULL),
         ('${DELETED_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', ARRAY['customer'], false, '${publicProjectId}', now(), now(), now()),
+         'deleted-guide', 'Deleted guide', 'hidden deleted body', 'demand', ARRAY['customer'], false, '${publicProjectId}', 'article', now(), now(), now()),
         ('${PRIVATE_SPACE_DOC}', '${privateSpaceId}', 'global', NULL, NULL,
-         'private-guide', 'Private guide', 'hidden private body', 'demand', ARRAY['customer'], false, '${privateProjectId}', now(), now(), NULL),
+         'private-guide', 'Private guide', 'hidden private body', 'demand', ARRAY['customer'], false, '${privateProjectId}', 'article', now(), now(), NULL),
         ('${OTHER_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', ARRAY['customer'], false, '${otherProjectId}', now(), now(), NULL),
+         'other-project-guide', 'Other project guide', 'hidden other project body', 'demand', ARRAY['customer'], false, '${otherProjectId}', 'article', now(), now(), NULL),
         ('${NO_PROJECT_DOC}', '${publicSpaceId}', 'global', NULL, NULL,
-         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', ARRAY['customer'], false, NULL, now(), now(), NULL);
+         'no-project-guide', 'No project guide', 'hidden no project body', 'demand', ARRAY['customer'], false, NULL, 'article', now(), now(), NULL);
     `)
   })
 
