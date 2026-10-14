@@ -195,7 +195,7 @@ type EvidenceReference = {
   kind: string
 }
 
-export function evidenceReferences(kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS, row: Payload) {
+function evidenceReferences(kind: keyof typeof OUTBOX_PAYLOAD_CONTRACTS, row: Payload) {
   const reference = (
     table: MachineEvidenceTable,
     id: unknown,
