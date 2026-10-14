@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { fileURLToPath } from 'node:url'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {

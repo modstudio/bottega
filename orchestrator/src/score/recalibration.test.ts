@@ -2,11 +2,10 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recalibrate } from './recalibration.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 const priorCalibrationSession = process.env.CLAUDE_CODE_SESSION_ID
 const outputs: string[] = []

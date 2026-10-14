@@ -1,10 +1,9 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { removeHookTree } from '../hook-tree/tree.ts'
 import { landingTreeSeedRequest, releaseFailedLandingTree } from './tree.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 test('landing-tree seed request carries the recorded launch seed', () => {
   expect(

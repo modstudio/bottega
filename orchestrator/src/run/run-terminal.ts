@@ -6,6 +6,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutToWatch,
@@ -23,7 +24,6 @@ import {
   type realQuestions,
   type WorkerReply,
 } from '../contract/contract.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'

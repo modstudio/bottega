@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import {
@@ -17,7 +18,6 @@ import {
   realQuestions,
   type WorkerReply,
 } from '../contract/contract.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'

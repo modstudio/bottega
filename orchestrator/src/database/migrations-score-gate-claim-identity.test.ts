@@ -65,7 +65,11 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
                 (2,'01990000-0000-7000-8000-000000000712',2,'2026-10-14','Two?')`,
       )
       .run()
-    database.query("INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000721','2026-10-14')").run()
+    database
+      .query(
+        "INSERT INTO review (id,record_id,recorded_at) VALUES (1,'01990000-0000-7000-8000-000000000721','2026-10-14')",
+      )
+      .run()
 
     database
       .query(
@@ -180,9 +184,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
         n: before[table],
       })
-      const ids = database
-        .query<{ record_id: string }, []>(`SELECT record_id FROM ${table}`)
-        .all()
+      const ids = database.query<{ record_id: string }, []>(`SELECT record_id FROM ${table}`).all()
       expect(ids.length).toBe(before[table]!)
       for (const row of ids) expect(row.record_id).toMatch(UUID_V4)
       expect(
@@ -204,13 +206,16 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
       run_a_id: 1,
       run_b_id: 2,
     })
-    expect(database.query('SELECT run_id,question_id FROM run_carried_ruling ORDER BY run_id').all()).toEqual([
+    expect(
+      database.query('SELECT run_id,question_id FROM run_carried_ruling ORDER BY run_id').all(),
+    ).toEqual([
       { run_id: 1, question_id: 1 },
       { run_id: 2, question_id: 2 },
     ])
-    expect(
-      database.query('SELECT winner_run_id,loser_run_id FROM duel').get(),
-    ).toEqual({ winner_run_id: 1, loser_run_id: 2 })
+    expect(database.query('SELECT winner_run_id,loser_run_id FROM duel').get()).toEqual({
+      winner_run_id: 1,
+      loser_run_id: 2,
+    })
     expect(
       database.query('SELECT gate_execution_id,check_name FROM check_execution ORDER BY id').all(),
     ).toEqual([

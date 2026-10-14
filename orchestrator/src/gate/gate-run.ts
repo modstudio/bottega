@@ -10,9 +10,9 @@ import {
   parseCheckExecutionLines,
 } from '../../../shared/check-execution.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,

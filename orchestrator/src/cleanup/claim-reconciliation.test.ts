@@ -1,11 +1,10 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reconcileAbsentClaims } from './claim-reconciliation.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })

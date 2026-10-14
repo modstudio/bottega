@@ -348,8 +348,20 @@ describe('operational monitor conditions', () => {
      (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
      VALUES (?, ?,?,'sandbox_dir',?,'claimed',?)`,
     )
-    insertClaim.run(newRecordId(), normal, normal, `/runs/sandbox-${normal}`, '2026-09-15T10:00:00.000Z')
-    insertClaim.run(newRecordId(), broken, broken, `/runs/sandbox-${broken}`, '2026-09-15T10:00:00.000Z')
+    insertClaim.run(
+      newRecordId(),
+      normal,
+      normal,
+      `/runs/sandbox-${normal}`,
+      '2026-09-15T10:00:00.000Z',
+    )
+    insertClaim.run(
+      newRecordId(),
+      broken,
+      broken,
+      `/runs/sandbox-${broken}`,
+      '2026-09-15T10:00:00.000Z',
+    )
     expect(unsettledClaimConditions(unsettledClaimInventory(), clock)).toEqual({
       conditions: [
         {

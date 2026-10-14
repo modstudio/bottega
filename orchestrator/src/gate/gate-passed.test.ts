@@ -1,10 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { formatPassingGate, passingGateForCommit, selectPassingGateId } from './gate-passed.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 

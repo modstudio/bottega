@@ -1,14 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'

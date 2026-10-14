@@ -1,9 +1,8 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { continuationCheckpointContext } from './continuation-checkpoint-context.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 test('uses the resolved continuation tree tip as the checkpoint prompt start', () => {
   const rootId = addRun({ agent: 'codex', job: 'implement' })

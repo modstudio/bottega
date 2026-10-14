@@ -189,7 +189,13 @@ describe('routing backtest statistics', () => {
       ]
       for (const row of reverse ? [...rows].reverse() : rows) {
         const id = addRun({ agent: row.agent, job: 'fix', startedAt: row.startedAt })
-        insertScore.run(newRecordId(), id, 'full', row.quality, row.startedAt.replace('00:00', '01:00'))
+        insertScore.run(
+          newRecordId(),
+          id,
+          'full',
+          row.quality,
+          row.startedAt.replace('00:00', '01:00'),
+        )
       }
       return routingBacktest('fix', 1)
     }
@@ -267,7 +273,13 @@ describe('routing backtest statistics', () => {
         job: 'fix',
         startedAt: `2026-01-${day}T00:00:00.000Z`,
       })
-      insert.run(newRecordId(), id, 'full', i < 5 ? 'mixed' : 'right', `2026-01-${day}T01:00:00.000Z`)
+      insert.run(
+        newRecordId(),
+        id,
+        'full',
+        i < 5 ? 'mixed' : 'right',
+        `2026-01-${day}T01:00:00.000Z`,
+      )
     }
     const row = routingBacktest('fix', 2).jobs[0]!
     // Neither replay selects the four historical agy runs, so their perfect
@@ -316,7 +328,13 @@ describe('routing backtest statistics', () => {
     for (let i = 0; i < EVIDENCE_WINDOW; i++) {
       const startedAt = new Date(base + (MIN_SAMPLE + i) * 86_400_000).toISOString()
       const id = addRun({ agent: 'codex', job: 'fix', model: 'older-model', startedAt })
-      insert.run(newRecordId(), id, 'full', 'right', new Date(Date.parse(startedAt) + 3_600_000).toISOString())
+      insert.run(
+        newRecordId(),
+        id,
+        'full',
+        'right',
+        new Date(Date.parse(startedAt) + 3_600_000).toISOString(),
+      )
     }
 
     expect(candidates('fix').find((candidate) => candidate.agent === 'codex')).toMatchObject({

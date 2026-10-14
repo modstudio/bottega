@@ -1,9 +1,8 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { workerGateToolingCondition, workerGateToolingConditions } from './monitor-gate-tooling.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 test('worker gate tooling changes produce a run condition with paths and command', () => {
   expect(

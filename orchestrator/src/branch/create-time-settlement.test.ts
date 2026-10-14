@@ -1,9 +1,8 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { settleCreateTimeBranchCleanup } from './create-time-settlement.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-
 
 function claimedBranch(runId: number): number {
   return Number(

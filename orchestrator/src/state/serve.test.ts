@@ -221,7 +221,8 @@ describe('run detail', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     insertAudit.run(newRecordId(), root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
-    insertAudit.run(newRecordId(), 
+    insertAudit.run(
+      newRecordId(),
       child,
       root,
       'continue',
@@ -253,6 +254,8 @@ describe('run detail', () => {
       resolved_from: 'turn',
       root_id: root,
     })
-    expect(() => insertAudit.run(newRecordId(), root, root, 'invented', null, nowIso(), null)).toThrow()
+    expect(() =>
+      insertAudit.run(newRecordId(), root, root, 'invented', null, nowIso(), null),
+    ).toThrow()
   })
 })

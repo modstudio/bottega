@@ -3,12 +3,11 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../shared/record-id.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import { db } from './database/db.ts'
 import { searchCommand } from './record/record-commands.ts'
 import { searchRecords, searchSnippet } from './search.ts'
-import { newRecordId } from '../../shared/record-id.ts'
-
 
 const dirs: string[] = []
 

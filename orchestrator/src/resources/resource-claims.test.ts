@@ -390,9 +390,12 @@ describe('resource claim decisions', () => {
        VALUES (?, ?,?,?,?, 'claimed',?)`,
     )
     const previousId = Number(
-      insert.run(newRecordId(), root, root, 'database', 'postgres:existing', nowIso()).lastInsertRowid,
+      insert.run(newRecordId(), root, root, 'database', 'postgres:existing', nowIso())
+        .lastInsertRowid,
     )
-    const attemptId = Number(insert.run(newRecordId(), root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid)
+    const attemptId = Number(
+      insert.run(newRecordId(), root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid,
+    )
     const databaseId = Number(
       database
         .query(
