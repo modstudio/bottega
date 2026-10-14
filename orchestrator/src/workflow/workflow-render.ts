@@ -134,7 +134,7 @@ function operatorRulingAutonomy(hasOtherFloor: boolean): string {
 function autonomyInstruction(step: WorkflowStep): string {
   const resolved = step.resolvedAutonomy.value
   const maySelfRule = step.floor.includes('ruling') && !step.operatorRuling
-  if (step.operatorRuling)
+  if (step.floor.includes('ruling') && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
     return 'stop and put the ruling to the operator; record the question with `orch workflow await`.'

@@ -216,4 +216,31 @@ describe('workflow rendering', () => {
     expect(rendered).not.toContain('self_ruling')
     expect(rendered).not.toContain('--self-ruling')
   })
+
+  test('resolved close-task with tracker-transition and operatorRuling offers no ruling', () => {
+    const rendered = renderWorkflowStep({
+      slug: 'close-task',
+      title: 'Close the task',
+      body: "This run's close action is done.",
+      floor: ['tracker-transition'],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto',
+      needs: [],
+      operatorRuling: true,
+      resolvedAutonomy: { value: 'auto', scope: 'built-in' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    })
+    expect(rendered).toContain(
+      'Autonomy: auto (built-in) — rule yourself; a design or product-direction decision still goes to the operator (`orch workflow await`).',
+    )
+    expect(rendered).not.toContain('put an operator ruling')
+  })
 })

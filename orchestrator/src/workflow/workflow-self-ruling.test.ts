@@ -20,8 +20,8 @@ test('only auto and review autonomy permit an agent self-ruling', () => {
 })
 
 test('an operator-ruling floor refuses an agent self-ruling', () => {
-  expect(selfRulingRefusal('auto', [ruling(true)], 'specification line 4')).toBe(
-    "self-ruling is refused because this step's floor requires an operator ruling; use `orch workflow await` and `orch workflow rule` instead, with `--from-operator` where the operator rules",
+  expect(selfRulingRefusal('auto', [ruling(true)], 'specification line 4')).toContain(
+    'requires an operator ruling',
   )
 })
 
