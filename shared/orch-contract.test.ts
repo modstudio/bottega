@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import {
-  HarnessHealthSchema,HarnessHealthSchema, 
-  OrchAgentDefinitionSchema,OrchAgentDefinitionSchema, 
+  HarnessHealthSchema,
+  OrchAgentDefinitionSchema,
   OrchRunDetailSchema,
-  OrchStateSchema,OrchStateSchema 
+  OrchStateSchema,
 } from './orch-contract.ts'
 
 test('agent snapshot parsing preserves who operates the endpoint', () => {
