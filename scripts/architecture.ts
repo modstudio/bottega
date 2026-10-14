@@ -4,6 +4,13 @@ import { boardModules } from './architecture-board-modules.ts'
 import { importBoundaries } from './architecture-boundaries.ts'
 import { branchModuleSpecs } from './architecture-branch-modules.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
+import {
+  cliCompositionRule,
+  cliConcernEntries,
+  cliModules,
+  cliRouteInspectionRule,
+  concernIsolationRule,
+} from './architecture-cli.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
@@ -68,6 +75,12 @@ const concerns: ConcernManifest = {
       dependencyTypes: ['type-only'],
       reason: 'The web client imports only the hub router type across the web boundary.',
     },
+    ...cliConcernEntries.map((to) => ({
+      from: 'cli',
+      to,
+      dependencyTypes: ['local'],
+      reason: 'The product command composition root imports one declared executable entry.',
+    })),
   ],
 }
 
@@ -78,6 +91,7 @@ export const modules: ArchitectureModule[] = [
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...boardModules,
   ...releaseModules,
+  ...cliModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...retrievalModules,
   ...operatorWaitingModules,
   ...branchStoreModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
@@ -809,24 +823,15 @@ export function architectureRules() {
   const exception = concerns.exceptions[0]!
   const cycleFiles = [...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1)))]
   const forbidden: ArchitectureRule[] = [
-    {
-      name: 'concern-isolation',
-      severity: 'error',
-      from: { path: `^(${concerns.roots.join('|')})/` },
-      to: { path: `^(?!$1/|shared/)(${concerns.roots.join('|')})/` },
-    },
+    concernIsolationRule(concerns.roots),
+    cliCompositionRule(concerns.roots, cliConcernEntries, exactArchitecturePath),
+    cliRouteInspectionRule(concerns.roots, exactArchitecturePath),
     {
       name: 'shared-is-independent',
       severity: 'error',
       comment: concerns.shared.reason,
       from: { path: '^shared/' },
       to: { path: `^(${concerns.roots.join('|')})/` },
-    },
-    {
-      name: 'concerns-do-not-import-release',
-      severity: 'error',
-      from: { path: `^(${concerns.roots.join('|')})/` },
-      to: { path: '^release/' },
     },
     {
       name: 'hub-web-imports-only-router-type',

@@ -3,42 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME } from '../shared/brand.ts'
-import { DIST_MANIFEST } from '../shared/install-root.ts'
-import {
-  DECLARED_PAYLOAD_PATHS,
-  distributionManifest,
-  releaseVersion,
-  run,
-} from './build-release.ts'
-
-test('the payload has only the declared runtime paths', () => {
-  expect(DECLARED_PAYLOAD_PATHS).toEqual([
-    'orchestrator/src/cli/orch',
-    'hub/src/cli.ts',
-    'orchestrator/src/run/exec.ts',
-    'orchestrator/src/database/store-write-lock.c',
-    'retrieval/src/search-cli.ts',
-    'orchestrator/migrations',
-    'hub/migrations',
-    'orchestrator/hooks',
-    'hub/web/dist',
-    'ops/install.sh',
-    'ops/bin',
-    'ops/launchd',
-    'hub/bin',
-    'hub/launchd',
-    'shared/install-root.ts',
-    'shared/state-directory.ts',
-    'shared/config-directory.ts',
-    'shared/machine-config.ts',
-    'shared/env-source.ts',
-    'shared/attribution-markers.json',
-    DIST_MANIFEST,
-    'bin/orch',
-    'bin/hub',
-    'bin/retrieval-search',
-  ])
-})
+import { distributionManifest, releaseVersion, run } from './build-release.ts'
 
 test('the packaged hook reads its marker list from the release layout', async () => {
   const payload = mkdtempSync(join(tmpdir(), 'release-hook-'))

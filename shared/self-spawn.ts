@@ -31,12 +31,7 @@ function sourceArguments(entry: BottegaEntry): string[] {
         assetPath('orchestrator', 'src', 'run', 'exec.ts'),
       ]
     case 'ask-server':
-      return [
-        process.execPath,
-        '--no-env-file',
-        assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
-        'ask-server',
-      ]
+      return [assetPath('bin', 'orch'), 'ask-server']
     case 'ask-proxy':
       return [
         Bun.which('bun') ?? process.execPath,
@@ -45,12 +40,7 @@ function sourceArguments(entry: BottegaEntry): string[] {
         'ask-server',
       ]
     case 'mcp-reader-proxy':
-      return [
-        process.execPath,
-        '--no-env-file',
-        assetPath('orchestrator', 'src', 'cli', 'orch.ts'),
-        'mcp-reader-proxy',
-      ]
+      return [assetPath('bin', 'orch'), 'mcp-reader-proxy']
     case 'retrieval-search':
       return [assetPath('bin', 'retrieval-search')]
     case 'check-attribution':

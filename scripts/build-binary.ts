@@ -129,7 +129,7 @@ export async function buildBinary(
     writeFileSync(
       wrapper,
       `import './embedded-assets.ts'
-await import(${JSON.stringify(join(repositoryRoot, 'release', `${PLATFORM_SLUG}.ts`))})
+await import(${JSON.stringify(join(repositoryRoot, 'cli', `${PLATFORM_SLUG}.ts`))})
 `,
     )
 

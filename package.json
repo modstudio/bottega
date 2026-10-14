@@ -5,6 +5,7 @@
   "private": true,
   "workspaces": [
     "orchestrator",
+    "cli",
     "hub",
     "hub/deploy/site",
     "hub/web",

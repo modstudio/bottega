@@ -10,33 +10,7 @@ import { resolveStateRoot } from '../shared/state-directory.ts'
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 export const ORCH_CLI_PAYLOAD = 'orchestrator/src/cli/orch'
 export const ORCH_CLI_ENTRYPOINT = `${ORCH_CLI_PAYLOAD}/entry.ts`
-
-export const DECLARED_PAYLOAD_PATHS = [
-  ORCH_CLI_PAYLOAD,
-  'hub/src/cli.ts',
-  'orchestrator/src/run/exec.ts',
-  'orchestrator/src/database/store-write-lock.c',
-  'retrieval/src/search-cli.ts',
-  'orchestrator/migrations',
-  'hub/migrations',
-  'orchestrator/hooks',
-  'hub/web/dist',
-  'ops/install.sh',
-  'ops/bin',
-  'ops/launchd',
-  'hub/bin',
-  'hub/launchd',
-  'shared/install-root.ts',
-  'shared/state-directory.ts',
-  'shared/config-directory.ts',
-  'shared/machine-config.ts',
-  'shared/env-source.ts',
-  'shared/attribution-markers.json',
-  DIST_MANIFEST,
-  'bin/orch',
-  'bin/hub',
-  'bin/retrieval-search',
-] as const
+export const PRODUCT_CLI_ENTRYPOINT = `cli/${PLATFORM_SLUG}.ts`
 
 export function releaseVersion(tag: string): string {
   const version = releaseTagVersion(tag)
@@ -100,7 +74,7 @@ function copyFile(source: string, destination: string): void {
   cpSync(source, destination, { preserveTimestamps: true })
 }
 
-function shim(entrypoint: string): string {
+function shim(entrypoint: string, prefix = ''): string {
   return `#!/bin/sh
 script=$0
 while [ -L "$script" ]; do
@@ -111,7 +85,7 @@ while [ -L "$script" ]; do
   esac
 done
 root=$(CDPATH= cd "$(dirname "$script")/.." && pwd)
-exec bun --no-env-file "$root/${entrypoint}" "$@"
+exec bun --no-env-file "$root/${entrypoint}" ${prefix}"$@"
 `
 }
 
@@ -129,6 +103,7 @@ export async function buildRelease(tag: string): Promise<string> {
   await run(['bun', 'run', 'build'], join(repositoryRoot, 'hub/web'))
   await bundleDirectory('orchestrator/src/cli/orch.ts', join(payloadRoot, ORCH_CLI_PAYLOAD))
   await bundle('hub/src/cli.ts', join(payloadRoot, 'hub/src/cli.ts'))
+  await bundle(PRODUCT_CLI_ENTRYPOINT, join(payloadRoot, PRODUCT_CLI_ENTRYPOINT))
   await bundle('orchestrator/src/run/exec.ts', join(payloadRoot, 'orchestrator/src/run/exec.ts'))
   await bundle('retrieval/src/search-cli.ts', join(payloadRoot, 'retrieval/src/search-cli.ts'))
 
@@ -164,14 +139,15 @@ export async function buildRelease(tag: string): Promise<string> {
     `${JSON.stringify(distributionManifest(version, built, commit), null, 2)}\n`,
   )
 
-  for (const [name, entrypoint] of [
-    ['orch', ORCH_CLI_ENTRYPOINT],
-    ['hub', 'hub/src/cli.ts'],
-    ['retrieval-search', 'retrieval/src/search-cli.ts'],
+  for (const [name, entrypoint, argumentsPrefix] of [
+    [PLATFORM_SLUG, PRODUCT_CLI_ENTRYPOINT, ''],
+    ['orch', PRODUCT_CLI_ENTRYPOINT, 'orch '],
+    ['hub', PRODUCT_CLI_ENTRYPOINT, 'hub '],
+    ['retrieval-search', 'retrieval/src/search-cli.ts', ''],
   ] as const) {
     const path = join(payloadRoot, 'bin', name)
     mkdirSync(join(path, '..'), { recursive: true })
-    writeFileSync(path, shim(entrypoint))
+    writeFileSync(path, shim(entrypoint, argumentsPrefix))
     await chmod(path, 0o755)
   }
 
