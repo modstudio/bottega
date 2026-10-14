@@ -9,6 +9,8 @@ import {
   triageFinding,
 } from '../review/review-triage.ts'
 import {
+import { newRecordId } from '../../../shared/record-id.ts'
+
   BETA_SCALE,
   candidates,
   currentPolicySelection,
@@ -136,8 +138,8 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
+        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
     const random = Math.random
@@ -162,8 +164,8 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
+        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
     expect(pick('review-lens', 'codex')).toEqual({
@@ -180,8 +182,8 @@ describe('routing exploration', () => {
     const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
+        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES ('${newRecordId()}', 'asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
       )
       .run(evalRun, nowIso())
     const random = Math.random

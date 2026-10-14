@@ -5,6 +5,8 @@ import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
+import { newRecordId } from '../../../shared/record-id.ts'
+
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
@@ -82,8 +84,8 @@ function recordPassingGate(): void {
   db()
     .query(
       `INSERT INTO gate_execution
-        (requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
-       VALUES ('2026-10-09','2026-10-09',0,0,100,'passed',?,?)`,
+        (record_id, requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
+       VALUES ('${newRecordId()}', '2026-10-09','2026-10-09',0,0,100,'passed',?,?)`,
     )
     .run(pullRequest.headCommit, cwd)
 }

@@ -66,6 +66,6 @@ export function score(
   fidelity: string | null = null,
 ) {
   db()
-    .query('INSERT INTO score (run_id, delivery, quality, fidelity, scored_at) VALUES (?,?,?,?,?)')
+    .query(`INSERT INTO score (record_id, run_id, delivery, quality, fidelity, scored_at) VALUES ('${newRecordId()}', ?,?,?,?,?)`)
     .run(runId, delivery, quality, fidelity, new Date().toISOString())
 }

@@ -199,8 +199,8 @@ describe('tracked recipe execution', () => {
     database
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,?,'worktree','/unrelated','claimed',?)`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES ('${newRecordId()}', ?,?,?,'worktree','/unrelated','claimed',?)`,
       )
       .run(unrelatedRunId, unrelatedRunId, projectId, nowIso())
 
@@ -773,8 +773,8 @@ describe('tracked recipe execution', () => {
     const failedRun = Number(insertRun.run(newRecordId(), nowIso(), projectId).lastInsertRowid)
     const insertClaim = database.query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,?,?,'database',?,'claimed',?)`,
+       (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+       VALUES ('${newRecordId()}', ?,?,?,'database',?,'claimed',?)`,
     )
     insertClaim.run(successfulRun, successfulRun, projectId, 'postgres:app_ok', nowIso())
     insertClaim.run(failedRun, failedRun, projectId, 'postgres:app_failed', nowIso())

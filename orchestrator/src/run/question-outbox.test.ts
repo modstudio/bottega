@@ -46,8 +46,8 @@ test('question payload contains the hosted shape and replaces a pending mutation
     .run(question.id)
   database
     .query(
-      `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)
-       VALUES (?,'rule','architect','2026-09-25T10:02:00.000Z','One')`,
+      `INSERT INTO question_mutation_audit (record_id, question_id,action,actor_session,at,reason)
+       VALUES ('${newRecordId()}', ?,'rule','architect','2026-09-25T10:02:00.000Z','One')`,
     )
     .run(question.id)
   enqueueQuestionRecord(database, question.id)

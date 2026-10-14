@@ -3,6 +3,7 @@
  * Knows root ownership, adoption, and mutation audit. Must not know routing, transports, CLI adapters, worktrees, or reviews.
  */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writableDb } from '../database/db.ts'
 import {
@@ -130,10 +131,11 @@ export function auditRunMutation(
 ): void {
   database
     .query(
-      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason, turn_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO run_mutation_audit (record_id, run_id, root_id, action, actor_session, at, reason, turn_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
+      newRecordId(),
       authority.runId,
       authority.rootId,
       action,

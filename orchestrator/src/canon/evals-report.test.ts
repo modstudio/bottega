@@ -5,6 +5,8 @@ import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
+import { newRecordId } from '../../../shared/record-id.ts'
+
   CANON_EVALS,
   canonEvalsReport,
   failingCanonEvalSlugs,
@@ -236,8 +238,8 @@ describe('canon eval establishment', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db()
       .query(
-        `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-         VALUES ('legacy-empty', ?, ?, 'codex', 'model', 1, 'passed', ?)`,
+        `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+         VALUES ('${newRecordId()}', 'legacy-empty', ?, ?, 'codex', 'model', 1, 'passed', ?)`,
       )
       .run(runId, EMPTY_CANON_SHA, nowIso())
 

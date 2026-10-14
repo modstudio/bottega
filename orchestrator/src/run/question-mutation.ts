@@ -76,10 +76,11 @@ export function auditQuestionMutation(
 ): void {
   database
     .query(
-      `INSERT INTO question_mutation_audit (question_id,action,actor_session,at,reason)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO question_mutation_audit (record_id,question_id,action,actor_session,at,reason)
+       VALUES (?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       input.questionId,
       input.action,
       input.actor,

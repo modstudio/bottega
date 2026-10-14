@@ -4,6 +4,8 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
 import {
+import { newRecordId } from '../../../shared/record-id.ts'
+
   ROUTING_BACKTEST_SEEDS,
   routingBacktest,
   routingBacktestEnsemble,
@@ -17,8 +19,8 @@ describe('routing backtest statistics', () => {
 
   test('is deterministic under a fixed seed', () => {
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,'2026-01-01T00:00:00.000Z','test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,'2026-01-01T00:00:00.000Z','test')`,
     )
     for (let i = 0; i < 8; i++) {
       const id = addRun({
@@ -26,7 +28,7 @@ describe('routing backtest statistics', () => {
         job: 'summarize',
         startedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
       })
-      insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
+      insert.run(newRecordId(), id, 'full', i % 3 ? 'right' : 'mixed')
     }
     expect(routingBacktest('summarize', 12345)).toEqual(routingBacktest('summarize', 12345))
   })
@@ -43,11 +45,11 @@ describe('routing backtest statistics', () => {
       startedAt: '2026-01-02T00:00:00.000Z',
     })
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,?, 'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,?, 'test')`,
     )
-    insert.run(first, 'full', 'right', '2026-01-03T00:00:00.000Z')
-    insert.run(second, 'full', 'right', '2026-01-02T01:00:00.000Z')
+    insert.run(newRecordId(), first, 'full', 'right', '2026-01-03T00:00:00.000Z')
+    insert.run(newRecordId(), second, 'full', 'right', '2026-01-02T01:00:00.000Z')
     expect(routingBacktest('summarize', 123).causalExcludedJudgments).toBe(1)
   })
 
@@ -60,10 +62,10 @@ describe('routing backtest statistics', () => {
     addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-02T00:00:00.000Z' })
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'full','right','2026-01-01T01:00:00.000Z','test')`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'full','right','2026-01-01T01:00:00.000Z','test')`,
       )
-      .run(scored)
+      .run(newRecordId(), scored)
 
     const result = routingBacktest('fix', 1)
     expect(result.jobs[0]!.runs).toBe(2)
@@ -91,10 +93,10 @@ describe('routing backtest statistics', () => {
         .run(chosen, AGENTS[chosen]!.model, id)
       db()
         .query(
-          `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-         VALUES (?,'full','right',?,'test')`,
+          `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+         VALUES (?, ?,'full','right',?,'test')`,
         )
-        .run(id, new Date(Date.parse(startedAt) + 1000).toISOString())
+        .run(newRecordId(), id, new Date(Date.parse(startedAt) + 1000).toISOString())
       matched[chosen]++
       prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
     }
@@ -178,8 +180,8 @@ describe('routing backtest statistics', () => {
 
   test('dispatch chronology is invariant when run ids and started_at disagree', () => {
     const insertScore = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,?, 'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,?, 'test')`,
     )
     const addChronology = (reverse: boolean) => {
       const rows = [
@@ -188,7 +190,7 @@ describe('routing backtest statistics', () => {
       ]
       for (const row of reverse ? [...rows].reverse() : rows) {
         const id = addRun({ agent: row.agent, job: 'fix', startedAt: row.startedAt })
-        insertScore.run(id, 'full', row.quality, row.startedAt.replace('00:00', '01:00'))
+        insertScore.run(newRecordId(), id, 'full', row.quality, row.startedAt.replace('00:00', '01:00'))
       }
       return routingBacktest('fix', 1)
     }
@@ -216,10 +218,10 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'full','right','2026-01-01T00:11:00.000Z','test')`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'full','right','2026-01-01T00:11:00.000Z','test')`,
       )
-      .run(decision)
+      .run(newRecordId(), decision)
 
     const cooled = routingBacktest('fix', 2)
     const disabled = routingBacktest('fix', 2, { cooldowns: false })
@@ -243,10 +245,10 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'full','right','2026-01-01T00:01:00.000Z','test')`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'full','right','2026-01-01T00:01:00.000Z','test')`,
       )
-      .run(id)
+      .run(newRecordId(), id)
     db()
       .query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
       .run(id)
@@ -256,8 +258,8 @@ describe('routing backtest statistics', () => {
 
   test('each simulated policy learns only from historical runs it selected', () => {
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,?, 'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,?, 'test')`,
     )
     for (let i = 0; i < 9; i++) {
       const day = String(i + 1).padStart(2, '0')
@@ -266,7 +268,7 @@ describe('routing backtest statistics', () => {
         job: 'fix',
         startedAt: `2026-01-${day}T00:00:00.000Z`,
       })
-      insert.run(id, 'full', i < 5 ? 'mixed' : 'right', `2026-01-${day}T01:00:00.000Z`)
+      insert.run(newRecordId(), id, 'full', i < 5 ? 'mixed' : 'right', `2026-01-${day}T01:00:00.000Z`)
     }
     const row = routingBacktest('fix', 2).jobs[0]!
     // Neither replay selects the four historical agy runs, so their perfect
@@ -290,11 +292,11 @@ describe('routing backtest statistics', () => {
     }
     const before = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'none',NULL,?,'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'none',NULL,?,'test')`,
     )
     for (const [i, id] of ids.entries()) {
-      insert.run(id, `2026-01-0${i + 1}T01:00:00.000Z`)
+      insert.run(newRecordId(), id, `2026-01-0${i + 1}T01:00:00.000Z`)
     }
     const after = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
     expect(after).toEqual(before)
@@ -302,20 +304,20 @@ describe('routing backtest statistics', () => {
 
   test('late-scored older-model rows never enter the current-model posterior', () => {
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,?, 'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,?, 'test')`,
     )
     const base = Date.parse('2026-01-01T00:00:00.000Z')
     const currentModel = AGENTS.codex!.model
     for (let i = 0; i < MIN_SAMPLE; i++) {
       const startedAt = new Date(base + i * 86_400_000).toISOString()
       const id = addRun({ agent: 'codex', job: 'fix', model: currentModel, startedAt })
-      insert.run(id, 'full', 'wrong', new Date(base + 50 * 86_400_000).toISOString())
+      insert.run(newRecordId(), id, 'full', 'wrong', new Date(base + 50 * 86_400_000).toISOString())
     }
     for (let i = 0; i < EVIDENCE_WINDOW; i++) {
       const startedAt = new Date(base + (MIN_SAMPLE + i) * 86_400_000).toISOString()
       const id = addRun({ agent: 'codex', job: 'fix', model: 'older-model', startedAt })
-      insert.run(id, 'full', 'right', new Date(Date.parse(startedAt) + 3_600_000).toISOString())
+      insert.run(newRecordId(), id, 'full', 'right', new Date(Date.parse(startedAt) + 3_600_000).toISOString())
     }
 
     expect(candidates('fix').find((candidate) => candidate.agent === 'codex')).toMatchObject({
@@ -327,8 +329,8 @@ describe('routing backtest statistics', () => {
 
   test('the replay excludes a disabled legacy agent while retaining its historical rows', () => {
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'full','right',?,'test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'full','right',?,'test')`,
     )
     for (let i = 0; i < MIN_SAMPLE; i++) {
       const day = String(i + 1).padStart(2, '0')
@@ -337,7 +339,7 @@ describe('routing backtest statistics', () => {
         job: 'summarize',
         startedAt: `2026-01-${day}T00:00:00.000Z`,
       })
-      insert.run(id, `2026-01-${day}T01:00:00.000Z`)
+      insert.run(newRecordId(), id, `2026-01-${day}T01:00:00.000Z`)
     }
 
     const production = pick(
@@ -356,7 +358,7 @@ describe('routing backtest statistics', () => {
       job: 'summarize',
       startedAt: '2026-01-06T00:00:00.000Z',
     })
-    insert.run(sixth, '2026-01-06T01:00:00.000Z')
+    insert.run(newRecordId(), sixth, '2026-01-06T01:00:00.000Z')
 
     const selections = routingBacktest('summarize', 1).jobs[0]!.currentSelections
     expect(production).toBe('codex')
@@ -365,8 +367,8 @@ describe('routing backtest statistics', () => {
 
   test('reports only replay choices for the filtered job', () => {
     const insert = db().query(
-      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,?,?,'2026-01-01T00:00:00.000Z','test')`,
+      `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,?,?,'2026-01-01T00:00:00.000Z','test')`,
     )
     for (let i = 0; i < 12; i++) {
       const id = addRun({
@@ -374,7 +376,7 @@ describe('routing backtest statistics', () => {
         job: 'summarize',
         startedAt: `2026-02-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
       })
-      insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
+      insert.run(newRecordId(), id, 'full', i % 3 ? 'right' : 'mixed')
     }
     const result = routingBacktest('summarize', 7)
     expect(result.jobs.map((row) => row.job)).toEqual(['summarize'])
@@ -397,10 +399,10 @@ describe('routing backtest statistics', () => {
     })
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
-       VALUES (?,'full','right','2026-01-02T01:00:00.000Z','test')`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?, ?,'full','right','2026-01-02T01:00:00.000Z','test')`,
       )
-      .run(id)
+      .run(newRecordId(), id)
     const result = routingBacktestEnsemble('summarize')
     expect(result.seeds).toEqual(ROUTING_BACKTEST_SEEDS)
     expect(result.trajectories).toHaveLength(20)

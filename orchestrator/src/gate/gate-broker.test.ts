@@ -96,7 +96,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
   ).id
   const gateId = (
     db()
-      .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+      .query(`INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`)
       .get(runId, new Date().toISOString()) as { id: number }
   ).id
   const started: number[] = []
@@ -136,7 +136,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     writeFileSync(join(repository, 'README.md'), 'dirty\n')
     const dirtyGateId = (
       db()
-        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+        .query(`INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`)
         .get(runId, new Date().toISOString()) as { id: number }
     ).id
     await waitForFinishedGate(dirtyGateId)
@@ -151,7 +151,7 @@ test("a rebased writer runs the gate from its tree and records only a clean tree
     writeFileSync(join(repository, 'scripts', 'gate'), '#!/bin/sh\nwhile :; do sleep 1; done\n')
     const cancelledGateId = (
       db()
-        .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
+        .query(`INSERT INTO gate_execution (record_id, run_id,requested_at) VALUES ('${newRecordId()}', ?,?) RETURNING id`)
         .get(runId, new Date().toISOString()) as { id: number }
     ).id
     await waitFor(() => started.includes(cancelledGateId), `gate ${cancelledGateId} to start`)

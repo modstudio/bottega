@@ -245,8 +245,10 @@ function selectGateExecutionOnce(
     }
     const requestedAt = nowIso()
     const inserted = db()
-      .query('INSERT INTO gate_execution (run_id,requested_at) VALUES (?,?) RETURNING id')
-      .get(runId, requestedAt) as { id: number }
+      .query(
+        'INSERT INTO gate_execution (record_id,run_id,requested_at) VALUES (?,?,?) RETURNING id',
+      )
+      .get(newRecordId(), runId, requestedAt) as { id: number }
     return { id: inserted.id, requestedAt, introduction: null }
   })
 }

@@ -67,6 +67,9 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
     },
   })
   expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+  expect(
+    d.query<{ record_id: string }, []>('SELECT record_id FROM gate_execution').get()?.record_id,
+  ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 })
 
 test('inserts a finished dirty-tree gate without attributing it to HEAD', async () => {

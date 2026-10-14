@@ -4,6 +4,7 @@
  * Must not know resource creation, Git operations, close-out policy, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   CANON_MIRROR_JOB,
   HOOK_TREE_JOB,
@@ -193,10 +194,11 @@ function insertClaim(
   database
     .query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
-       VALUES (?,?,?,?,?,?,?,'claimed',?)`,
+       (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+       VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
     )
     .run(
+      newRecordId(),
       claim.rootRunId,
       claim.runId,
       claim.projectId,
@@ -272,10 +274,11 @@ export function claimRecipePort(
       database
         .query(
           `INSERT INTO resource_claim
-           (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
-           VALUES (?,?,?,'port',?,?,?,'claimed',?)`,
+           (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           VALUES (?,?,?,?,'port',?,?,?,'claimed',?)`,
         )
         .run(
+          newRecordId(),
           input.rootRunId,
           input.runId,
           input.projectId,
@@ -341,10 +344,11 @@ export function claimIndex(
       database
         .query(
           `INSERT INTO resource_claim
-           (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
-           VALUES (?,?,?,'index',?,?,?,'claimed',?)`,
+           (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+           VALUES (?,?,?,?,'index',?,?,?,'claimed',?)`,
         )
         .run(
+          newRecordId(),
           input.rootRunId,
           input.runId,
           input.projectId,
@@ -396,10 +400,11 @@ export function claimString(
     database
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
-         VALUES (?,?,?,'string',?,?,?,'claimed',?)`,
+         (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         VALUES (?,?,?,?,'string',?,?,?,'claimed',?)`,
       )
       .run(
+        newRecordId(),
         input.rootRunId,
         input.runId,
         input.projectId,
@@ -462,10 +467,11 @@ export function claimDatabaseName(
     database
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
-         VALUES (?,?,?,'database',?,?,?,'claimed',?)`,
+         (record_id,root_run_id,run_id,project_id,kind,allocation_key,identity,label,state,claimed_at)
+         VALUES (?,?,?,?,'database',?,?,?,'claimed',?)`,
       )
       .run(
+        newRecordId(),
         input.rootRunId,
         input.runId,
         input.projectId,

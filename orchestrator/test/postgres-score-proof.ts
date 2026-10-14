@@ -211,8 +211,8 @@ export async function proveScoreRecordSync(input: {
     )
   cache
     .query(
-      `INSERT INTO score (run_id,delivery,quality,note,scored_at,scored_by)
-       VALUES (991,'full','right','first',?,'architect')`,
+      `INSERT INTO score (record_id, run_id,delivery,quality,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 991,'full','right','first',?,'architect')`,
     )
     .run(String(score.scoredAt))
   cache.query("INSERT INTO schema_meta (key,value) VALUES ('record_scores_cursor',?)").run(cursor)

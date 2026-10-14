@@ -178,6 +178,13 @@ describe('resource claim decisions', () => {
 
     expect(allocate(first)).toBe(24000)
     expect(() => allocate(second)).toThrow('recipe port band [24000, 24001) is full: 1 live claims')
+    expect(
+      database
+        .query<{ record_id: string }, []>(
+          "SELECT record_id FROM resource_claim WHERE kind='port' AND state='claimed'",
+        )
+        .get()?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   })
 
   test('named and anonymous recipe ports reuse only the matching identity', () => {
@@ -337,12 +344,12 @@ describe('resource claim decisions', () => {
     )
     const insertClaim = database.query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,? ,?,?,'claimed',?)`,
+       (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+       VALUES (?, ?,? ,?,?,'claimed',?)`,
     )
-    insertClaim.run(root, root, 'worktree', '/tree', nowIso())
-    insertClaim.run(root, root, 'index', 'index:1:1', nowIso())
-    insertClaim.run(root, root, 'string', 'string:1:value', nowIso())
+    insertClaim.run(newRecordId(), root, root, 'worktree', '/tree', nowIso())
+    insertClaim.run(newRecordId(), root, root, 'index', 'index:1:1', nowIso())
+    insertClaim.run(newRecordId(), root, root, 'string', 'string:1:value', nowIso())
     settleClaims(database, {
       rootRunId: root,
       kind: 'worktree',
@@ -379,21 +386,21 @@ describe('resource claim decisions', () => {
     )
     const insert = database.query(
       `INSERT INTO resource_claim
-       (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-       VALUES (?,?,?,?, 'claimed',?)`,
+       (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+       VALUES (?, ?,?,?,?, 'claimed',?)`,
     )
     const previousId = Number(
-      insert.run(root, root, 'database', 'postgres:existing', nowIso()).lastInsertRowid,
+      insert.run(newRecordId(), root, root, 'database', 'postgres:existing', nowIso()).lastInsertRowid,
     )
-    const attemptId = Number(insert.run(root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid)
+    const attemptId = Number(insert.run(newRecordId(), root, root, 'index', 'index:1:2', nowIso()).lastInsertRowid)
     const databaseId = Number(
       database
         .query(
           `INSERT INTO resource_claim
-           (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-           VALUES (?,?,'database','postgres:app_1','claimed',?)`,
+           (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+           VALUES (?, ?,?,'database','postgres:app_1','claimed',?)`,
         )
-        .run(root, root, nowIso()).lastInsertRowid,
+        .run(newRecordId(), root, root, nowIso()).lastInsertRowid,
     )
     releaseRecipeAllocationClaims(database, {
       claimIds: [attemptId, databaseId],

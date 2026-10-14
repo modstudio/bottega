@@ -7,6 +7,8 @@ import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+
 
 const RECORD_ID = '01990000-0000-7000-8000-000000000042'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000099'
@@ -25,8 +27,8 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO score
-       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
     )
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)

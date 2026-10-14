@@ -2,6 +2,7 @@
 /**
  * Knows comparison validation, atomic duel persistence, partners, and matrices. Must not know worktrees, runs, routing, transports, or CLI adapters.
  */
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
   changeIdentityJoin,
@@ -85,12 +86,12 @@ export function recordDuels(
 ): void {
   const winner = validateComparisons(winnerRunId, loserRunIds, callerSession, force)
   const insert = db().query(
-    `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
-     VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+    `INSERT INTO duel (record_id, job, winner_run_id, loser_run_id, session_id, at)
+     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
   )
   writeTransaction(() => {
     for (const loserId of loserRunIds) {
-      insert.run(winner.job, winnerRunId, loserId, callerSession, at)
+      insert.run(newRecordId(), winner.job, winnerRunId, loserId, callerSession, at)
       recordComparedPair(winnerRunId, loserId, at)
     }
   })
@@ -106,12 +107,12 @@ export function recordLosses(
 ): void {
   const loser = validateComparisons(loserRunId, winnerRunIds, callerSession, force)
   const insert = db().query(
-    `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
-     VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+    `INSERT INTO duel (record_id, job, winner_run_id, loser_run_id, session_id, at)
+     VALUES (?,?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
   )
   writeTransaction(() => {
     for (const winnerId of winnerRunIds) {
-      insert.run(loser.job, winnerId, loserRunId, callerSession, at)
+      insert.run(newRecordId(), loser.job, winnerId, loserRunId, callerSession, at)
       recordComparedPair(winnerId, loserRunId, at)
     }
   })
@@ -139,10 +140,10 @@ function recordComparedPair(a: number, b: number, at: string): void {
   const [runA, runB] = orderedPair(a, b)
   db()
     .query(
-      `INSERT INTO compared_pair (run_a_id, run_b_id, compared_at) VALUES (?,?,?)
+      `INSERT INTO compared_pair (record_id, run_a_id, run_b_id, compared_at) VALUES (?,?,?,?)
      ON CONFLICT(run_a_id, run_b_id) DO NOTHING`,
     )
-    .run(runA, runB, at)
+    .run(newRecordId(), runA, runB, at)
 }
 
 export type PairPartner = { id: number; agent: string; reason: string }

@@ -5,6 +5,8 @@ import { PassThrough, Writable } from 'node:stream'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recalibrate } from './recalibration.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+
 
 const priorCalibrationSession = process.env.CLAUDE_CODE_SESSION_ID
 const outputs: string[] = []
@@ -53,8 +55,8 @@ describe('recalibrating the scorer', () => {
   ) =>
     db()
       .query(
-        `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at, scored_by)
-     VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, scored_at, scored_by)
+     VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
       )
       .run(runId, delivery, quality, fidelity, scoredAt, scorer)
 

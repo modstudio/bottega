@@ -42,6 +42,17 @@ describe('pairwise judgments', () => {
     // Re-scoring does not duplicate the pair protected by the UNIQUE constraint.
     recordDuels(winner, [grok], 'session-A', '2026-09-02T13:00:00.000Z')
     expect((db().query('SELECT COUNT(*) AS n FROM duel').get() as { n: number }).n).toBe(2)
+    const identities = db()
+      .query<{ record_id: string }, []>(
+        'SELECT record_id FROM duel UNION ALL SELECT record_id FROM compared_pair',
+      )
+      .all()
+    expect(identities.length).toBeGreaterThan(0)
+    for (const row of identities) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
   })
 
   test('duels require distinct runs from the same job', () => {

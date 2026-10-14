@@ -7,6 +7,8 @@ import { addRun } from '../test/fixtures/store.ts'
 import { db } from './database/db.ts'
 import { searchCommand } from './record/record-commands.ts'
 import { searchRecords, searchSnippet } from './search.ts'
+import { newRecordId } from '../../shared/record-id.ts'
+
 
 const dirs: string[] = []
 
@@ -107,8 +109,8 @@ describe('record search', () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     db()
       .query(
-        `INSERT INTO score (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-         VALUES (?,'full','right','faithful',?,datetime('now'),'architect')`,
+        `INSERT INTO score (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+         VALUES ('${newRecordId()}', ?,'full','right','faithful',?,datetime('now'),'architect')`,
       )
       .run(run, 'unique search json note')
     const lines: string[] = []

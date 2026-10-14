@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
@@ -109,10 +110,10 @@ export async function recalibrate(
       ]
       db()
         .query(
-          `INSERT INTO calibration (run_id, delivery, quality, fidelity, at, session_id)
-       VALUES (?,?,?,?,?,?)`,
+          `INSERT INTO calibration (record_id, run_id, delivery, quality, fidelity, at, session_id)
+       VALUES (?,?,?,?,?,?,?)`,
         )
-        .run(row.id, ...fresh, calibrationAt, sessionId())
+        .run(newRecordId(), row.id, ...fresh, calibrationAt, sessionId())
       results.push({
         original: [row.original_delivery, row.original_quality, row.original_fidelity],
         fresh,

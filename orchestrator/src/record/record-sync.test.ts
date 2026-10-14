@@ -174,8 +174,8 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO score
-       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (42,'full','right',NULL,'old',?,'architect')`,
+       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 42,'full','right',NULL,'old',?,'architect')`,
     )
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)
@@ -663,8 +663,8 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local
     .query(
       `INSERT INTO score
-       (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-       VALUES (42,'full','right',NULL,'complete',?,'architect')`,
+       (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+       VALUES ('${newRecordId()}', 42,'full','right',NULL,'complete',?,'architect')`,
     )
     .run(STAMP)
   enqueueScoreRecord(local, 42, MACHINE_ID)

@@ -101,7 +101,7 @@ export function retireRunChainQuestionDeliveries(
     database
       .query(
         `INSERT INTO question_delivery (record_id,question_id,run_id,mode,outcome,at,error)
-         VALUES (?,? ,NULL,'record-only','retired',?,?)`.replace('? ,', '?,')
+         VALUES (?,?,NULL,'record-only','retired',?,?)`,
       )
       .run(newRecordId(), questionId, at, reason)
     enqueueQuestionRecord(database, questionId)

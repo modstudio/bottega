@@ -4,6 +4,8 @@ import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reconcileAbsentClaims } from './claim-reconciliation.ts'
 import type { CleanupPresentation } from './cleanup.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+
 
 function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
@@ -22,10 +24,10 @@ function keptBranchClaim(tip: string | null = 'a'.repeat(40)) {
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,?,'branch',?,'claimed',?)`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?,?,?,'branch',?,'claimed',?)`,
       )
-      .run(runId, runId, projectId, ref, nowIso()).lastInsertRowid,
+      .run(newRecordId(), runId, runId, projectId, ref, nowIso()).lastInsertRowid,
   )
   return { runId, project, repository, branch, ref, claimId, tip }
 }
@@ -282,14 +284,14 @@ test('sweep dry-run lists absent and kept claims without changing either row', (
     .run(project, projectId, `/repo/${project}`, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-     VALUES (?,?,?,'worktree',?,'claimed',?)`,
+     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     VALUES (?, ?,?,?,'worktree',?,'claimed',?)`,
   )
   const absent = Number(
-    insert.run(runId, runId, projectId, '/absent-tree', nowIso()).lastInsertRowid,
+    insert.run(newRecordId(), runId, runId, projectId, '/absent-tree', nowIso()).lastInsertRowid,
   )
   const present = Number(
-    insert.run(runId, runId, projectId, '/present-tree', nowIso()).lastInsertRowid,
+    insert.run(newRecordId(), runId, runId, projectId, '/present-tree', nowIso()).lastInsertRowid,
   )
   const lines: string[] = []
   const presentation: CleanupPresentation = {
@@ -334,11 +336,11 @@ test('reconciling an absent worktree leaves its dependent port claimed', () => {
   db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-     VALUES (?,?,?,?,?,'claimed',?)`,
+     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     VALUES (?, ?,?,?,?,?,'claimed',?)`,
   )
-  insert.run(runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
-  insert.run(runId, runId, projectId, 'port', '21991', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'port', '21991', nowIso())
 
   reconcileAbsentClaims({
     dryRun: false,
@@ -374,14 +376,14 @@ test('an absent worktree does not release allocations shared with a present work
   db().query('UPDATE run SET repo=?,project_id=? WHERE id=?').run(project, projectId, runId)
   const insert = db().query(
     `INSERT INTO resource_claim
-     (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-     VALUES (?,?,?,?,?,'claimed',?)`,
+     (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+     VALUES (?, ?,?,?,?,?,'claimed',?)`,
   )
-  insert.run(runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
-  insert.run(runId, runId, projectId, 'worktree', '/present-tree', nowIso())
-  insert.run(runId, runId, projectId, 'port', '21992', nowIso())
-  insert.run(runId, runId, projectId, 'index', '7', nowIso())
-  insert.run(runId, runId, projectId, 'string', 'shared-value', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'worktree', '/absent-tree', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'worktree', '/present-tree', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'port', '21992', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'index', '7', nowIso())
+  insert.run(newRecordId(), runId, runId, projectId, 'string', 'shared-value', nowIso())
 
   reconcileAbsentClaims({
     dryRun: false,
@@ -424,10 +426,10 @@ test('a guard that changes before locked settlement leaves the claim claimed', (
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,?,'worktree','/absent-tree','claimed',?)`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?,?,?,'worktree','/absent-tree','claimed',?)`,
       )
-      .run(runId, runId, projectId, nowIso()).lastInsertRowid,
+      .run(newRecordId(), runId, runId, projectId, nowIso()).lastInsertRowid,
   )
 
   reconcileAbsentClaims({
@@ -465,10 +467,10 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?, ?, NULL, 'branch', ?, 'claimed', ?)`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?, ?, NULL, 'branch', ?, 'claimed', ?)`,
       )
-      .run(runId, runId, `refs/heads/DEV-991-${runId}`, nowIso()).lastInsertRowid,
+      .run(newRecordId(), runId, runId, `refs/heads/DEV-991-${runId}`, nowIso()).lastInsertRowid,
   )
   const refRepositories: string[] = []
 
@@ -506,10 +508,10 @@ test('an unregistered claim settles absent when its owning repository root is go
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
-         VALUES (?, ?, NULL, 'retained_ref', ?, 'claimed', ?)`,
+         (record_id, root_run_id,run_id,project_id,kind,allocation_key,state,claimed_at)
+         VALUES (?, ?, ?, NULL, 'retained_ref', ?, 'claimed', ?)`,
       )
-      .run(runId, runId, `refs/orch/retained/${runId}`, nowIso()).lastInsertRowid,
+      .run(newRecordId(), runId, runId, `refs/orch/retained/${runId}`, nowIso()).lastInsertRowid,
   )
 
   reconcileAbsentClaims({

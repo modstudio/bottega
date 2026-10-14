@@ -2,14 +2,16 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { settleCreateTimeBranchCleanup } from './create-time-settlement.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+
 
 function claimedBranch(runId: number): number {
   return Number(
     db()
       .query(
         `INSERT INTO resource_claim
-         (root_run_id,run_id,kind,allocation_key,state,claimed_at)
-         VALUES (?,?,'branch','refs/heads/DEV-991','claimed',?)`,
+         (record_id, root_run_id,run_id,kind,allocation_key,state,claimed_at)
+         VALUES ('${newRecordId()}', ?,?,'branch','refs/heads/DEV-991','claimed',?)`,
       )
       .run(runId, runId, nowIso()).lastInsertRowid,
   )

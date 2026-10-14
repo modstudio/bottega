@@ -810,8 +810,8 @@ describe('record cache pull', () => {
       db()
         .query(
           `INSERT INTO score
-            (run_id,delivery,quality,fidelity,note,scored_at,scored_by)
-           VALUES (?,'full','right',NULL,'kept',?,'architect')`,
+            (record_id, run_id,delivery,quality,fidelity,note,scored_at,scored_by)
+           VALUES ('${newRecordId()}', ?,'full','right',NULL,'kept',?,'architect')`,
         )
         .run(localId, scoreAt)
     }

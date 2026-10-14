@@ -64,6 +64,10 @@ test('close service closes, audits and enqueues once', () => {
   expect(
     database.query('SELECT action,actor_session,reason FROM question_mutation_audit').all(),
   ).toEqual([{ action: 'close', actor_session: 'architect-session', reason: 'chain-terminal' }])
+  expect(
+    database.query<{ record_id: string }, []>('SELECT record_id FROM question_mutation_audit').get()
+      ?.record_id,
+  ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   expect(database.query("SELECT kind FROM outbox WHERE kind='question'").all()).toEqual([
     { kind: 'question' },
   ])

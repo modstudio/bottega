@@ -17,6 +17,7 @@ import {
   realQuestions,
   type WorkerReply,
 } from '../contract/contract.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -438,10 +439,11 @@ function insertEval(row: {
 }): void {
   db()
     .query(
-      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
-     VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO canon_eval (record_id, slug, run_id, canon_sha, agent, model, pass, why, at)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       row.slug,
       row.runId,
       row.canonSha,

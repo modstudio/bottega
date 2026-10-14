@@ -519,12 +519,13 @@ function applyScore(local: Database, item: Record<string, unknown>): void {
   if (item.delivery == null) return
   local
     .query(
-      `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-       VALUES (?,?,?,?,?,?,?)
+      `INSERT INTO score (record_id, run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+       VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
          fidelity=excluded.fidelity, note=excluded.note, scored_at=excluded.scored_at`,
     )
     .run(
+      newRecordId(),
       localRun.id,
       String(item.delivery),
       item.quality == null ? null : String(item.quality),

@@ -215,8 +215,8 @@ test('gathers a bound answered ruling and a finished matching gate', () => {
      VALUES ('${newRecordId()}',1,'2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
   ).run()
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-     VALUES (NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+     VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   const gathered = gather(d, { ruling: 1, gate: 1 })
   expect(gathered.ruling).toEqual({
@@ -420,8 +420,8 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code)
-     VALUES (?, '2026-09-01','2026-09-01','2026-09-01',0)`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+     VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(foreign)
   expect(() => gather(d, { gate: 1 })).toThrow(
     "--gate 1 project is other, not this cursor's fixture",
@@ -433,8 +433,8 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     branch: 'other-branch',
   })
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code)
-     VALUES (?, '2026-09-01','2026-09-01','2026-09-01',0)`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code)
+     VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
   ).run(matching)
   expect(gather(d, { gate: 2 }).gate).toEqual({
     id: 2,
@@ -448,8 +448,8 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
 test('a foreign architect gate is refused and a matching architect gate is allowed', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-     VALUES (NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/other','abc')`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+     VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/other','abc')`,
   ).run()
   expect(() =>
     gather(
@@ -466,8 +466,8 @@ test('a foreign architect gate is refused and a matching architect gate is allow
   ).toThrow("--gate 1 cwd project is other, not this cursor's fixture")
 
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-     VALUES (NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+     VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(gather(d, { gate: 2 }).gate).toEqual({
     id: 2,
@@ -481,8 +481,8 @@ test('a foreign architect gate is refused and a matching architect gate is allow
 test('an architect gate whose commit is not an ancestor is refused', () => {
   const d = database()
   d.query(
-    `INSERT INTO gate_execution (run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-     VALUES (NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
+    `INSERT INTO gate_execution (record_id, run_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
+     VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
   ).run()
   expect(() =>
     gather(

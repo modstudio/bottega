@@ -1,6 +1,7 @@
 // concern: review-triage
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { parseReviewOutput, recordReviews } from './review.ts'
@@ -252,12 +253,13 @@ export function amendFinding(
     database
       .query(
         `INSERT INTO review_finding_amendment
-         (review_id,finding_ordinal,old_disposition,new_disposition,
+         (record_id,review_id,finding_ordinal,old_disposition,new_disposition,
           old_rejection_category,new_rejection_category,old_triaged_severity,new_triaged_severity,
           reason,actor_session,at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
+        newRecordId(),
         reviewId,
         ordinal,
         finding.disposition,

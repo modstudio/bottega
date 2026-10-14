@@ -60,6 +60,10 @@ test('checkpoint commits a fresh untracked file', () => {
 
     expect(checkpoint(database, repository).created).toBe(true)
     expect(git(['show', '--format=', '--name-only', 'HEAD'], repository)).toBe('fresh.ts')
+    expect(
+      database.query<{ record_id: string }, []>('SELECT record_id FROM run_checkpoint').get()
+        ?.record_id,
+    ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   } finally {
     database.close()
   }

@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { workerGateToolingCondition, workerGateToolingConditions } from './monitor-gate-tooling.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+
 
 test('worker gate tooling changes produce a run condition with paths and command', () => {
   expect(
@@ -76,12 +78,12 @@ test('worker gate tooling admission must be at or after the latest tooling gate 
     .run(project, 'DEV-after', 'DEV-after', after)
   const insertGate = database.query(
     `INSERT INTO gate_execution
-       (run_id,requested_at,started_at,finished_at,exit_code,tooling_paths,resolved_command)
-     VALUES (?,'2026-09-25T11:59:00.000Z','2026-09-25T12:00:00.000Z',
+       (record_id, run_id,requested_at,started_at,finished_at,exit_code,tooling_paths,resolved_command)
+     VALUES (?, ?,'2026-09-25T11:59:00.000Z','2026-09-25T12:00:00.000Z',
              '2026-09-25T12:01:00.000Z',0,'["package.json"]','bun run check')`,
   )
-  insertGate.run(before)
-  insertGate.run(after)
+  insertGate.run(newRecordId(), before)
+  insertGate.run(newRecordId(), after)
   const insertSnapshot = database.query(
     `INSERT INTO landing_triage_snapshot
        (record_id,project,project_id,branch,tip,tree,review_ids,patch_id,tier,lens_rounds,

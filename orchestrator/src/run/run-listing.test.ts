@@ -432,8 +432,8 @@ describe('run listing', () => {
     }
     db()
       .query(
-        `INSERT INTO question_delivery (question_id,run_id,mode,outcome,at,error)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO question_delivery (record_id, question_id,run_id,mode,outcome,at,error)
+         VALUES ('${newRecordId()}', ?,?,?,?,?,?)`,
       )
       .run(rootQuestion.id, child, 'resume', 'delivered', '2026-09-04T10:06:00.000Z', null)
     const row = runJson((await command({ json: true, id: [String(root)] }))[0]!)
