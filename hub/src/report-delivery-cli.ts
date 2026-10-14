@@ -8,7 +8,12 @@ import { hostedDeliveryRepository, sesReportMailClient } from './report-delivery
 
 type Environment = Record<string, string | undefined>
 
-type DeliveryResult = { due: number; sent: number; skipped: number; failed: number }
+type DeliveryResult = {
+  due: number
+  sent: number
+  skipped: number
+  failed: number
+}
 
 export async function runScheduledReportDelivery(input: {
   deliveryEnabled: boolean
@@ -42,21 +47,20 @@ export async function runScheduledReportDelivery(input: {
 }
 
 export async function runReportDeliveryCommand(
-  argv: string[] = process.argv.slice(2),
+  input: { dryRun: boolean },
   environment: Environment = process.env,
 ) {
-  const dryRun = argv.includes('--dry-run')
   const databaseUrl = environment.HUB_RECORD_DATABASE_URL
   if (!databaseUrl) throw new Error('HUB_RECORD_DATABASE_URL is required')
   return runScheduledReportDelivery({
     deliveryEnabled: environment.HUB_REPORT_DELIVERY_ENABLED === 'true',
-    dryRun,
+    dryRun: input.dryRun,
     prune: () => pruneHostedChanges(databaseUrl),
     deliver: () =>
       runReportDeliveryPass({
         repository: hostedDeliveryRepository(databaseUrl),
         mail: sesReportMailClient(environment),
-        dryRun,
+        dryRun: input.dryRun,
         hostedOrigin: environment.HUB_HOSTED_URL,
         print: console.log,
       }),
@@ -65,4 +69,7 @@ export async function runReportDeliveryCommand(
   })
 }
 
-if (import.meta.main) await runReportDeliveryCommand()
+if (import.meta.main)
+  await runReportDeliveryCommand({
+    dryRun: process.argv.slice(2).includes('--dry-run'),
+  })

@@ -1,3 +1,5 @@
+import type { Command } from 'commander'
+import { requireDatabase } from './db.ts'
 import {
   hostedCreateReportSubscription,
   hostedListReportSubscriptions,
@@ -6,18 +8,23 @@ import {
 import { runReportDeliveryCommand } from './report-delivery-cli.ts'
 import { pushReports } from './report-push.ts'
 
-function flagOf(argv: string[], name: string) {
-  const i = argv.indexOf(`--${name}`)
-  return i >= 0 ? argv[i + 1] : undefined
+type ReportOptions = {
+  cadence?: string
+  day?: string
+  dryRun?: boolean
+  hour?: string
+  json?: boolean
+  member?: string[]
+  project?: string
+  recipient?: string
+  scope?: string
+  zone?: string
 }
 
-function flagsOf(argv: string[], name: string) {
-  return argv.flatMap((value, index) =>
-    value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [],
-  )
-}
+const repeat = (value: string, previous: string[] = []) => [...previous, value]
+const open = () => requireDatabase()
 
-async function reportPush(dryRun: boolean) {
+async function reportPush(dryRun: boolean): Promise<void> {
   const result = await pushReports({ dryRun })
   console.log(JSON.stringify(result, null, 2))
   if (result.match === false) process.exitCode = 1
@@ -25,7 +32,7 @@ async function reportPush(dryRun: boolean) {
 
 function subscriptionScope(
   row: Awaited<ReturnType<typeof hostedListReportSubscriptions>>['subscriptions'][number],
-) {
+): string {
   if (row.scope_kind === 'project') return `project ${row.project_name}`
   if (row.scope_kind === 'members')
     return `members ${row.members.map((member) => member.user_id).join(',')}`
@@ -34,64 +41,93 @@ function subscriptionScope(
   return 'space'
 }
 
-async function reportList(json: boolean) {
+async function reportList(json: boolean): Promise<void> {
   const { subscriptions } = await hostedListReportSubscriptions()
-  if (json) {
-    console.log(JSON.stringify(subscriptions))
-    return
-  }
-  if (!subscriptions.length) {
-    console.log('no report subscriptions')
-    return
-  }
-  for (const row of subscriptions) {
-    const scope = subscriptionScope(row)
-    const when =
-      row.cadence === 'weekly'
-        ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
-        : `daily ${row.hour}:00 ${row.zone}`
-    console.log(
-      `${row.id}  ${scope}  ${when}  ${row.recipients.map((recipient) => recipient.email).join(', ') || 'no recipients'}  ${row.enabled ? 'enabled' : 'disabled'}`,
-    )
-  }
+  if (json) console.log(JSON.stringify(subscriptions))
+  else if (!subscriptions.length) console.log('no report subscriptions')
+  else
+    for (const row of subscriptions) {
+      const when =
+        row.cadence === 'weekly'
+          ? `weekly ${row.weekday} ${row.hour}:00 ${row.zone}`
+          : `daily ${row.hour}:00 ${row.zone}`
+      console.log(
+        `${row.id}  ${subscriptionScope(row)}  ${when}  ` +
+          `${row.recipients.map((recipient) => recipient.email).join(', ') || 'no recipients'}  ` +
+          `${row.enabled ? 'enabled' : 'disabled'}`,
+      )
+    }
 }
 
-function subscribeScope(argv: string[]) {
-  const kind = flagOf(argv, 'scope')
-  if (kind === 'space') return { kind: 'space' as const }
-  if (kind === 'project')
-    return { kind: 'project' as const, project: flagOf(argv, 'project') ?? '' }
-  if (kind === 'members') return { kind: 'members' as const, userIds: flagsOf(argv, 'member') }
+function subscribeScope(options: ReportOptions) {
+  if (options.scope === 'space') return { kind: 'space' as const }
+  if (options.scope === 'project')
+    return { kind: 'project' as const, project: options.project ?? '' }
+  if (options.scope === 'members')
+    return { kind: 'members' as const, userIds: options.member ?? [] }
   throw new Error(
     'usage: hub report subscribe --scope space|project|members [--project NAME] [--member USER_ID] --cadence daily|weekly --hour N [--day monday] --zone AREA/CITY [--recipient USER_ID]',
   )
 }
 
-async function reportSubscribe(argv: string[]) {
-  const hour = Number(flagOf(argv, 'hour'))
+async function reportSubscribe(options: ReportOptions): Promise<void> {
+  const hour = Number(options.hour)
   const row = await hostedCreateReportSubscription({
-    scope: subscribeScope(argv),
-    cadence: flagOf(argv, 'cadence') ?? '',
+    scope: subscribeScope(options),
+    cadence: options.cadence ?? '',
     hour: Number.isFinite(hour) ? hour : Number.NaN,
-    weekday: flagOf(argv, 'day'),
-    zone: flagOf(argv, 'zone') ?? '',
-    recipientUserIds: flagOf(argv, 'recipient') ? [flagOf(argv, 'recipient')!] : undefined,
+    weekday: options.day,
+    zone: options.zone ?? '',
+    recipientUserIds: options.recipient ? [options.recipient] : undefined,
   })
   console.log(row.id)
 }
 
-async function reportUnsubscribe(id: string | undefined) {
-  if (!id || id.startsWith('--')) throw new Error('usage: hub report unsubscribe <ID>')
-  const row = await hostedUnsubscribeReportSubscription(id)
-  console.log(`unsubscribed ${row.id}`)
-}
-
-export async function runReportCommand(argv: string[]) {
-  const sub = argv[1]
-  if (sub === 'push') return reportPush(argv.includes('--dry-run'))
-  if (sub === 'subscriptions') return reportList(argv.includes('--json'))
-  if (sub === 'subscribe') return reportSubscribe(argv)
-  if (sub === 'unsubscribe') return reportUnsubscribe(argv[2])
-  if (sub === 'send') return runReportDeliveryCommand(argv)
-  throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push|send')
+export function registerReportCommands(program: Command): void {
+  const report = program.command('report').action(() => {
+    open()
+    throw new Error('usage: hub report subscribe|subscriptions|unsubscribe|push|send')
+  })
+  report
+    .command('subscribe')
+    .option('--scope <space|project|person>', '')
+    .option('--project <name>', '')
+    .option('--member <user-id>', '', repeat, [])
+    .option('--cadence <daily|weekly>', '')
+    .option('--hour <N>', '')
+    .option('--day <monday>', '')
+    .option('--zone <area/city>', '')
+    .option('--recipient <user-id>', '')
+    .action(async (options: ReportOptions) => {
+      open()
+      await reportSubscribe(options)
+    })
+  report
+    .command('subscriptions')
+    .option('--json', '')
+    .action(async (options: ReportOptions) => {
+      open()
+      await reportList(Boolean(options.json))
+    })
+  report.command('unsubscribe <id>').action(async (id) => {
+    open()
+    const row = await hostedUnsubscribeReportSubscription(id)
+    console.log(`unsubscribed ${row.id}`)
+  })
+  report
+    .command('send')
+    .description('render and send every subscription whose period is due')
+    .option('--dry-run', '')
+    .action(async (options: ReportOptions) => {
+      open()
+      await runReportDeliveryCommand({ dryRun: Boolean(options.dryRun) })
+    })
+  report
+    .command('push')
+    .description('migrate and verify send history')
+    .option('--dry-run', '')
+    .action(async (options: ReportOptions) => {
+      open()
+      await reportPush(Boolean(options.dryRun))
+    })
 }

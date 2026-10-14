@@ -11,7 +11,7 @@ import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { HOSTED_CHANGES_CURSOR_KEY } from './hosted-task-change-family.ts'
 import { applyMigrations } from './migrations.ts'
-import { drainHostedOutbox, queueHostedChange, runHostedOutboxCommand } from './outbox.ts'
+import { drainHostedOutbox, queueHostedChange, retryHostedOutboxEntryCommand } from './outbox.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import {
   HOSTED_STATUS_EVENT_TABLE,
@@ -247,7 +247,10 @@ test('two machines whose task ids and event ids both differ share one hosted eve
   ])
   first.close()
   writeTransaction((conn) =>
-    insertTaskAndEvent(conn, secondEventId, at, { taskId: secondTaskId, queueTask: true }),
+    insertTaskAndEvent(conn, secondEventId, at, {
+      taskId: secondTaskId,
+      queueTask: true,
+    }),
   )
   expect((await drainToHosted()).sent).toBe(2)
   expect(await hostedIds([firstEventId, secondEventId])).toEqual([{ id: firstEventId }])
@@ -330,7 +333,10 @@ test.each([
     })
     expect(report.sent).toBe(1)
     expect(sent).toEqual([
-      expect.objectContaining({ id: hostedId, table: HOSTED_STATUS_EVENT_TABLE }),
+      expect.objectContaining({
+        id: hostedId,
+        table: HOSTED_STATUS_EVENT_TABLE,
+      }),
     ])
     expect(await hostedIds([hostedId, machineId])).toEqual([{ id: hostedId }])
   },
@@ -342,7 +348,12 @@ test('pull adoption takes the hosted row values', async () => {
   const at = '2026-10-12T17:00:00.000Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: hostedId, op: 'upsert', row: eventRow(hostedId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: hostedId,
+        op: 'upsert',
+        row: eventRow(hostedId, at),
+      },
     ]),
   ).toEqual([{ id: hostedId, status: 'applied' }])
   writeTransaction((conn) => {
@@ -364,7 +375,12 @@ test('a quarantined status-event entry converges on pull', async () => {
   const at = '2026-10-12T18:00:00.000Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: hostedId, op: 'upsert', row: eventRow(hostedId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: hostedId,
+        op: 'upsert',
+        row: eventRow(hostedId, at),
+      },
     ]),
   ).toEqual([{ id: hostedId, status: 'applied' }])
   writeTransaction((conn) => {
@@ -391,11 +407,19 @@ test('a machine row that already holds the hosted id drops the duplicate and adv
   const at = '2026-10-12T19:00:00.000Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: hostedId, op: 'upsert', row: eventRow(hostedId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: hostedId,
+        op: 'upsert',
+        row: eventRow(hostedId, at),
+      },
     ]),
   ).toEqual([{ id: hostedId, status: 'applied' }])
   writeTransaction((conn) => {
-    insertTaskAndEvent(conn, hostedId, at, { toStatus: 'review', queueEvent: false })
+    insertTaskAndEvent(conn, hostedId, at, {
+      toStatus: 'review',
+      queueEvent: false,
+    })
     conn
       .query(
         `INSERT INTO task_status_event (record_id,task_key,task_record_id,at,from_status,to_status)
@@ -419,7 +443,12 @@ test('a deleted holder is rejected and not adopted', async () => {
   const at = '2026-10-12T16:00:00.000Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: hostedId, op: 'upsert', row: eventRow(hostedId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: hostedId,
+        op: 'upsert',
+        row: eventRow(hostedId, at),
+      },
     ]),
   ).toEqual([{ id: hostedId, status: 'applied' }])
   await database.query(`UPDATE hub_task_status_event SET deleted_at=$1 WHERE id=$2`, [at, hostedId])
@@ -432,11 +461,19 @@ test('a deleted holder is rejected and not adopted', async () => {
         row: eventRow(incomingId, at),
       },
     ]),
-  ).toEqual([{ id: incomingId, status: 'rejected', reason: DELETED_ON_HOSTED_RECORD_REASON }])
-  const remaining = await database.query<{ id: string; deleted_at: string | null }>(
-    `SELECT id::text id, deleted_at FROM hub_task_status_event WHERE id=ANY($1::uuid[])`,
-    [[hostedId, incomingId]],
-  )
+  ).toEqual([
+    {
+      id: incomingId,
+      status: 'rejected',
+      reason: DELETED_ON_HOSTED_RECORD_REASON,
+    },
+  ])
+  const remaining = await database.query<{
+    id: string
+    deleted_at: string | null
+  }>(`SELECT id::text id, deleted_at FROM hub_task_status_event WHERE id=ANY($1::uuid[])`, [
+    [hostedId, incomingId],
+  ])
   expect(remaining.rows.map((row) => row.id)).toEqual([hostedId])
   expect(remaining.rows[0]!.deleted_at).not.toBeNull()
 })
@@ -448,7 +485,12 @@ test('a transition one millisecond later is a second event', async () => {
   const later = '2026-10-12T12:00:00.001Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: firstId, op: 'upsert', row: eventRow(firstId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: firstId,
+        op: 'upsert',
+        row: eventRow(firstId, at),
+      },
     ]),
   ).toEqual([{ id: firstId, status: 'applied' }])
   expect(
@@ -470,7 +512,12 @@ test('a quarantined collision converges after retry', async () => {
   const at = '2026-10-12T13:00:00.000Z'
   expect(
     await apply([
-      { table: HOSTED_STATUS_EVENT_TABLE, id: hostedId, op: 'upsert', row: eventRow(hostedId, at) },
+      {
+        table: HOSTED_STATUS_EVENT_TABLE,
+        id: hostedId,
+        op: 'upsert',
+        row: eventRow(hostedId, at),
+      },
     ]),
   ).toEqual([{ id: hostedId, status: 'applied' }])
   writeTransaction((conn) => {
@@ -485,7 +532,7 @@ test('a quarantined collision converges after retry', async () => {
   const entryId = db()
     .query<{ id: string }, [string]>(`SELECT id FROM hosted_outbox WHERE row_id=?`)
     .get(machineId)!.id
-  expect(runHostedOutboxCommand(['outbox', 'retry', entryId])).toEqual([
+  expect(retryHostedOutboxEntryCommand(entryId)).toEqual([
     `outbox entry ${entryId} queued for retry`,
   ])
   expect((await drainToHosted()).sent).toBe(1)

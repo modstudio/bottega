@@ -4,7 +4,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
-import { type OutboxProcessKind, recordOutboxTrace, runOutboxTraceCommand } from './outbox-trace.ts'
+import { type OutboxProcessKind, recordOutboxTrace } from './outbox-trace.ts'
 import { projects } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -45,15 +45,27 @@ export type OutboxEntry = {
 }
 
 export function mergeQueuedHostedChange(
-  prior: { operation: 'upsert' | 'delete'; fields: readonly string[] | null } | null,
-  incoming: { operation: 'upsert' | 'delete'; fields: readonly string[] | null },
+  prior: {
+    operation: 'upsert' | 'delete'
+    fields: readonly string[] | null
+  } | null,
+  incoming: {
+    operation: 'upsert' | 'delete'
+    fields: readonly string[] | null
+  },
 ): { operation: 'upsert' | 'delete'; fields: string[] | null } {
   if (incoming.operation === 'delete') return { operation: 'delete', fields: null }
   if (!prior || prior.operation === 'delete')
-    return { operation: 'upsert', fields: incoming.fields ? [...new Set(incoming.fields)] : null }
+    return {
+      operation: 'upsert',
+      fields: incoming.fields ? [...new Set(incoming.fields)] : null,
+    }
   if (prior.fields === null || incoming.fields === null)
     return { operation: 'upsert', fields: null }
-  return { operation: 'upsert', fields: [...new Set([...prior.fields, ...incoming.fields])] }
+  return {
+    operation: 'upsert',
+    fields: [...new Set([...prior.fields, ...incoming.fields])],
+  }
 }
 
 export type HostedOutboxReport = {
@@ -197,7 +209,10 @@ export function pendingHostedOutboxSummary(): PendingHostedOutbox {
        FROM hosted_outbox WHERE quarantined_at IS NULL`,
     )
     .get()!
-  return { pendingCount: row.pending_count, newestQueuedAt: row.newest_queued_at }
+  return {
+    pendingCount: row.pending_count,
+    newestQueuedAt: row.newest_queued_at,
+  }
 }
 
 function retryHostedOutboxEntryOutcome(id: string): 'retried' | 'missing-row' | 'not-quarantined' {
@@ -781,28 +796,28 @@ export async function hostedOutboxDoctorLines(
   return lines
 }
 
-function showHostedOutboxEntry(id: string | undefined): string[] {
-  if (!id) throw new Error('usage: hub outbox show <ID>')
+export function showHostedOutboxEntry(id: string): string[] {
   const row = listHostedOutbox().find((entry) => entry.id === id)
   if (!row) throw new Error(`no outbox entry ${id}`)
   return [
     JSON.stringify(
-      { ...row, kept_values: row.kept_values ? JSON.parse(row.kept_values) : null },
+      {
+        ...row,
+        kept_values: row.kept_values ? JSON.parse(row.kept_values) : null,
+      },
       null,
       2,
     ),
   ]
 }
 
-function discardHostedOutboxCommand(id: string | undefined): string[] {
-  if (!id) throw new Error('usage: hub outbox discard <ID>')
+export function discardHostedOutboxEntryCommand(id: string): string[] {
   if (!discardHostedOutboxEntry(id))
     throw new Error(`outbox entry ${id} is not quarantined; use \`hub outbox retry ${id}\``)
   return [`outbox entry ${id} discarded`]
 }
 
-function retryHostedOutboxCommand(id: string | undefined): string[] {
-  if (!id) throw new Error('usage: hub outbox retry <ID>')
+export function retryHostedOutboxEntryCommand(id: string): string[] {
   const outcome = retryHostedOutboxEntryOutcome(id)
   if (outcome === 'missing-row')
     throw new Error(
@@ -812,14 +827,9 @@ function retryHostedOutboxCommand(id: string | undefined): string[] {
   return [`outbox entry ${id} queued for retry`]
 }
 
-export function runHostedOutboxCommand(argv: string[]): string[] {
-  if (argv[1] === 'trace') return runOutboxTraceCommand(argv.slice(1))
-  if (argv[1] === 'show') return showHostedOutboxEntry(argv[2])
-  if (argv[1] === 'discard') return discardHostedOutboxCommand(argv[2])
-  if (argv[1] === 'retry') return retryHostedOutboxCommand(argv[2])
-  if (argv[1] && argv[1] !== '--json') throw new Error('usage: hub outbox [--json]')
+export function hostedOutboxLines(json = false): string[] {
   const rows = listHostedOutbox()
-  if (argv.includes('--json')) return [JSON.stringify(rows)]
+  if (json) return [JSON.stringify(rows)]
   if (!rows.length) return ['hosted outbox is empty']
   return rows.map(
     (row) =>

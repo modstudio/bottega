@@ -5,9 +5,9 @@ import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   listOutboxTrace,
   OUTBOX_TRACE_RETENTION_MS,
+  outboxTraceLines,
   pruneOutboxTrace,
   recordOutboxTrace,
-  runOutboxTraceCommand,
 } from './outbox-trace.ts'
 import { HOSTED_INTERVAL_TABLE } from './push-contract.ts'
 import type { HostedTaskIdentity } from './task-client.ts'
@@ -149,9 +149,7 @@ test('traces duplicate deletes, replacements, and rejections but not plain appli
       process: 'collector',
     },
   ])
-  expect(
-    JSON.parse(runOutboxTraceCommand(['trace', '--row', deletedId, '--json'])[0]!),
-  ).toHaveLength(1)
+  expect(JSON.parse(outboxTraceLines(deletedId, true)[0]!)).toHaveLength(1)
 })
 
 test('trace pruning removes rows older than the named retention', () => {
