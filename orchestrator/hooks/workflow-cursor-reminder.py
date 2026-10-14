@@ -15,9 +15,9 @@ import sys
 CLI_TIMEOUT_SECONDS = 5
 
 
-def orch_bin():
+def bottega_bin():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    return os.path.join(root, "bin", "orch")
+    return os.path.join(root, "bin", "bottega")
 
 
 def emit(payload):
@@ -80,7 +80,7 @@ def parse_cursor_rows(stdout):
 
 
 def query_cursors(cwd, session=None):
-    command = [orch_bin(), "workflow", "cursors", "--json"]
+    command = [bottega_bin(), "workflow", "cursors", "--json"]
     if session is not None:
         command.extend(["--session", session])
     try:
@@ -111,12 +111,12 @@ def session_start_context(source, rows):
     if source == "clear":
         header = (
             "Open workflow cursors in this project, possibly driven by another session. "
-            "Resume a flow with next_workflow_step (MCP) or orch workflow next."
+            "Resume a flow with next_workflow_step (MCP) or bottega workflow next."
         )
     else:
         header = (
             "Open workflow cursors. Resume a flow with next_workflow_step (MCP) "
-            "or orch workflow next."
+            "or bottega workflow next."
         )
     lines = [header]
     for row in rows:
@@ -184,7 +184,7 @@ def main():
             raise ValueError("hook payload is not an object")
     except Exception as error:
         print(
-            f"orch: hook payload could not be parsed ({error.__class__.__name__}: {error})",
+            f"bottega: hook payload could not be parsed ({error.__class__.__name__}: {error})",
             file=sys.stderr,
         )
         return 0

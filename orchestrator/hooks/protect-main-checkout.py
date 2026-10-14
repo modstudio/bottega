@@ -157,7 +157,7 @@ def deny(project, path):
                 f"{project['name']}: refusing edit to tracked file {rel} in main checkout {project['path']}\n"
                 f"work from a worktree under {hint} instead\n"
                 f"invariant: {INVARIANT}\n"
-                f"cleared by: orch do --cwd {shell_quote(hint + '/<tree>')}"
+                f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
             ),
         }
     }))

@@ -58,6 +58,22 @@ const ALLOWED = new Set([
   'ops/bin/orch-record-sync.sh',
   'ops/bin/orch-canon-audit.sh',
   'ops/bin/orch-canon-mirror.sh',
+  // Hook programs cannot import the TypeScript brand module; these command-facing hooks
+  // must name the front-door executable while the legacy command migration is in flight.
+  'orchestrator/hooks/block-agent.py',
+  'orchestrator/hooks/board-ack-guard.py',
+  'orchestrator/hooks/board_hook_common.py',
+  'orchestrator/hooks/git-guard.py',
+  'orchestrator/hooks/heartbeat-guard.py',
+  'orchestrator/hooks/heartbeat-remind.py',
+  'orchestrator/hooks/orch-heartbeat.sh',
+  'orchestrator/hooks/protect-main-checkout.py',
+  'orchestrator/hooks/score-reminder.py',
+  'orchestrator/hooks/session-brief.py',
+  'orchestrator/hooks/test-substance-guard.py',
+  'orchestrator/hooks/test_heartbeat_remind.py',
+  'orchestrator/hooks/test_session_brief_context.py',
+  'orchestrator/hooks/workflow-cursor-reminder.py',
 ])
 
 const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')

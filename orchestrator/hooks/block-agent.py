@@ -130,7 +130,7 @@ def log(decision, why, inp, event, payload=None):
         db.commit()
         db.close()
     except Exception as e:
-        print(f"orch: spawn not logged ({e.__class__.__name__}: {e})", file=sys.stderr)
+        print(f"bottega: spawn not logged ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join("" if v is None else str(v) for v in row) + "\n")
@@ -142,7 +142,7 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except Exception as e:
-        print(f"orch: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
+        print(f"bottega: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
             row = (time.strftime("%Y-%m-%dT%H:%M:%S"), "payload could not be parsed")
             with open(FALLBACK_LOG, "a") as fh:
@@ -210,18 +210,18 @@ def main() -> int:
                 "YOUR ROLE: you are the architect, orchestrator and judge. You design "
                 "the change, you rule on decisions, you review what comes back. The "
                 "agents build.\n\n"
-                "  orch do <job> \"<prompt>\"        # orch jobs - to see job types\n"
-                "  orch do file-question --file /path/to/prompt.txt\n\n"
+                "  bottega run start <job> \"<prompt>\"        # bottega agent jobs - to see job types\n"
+                "  bottega run start file-question --file /path/to/prompt.txt\n\n"
                 "TO DELEGATE IMPLEMENTATION - this is not read-only work any more:\n"
-                "  orch do implement \"<spec>\"      # writes, in a throwaway worktree\n"
-                "  orch do fix \"<one change>\"      # a narrow, already-diagnosed change\n"
-                "  orch inbox                       # design decisions a worker stopped to ask\n"
-                "  orch answer <id> \"<ruling>\"     # rule, and resume it where it stopped\n"
-                "  orch diff <id>                   # what it actually changed\n\n"
+                "  bottega run start implement \"<spec>\"      # writes, in a throwaway worktree\n"
+                "  bottega run start fix \"<one change>\"      # a narrow, already-diagnosed change\n"
+                "  bottega question inbox                       # design decisions a worker stopped to ask\n"
+                "  bottega question answer <id> \"<ruling>\"     # rule, and resume it where it stopped\n"
+                "  bottega run diff <id>                   # what it actually changed\n\n"
                 "A worker escalates every design decision to you rather than guessing, "
                 "so delegating implementation does not delegate the design.\n\n"
                 "Then score it so routing improves:\n"
-                "  orch score <id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful]\n\n"
+                "  bottega score <id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful]\n\n"
                 "IF THIS NEEDS THE WEB, no external agent can do it - they have no "
                 "network. Re-issue the same call with NEEDS-WEB in the prompt and it "
                 "will be allowed. Say it only when it is true: every spawn is logged, "

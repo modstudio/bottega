@@ -2,8 +2,8 @@
 #
 # Report, at an interval, whether a session is waiting or is blocked.
 #
-# `orch do` is detach-by-default, so a session that dispatches work and then sits
-# in `orch wait` emits nothing for as long as the worker runs. From outside that
+# `bottega run start` is detach-by-default, so a session that dispatches work and then sits
+# in `bottega run wait` emits nothing for as long as the worker runs. From outside that
 # is indistinguishable from a session that has died, and the operator cannot tell
 # whether it needs a wake or is genuinely waiting. That ambiguity is the whole
 # reason this exists: it collapses to four states, two of which are actionable.
@@ -33,7 +33,7 @@
 # it needs something. Exit 0 with no output is the "nothing to say" answer, and
 # the Monitor tool reports the exit itself.
 #
-# Detection remains deliberately machine-wide in `orch monitor`.
+# Detection remains deliberately machine-wide in `bottega machine monitor`.
 # This hook also classifies stalled runs from the canonical run listing so the
 # owning session learns promptly; supplemental monitor notices remain below.
 # Conditions without an owner stay in the monitor report for the fixer queue.
@@ -51,7 +51,7 @@ cd "$ROOT" 2>/dev/null || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
 }
-ORCH="$ROOT/../bin/orch"
+BOTTEGA="$ROOT/../bin/bottega"
 if [ -n "${ORCH_DB:-}" ]; then
   case "$ORCH_DB" in
     /*) DB_PATH="$ORCH_DB" ;;
@@ -65,7 +65,7 @@ else
 fi
 export ORCH_DB="$DB_PATH"
 
-SID="${1:?session id required (Claude session_id; orch records it on every run)}"
+SID="${1:?session id required (Claude session_id; bottega records it on every run)}"
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
@@ -139,7 +139,7 @@ trap cleanup_active_guarded_call EXIT
 report_store_write_lock() {
   lock_out=$(mktemp)
   lock_timed_out=$(mktemp)
-  CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --lock-holder --json >"$lock_out" 2>/dev/null &
+  CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --lock-holder --json >"$lock_out" 2>/dev/null &
   ACTIVE_GUARDED_PID=$!
   start_watchdog "$ACTIVE_GUARDED_PID" "$lock_timed_out"
   ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
@@ -173,20 +173,20 @@ for ((i = 1; i <= MAX; i++)); do
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
   fi
-  (cd "$CALLER_DIRECTORY" && CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" board presence) >/dev/null 2>&1 || true
+  (cd "$CALLER_DIRECTORY" && CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" board presence) >/dev/null 2>&1 || true
   # The heartbeat is session-scoped, not checkout-scoped. Ask for the complete
   # visible set, and make the explicit SID the identity used to derive
   # `can_answer`; the inherited environment may name a different session.
-  # Query first, THEN parse. A previous version piped `orch` straight into
-  # python under `set -o pipefail`; a non-zero exit from `orch` collapsed into
+  # Query first, THEN parse. Piping `bottega` straight into python under
+  # `set -o pipefail` lets a non-zero exit collapse into
   # the empty fallback, which reads as "no runs" and exits CLEAR. A transient
-  # orch failure would therefore announce all-clear while work was still
+  # command failure would therefore announce all-clear while work was still
   # running - the precise failure this file exists to prevent. Distinguish
-  # "orch said nothing" from "orch did not answer".
+  # "bottega said nothing" from "bottega did not answer".
   inbox_err=$(mktemp)
   runs_err=$(mktemp)
-  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" inbox --all --json 2>"$inbox_err"); inbox_rc=$?
-  runs_raw=$("$ORCH" runs --limit 200 --json 2>"$runs_err"); runs_rc=$?
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" question inbox --all --json 2>"$inbox_err"); inbox_rc=$?
+  runs_raw=$("$BOTTEGA" run list --limit 200 --json 2>"$runs_err"); runs_rc=$?
   rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
@@ -356,7 +356,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect orch diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
@@ -388,9 +388,9 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     if [ "$status" = "ok" ]; then
       echo "FINISHED $id/$job $agent $latency"
     elif [ "$failure_kind" = "harness" ]; then
-      echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'orch run $id'"
+      echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     else
-      echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'orch run $id'"
+      echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi
   done <<< "$observed"
 
@@ -402,7 +402,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     prev_key="$key"; since_emit=0
     ts=$(date +%H:%M:%S)
     if [ "$asking" -gt 0 ]; then
-      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) and $landing_n landing(s) live."
+      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'bottega question inbox', then 'bottega question answer <id>'. $n run(s) and $landing_n landing(s) live."
     fi
     if [ "$stalled_n" -gt 0 ]; then
       echo "[$ts] STALLED - $stalled_n run(s): $stalled_detail"
@@ -427,7 +427,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   monitor_err=$(mktemp)
   monitor_out=$(mktemp)
   monitor_timed_out=$(mktemp)
-  CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --notices --json >"$monitor_out" 2>"$monitor_err" &
+  CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --notices --json >"$monitor_out" 2>"$monitor_err" &
   ACTIVE_GUARDED_PID=$!
   start_watchdog "$ACTIVE_GUARDED_PID" "$monitor_timed_out"
   ACTIVE_WATCHDOG_PID=$WATCHDOG_PID
@@ -560,7 +560,7 @@ print(token)
           export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
           export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
           ack_timed_out=$(mktemp)
-          CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+          CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" machine monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
           ACTIVE_GUARDED_PID=$!
           start_watchdog "$ACTIVE_GUARDED_PID" "$ack_timed_out"
           ACTIVE_WATCHDOG_PID=$WATCHDOG_PID

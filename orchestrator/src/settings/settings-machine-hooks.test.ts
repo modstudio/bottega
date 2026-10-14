@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
@@ -36,6 +37,8 @@ const profileHooks = {
         handler('heartbeat-remind.py', {
           if: `Bash(${OLD_ROOT}/bin/${PLATFORM_SLUG} run start:*)`,
         }),
+        handler('heartbeat-remind.py', { if: 'Bash(orch do:*)' }),
+        handler('heartbeat-remind.py', { if: `Bash(${OLD_ROOT}/bin/orch do:*)` }),
       ],
     },
   ],
@@ -55,6 +58,15 @@ function render(hooks: unknown) {
   return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE)
 }
 
+test('heartbeat reminder recognizes detached dispatch commands', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_heartbeat_remind.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
+
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)
   const fromEmpty = render({})
@@ -64,10 +76,16 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(14)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(18)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
-  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(2)
+  expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(6)
+  expect(commands).toContain(`Bash(${PLATFORM_SLUG} run start:*)`)
+  expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} run start:*)`)
+  expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/${PLATFORM_SLUG} run start:*)`)
+  expect(commands).toContain('Bash(orch do:*)')
+  expect(commands).toContain('Bash(./bin/orch do:*)')
+  expect(commands).toContain(`Bash(${ASSET_ROOT}/bin/orch do:*)`)
 })
 
 test('unrelated profile handlers survive unchanged and in place', () => {
@@ -120,7 +138,7 @@ test('superseded handlers name exactly the removed profile entries', () => {
     { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
     { event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' },
     { event: 'SubagentStart', matcher: '*', script: 'block-agent.py' },
-    ...Array.from({ length: 2 }, () => ({
+    ...Array.from({ length: 4 }, () => ({
       event: 'PostToolUse',
       matcher: 'Bash',
       script: 'heartbeat-remind.py' as const,

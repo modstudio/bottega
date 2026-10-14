@@ -11,8 +11,9 @@
          slower clock. The loop keeps both cadences in one process. -->
     <key>ProgramArguments</key>
     <array>
-        <string>__INSTALL_ROOT__/bin/hub</string>
-        <string>collect</string>
+        <string>__INSTALL_ROOT__/bin/bottega</string>
+        <string>record</string>
+        <string>pull</string>
         <string>--watch</string>
     </array>
 
@@ -21,7 +22,7 @@
     <key>KeepAlive</key>
     <true/>
 
-    <!-- PATH is not inherited under launchd, and the collector shells `orch`,
+    <!-- PATH is not inherited under launchd, and the collector shells `bottega`,
          `git` and `bun`. Without this it fails on every tick, silently. -->
     <key>EnvironmentVariables</key>
     <dict>

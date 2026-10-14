@@ -30,8 +30,8 @@ def heartbeat_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "orch-heartbeat.sh"))
 
 
-def orch_path() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
+def bottega_path() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
 
 
 def heartbeat_armed(session_id: str) -> bool | None:
@@ -102,7 +102,7 @@ def live_landing_ids(session_id: str):
 def live_run_ids(session_id: str):
     try:
         result = subprocess.run(
-            [orch_path(), "runs", "--limit", "200", "--json"],
+            [bottega_path(), "run", "list", "--limit", "200", "--json"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -169,7 +169,7 @@ def main() -> int:
         count = len(run_ids)
         landing_count = len(landings)
         work = (
-            f"{count} live orch run{'s' if count != 1 else ''}"
+            f"{count} live bottega run{'s' if count != 1 else ''}"
             f" and {landing_count} landing{'s' if landing_count != 1 else ''}"
         )
         if landing_ids is None:

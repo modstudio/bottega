@@ -11,11 +11,19 @@ import { pidAlive } from '../../shared/process-identity.ts'
 
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
+  const frontDoorSource = `cli/${PLATFORM_SLUG}.ts`
   return words.some((word, index) => {
     const next = words[index + 1]
     const after = words[index + 2]
     if (
       (word === PLATFORM_SLUG || word.endsWith(`/bin/${PLATFORM_SLUG}`)) &&
+      next === 'dashboard' &&
+      after === 'start'
+    ) {
+      return true
+    }
+    if (
+      (word === frontDoorSource || word.endsWith(`/${frontDoorSource}`)) &&
       next === 'dashboard' &&
       after === 'start'
     ) {
