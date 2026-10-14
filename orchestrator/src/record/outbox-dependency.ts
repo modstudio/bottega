@@ -12,6 +12,9 @@ type ParentState = {
   retired_at: string | null
 }
 
+export const outboxParentIdentityKey = (kind: string, recordId: string): string =>
+  `${kind}:${recordId}`
+
 const nullableString = (value: unknown): string | null => (value == null ? null : String(value))
 
 function reviewRunIds(database: Database, reviewRecordId: string): string[] {
@@ -120,12 +123,14 @@ export function blockedByRetiredParentRows(database: Database): BlockedOutboxRow
 function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
-  plannedParents?: ReadonlySet<string>,
+  plannedParents?: ReadonlyMap<string, readonly number[]>,
 ): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string; reason?: string } {
-  const unique = new Map(parents.map((parent) => [`${parent.kind}:${parent.recordId}`, parent]))
+  const unique = new Map(
+    parents.map((parent) => [outboxParentIdentityKey(parent.kind, parent.recordId), parent]),
+  )
   let deferred = false
   for (const { kind, recordId: parentRecordId, blockedReason } of unique.values()) {
-    if (plannedParents?.has(`${kind}:${parentRecordId}`)) continue
+    if (plannedParents?.has(outboxParentIdentityKey(kind, parentRecordId))) continue
     const rows = database
       .query<ParentState, [string, string]>(
         `SELECT synced_at,quarantined_at,retired_at FROM outbox
@@ -147,7 +152,7 @@ function outboxDependency(
   row: OutboxRow,
   payload: Payload,
   database: Database,
-  plannedParents?: ReadonlySet<string>,
+  plannedParents?: ReadonlyMap<string, readonly number[]>,
 ) {
   return outboxDependencyState(
     database,
@@ -197,7 +202,7 @@ export function deferOutboxRow(
   row: OutboxRow,
   payload: Payload,
   blocked: BlockedOutboxRow[],
-  plannedParents?: ReadonlySet<string>,
+  plannedParents?: ReadonlyMap<string, readonly number[]>,
 ): boolean {
   const dependency = outboxDependency(row, payload, database, plannedParents)
   if (dependency.disposition === 'ready') return false
@@ -216,8 +221,28 @@ export function outboxRowWaitsForParent(
   database: Database,
   row: OutboxRow,
   payload: Payload,
+  plannedParents?: ReadonlyMap<string, readonly number[]>,
 ): boolean {
-  return outboxDependency(row, payload, database).disposition === 'deferred'
+  return outboxDependency(row, payload, database, plannedParents).disposition === 'deferred'
+}
+
+export function outboxRowPlannedParentKeys(
+  database: Database,
+  row: OutboxRow,
+  payload: Payload,
+  plannedParents: ReadonlyMap<string, readonly number[]>,
+): string[] {
+  const parents = new Map(
+    outboxParentRecordIds(row, payload, database).map((parent) => [
+      outboxParentIdentityKey(parent.kind, parent.recordId),
+      parent,
+    ]),
+  )
+  return [...parents].flatMap(([key, parent]) =>
+    plannedParents.has(key) && outboxDependencyState(database, [parent]).disposition === 'deferred'
+      ? [key]
+      : [],
+  )
 }
 
 export function outboxRowIsEligible(database: Database, row: OutboxRow): boolean {

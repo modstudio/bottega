@@ -52,6 +52,29 @@ const runPayload = (input: {
   return row
 }
 
+const scorePayload = (input: {
+  id: string
+  machineId: string
+  projectName: string
+  spaceId: string
+}) => {
+  const row = Object.fromEntries(
+    OUTBOX_PAYLOAD_CONTRACTS.score.columns.map((column) => [column, null]),
+  )
+  Object.assign(row, {
+    ...input,
+    localId: nextLocalId++,
+    delivery: 'full',
+    quality: 'right',
+    fidelity: 'faithful',
+    note: 'same-batch proof',
+    scoredAt: '2026-10-13T01:01:00.000Z',
+    scoredBy: 'architect',
+    updatedAt: '2026-10-13T01:01:00.000Z',
+  })
+  return row
+}
+
 function localOutbox(payload: Record<string, unknown>): Database {
   const local = new Database(':memory:')
   applyMigrations(local)
@@ -218,6 +241,116 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       ).toBe(before)
       expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('1')
     })
+  })
+
+  test('hosted sync records a same-request run and score but not a refused parent child', async () => {
+    const syncPair = async (inputRows: {
+      run: Record<string, unknown>
+      score: Record<string, unknown>
+    }) => {
+      const local = new Database(':memory:')
+      applyMigrations(local)
+      local
+        .query(
+          `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
+           (1,'run',?,?,?),
+           (2,'score',?,?,?)`,
+        )
+        .run(
+          String(inputRows.run.id),
+          JSON.stringify(inputRows.run),
+          String(inputRows.run.createdAt),
+          String(inputRows.score.id),
+          JSON.stringify(inputRows.score),
+          String(inputRows.score.scoredAt),
+        )
+      const requests: string[][] = []
+      const hosted = recordApiClient()
+      const result = await syncRecord({
+        local,
+        identity: { id: String(inputRows.run.machineId), name: 'proof-machine' },
+        projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+        client: {
+          whoami: hosted.whoami,
+          sync: async (request) => {
+            requests.push(request.rows.map((row) => row.kind))
+            return hosted.sync!(request)
+          },
+        },
+      })
+      return { local, requests, result }
+    }
+
+    const recordedId = newRecordId()
+    const recorded = await syncPair({
+      run: runPayload({
+        id: recordedId,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+      score: scorePayload({
+        id: recordedId,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+    })
+    try {
+      expect(recorded.result).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+      expect(recorded.requests).toEqual([['run', 'score']])
+      expect(input.admin(`SELECT count(*) FROM run WHERE id='${recordedId}';`)).toBe('1')
+      expect(input.admin(`SELECT count(*) FROM run_score WHERE run_id='${recordedId}';`)).toBe('1')
+    } finally {
+      recorded.local.close()
+    }
+
+    const refusedId = newRecordId()
+    const ownerMachineId = newRecordId()
+    const owner = localOutbox(
+      runPayload({
+        id: refusedId,
+        machineId: ownerMachineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+    )
+    try {
+      expect(
+        await syncRecord({
+          local: owner,
+          identity: { id: ownerMachineId, name: 'parent-owner' },
+          projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+        }),
+      ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
+    } finally {
+      owner.close()
+    }
+
+    const refused = await syncPair({
+      run: runPayload({
+        id: refusedId,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+      score: scorePayload({
+        id: refusedId,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        spaceId: input.writeSpaceId,
+      }),
+    })
+    try {
+      expect(refused.result).toMatchObject({ pushed: 0, failed: 1, pending: 1 })
+      expect(refused.requests).toEqual([['run', 'score']])
+      expect(input.admin(`SELECT machine_id FROM run WHERE id='${refusedId}';`)).toBe(
+        ownerMachineId,
+      )
+      expect(input.admin(`SELECT count(*) FROM run_score WHERE run_id='${refusedId}';`)).toBe('0')
+    } finally {
+      refused.local.close()
+    }
   })
 
   test('hosted sync refuses machine takeover before writing and preserves the owner', async () => {
