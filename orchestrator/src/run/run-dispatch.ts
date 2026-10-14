@@ -4,10 +4,9 @@
  * not know transports, worktrees, routing policy, reviews, or the CLI.
  */
 import { type ChildProcess, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
@@ -164,7 +163,7 @@ export async function detach(
        RETURNING id`,
       )
       .get(
-        newRecordId(),
+        randomUUID(),
         nowIso(),
         jobName,
         projectName,

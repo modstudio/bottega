@@ -37,7 +37,9 @@ test('run and question identity migration fills nulls, keeps identities, and pre
     const missingRun = runInsert.get(null) as { id: number }
     const keptRunId = '01990000-0000-7000-8000-000000000401'
     const keptRun = runInsert.get(keptRunId) as { id: number }
-    database.query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(missingRun.id, keptRun.id)
+    database
+      .query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?')
+      .run(missingRun.id, keptRun.id)
     const questionInsert = database.query(
       `INSERT INTO question (record_id,run_id,asked_at,question) VALUES (?,?,'2026-10-13',?)
        RETURNING id`,
@@ -68,9 +70,9 @@ test('run and question identity migration fills nulls, keeps identities, and pre
       .all()
     expect(runIds.find((row) => row.id === missingRun.id)?.record_id).toMatch(UUID_V4)
     expect(runIds.find((row) => row.id === keptRun.id)?.record_id).toBe(keptRunId)
-    expect(
-      database.query('SELECT parent_run_id,turn FROM run WHERE id=?').get(keptRun.id),
-    ).toEqual({ parent_run_id: missingRun.id, turn: 2 })
+    expect(database.query('SELECT parent_run_id,turn FROM run WHERE id=?').get(keptRun.id)).toEqual(
+      { parent_run_id: missingRun.id, turn: 2 },
+    )
     expect(questionIds.find((row) => row.id === missingQuestion.id)?.record_id).toMatch(UUID_V4)
     expect(questionIds.find((row) => row.id === keptQuestion.id)?.record_id).toBe(keptQuestionId)
     expect(database.query('SELECT run_id FROM run_checkpoint').get()).toEqual({

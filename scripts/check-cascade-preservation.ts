@@ -225,9 +225,7 @@ function parserRisks(
   let activeForeignKeys = [...foreignKeys]
   for (const [index, statement] of statements.entries()) {
     for (const deletedTable of destructiveTables(statement)) {
-      for (const { dependent } of activeForeignKeys.filter(
-        (key) => key.parent === deletedTable,
-      )) {
+      for (const { dependent } of activeForeignKeys.filter((key) => key.parent === deletedTable)) {
         const preserved = snapshots.some(
           (copy) =>
             copy.source === dependent &&
