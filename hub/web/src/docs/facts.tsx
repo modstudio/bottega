@@ -16,7 +16,7 @@ import type { DocHeading } from './headings.ts'
 import { savedVersionAuthor } from './reading.tsx'
 import { isScope } from './scope.ts'
 import type { DocsAudience, DocsDoc, DocsSource } from './types.ts'
-import { useExpectedRevision } from './use-docs.ts'
+import { useStoredDocument } from './use-docs.ts'
 import { useHeldPanel } from './use-held-panel.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
@@ -201,7 +201,8 @@ function DocManage({ doc, source }: { doc: DocsDoc; source: DocsSource }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const scoped = isScope(doc.scope)
-  const expectedRevision = useExpectedRevision(doc, source, open)
+  const storedDocument = useStoredDocument(doc, source, open)
+  const expectedRevision = storedDocument?.revision
   const hostedRevisionMissing = source === 'hosted' && !expectedRevision
 
   async function removed() {
