@@ -57,7 +57,7 @@ export type DocsViewProps = {
   bodyView?: ReactNode
   viewedRevision?: { title: string; body: string } | null
   editing?: boolean
-  toolbar?: ReactNode
+  editBand?: ReactNode
   banner?: ReactNode
   titleView?: (headingRef: Ref<HTMLElement | null>) => ReactNode
   /** Where the article's fields are saved, when this reader may edit them in place. */

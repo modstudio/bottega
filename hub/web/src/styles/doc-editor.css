@@ -1,9 +1,10 @@
 /* In-place article editor. Selectors are editor-only. */
 
-input.doc-editor-title {
+textarea.doc-editor-title {
   display: block;
   box-sizing: border-box;
   width: 100%;
+  height: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -11,9 +12,12 @@ input.doc-editor-title {
   box-shadow: none;
   appearance: none;
   outline: none;
+  overflow: hidden;
+  resize: none;
+  field-sizing: content;
 }
 
-input.doc-editor-title:focus-visible {
+textarea.doc-editor-title:focus-visible {
   outline: var(--focus-width) solid var(--focus-color);
   outline-offset: var(--focus-offset);
 }
@@ -78,6 +82,11 @@ input.doc-editor-title:focus-visible {
 .doc-editor .doc-ed-code {
   color: var(--text-secondary);
   font-family: var(--family-mono);
+}
+
+.doc-editor .doc-ed-inline-code {
+  color: var(--text-secondary);
+  font-family: var(--family-mono);
   background: var(--surface-sunken);
   border: 1px solid var(--border-default);
 }
@@ -92,12 +101,35 @@ input.doc-editor-title:focus-visible {
   color: var(--text-primary);
 }
 
-.doc-editor .doc-ed-literal {
-  color: var(--accent-text);
+.doc-editor .doc-ed-string {
+  color: var(--status-success);
+}
+
+.doc-editor .doc-ed-number,
+.doc-editor .doc-ed-regexp {
+  color: var(--status-info);
+}
+
+.doc-editor .doc-ed-atom,
+.doc-editor .doc-ed-definition {
+  color: var(--status-warning);
+}
+
+.doc-editor .doc-ed-function,
+.doc-editor .doc-ed-type {
+  color: var(--status-progress);
 }
 
 .doc-editor .doc-ed-name {
   color: var(--text-secondary);
+}
+
+.doc-editor .doc-ed-punctuation {
+  color: var(--text-muted);
+}
+
+.doc-editor .doc-ed-invalid {
+  color: var(--status-error);
 }
 
 /* Stands in for the editor while its code loads, set exactly as its content is. */

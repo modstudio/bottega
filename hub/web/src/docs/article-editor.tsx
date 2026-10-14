@@ -10,6 +10,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -54,6 +55,10 @@ type RichEditorProps = {
 
 type Draft = { title: string; body: string }
 
+function singleLineTitle(title: string): string {
+  return title.replace(/[\r\n]+/g, ' ')
+}
+
 export function articleDraftSource(
   _pageDocument: Pick<DocsDoc, 'title' | 'body'> | null,
   storedDocument: Pick<StoredDocument, 'title' | 'body'> | undefined,
@@ -70,13 +75,38 @@ function ArticleEditTitle({
   onChange: (title: string) => void
   headingRef: Ref<HTMLElement | null>
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const setHeadingRef = useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      textareaRef.current = element
+      if (typeof headingRef === 'function') headingRef(element)
+      else if (headingRef) headingRef.current = element
+    },
+    [headingRef],
+  )
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea || textarea.value !== title || CSS.supports('field-sizing', 'content')) return
+    const size = () => {
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+    size()
+    const observer = new ResizeObserver(size)
+    if (textarea.parentElement) observer.observe(textarea.parentElement)
+    return () => observer.disconnect()
+  }, [title])
   return (
-    <input
-      ref={headingRef as Ref<HTMLInputElement>}
+    <textarea
+      ref={setHeadingRef}
       className="doc-title doc-editor-title"
       data-long={title.length > LONG_TITLE ? '' : undefined}
+      rows={1}
       value={title}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => onChange(singleLineTitle(event.target.value))}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.preventDefault()
+      }}
       aria-label="Title"
     />
   )
@@ -168,7 +198,6 @@ function ArticleEditActions({
   onSave,
   popoverRef,
   reasonRef,
-  modeSwitch,
 }: {
   saveEnabled: boolean
   saving: boolean
@@ -178,7 +207,6 @@ function ArticleEditActions({
   onSave: () => void
   popoverRef: RefObject<HTMLDivElement | null>
   reasonRef: RefObject<HTMLInputElement | null>
-  modeSwitch?: ReactNode
 }) {
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -187,7 +215,6 @@ function ArticleEditActions({
   }
   return (
     <>
-      {modeSwitch}
       <Button size="sm" variant="secondary" onClick={onCancel}>
         <X size={14} />
         Cancel
@@ -219,6 +246,39 @@ function ArticleEditActions({
         </form>
       </Popover>
     </>
+  )
+}
+
+/**
+ * The editing tools, in the place of the status line under the title: the formatting toolbar for
+ * the body and the Rich | Markdown switch. It holds the line's height, so nothing below moves, and
+ * stays in view under the article's header while the body scrolls.
+ */
+function ArticleEditBand({
+  toolbar,
+  mode,
+  onMode,
+}: {
+  toolbar: ReactNode
+  mode: DocEditorMode
+  onMode: (mode: DocEditorMode) => void
+}) {
+  return (
+    <div className="doc-measure -mx-1 z-[9] mt-3 flex h-control-sm items-center gap-3 bg-surface-page px-1 lg:sticky lg:top-[calc(var(--docs-stick)+var(--docs-reading-top))]">
+      <div className="flex min-w-0 flex-1 items-center">{toolbar}</div>
+      <Segmented
+        label="Editor mode"
+        size="sm"
+        value={mode}
+        options={[
+          { value: 'rich', label: 'Rich' },
+          { value: 'markdown', label: 'Markdown' },
+        ]}
+        onChange={(value) => {
+          if (value === 'rich' || value === 'markdown') onMode(value)
+        }}
+      />
+    </div>
   )
 }
 
@@ -606,10 +666,17 @@ export function editorChrome(
     ) : (
       revisionBody
     ),
-    toolbar:
-      activeEditing && editor.mode === 'rich' && Toolbar && editor.richEditor ? (
-        <Toolbar editor={editor.richEditor} />
-      ) : undefined,
+    editBand: activeEditing ? (
+      <ArticleEditBand
+        toolbar={
+          editor.mode === 'rich' && Toolbar && editor.richEditor ? (
+            <Toolbar editor={editor.richEditor} />
+          ) : null
+        }
+        mode={editor.mode}
+        onMode={editor.setMode}
+      />
+    ) : undefined,
     banner: activeEditing ? (
       <ArticleEditBanner
         conflict={editor.conflict}
@@ -636,20 +703,6 @@ export function editorChrome(
         onSave={editor.save}
         popoverRef={editor.popoverRef}
         reasonRef={editor.reasonRef}
-        modeSwitch={
-          <Segmented
-            label="Editor mode"
-            size="sm"
-            value={editor.mode}
-            options={[
-              { value: 'rich', label: 'Rich' },
-              { value: 'markdown', label: 'Markdown' },
-            ]}
-            onChange={(value) => {
-              if (value === 'rich' || value === 'markdown') editor.setMode(value)
-            }}
-          />
-        }
       />
     ) : mayEdit ? (
       <Button size="sm" variant="secondary" onClick={onEnterEdit}>

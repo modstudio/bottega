@@ -1,11 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { queryClient, trpc } from '@/trpc/client'
 import { Badge } from '@/ui/badge/badge'
 import { Button } from '@/ui/button/button'
 import { Checkbox } from '@/ui/checkbox/checkbox'
 import { Input } from '@/ui/field/input'
+import { SearchSelect } from '@/ui/listbox/search-select'
 import { Menu } from '@/ui/menu/menu'
 import { Popover } from '@/ui/popover/popover'
 import {
@@ -139,6 +140,20 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+/** An editable value's trigger: the whole row is the target, with a chevron at its end. */
+const fieldTrigger =
+  'group flex w-full min-w-0 cursor-pointer items-center justify-between gap-2 text-left hover:text-text-primary disabled:cursor-default'
+
+function RowChevron() {
+  return (
+    <ChevronDown
+      aria-hidden
+      size={14}
+      className="shrink-0 text-icon-muted group-hover:text-text-primary group-disabled:invisible"
+    />
+  )
+}
+
 /** A field's value shown as text; an editor clicks it to choose another value. */
 function ChoiceText({
   label,
@@ -161,9 +176,10 @@ function ChoiceText({
           type="button"
           disabled={disabled}
           title={`Change ${label.toLowerCase()}`}
-          className="cursor-pointer text-left hover:text-text-primary disabled:cursor-default"
+          className={fieldTrigger}
         >
-          {current}
+          <span className="min-w-0 truncate">{current}</span>
+          <RowChevron />
         </button>
       }
       items={options.map((option) => ({
@@ -229,24 +245,27 @@ function ChipChoices<T extends string>({
           type="button"
           disabled={disabled}
           title={`Change ${label.toLowerCase()}`}
-          className="flex min-h-6 cursor-pointer flex-wrap items-center gap-1 text-left hover:text-text-primary disabled:cursor-default"
+          className={fieldTrigger}
         >
-          {chosen.length ? (
-            <>
-              {shown.map((value) => (
-                <Badge key={value} icon={false}>
-                  {labelOf(value)}
-                </Badge>
-              ))}
-              {hidden > 0 ? (
-                <Badge icon={false} title={chosen.slice(VISIBLE_CHIPS).map(labelOf).join(', ')}>
-                  {`+${hidden}`}
-                </Badge>
-              ) : null}
-            </>
-          ) : (
-            <span className="text-text-muted">None</span>
-          )}
+          <span className="flex min-h-6 min-w-0 flex-wrap items-center gap-1">
+            {chosen.length ? (
+              <>
+                {shown.map((value) => (
+                  <Badge key={value} icon={false}>
+                    {labelOf(value)}
+                  </Badge>
+                ))}
+                {hidden > 0 ? (
+                  <Badge icon={false} title={chosen.slice(VISIBLE_CHIPS).map(labelOf).join(', ')}>
+                    {`+${hidden}`}
+                  </Badge>
+                ) : null}
+              </>
+            ) : (
+              <span className="text-text-muted">None</span>
+            )}
+          </span>
+          <RowChevron />
         </button>
       }
     >
@@ -267,6 +286,42 @@ function ChipChoices<T extends string>({
         ))}
       </div>
     </Popover>
+  )
+}
+
+/** A long list of choices as a field: its value as text, searched in a panel. */
+function SearchChoice({
+  label,
+  value,
+  options,
+  disabled,
+  onChoose,
+}: {
+  label: string
+  value: string
+  options: readonly { value: string; label: string }[]
+  disabled: boolean
+  onChoose: (value: string) => void
+}) {
+  const current = options.find((option) => option.value === value)?.label ?? 'None'
+  return (
+    <SearchSelect
+      label={label}
+      value={value}
+      options={options}
+      onChange={onChoose}
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          title={`Change ${label.toLowerCase()}`}
+          className={fieldTrigger}
+        >
+          <span className="min-w-0 truncate">{current}</span>
+          <RowChevron />
+        </button>
+      }
+    />
   )
 }
 
@@ -316,7 +371,7 @@ function ParentRow({ doc, source, field }: { doc: DocsDoc; source: DocsSource; f
   return (
     <Row label="Parent">
       {field.canAddress ? (
-        <ChoiceText
+        <SearchChoice
           label="Parent"
           value={doc.parentId ?? ''}
           options={[
