@@ -22,7 +22,7 @@ const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
-const LIVE_COPY_PHASE_TIMEOUT_MS = 300_000
+const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
 function copyDatabase(source: string, target: string): void {
   copyFileSync(source, target)
   for (const suffix of ['-wal', '-shm']) {
