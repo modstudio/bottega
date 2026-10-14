@@ -20,6 +20,15 @@ export function isTone(value: unknown): value is Tone {
   return typeof value === 'string' && TONES.includes(value as Tone)
 }
 
+/** Whether a blockquote's source is a GitHub alert the reader renders. */
+export function isGithubAlertBlock(raw: string): boolean {
+  const first = raw.split('\n').find((line) => line.trim() !== '')
+  if (!first) return false
+  const match = /^ {0,3}>[ \t]*\[!([A-Za-z]+)\]/.exec(first)
+  if (!match) return false
+  return Object.hasOwn(ALERTS, match[1]!.toUpperCase())
+}
+
 const build: DefaultBuildType = (alert, children) => {
   const mapped = ALERTS[alert.keyword.toUpperCase() as keyof typeof ALERTS]
   if (!mapped) return null

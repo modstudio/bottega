@@ -128,12 +128,15 @@ function ReadingTop({
       {/* For an article of wide tables: the pane takes the room of the facts column too. */}
       <div className="flex shrink-0 items-center gap-2">
         {headerAction}
-        <span className="hidden lg:inline-flex">
-          <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
-            {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            {wide ? 'Reading width' : 'Wide'}
-          </Button>
-        </span>
+        {/* While editing, the toolbar needs the room; width is chosen while reading. */}
+        {editing ? null : (
+          <span className="hidden lg:inline-flex">
+            <Button size="sm" variant="secondary" onClick={() => onWide(!wide)}>
+              {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              {wide ? 'Reading width' : 'Wide'}
+            </Button>
+          </span>
+        )}
       </div>
     </div>
   )

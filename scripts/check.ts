@@ -431,6 +431,7 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-test-spawns.ts'),
   staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
   staticCheck('scripts/check-brand.ts'),
+  staticCheck('scripts/check-doc-editor-rich-style.ts'),
   staticCheck('scripts/check-harness-mirror.ts'),
   staticCheck('scripts/check-canon-drift.ts'),
   staticCheck('scripts/generate-recipe-schema.ts', ['--check']),

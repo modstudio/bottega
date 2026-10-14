@@ -1,0 +1,55 @@
+/* Rich article editor chrome. Text styling lives in markdown.css. */
+
+.markdown.doc-editor-rich {
+  caret-color: var(--text-primary);
+  outline: none;
+  white-space: normal;
+}
+
+.markdown.doc-editor-rich:focus,
+.markdown.doc-editor-rich:focus-visible {
+  outline: none;
+}
+
+.markdown.doc-editor-rich ::selection {
+  background: var(--selection);
+}
+
+.markdown.doc-editor-rich .selectedCell {
+  background: var(--selection);
+}
+
+.markdown.doc-editor-rich pre {
+  white-space: pre-wrap;
+}
+
+.markdown.doc-editor-rich .doc-editor-locked {
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+  position: relative;
+}
+
+.markdown.doc-editor-rich .doc-editor-locked:hover,
+.markdown.doc-editor-rich .doc-editor-locked:focus-within {
+  outline-color: var(--border-default);
+}
+
+.markdown.doc-editor-rich .doc-editor-locked-edit {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.markdown.doc-editor-rich .doc-editor-locked:hover .doc-editor-locked-edit,
+.markdown.doc-editor-rich .doc-editor-locked:focus-within .doc-editor-locked-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A table wider than the column scrolls inside it, as it does when reading. */
+.markdown.doc-editor-rich .tableWrapper {
+  overflow-x: auto;
+}
