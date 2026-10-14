@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import type { Command } from 'commander'
+import { assetPath } from '../../shared/install-root.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase, writeTransaction } from './db.ts'
 import { credentials, Mcp } from './mcp.ts'
@@ -158,7 +158,8 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
 }
 
 async function importTasks(file: string): Promise<void> {
-  const project = projectOf(fileURLToPath(new URL('../..', import.meta.url)))
+  const checkout = assetPath()
+  const project = projectOf(checkout)
   const prefix = projects().find((candidate) => candidate.name === project)?.settings
     .keyPrefixes?.[0]
   if (!project || !prefix) throw new Error('the local project must declare a key prefix')
@@ -168,7 +169,6 @@ async function importTasks(file: string): Promise<void> {
     closed: string | null
     shas: string[]
   }[]
-  const checkout = fileURLToPath(new URL('../..', import.meta.url))
   const log = Bun.spawnSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
     stdout: 'pipe',
     stderr: 'ignore',

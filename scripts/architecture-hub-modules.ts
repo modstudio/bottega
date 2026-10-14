@@ -171,8 +171,8 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-cli.ts',
     allowed: [
       'node:fs',
-      'node:url',
       'commander',
+      '../../shared/install-root.ts',
       './attribute.ts',
       './db.ts',
       './mcp.ts',
