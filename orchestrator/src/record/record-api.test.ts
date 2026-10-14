@@ -500,7 +500,8 @@ describe('record API', () => {
     const response = await appWith(null).request('/v1/whoami')
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
-      error: 'record authentication required', remedy: `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
+      error: 'record authentication required',
+      remedy: `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``,
     })
   })
 

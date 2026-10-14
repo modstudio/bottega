@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { readProjectReview, recordProjectReviewCommand } from './review-record-command.ts'

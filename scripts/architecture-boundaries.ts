@@ -74,7 +74,8 @@ export const importBoundaries: ImportBoundary[] = [
     'agent-commands-boundary',
     'orchestrator/src/agent/agent-commands.ts',
     [
-      '../../../shared/brand.ts', './agent-probe.ts',
+      '../../../shared/brand.ts',
+      './agent-probe.ts',
       './agent-registry.ts',
       '../cli/args.ts',
       '../database/db.ts',
@@ -104,7 +105,8 @@ export const importBoundaries: ImportBoundary[] = [
     'canon-lint-boundary',
     'orchestrator/src/canon/canon-lint.ts',
     [
-      '../../../shared/brand.ts', 'node:path',
+      '../../../shared/brand.ts',
+      'node:path',
       'github-slugger',
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
@@ -142,7 +144,8 @@ export const importBoundaries: ImportBoundary[] = [
     'cleanup-boundary',
     'orchestrator/src/cleanup/cleanup.ts',
     [
-      '../../../shared/brand.ts', 'node:fs',
+      '../../../shared/brand.ts',
+      'node:fs',
       'node:path',
       '../database/db.ts',
       '../resources/docker-resources.ts',
@@ -168,7 +171,8 @@ export const importBoundaries: ImportBoundary[] = [
     'close-out-boundary',
     'orchestrator/src/close/close-out.ts',
     [
-      '../../../shared/brand.ts', 'node:fs',
+      '../../../shared/brand.ts',
+      'node:fs',
       'node:path',
       './absent-close-out-residue.ts',
       './absent-tree-close-out.ts',
@@ -228,7 +232,8 @@ export const importBoundaries: ImportBoundary[] = [
     'dispatch-commands-boundary',
     'orchestrator/src/dispatch/dispatch-commands.ts',
     [
-      '../../../shared/brand.ts', 'node:fs',
+      '../../../shared/brand.ts',
+      'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
       './review-lens-prompt.ts',

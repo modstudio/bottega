@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
 import { applyMigrations } from '../database/migrations.ts'
 

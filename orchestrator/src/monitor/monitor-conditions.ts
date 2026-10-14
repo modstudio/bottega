@@ -576,18 +576,32 @@ export function rulingConditions(clock = Date.now()): {
     stderr: 'pipe',
   })
   if (p.exitCode !== 0)
-    return { conditions: [], errors: [p.stderr.toString().trim() || `${PLATFORM_SLUG} question stats exited ${p.exitCode}`] }
+    return {
+      conditions: [],
+      errors: [
+        p.stderr.toString().trim() || `${PLATFORM_SLUG} question stats exited ${p.exitCode}`,
+      ],
+    }
   const raw = p.stdout.toString().trim()
   if (!raw)
-    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json produced no document`] }
+    return {
+      conditions: [],
+      errors: [`${PLATFORM_SLUG} question stats --json produced no document`],
+    }
   let payload: HubRulingsPayload
   try {
     payload = JSON.parse(raw) as HubRulingsPayload
   } catch {
-    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json was not a JSON document`] }
+    return {
+      conditions: [],
+      errors: [`${PLATFORM_SLUG} question stats --json was not a JSON document`],
+    }
   }
   if (!Array.isArray(payload.questions))
-    return { conditions: [], errors: [`${PLATFORM_SLUG} question stats --json missing questions array`] }
+    return {
+      conditions: [],
+      errors: [`${PLATFORM_SLUG} question stats --json missing questions array`],
+    }
   const threshold = durationMs(payload.stale_after ?? '1h') ?? 3_600_000
   const conditions = payload.questions
     .flatMap((row): MonitorCondition[] => {

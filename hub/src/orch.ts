@@ -213,7 +213,8 @@ async function orchProcess(
       const accepted =
         opts.acceptedExitCodes?.includes(code) &&
         (opts.acceptedOutput === undefined || opts.acceptedOutput(out.trim()))
-      if (!accepted) throw new Error(err.trim() || out.trim() || `${PLATFORM_SLUG} ${args[0]} exited ${code}`)
+      if (!accepted)
+        throw new Error(err.trim() || out.trim() || `${PLATFORM_SLUG} ${args[0]} exited ${code}`)
     }
     return out.trim()
   } finally {
@@ -307,7 +308,10 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
 }
 
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
-  json(['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since], RulingListSchema)
+  json(
+    ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
+    RulingListSchema,
+  )
 
 export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
@@ -323,14 +327,22 @@ export const waiting = (): Promise<OperatorWaitingItem[]> =>
   json(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
 
 export const claimWaitingNotifications = () =>
-  json(['run', 'waiting', '--claim-notifications', '--json'], z.array(ClaimedOperatorNotificationSchema))
+  json(
+    ['run', 'waiting', '--claim-notifications', '--json'],
+    z.array(ClaimedOperatorNotificationSchema),
+  )
 
 export type WaitingRuling = { questionId: number; ruling: string }
 
 export const answerWaitingArgv = (runId: number, rulings: readonly WaitingRuling[]): string[] => [
-  'question', 'answer', String(runId),
+  'question',
+  'answer',
+  String(runId),
   ...rulings.flatMap(({ questionId, ruling }) => [`--q${questionId}`, ruling]),
-  '--from-operator', '--channel', 'ui', '--json',
+  '--from-operator',
+  '--channel',
+  'ui',
+  '--json',
 ]
 
 export async function answerWaiting(
@@ -351,13 +363,19 @@ export type FileWaitingRuling = {
 }
 
 export const fileRulingArgv = (input: FileWaitingRuling): string[] => [
-  'question', 'ruling', 'file', String(input.questionId),
+  'question',
+  'ruling',
+  'file',
+  String(input.questionId),
   '--as',
   input.as,
   ...(input.scope ? ['--scope', input.scope] : []),
   ...(input.subject ? ['--subject', input.subject] : []),
   ...(input.title ? ['--title', input.title] : []),
-  '--from-operator', '--channel', 'ui', '--json',
+  '--from-operator',
+  '--channel',
+  'ui',
+  '--json',
 ]
 
 export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileRulingResult> {

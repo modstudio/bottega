@@ -6,8 +6,8 @@ import {
   type JSONRPCRequest,
 } from '@modelcontextprotocol/client'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   installRecordSessionRunner,
   memoryRecordSession,
@@ -323,8 +323,8 @@ describe('orch MCP', () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    const call = async (name: string, arguments_: Record<string, unknown>) => {
-      const result = await client.callTool({ name, arguments: arguments_ })
+    const call = async (name: string, arguments: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: arguments })
       if (result.isError)
         throw new Error(
           `${name}: ${(result.content as { text: string }[])[0]?.text ?? 'unknown error'}`,

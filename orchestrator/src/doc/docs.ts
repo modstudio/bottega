@@ -462,7 +462,8 @@ export async function setDocStatus(
   owner: string | null = null,
 ): Promise<Doc> {
   const current = getDoc(scope, subject, slug, owner)
-  if (!current) throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
+  if (!current)
+    throw new Error(`no ${scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${scope}`)
   return setDoc({
     scope: current.scope,
     subject: current.subject,
