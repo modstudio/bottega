@@ -42,20 +42,6 @@ FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
 LOAD_WAIT_TRIES=20
 LOAD_WAIT_SECONDS=0.25
 FAILED_LABELS=()
-HOSTED_HUB_WRITE_LABELS=(
-  "com.user.hub-note-maintenance"
-  "com.user.orch-fix-defect"
-  "com.user.orch-monitor"
-)
-
-needs_hosted_hub_url() {
-  local candidate="$1"
-  local hosted_label
-  for hosted_label in "${HOSTED_HUB_WRITE_LABELS[@]}"; do
-    [[ "$candidate" == "$hosted_label" ]] && return 0
-  done
-  return 1
-}
 
 wait_unloaded() {
   local tries=0
@@ -100,13 +86,13 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/pro
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
+if [[ -z "${HUB_HOSTED_URL:-}" ]]; then
+  echo "warning: HUB_HOSTED_URL is unset for com.user.hub-note-maintenance, com.user.orch-fix-defect, and com.user.orch-monitor; set HUB_HOSTED_URL and rerun ops/install.sh" >&2
+fi
+
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
-  if needs_hosted_hub_url "$label" && [[ -z "${HUB_HOSTED_URL:-}" ]]; then
-    remove_skipped_agent "$label" "HUB_HOSTED_URL is unset; set HUB_HOSTED_URL and run ops/install.sh again"
-    continue
-  fi
   if [[ "$label" == "com.user.local-model-tunnel" && -z "$MODEL_HOST" ]]; then
     remove_skipped_agent "$label" "model_host.ssh_alias is unset"
     continue
