@@ -74,12 +74,7 @@ import {
 
 export type { Doc, DocRevision, DocRevisionMetadata }
 
-import {
-  parseResumeFrontmatter,
-  type ResumeFrontmatter,
-  resumeAge,
-  resumeFrontmatter,
-} from './doc-resume-frontmatter.ts'
+import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import {
   assertLocalRevisionWrite,
   currentDocRevision,
@@ -106,7 +101,7 @@ import {
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
-export { parseResumeFrontmatter, type ResumeFrontmatter, resumeAge }
+export { parseResumeFrontmatter, resumeAge }
 
 function assertInjectSize(input: {
   scope: string

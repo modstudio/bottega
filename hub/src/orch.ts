@@ -91,9 +91,7 @@ import {
   BoardThreadResultSchema,
 } from './board-contract.ts'
 import {
-  type DocArgvInput,
   type DocListFilters,
-  type DocOp,
   type DocRevisionMetadata,
   type DocSetInput,
   type DocSubjects,
@@ -102,7 +100,7 @@ import {
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
-export type { DocArgvInput, DocListFilters, DocOp, DocRevisionMetadata, DocSetInput, DocSubjects }
+export type { DocListFilters, DocRevisionMetadata, DocSetInput, DocSubjects }
 export { docArgv }
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
