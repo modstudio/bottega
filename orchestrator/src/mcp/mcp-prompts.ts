@@ -30,13 +30,13 @@ type BoundWorkflowPromptArguments = {
 
 function bindingRefusal(definition: WorkflowDefinition, token: string): string {
   const modes = definition.modes.map((mode) => mode.slug)
-  const arguments = definition.arguments.map((argument) => argument.name)
+  const arguments_ = definition.arguments.map((argument) => argument.name)
   const examples = [
     `mode=${token}`,
     `project=${token}`,
-    ...arguments.map((name) => `${name}=${token}`),
+    ...arguments_.map((name) => `${name}=${token}`),
   ]
-  return `Could not place prompt token "${token}". Workflow modes: ${modes.join(', ')}. Declared arguments: ${arguments.join(', ') || '(none)'}. Use a named value such as ${examples.join(', ')}.`
+  return `Could not place prompt token "${token}". Workflow modes: ${modes.join(', ')}. Declared arguments: ${arguments_.join(', ') || '(none)'}. Use a named value such as ${examples.join(', ')}.`
 }
 
 type PromptSlot = 'mode' | 'project' | 'autonomy'

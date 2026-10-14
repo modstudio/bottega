@@ -253,13 +253,13 @@ describe('setup MCP tools', () => {
 
   test.each(['setup_plan', 'setup_apply'])('%s refuses a worker-marked caller', async (name) => {
     process.env.ORCH_RUN_ID = '123'
-    const arguments =
+    const arguments_ =
       name === 'setup_plan'
         ? { folders: [folder] }
         : { folders: [folder], answers: { [question.id]: 'ALPHA' } }
 
     const result = await withClient(serviceFor(fixturePlan()), (client) =>
-      client.callTool({ name, arguments: arguments }),
+      client.callTool({ name, arguments: arguments_ }),
     )
 
     expect(result.isError).toBe(true)
@@ -272,11 +272,11 @@ describe('setup MCP tools', () => {
       [[], '[]'],
       [[`${folder}/setup-tools-path-that-does-not-exist`], 'setup-tools-path-that-does-not-exist'],
     ] as const) {
-      const arguments =
+      const arguments_ =
         name === 'setup_plan' ? { folders } : { folders, answers: { [question.id]: 'ALPHA' } }
 
       const result = await withClient(serviceFor(fixturePlan()), (client) =>
-        client.callTool({ name, arguments: arguments }),
+        client.callTool({ name, arguments: arguments_ }),
       )
 
       expect(result.isError).toBe(true)

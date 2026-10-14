@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'

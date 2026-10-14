@@ -8,13 +8,13 @@ import { bindWorkflowPromptArguments, workflowPromptDefinitions } from './mcp-pr
 
 const workflow = (
   slug: string,
-  arguments: WorkflowDefinition['arguments'],
+  arguments_: WorkflowDefinition['arguments'],
 ): { slug: string; definition: WorkflowDefinition } => ({
   slug,
   definition: {
     title: 'Ship task',
     description: 'Ship one task.',
-    arguments: arguments,
+    arguments: arguments_,
     modes: [
       { slug: 'fast', title: 'Fast', default: true, steps: ['implement'] },
       { slug: 'careful', title: 'Careful', steps: ['plan', 'implement'] },

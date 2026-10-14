@@ -96,15 +96,15 @@ describe('scoped operator docs', () => {
       await server.connect(serverTransport)
       await client.connect(clientTransport)
       try {
-        const arguments: Record<string, string> = {
+        const arguments_: Record<string, string> = {
           kind: 'suggestion',
           what_happened: 'Issue reports need a direct filing path',
           expected: `A report should land on the ${PLATFORM_SLUG} board`,
           evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
           not_established: 'No priority or assignee has been established',
         }
-        delete arguments[field]
-        const filed = await client.callTool({ name: 'file_issue', arguments: arguments })
+        delete arguments_[field]
+        const filed = await client.callTool({ name: 'file_issue', arguments: arguments_ })
         expect(filed.isError).toBe(true)
         const message = (filed.content as { text: string }[])[0]!.text
         expect(message).toContain(`${field} is required`)

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   matchesRunSearch,
   PROJECT_FALLBACK,
