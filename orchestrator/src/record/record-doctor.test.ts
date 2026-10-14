@@ -17,8 +17,8 @@ describe('record doctor decisions', () => {
     sessionAccepted: true,
     activeSpaceId: 'space-1',
     memberships: [
-      { spaceId: 'space-1', name: 'Workshop', slug: 'workshop', permission: 'write' },
-      { spaceId: 'space-2', name: 'Library', slug: 'library', permission: 'read' },
+      { spaceId: 'space-1', slug: 'workshop', permission: 'write' },
+      { spaceId: 'space-2', slug: 'library', permission: 'read' },
     ],
     projects: [
       { name: PLATFORM_NAME, space: 'workshop' },
@@ -79,10 +79,35 @@ describe('record doctor decisions', () => {
     expect(recordDoctorExitCode(checks)).toBe(1)
   })
 
+  test('does not diagnose project memberships when the session was not accepted', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      sessionAccepted: false,
+      activeSpaceId: null,
+      memberships: [],
+      projects: [{ name: 'unseen', space: 'outside' }],
+    })
+    expect(checks).not.toContainEqual(
+      expect.objectContaining({ name: 'project unseen declared space' }),
+    )
+    expect(checks).toContainEqual({
+      name: 'user memberships',
+      status: 'fail',
+      detail: 'record session is missing or expired; run `orch record sign-in --email <email>`',
+      section: 'customer',
+    })
+  })
+
   test('operator checks appear only when the actor connection is present', () => {
-    const operatorCheck = { name: 'record connection works', status: 'pass' as const }
+    const operatorCheck = {
+      name: 'record connection works',
+      status: 'pass' as const,
+    }
     expect(
-      decideRecordDoctorChecks({ ...healthyFacts, operatorChecks: [operatorCheck] }),
+      decideRecordDoctorChecks({
+        ...healthyFacts,
+        operatorChecks: [operatorCheck],
+      }),
     ).not.toContainEqual(expect.objectContaining({ section: 'operator' }))
     expect(
       decideRecordDoctorChecks({
@@ -192,9 +217,12 @@ describe('record doctor decisions', () => {
       )
       .run()
 
-    expect(localQuestionCountForSpace(database, [], { id: 'space-id', slug: 'active-space' })).toBe(
-      1,
-    )
+    expect(
+      localQuestionCountForSpace(database, [], {
+        id: 'space-id',
+        slug: 'active-space',
+      }),
+    ).toBe(1)
     database.close()
   })
 })

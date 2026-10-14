@@ -9,8 +9,12 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../../shared/record-remedies.ts'
+import {
+  parseRecordSpaceMemberships,
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
@@ -19,7 +23,6 @@ import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/p
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
-import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -38,7 +41,6 @@ export type RecordDoctorCheck = {
   detail?: string
   section?: 'customer' | 'operator'
 }
-type DoctorMembership = RecordSpaceMembership & { name: string }
 type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
 export type RecordDoctorFacts = {
   apiConfigured: boolean
@@ -47,7 +49,7 @@ export type RecordDoctorFacts = {
   sessionAccepted: boolean
   sessionFailure?: string
   activeSpaceId: string | null
-  memberships: readonly DoctorMembership[]
+  memberships: readonly RecordSpaceMembership[]
   projects: ReadonlyArray<{ name: string; space: string | null }>
   pendingOutboxRows: number
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
@@ -91,6 +93,7 @@ function membershipChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
 }
 
 function projectSpaceChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
+  if (!facts.sessionAccepted) return []
   return facts.projects.flatMap((project) => {
     if (!project.space) return []
     const membership = recordSpaceMembership(project.space, facts.memberships)
@@ -116,7 +119,11 @@ function projectSpaceChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
 export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
   const checks: RecordDoctorCheck[] = [
     facts.apiConfigured
-      ? { name: 'hosted API address configured', status: 'pass', section: 'customer' }
+      ? {
+          name: 'hosted API address configured',
+          status: 'pass',
+          section: 'customer',
+        }
       : {
           name: 'hosted API address configured',
           status: 'fail',
@@ -172,12 +179,20 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
           detail: `${facts.quarantinedOutboxRows.length}: ${facts.quarantinedOutboxRows.map((row) => `${row.id} ${row.kind} (${row.reason})`).join(', ')}; run \`orch record outbox retry <row-id>\` or \`orch record outbox retire <row-id> --reason <text>\``,
           section: 'customer',
         }
-      : { name: 'local outbox quarantined rows', status: 'pass', detail: '0', section: 'customer' },
+      : {
+          name: 'local outbox quarantined rows',
+          status: 'pass',
+          detail: '0',
+          section: 'customer',
+        },
   )
 
   if (facts.operatorConnectionPresent)
     checks.push(
-      ...(facts.operatorChecks ?? []).map((check) => ({ ...check, section: 'operator' as const })),
+      ...(facts.operatorChecks ?? []).map((check) => ({
+        ...check,
+        section: 'operator' as const,
+      })),
     )
   return checks
 }
@@ -204,11 +219,11 @@ function failureDetail(error: unknown, urls: readonly string[]): string {
   return redactRecordPasswords(error instanceof Error ? error.message : String(error), urls)
 }
 
-function questionCountCheck(local: number, hosted: number): RecordDoctorCheck {
+function questionCountCheck(name: string, local: number, hosted: number): RecordDoctorCheck {
   return local === hosted
-    ? { name: 'local versus hosted questions', status: 'pass', detail: `${local} each` }
+    ? { name, status: 'pass', detail: `${local} each` }
     : {
-        name: 'local versus hosted questions',
+        name,
         status: 'fail',
         detail: `${local} local; ${hosted} hosted`,
       }
@@ -249,18 +264,6 @@ function pendingOutboxCount(database: Database): number {
     .get()!.count
 }
 
-function membershipsFromIdentity(identity: RecordIdentity | null): DoctorMembership[] {
-  if (!identity) return []
-  return identity.memberships.flatMap((row) =>
-    typeof row.space_id === 'string' &&
-    typeof row.name === 'string' &&
-    typeof row.slug === 'string' &&
-    typeof row.permission === 'string'
-      ? [{ spaceId: row.space_id, name: row.name, slug: row.slug, permission: row.permission }]
-      : [],
-  )
-}
-
 type CustomerFacts = Omit<RecordDoctorFacts, 'operatorConnectionPresent' | 'operatorChecks'> & {
   userId: string | null
 }
@@ -276,7 +279,7 @@ async function customerFacts(
   let sessionAccepted = false
   let apiFailure: string | undefined
   let sessionFailure: string | undefined
-  let identity: RecordIdentity | null = null
+  let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
   if (!apiConfigured) {
     apiFailure = API_CONFIGURATION_REMEDY
     sessionFailure = RECORD_SIGN_IN_REMEDY
@@ -307,7 +310,7 @@ async function customerFacts(
     sessionFailure,
     userId: identity?.user.id ?? null,
     activeSpaceId: identity?.activeSpaceId ?? null,
-    memberships: membershipsFromIdentity(identity),
+    memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
     pendingOutboxRows: pendingOutboxCount(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
@@ -321,7 +324,11 @@ async function customerFacts(
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
-  identity: { userId: string; activeSpaceId: string; activeSpaceSlug: string } | null
+  identity: {
+    userId: string
+    activeSpaceId: string
+    activeSpaceSlug: string
+  } | null
   projects: Array<{ name: string; space: string | null }>
   database: Database
 }): Promise<RecordDoctorCheck[]> {
@@ -337,53 +344,70 @@ async function operatorRecordChecks(input: {
     }
   }
   const actor = new SQL(input.recordUrl)
+  const identityNames = [
+    'runs with no started_by',
+    'local versus hosted questions',
+    'session intervals with no session identity',
+  ] as const
   try {
-    await run('record connection works', async () => {
+    const connected = await run('record connection works', async () => {
       await actor`SELECT 1`
+      return true
     })
     await run('record connection is not record_owner', () => refuseOwnerConnection(actor, 'doctor'))
-    if (!input.identity) {
-      for (const name of [
-        'runs with no started_by',
-        'session intervals with no session identity',
-        'local versus hosted questions',
-      ])
-        checks.push({ name, status: 'skipped', detail: 'accepted active session unavailable' })
+    if (!connected || !input.identity) {
+      const detail = connected
+        ? 'accepted active session unavailable'
+        : 'record connection unavailable'
+      for (const name of identityNames) checks.push({ name, status: 'skipped', detail })
     } else {
       const identity = input.identity
-      const attribution = await actor.begin(async (tx) => {
-        await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-        await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
-        const runs =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
-        const intervals =
-          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
-        const questions =
-          await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
-        return { runs: runs[0]!, intervals: intervals[0]!, questions: questions[0]! }
-      })
-      checks.push({
-        name: 'runs with no started_by',
-        status: 'pass',
-        detail: unattributedShare(Number(attribution.runs.missing), Number(attribution.runs.total)),
-      })
-      checks.push(
-        questionCountCheck(
-          localQuestionCountForSpace(input.database, input.projects, {
-            id: identity.activeSpaceId,
-            slug: identity.activeSpaceSlug,
-          }),
-          Number(attribution.questions.total),
-        ),
-      )
-      checks.push({
-        name: 'session intervals with no session identity',
-        status: 'pass',
-        detail: unattributedShare(
-          Number(attribution.intervals.missing),
-          Number(attribution.intervals.total),
-        ),
-      })
+      try {
+        const attribution = await actor.begin(async (tx) => {
+          await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
+          await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
+          const runs =
+            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
+          const intervals =
+            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
+          const questions =
+            await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
+          return {
+            runs: runs[0]!,
+            intervals: intervals[0]!,
+            questions: questions[0]!,
+          }
+        })
+        checks.push({
+          name: identityNames[0],
+          status: 'pass',
+          detail: unattributedShare(
+            Number(attribution.runs.missing),
+            Number(attribution.runs.total),
+          ),
+        })
+        checks.push(
+          questionCountCheck(
+            identityNames[1],
+            localQuestionCountForSpace(input.database, input.projects, {
+              id: identity.activeSpaceId,
+              slug: identity.activeSpaceSlug,
+            }),
+            Number(attribution.questions.total),
+          ),
+        )
+        checks.push({
+          name: identityNames[2],
+          status: 'pass',
+          detail: unattributedShare(
+            Number(attribution.intervals.missing),
+            Number(attribution.intervals.total),
+          ),
+        })
+      } catch (error) {
+        const detail = failureDetail(error, urls)
+        for (const name of identityNames) checks.push({ name, status: 'fail', detail })
+      }
     }
   } finally {
     await actor.close()
@@ -397,7 +421,11 @@ async function operatorRecordChecks(input: {
   ]
   if (!input.migrateUrl) {
     for (const name of ownerNames)
-      checks.push({ name, status: 'skipped', detail: 'ORCH_RECORD_MIGRATE_URL not set' })
+      checks.push({
+        name,
+        status: 'skipped',
+        detail: 'ORCH_RECORD_MIGRATE_URL not set',
+      })
     return checks
   }
   const owner = new SQL(input.migrateUrl)
