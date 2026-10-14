@@ -9,6 +9,7 @@ const article = {
     { id: 'subject-3', name: 'Review' },
   ],
   sourceFiles: ['orchestrator/src/route.ts', 'orchestrator/src/evidence.ts'],
+  checkedAgainstCommit: '1111111111111111111111111111111111111111',
 }
 
 const articleRow = {
@@ -34,6 +35,7 @@ test('the mapping carries article fields', () => {
   expect(mapped.articleSubject).toEqual(article.articleSubject)
   expect(mapped.relatedSubjects).toEqual(article.relatedSubjects)
   expect(mapped.sourceFiles).toEqual(article.sourceFiles)
+  expect(mapped.checkedAgainstCommit).toBe(article.checkedAgainstCommit)
 })
 
 test('record-shaped docs map onto the shared tree item and keep delivery', () => {

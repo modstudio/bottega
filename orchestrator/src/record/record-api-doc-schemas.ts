@@ -7,6 +7,7 @@ import {
   DOC_KINDS,
   DOC_STATUSES,
   normalizeDocAudiences,
+  normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
@@ -42,6 +43,11 @@ const recordDocTreeFieldShape = {
   articleSubjectId: z.string().uuid().nullable().optional(),
   relatedSubjectIds: z.array(z.string().uuid()).optional(),
   sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+  checkedAgainstCommit: z
+    .string()
+    .transform(normalizeDocCheckedAgainstCommit)
+    .nullable()
+    .optional(),
   replacementSlug: z.string().min(1).nullable().optional(),
 }
 
@@ -86,6 +92,11 @@ export const recordDocImportSchema = z.object({
     articleSubjectId: z.string().uuid().nullable().optional(),
     relatedSubjectIds: z.array(z.string().uuid()).optional(),
     sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+    checkedAgainstCommit: z
+      .string()
+      .transform(normalizeDocCheckedAgainstCommit)
+      .nullable()
+      .optional(),
     replacementSlug: z.string().min(1).nullable().optional().default(null),
     projectName: z.string().nullable().optional(),
     createdAt: isoSchema,
@@ -112,6 +123,12 @@ export const recordDocImportSchema = z.object({
       articleSubjectId: z.string().uuid().nullable().optional().default(null),
       relatedSubjectIds: z.array(z.string().uuid()).optional().default([]),
       sourceFiles: z.array(z.string()).transform(normalizeDocSourceFiles).optional().default([]),
+      checkedAgainstCommit: z
+        .string()
+        .transform(normalizeDocCheckedAgainstCommit)
+        .nullable()
+        .optional()
+        .default(null),
       replacementSlug: z.string().min(1).nullable().optional().default(null),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),

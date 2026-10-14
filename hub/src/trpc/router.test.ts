@@ -494,6 +494,7 @@ describe('doc router', () => {
     articleSubject: null,
     relatedSubjects: [] as Array<{ id: string; name: string }>,
     sourceFiles: [] as string[],
+    checkedAgainstCommit: null,
     replacementSlug: null,
   } as const
 

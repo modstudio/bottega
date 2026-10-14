@@ -15,6 +15,7 @@ export const ArticleDocFieldsSchema = z.object({
   articleSubject: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
   relatedSubjects: z.array(z.object({ id: z.string().uuid(), name: z.string() })).optional(),
   sourceFiles: z.array(z.string()).optional(),
+  checkedAgainstCommit: z.string().nullable().optional(),
 })
 type ArticleDocFields = z.infer<typeof ArticleDocFieldsSchema>
 

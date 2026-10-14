@@ -36,6 +36,7 @@ realPostgres('Bun SQL jsonb binding', () => {
 
   test('the document service stores and reads article lists as arrays', async () => {
     const admin = new SQL(adminUrl!)
+    const checkedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     try {
       await admin`
         INSERT INTO space (id,name,slug,created_at)
@@ -75,6 +76,7 @@ realPostgres('Bun SQL jsonb binding', () => {
         articleSubjectId: OWN_SUBJECT_ID,
         relatedSubjectIds: [RELATED_SUBJECT_ID],
         sourceFiles: ['src/article.ts'],
+        checkedAgainstCommit: checkedCommit,
         reason: 'prove JSONB binding',
         author: USER_ID,
       })
@@ -100,6 +102,81 @@ realPostgres('Bun SQL jsonb binding', () => {
       })
       expect(read?.sourceFiles).toEqual(['src/article.ts'])
       expect(read?.relatedSubjects).toEqual([{ id: RELATED_SUBJECT_ID, name: 'Related' }])
+      expect(read?.checkedAgainstCommit).toBe(checkedCommit)
+
+      const kept = await upsertRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        scope: 'project',
+        subject: 'jsonb-proof',
+        slug: 'binding-proof',
+        title: 'Binding proof',
+        body: 'The stored lists and checked commit remain unchanged when omitted.',
+        delivery: 'demand',
+        reason: 'prove omitted checked commit is kept',
+        author: USER_ID,
+        expectedRevision: written.revisionId,
+      })
+      const readKept = await getRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        id: written.id,
+      })
+      expect(readKept?.checkedAgainstCommit).toBe(checkedCommit)
+      const keptRevisions = await admin`
+        SELECT id, checked_against_commit
+        FROM doc_revision
+        WHERE id IN (${written.revisionId}::uuid, ${kept.revisionId}::uuid)
+        ORDER BY id
+      `
+      expect([...keptRevisions]).toEqual(
+        [
+          { id: written.revisionId, checked_against_commit: checkedCommit },
+          { id: kept.revisionId, checked_against_commit: checkedCommit },
+        ].sort((left, right) => left.id.localeCompare(right.id)),
+      )
+
+      const cleared = await upsertRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        scope: 'project',
+        subject: 'jsonb-proof',
+        slug: 'binding-proof',
+        title: 'Binding proof',
+        body: 'The checked commit is explicitly cleared.',
+        delivery: 'demand',
+        checkedAgainstCommit: null,
+        reason: 'prove checked commit can be cleared',
+        author: USER_ID,
+        expectedRevision: kept.revisionId,
+      })
+      const readCleared = await getRecordDoc({
+        url: actorUrl!,
+        spaceId: SPACE_ID,
+        userId: USER_ID,
+        id: written.id,
+      })
+      expect(readCleared?.checkedAgainstCommit).toBeNull()
+      const clearedRevisions = await admin`
+        SELECT id, checked_against_commit
+        FROM doc_revision
+        WHERE id IN (
+          ${written.revisionId}::uuid,
+          ${kept.revisionId}::uuid,
+          ${cleared.revisionId}::uuid
+        )
+        ORDER BY id
+      `
+      expect([...clearedRevisions]).toEqual(
+        [
+          { id: written.revisionId, checked_against_commit: checkedCommit },
+          { id: kept.revisionId, checked_against_commit: checkedCommit },
+          { id: cleared.revisionId, checked_against_commit: null },
+        ].sort((left, right) => left.id.localeCompare(right.id)),
+      )
     } finally {
       await admin`UPDATE doc SET latest_revision_id=NULL WHERE space_id=${SPACE_ID}::uuid`
       await admin`DELETE FROM doc_revision WHERE space_id=${SPACE_ID}::uuid`

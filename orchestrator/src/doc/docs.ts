@@ -158,6 +158,7 @@ function assertInjectSize(input: {
         articleSubject: null,
         relatedSubjects: [],
         sourceFiles: [],
+        checkedAgainstCommit: null,
         replacement_slug: null,
         parent_id: null,
         parent_slug: null,
@@ -339,12 +340,8 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
-  const { form, articleSubject, relatedSubjects, sourceFiles } = resolveLocalDocArticleFields(
-    input,
-    prior,
-    kind,
-    projectName,
-  )
+  const { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit } =
+    resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
   assertDocSections(input.body, tree.audiences)
   const lifecycle = localDocumentLifecycle(input, prior)
@@ -366,6 +363,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         articleSubject,
         relatedSubjects,
         sourceFiles,
+        checkedAgainstCommit,
         requestedOp,
         identity,
       }),
@@ -395,6 +393,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
           articleSubject,
           relatedSubjects,
           sourceFiles,
+          checkedAgainstCommit,
         }),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
@@ -420,6 +419,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         articleSubject,
         relatedSubjects,
         sourceFiles,
+        checkedAgainstCommit,
         requestedOp,
         identity,
         recordId: hosted.id,

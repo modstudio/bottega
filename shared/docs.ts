@@ -68,6 +68,16 @@ export function normalizeDocSourceFiles(input: readonly string[]): string[] {
   }
   return [...input]
 }
+
+/** Validate a repository commit recorded when an article was checked. */
+export function normalizeDocCheckedAgainstCommit(input: string): string {
+  if (!/^[0-9a-f]{40}$/.test(input)) {
+    throw new Error(
+      'invalid checked-against commit: use the full lowercase 40-character hexadecimal git commit id',
+    )
+  }
+  return input
+}
 export const DOC_SUMMARY_MAX_LENGTH = 160
 
 /** Derive the short catalogue copy from the first prose paragraph in a markdown body. */

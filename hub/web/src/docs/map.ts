@@ -97,6 +97,12 @@ export function mapDoc(row: Record<string, unknown>): DocsDoc {
     sourceFiles: Array.isArray(row.sourceFiles)
       ? row.sourceFiles.filter((path): path is string => typeof path === 'string')
       : undefined,
+    checkedAgainstCommit:
+      row.checkedAgainstCommit === null
+        ? null
+        : typeof row.checkedAgainstCommit === 'string'
+          ? row.checkedAgainstCommit
+          : undefined,
   }
 }
 

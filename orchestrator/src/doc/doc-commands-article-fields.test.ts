@@ -115,6 +115,8 @@ test('orch doc commands preserve, clear, and list article fields by subject name
       'docs/pricing.md',
       '--source-file',
       'src/pricing.ts',
+      '--checked-at',
+      '1111111111111111111111111111111111111111',
     ),
     'Pricing body.',
   )
@@ -127,6 +129,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
       { id: strategy.id, name: 'Strategy' },
     ],
     sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+    checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
 
   expect(await command(setArgs('pricing-own'), 'Updated pricing body.')).toMatchObject({ code: 0 })
@@ -135,6 +138,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
     articleSubject: { id: pricing.id },
     relatedSubjects: [{ id: product.id }, { id: strategy.id }],
     sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+    checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
 
   expect(
@@ -203,6 +207,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
         articleSubject: { id: pricing.id },
         relatedSubjects: [{ id: product.id }, { id: strategy.id }],
         sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
     [
@@ -212,6 +217,7 @@ test('orch doc commands preserve, clear, and list article fields by subject name
         articleSubject: null,
         relatedSubjects: [{ id: product.id }, { id: strategy.id }],
         sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
     [
@@ -221,11 +227,28 @@ test('orch doc commands preserve, clear, and list article fields by subject name
         articleSubject: null,
         relatedSubjects: [],
         sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
     [
       '--no-source-files',
-      { form: null, articleSubject: null, relatedSubjects: [], sourceFiles: [] },
+      {
+        form: null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
+      },
+    ],
+    [
+      '--no-checked-at',
+      {
+        form: null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
+        checkedAgainstCommit: null,
+      },
     ],
   ] as const
   for (const [flag, expected] of clearCases) {

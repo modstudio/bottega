@@ -6,6 +6,7 @@ import {
   DOC_KINDS,
   DOC_STATUSES,
   normalizeDocAudiences,
+  normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
@@ -69,6 +70,20 @@ type DocWriteTreeSelector = (input: {
   subject: string | null
   cwd?: string
 }) => SelectedDocWriteTree | undefined
+
+const checkedAgainstCommitSchema = z
+  .string()
+  .transform(normalizeDocCheckedAgainstCommit)
+  .nullable()
+  .optional()
+
+const articleFieldSchemaShape = {
+  form: z.enum(DOC_FORMS).nullable().optional(),
+  article_subject: z.string().min(1).nullable().optional(),
+  related_subjects: z.array(z.string().min(1)).optional(),
+  source_files: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+  checked_against_commit: checkedAgainstCommitSchema,
+}
 
 function setDocToolPayload(
   doc: Awaited<ReturnType<typeof setDoc>>,
@@ -156,7 +171,6 @@ export function registerDocTools(
       )
     },
   )
-
   server.registerTool(
     'get_doc',
     {
@@ -181,7 +195,6 @@ export function registerDocTools(
       return text(doc)
     },
   )
-
   server.registerTool(
     'set_doc',
     {
@@ -199,10 +212,7 @@ export function registerDocTools(
         featured: z.boolean().optional(),
         status: z.enum(DOC_STATUSES).optional(),
         kind: z.enum(DOC_KINDS).optional(),
-        form: z.enum(DOC_FORMS).nullable().optional(),
-        article_subject: z.string().min(1).nullable().optional(),
-        related_subjects: z.array(z.string().min(1)).optional(),
-        source_files: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
+        ...articleFieldSchemaShape,
         replacement: z.string().trim().min(1).nullable().optional(),
         force_inject: z
           .string()
@@ -238,6 +248,7 @@ export function registerDocTools(
       article_subject,
       related_subjects,
       source_files,
+      checked_against_commit,
       replacement,
       force_inject,
       reason,
@@ -266,6 +277,7 @@ export function registerDocTools(
           articleSubject: article_subject,
           relatedSubjects: related_subjects,
           sourceFiles: source_files,
+          checkedAgainstCommit: checked_against_commit,
           replacementSlug: replacement,
           forceInject: force_inject,
           reason,
@@ -278,7 +290,6 @@ export function registerDocTools(
       return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
     },
   )
-
   server.registerTool(
     'set_doc_status',
     {

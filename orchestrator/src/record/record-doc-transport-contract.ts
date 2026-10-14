@@ -6,10 +6,16 @@ const RECORD_DOC_ARTICLE_RESPONSE_KEYS = [
   'articleSubject',
   'relatedSubjects',
   'sourceFiles',
+  'checkedAgainstCommit',
 ] as const
 
 type ArticleResponseKey = (typeof RECORD_DOC_ARTICLE_RESPONSE_KEYS)[number]
-type ArticleWriteField = 'form' | 'articleSubjectId' | 'relatedSubjectIds' | 'sourceFiles'
+type ArticleWriteField =
+  | 'form'
+  | 'articleSubjectId'
+  | 'relatedSubjectIds'
+  | 'sourceFiles'
+  | 'checkedAgainstCommit'
 
 export type RecordDocWriteResponse<T extends { id: string }> = T &
   Partial<Record<ArticleResponseKey, unknown>>
@@ -22,6 +28,7 @@ const ARTICLE_WRITE_FIELDS: readonly ArticleWriteField[] = [
   'articleSubjectId',
   'relatedSubjectIds',
   'sourceFiles',
+  'checkedAgainstCommit',
 ]
 
 const owns = (value: object, key: PropertyKey): boolean => Object.hasOwn(value, key)
