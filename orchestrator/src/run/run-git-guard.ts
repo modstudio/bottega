@@ -1,10 +1,23 @@
 // concern: run git guard
+import { worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
+  ensureWorkerBranchNamespaceDirs,
   prepareSharedRefGuard,
+  workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
 import { resolveRefGuardHook } from '../resources/ref-guard-runtime.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+
+/** Shared git roots for a writing worktree, creating the branch namespace dirs if missing. */
+export function provisionWriterSharedGitRoots(
+  worktree: Worktree | null,
+  writesRepo: boolean,
+): string[] {
+  if (!worktree || !writesRepo) return []
+  ensureWorkerBranchNamespaceDirs(worktree.path, worktree.branch)
+  return [worktreeGitDir(worktree.path), ...workerSharedGitRoots(worktree.path, worktree.branch)]
+}
 
 /** Give writers their shared-ref guard and readers an unconditional push refusal. */
 export function workerGitConfigEnvironment(

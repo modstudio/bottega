@@ -18,7 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
 import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-environment.ts'
@@ -367,9 +367,27 @@ export function removeSharedRefGuard(cwd: string, runId: number): void {
 }
 
 /**
+ * Canonicalise a writable root that may not exist yet. Git may keep a slash
+ * branch only in packed-refs, so the loose namespace directory is absent.
+ * Realpath the nearest existing ancestor and append the unresolved suffix so
+ * symlink containment still holds.
+ */
+function canonicalWritableRoot(root: string): string {
+  let ancestor = resolve(root)
+  const suffix: string[] = []
+  while (!pathEntryExists(ancestor)) {
+    const parent = dirname(ancestor)
+    if (parent === ancestor) break
+    suffix.unshift(basename(ancestor))
+    ancestor = parent
+  }
+  return join(realpathSync(ancestor), ...suffix)
+}
+
+/**
  * Refuse dispatch if the worker can write the hook that constrains its shared ref writes.
- * Existing paths are canonicalised before containment is compared so symlinks cannot
- * make a writable ancestor look unrelated to the published directory.
+ * Writable roots are canonicalised through the realpath of the nearest existing
+ * ancestor so a missing directory still compares symlink-safely.
  */
 export function assertSharedRefGuardOutsideWritableRoots(
   hookDir: string,
@@ -378,7 +396,7 @@ export function assertSharedRefGuardOutsideWritableRoots(
 ): void {
   const protectedPaths = [realpathSync(hookDir), realpathSync(guardPath)]
   for (const root of writableRoots) {
-    const canonicalRoot = realpathSync(root)
+    const canonicalRoot = canonicalWritableRoot(root)
     for (const protectedPath of protectedPaths) {
       const rel = relative(canonicalRoot, protectedPath)
       if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
@@ -405,15 +423,45 @@ function sharedRefGuardEnvironment(
   }
 }
 
+function workerBranchNamespaceDirs(
+  cwd: string,
+  branch: string,
+): {
+  objects: string
+  refDir: string
+  reflogDir: string
+  heads: string
+  logHeads: string
+} {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
+  const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
+  const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
+  return {
+    objects: join(paths.commonDir, 'objects'),
+    refDir: dirname(ref),
+    reflogDir: dirname(reflog),
+    heads: resolve(paths.commonDir, 'refs', 'heads'),
+    logHeads: resolve(paths.commonDir, 'logs', 'refs', 'heads'),
+  }
+}
+
 /**
  * Common immutable objects plus the run branch's ref/reflog directories are the only shared writes.
  * A flat branch necessarily grants all of refs/heads and logs/refs/heads. That is acceptable only
  * because the guard is outside those roots and refuses every ref except the worker's exact branch.
  */
 export function workerSharedGitRoots(cwd: string, branch: string): string[] {
-  const paths = linkedWorktreePaths(cwd)
-  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
-  const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
-  const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
-  return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
+  const dirs = workerBranchNamespaceDirs(cwd, branch)
+  return [dirs.objects, dirs.refDir, dirs.reflogDir]
+}
+
+/**
+ * Recursively create the branch namespace directories `workerSharedGitRoots`
+ * names when they are missing. Does not create `refs/heads` or `logs/refs/heads`.
+ */
+export function ensureWorkerBranchNamespaceDirs(cwd: string, branch: string): void {
+  const dirs = workerBranchNamespaceDirs(cwd, branch)
+  if (dirs.refDir !== dirs.heads) mkdirSync(dirs.refDir, { recursive: true })
+  if (dirs.reflogDir !== dirs.logHeads) mkdirSync(dirs.reflogDir, { recursive: true })
 }
