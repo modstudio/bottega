@@ -226,36 +226,6 @@ test('snapshots and restores every finding identity before amending siblings', (
   }
 })
 
-test('skips a whole review when a sibling would retain a null record id', () => {
-  const seeds = seedReview('restore-triage-null-sibling', 2)
-  const first = seeds[0]!
-  const second = seeds[1]!
-  appendSource(first)
-  db().query('UPDATE review_finding SET record_id=NULL WHERE id=?').run(second.findingId)
-  db()
-    .query("DELETE FROM outbox WHERE kind='review_finding' AND json_extract(payload,'$.localId')=?")
-    .run(second.findingId)
-  const before = {
-    findings: db()
-      .query('SELECT * FROM review_finding WHERE review_id=? ORDER BY id')
-      .all(first.reviewId),
-    amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
-    outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
-  }
-
-  const report = restoreReviewTriage(db(), { dryRun: false })
-
-  expect(report.applied).toBe(0)
-  expect(report.byReason).toEqual({ 'review has a finding with no record id': 2 })
-  expect({
-    findings: db()
-      .query('SELECT * FROM review_finding WHERE review_id=? ORDER BY id')
-      .all(first.reviewId),
-    amendments: db().query('SELECT COUNT(*) AS count FROM review_finding_amendment').get(),
-    outbox: db().query('SELECT COUNT(*) AS count FROM outbox').get(),
-  }).toEqual(before)
-})
-
 test('does not overwrite triage that lands after review ids are listed', () => {
   const seed = seedFinding('restore-triage-stale-snapshot')
   appendSource(seed, { disposition: 'rejected', rejectionCategory: 'incorrect' })

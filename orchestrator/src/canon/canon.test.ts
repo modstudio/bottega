@@ -461,10 +461,14 @@ describe('schema coexistence', () => {
           .get(repo, projectId) as { id: number }
       ).id
     const mixed = (
-      d.query("INSERT INTO review (recorded_at) VALUES ('t') RETURNING id").get() as { id: number }
+      d.query(
+        `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+      ).get() as { id: number }
     ).id
     const aliased = (
-      d.query("INSERT INTO review (recorded_at) VALUES ('t') RETURNING id").get() as { id: number }
+      d.query(
+        `INSERT INTO review (record_id,recorded_at) VALUES ('${newRecordId()}','t') RETURNING id`,
+      ).get() as { id: number }
     ).id
     const mixedA = insertRun('starship', starship)
     const mixedB = insertRun('alephbeis', starship)
@@ -472,8 +476,8 @@ describe('schema coexistence', () => {
     const aliasB = insertRun('devbox', platformId)
     const lens = (reviewId: number, runId: number, name: string) => {
       d.query(
-        `INSERT INTO review_lens (review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
-         VALUES (?, ?, ?, 'codex', '[]', '[]', '[]', '[]')`,
+        `INSERT INTO review_lens (record_id, review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+         VALUES ('${newRecordId()}', ?, ?, ?, 'codex', '[]', '[]', '[]', '[]')`,
       ).run(reviewId, runId, name)
     }
     lens(mixed, mixedA, 'a')

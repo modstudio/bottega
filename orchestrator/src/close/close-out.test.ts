@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -470,10 +471,10 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
   try {
     db()
       .query(
-        `INSERT INTO landing (project,branch,status,started_at)
-         VALUES (?,?,'queued','2026-09-29T00:00:00.000Z')`,
+        `INSERT INTO landing (record_id,project,branch,status,started_at)
+         VALUES (?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
-      .run(project, `DEV-1023-orch-${id}`)
+      .run(newRecordId(), project, `DEV-1023-orch-${id}`)
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',

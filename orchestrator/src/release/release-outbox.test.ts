@@ -39,6 +39,9 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   expect(Object.keys(startedPayload).sort()).toEqual(
     [...RELEASE_RECORD_PAYLOAD_CONTRACT.columns].sort(),
   )
+  expect(initial.record_id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  )
   expect(startedPayload).toMatchObject({
     id: initial.record_id,
     projectName: PLATFORM_SLUG,
@@ -158,17 +161,17 @@ test('release sanitizer withholds warning and rollback reason while local values
   })
 })
 
-test('release backfill mints and enqueues each existing row once', () => {
+test('release backfill enqueues each existing row once', () => {
   const database = fixture()
   database
     .query(
       `INSERT INTO release_ledger
-       (project,rung,candidate_commit,rollback,actor,started_at)
-       VALUES (?,'production','one',0,'operator','2026-10-12T00:00:00.000Z'),
-              (?,'production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
+       (record_id,project,rung,candidate_commit,rollback,actor,started_at)
+       VALUES ('01990000-0000-7000-8000-000000000031',?,'production','one',0,'operator','2026-10-12T00:00:00.000Z'),
+              ('01990000-0000-7000-8000-000000000032',?,'production','two',0,'operator','2026-10-12T00:01:00.000Z')`,
     )
     .run(PLATFORM_SLUG, PLATFORM_SLUG)
-  expect(backfillReleaseRecords(database)).toEqual({ minted: 2, enqueued: 2 })
+  expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 2 })
   expect(backfillReleaseRecords(database)).toEqual({ minted: 0, enqueued: 0 })
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
     count: 2,

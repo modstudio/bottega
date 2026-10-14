@@ -35,6 +35,19 @@ describe('review discipline', () => {
       { run_id: first, lens: 'safety', agent: 'codex', model: 'effective-a', completed_at: null },
       { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
     ])
+    const identities = db()
+      .query<{ record_id: string }, [number]>(
+        `SELECT record_id FROM review WHERE id=?
+         UNION ALL SELECT record_id FROM review_lens WHERE review_id=?
+         UNION ALL SELECT record_id FROM review_finding WHERE review_id=?`,
+      )
+      .all(review, review, review)
+    expect(identities.length).toBeGreaterThan(0)
+    for (const row of identities) {
+      expect(row.record_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
     expect(
       db()
         .query<{ kind: string; count: number }, []>(

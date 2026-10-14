@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { backfillReviewRecords } from './review-outbox.ts'
 
-test('review backfill mints parent rows before children, enqueues the graph, and is idempotent', () => {
+test('review backfill enqueues the graph once and is idempotent', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
   database
@@ -12,22 +12,26 @@ test('review backfill mints parent rows before children, enqueues the graph, and
     VALUES (1, '01990000-0000-7000-8000-000000000010', '2026-09-15T00:00:00Z',
       'codex', 'review-lens', 'sha', 1, 'head', 'ok')`)
     .run()
-  database.query("INSERT INTO review (id, recorded_at) VALUES (1, '2026-09-15T01:00:00Z')").run()
+  database
+    .query(
+      "INSERT INTO review (id, record_id, recorded_at) VALUES (1, '01990000-0000-7000-8000-000000000011', '2026-09-15T01:00:00Z')",
+    )
+    .run()
   database
     .query(`INSERT INTO review_lens
-    (id, review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
-    VALUES (1, 1, 1, 'craft', 'codex', '[]', '[]', '[]', '[]')`)
+    (id, record_id, review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+    VALUES (1, '01990000-0000-7000-8000-000000000012', 1, 1, 'craft', 'codex', '[]', '[]', '[]', '[]')`)
     .run()
   database
     .query(`INSERT INTO review_finding
-    (id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
-    VALUES (1, 1, 1, 1, 'major', 'a.ts:1', 'evidence', 'correct it')`)
+    (id, record_id, review_id, review_lens_id, ordinal, severity, location, evidence, proposed_correction)
+    VALUES (1, '01990000-0000-7000-8000-000000000013', 1, 1, 1, 'major', 'a.ts:1', 'evidence', 'correct it')`)
     .run()
 
   expect(backfillReviewRecords(database)).toEqual({
-    mintedReviews: 1,
-    mintedLenses: 1,
-    mintedFindings: 1,
+    mintedReviews: 0,
+    mintedLenses: 0,
+    mintedFindings: 0,
     mintedReads: 0,
     enqueuedReviews: 1,
     enqueuedReads: 0,

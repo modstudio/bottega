@@ -247,34 +247,36 @@ describe('lens catalogue', () => {
       .query(`INSERT INTO canon_pack (id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
       VALUES (8001,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
       .run()
-    live.query(`INSERT INTO review (id,recorded_at,project_id) VALUES (8002,'now',NULL)`).run()
     live
-      .query(`INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-      VALUES (8002,?,'correctness','codex','[]','[]','[]','[]')`)
-      .run(runId)
+      .query(`INSERT INTO review (id,record_id,recorded_at,project_id) VALUES (8002,?,'now',NULL)`)
+      .run(newRecordId())
+    live
+      .query(`INSERT INTO review_lens (record_id,review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      VALUES (?,8002,?,'correctness','codex','[]','[]','[]','[]')`)
+      .run(newRecordId(), runId)
     live
       .query(
-        `INSERT INTO landing (id,project,branch,status,started_at,project_id) VALUES (8003,'one','branch','queued','now',NULL)`,
+        `INSERT INTO landing (id,record_id,project,branch,status,started_at,project_id) VALUES (8003,?,'one','branch','queued','now',NULL)`,
       )
-      .run()
+      .run(newRecordId())
     live
-      .query(`INSERT INTO landing_override (id,project,branch,tip,tree,reason,at,project_id)
-      VALUES (8004,'one','branch','tip','tree','test','now',NULL)`)
-      .run()
+      .query(`INSERT INTO landing_override (id,record_id,project,branch,tip,tree,reason,at,project_id)
+      VALUES (8004,?,'one','branch','tip','tree','test','now',NULL)`)
+      .run(newRecordId())
     live
       .query(`INSERT INTO landing_review_carry
-      (id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_id)
-      VALUES (8005,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
-      .run()
+      (id,record_id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_id)
+      VALUES (8005,?,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`)
+      .run(newRecordId())
     live
       .query(`INSERT INTO doc (id,scope,subject,slug,title,body,audiences,created_at,updated_at,project_id,record_id)
       VALUES (8006,'project','one','probe','Probe','body','["technical"]','now','now',NULL,?)`)
       .run(newRecordId())
     live
       .query(`INSERT INTO doc_revision
-      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_id)
-      VALUES (8007,8006,'project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL)`)
-      .run()
+      (id,doc_id,scope,subject,slug,op,title,body,audiences,author,reason,at,project_id,record_id)
+      VALUES (8007,8006,'project','one','probe','create','Probe','body','["technical"]','test','test','now',NULL,?)`)
+      .run(newRecordId())
 
     expect(applyMigrations(live)).toEqual([])
     expect(live.query('SELECT project_id FROM run WHERE id=?').get(renamedRunId)).toEqual({

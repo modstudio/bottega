@@ -15,6 +15,8 @@ test('migrated tables are converted, exempt with reasons, or in the shrinking ba
     const inventory = orchestratorIdentityInventory(database)
     expect(inventory.converted.includes('run')).toBe(true)
     expect(inventory.converted.includes('question')).toBe(true)
+    expect(inventory.converted.includes('review')).toBe(true)
+    expect(inventory.converted.includes('doc_revision')).toBe(true)
     expect(inventory.exempt).toHaveLength(EXEMPT_TABLES.length)
     expect(inventory.baseline).toHaveLength(IDENTITY_BASELINE.length)
   } finally {

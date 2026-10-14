@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { readProjectReview, recordProjectReviewCommand } from './review-record-command.ts'
@@ -140,29 +141,29 @@ test('selects every review round on the branch and requires every selected lens 
     const run = addRun({ agent: 'codex', job: 'review-lens', lens, repo: project })
     database.query('UPDATE run SET branch=? WHERE id=?').run(branch, run)
     const review = database
-      .query<{ id: number }, [string]>(
+      .query<{ id: number }, [string, string]>(
         `INSERT INTO review
-           (recorded_at,completed_at,patch_id,path_set,tier)
-         VALUES ('2026-10-09','2026-10-09',?,'["src/a.ts"]',2) RETURNING id`,
+           (record_id,recorded_at,completed_at,patch_id,path_set,tier)
+         VALUES (?,'2026-10-09','2026-10-09',?,'["src/a.ts"]',2) RETURNING id`,
       )
-      .get(patchId)!
+      .get(newRecordId(), patchId)!
     const reviewLens = database
-      .query<{ id: number }, [number, number, string]>(
+      .query<{ id: number }, [string, number, number, string]>(
         `INSERT INTO review_lens
-           (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
+           (record_id,review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,
             could_not_verify,reproduced,coverage,limits,overlap)
-         VALUES (?,?,?,'codex','model','[]','[]','[]','[]','all','adequate','absent','unique')
+         VALUES (?,?,?,?,'codex','model','[]','[]','[]','[]','all','adequate','absent','unique')
          RETURNING id`,
       )
-      .get(review.id, run, lens)!
+      .get(newRecordId(), review.id, run, lens)!
     database
       .query(
         `INSERT INTO review_finding
-           (review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
+           (record_id,review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction,
             disposition,triaged_severity)
-         VALUES (?,?,1,'high','src/a.ts:1','evidence','fix','accepted','high')`,
+         VALUES (?,?,?,1,'high','src/a.ts:1','evidence','fix','accepted','high')`,
       )
-      .run(review.id, reviewLens.id)
+      .run(newRecordId(), review.id, reviewLens.id)
     return { review: review.id, lens: reviewLens.id, run }
   }
 
