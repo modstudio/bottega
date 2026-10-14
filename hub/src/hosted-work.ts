@@ -7,6 +7,7 @@ import { formatNoteLabel } from './note-label.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import {
   type BoardSourceRow,
+  boardRecentSince,
   type CompletedRow,
   combineMachineDays,
   type DayIntervalRow,
@@ -233,17 +234,18 @@ export async function hostedBoard(
   const facts = await windowFacts(databaseUrl, identity, from, to)
   const projectRows = projectsOf(input.projects)
   const tasks = projectTasksInWindow(facts.intervals, projectRows, now)
-  const since = new Date(now - 14 * 86_400_000).toISOString()
+  const since = boardRecentSince(now)
   const board = await withHostedTenant(databaseUrl, identity, async (tx) => {
     const sourceRows = rows<
-      Omit<BoardSourceRow, 'updated_at' | 'last_seen'> & {
+      Omit<BoardSourceRow, 'updated_at' | 'last_seen' | 'closed_at'> & {
         updated_at: SqlTime | null
         last_seen: SqlTime
+        closed_at: SqlTime | null
       }
     >(
       await tx`
       SELECT t.space_id,s.name AS space_name,t.key,t.project,t.title,t.assignee,t.status,
-        t.status_category,t.source,t.updated_at,t.last_seen
+        t.status_category,t.source,t.updated_at,t.last_seen,t.closed_at
       FROM hub_task t JOIN space s ON s.id=t.space_id WHERE t.deleted_at IS NULL`,
     )
     const live = rows<{ space_id: string; task_key: string }>(
@@ -261,43 +263,34 @@ export async function hostedBoard(
         ...row,
         updated_at: iso(row.updated_at),
         last_seen: iso(row.last_seen)!,
+        closed_at: iso(row.closed_at),
       })),
       recentKeys: recent.map((row) => `${row.space_id}\0${row.task_key}`),
       liveKeys: live.map((row) => `${row.space_id}\0${row.task_key}`),
       projects: projectRows,
       cap: 250,
+      since,
+      filters: input.filters,
     })
   })
-  const sourceMatches = (card: (typeof board.cards)[number]) =>
-    !input.filters.source ||
-    (input.filters.source === 'hub'
-      ? card.source === 'local'
-      : card.source !== 'local' && card.project === input.filters.source)
-  const cards = board.cards.filter(
-    (card) =>
-      (!input.filters.project || card.project === input.filters.project) && sourceMatches(card),
-  )
   const strings = (values: (string | null | undefined)[]) =>
     [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
+  const { sourceFacetProjects, ...page } = board
   return {
     ...strip(facts.intervals, tasks, input.hours, to, facts.collectedAt, facts.tasksShipped),
     view: 'board' as const,
     data: {
-      ...board,
-      cards,
+      ...page,
       scoped: Boolean(input.filters.project || input.filters.source),
       filters: input.filters,
-      matched: cards.length,
+      matched: page.cards.length,
       facets: {
         agents: [] as string[],
         projects: strings([
           ...input.projects.map((item) => item.name),
-          ...Object.keys(board.totals.project),
+          ...Object.keys(page.totals.project),
         ]),
-        sources: strings([
-          'hub',
-          ...board.cards.filter((card) => card.source !== 'local').map((card) => card.project),
-        ]),
+        sources: strings(['hub', ...sourceFacetProjects]),
       },
     },
   }

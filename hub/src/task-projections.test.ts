@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import {
+  type BoardSourceRow,
+  boardRecentSince,
   combineMachineDays,
+  projectBoard,
   projectBoardCards,
   projectFlightDone,
   projectRatioSummary,
@@ -174,6 +177,7 @@ test('board bucketing fields and live state are shaped outside either database a
         source: 'local',
         updated_at: null,
         last_seen: '2026-09-17T11:00:00.000Z',
+        closed_at: null,
       },
     ],
     ['task-record-701'],
@@ -213,4 +217,107 @@ test('local projection keeps one shared label separate by task record id', () =>
     { recordId: 'alpha-record', project: 'alpha' },
     { recordId: 'beta-record', project: 'beta' },
   ])
+})
+
+function boardRow(
+  overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>,
+): BoardSourceRow {
+  return {
+    project: 'workshop',
+    title: overrides.key,
+    assignee: null,
+    status: 'active',
+    status_category: 'active',
+    source: 'local',
+    updated_at: '2026-09-17T12:00:00.000Z',
+    last_seen: '2026-09-17T12:00:00.000Z',
+    closed_at: null,
+    ...overrides,
+  }
+}
+
+test("a filtered project still receives done rows that would fall below the cap behind another project's rows", () => {
+  const cap = 3
+  const rows = [
+    boardRow({ key: 'DEV-1', updated_at: '2026-09-17T12:00:00.000Z' }),
+    boardRow({ key: 'DEV-2', updated_at: '2026-09-17T11:00:00.000Z' }),
+    boardRow({ key: 'DEV-3', updated_at: '2026-09-17T10:00:00.000Z' }),
+    boardRow({
+      key: 'SEGNA-1',
+      project: 'segnavia',
+      status: 'done',
+      status_category: 'done',
+      source: 'mcp',
+      updated_at: '2026-09-01T00:00:00.000Z',
+    }),
+  ]
+  const recentKeys = ['unattributed:segnavia:SEGNA-1']
+  const input = {
+    rows,
+    recentKeys,
+    liveKeys: [] as string[],
+    projects: project,
+    cap,
+    since: boardRecentSince(now),
+  }
+  const unfiltered = projectBoard(input)
+  const cases = [
+    { filters: undefined, keys: ['DEV-1', 'DEV-2', 'DEV-3'] },
+    { filters: { project: 'segnavia', source: '' }, keys: ['SEGNA-1'] },
+    { filters: { project: '', source: 'segnavia' }, keys: ['SEGNA-1'] },
+    { filters: { project: '', source: 'hub' }, keys: ['DEV-1', 'DEV-2', 'DEV-3'] },
+  ]
+  for (const { filters, keys } of cases) {
+    const board = filters ? projectBoard({ ...input, filters }) : unfiltered
+    expect(board.cards.map((card) => card.key)).toEqual(keys)
+    expect(board.cap).toBe(cap)
+    expect(board.sourceFacetProjects).toEqual(['segnavia'])
+    expect(board.totals).toEqual(unfiltered.totals)
+  }
+  expect(unfiltered.cards).toHaveLength(cap)
+  expect(Object.keys(unfiltered.totals.project).sort()).toEqual(['segnavia', 'workshop'])
+})
+
+test('a done row with no interval is eligible when closed inside the window', () => {
+  const since = boardRecentSince(now)
+  const board = projectBoard({
+    rows: [
+      boardRow({
+        key: 'SEGNA-7',
+        project: 'segnavia',
+        status: 'done',
+        status_category: 'done',
+        source: 'mcp',
+        closed_at: '2026-09-16T12:00:00.000Z',
+      }),
+    ],
+    recentKeys: [],
+    liveKeys: [],
+    projects: project,
+    cap: 250,
+    since,
+  })
+  expect(board.cards.map((card) => card.key)).toEqual(['SEGNA-7'])
+})
+
+test('a done row closed outside the window is not eligible', () => {
+  const since = boardRecentSince(now)
+  const board = projectBoard({
+    rows: [
+      boardRow({
+        key: 'SEGNA-8',
+        project: 'segnavia',
+        status: 'done',
+        status_category: 'done',
+        source: 'mcp',
+        closed_at: '2026-08-01T12:00:00.000Z',
+      }),
+    ],
+    recentKeys: [],
+    liveKeys: [],
+    projects: project,
+    cap: 250,
+    since,
+  })
+  expect(board.cards).toHaveLength(0)
 })

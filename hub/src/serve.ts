@@ -30,7 +30,7 @@ import {
   type SearchableLiveRun,
 } from './run-display.ts'
 import { startRevisionMonitor } from './service-revision.ts'
-import { projectFlightDone } from './task-projections.ts'
+import { BOARD_RECENT_WINDOW_DAYS, projectFlightDone } from './task-projections.ts'
 import { hoursAgo } from './time.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
@@ -255,25 +255,14 @@ type RunFilters = {
   search?: string
 }
 
-/** The UI calls local ownership "hub"; external source values are project names. */
-function matchesSource(row: { source: string | null; project: string | null }, source?: string) {
-  return (
-    !source ||
-    (source === 'hub' ? row.source === 'local' : row.source !== 'local' && row.project === source)
-  )
-}
-
-function sourceFacets(rows: { source: string | null; project: string | null }[]) {
+function sourceFacets(projectsFromBoard: string[]) {
   return [
     ...new Set([
       'hub',
       ...projects()
         .filter((project) => project.settings.tracker)
         .map((project) => project.name),
-      ...rows
-        .filter((row) => row.source !== 'local')
-        .map((row) => row.project)
-        .filter((value): value is string => !!value),
+      ...projectsFromBoard,
     ]),
   ].sort()
 }
@@ -328,10 +317,10 @@ export async function view(
      * tracker sit side by side — distinguished, never blended, because a reader
      * has to know which they can act on here.
      */
-    const b = boardTasks()
-    const rows = b.cards.filter(
-      (c) => (!f.project || c.project === f.project) && matchesSource(c, f.source),
-    )
+    const b = boardTasks(BOARD_RECENT_WINDOW_DAYS, 250, {
+      project: f.project,
+      source: f.source ?? '',
+    })
     /**
      * Facets from the REGISTER, not from the cards.
      *
@@ -357,10 +346,10 @@ export async function view(
           ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
         ]),
       ].sort() as string[],
-      sources: sourceFacets(b.cards),
+      sources: sourceFacets(b.sourceFacetProjects),
     }
     return {
-      cards: rows,
+      cards: b.cards,
       // TRUE totals, from the same filter the query used — never a count of
       // the page. A column header counting the rows it was handed understates
       // every column once the set outgrows one fetch.

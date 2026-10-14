@@ -1,15 +1,18 @@
 import { engagedMs } from '../../shared/interval.ts'
 import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import type { Capabilities } from '../../shared/trackers.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 import {
+  BOARD_RECENT_WINDOW_DAYS,
+  type BoardFilters,
+  boardRecentSince,
   combineMachineDays,
   type DayIntervalRow,
   intervalEndMs,
   type MachineDayRow,
+  type ProjectBoard,
   projectBoard,
   projectRatioSummary,
   projectRollUpDays,
@@ -288,26 +291,6 @@ export function spendGrid(windowDays = 14) {
   return projectSpendGrid(summary, vendors, intervals, Date.now())
 }
 
-/** One card on the board. */
-type BoardTask = {
-  spaceId?: string
-  spaceName?: string
-  recordId?: string
-  key: string
-  project: string | null
-  title: string | null
-  assignee: string | null
-  status: string | null
-  statusCategory: string | null
-  /** 'local' is ours to edit; 'mcp' is a tracker's; 'git' was inferred from commits. */
-  source: string
-  sourceProtocol: string | null
-  capabilities: Capabilities
-  updatedAt: string | null
-  /** Whether an agent is working on it right now. */
-  workingNow: boolean
-}
-
 /**
  * Every task in play, across every project, whoever owns it.
  *
@@ -332,30 +315,22 @@ type BoardTask = {
  * home for it.
  */
 /** The board, and what it is a page of. */
-export type Board = {
-  cards: BoardTask[]
-  /**
-   * TRUE totals per column, from the same filter — never a count of the page.
-   *
-   * Keyed by DIMENSION, because the board groups by either status or project
-   * and a header must carry the real total whichever way it is sliced. Counting
-   * the drawn cards would understate every column the moment the set outgrows
-   * one fetch, which for `done` it always does.
-   */
-  totals: { status: Record<string, number>; project: Record<string, number> }
-  /** How many cards were asked for. */
-  cap: number
-}
+export type Board = Omit<ProjectBoard, 'sourceFacetProjects'>
 
-export function boardTasks(windowDays = 14, cap = 250): Board {
-  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+export function boardTasks(
+  windowDays = BOARD_RECENT_WINDOW_DAYS,
+  cap = 250,
+  filters?: BoardFilters,
+): Board & Pick<ProjectBoard, 'sourceFacetProjects'> {
+  const since = boardRecentSince(Date.now(), windowDays * 86_400_000)
 
   /**
-   * RECENCY COMES FROM WORK, NEVER FROM A TIMESTAMP ON THE TASK.
+   * Recency is work in the window, or a close in that same window.
    *
-   * `updated_at` and `last_seen` describe when the tracker or collector observed
-   * a task, not when work happened. The `interval` table is the record of work
-   * actually happening, and it is what "recent" means here.
+   * `updated_at` and `last_seen` are when the tracker or collector observed a
+   * task. `interval.start_at` is when work happened. `closed_at` is when the
+   * task closed, so a done row with no interval still belongs on the board
+   * when that close falls in the window `boardRecentSince` names.
    */
   /**
    * SPEND THE BUDGET ON OPEN WORK — also borrowed from that sibling project, and the reason a capped
@@ -379,11 +354,12 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
         source: string
         updated_at: string | null
         last_seen: string
+        closed_at: string | null
       },
       []
     >(
       `SELECT t.key, t.record_id, t.project, t.title, t.assignee, t.status, t.status_category, t.source,
-            t.updated_at, t.last_seen
+            t.updated_at, t.last_seen, t.closed_at
        FROM task t`,
     )
     .all()
@@ -420,5 +396,13 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       .filter((id): id is string => id !== null),
   )
 
-  return projectBoard({ rows, recentKeys: recent, liveKeys: [...live], projects: projects(), cap })
+  return projectBoard({
+    rows,
+    recentKeys: recent,
+    liveKeys: [...live],
+    projects: projects(),
+    cap,
+    since,
+    filters,
+  })
 }
