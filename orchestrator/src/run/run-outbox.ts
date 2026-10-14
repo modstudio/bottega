@@ -1,14 +1,14 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
 type LocalRun = Record<string, unknown> & {
   id: number
-  record_id: string | null
+  record_id: string
   project_name: string | null
   started_at: string
   retry_record_id: string | null
@@ -123,10 +123,6 @@ export function enqueueRunRecord(
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} does not exist and cannot be enqueued`)
-  if (row.record_id === null) {
-    row.record_id = newRecordId()
-    database.query('UPDATE run SET record_id=? WHERE id=?').run(row.record_id, row.id)
-  }
   if (row.retry_of !== null && row.retry_record_id === null) {
     throw new Error(`run ${runId} has retry_of ${row.retry_of} without a record id`)
   }
@@ -151,15 +147,6 @@ export function enqueueRunRecord(
 }
 
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
-  const missing = database
-    .query<{ id: number }, [string, string]>(
-      'SELECT id FROM run WHERE record_id IS NULL AND job NOT IN (?,?) ORDER BY id',
-    )
-    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
-  for (const row of missing) {
-    database.query('UPDATE run SET record_id=? WHERE id=?').run(newRecordId(), row.id)
-  }
-
   const terminal = database
     .query<{ id: number; finished_at: string }, [string, string]>(
       `SELECT r.id, COALESCE(r.last_event_at, r.started_at) AS finished_at
@@ -177,5 +164,5 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { minted: missing.length, enqueued: terminal.length, skippedLive }
+  return { minted: 0, enqueued: terminal.length, skippedLive }
 }

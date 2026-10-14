@@ -1,7 +1,7 @@
 // concern: question-outbox
 /** Knows how local question evidence becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
@@ -9,7 +9,7 @@ import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type QuestionRow = Record<string, unknown> & {
   id: number
-  record_id: string | null
+  record_id: string
   run_id: number | null
   run_record_id: string | null
   project_name: string | null
@@ -30,10 +30,6 @@ function loadQuestion(database: Database, questionId: number): QuestionRow {
     )
     .get(questionId)
   if (!row) throw new Error(`question ${questionId} does not exist and cannot be enqueued`)
-  if (!row.record_id) {
-    row.record_id = newRecordId()
-    database.query('UPDATE question SET record_id=? WHERE id=?').run(row.record_id, row.id)
-  }
   return row
 }
 
@@ -115,11 +111,6 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
 }
 
 export function backfillQuestionRecords(database: Database): { minted: number; enqueued: number } {
-  const missing = database
-    .query<{ id: number }, []>('SELECT id FROM question WHERE record_id IS NULL')
-    .all()
-  for (const row of missing)
-    database.query('UPDATE question SET record_id=? WHERE id=?').run(newRecordId(), row.id)
   const questions = database
     .query<{ id: number }, []>(
       `SELECT id FROM question WHERE NOT EXISTS (
@@ -128,5 +119,5 @@ export function backfillQuestionRecords(database: Database): { minted: number; e
     )
     .all()
   for (const row of questions) enqueueQuestionRecord(database, row.id)
-  return { minted: missing.length, enqueued: questions.length }
+  return { minted: 0, enqueued: questions.length }
 }

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
@@ -155,10 +156,11 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     const inserted = writableDb()
       .query(
         `INSERT INTO run
-       (started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       (record_id,started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       )
       .get(
+        newRecordId(),
         new Date(started).toISOString(),
         name,
         `agent-probe-${id}`,

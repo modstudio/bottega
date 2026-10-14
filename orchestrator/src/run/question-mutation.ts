@@ -2,6 +2,7 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -117,11 +118,12 @@ export function upsertWorkflowQuestion(
   const inserted = database
     .query<{ id: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+        (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?, 'workflow', ?,?,?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       input.cursorId,
       input.workflowKey || null,
       input.at,

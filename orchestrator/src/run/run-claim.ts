@@ -257,7 +257,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       : originalSchemaPath
 
   const started = Date.now()
-  const recordId = newRecordId()
+  const reservedIdentity = opts.reserveId
+    ? db()
+        .query<{ record_id: string }, [number]>('SELECT record_id FROM run WHERE id=?')
+        .get(opts.reserveId)
+    : null
+  if (opts.reserveId && !reservedIdentity)
+    throw new Error(`reserved run ${opts.reserveId} does not exist`)
+  const recordId = reservedIdentity?.record_id ?? newRecordId()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null

@@ -2,6 +2,7 @@
 /** Opens an architect-owned, project-provisioned tree on a finished run branch. */
 
 import { createHash } from 'node:crypto'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { branchOf, checkedOutWorktree, gitContext } from '../git/git-environment.ts'
@@ -172,11 +173,12 @@ export function openLandingTree(runId: number, seed?: string): OpenedLandingTree
   const inserted = db()
     .query(
       `INSERT INTO run
-       (started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
+       (record_id,started_at,agent,job,repo,project_id,cwd,prompt_sha,prompt_bytes,prompt_head,status,
         session_id,launch_cwd,launch_key,launch_base,launch_seed,stack,evidence_excluded,pid)
-       VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       startedAt,
       LANDING_TREE_AGENT,
       LANDING_TREE_JOB,

@@ -477,6 +477,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
   ]),
+  module('orchestrator/src/database/identity-inventory.ts', ['bun:sqlite']),
   module('orchestrator/src/resources/ref-guard.ts', [
     '../database/db.ts',
     '../../../shared/process-identity.ts',
