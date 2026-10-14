@@ -170,6 +170,7 @@ export async function readMessageText(
   throw new Error(opts.missing)
 }
 type QuestionTextSource = { identifier: string; file?: string; text?: string }
+type QuestionSelector = { identifier: string; text?: string }
 
 export type AnswerTextSources = {
   byId: QuestionTextSource[]
@@ -191,6 +192,13 @@ function takeFilePath(
   const path = args[index + 1]
   if (path === undefined) throw new Error(`argument --file needs a value\nworking form: ${usage}`)
   return { path, next: index + 2 }
+}
+
+function questionSelector(arg: string): QuestionSelector | null {
+  const equals = arg.match(/^--q([^=]+)=(.*)$/)
+  if (equals) return { identifier: equals[1]!, text: equals[2]! }
+  const flagged = arg.match(/^--q(.+)$/)
+  return flagged ? { identifier: flagged[1]! } : null
 }
 
 /**
@@ -249,29 +257,25 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
-    if (questions && !booleans.has(arg)) {
-      const equals = arg.match(/^--q([^=]+)=(.*)$/)
-      if (equals) {
-        byId.push({ identifier: equals[1]!, text: equals[2]! })
+    const selector = questions && !booleans.has(arg) ? questionSelector(arg) : null
+    if (selector) {
+      if ('text' in selector) {
+        byId.push(selector)
         continue
       }
-      const flagged = arg.match(/^--q(.+)$/)
-      if (flagged) {
-        const identifier = flagged[1]!
-        const next = args[i + 1]
-        if (next === '--file' || next?.startsWith('--file=')) {
-          const taken = takeFilePath(args, i + 1, usage)
-          byId.push({ identifier, file: taken.path })
-          i = taken.next - 1
-          continue
-        }
-        if (next === undefined || booleans.has(next)) {
-          throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
-        }
-        byId.push({ identifier, text: next })
-        i++
+      const next = args[i + 1]
+      if (next === '--file' || next?.startsWith('--file=')) {
+        const taken = takeFilePath(args, i + 1, usage)
+        byId.push({ identifier: selector.identifier, file: taken.path })
+        i = taken.next - 1
         continue
       }
+      if (next === undefined || booleans.has(next)) {
+        throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
+      }
+      byId.push({ identifier: selector.identifier, text: next })
+      i++
+      continue
     }
     if (arg === '--file' || arg.startsWith('--file=')) {
       const taken = takeFilePath(args, i, usage)

@@ -28,6 +28,23 @@ type Candidate = Omit<RecordSearchResult, 'match' | 'snippet'> & { text: string 
 
 const SNIPPET_LENGTH = 240
 
+function matchedResult(row: Candidate, query: string, includeFull: boolean): RecordSearchResult {
+  const directlyLinked = row.task_key?.toLocaleLowerCase() === query.toLocaleLowerCase()
+  return {
+    source: row.source,
+    id: row.id,
+    run_id: row.run_id,
+    run_record_id: row.run_record_id,
+    root_run_id: row.root_run_id,
+    root_run_record_id: row.root_run_record_id,
+    task_key: row.task_key,
+    started_at: row.started_at,
+    match: directlyLinked ? 'direct task link' : 'literal text match (weak relevance)',
+    snippet: searchSnippet(row.text, query, directlyLinked),
+    ...(includeFull ? { content: row.text } : {}),
+  }
+}
+
 /** A compact excerpt around the first literal match. Never returns the whole record by default. */
 export function searchSnippet(text: string, query: string, directlyLinked: boolean): string {
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -171,23 +188,7 @@ export function searchRecords(
     .flatMap((row) => {
       const directlyLinked = row.task_key?.toLocaleLowerCase() === folded
       if (!directlyLinked && !row.text.toLocaleLowerCase().includes(folded)) return []
-      return [
-        {
-          source: row.source,
-          id: row.id,
-          run_id: row.run_id,
-          run_record_id: row.run_record_id,
-          root_run_id: row.root_run_id,
-          root_run_record_id: row.root_run_record_id,
-          task_key: row.task_key,
-          started_at: row.started_at,
-          match: directlyLinked
-            ? ('direct task link' as const)
-            : ('literal text match (weak relevance)' as const),
-          snippet: searchSnippet(row.text, query, directlyLinked),
-          ...(includeFull ? { content: row.text } : {}),
-        },
-      ]
+      return [matchedResult(row, query, includeFull)]
     })
     .sort((a, b) => {
       if (a.match !== b.match) return a.match === 'direct task link' ? -1 : 1

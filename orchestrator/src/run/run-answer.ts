@@ -77,6 +77,10 @@ type RunAnswerHelpers = {
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
 
+function allowsPartialRecordOnly(input: AnswerRunInput, ownersLive: boolean): boolean {
+  return Boolean(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
+}
+
 function answerResult(
   outcome: AnswerWaitingResult['outcome'],
   runId: number,
@@ -743,10 +747,7 @@ export async function answerRun(
       })
     }
   }
-  if (
-    answers.length !== open.length &&
-    !(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
-  ) {
+  if (answers.length !== open.length && !allowsPartialRecordOnly(input, ownersLive)) {
     throw new Error(
       `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
         'For multiple questions, pass every --q<id> in a single command. ' +

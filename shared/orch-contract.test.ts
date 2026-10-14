@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from './brand.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -121,7 +122,7 @@ test('run detail accepts a child-turn request with both run UUIDs', () => {
     resolved_from: 'turn',
     agent: 'codex',
     job: 'implement',
-    project: 'bottega',
+    project: PLATFORM_NAME,
     latency_ms: 12,
     vendor_tokens: 34,
     status: 'ok',
