@@ -164,7 +164,7 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO run (record_id,id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,'2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
+      `INSERT INTO run (record_id,id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,'2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
     )
     .run(SECRET)
   enqueueRunRecord(database, 42, '01990000-0000-7000-8000-000000000099', '2026-09-15T01:01:00.000Z')
@@ -216,7 +216,7 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
   enqueueScoreRecord(database, 1, '01990000-0000-7000-8000-000000000099')
   const question = database
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,answer) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),1,'2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,answer) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),1,'2026-09-15T00:01:00Z','Which?',?) RETURNING id`,
     )
     .get(SECRET) as { id: number }
   enqueueQuestionRecord(database, question.id)

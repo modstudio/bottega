@@ -458,6 +458,24 @@ test('withdrawing a pending root drops its reply from the rerun', async () => {
   ).toEqual({ value: '1' })
 })
 
+test('a run-tied claim without a hosted run id stays live as a lasting refusal and does not block the mark', async () => {
+  const run = db()
+    .query(
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running',1) RETURNING id`,
+    )
+    .get(new Date(NOW - 1_000).toISOString()) as { id: number }
+  const localClaim = claim(run.id)
+  const result = await adoptHostedBoard({
+    confirm: 1,
+    clock: () => NOW,
+    client: capturingClient([]).client,
+  })
+  expect(result).toMatchObject({ status: 'adopted', refused: 1 })
+  expect(db().query('SELECT closed_at FROM board_claim WHERE id=?').get(localClaim.id)).toEqual({
+    closed_at: null,
+  })
+})
+
 test('a lasting hosted root refusal leaves its thread local and live and still sets the mark', async () => {
   presence()
   const question = askQuestion(
@@ -639,7 +657,7 @@ test('the plan and upload include only receipts for readers that are still aroun
   presence('live-reader')
   const finishedRun = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','ok',1) RETURNING id`,
     )
     .get(new Date(NOW - 1_000).toISOString()) as { id: number }
   const notice = postNotice(

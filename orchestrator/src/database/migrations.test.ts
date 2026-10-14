@@ -290,7 +290,7 @@ test('note UUID reference migration preserves rows and turns old integers into d
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-10-09','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-10-09','codex','implement','sha',1,'prompt','ok') RETURNING id`,
       )
       .get() as { id: number }
     database
@@ -598,11 +598,13 @@ test('workflow question migration preserves run questions and backfills an await
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-09-20','codex','implement','sha',1,'prompt','asking') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-20','codex','implement','sha',1,'prompt','asking') RETURNING id`,
       )
       .get() as { id: number }
     const question = database
-      .query(`INSERT INTO question (run_id,asked_at,question,asked_via) VALUES (?,?,?,'reply')`)
+      .query(
+        `INSERT INTO question (run_id,asked_at,question,asked_via) VALUES (?,?,?,'reply')`,
+      )
       .run(run.id, '2026-09-20', 'Run question?').lastInsertRowid
     database
       .query(
@@ -736,7 +738,7 @@ test('workflow question migration preserves run questions and backfills an await
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     const next = database
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'2026-09-24','Next?','reply') RETURNING id`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'2026-09-24','Next?','reply') RETURNING id`,
       )
       .get(run.id) as { id: number }
     expect(next.id).toBeGreaterThan(99)
@@ -764,7 +766,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
     applyMigrations(database, folder)
     const run = database
       .query(
-        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-09-20','codex','implement','sha',1,'prompt','ok') RETURNING id`,
+        `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-20','codex','implement','sha',1,'prompt','ok') RETURNING id`,
       )
       .get() as { id: number }
     database

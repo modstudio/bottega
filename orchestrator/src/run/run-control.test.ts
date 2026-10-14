@@ -26,7 +26,7 @@ function insert(status: string, job = 'file-question'): number {
     db()
       .query(
         `INSERT INTO run (record_id,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
-                         repo, cwd, worktree) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
+                         repo, cwd, worktree) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING id`,
       )
       .get(new Date().toISOString(), job, status, dir, dir) as { id: number }
   ).id
@@ -69,8 +69,8 @@ describe('inherited resume launch', () => {
     [2, null, 'prefer'],
     [0, null, undefined],
     [null, null, undefined],
-  ] as const)('maps stored mcp %s with error %s to %s', (mcp, mcpError, expected) => {
-    expect(resumeLaunchFromStored({ ...stored, mcp, mcp_error: mcpError })).toEqual({
+  ] as const)('maps stored mcp %s with error %s to %s', (mcp, mcp_error, expected) => {
+    expect(resumeLaunchFromStored({ ...stored, mcp, mcp_error })).toEqual({
       seed: undefined,
       key: undefined,
       base: undefined,

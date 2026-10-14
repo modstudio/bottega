@@ -198,7 +198,7 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO question (record_id,workflow_cursor_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),last_insert_rowid(),'2026-09-25','workflow')`,
+        `INSERT INTO question (record_id,workflow_cursor_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),last_insert_rowid(),'2026-09-25','workflow')`,
       )
       .run()
     database
@@ -234,7 +234,7 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),1,'2026-09-25','no project')",
+        "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),1,'2026-09-25','no project')",
       )
       .run()
     database

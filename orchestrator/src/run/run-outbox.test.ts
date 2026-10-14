@@ -58,7 +58,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     `INSERT INTO run (record_id,
        id, started_at, last_event_at, agent, job, project_id, prompt_sha, prompt_bytes,
        prompt_head, status, retry_of, parent_run_id
-     ) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
+     ) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?, ?, ?, 'codex', 'implement', ?, 'sha', 4, 'head', ?, ?, ?)`,
   )
   insert.run(1, '2026-09-15T01:00:00.000Z', '2026-09-15T01:01:00.000Z', null, 'ok', null, null)
   insert.run(2, '2026-09-15T02:00:00.000Z', null, 1, 'failed', 1, null)
@@ -110,7 +110,7 @@ test('backfill leaves hook-tree rows local', () => {
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
     )
     .run(HOOK_TREE_JOB)
 

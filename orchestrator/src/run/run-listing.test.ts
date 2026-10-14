@@ -287,7 +287,7 @@ describe('run listing', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?)`,
       )
       .run(
         id,
@@ -309,7 +309,7 @@ describe('run listing', () => {
     const id = insert('ok')
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,closed_at,close_reason) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?)`,
       )
       .run(
         id,
@@ -406,7 +406,7 @@ describe('run listing', () => {
     db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,answered_at,asked_via,answerer_kind,answer_channel) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,?,?)`,
       )
       .run(
         root,

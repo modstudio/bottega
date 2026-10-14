@@ -19,7 +19,7 @@ function projectFixture() {
 function runFixture(session: string | null, status = 'running') {
   return db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
+      `INSERT INTO run (record_id,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
        RETURNING id`,
     )
     .get(status, session) as { id: number }

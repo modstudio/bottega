@@ -98,7 +98,7 @@ test('score payload maps every hosted verdict field', () => {
   })
 })
 
-test('score enqueue participates in its caller transaction', () => {
+test('score enqueue participates in its caller transaction and skips runs without record ids', () => {
   const database = scoredRun()
   expect(() =>
     database
@@ -112,6 +112,13 @@ test('score enqueue participates in its caller transaction', () => {
     database.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
   ).toBe(0)
   database.close()
+
+  const localOnly = scoredRun(null)
+  expect(enqueueScoreRecord(localOnly, 42, MACHINE_ID)).toBe(false)
+  expect(
+    localOnly.query<{ count: number }, []>('SELECT count(*) count FROM outbox').get()!.count,
+  ).toBe(0)
+  localOnly.close()
 })
 
 test('score backfill enqueues each hosted score once', () => {

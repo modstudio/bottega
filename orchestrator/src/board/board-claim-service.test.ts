@@ -136,7 +136,7 @@ test('a tied claim follows the chain latest turn and renewal restarts its lease'
   const clock = Date.now()
   const root = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
     .run(new Date(clock).toISOString())
   const runId = Number(root.lastInsertRowid)
@@ -216,7 +216,7 @@ test('task audience reaches its claim holder, current architect, and live launch
   takeClaim({ subject: 'task:DEV-9' }, env('claim-holder'), clock, cwd)
   const run = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')`,
     )
     .run(new Date(clock).toISOString())
   const posted = postNotice(
@@ -264,7 +264,7 @@ test('a task claim tied to an ended chain does not put its holder in the task au
   const clock = Date.now()
   const root = db()
     .query(
-      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+      `INSERT INTO run (record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
     )
     .run(new Date(clock).toISOString())
   const runId = Number(root.lastInsertRowid)

@@ -536,7 +536,7 @@ describe('operational monitor conditions', () => {
     })
     db()
       .query(
-        `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?,?,?)`,
+        `INSERT INTO question (record_id,run_id,asked_at,question,why,answer,answered_at) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?,?,?)`,
       )
       .run(id, nowIso(), 'fixture question', 'catches stale asking status', 'answered', nowIso())
     const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {

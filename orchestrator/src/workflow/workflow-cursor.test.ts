@@ -114,7 +114,7 @@ function installEvidence(
   const ruling = d
     .query<{ id: number }, (string | number | null)[]>(
       `INSERT INTO question (record_id,workflow_cursor_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
-         workflow_step_ordinal,workflow_step_slug) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
+         workflow_step_ordinal,workflow_step_slug) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING id`,
     )
     .get(
       row.id,

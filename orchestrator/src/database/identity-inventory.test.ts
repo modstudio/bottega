@@ -1,12 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { applyMigrations } from './migrations.ts'
 import {
   decideIdentityInventory,
   EXEMPT_TABLES,
   IDENTITY_BASELINE,
   orchestratorIdentityInventory,
 } from './identity-inventory.ts'
-import { applyMigrations } from './migrations.ts'
 
 test('migrated tables are converted, exempt with reasons, or in the shrinking baseline', () => {
   const database = new Database(':memory:')
@@ -23,10 +23,14 @@ test('migrated tables are converted, exempt with reasons, or in the shrinking ba
 })
 
 test('unknown and newly converted baseline tables are refused', () => {
+  expect(() => decideIdentityInventory([{ name: 'new_table', hasRequiredIdentity: false }], [], [], []))
+    .toThrow('add it to CONVERTED_TABLES, EXEMPT_TABLES with a reason, or IDENTITY_BASELINE')
   expect(() =>
-    decideIdentityInventory([{ name: 'new_table', hasRequiredIdentity: false }], [], [], []),
-  ).toThrow('add it to CONVERTED_TABLES, EXEMPT_TABLES with a reason, or IDENTITY_BASELINE')
-  expect(() =>
-    decideIdentityInventory([{ name: 'waiting', hasRequiredIdentity: true }], [], [], ['waiting']),
+    decideIdentityInventory(
+      [{ name: 'waiting', hasRequiredIdentity: true }],
+      [],
+      [],
+      ['waiting'],
+    ),
   ).toThrow('remove it from IDENTITY_BASELINE and add it to CONVERTED_TABLES')
 })

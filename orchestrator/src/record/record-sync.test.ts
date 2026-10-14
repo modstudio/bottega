@@ -276,7 +276,7 @@ test('ordinary sync pushes an asking run before its live question', async () => 
     .run(RECORD_ID)
   local
     .query(
-      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,?,'Which?','live')`,
+      `INSERT INTO question (record_id,run_id,asked_at,question,asked_via) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?','live')`,
     )
     .run(STAMP)
   local
@@ -644,7 +644,7 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
     .run(RECORD_ID)
   local
     .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,?,'Which?')",
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?')",
     )
     .run(STAMP)
   local
@@ -786,7 +786,7 @@ test('a dependent reports a retired parent without attempting delivery', async (
     .run(RECORD_ID)
   local
     .query(
-      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES ('00000000-0000-4000-8000-' || lower(hex(randomblob(6))),42,?,'Which?')",
+      "INSERT INTO question (record_id,run_id,asked_at,question) VALUES (\'00000000-0000-4000-8000-\' || lower(hex(randomblob(6))),42,?,'Which?')",
     )
     .run(STAMP)
   local
