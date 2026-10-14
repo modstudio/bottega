@@ -4,8 +4,8 @@ import { db, writeTransaction } from './db.ts'
 import { drainHostedOutbox, queueHostedChange } from './outbox.ts'
 import {
   listOutboxTrace,
-  outboxTraceLines,
   OUTBOX_TRACE_RETENTION_MS,
+  outboxTraceLines,
   pruneOutboxTrace,
   recordOutboxTrace,
 } from './outbox-trace.ts'

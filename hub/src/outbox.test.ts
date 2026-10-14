@@ -3,8 +3,8 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
-  drainHostedOutbox,
   discardHostedOutboxEntryCommand,
+  drainHostedOutbox,
   hostedOutboxDoctorLines,
   listHostedOutbox,
   mergeQueuedHostedChange,
