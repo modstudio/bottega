@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
@@ -56,6 +57,15 @@ const profileHooks = {
 function render(hooks: unknown) {
   return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE)
 }
+
+test('heartbeat reminder recognizes detached dispatch commands', () => {
+  const hookTest = fileURLToPath(new URL('../../hooks/test_heartbeat_remind.py', import.meta.url))
+  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
+  expect({
+    exitCode: result.exitCode,
+    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
+  }).toEqual({ exitCode: 0, output: 'ok' })
+})
 
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)

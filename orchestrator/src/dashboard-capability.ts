@@ -11,6 +11,7 @@ import { pidAlive } from '../../shared/process-identity.ts'
 
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
+  const frontDoorSource = `cli/${PLATFORM_SLUG}.ts`
   return words.some((word, index) => {
     const next = words[index + 1]
     const after = words[index + 2]
@@ -22,7 +23,7 @@ export function dashboardServeCommand(command: string): boolean {
       return true
     }
     if (
-      (word === 'cli/bottega.ts' || word.endsWith('/cli/bottega.ts')) &&
+      (word === frontDoorSource || word.endsWith(`/${frontDoorSource}`)) &&
       next === 'dashboard' &&
       after === 'start'
     ) {
