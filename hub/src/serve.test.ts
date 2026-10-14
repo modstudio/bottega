@@ -127,7 +127,7 @@ describe('run ingest', () => {
       id: 9821,
       status: 'ok',
       delivery: 'none',
-      evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+      evidence_excluded: `voided with orch score --void`,
     })
     const state = {
       live: [],
@@ -157,7 +157,7 @@ describe('run ingest', () => {
         expect.objectContaining({
           id: 9821,
           delivery: 'none',
-          evidence_excluded: `voided with ${PLATFORM_SLUG} score --void`,
+          evidence_excluded: `voided with orch score --void`,
         }),
       ])
     } finally {
