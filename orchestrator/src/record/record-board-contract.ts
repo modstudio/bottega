@@ -1,8 +1,12 @@
 // concern: record-board-contract
 /** Hosted board JSON contract. Must not know SQL or local stores. */
-import { BOARD_PURPOSES, type BoardPurpose } from '../../../shared/board-purpose.ts'
+import {
+  BOARD_PURPOSES,
+  type BoardPurpose,
+  defaultBoardPurpose,
+} from '../../../shared/board-purpose.ts'
 
-export { BOARD_PURPOSES }
+export { BOARD_PURPOSES, defaultBoardPurpose }
 
 export const BOARD_CHANGES_PAGE_LIMIT = 100
 export const BOARD_MESSAGES_PAGE_LIMIT = 100
