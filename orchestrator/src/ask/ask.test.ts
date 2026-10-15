@@ -221,7 +221,7 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('writers receive run_gate while readers receive only the recorded gate result', async () => {
+  test('writers receive run_gate and run_tests while readers receive only the recorded gate result', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const writerConnection = await askClient(writer)
@@ -234,8 +234,16 @@ describe('the live ask channel always answers', () => {
       expect(writerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
       expect(readerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
+      const runTests = writerTools.tools.find((tool) => tool.name === 'run_tests')
+      expect(runTests).toBeDefined()
+      expect(runTests?.inputSchema).toMatchObject({
+        type: 'object',
+        properties: { paths: { type: 'array', items: { type: 'string' } } },
+        required: ['paths'],
+      })
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'run_tests')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'gate_result')).toBeDefined()
       expect(
         [
@@ -251,6 +259,14 @@ describe('the live ask channel always answers', () => {
       expect(result.isError).toBeUndefined()
       expect(resultText(result)).toBe(
         "This run's project has no registered gate, so nothing was run.",
+      )
+      const focusedResult = await writerConnection.client.callTool({
+        name: 'run_tests',
+        arguments: { paths: ['tests/example.test.ts'] },
+      })
+      expect(focusedResult.isError).toBeUndefined()
+      expect(resultText(focusedResult)).toBe(
+        "This run's project has no registered focused test runner, so nothing was run.",
       )
       const readerResult = await readerConnection.client.callTool({
         name: 'gate_result',

@@ -17,6 +17,8 @@ import type {
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
+export type FocusedTestRunnerSettings = { command: string; args: string[] }
+
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
   /** Whether this project's create command can check out a requested base detached. */
@@ -157,6 +159,8 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /** Fixed executable and argv prefix for writer-requested project-relative test paths. */
+  focusedTests?: FocusedTestRunnerSettings
   /** Ordered promotion and remote-admission facts after the landing branch merges. */
   release?: ReleaseSettings
   /** Where shared workflows read and write this project's docs and canon. */

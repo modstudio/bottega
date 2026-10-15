@@ -1,0 +1,44 @@
+import { dirname, normalize } from 'node:path'
+import type { ArchitectureModule } from './architecture.ts'
+
+const module = (file: string, allowed: string[]): ArchitectureModule => ({
+  file,
+  allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+})
+
+export const focusedTestModules: ArchitectureModule[] = [
+  module('orchestrator/src/focused-test/focused-test-decision.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/focused-test/focused-test-request.ts', [
+    'node:crypto',
+    'node:fs',
+    'node:path',
+    '../run/run-artifacts.ts',
+    './focused-test-decision.ts',
+  ]),
+  module('orchestrator/src/focused-test/focused-test-tool.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../ask/worker-auth.ts',
+    '../database/db.ts',
+    '../jobs/jobs.ts',
+    '../run/run-artifacts.ts',
+    './focused-test-decision.ts',
+    './focused-test-request.ts',
+  ]),
+  module('orchestrator/src/focused-test/focused-test-broker.ts', [
+    'node:child_process',
+    'node:fs',
+    'node:path',
+    '../database/db.ts',
+    '../events.ts',
+    '../gate/gate-decision.ts',
+    '../idle-kill.ts',
+    '../issue/issue-shell.ts',
+    '../project/project-settings.ts',
+    '../resources/main-stack.ts',
+    './focused-test-decision.ts',
+    './focused-test-request.ts',
+  ]),
+]

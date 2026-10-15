@@ -97,6 +97,11 @@ describe('job contracts are visible before submission', () => {
     expect(text).toContain('never replaces the diff')
   })
   test('writers run the registered gate while readers inspect its recorded result', () => {
+    expect(WORKER_PREAMBLE).toContain('When the `run_tests` tool is available')
+    expect(WORKER_PREAMBLE).toContain('project-relative paths')
+    expect(WORKER_PREAMBLE).toContain('tests you add or change')
+    expect(WORKER_PREAMBLE).toContain('never the completion gate')
+    expect(WORKER_PREAMBLE).toContain('does not replace the mandatory `run_gate` call')
     expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
     expect(WORKER_PREAMBLE).toContain(
       'call it again while its reply says the gate is still running',
@@ -104,10 +109,12 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE).toContain('report done only with a finished result or a refusal')
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
+    expect(READONLY_PREAMBLE).not.toContain('run_tests')
     expect(READONLY_PREAMBLE).toContain('Call the `gate_result` tool on the `orch-ask` MCP server')
     expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
     expect(READONLY_PREAMBLE).toContain('`could_not_verify`')
     expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
+    expect(NO_REPO_PREAMBLE).not.toContain('run_tests')
   })
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {

@@ -12,6 +12,11 @@ const samples = {
   docs: { setting: { path: 'docs' }, column: 'docs', value: { path: 'docs' } },
   envPrefix: { setting: 'PROBE', column: 'envPrefix', value: 'PROBE' },
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
+  focusedTests: {
+    setting: { command: 'scripts/test-focused', args: ['--ci'] },
+    column: 'focusedTests',
+    value: { command: 'scripts/test-focused', args: ['--ci'] },
+  },
   keyPrefixes: { setting: ['DEV'], column: 'keyPrefixes', value: ['DEV'] },
   managedContext: { setting: true, column: 'managedContext', value: true },
   mcp: { setting: { probe_tool: 'ping' }, column: 'mcpProbeTool', value: 'ping' },

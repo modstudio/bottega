@@ -41,6 +41,7 @@ import {
 } from '../board/board-delivery.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
   decideGateCancellation,
   decideGateEligibility,
@@ -173,16 +174,17 @@ function gateEligibility(runId: number, token: string) {
   })
 }
 
-function gateToolAvailable(runId: number, token: string): boolean {
-  if (!authenticatedWorkerRun(runId, token)) return false
+function authenticatedJobNeeds(runId: number, token: string) {
+  if (!authenticatedWorkerRun(runId, token)) return null
   const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
-  return Boolean(row && JOBS[row.job]?.needs.writesRepo)
+  return row ? JOBS[row.job]?.needs : null
 }
 
+function gateToolAvailable(runId: number, token: string): boolean {
+  return Boolean(authenticatedJobNeeds(runId, token)?.writesRepo)
+}
 function gateResultToolAvailable(runId: number, token: string): boolean {
-  if (!authenticatedWorkerRun(runId, token)) return false
-  const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
-  const needs = row ? JOBS[row.job]?.needs : null
+  const needs = authenticatedJobNeeds(runId, token)
   return Boolean(needs?.readsRepo && !needs.writesRepo)
 }
 
@@ -590,6 +592,8 @@ export function createAskMcpServer(
         }
       },
     )
+
+    registerFocusedTestTool({ registerTool, runId, token, text })
   }
 
   if (gateResultToolAvailable(runId, token)) {

@@ -59,6 +59,22 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('focused test runners have a fixed executable and argv prefix', () => {
+    expect(
+      validateProjectSettings({
+        focusedTests: { command: 'scripts/test-focused', args: ['--ci'] },
+      }),
+    ).toEqual([])
+    expect(
+      validateProjectSettings({
+        focusedTests: { command: '', args: ['ok', 1] },
+      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+    ).toEqual([
+      'focusedTests.command must be a non-empty string',
+      'focusedTests.args must be an array of strings',
+    ])
+  })
+
   test('reader MCP tool maps are strict, named, and duplicate-free', () => {
     expect(
       validateProjectSettings({

@@ -7,6 +7,7 @@ import {
   appendRunEvent,
   createEventLog,
   eventsFromVendorLine,
+  formatPeek,
   idleLabel,
   peekRun,
   runEventsPath,
@@ -64,6 +65,31 @@ function probeEvents(...lines: string[]): NormalizedEvent[] {
 }
 
 describe('vendor event log', () => {
+  test('peek preserves and formats focused test evidence', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    appendRunEvent(id, {
+      ts: '2026-10-15T12:00:00.000Z',
+      type: 'focused_test',
+      paths: ['tests/one.test.ts'],
+      exitCode: 1,
+      timedOut: false,
+      elapsedMs: 42,
+      logName: 'focused-test-request.log',
+    })
+    const peek = peekRun(id)
+    expect(peek.events.at(-1)).toEqual({
+      type: 'focused_test',
+      paths: ['tests/one.test.ts'],
+      exitCode: 1,
+      timedOut: false,
+      elapsedMs: 42,
+      logName: 'focused-test-request.log',
+    })
+    expect(formatPeek(peek)).toContain(
+      'focused test exit 1 42ms tests/one.test.ts (focused-test-request.log)',
+    )
+  })
+
   test('non-worker activity appends without moving the activity clock', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET last_event_at=? WHERE id=?').run('worker-time', id)

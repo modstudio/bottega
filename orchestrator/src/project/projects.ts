@@ -53,6 +53,7 @@ import {
   placeholders,
   validateCreate,
 } from '../worktree/worktree-template.ts'
+import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
   requireHostedProjectPush,
   retireProjectInHostedRecord,
@@ -735,6 +736,7 @@ export function validateProjectSettings(
     ...mainStackProblems(settings.mainStack),
     ...reviewLensProblems(settings.review, context.enabledLensIds),
     ...mcpSettingsProblems(settings.mcp),
+    ...focusedTestsProblems(settings.focusedTests),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

@@ -24,6 +24,7 @@ export type HostedProjectColumns = {
   landingBranch: string | null
   productionBranch: string | null
   gate: string | null
+  focusedTests: JsonObject | null
   requireCleanMain: boolean
   color: string | null
   colorDark: string | null
@@ -55,6 +56,7 @@ export const PROJECT_SETTING_COLUMNS = {
   docs: 'docs',
   envPrefix: 'envPrefix',
   gate: 'gate',
+  focusedTests: 'focusedTests',
   keyPrefixes: 'keyPrefixes',
   managedContext: 'managedContext',
   mcp: 'mcpProbeTool',
@@ -125,6 +127,10 @@ function document(value: unknown, location: string): JsonObject | null {
   return object(value, location)
 }
 
+function settingDocument(settings: JsonObject, key: string, project: string): JsonObject | null {
+  return document(settings[key], `project ${project} settings.${key}`)
+}
+
 export function hostedProjectColumns(
   settings: Record<string, unknown>,
   project: string,
@@ -152,6 +158,7 @@ export function hostedProjectColumns(
       settings.gate,
       `project ${project} settings.gate`,
     ),
+    [PROJECT_SETTING_COLUMNS.focusedTests]: settingDocument(settings, 'focusedTests', project),
     [PROJECT_SETTING_COLUMNS.requireCleanMain]: settings.requireCleanMain !== false,
     [PROJECT_SETTING_COLUMNS.color]: optionalString(
       settings.color,
@@ -177,38 +184,18 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.secretPaths]: optionalStringArray(settings, 'secretPaths', project),
     [PROJECT_SETTING_COLUMNS.mcp]: mcpProbeTool(settings, project),
     mcpReaderTools: mcpReaderTools(settings, project),
-    [PROJECT_SETTING_COLUMNS.docs]: document(settings.docs, `project ${project} settings.docs`),
-    [PROJECT_SETTING_COLUMNS.signals]: document(
-      settings.signals,
-      `project ${project} settings.signals`,
+    [PROJECT_SETTING_COLUMNS.docs]: settingDocument(settings, 'docs', project),
+    [PROJECT_SETTING_COLUMNS.signals]: settingDocument(settings, 'signals', project),
+    [PROJECT_SETTING_COLUMNS.review]: settingDocument(settings, 'review', project),
+    [PROJECT_SETTING_COLUMNS.testSubstance]: settingDocument(settings, 'testSubstance', project),
+    [PROJECT_SETTING_COLUMNS.mechanicalChecks]: settingDocument(
+      settings,
+      'mechanicalChecks',
+      project,
     ),
-    [PROJECT_SETTING_COLUMNS.review]: document(
-      settings.review,
-      `project ${project} settings.review`,
-    ),
-    [PROJECT_SETTING_COLUMNS.testSubstance]: document(
-      settings.testSubstance,
-      `project ${project} settings.testSubstance`,
-    ),
-    [PROJECT_SETTING_COLUMNS.mechanicalChecks]: document(
-      settings.mechanicalChecks,
-      `project ${project} settings.mechanicalChecks`,
-    ),
-    [PROJECT_SETTING_COLUMNS.release]: document(
-      settings.release,
-      `project ${project} settings.release`,
-    ),
-    [PROJECT_SETTING_COLUMNS.states]: document(
-      settings.states,
-      `project ${project} settings.states`,
-    ),
-    [PROJECT_SETTING_COLUMNS.tracker]: document(
-      settings.tracker,
-      `project ${project} settings.tracker`,
-    ),
-    [PROJECT_SETTING_COLUMNS.worktree]: document(
-      settings.worktree,
-      `project ${project} settings.worktree`,
-    ),
+    [PROJECT_SETTING_COLUMNS.release]: settingDocument(settings, 'release', project),
+    [PROJECT_SETTING_COLUMNS.states]: settingDocument(settings, 'states', project),
+    [PROJECT_SETTING_COLUMNS.tracker]: settingDocument(settings, 'tracker', project),
+    [PROJECT_SETTING_COLUMNS.worktree]: settingDocument(settings, 'worktree', project),
   }
 }
