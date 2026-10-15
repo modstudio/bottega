@@ -70,9 +70,9 @@ function localOutbox(
     })
     local
       .query(
-        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),?,'run',?,?,?)",
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'run',?,?,?)",
       )
-      .run(id, values.id ?? null, JSON.stringify(values), STAMP)
+      .run(newRecordId(), id, values.id ?? null, JSON.stringify(values), STAMP)
   }
   return local
 }
@@ -116,9 +116,9 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
   mutate(payload)
   local
     .query(
-      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'landing_triage_snapshot',?,?,?)",
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'landing_triage_snapshot',?,?,?)",
     )
-    .run(RECORD_ID, JSON.stringify(payload), STAMP)
+    .run(newRecordId(), RECORD_ID, JSON.stringify(payload), STAMP)
   return local
 }
 
@@ -157,9 +157,9 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
   mutate(payload)
   local
     .query(
-      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),1,'landing_override',?,?,?)",
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'landing_override',?,?,?)",
     )
-    .run(RECORD_ID, JSON.stringify(payload), STAMP)
+    .run(newRecordId(), RECORD_ID, JSON.stringify(payload), STAMP)
   return local
 }
 

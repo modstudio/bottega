@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
 import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
@@ -9,9 +10,9 @@ function fixture(): Database {
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
     )
-    .run()
+    .run(newRecordId())
   quarantineOutboxRow(
     database,
     7,
@@ -121,10 +122,10 @@ describe('outbox quarantine exits', () => {
     applyMigrations(database)
     database
       .query(
-        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
                 ('01990000-0000-7000-8000-000000000009',9,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
       )
-      .run()
+      .run(newRecordId())
 
     retireOutboxRowWithDependencyProof(
       9,

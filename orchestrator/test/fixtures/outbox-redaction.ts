@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { retryOutboxRow } from '../../src/record/outbox-quarantine.ts'
 import { redactSyncedOutbox, syncedRedactionRules } from '../../src/record/outbox-redaction.ts'
 
@@ -25,9 +26,9 @@ export async function exerciseQuarantinedRedactionSync<T>(
   newer.updatedAt = '2026-09-15T01:02:00.000Z'
   local
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at,quarantine_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),2,'run',?,?,?,'2026-09-15T01:03:00.000Z','remote refusal')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at,quarantine_reason) VALUES (?,2,'run',?,?,?,'2026-09-15T01:03:00.000Z','remote refusal')`,
     )
-    .run(String(newer.id), JSON.stringify(newer), '2026-09-15T01:02:00.000Z')
+    .run(newRecordId(), String(newer.id), JSON.stringify(newer), '2026-09-15T01:02:00.000Z')
   const redaction = redactSyncedOutbox(
     { rules: syncedRedactionRules('url-userinfo'), dryRun: false },
     local,

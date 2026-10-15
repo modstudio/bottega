@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { quarantineOutboxRow } from '../record/outbox-quarantine.ts'
 import { outboxQuarantineConditions, outboxRetiredParentConditions } from './monitor-outbox.ts'
@@ -9,9 +10,9 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),9,'score','record-9','{}','2026-09-28T00:00:00.000Z')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'score','record-9','{}','2026-09-28T00:00:00.000Z')`,
     )
-    .run()
+    .run(newRecordId())
   quarantineOutboxRow(database, 9, '{}', 'verdict refused', '2026-09-28T00:01:00.000Z')
   expect(outboxQuarantineConditions(database)).toEqual([
     expect.objectContaining({
@@ -28,10 +29,10 @@ test('an active outbox row blocked by a retired parent is a clearing monitor con
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
               ('01990000-0000-7000-8000-000000000009',9,'run','child','{"retryOf":"parent"}','2026-09-28',NULL,NULL)`,
     )
-    .run()
+    .run(newRecordId())
   expect(outboxRetiredParentConditions(database)).toEqual([
     expect.objectContaining({
       kind: 'outbox-retired-parent',
@@ -47,11 +48,11 @@ test('a synced parent with a later retired snapshot does not raise the condition
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,synced_at,retired_at,retirement_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),7,'run','parent','{}','2026-09-28','2026-09-28',NULL,NULL),
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,synced_at,retired_at,retirement_reason) VALUES (?,7,'run','parent','{}','2026-09-28','2026-09-28',NULL,NULL),
               ('01990000-0000-7000-8000-000000000008',8,'run','parent','{}','2026-09-28',NULL,'2026-09-28','later snapshot'),
               ('01990000-0000-7000-8000-000000000009',9,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL,NULL)`,
     )
-    .run()
+    .run(newRecordId())
   expect(outboxRetiredParentConditions(database)).toEqual([])
   database.close()
 })
@@ -61,10 +62,10 @@ test('a malformed retired lens payload is an explicit unreadable-parent conditio
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),8,'review_lens','lens-parent','{','2026-09-28','2026-09-28','bad payload'),
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'review_lens','lens-parent','{','2026-09-28','2026-09-28','bad payload'),
               ('01990000-0000-7000-8000-000000000009',9,'review_finding','finding','{"reviewId":"review","reviewLensId":"lens-parent"}','2026-09-28',NULL,NULL)`,
     )
-    .run()
+    .run(newRecordId())
   expect(outboxRetiredParentConditions(database)).toEqual([
     expect.objectContaining({ detail: expect.stringContaining('unreadable stored payload') }),
   ])

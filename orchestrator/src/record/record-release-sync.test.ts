@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from '../release/release-ledger.ts'
@@ -28,9 +29,9 @@ function senderStore(row: LocalOutboxRow): Database {
   database.query("INSERT INTO project VALUES (?,'{}')").run(PLATFORM_SLUG)
   database
     .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'release',?,?,?)",
+      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'release',?,?,?)",
     )
-    .run(row.record_id, row.payload, row.created_at)
+    .run(newRecordId(), row.record_id, row.payload, row.created_at)
   return database
 }
 
@@ -99,9 +100,9 @@ test('release sender upserts the finished state by record id in the project spac
     .get()!
   local
     .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'release',?,?,?)",
+      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'release',?,?,?)",
     )
-    .run(finished.record_id, finished.payload, finished.created_at)
+    .run(newRecordId(), finished.record_id, finished.payload, finished.created_at)
   expect(await syncRecord(options)).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
 
   const writes = remote.statements.filter((statement) =>

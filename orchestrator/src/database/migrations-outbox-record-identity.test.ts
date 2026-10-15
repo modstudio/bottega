@@ -62,6 +62,25 @@ test('outbox identity migration renames subject ids, fills row ids, and preserve
           .get(),
       ).toEqual({ notnull: 1, dflt_value: null })
     }
+    expect(() =>
+      database.exec(`INSERT INTO outbox (id,kind,row_id,payload,created_at,record_id)
+        SELECT 14,kind,'01990000-0000-7000-8000-000000001114',payload,created_at,record_id
+          FROM outbox WHERE id=4`),
+    ).toThrow('UNIQUE constraint failed: outbox.record_id')
+    expect(() =>
+      database.exec(`INSERT INTO outbox_quarantine_audit
+        (id,outbox_id,kind,row_id,attempts,disposition,at,record_id)
+        SELECT 15,outbox_id,kind,'01990000-0000-7000-8000-000000001115',attempts,
+               disposition,at,record_id
+          FROM outbox_quarantine_audit WHERE id=5`),
+    ).toThrow('UNIQUE constraint failed: outbox_quarantine_audit.record_id')
+    expect(() =>
+      database.exec(`INSERT INTO outbox_redaction_audit
+        (id,outbox_id,kind,row_id,rules,withheld_paths,at,record_id)
+        SELECT 16,outbox_id,kind,'01990000-0000-7000-8000-000000001116',rules,
+               withheld_paths,at,record_id
+          FROM outbox_redaction_audit WHERE id=6`),
+    ).toThrow('UNIQUE constraint failed: outbox_redaction_audit.record_id')
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     expect(() =>
       database.query("UPDATE outbox_quarantine_audit SET reason='changed'").run(),

@@ -206,11 +206,11 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25'),
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25'),
                 ('01990000-0000-7000-8000-000000000003','run','01990000-0000-7000-8000-000000000003','{}','2026-09-25','2026-09-25'),
                 ('01990000-0000-7000-8000-000000000004','run','01990000-0000-7000-8000-000000000004','{}','2026-09-25','2026-09-25')`,
       )
-      .run()
+      .run(newRecordId())
 
     expect(
       localQuestionCountForSpace(
@@ -243,9 +243,9 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25')`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25')`,
       )
-      .run()
+      .run(newRecordId())
 
     expect(
       localQuestionCountForSpace(database, [], {

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
@@ -56,10 +57,15 @@ function appendSource(seed: FindingSeed, overrides: Record<string, unknown> = {}
   }
   return Number(
     db()
-      .query<{ id: number }, [string, string, string]>(
-        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'review_finding',?,?,?) RETURNING id`,
+      .query<{ id: number }, [string, string, string, string]>(
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'review_finding',?,?,?) RETURNING id`,
       )
-      .get(seed.originalRecordId, JSON.stringify(payload), '2026-09-22T00:00:00.000Z')!.id,
+      .get(
+        newRecordId(),
+        seed.originalRecordId,
+        JSON.stringify(payload),
+        '2026-09-22T00:00:00.000Z',
+      )!.id,
   )
 }
 
@@ -144,10 +150,8 @@ test('skips null-only, mismatched, open, missing, and hosted-diverged findings',
   const diverged = seedFinding('restore-triage-diverged')
   appendSource(diverged)
   db()
-    .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run',?,?,?)",
-    )
-    .run(diverged.remintedRecordId, '{}', '2026-09-23T00:00:00.000Z')
+    .query("INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'run',?,?,?)")
+    .run(newRecordId(), diverged.remintedRecordId, '{}', '2026-09-23T00:00:00.000Z')
 
   const report = restoreReviewTriage(db(), { dryRun: false })
   expect(report.applied).toBe(0)

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
@@ -46,9 +47,9 @@ function seeded(): { database: Database; urlUserinfo: string; base64: string } {
     .run(STAMP, planted.urlUserinfo, planted.base64)
   database
     .query(
-      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-42',?,?,?)`,
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','record-42',?,?,?)`,
     )
-    .run(runPayload(planted.urlUserinfo, planted.base64), STAMP, STAMP)
+    .run(newRecordId(), runPayload(planted.urlUserinfo, planted.base64), STAMP, STAMP)
   return { database, ...planted }
 }
 
@@ -139,9 +140,9 @@ test('a newer active row is skipped and reported without leaking planted text', 
   const { database, urlUserinfo } = seeded()
   database
     .query(
-      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-7' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),'run','record-42',?,?)`,
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'run','record-42',?,?)`,
     )
-    .run(runPayload('a newer clean value', 'ordinary label'), NEXT_STAMP)
+    .run(newRecordId(), runPayload('a newer clean value', 'ordinary label'), NEXT_STAMP)
   const result = redactSyncedOutbox(
     { rules: syncedRedactionRules('url-userinfo'), dryRun: false },
     database,
