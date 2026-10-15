@@ -110,6 +110,32 @@ function incomingIsStale(cached: string | null, incoming: string): boolean {
   return cached !== null && BigInt(incoming) < BigInt(cached)
 }
 
+export function cacheHostedBoardReceipt(
+  receipt: import('../record/record-board-contract.ts').HostedBoardReceipt,
+  database: Database = writableDb(),
+): void {
+  database
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,?,?,0 WHERE EXISTS (
+         SELECT 1 FROM hosted_board_message_cache WHERE id=?
+       ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       audience_at_posting=excluded.audience_at_posting,
+       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
+       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
+       pending_sync=0,sync_error=NULL`,
+    )
+    .run(
+      receipt.messageId,
+      receipt.readerSession,
+      receipt.audienceAtPosting ? 1 : 0,
+      receipt.deliveredAt,
+      receipt.acknowledgedAt,
+      receipt.messageId,
+    )
+}
+
 function replacePage(database: Database, page: HostedBoardChanges): number {
   return writeTransaction(() => {
     const putMessage = database.query(
@@ -122,15 +148,6 @@ function replacePage(database: Database, page: HostedBoardChanges): number {
     )
     const putTag = database.query(
       'INSERT INTO hosted_board_message_tag_cache(message_id,kind,value,origin) VALUES (?,?,?,?)',
-    )
-    const putReceipt = database.query(
-      `INSERT INTO hosted_board_receipt_cache
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,?,?,?,0) ON CONFLICT(message_id,reader_session) DO UPDATE SET
-       audience_at_posting=excluded.audience_at_posting,
-       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
-       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
-       pending_sync=0,sync_error=NULL`,
     )
     let applied = 0
     for (const change of page.items) {
@@ -145,14 +162,7 @@ function replacePage(database: Database, page: HostedBoardChanges): number {
       )
       clearTags.run(message.id)
       for (const tag of change.tags) putTag.run(message.id, tag.kind, tag.value, tag.origin)
-      for (const receipt of change.receipts)
-        putReceipt.run(
-          receipt.messageId,
-          receipt.readerSession,
-          receipt.audienceAtPosting ? 1 : 0,
-          receipt.deliveredAt,
-          receipt.acknowledgedAt,
-        )
+      for (const receipt of change.receipts) cacheHostedBoardReceipt(receipt, database)
       applied += 1
     }
     if (page.highestRevision !== null) advanceHostedBoardCursor(database, page.highestRevision)
