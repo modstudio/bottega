@@ -836,7 +836,7 @@ search documents semantically
 
 ## bottega doc set
 
-**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--force-inject <value>] [--json]`
+**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--summary <text>] [--no-summary] [--force-inject <value>] [--json]`
 
 create or revise a document
 
@@ -871,6 +871,8 @@ create or revise a document
 - `--no-source-files`: clear all source files
 - `--checked-at <commit>`: set the commit checked by this article
 - `--no-checked-at`: clear the checked commit
+- `--summary <text>`: set the written summary
+- `--no-summary`: clear the written summary
 - `--force-inject <value>`: give the reason for overriding inject policy
 - `--json`: print JSON output
 
