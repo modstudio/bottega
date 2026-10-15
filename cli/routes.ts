@@ -114,6 +114,7 @@ export const ROUTES = (
     {
       command: ['record', 'sync'],
       owner: 'composite',
+      description: 'synchronize the orchestrator and hub records',
       composite: [
         {
           owner: 'orch',
@@ -131,7 +132,11 @@ export const ROUTES = (
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
-    { command: ['record', 'outbox'], owner: 'outbox' },
+    {
+      command: ['record', 'outbox'],
+      owner: 'outbox',
+      description: 'inspect and retry pending record writes',
+    },
     route('record', 'orch', 'record'),
     route('agent show', 'orch', 'agent'),
     route('agent list', 'orch', 'agents'),
@@ -158,6 +163,7 @@ export const ROUTES = (
     {
       command: ['machine', 'doctor'],
       owner: 'composite',
+      description: 'inspect orchestrator and hub health',
       composite: [
         {
           owner: 'orch',
@@ -172,6 +178,7 @@ export const ROUTES = (
     {
       command: ['machine', 'migrate'],
       owner: 'composite',
+      description: 'migrate the orchestrator and hub stores',
       composite: [
         {
           owner: 'orch',
@@ -197,7 +204,11 @@ export const ROUTES = (
     ].map((name) => route(`machine ${name}`, 'orch', name)),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'init-db'], owner: 'orch', argv: ['init-db'], hidden: true },
-    { command: ['machine', 'legacy-calls'], owner: 'local' },
+    {
+      command: ['machine', 'legacy-calls'],
+      owner: 'local',
+      description: 'report legacy orch and hub invocations',
+    },
     route('mcp serve', 'orch', 'mcp'),
     route('mcp ask-server', 'orch', 'ask-server'),
     { command: ['mcp', 'reader-proxy'], owner: 'orch', argv: ['mcp-reader-proxy'], hidden: true },

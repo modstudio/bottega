@@ -327,6 +327,7 @@ if (
     './orchestrator/src/ratchet/biome-adapter.test.ts',
     './orchestrator/src/ratchet/ratchet-plan.test.ts',
     './scripts/check-file-ceiling.test.ts',
+    './scripts/command-descriptions.test.ts',
     './scripts/check-cognitive-ceiling.test.ts',
     './scripts/check-harness-mirror.test.ts',
     './scripts/check-canon-drift.test.ts',
@@ -401,6 +402,7 @@ const staticChecks: StaticCheck[] = [
   staticCheck('scripts/check-launchd-templates.ts'),
   staticCheck('scripts/check-gitleaks.ts'),
   staticCheck('scripts/check-write-transaction-site.ts'),
+  staticCheck('scripts/check-command-descriptions.ts'),
   staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),
   staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode], 'cognitive-complexity', true),
   {
