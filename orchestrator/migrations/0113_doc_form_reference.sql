@@ -1,6 +1,9 @@
 PRAGMA foreign_keys = ON;
 PRAGMA defer_foreign_keys = ON;
 --> statement-breakpoint
+CREATE TEMP TABLE doc_related_subject_before_form_reference AS SELECT * FROM doc_related_subject;
+DELETE FROM doc_related_subject;
+--> statement-breakpoint
 CREATE TABLE doc_form_reference (
   id INTEGER PRIMARY KEY,
   scope TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global','stack','resume','canon','settings')),
@@ -50,6 +53,8 @@ CREATE UNIQUE INDEX doc_address ON doc(scope, COALESCE(subject, ''), COALESCE(ow
 CREATE INDEX doc_parent_id ON doc(parent_id);
 CREATE INDEX doc_project_id ON doc(project_id);
 CREATE INDEX doc_scope_subject ON doc(scope, subject);
+--> statement-breakpoint
+INSERT INTO doc_related_subject SELECT * FROM doc_related_subject_before_form_reference;
 --> statement-breakpoint
 CREATE TABLE doc_revision_form_reference (
   id INTEGER PRIMARY KEY,

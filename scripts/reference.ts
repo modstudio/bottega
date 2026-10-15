@@ -13,13 +13,10 @@ import { GROUPS, ROUTES } from '../cli/routes.ts'
 import { program as hubProgram } from '../hub/src/cli-program.ts'
 import { program as orchProgram } from '../orchestrator/src/cli/program.ts'
 import { documentationInventory } from './command-descriptions.ts'
-import {
-  REFERENCE_DIRECTORY,
-  REGENERATE_COMMAND,
-  renderReferencePages,
-} from './command-reference.ts'
+import { REGENERATE_COMMAND, renderReferencePages } from './command-reference.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const REFERENCE_DIRECTORY = 'docs/reference'
 const referenceDirectory = join(root, REFERENCE_DIRECTORY)
 
 function expectedPages() {

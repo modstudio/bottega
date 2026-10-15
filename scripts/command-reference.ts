@@ -8,7 +8,6 @@ import type {
 } from './command-descriptions.ts'
 
 export const REGENERATE_COMMAND = 'bun scripts/reference.ts --write'
-export const REFERENCE_DIRECTORY = 'docs/reference'
 
 export type ReferencePage = {
   file: string

@@ -1,15 +1,16 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import type { DocumentationInventory } from './command-descriptions.ts'
 import { REGENERATE_COMMAND, renderReferencePages } from './command-reference.ts'
 
 function fixture(description = 'show one run'): DocumentationInventory {
   return {
     units: [],
-    notWalked: ['bottega run legacy'],
+    notWalked: [`${PLATFORM_SLUG} run legacy`],
     groups: [{ name: 'run', description: 'dispatch and inspect runs' }],
     commands: [
       {
-        spelling: 'bottega run',
+        spelling: `${PLATFORM_SLUG} run`,
         group: 'run',
         description: 'dispatch and inspect runs',
         arguments: [],
@@ -18,7 +19,7 @@ function fixture(description = 'show one run'): DocumentationInventory {
         optionsByHelp: false,
       },
       {
-        spelling: 'bottega run show',
+        spelling: `${PLATFORM_SLUG} run show`,
         group: 'run',
         description,
         arguments: [{ name: 'id', required: false, variadic: false }],
@@ -42,11 +43,11 @@ function fixture(description = 'show one run'): DocumentationInventory {
             default: { kind: 'env', name: 'HOME' },
           },
         ],
-        examples: ['bottega run show 1'],
+        examples: [`${PLATFORM_SLUG} run show 1`],
         optionsByHelp: false,
       },
       {
-        spelling: 'bottega run legacy',
+        spelling: `${PLATFORM_SLUG} run legacy`,
         group: 'run',
         description: 'legacy dispatcher',
         arguments: [{ name: 'args', required: false, variadic: true }],
@@ -65,18 +66,18 @@ test('a fixture inventory renders the fixed command shape', () => {
   expect(index).toContain(GeneratedHeaderSnippet())
   expect(index).toContain('- [run](./run.md) — dispatch and inspect runs')
   const page = pages[1]!.content
-  expect(page).toContain('## bottega run show')
+  expect(page).toContain(`## ${PLATFORM_SLUG} run show`)
   expect(page).toContain(
-    '**Synopsis:** `bottega run show [id] [--format <name>] [--cwd <path>] [--home <path>]`',
+    `**Synopsis:** \`${PLATFORM_SLUG} run show [id] [--format <name>] [--cwd <path>] [--home <path>]\``,
   )
   expect(page).toContain('show one run')
   expect(page).toContain('- `--format <name>`: select the output format (default: json)')
   expect(page).toContain('### Examples')
-  expect(page).toContain('- `bottega run show 1`')
+  expect(page).toContain(`- \`${PLATFORM_SLUG} run show 1\``)
   expect(page).toContain('- [run](./run.md)')
-  expect(page).toContain('- [bottega run](./run.md#bottega-run)')
-  expect(page).toContain('- [bottega run legacy](./run.md#bottega-run-legacy)')
-  expect(page).toContain('## bottega run legacy')
+  expect(page).toContain(`- [${PLATFORM_SLUG} run](./run.md#${PLATFORM_SLUG}-run)`)
+  expect(page).toContain(`- [${PLATFORM_SLUG} run legacy](./run.md#${PLATFORM_SLUG}-run-legacy)`)
+  expect(page).toContain(`## ${PLATFORM_SLUG} run legacy`)
   expect(page).toContain('Options are documented by `--help`.')
   expect(page).not.toContain('### Examples\n\n### Related')
 })
