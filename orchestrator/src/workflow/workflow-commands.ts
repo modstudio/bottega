@@ -72,22 +72,19 @@ import {
   workflowVersions,
 } from './workflows.ts'
 
-type Presentation = {
+export type WorkflowPresentation = {
   log(value: string): void
   error(value: string): void
   setExitCode(code: number): void
 }
-type WorkflowCommandOptions = {
+export type WorkflowCommandOptions = {
   cwd?: string
   json?: boolean
   probeRunner?: ProbeRunner
   stdinText?: () => Promise<string>
   stdinIsTTY?: () => boolean | undefined
 }
-type WorkflowChildCommandInvocation = {
-  argv: string[]
-  options: Pick<WorkflowCommandOptions, 'cwd' | 'json'>
-}
+export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
   | Pick<ProbeRecord, 'id' | 'withheld'>
   | Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'outputTail'>
@@ -99,66 +96,66 @@ const positive = (value: string | undefined, label: string): number | undefined 
   return n
 }
 
-export function workflowChildCommandInvocation(
-  args: string[],
-  rawArgs: string[],
-  options: { cwd?: unknown; json?: unknown },
-): WorkflowChildCommandInvocation | undefined {
-  if (args[0] !== 'exec' && args[0] !== 'probe') return undefined
-  const separator = rawArgs.indexOf('--')
-  return {
-    argv: ['workflow', args[0], ...(separator < 0 ? [] : ['--', ...rawArgs.slice(separator + 1)])],
-    options: {
-      cwd: typeof options.cwd === 'string' ? options.cwd : undefined,
-      json: Boolean(options.json),
-    },
-  }
-}
-
-export async function workflowCommand(
-  argv: string[],
-  presentation: Presentation,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const sub = argv[1]
-  const json = options.json ?? argv.includes('--json')
-  const flag = (name: string) => flagValue(argv, name)
-  const print = (value: unknown, line?: string) =>
+export function workflowPrint(json: boolean, presentation: WorkflowPresentation): WorkflowPrint {
+  return (value, line) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
-  if (sub === 'catalogue') catalogueCommand(argv.slice(1), print)
-  else if (sub === 'list') {
-    const rows = listWorkflows()
-    print(
-      rows,
-      rows
-        .map(
-          (row) =>
-            `${row.slug}  ${row.title}  production=${row.production_n ?? '-'} draft=${row.draft_n ?? '-'}`,
-        )
-        .join('\n'),
-    )
-  } else if (sub === 'show') print(showWorkflow(argv[2]!, positive(flag('version'), '--version')))
-  else if (sub === 'set') setWorkflowCommand(argv, print)
-  else if (sub === 'promote')
-    print(promoteWorkflow(argv[2]!, positive(argv[3], 'version')!, flag('reason'), flag('author')))
-  else if (sub === 'retire')
-    print(retireWorkflow(argv[2]!, positive(argv[3], 'version')!, flag('reason'), flag('author')))
-  else if (sub === 'fork')
-    print(forkWorkflow(argv[2]!, positive(flag('from'), '--from'), flag('reason'), flag('author')))
-  else if (sub === 'versions') print(workflowVersions(argv[2]!))
-  else if (sub === 'render-check') renderCheckCommand(json, presentation)
-  else if (sub === 'compose') await composeCommand(argv, json, print, presentation)
-  else if (sub === 'step') await stepCommand(argv, print)
-  else if (await cursorCommand(sub, argv, print, presentation, options)) return
-  else if (sub === 'hydrate') hydrateCommand(argv, presentation)
-  else if (sub === 'import') importCommand(argv, print)
-  else
-    throw new Error(
-      `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
-    )
 }
 
-function renderCheckCommand(json: boolean, presentation: Presentation): void {
+export function listWorkflowCommand(print: WorkflowPrint): void {
+  const rows = listWorkflows()
+  print(
+    rows,
+    rows
+      .map(
+        (row) =>
+          `${row.slug}  ${row.title}  production=${row.production_n ?? '-'} draft=${row.draft_n ?? '-'}`,
+      )
+      .join('\n'),
+  )
+}
+
+export function showWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+  print(showWorkflow(argv[2]!, positive(flagValue(argv, 'version'), '--version')))
+}
+
+export function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    promoteWorkflow(
+      argv[2]!,
+      positive(argv[3], 'version')!,
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function retireWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    retireWorkflow(
+      argv[2]!,
+      positive(argv[3], 'version')!,
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function forkWorkflowCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    forkWorkflow(
+      argv[2]!,
+      positive(flagValue(argv, 'from'), '--from'),
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function workflowVersionsCommand(argv: string[], print: WorkflowPrint): void {
+  print(workflowVersions(argv[2]!))
+}
+
+export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
   const result = checkWorkflowRendering(
     productionWorkflows(db()),
     productionStepCatalogue().definition,
@@ -174,26 +171,7 @@ function renderCheckCommand(json: boolean, presentation: Presentation): void {
     presentation.setExitCode(1)
 }
 
-async function cursorCommand(
-  sub: string | undefined,
-  argv: string[],
-  print: (value: unknown, line?: string) => void,
-  presentation: Presentation,
-  options: WorkflowCommandOptions,
-): Promise<boolean> {
-  if (sub === 'attach') await attachCommand(argv, print, options)
-  else if (sub === 'next') nextCommand(argv, print)
-  else if (sub === 'await') awaitCommand(argv, print)
-  else if (sub === 'rule') ruleCommand(argv, print)
-  else if (sub === 'abandon') abandonCommand(argv, print)
-  else if (sub === 'cursors') cursorsCommand(argv, print)
-  else if (sub === 'probe') await probeCommand(argv, print, presentation, options)
-  else if (sub === 'exec') await execCommand(argv, print, presentation, options)
-  else return false
-  return true
-}
-
-async function attachCommand(
+export async function attachCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
   options: WorkflowCommandOptions,
@@ -239,10 +217,10 @@ async function attachCommand(
   print(reference, reference)
 }
 
-async function execCommand(
+export async function execCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
-  presentation: Presentation,
+  presentation: WorkflowPresentation,
   options: WorkflowCommandOptions,
 ): Promise<void> {
   if (argv[2] !== '--')
@@ -271,10 +249,10 @@ async function execCommand(
   presentCommandOutcome('exec', result, presentation)
 }
 
-async function probeCommand(
+export async function probeCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
-  presentation: Presentation,
+  presentation: WorkflowPresentation,
   options: WorkflowCommandOptions,
 ): Promise<void> {
   if (argv[2] !== '--')
@@ -311,7 +289,7 @@ export function commandOutcome(verb: 'exec' | 'probe', result: ProbeRecord): Com
 function presentCommandOutcome(
   verb: 'exec' | 'probe',
   result: ProbeRecord,
-  presentation: Presentation,
+  presentation: WorkflowPresentation,
 ): void {
   const outcome = commandOutcome(verb, result)
   if (outcome.errorLine) presentation.error(outcome.errorLine)
@@ -335,7 +313,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
   }
 }
 
-function ruleCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function ruleCommand(argv: string[], print: WorkflowPrint): void {
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -371,7 +349,7 @@ function ruleCommand(argv: string[], print: (value: unknown, line?: string) => v
   print(result, `${result.summary} Question ${result.questionId}.`)
 }
 
-function abandonCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function abandonCommand(argv: string[], print: WorkflowPrint): void {
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
@@ -405,7 +383,7 @@ function abandonCommand(argv: string[], print: (value: unknown, line?: string) =
   print(result, result)
 }
 
-function setWorkflowCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function setWorkflowCommand(argv: string[], print: WorkflowPrint): void {
   const file = flagValue(argv, 'file')
   if (!file) throw new Error('file is required')
   print(
@@ -418,7 +396,7 @@ function setWorkflowCommand(argv: string[], print: (value: unknown, line?: strin
   )
 }
 
-async function stepCommand(
+export async function stepCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
 ): Promise<void> {
@@ -475,7 +453,7 @@ async function stepCommand(
   print(step, renderWorkflowStep(step))
 }
 
-function nextCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function nextCommand(argv: string[], print: WorkflowPrint): void {
   const selfRuling = flagValue(argv, 'self-ruling')
   const basis = flagValue(argv, 'basis')
   if (basis !== undefined && selfRuling === undefined)
@@ -523,7 +501,7 @@ function nextCommand(argv: string[], print: (value: unknown, line?: string) => v
   print(result, result)
 }
 
-function awaitCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function awaitCommand(argv: string[], print: WorkflowPrint): void {
   const args = workflowArgs(argv)
   const context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -589,7 +567,7 @@ function cursorCommandTarget(
   return { project, workflow: suppliedWorkflow, step }
 }
 
-function cursorsCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function cursorsCommand(argv: string[], print: WorkflowPrint): void {
   const rows = listWorkflowCursors({
     session: flagValue(argv, 'session'),
     project: flagValue(argv, 'project'),
@@ -599,25 +577,54 @@ function cursorsCommand(argv: string[], print: (value: unknown, line?: string) =
   print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 
-function catalogueCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
-  const sub = argv[1]
-  const flag = (name: string) => flagValue(argv, name)
-  if (sub === 'show') print(showStepCatalogue(positive(flag('version'), '--version')))
-  else if (sub === 'set') {
-    const file = flag('file')
-    if (!file) throw new Error('file is required')
-    print(setStepCatalogue(JSON.parse(readFileSync(file, 'utf8')), flag('reason'), flag('author')))
-  } else if (sub === 'promote')
-    print(promoteStepCatalogue(positive(argv[2], 'version')!, flag('reason'), flag('author')))
-  else if (sub === 'retire')
-    print(retireStepCatalogue(positive(argv[2], 'version')!, flag('reason'), flag('author')))
-  else if (sub === 'fork')
-    print(forkStepCatalogue(positive(flag('from'), '--from'), flag('reason'), flag('author')))
-  else if (sub === 'versions') print(stepCatalogueVersions())
-  else
-    throw new Error(
-      `unknown: ${PLATFORM_SLUG} workflow catalogue. Try show | set | promote | retire | fork | versions`,
-    )
+export function showCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+  print(showStepCatalogue(positive(flagValue(argv, 'version'), '--version')))
+}
+
+export function setCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+  const file = flagValue(argv, 'file')
+  if (!file) throw new Error('file is required')
+  print(
+    setStepCatalogue(
+      JSON.parse(readFileSync(file, 'utf8')),
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    promoteStepCatalogue(
+      positive(argv[2], 'version')!,
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function retireCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    retireStepCatalogue(
+      positive(argv[2], 'version')!,
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function forkCatalogueCommand(argv: string[], print: WorkflowPrint): void {
+  print(
+    forkStepCatalogue(
+      positive(flagValue(argv, 'from'), '--from'),
+      flagValue(argv, 'reason'),
+      flagValue(argv, 'author'),
+    ),
+  )
+}
+
+export function catalogueVersionsCommand(print: WorkflowPrint): void {
+  print(stepCatalogueVersions())
 }
 
 function workflowRoot(argv: string[]): string {
@@ -633,7 +640,7 @@ function registeredMainCheckout(root: string): string | null {
   return projects().find((project) => resolvedPathsEqual(root, project.path))?.path ?? null
 }
 
-function hydrateCommand(argv: string[], presentation: Presentation): void {
+export function hydrateCommand(argv: string[], presentation: WorkflowPresentation): void {
   const root = workflowRoot(argv)
   const main = registeredMainCheckout(root)
   if (main) {
@@ -669,7 +676,7 @@ export function workflowImportLines(result: WorkflowTreeImportResult): string[] 
   ]
 }
 
-function importCommand(argv: string[], print: (value: unknown, line?: string) => void): void {
+export function importCommand(argv: string[], print: WorkflowPrint): void {
   const root = workflowRoot(argv)
   const result = importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
@@ -689,11 +696,11 @@ function workflowArgs(argv: string[]): Record<string, string> {
   )
 }
 
-async function composeCommand(
+export async function composeCommand(
   argv: string[],
   json: boolean,
   print: (value: unknown, line?: string) => void,
-  presentation: Presentation,
+  presentation: WorkflowPresentation,
 ): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')

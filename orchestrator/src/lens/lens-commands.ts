@@ -1,32 +1,35 @@
 // concern: review
 /** Owns lens registry command decisions. Must not know CLI grammar. */
 import { readFileSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { listLenses, listProfiles, setLens, setProfile, showLens, showProfile } from './lenses.ts'
-export function lensCommand(argv: string[], presentation: { log(value: string): void }): void {
-  const sub = argv[1]
+
+type LensPresentation = { log(value: string): void }
+type Emit = (value: unknown, line?: string) => void
+
+export function lensEmitter(argv: string[], presentation: LensPresentation): Emit {
   const json = argv.includes('--json')
-  const emit = (value: unknown, line?: string) =>
+  return (value, line) =>
     presentation.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
-  if (sub === 'list') {
-    const rows = listLenses()
-    emit(
-      rows,
-      rows
-        .map(
-          (row) =>
-            `${row.id}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}  ${row.requires_execution ? 'requires execution' : 'reading only'}  ${row.title}`,
-        )
-        .join('\n'),
-    )
-  } else if (sub === 'show') {
-    const row = showLens(argv[2]!)
-    if (!row) throw new Error(`no lens "${argv[2]}"`)
-    emit(row)
-  } else if (sub === 'set') setLensCommand(argv, emit)
-  else if (sub === 'profile') profileCommand(argv, emit)
-  else throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
+}
+
+export function listLensesCommand(emit: Emit): void {
+  const rows = listLenses()
+  emit(
+    rows,
+    rows
+      .map(
+        (row) =>
+          `${row.id}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}  ${row.requires_execution ? 'requires execution' : 'reading only'}  ${row.title}`,
+      )
+      .join('\n'),
+  )
+}
+
+export function showLensCommand(argv: string[], emit: Emit): void {
+  const row = showLens(argv[2]!)
+  if (!row) throw new Error(`no lens "${argv[2]}"`)
+  emit(row)
 }
 
 const enabled = (argv: string[]) => {
@@ -46,9 +49,7 @@ const source = (argv: string[], inline: string, file: string) => {
     throw new Error(`pass exactly one of --${inline} or --${file}`)
   return path ? readFileSync(path, 'utf8') : value!
 }
-type Emit = (value: unknown, line?: string) => void
-
-function setLensCommand(argv: string[], emit: Emit): void {
+export function setLensCommand(argv: string[], emit: Emit): void {
   const flag = (name: string) => flagValue(argv, name),
     id = argv[2],
     title = flag('title'),
@@ -79,44 +80,40 @@ function setLensCommand(argv: string[], emit: Emit): void {
   )
 }
 
-function profileCommand(argv: string[], emit: Emit): void {
+export function listProfilesCommand(argv: string[], emit: Emit): void {
+  const id = argv[3]
+  const rows = listProfiles(id)
+  emit(
+    rows,
+    rows
+      .map(
+        (row) =>
+          `${row.lens_id}  ${row.axis}/${row.name}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}`,
+      )
+      .join('\n'),
+  )
+}
+
+export function showProfileCommand(argv: string[], emit: Emit): void {
+  const row = showProfile(argv[3]!, flagValue(argv, 'axis')!, flagValue(argv, 'name')!)
+  if (!row) throw new Error('no such lens profile')
+  emit(row)
+}
+
+export function setProfileCommand(argv: string[], emit: Emit): void {
   const flag = (name: string) => flagValue(argv, name),
-    action = argv[2],
-    id = argv[3]
-  if (action === 'list') {
-    const rows = listProfiles(id)
-    emit(
-      rows,
-      rows
-        .map(
-          (row) =>
-            `${row.lens_id}  ${row.axis}/${row.name}  v${row.version}  ${row.enabled ? 'enabled' : 'disabled'}`,
-        )
-        .join('\n'),
-    )
-    return
-  }
-  if (action === 'show') {
-    const row = showProfile(id!, flag('axis')!, flag('name')!)
-    if (!row) throw new Error('no such lens profile')
-    emit(row)
-    return
-  }
-  if (action === 'set') {
-    const reason = flag('reason')
-    if (!id || !flag('axis') || !flag('name') || !reason?.trim())
-      throw new Error('lens profile set requires lens, axis, name, enabled, body, and reason')
-    emit(
-      setProfile({
-        lensId: id,
-        axis: flag('axis')!,
-        name: flag('name')!,
-        body: source(argv, 'body', 'body-file'),
-        enabled: enabled(argv),
-        reason,
-      }),
-    )
-    return
-  }
-  throw new Error(`unknown: ${PLATFORM_SLUG} review lens profile. Try list | show | set`)
+    id = argv[3],
+    reason = flag('reason')
+  if (!id || !flag('axis') || !flag('name') || !reason?.trim())
+    throw new Error('lens profile set requires lens, axis, name, enabled, body, and reason')
+  emit(
+    setProfile({
+      lensId: id,
+      axis: flag('axis')!,
+      name: flag('name')!,
+      body: source(argv, 'body', 'body-file'),
+      enabled: enabled(argv),
+      reason,
+    }),
+  )
 }

@@ -1,14 +1,17 @@
 import { expect, test } from 'bun:test'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { program } from '../cli/program.ts'
+import { registerWorkflowCommands } from '../commands/logic.ts'
+import { setRawArgv } from '../commands/support.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import {
   commandOutcome,
-  workflowChildCommandInvocation,
-  workflowCommand,
+  type WorkflowCommandOptions,
+  type WorkflowPresentation,
   workflowImportLines,
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -20,6 +23,17 @@ const presentation = (lines: string[]) => ({
   error: () => {},
   setExitCode: () => {},
 })
+
+async function workflowCommand(
+  argv: string[],
+  shown: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const command = new Command().exitOverride().enablePositionalOptions()
+  registerWorkflowCommands(command, shown, options)
+  setRawArgv(argv)
+  await command.parseAsync(['node', 'orch', ...argv])
+}
 
 const outcomePresentation = () => {
   const stdout: string[] = []
@@ -198,28 +212,20 @@ test('workflow attach refuses text in an argument', async () => {
   ).rejects.toThrow('workflow text is not accepted as an argument')
 })
 
-test('workflow child command invocation preserves an embedded separator in exec argv', () => {
-  expect(
-    workflowChildCommandInvocation(
-      ['exec'],
-      [
-        'bun',
-        'orch',
-        'workflow',
-        'exec',
-        '--',
-        '/usr/bin/printf',
-        '[%s]\\n',
-        'first',
-        '--',
-        'tail',
-      ],
-      {},
-    ),
-  ).toEqual({
-    argv: ['workflow', 'exec', '--', '/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'],
-    options: { cwd: undefined, json: false },
-  })
+test('workflow child command invocation preserves an embedded separator in exec argv', async () => {
+  registerCurrentProject('workflow-child-invocation')
+  let received: { command: string[]; cwd: string } | undefined
+  await workflowCommand(
+    ['workflow', 'probe', '--', '/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'],
+    presentation([]),
+    {
+      probeRunner: (input) => {
+        received = input
+        return { exitCode: 0, output: '' }
+      },
+    },
+  )
+  expect(received?.command).toEqual(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'])
 })
 
 test('Commander refuses workflow exec without a separator before running the child', async () => {
@@ -229,6 +235,7 @@ test('Commander refuses workflow exec without a separator before running the chi
     delete process.env.ORCH_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const before = (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
+    setRawArgv(['workflow', 'exec', '/usr/bin/printf', '%s', '--cwd', 'child-dir', '--json'])
 
     await expect(
       program.parseAsync([
@@ -255,31 +262,16 @@ test('Commander refuses workflow exec without a separator before running the chi
   }
 })
 
-test('workflow child command invocation keeps cwd and json options out of exec argv', () => {
-  expect(
-    workflowChildCommandInvocation(
-      ['exec'],
-      [
-        'bun',
-        'orch',
-        'workflow',
-        'exec',
-        '--cwd',
-        '.',
-        '--',
-        '/usr/bin/printf',
-        '%s%s%s%s',
-        '--x',
-        '--cwd',
-        'child-dir',
-        '--json',
-      ],
-      { cwd: '.', json: true },
-    ),
-  ).toEqual({
-    argv: [
+test('workflow child command invocation keeps cwd and json options out of exec argv', async () => {
+  registerCurrentProject('workflow-child-options')
+  let received: { command: string[]; cwd: string } | undefined
+  await workflowCommand(
+    [
       'workflow',
-      'exec',
+      'probe',
+      '--cwd',
+      '.',
+      '--json',
       '--',
       '/usr/bin/printf',
       '%s%s%s%s',
@@ -288,7 +280,17 @@ test('workflow child command invocation keeps cwd and json options out of exec a
       'child-dir',
       '--json',
     ],
-    options: { cwd: '.', json: true },
+    presentation([]),
+    {
+      probeRunner: (input) => {
+        received = input
+        return { exitCode: 0, output: '' }
+      },
+    },
+  )
+  expect(received).toEqual({
+    command: ['/usr/bin/printf', '%s%s%s%s', '--x', '--cwd', 'child-dir', '--json'],
+    cwd: process.cwd(),
   })
 })
 
