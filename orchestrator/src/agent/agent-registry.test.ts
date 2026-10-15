@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
-import { type AgentRow, rowAgent } from './agent-registry.ts'
+import { type AgentRow, addAgent, rowAgent } from './agent-registry.ts'
 
 function codexRow(probeResult: unknown): AgentRow {
   const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow
@@ -21,4 +21,16 @@ test('an explicit false probe verdict is not passed', () => {
 
 test('an explicit true probe verdict is passed', () => {
   expect(rowAgent(codexRow({ ok: true })).probePassed).toBe(true)
+})
+
+test('a registered agent is created with a version-seven record id', () => {
+  addAgent('identity-fixture', {
+    harness: 'codex',
+    backend: 'vendor',
+    model: 'fixture',
+  })
+  const row = db().query("SELECT record_id FROM agent WHERE name='identity-fixture'").get() as {
+    record_id: string
+  }
+  expect(row.record_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/)
 })

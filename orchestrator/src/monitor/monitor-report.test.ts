@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { displayConditions, monitorHistory } from './monitor.ts'
 
@@ -7,18 +8,19 @@ describe('operational monitor reports', () => {
     const invocation = (
       db()
         .query(
-          `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,1) RETURNING id`,
+          `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,1) RETURNING id`,
         )
-        .get() as { id: number }
+        .get(newRecordId()) as { id: number }
     ).id
     db()
       .query(
         `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
-       VALUES (?,?,?,?,?,?,?)`,
+       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
+        newRecordId(),
         invocation,
         'observation-error',
         `invocation:${invocation}:1`,
@@ -86,19 +88,20 @@ describe('operational monitor reports', () => {
     const invocation = (
       db()
         .query(
-          `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+          `INSERT INTO monitor_invocation (record_id,started_at,finished_at,trigger,findings,errors)
+       VALUES (?,'2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
         )
-        .get() as { id: number }
+        .get(newRecordId()) as { id: number }
     ).id
     const detail = 'history-detail-'.repeat(5_500)
     db()
       .query(
         `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
-       VALUES (?,?,?,?,?,?,?)`,
+       (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
+        newRecordId(),
         invocation,
         'stale-run',
         'run:large-history',

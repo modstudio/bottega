@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
@@ -282,10 +283,11 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   }
   writableDb()
     .query(
-      `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent (record_id,name,harness,backend,model,base_url,transport,caps,billing,operated_by,enabled,disabled_reason,jobs,preferred_jobs,max_concurrent)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
+      newRecordId(),
       name,
       input.harness!,
       input.backend!,

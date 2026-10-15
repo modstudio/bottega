@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import {
   productionStepCatalogue,
@@ -74,8 +75,8 @@ function installProbe(d: Database): number {
   return (
     d
       .query<{ id: number }, []>(
-        `INSERT INTO probe (command,cwd,head_commit,exit_code,output_tail,created_at)
-         VALUES ('["true"]','/tmp/work','abc',0,'','2026-10-12') RETURNING id`,
+        `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at)
+         VALUES ('${newRecordId()}','["true"]','/tmp/work','abc',0,'','2026-10-12') RETURNING id`,
       )
       .get() as { id: number }
   ).id

@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { runEventsPath } from '../events.ts'
@@ -76,10 +77,10 @@ test('host broker retries a claim that throws on a later poll tick', async () =>
     .run(project.id, '/runs/tree', runId)
   const request = db()
     .query(
-      `INSERT INTO worker_note_request (run_id,text,file,requested_at,status)
-       VALUES (?,?,NULL,?,'requested') RETURNING id`,
+      `INSERT INTO worker_note_request (record_id,run_id,text,file,requested_at,status)
+       VALUES (?,?,?,NULL,?,'requested') RETURNING id`,
     )
-    .get(runId, 'retry this note', new Date().toISOString()) as { id: number }
+    .get(newRecordId(), runId, 'retry this note', new Date().toISOString()) as { id: number }
   const database = db()
   const transaction = database.transaction.bind(database)
   let attempts = 0

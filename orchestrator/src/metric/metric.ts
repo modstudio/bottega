@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
 
@@ -260,11 +261,11 @@ export async function collect(windowDays = 30) {
   const [tok, act] = [await claudeTokensByDay(since), activityByDay(start.toISOString())]
   const d = db()
   const stmt = d.query(
-    `INSERT INTO metric (day, claude_tokens, cache_read, messages, tasks,
+    `INSERT INTO metric (record_id, day, claude_tokens, cache_read, messages, tasks,
                          canon_tokens, other_tokens, commits, files,
                          lines_product, lines_test, lines_docs, lines_config, lines_generated,
                          collected_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
        -- Token columns are only overwritten by a collection that FOUND tokens.
        --
@@ -298,6 +299,7 @@ export async function collect(windowDays = 30) {
     const t = tok.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
     const a = act.get(day)
     stmt.run(
+      newRecordId(),
       day,
       t.tokens,
       t.cacheRead,

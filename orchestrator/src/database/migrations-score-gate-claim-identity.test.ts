@@ -179,10 +179,7 @@ test('score gate claim and audit identity migration fills ids, keeps rows and ke
         (database.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
       ]),
     )
-    expect(applyMigrations(database)).toEqual([
-      '0107_score_gate_claim_audit_record_identity',
-      '0108_workflow_lens_port_record_identity',
-    ])
+    expect(applyMigrations(database)).toContain('0107_score_gate_claim_audit_record_identity')
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({
         n: before[table],

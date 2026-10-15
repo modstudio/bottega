@@ -164,19 +164,21 @@ test('an unadopted mixed condition and local-board acknowledgement succeeds with
   const invocation = (
     db()
       .query(
-        `INSERT INTO monitor_invocation(started_at,finished_at,trigger,findings,errors)
-         VALUES (?,?, 'invoked',1,0) RETURNING id`,
+        `INSERT INTO monitor_invocation(record_id,started_at,finished_at,trigger,findings,errors)
+         VALUES (?,?,?, 'invoked',1,0) RETURNING id`,
       )
-      .get('2026-10-05T12:00:00.000Z', '2026-10-05T12:00:01.000Z') as { id: number }
+      .get(newRecordId(), '2026-10-05T12:00:00.000Z', '2026-10-05T12:00:01.000Z') as {
+      id: number
+    }
   ).id
   const condition = (
     db()
       .query(
         `INSERT INTO monitor_condition
-         (invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-         VALUES (?,'stale-run','run:7',?,1000,'detail','reported',?) RETURNING id`,
+         (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+         VALUES (?,?,'stale-run','run:7',?,1000,'detail','reported',?) RETURNING id`,
       )
-      .get(invocation, '2026-10-05T11:59:59.000Z', session) as { id: number }
+      .get(newRecordId(), invocation, '2026-10-05T11:59:59.000Z', session) as { id: number }
   ).id
   const local = postNotice(
     {

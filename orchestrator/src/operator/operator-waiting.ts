@@ -13,6 +13,7 @@ import type {
   ClaimedOperatorNotification,
   OperatorWaitingItem,
 } from '../../../shared/orch-contract.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
@@ -62,11 +63,11 @@ export function claimOperatorNotifications(
     )
     const claimed: ClaimedOperatorNotification[] = []
     const insert = d.query(
-      `INSERT OR IGNORE INTO operator_notification (kind,item_id,episode,notified_at)
-       VALUES (?,?,?,?)`,
+      `INSERT OR IGNORE INTO operator_notification (record_id,kind,item_id,episode,notified_at)
+       VALUES (?,?,?,?,?)`,
     )
     for (const { item, episode } of items) {
-      if (insert.run(item.kind, item.id, episode, nowIso()).changes !== 1) continue
+      if (insert.run(newRecordId(), item.kind, item.id, episode, nowIso()).changes !== 1) continue
       claimed.push({ ...item, notification: notificationDetails(item) })
     }
     return claimed

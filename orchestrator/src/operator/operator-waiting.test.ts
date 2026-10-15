@@ -203,7 +203,19 @@ test('notification claims return each waiting episode once', () => {
     body: 'Question?',
     link: `http://127.0.0.1:7778/inbox/question/${question.id}`,
   })
+  const notificationIds = db()
+    .query<{ record_id: string }, []>('SELECT record_id FROM operator_notification ORDER BY kind')
+    .all()
+  expect(notificationIds).toHaveLength(2)
+  expect(
+    notificationIds.every(({ record_id }) => /^[0-9a-f]{8}-[0-9a-f]{4}-7/.test(record_id)),
+  ).toBe(true)
   expect(claimOperatorNotifications(db())).toEqual([])
+  expect(
+    db()
+      .query<{ record_id: string }, []>('SELECT record_id FROM operator_notification ORDER BY kind')
+      .all(),
+  ).toEqual(notificationIds)
 
   db().query("UPDATE workflow_cursor SET state='running', updated_at='2026-09-26'").run()
   db()

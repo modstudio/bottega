@@ -253,9 +253,9 @@ describe('lens catalogue', () => {
     live.query('UPDATE run SET project_id=NULL WHERE id=?').run(runId)
     live.query('UPDATE run SET project_id=NULL WHERE id=?').run(renamedRunId)
     live
-      .query(`INSERT INTO canon_pack (id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
-      VALUES (8001,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
-      .run()
+      .query(`INSERT INTO canon_pack (id,record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
+      VALUES (8001,?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)
+      .run(newRecordId())
     live
       .query(`INSERT INTO review (id,record_id,recorded_at,project_id) VALUES (8002,?,'now',NULL)`)
       .run(newRecordId())

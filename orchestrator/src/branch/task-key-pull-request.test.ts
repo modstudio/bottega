@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from './task-key-pull-request.ts'
 
@@ -24,9 +25,9 @@ test('finds a landing whose branch starts with the task key', () => {
   const d = database()
   d.query(
     `INSERT INTO branch_landing_record
-      (project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES ('fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
-  ).run()
+      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,'fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
+  ).run(newRecordId())
   expect(branchForTaskKey('fixture', 'DEV-977', null, d)).toBe('DEV-977-work')
   expect(pullRequestNumberForBranch('fixture', 'DEV-977-work', d)).toBe(12)
 })
@@ -51,9 +52,9 @@ test('a landing record wins over a snapshot for the same branch', () => {
   ).run()
   d.query(
     `INSERT INTO branch_landing_record
-      (project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES ('fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
-  ).run()
+      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,'fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
+  ).run(newRecordId())
   expect(pullRequestNumberForBranch('fixture', 'DEV-977-work', d)).toBe(12)
 })
 
@@ -61,9 +62,9 @@ test('a different project or key does not match', () => {
   const d = database()
   d.query(
     `INSERT INTO branch_landing_record
-      (project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES ('fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
-  ).run()
+      (record_id,project,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+     VALUES (?,'fixture','DEV-977-work','abc',12,'def','2026-09-01','2026-09-01')`,
+  ).run(newRecordId())
   expect(branchForTaskKey('other', 'DEV-977', null, d)).toBeNull()
   expect(branchForTaskKey('fixture', 'DEV-978', null, d)).toBeNull()
   expect(pullRequestNumberForBranch('other', 'DEV-977-work', d)).toBeNull()

@@ -69,6 +69,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../../../shared/orch-contract.ts',
     '../../../shared/operator-inbox.ts',
     '../../../shared/operator-notification.ts',
+    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../run/run-authority.ts',
     '../run/question-outbox.ts',

@@ -20,6 +20,7 @@ export const branchModuleSpecs = [
   {
     file: 'orchestrator/src/branch/branch-landing-service.ts',
     allowed: [
+      '../../../shared/record-id.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',

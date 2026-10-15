@@ -5,6 +5,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { boardEscalations } from '../board/board-service.ts'
 import { allInjectChecks, storedPackDrift } from '../canon/canon.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
@@ -234,8 +235,10 @@ function startMonitorInvocation(trigger: 'invoked' | 'backstop', startedAt: stri
   try {
     const database = writableDb()
     const row = database
-      .query('INSERT INTO monitor_invocation (started_at, trigger) VALUES (?,?) RETURNING id')
-      .get(startedAt, trigger) as { id: number }
+      .query(
+        'INSERT INTO monitor_invocation (record_id,started_at,trigger) VALUES (?,?,?) RETURNING id',
+      )
+      .get(newRecordId(), startedAt, trigger) as { id: number }
     return { database, invocation: row.id }
   } catch (error) {
     if (databaseBusy(error)) throw new MonitorStoreBusyError(error)
@@ -426,9 +429,9 @@ function persistMonitorConditions(
     writeTransaction(() => {
       const insert = database.query(
         `INSERT INTO monitor_condition
-        (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
+        (record_id,invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
          owner_session_id,delivered_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       const priorDelivery = database.query(
         `SELECT delivered_at FROM monitor_condition
@@ -444,6 +447,7 @@ function persistMonitorConditions(
             } | null)
           : null
         insert.run(
+          newRecordId(),
           invocation,
           condition.kind,
           condition.subject,
