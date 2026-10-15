@@ -21,13 +21,29 @@ export function docPlainSnippet(marked: string): DocPlainSnippet {
 }
 
 function reduceMarkdown(marked: string): string {
-  const lines: string[] = []
+  const lines: { text: string; table: boolean }[] = []
   for (const raw of marked.split('\n')) {
     const line = raw.replace(/\r$/, '')
     if (FENCE_LINE.test(line) || isTableSeparator(line)) continue
-    lines.push(formatTableRow(stripInline(stripLinePrefix(line))))
+    const stripped = stripInline(stripLinePrefix(line))
+    lines.push({ text: formatTableRow(stripped), table: isTableRow(stripped) })
   }
-  return lines.join('\n')
+  return joinReducedLines(lines)
+}
+
+function joinReducedLines(lines: { text: string; table: boolean }[]): string {
+  let joined = ''
+  for (const [index, line] of lines.entries()) {
+    if (index > 0) {
+      joined += lines[index - 1]!.table && line.table ? ' / ' : '\n'
+    }
+    joined += line.text
+  }
+  return joined
+}
+
+function isTableRow(line: string): boolean {
+  return line.includes('|')
 }
 
 function stripLinePrefix(line: string): string {
@@ -45,7 +61,7 @@ function isTableSeparator(line: string): boolean {
 }
 
 function formatTableRow(line: string): string {
-  if (!line.includes('|')) return line
+  if (!isTableRow(line)) return line
   const cells = line.split('|')
   const trimmed = line.trim()
   if (trimmed.startsWith('|')) cells.shift()
@@ -66,9 +82,9 @@ function stripInline(text: string): string {
       .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
       .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/__(.+?)__/g, '$1')
+      .replace(/(?<![A-Za-z0-9])__(.+?)__(?![A-Za-z0-9])/g, '$1')
       .replace(/\*(.+?)\*/g, '$1')
-      .replace(/_(.+?)_/g, '$1')
+      .replace(/(?<![A-Za-z0-9])_(.+?)_(?![A-Za-z0-9])/g, '$1')
   }
   return current
 }

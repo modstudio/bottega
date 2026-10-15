@@ -40,3 +40,23 @@ test('images, lists, quotes, fences, separator rows, and entities follow the sni
     highlights: [{ start: 'alt text left · right const '.length, length: 'value'.length }],
   })
 })
+
+test('consecutive table rows separate with a slash and keep a space next to prose', () => {
+  expect(docPlainSnippet('| stock remains |\n| $100 | $80 |')).toEqual({
+    snippet: 'stock remains / $100 · $80',
+    highlights: [],
+  })
+  expect(
+    docPlainSnippet(['Prose', '| stock remains |', '| $100 | $80 |', 'after'].join('\n')),
+  ).toEqual({
+    snippet: 'Prose stock remains / $100 · $80 after',
+    highlights: [],
+  })
+})
+
+test('underscore emphasis leaves intraword underscores and still strips wrapping markers', () => {
+  expect(docPlainSnippet('stock_stated_at and _copy_ and __strong__ and foo*bar*baz')).toEqual({
+    snippet: 'stock_stated_at and copy and strong and foobarbaz',
+    highlights: [],
+  })
+})
