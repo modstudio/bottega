@@ -37,6 +37,7 @@ export const releaseModules = [
     file: 'orchestrator/src/release/release-outbox.ts',
     allowed: [
       'bun:sqlite',
+      'shared/record-id.ts',
       'shared/record/schema.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/machine-identity.ts',

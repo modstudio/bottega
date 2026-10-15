@@ -165,6 +165,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/run/question-outbox.ts', [
     'bun:sqlite',
+    '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
@@ -178,6 +179,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     'bun:sqlite',
     '../database/db.ts',
     './outbox-sanitize.ts',
@@ -252,6 +254,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/outbox-quarantine.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     'bun:sqlite',
     '../database/db.ts',
   ]),

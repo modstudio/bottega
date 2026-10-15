@@ -206,6 +206,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-outbox-boundary',
     'orchestrator/src/run/run-outbox.ts',
     [
+      '../../../shared/record-id.ts',
       '../../../shared/record/schema.ts',
       '../record/outbox-sanitize.ts',
       './synthetic-lifecycle-job.ts',

@@ -175,6 +175,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-outbox-boundary',
     file: 'orchestrator/src/review/review-outbox.ts',
     allowed: [
+      '../../../shared/record-id.ts',
       '../../../shared/record/schema.ts',
       '../database/db.ts',
       '../record/machine-identity.ts',
