@@ -28,6 +28,7 @@ function mcpFlagValues(argv: string[]): Array<string | undefined> {
   const values: Array<string | undefined> = []
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]!
+    if (arg === '--') break
     if (arg === MCP_FLAG) {
       const next = argv[index + 1]
       values.push(next !== undefined && !next.startsWith('-') ? next : undefined)

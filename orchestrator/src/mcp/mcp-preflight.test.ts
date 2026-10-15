@@ -32,6 +32,11 @@ describe('parseRequestedMcp', () => {
     expect(parseRequestedMcp(['do', 'implement', 'prompt'])).toBeUndefined()
   })
 
+  test('--mcp after the option terminator is prompt text', () => {
+    expect(parseRequestedMcp(['do', 'implement', '--', '--mcp=prefer'])).toBeUndefined()
+    expect(parseRequestedMcp(['--mcp', '--', '--mcp', 'prefer'])).toBe('require')
+  })
+
   test.each([
     [['--mcp'], 'require'],
     [['prompt', '--mcp'], 'require'],
