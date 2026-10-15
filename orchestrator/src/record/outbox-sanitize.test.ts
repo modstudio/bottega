@@ -177,6 +177,7 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
         id: number
         kind: string
         record_id: string
+        row_id: string
         payload: string
         created_at: string
         attempts: number

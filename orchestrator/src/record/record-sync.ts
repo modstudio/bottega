@@ -195,7 +195,7 @@ function planBatchRow(
 function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
     .query<OutboxRow, []>(
-      `SELECT id, kind, record_id, payload FROM outbox
+      `SELECT id, kind, row_id, payload FROM outbox
        WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
     )
     .all()
@@ -319,7 +319,7 @@ function addPlannedRow(input: {
       ...input.plannedParents.get(key)!,
     ]),
   })
-  const rowKey = outboxParentIdentityKey(row.kind, row.record_id)
+  const rowKey = outboxParentIdentityKey(row.kind, row.row_id)
   const identityRows = input.plannedParents.get(rowKey)
   if (identityRows) identityRows.push(row.id)
   else input.plannedParents.set(rowKey, [row.id])

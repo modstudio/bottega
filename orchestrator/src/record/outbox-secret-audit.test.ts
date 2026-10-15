@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { auditOutboxSecrets, renderOutboxSecretAudit } from './outbox-secret-audit.ts'
@@ -25,14 +26,25 @@ function seeded(): Database {
   const secret = runPayload(SECRET)
   database
     .query(
-      `INSERT INTO outbox (id,kind,record_id,payload,created_at,synced_at,quarantined_at,retired_at)
-       VALUES (1,'run','r1',?,?,'2026-09-15T01:02:00.000Z',NULL,NULL),
-              (2,'run','r2',?,?,NULL,NULL,NULL),
-              (3,'run','r3',?,?,NULL,'2026-09-15T01:03:00.000Z',NULL),
-              (4,'run','r4',?,?,NULL,NULL,'2026-09-15T01:04:00.000Z'),
-              (5,'run','r5',?,?,NULL,NULL,NULL)`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,synced_at,quarantined_at,retired_at) VALUES (?,1,'run','r1',?,?,'2026-09-15T01:02:00.000Z',NULL,NULL),
+              ('01990000-0000-7000-8000-000000000002',2,'run','r2',?,?,NULL,NULL,NULL),
+              ('01990000-0000-7000-8000-000000000003',3,'run','r3',?,?,NULL,'2026-09-15T01:03:00.000Z',NULL),
+              ('01990000-0000-7000-8000-000000000004',4,'run','r4',?,?,NULL,NULL,'2026-09-15T01:04:00.000Z'),
+              ('01990000-0000-7000-8000-000000000005',5,'run','r5',?,?,NULL,NULL,NULL)`,
     )
-    .run(secret, STAMP, secret, STAMP, secret, STAMP, secret, STAMP, runPayload('clean'), STAMP)
+    .run(
+      newRecordId(),
+      secret,
+      STAMP,
+      secret,
+      STAMP,
+      secret,
+      STAMP,
+      secret,
+      STAMP,
+      runPayload('clean'),
+      STAMP,
+    )
   return database
 }
 
@@ -76,10 +88,10 @@ function plantedOutbox(payloads: string[]): Database {
   const database = new Database(':memory:')
   applyMigrations(database)
   const insert = database.query(
-    `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,?,?,?,?)`,
+    `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)`,
   )
   for (const [index, payload] of payloads.entries()) {
-    insert.run(index + 1, 'run', `r${index + 1}`, payload, STAMP)
+    insert.run(newRecordId(), index + 1, 'run', `r${index + 1}`, payload, STAMP)
   }
   return database
 }

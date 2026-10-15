@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../database/migrations.ts'
 import {
   NEVER_BOUND,
@@ -57,10 +58,9 @@ test('the binding migration backfills only from successful hosted-record evidenc
   const syncedOutbox = migratedBinding((database) => {
     database
       .query(
-        `INSERT INTO outbox(kind,record_id,payload,created_at,attempts,synced_at)
-         VALUES ('run','record-1','{}','2026-10-05',1,'2026-10-05')`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts,synced_at) VALUES (?,'run','record-1','{}','2026-10-05',1,'2026-10-05')`,
       )
-      .run()
+      .run(newRecordId())
   })
   const hostedDoc = migratedBinding((database) => {
     database
@@ -84,10 +84,9 @@ test('the binding migration backfills only from successful hosted-record evidenc
     migratedBinding((database) => {
       database
         .query(
-          `INSERT INTO outbox(kind,record_id,payload,created_at,attempts)
-           VALUES ('run','record-3','{}','2026-10-05',2)`,
+          `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts) VALUES (?,'run','record-3','{}','2026-10-05',2)`,
         )
-        .run()
+        .run(newRecordId())
     }),
   ).toEqual(NEVER_BOUND)
 })

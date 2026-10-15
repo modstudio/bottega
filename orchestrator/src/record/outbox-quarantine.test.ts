@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
 import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
@@ -9,10 +10,9 @@ function fixture(): Database {
   applyMigrations(database)
   database
     .query(
-      `INSERT INTO outbox (id,kind,record_id,payload,created_at)
-       VALUES (7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,7,'score','record-7','{}','2026-09-28T00:00:00.000Z')`,
     )
-    .run()
+    .run(newRecordId())
   quarantineOutboxRow(
     database,
     7,
@@ -35,12 +35,46 @@ describe('outbox quarantine exits', () => {
     ).toEqual({ quarantined_at: null, quarantine_reason: null, last_error: null })
     expect(
       database
-        .query('SELECT disposition,actor_session,attempts FROM outbox_quarantine_audit ORDER BY id')
+        .query<
+          {
+            disposition: string
+            actor_session: string
+            attempts: number
+            record_id: string
+            row_id: string
+          },
+          []
+        >(
+          'SELECT disposition,actor_session,attempts,record_id,row_id FROM outbox_quarantine_audit ORDER BY id',
+        )
         .all(),
     ).toEqual([
-      { disposition: 'quarantine', actor_session: 'sync-session', attempts: 1 },
-      { disposition: 'retry', actor_session: 'operator-session', attempts: 1 },
+      {
+        disposition: 'quarantine',
+        actor_session: 'sync-session',
+        attempts: 1,
+        record_id: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
+        row_id: 'record-7',
+      },
+      {
+        disposition: 'retry',
+        actor_session: 'operator-session',
+        attempts: 1,
+        record_id: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        ),
+        row_id: 'record-7',
+      },
     ])
+    const auditIds = database
+      .query<{ record_id: string; row_id: string }, []>(
+        'SELECT record_id,row_id FROM outbox_quarantine_audit ORDER BY id',
+      )
+      .all()
+    expect(new Set(auditIds.map((row) => row.record_id)).size).toBe(2)
+    expect(auditIds.every((row) => row.record_id !== row.row_id)).toBe(true)
     database.close()
   })
 
@@ -88,12 +122,10 @@ describe('outbox quarantine exits', () => {
     applyMigrations(database)
     database
       .query(
-        `INSERT INTO outbox
-         (id,kind,record_id,payload,created_at,retired_at,retirement_reason)
-         VALUES (8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
-                (9,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,retired_at,retirement_reason) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28','not deliverable'),
+                ('01990000-0000-7000-8000-000000000009',9,'run','child','{"parentRunId":"parent"}','2026-09-28',NULL,NULL)`,
       )
-      .run()
+      .run(newRecordId())
 
     retireOutboxRowWithDependencyProof(
       9,

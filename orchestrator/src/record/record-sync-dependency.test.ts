@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncRecord } from './record-sync.ts'
@@ -62,11 +63,18 @@ test('one sync pushes a review read before its dependent triage snapshot', async
   })
   local
     .query(
-      `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-       (1,'review_read',?,?,?),
-       (2,'landing_triage_snapshot',?,?,?)`,
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'review_read',?,?,?),
+       ('01990000-0000-7000-8000-000000000002',2,'landing_triage_snapshot',?,?,?)`,
     )
-    .run(READ_ID, JSON.stringify(read), STAMP, SNAPSHOT_ID, JSON.stringify(snapshot), STAMP)
+    .run(
+      newRecordId(),
+      READ_ID,
+      JSON.stringify(read),
+      STAMP,
+      SNAPSHOT_ID,
+      JSON.stringify(snapshot),
+      STAMP,
+    )
   const batches: string[][] = []
 
   try {
@@ -132,8 +140,8 @@ function insertOutboxRow(
   payload: Record<string, unknown>,
 ): void {
   local
-    .query('INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,?,?,?,?)')
-    .run(id, kind, recordId, JSON.stringify(payload), STAMP)
+    .query('INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)')
+    .run(newRecordId(), id, kind, recordId, JSON.stringify(payload), STAMP)
 }
 
 test('one sync request carries a review, lens, and finding dependency chain', async () => {

@@ -32,7 +32,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   const initial = database
     .query<{ record_id: string; payload: string }, []>(
       `SELECT release_ledger.record_id,outbox.payload FROM release_ledger
-       JOIN outbox ON outbox.record_id=release_ledger.record_id`,
+       JOIN outbox ON outbox.row_id=release_ledger.record_id`,
     )
     .get()!
   const startedPayload = JSON.parse(initial.payload) as Record<string, unknown>
@@ -66,7 +66,7 @@ test('release writes and evolves one whole-row pending payload without deploy ou
   )
   const rows = database
     .query<{ record_id: string; payload: string }, []>(
-      "SELECT record_id,payload FROM outbox WHERE kind='release' ORDER BY id",
+      "SELECT row_id AS record_id,payload FROM outbox WHERE kind='release' ORDER BY id",
     )
     .all()
   expect(rows).toHaveLength(1)
@@ -84,7 +84,9 @@ test('release writes and evolves one whole-row pending payload without deploy ou
 test('finishing after the started payload was sent appends the same record identity', () => {
   const database = fixture()
   const id = started(database)
-  const first = database.query<{ record_id: string }, []>('SELECT record_id FROM outbox').get()!
+  const first = database
+    .query<{ record_id: string }, []>('SELECT row_id AS record_id FROM outbox')
+    .get()!
   database.query("UPDATE outbox SET synced_at='2026-10-12T00:00:00.000Z'").run()
 
   finishReleaseLedgerEntry(
@@ -100,10 +102,9 @@ test('finishing after the started payload was sent appends the same record ident
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='release'").get()).toEqual({
     count: 2,
   })
-  expect(database.query<{ record_id: string }, []>('SELECT record_id FROM outbox').all()).toEqual([
-    { record_id: first.record_id },
-    { record_id: first.record_id },
-  ])
+  expect(
+    database.query<{ record_id: string }, []>('SELECT row_id AS record_id FROM outbox').all(),
+  ).toEqual([{ record_id: first.record_id }, { record_id: first.record_id }])
   database.close()
 })
 

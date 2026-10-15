@@ -37,6 +37,9 @@ const CONVERTED_TABLES = [
   'monitor_condition',
   'monitor_invocation',
   'operator_notification',
+  'outbox',
+  'outbox_quarantine_audit',
+  'outbox_redaction_audit',
   'port_baseline',
   'port_doctrine',
   'port_pair',
@@ -109,13 +112,9 @@ export const IDENTITY_BASELINE = [
   'board_reach_delivery',
   'board_reach_recording_failure',
   'board_receipt',
-  'outbox',
-  'outbox_quarantine_audit',
-  'outbox_redaction_audit',
   'project',
 ] as const
 
-const BORROWED_RECORD_ID = new Set(['outbox', 'outbox_quarantine_audit', 'outbox_redaction_audit'])
 const IDENTITY_COLUMNS: Readonly<Record<string, string>> = { subject: 'id' }
 
 export function decideIdentityInventory(
@@ -184,8 +183,7 @@ function readIdentityTables(database: Database): IdentityTable[] {
       (column) =>
         column.type.toUpperCase() === 'TEXT' &&
         (column.notnull === 1 || column.pk === 1) &&
-        column.name === identityColumn &&
-        !(identityColumn === 'record_id' && BORROWED_RECORD_ID.has(name)),
+        column.name === identityColumn,
     )
     return { name, hasRequiredIdentity }
   })

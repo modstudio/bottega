@@ -483,6 +483,7 @@ export const modules: ArchitectureModule[] = [
   ...recordModules,
   ...reviewModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   module('orchestrator/src/score/score-outbox.ts', [
+    '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../record/outbox-sanitize.ts',
     '../verdict/verdict-payload.ts',

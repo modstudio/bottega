@@ -122,10 +122,16 @@ test('score backfill enqueues each hosted score once', () => {
   expect(backfillScoreRecords(database, MACHINE_ID)).toBe(1)
   expect(backfillScoreRecords(database, MACHINE_ID)).toBe(0)
   const outbox = database
-    .query<{ kind: string; record_id: string; payload: string }, []>('SELECT * FROM outbox')
+    .query<{ kind: string; record_id: string; row_id: string; payload: string }, []>(
+      'SELECT * FROM outbox',
+    )
     .get()!
   expect(outbox.kind).toBe('score')
-  expect(outbox.record_id).toBe(RECORD_ID)
+  expect(outbox.row_id).toBe(RECORD_ID)
+  expect(outbox.record_id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  )
+  expect(outbox.record_id).not.toBe(outbox.row_id)
   expect(JSON.parse(outbox.payload)).toMatchObject({ note: 'first', scoredBy: 'architect' })
   database.close()
 })

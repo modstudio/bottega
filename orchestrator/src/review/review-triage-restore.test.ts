@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
@@ -56,11 +57,15 @@ function appendSource(seed: FindingSeed, overrides: Record<string, unknown> = {}
   }
   return Number(
     db()
-      .query<{ id: number }, [string, string, string]>(
-        `INSERT INTO outbox (kind,record_id,payload,created_at)
-         VALUES ('review_finding',?,?,?) RETURNING id`,
+      .query<{ id: number }, [string, string, string, string]>(
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'review_finding',?,?,?) RETURNING id`,
       )
-      .get(seed.originalRecordId, JSON.stringify(payload), '2026-09-22T00:00:00.000Z')!.id,
+      .get(
+        newRecordId(),
+        seed.originalRecordId,
+        JSON.stringify(payload),
+        '2026-09-22T00:00:00.000Z',
+      )!.id,
   )
 }
 
@@ -145,8 +150,8 @@ test('skips null-only, mismatched, open, missing, and hosted-diverged findings',
   const diverged = seedFinding('restore-triage-diverged')
   appendSource(diverged)
   db()
-    .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('run',?,?,?)")
-    .run(diverged.remintedRecordId, '{}', '2026-09-23T00:00:00.000Z')
+    .query("INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'run',?,?,?)")
+    .run(newRecordId(), diverged.remintedRecordId, '{}', '2026-09-23T00:00:00.000Z')
 
   const report = restoreReviewTriage(db(), { dryRun: false })
   expect(report.applied).toBe(0)
@@ -207,7 +212,7 @@ test('snapshots and restores every finding identity before amending siblings', (
   for (const seed of seeds) {
     const latest = db()
       .query<{ record_id: string; payload: string }, [number]>(
-        `SELECT record_id,payload FROM outbox WHERE kind='review_finding'
+        `SELECT row_id AS record_id,payload FROM outbox WHERE kind='review_finding'
             AND json_valid(payload) AND json_extract(payload,'$.localId')=?
             ORDER BY id DESC LIMIT 1`,
       )
@@ -220,7 +225,7 @@ test('snapshots and restores every finding identity before amending siblings', (
     expect(
       db()
         .query<{ count: number }, [string]>(
-          "SELECT COUNT(*) AS count FROM outbox WHERE kind='review_finding' AND record_id=?",
+          "SELECT COUNT(*) AS count FROM outbox WHERE kind='review_finding' AND row_id=?",
         )
         .get(seed.remintedRecordId)!.count,
     ).toBe(0)

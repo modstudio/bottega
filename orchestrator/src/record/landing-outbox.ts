@@ -2,6 +2,7 @@
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from './machine-identity.ts'
 
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
@@ -30,8 +31,8 @@ const enqueue = (
       ? JSON.stringify(value)
       : stringifyOutboxPayload(kind as OutboxSanitizeKind, value)
   database
-    .query('INSERT INTO outbox (kind, record_id, payload, created_at) VALUES (?,?,?,?)')
-    .run(kind, recordId, payload, at)
+    .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
+    .run(newRecordId(), kind, recordId, payload, at)
 }
 
 function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string) {
@@ -263,7 +264,7 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     const rows = database
       .query<{ id: number }, [string]>(
         `SELECT id FROM ${table} WHERE NOT EXISTS
-         (SELECT 1 FROM outbox WHERE kind=? AND record_id=${table}.record_id) ORDER BY id`,
+         (SELECT 1 FROM outbox WHERE kind=? AND row_id=${table}.record_id) ORDER BY id`,
       )
       .all(kind)
     for (const row of rows) enqueueRow(row.id)

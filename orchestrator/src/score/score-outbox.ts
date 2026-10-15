@@ -2,6 +2,7 @@
 /** Knows how a local verdict becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
@@ -76,7 +77,7 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
-        WHERE kind='score' AND record_id=? AND synced_at IS NULL
+        WHERE kind='score' AND row_id=? AND synced_at IS NULL
           AND quarantined_at IS NULL AND retired_at IS NULL
         ORDER BY id LIMIT 1`,
     )
@@ -92,10 +93,10 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
   } else {
     database
       .query(
-        `INSERT INTO outbox (kind, record_id, payload, created_at)
-         VALUES ('score', ?, ?, ?)`,
+        `INSERT INTO outbox (record_id, kind, row_id, payload, created_at)
+         VALUES (?, 'score', ?, ?, ?)`,
       )
-      .run(row.record_id, payload, row.scored_at)
+      .run(newRecordId(), row.record_id, payload, row.scored_at)
   }
   return true
 }
@@ -106,7 +107,7 @@ export function backfillScoreRecords(database: Database, machineId: string): num
       `SELECT s.run_id
          FROM score s JOIN run r ON r.id=s.run_id
         WHERE NOT EXISTS (
-            SELECT 1 FROM outbox o WHERE o.kind='score' AND o.record_id=r.record_id
+            SELECT 1 FROM outbox o WHERE o.kind='score' AND o.row_id=r.record_id
           )
         ORDER BY s.run_id`,
     )

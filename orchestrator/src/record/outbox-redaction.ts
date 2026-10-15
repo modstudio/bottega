@@ -2,6 +2,7 @@
 /** Re-enqueues sanitized copies of already-synced record payloads. Must not know hosted storage. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { sanitizeOutboxPayloadForRules } from './outbox-sanitize.ts'
 
@@ -18,7 +19,7 @@ const REDACTION_RULES = new Set<string>(DEFAULT_SYNCED_REDACTION_RULES)
 type SyncedOutboxRow = {
   id: number
   kind: string
-  record_id: string
+  row_id: string
   payload: string
 }
 
@@ -67,18 +68,18 @@ function parsePayload(row: SyncedOutboxRow): Record<string, unknown> {
 function latestSyncedRows(database: Database): SyncedOutboxRow[] {
   return database
     .query<SyncedOutboxRow, []>(
-      `SELECT current.id,current.kind,current.record_id,current.payload
+      `SELECT current.id,current.kind,current.row_id,current.payload
          FROM outbox current
          JOIN (
-           SELECT kind,record_id,max(id) AS id
-             FROM outbox INDEXED BY outbox_latest_synced_record
+           SELECT kind,row_id,max(id) AS id
+             FROM outbox INDEXED BY outbox_latest_synced_row
             WHERE synced_at IS NOT NULL
-            GROUP BY kind,record_id
+            GROUP BY kind,row_id
          ) latest
            ON latest.id=current.id
           AND latest.kind=current.kind
-          AND latest.record_id=current.record_id
-        ORDER BY current.kind,current.record_id`,
+          AND latest.row_id=current.row_id
+        ORDER BY current.kind,current.row_id`,
     )
     .all()
 }
@@ -88,16 +89,16 @@ function remainsEligible(database: Database, row: SyncedOutboxRow): boolean {
     database
       .query<{ id: number }, [string, string, number]>(
         `SELECT id FROM outbox candidate
-          WHERE kind=? AND record_id=? AND id=? AND synced_at IS NOT NULL
+          WHERE kind=? AND row_id=? AND id=? AND synced_at IS NOT NULL
             AND NOT EXISTS (
               SELECT 1 FROM outbox newer
                WHERE newer.kind=candidate.kind
-                 AND newer.record_id=candidate.record_id
+                 AND newer.row_id=candidate.row_id
                  AND newer.id>candidate.id
                  AND (newer.synced_at IS NOT NULL OR newer.retired_at IS NULL)
             )`,
       )
-      .get(row.kind, row.record_id, row.id),
+      .get(row.kind, row.row_id, row.id),
   )
 }
 
@@ -131,7 +132,7 @@ export function redactSyncedOutbox(
     countRecordRules(counts, row.kind, recordRules)
     if (options.dryRun) {
       if (!remainsEligible(database, row)) {
-        skipped.push({ kind: row.kind, recordId: row.record_id })
+        skipped.push({ kind: row.kind, recordId: row.row_id })
         continue
       }
       wouldEnqueue += 1
@@ -140,22 +141,23 @@ export function redactSyncedOutbox(
     const inserted = writeTransaction(() => {
       if (!remainsEligible(database, row)) return false
       const inserted = database
-        .query<{ id: number }, [string, string, string, string]>(
-          `INSERT INTO outbox (kind,record_id,payload,created_at)
-           VALUES (?,?,?,?) RETURNING id`,
+        .query<{ id: number }, [string, string, string, string, string]>(
+          `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+           VALUES (?,?,?,?,?) RETURNING id`,
         )
-        .get(row.kind, row.record_id, JSON.stringify(sanitized.payload), at)!
+        .get(newRecordId(), row.kind, row.row_id, JSON.stringify(sanitized.payload), at)!
       const paths = [...new Set(sanitized.matches.map((match) => match.path))].toSorted()
       database
         .query(
           `INSERT INTO outbox_redaction_audit
-           (outbox_id,kind,record_id,rules,withheld_paths,actor_session,at)
-           VALUES (?,?,?,?,?,?,?)`,
+           (record_id,outbox_id,kind,row_id,rules,withheld_paths,actor_session,at)
+           VALUES (?,?,?,?,?,?,?,?)`,
         )
         .run(
+          newRecordId(),
           inserted.id,
           row.kind,
-          row.record_id,
+          row.row_id,
           JSON.stringify(recordRules),
           JSON.stringify(paths),
           actorSession,
@@ -164,7 +166,7 @@ export function redactSyncedOutbox(
       return true
     }, database)
     if (!inserted) {
-      skipped.push({ kind: row.kind, recordId: row.record_id })
+      skipped.push({ kind: row.kind, recordId: row.row_id })
       continue
     }
     wouldEnqueue += 1

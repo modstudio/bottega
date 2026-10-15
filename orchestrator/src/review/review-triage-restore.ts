@@ -13,7 +13,7 @@ import {
   type TriageRestoreSource,
 } from './review-triage-restore-policy.ts'
 
-type OutboxRow = { id: number; record_id: string; payload: string }
+type OutboxRow = { id: number; row_id: string; payload: string }
 type Candidate = TriageRestoreFinding & { reviewId: number }
 type ReviewFinding = Candidate & { disposition: string | null }
 type SourceLookup = {
@@ -110,7 +110,7 @@ function reviewFindings(database: Database, reviewId: number): ReviewFinding[] {
 function latestSource(database: Database, findingId: number): SourceLookup {
   const row = database
     .query<OutboxRow, [number]>(
-      `SELECT id, record_id, payload FROM outbox
+      `SELECT id, row_id, payload FROM outbox
         WHERE kind='review_finding' AND json_valid(payload)
           AND json_extract(payload,'$.localId')=?
         ORDER BY id DESC LIMIT 1`,
@@ -150,7 +150,7 @@ function recordIdReferenced(database: Database, recordId: string): boolean {
   return Boolean(
     database
       .query<{ present: number }, [string]>(
-        'SELECT EXISTS(SELECT 1 FROM outbox WHERE record_id=?) AS present',
+        'SELECT EXISTS(SELECT 1 FROM outbox WHERE row_id=?) AS present',
       )
       .get(recordId)?.present,
   )

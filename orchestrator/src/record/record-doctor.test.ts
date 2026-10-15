@@ -206,12 +206,11 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO outbox (kind,record_id,payload,created_at,synced_at)
-         VALUES ('run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25'),
-                ('run','01990000-0000-7000-8000-000000000003','{}','2026-09-25','2026-09-25'),
-                ('run','01990000-0000-7000-8000-000000000004','{}','2026-09-25','2026-09-25')`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25'),
+                ('01990000-0000-7000-8000-000000000003','run','01990000-0000-7000-8000-000000000003','{}','2026-09-25','2026-09-25'),
+                ('01990000-0000-7000-8000-000000000004','run','01990000-0000-7000-8000-000000000004','{}','2026-09-25','2026-09-25')`,
       )
-      .run()
+      .run(newRecordId())
 
     expect(
       localQuestionCountForSpace(
@@ -244,10 +243,9 @@ describe('record doctor decisions', () => {
       .run()
     database
       .query(
-        `INSERT INTO outbox (kind,record_id,payload,created_at,synced_at)
-         VALUES ('run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25')`,
+        `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at) VALUES (?,'run','01990000-0000-7000-8000-000000000001','{}','2026-09-25','2026-09-25')`,
       )
-      .run()
+      .run(newRecordId())
 
     expect(
       localQuestionCountForSpace(database, [], {

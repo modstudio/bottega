@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { beforeEach, expect, test } from 'bun:test'
-import { newRecordId } from '../../shared/record/schema.ts'
+import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
@@ -79,8 +79,10 @@ function localOutbox(payload: Record<string, unknown>): Database {
   const local = new Database(':memory:')
   applyMigrations(local)
   local
-    .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (1,'run',?,?,?)")
-    .run(String(payload.id), JSON.stringify(payload), String(payload.createdAt))
+    .query(
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'run',?,?,?)",
+    )
+    .run(newRecordId(), String(payload.id), JSON.stringify(payload), String(payload.createdAt))
   return local
 }
 
@@ -252,11 +254,11 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       applyMigrations(local)
       local
         .query(
-          `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-           (1,'run',?,?,?),
-           (2,'score',?,?,?)`,
+          `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'run',?,?,?),
+           ('01990000-0000-7000-8000-000000000002',2,'score',?,?,?)`,
         )
         .run(
+          newRecordId(),
           String(inputRows.run.id),
           JSON.stringify(inputRows.run),
           String(inputRows.run.createdAt),
@@ -534,11 +536,11 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       updatedAt: at,
     })
     const insert =
-      "INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'test_flake',?,?,?)"
+      "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'test_flake',?,?,?)"
     const sync = async (rowId: number) => {
       const local = new Database(':memory:')
       applyMigrations(local)
-      local.query(insert).run(rowId, id, JSON.stringify(flake), at)
+      local.query(insert).run(newRecordId(), rowId, id, JSON.stringify(flake), at)
       try {
         return await withoutDirectRecordCredentials(() =>
           syncRecord({
@@ -609,11 +611,18 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     applyMigrations(local)
     local
       .query(
-        `INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES
-         (1,'review_read',?,?,?),
-         (2,'landing_triage_snapshot',?,?,?)`,
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,1,'review_read',?,?,?),
+         ('01990000-0000-7000-8000-000000000002',2,'landing_triage_snapshot',?,?,?)`,
       )
-      .run(readId, JSON.stringify(reviewRead), at, snapshotId, JSON.stringify(snapshot), at)
+      .run(
+        newRecordId(),
+        readId,
+        JSON.stringify(reviewRead),
+        at,
+        snapshotId,
+        JSON.stringify(snapshot),
+        at,
+      )
     try {
       expect(
         await withoutDirectRecordCredentials(() =>

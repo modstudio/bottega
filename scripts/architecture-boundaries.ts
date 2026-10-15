@@ -541,6 +541,7 @@ export const importBoundaries: ImportBoundary[] = [
     'landing-outbox-boundary',
     'orchestrator/src/record/landing-outbox.ts',
     [
+      '../../../shared/record-id.ts',
       '../../../shared/record/schema.ts',
       './machine-identity.ts',
       './outbox-sanitize.ts',

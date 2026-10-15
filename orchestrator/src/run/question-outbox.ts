@@ -2,6 +2,7 @@
 /** Knows how local question evidence becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
@@ -91,7 +92,7 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
-        WHERE kind='question' AND record_id=? AND synced_at IS NULL
+        WHERE kind='question' AND row_id=? AND synced_at IS NULL
           AND quarantined_at IS NULL AND retired_at IS NULL
         ORDER BY id LIMIT 1`,
     )
@@ -103,8 +104,10 @@ export function enqueueQuestionRecord(database: Database, questionId: number): b
     return true
   }
   database
-    .query("INSERT INTO outbox (kind,record_id,payload,created_at) VALUES ('question',?,?,?)")
-    .run(recordId, payload, at)
+    .query(
+      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'question',?,?,?)",
+    )
+    .run(newRecordId(), recordId, payload, at)
   return true
 }
 
@@ -112,7 +115,7 @@ export function backfillQuestionRecords(database: Database): { enqueued: number 
   const questions = database
     .query<{ id: number }, []>(
       `SELECT id FROM question WHERE NOT EXISTS (
-         SELECT 1 FROM outbox WHERE kind='question' AND record_id=question.record_id
+         SELECT 1 FROM outbox WHERE kind='question' AND row_id=question.record_id
        ) ORDER BY id`,
     )
     .all()

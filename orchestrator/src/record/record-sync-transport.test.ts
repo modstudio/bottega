@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
@@ -12,19 +13,21 @@ const STAMP = '2026-09-15T01:01:00.000Z'
 function localOutbox(count: number): Database {
   const local = new Database(':memory:')
   local.exec(`CREATE TABLE outbox (
-    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, payload TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
     created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, synced_at TEXT,
     quarantined_at TEXT, quarantine_reason TEXT, retired_at TEXT, retirement_reason TEXT
   );
   CREATE TABLE outbox_quarantine_audit (
-    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
   for (let id = 1; id <= count; id++) {
     local
-      .query("INSERT INTO outbox (id,kind,record_id,payload,created_at) VALUES (?,'run',?,?,?)")
-      .run(id, `record-${id}`, '{}', STAMP)
+      .query(
+        "INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,'run',?,?,?)",
+      )
+      .run(newRecordId(), id, `record-${id}`, '{}', STAMP)
   }
   return local
 }
