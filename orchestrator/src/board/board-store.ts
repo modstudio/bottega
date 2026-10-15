@@ -109,7 +109,16 @@ function rootPurpose(
       audience,
       authorKind: actor.kind,
       authorProject,
-    }) ?? standingPostingRefusal({ purpose, audience, authorKind: actor.kind, authorProject })
+      topics: input.topics,
+    }) ??
+    standingPostingRefusal({
+      purpose,
+      audience,
+      authorKind: actor.kind,
+      authorProject,
+      ackRequired: Boolean(input.ackRequired),
+      topics: input.topics,
+    })
   if (refusal) throw new Error(refusal)
   return purpose
 }

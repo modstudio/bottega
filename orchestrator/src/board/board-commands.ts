@@ -141,8 +141,16 @@ function registerBoardPostCommand(board: Command): void {
     )
     .option('--task <key>')
     .option('--path <glob>', 'add a repository-relative path glob', collect, [])
-    .option('--topic <name>', 'add a controlled board topic', collect, [])
-    .option('--ack-required')
+    .option(
+      '--topic <name>',
+      'add a controlled board topic; platform is for notices about changes to the platform every project depends on',
+      collect,
+      [],
+    )
+    .option(
+      '--ack-required',
+      'require acknowledgement for an operator post, an architect post to its own project, or a platform-topic request or standing post from the platform project to architects:all',
+    )
     .option('--deadline <duration>')
     .option('--expires <duration>')
     .action(async (options) => {

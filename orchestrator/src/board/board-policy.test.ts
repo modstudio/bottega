@@ -267,6 +267,40 @@ test('acknowledgement authority is operator-wide and architect-project-local', (
       authorProject: PLATFORM_SLUG,
     }),
   ).toBeNull()
+  expect(
+    acknowledgementRefusal({
+      ackRequired: true,
+      purpose: 'standing',
+      audience: parseAudience('architects:all'),
+      authorKind: 'architect',
+      authorProject: PLATFORM_SLUG,
+      topics: ['platform'],
+    }),
+  ).toBeNull()
+  expect(
+    standingPostingRefusal({
+      ackRequired: true,
+      purpose: 'standing',
+      audience: parseAudience('architects:all'),
+      authorKind: 'architect',
+      authorProject: PLATFORM_SLUG,
+      topics: ['platform'],
+    }),
+  ).toBeNull()
+  for (const input of [
+    { purpose: 'standing' as const, authorProject: PLATFORM_SLUG, topics: [] },
+    { purpose: 'information' as const, authorProject: PLATFORM_SLUG, topics: ['platform'] },
+    { purpose: 'standing' as const, authorProject: 'other', topics: ['platform'] },
+  ]) {
+    expect(
+      acknowledgementRefusal({
+        ackRequired: true,
+        audience: parseAudience('architects:all'),
+        authorKind: 'architect',
+        ...input,
+      }),
+    ).not.toBeNull()
+  }
   for (const expression of ['project:other', 'architects', 'task:DEV-1', 'machine:host']) {
     expect(
       acknowledgementRefusal({

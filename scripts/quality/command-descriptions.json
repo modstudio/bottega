@@ -70,7 +70,6 @@
   "board pending --json",
   "board pending --session",
   "board post",
-  "board post --ack-required",
   "board post --body",
   "board post --deadline",
   "board post --expires",

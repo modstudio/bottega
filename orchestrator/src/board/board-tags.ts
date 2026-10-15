@@ -1,6 +1,14 @@
 import { isAbsolute } from 'node:path'
 
-export const BOARD_TOPICS = ['release', 'mcp', 'gate', 'canon', 'infra', 'workflows'] as const
+export const BOARD_TOPICS = [
+  'release',
+  'mcp',
+  'gate',
+  'canon',
+  'infra',
+  'workflows',
+  'platform',
+] as const
 export const BOARD_MAX_PATH_TAGS = 10
 const BOARD_MAX_TOPIC_TAGS = 5
 

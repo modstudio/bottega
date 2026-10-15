@@ -1,4 +1,5 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
 
@@ -76,12 +77,21 @@ export function acknowledgementRefusal(input: {
   audience: Audience
   authorKind: 'operator' | 'architect'
   authorProject: string | null
+  topics?: readonly string[]
 }): string | null {
   if (input.ackRequired && input.purpose === 'information')
     return 'an information message cannot require acknowledgement; use purpose request or standing, or post without acknowledgement'
   if (!input.ackRequired || input.authorKind === 'operator') return null
   if (input.audience.kind === 'project' && input.audience.value === input.authorProject) return null
-  return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, or post without acknowledgement'
+  if (
+    input.authorProject === PLATFORM_SLUG &&
+    input.audience.kind === 'architects' &&
+    input.audience.all &&
+    input.topics?.includes('platform') &&
+    (input.purpose === 'request' || input.purpose === 'standing')
+  )
+    return null
+  return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, post as the operator, or post as the platform project to architects:all with topic platform and purpose request or standing'
 }
 
 export function standingPostingRefusal(input: {
@@ -89,9 +99,19 @@ export function standingPostingRefusal(input: {
   audience: Audience
   authorKind: 'operator' | 'architect'
   authorProject: string | null
+  ackRequired?: boolean
+  topics?: readonly string[]
 }): string | null {
   if (input.purpose !== 'standing' || input.authorKind === 'operator') return null
   const ownProject = input.authorProject
+  if (
+    input.ackRequired &&
+    ownProject === PLATFORM_SLUG &&
+    input.audience.kind === 'architects' &&
+    input.audience.all &&
+    input.topics?.includes('platform')
+  )
+    return null
   if (input.audience.kind === 'architects' && !input.audience.all && !input.audience.value)
     return null
   if (

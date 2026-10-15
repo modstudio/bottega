@@ -408,8 +408,22 @@ function purposeRefusal(
   const authorKind = session ? 'architect' : 'operator'
   const authorProject = input.project?.trim() || null
   const refusal =
-    acknowledgementRefusal({ ackRequired, purpose, audience, authorKind, authorProject }) ??
-    standingPostingRefusal({ purpose, audience, authorKind, authorProject })
+    acknowledgementRefusal({
+      ackRequired,
+      purpose,
+      audience,
+      authorKind,
+      authorProject,
+      topics: input.topics,
+    }) ??
+    standingPostingRefusal({
+      purpose,
+      audience,
+      authorKind,
+      authorProject,
+      ackRequired,
+      topics: input.topics,
+    })
   if (refusal) throw new RecordBoardError(refusal, 400)
 }
 
