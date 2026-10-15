@@ -8,6 +8,7 @@ import { type HostedProjectColumns, hostedProjectColumns } from './record-projec
 import { decideHostedProjectWrite, type HostedProjectNameRow } from './record-project-write.ts'
 
 export type RecordProject = {
+  id: string
   spaceId: string
   spaceName: string
   name: string
@@ -21,6 +22,7 @@ export type RecordProject = {
 }
 
 export type RecordProjectUpsertInput = {
+  id?: string
   name: string
   previousName?: string
   path: string
@@ -93,14 +95,12 @@ export async function upsertHostedProjectRow(
     canon: boolean
     retiredAt: string | null
     columns: HostedProjectColumns
+    id?: string
   },
 ): Promise<string> {
-  const existing = await tx`
-    SELECT id FROM project WHERE space_id = ${input.spaceId}::uuid AND name = ${input.name}
-  `
-  const id = existing.length ? String(existing[0]!.id) : newRecordId()
+  const id = input.id ?? newRecordId()
   const columns = input.columns
-  await tx`
+  const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
@@ -154,18 +154,21 @@ export async function upsertHostedProjectRow(
       tracker = EXCLUDED.tracker,
       worktree = EXCLUDED.worktree,
       retired_at = EXCLUDED.retired_at
+    RETURNING id
   `
-  return id
+  return String(rows[0]!.id)
 }
 
 export async function listRecordProjects(
   input: { url: string } & TenantPrincipal,
 ): Promise<RecordProject[]> {
   return tenant(input, async (tx) => {
-    const rows = await tx`SELECT p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
+    const rows =
+      await tx`SELECT p.id, p.space_id, s.name AS space_name, p.name, p.key_prefixes, p.stack,
         p.managed_context, p.landing_branch, p.color, p.color_dark, p.retired_at
         FROM project p JOIN space s ON s.id=p.space_id ORDER BY s.name,p.name`
     return rows.map((row: Record<string, unknown>) => ({
+      id: String(row.id),
       spaceId: String(row.space_id),
       spaceName: String(row.space_name),
       name: String(row.name),
@@ -182,7 +185,7 @@ export async function listRecordProjects(
 
 export async function upsertRecordProject(
   input: Tenant & RecordProjectUpsertInput,
-): Promise<{ name: string }> {
+): Promise<{ id: string; name: string }> {
   return tenant(input, async (tx) => {
     const currentName = input.previousName ?? input.name
     const nextName = input.name
@@ -217,8 +220,9 @@ export async function upsertRecordProject(
     if (currentName !== nextName) {
       await renameHostedDocSubjects(tx, input.spaceId, currentName, nextName)
     }
-    await upsertHostedProjectRow(tx, {
+    const id = await upsertHostedProjectRow(tx, {
       spaceId: input.spaceId,
+      id: input.id,
       name: nextName,
       path: input.path,
       stack: input.stack,
@@ -226,7 +230,7 @@ export async function upsertRecordProject(
       retiredAt: input.retiredAt,
       columns,
     })
-    return { name: nextName }
+    return { id, name: nextName }
   })
 }
 

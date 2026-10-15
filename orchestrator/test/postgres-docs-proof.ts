@@ -12,6 +12,7 @@ import {
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
+import { proveProjectIdentity } from './postgres-project-identity-proof.ts'
 import { proveSubjects } from './postgres-subject-cursor-proof.ts'
 
 function unused(): Promise<never> {
@@ -492,6 +493,8 @@ async function proveRequestedProjectSpace(
   activeSpaceId: string,
   destinationSpaceId: string,
 ): Promise<void> {
+  await proveProjectIdentity(origin, headers)
+
   const activeProjectName = `active-project-${newRecordId()}`
   const activeProject = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',

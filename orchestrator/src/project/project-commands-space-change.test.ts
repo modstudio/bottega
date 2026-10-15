@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -77,7 +78,7 @@ test('project set attributes an existing hosted row to its own space slug', asyn
     whoami: async () => identity,
     listProjects: async (destination) => {
       listed.push(destination?.destinationSpaceId ?? '')
-      return [{ name: 'space-move', spaceId: 'space-active' }]
+      return [{ id: newRecordId(), name: 'space-move', spaceId: 'space-active' }]
     },
   })
   await expect(
@@ -93,6 +94,7 @@ test('project set attributes an existing hosted row to its own space slug', asyn
 
 test('project set succeeds when no hosted row exists outside the destination', async () => {
   upsertProject({ name: 'space-new', path: '/w/space-new' })
+  const hostedId = newRecordId()
   const writes: Array<string | undefined> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -100,7 +102,7 @@ test('project set succeeds when no hosted row exists outside the destination', a
     listProjects: async () => [],
     upsertProject: async (input, destination) => {
       writes.push(destination?.destinationSpaceId)
-      return { name: input.name }
+      return { id: hostedId, name: input.name }
     },
   })
   await runProject(['project', 'set', 'space-new'], {
@@ -108,6 +110,7 @@ test('project set succeeds when no hosted row exists outside the destination', a
   })
   expect(writes).toEqual(['space-next'])
   expect(projectByName('space-new')?.settings.space).toBe('next-team')
+  expect(projectByName('space-new')?.recordId).toBe(hostedId)
 })
 
 test('fill-absent refuses a hosted row elsewhere before writing hosted or local settings', async () => {
@@ -116,10 +119,12 @@ test('fill-absent refuses a hosted row elsewhere before writing hosted or local 
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami: async () => identity,
-    listProjects: async () => [{ name: 'fill-space-move', spaceId: 'space-active' }],
+    listProjects: async () => [
+      { id: newRecordId(), name: 'fill-space-move', spaceId: 'space-active' },
+    ],
     upsertProject: async (input) => {
       writes += 1
-      return { name: input.name }
+      return { id: newRecordId(), name: input.name }
     },
   })
   await expect(
@@ -144,7 +149,7 @@ test('fill-absent writes only to the declaration before its local commit', async
     upsertProject: async (input, destination) => {
       events.push(`hosted:${destination?.destinationSpaceId}`)
       expect(projectByName(input.name)?.settings.space).toBeUndefined()
-      return { name: input.name }
+      return { id: newRecordId(), name: input.name }
     },
   })
   await fillAbsentProjectSettings({

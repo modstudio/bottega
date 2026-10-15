@@ -70,6 +70,8 @@ export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
   id: number
+  /** Hosted record identity; nullable until the one-time identity fill runs. */
+  recordId: string | null
   /** What it is called. Matches the directory name by default, not necessarily. */
   name: string
   /** Absolute path to its main checkout. */
@@ -148,6 +150,7 @@ export function resolvedWorktreeTool(
 
 function parse(row: {
   id: number
+  record_id?: string | null
   name: string
   path: string
   stack: string | null
@@ -166,6 +169,7 @@ function parse(row: {
   }
   return {
     id: row.id,
+    recordId: row.record_id ?? null,
     name: row.name,
     path: row.path,
     stack: row.stack,
@@ -187,6 +191,13 @@ export function projectRowByName(name: string, d = db()): Project | null {
     | Parameters<typeof parse>[0]
     | null
   return r ? parse(r) : null
+}
+
+function projectRowById(id: number, d = db()): Project | null {
+  const row = d.query('SELECT * FROM project WHERE id = ?').get(id) as
+    | Parameters<typeof parse>[0]
+    | null
+  return row ? parse(row) : null
 }
 
 export function projectByName(name: string, d = db()): Project | null {
@@ -257,6 +268,7 @@ export function stackAt(cwd: string): string | null {
 }
 
 export function upsertProject(p: {
+  recordId?: string | null
   name: string
   path: string
   stack?: string | null
@@ -268,6 +280,26 @@ export function upsertProject(p: {
     ...p,
     settings: projectSettingsForStorage(p.settings),
   })
+}
+
+/** Store the hosted identity once on the exact snapshotted row. */
+export function storeProjectRecordId(id: number, recordId: string): void {
+  writableDb()
+  const result = db()
+    .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
+    .run(recordId, id)
+  if (result.changes > 0) return
+  const project = projectRowById(id)
+  if (!project) {
+    throw new Error(
+      `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+    )
+  }
+  if (project.recordId !== recordId) {
+    throw new Error(
+      `project ${project.name} already has hosted identity ${project.recordId}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+    )
+  }
 }
 
 function projectSettingsForStorage(
@@ -282,6 +314,7 @@ function projectSettingsForStorage(
 
 export async function writeHostedProject(
   p: {
+    recordId?: string | null
     name: string
     previousName?: string
     path: string
@@ -291,8 +324,8 @@ export async function writeHostedProject(
     retiredAt?: string | null
   },
   destinationSpaceId?: string,
-): Promise<void> {
-  await writeProjectToHostedRecord(
+): Promise<string> {
+  return writeProjectToHostedRecord(
     { ...p, settings: projectSettingsForStorage(p.settings) },
     destinationSpaceId,
   )
@@ -302,7 +335,8 @@ export async function pushProjects(): Promise<string[]> {
   requireHostedProjectPush()
   const names: string[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {
-    await writeHostedProject({
+    const recordId = await writeHostedProject({
+      recordId: project.recordId,
       name: project.name,
       path: project.path,
       stack: project.stack,
@@ -310,6 +344,7 @@ export async function pushProjects(): Promise<string[]> {
       settings: project.settings,
       retiredAt: project.retiredAt,
     })
+    storeProjectRecordId(project.id, recordId)
     names.push(project.name)
   }
   return names

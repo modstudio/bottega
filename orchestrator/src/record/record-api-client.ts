@@ -263,6 +263,7 @@ export type RecordApiClient = {
   ): Promise<{ docs: number; revisions: number }>
   upsertProject(
     input: {
+      id?: string
       name: string
       previousName?: string
       path: string
@@ -272,10 +273,10 @@ export type RecordApiClient = {
       retiredAt: string | null
     },
     destination?: RecordRequestDestination,
-  ): Promise<{ name: string }>
+  ): Promise<{ id: string; name: string }>
   listProjects(
     destination?: RecordRequestDestination,
-  ): Promise<Array<{ name: string; spaceId: string }>>
+  ): Promise<Array<{ id: string; name: string; spaceId: string }>>
   retireProject(name: string, destination?: RecordRequestDestination): Promise<{ name: string }>
   listProjectSubjects(
     query: {

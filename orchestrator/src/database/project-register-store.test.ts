@@ -33,6 +33,8 @@ test('a new store gets the exact default local project once', () => {
     canon: 0,
     settings: JSON.stringify(DEFAULT_LOCAL_PROJECT_SETTINGS),
   })
+  const recordId = (rows[0] as { record_id: string }).record_id
+  expect(recordId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   expect(existsSync(join(root, 'projects', 'tasks'))).toBe(true)
 })
 

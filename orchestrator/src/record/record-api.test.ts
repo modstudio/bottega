@@ -39,7 +39,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     readReleases: async () => [],
     readLatestReleases: async () => [],
     readProjects: async () => [],
-    upsertProject: async () => ({ name: 'one' }),
+    upsertProject: async () => ({ id, name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
     listDocs: async () => [],
     listPublicDocs: async () => [],
@@ -828,6 +828,7 @@ describe('record API presentation routes', () => {
 
   test('projects contain only the presentation allowlist', async () => {
     const project = {
+      id,
       name: 'one',
       keyPrefixes: ['ONE'],
       stack: null,
@@ -843,6 +844,7 @@ describe('record API presentation routes', () => {
     expect(Object.keys(rows[0]!).sort()).toEqual([
       'color',
       'colorDark',
+      'id',
       'keyPrefixes',
       'landingBranch',
       'name',
@@ -864,11 +866,16 @@ describe('record API presentation routes', () => {
   })
 
   test('validates project upsert at the edge and passes the tenant', async () => {
-    const calls: Array<{ name: string; userId: string; spaceId: string }> = []
+    const calls: Array<{ id?: string; name: string; userId: string; spaceId: string }> = []
     const app = appWith(identity, {
-      upsertProject: async (input: { name: string; userId: string; spaceId: string }) => {
+      upsertProject: async (input: {
+        id?: string
+        name: string
+        userId: string
+        spaceId: string
+      }) => {
         calls.push(input)
-        return { name: input.name }
+        return { id: input.id ?? id, name: input.name }
       },
     })
     const invalid = await app.request('/v1/projects', {
@@ -882,6 +889,7 @@ describe('record API presentation routes', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        id,
         name: 'probe',
         path: '/w/probe',
         stack: 'ts',
@@ -892,7 +900,7 @@ describe('record API presentation routes', () => {
     })
     expect(response.status).toBe(200)
     expect(calls).toEqual([
-      expect.objectContaining({ name: 'probe', userId: 'user-a', spaceId: 'space-a' }),
+      expect.objectContaining({ id, name: 'probe', userId: 'user-a', spaceId: 'space-a' }),
     ])
   })
 
@@ -930,7 +938,7 @@ describe('record API presentation routes', () => {
     const app = appWith(identity, {
       retireProject: async (input: { name: string }) => {
         calls.push(input.name)
-        return { name: input.name }
+        return { id, name: input.name }
       },
     })
     const response = await app.request('/v1/projects/probe/retire', { method: 'POST' })

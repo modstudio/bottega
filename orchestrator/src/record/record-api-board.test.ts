@@ -41,7 +41,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readReleases: async () => [],
     readLatestReleases: async () => [],
     readProjects: async () => [],
-    upsertProject: async () => ({ name: 'one' }),
+    upsertProject: async () => ({ id: newRecordId(), name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
     listDocs: async () => [],
     listPublicDocs: async () => [],

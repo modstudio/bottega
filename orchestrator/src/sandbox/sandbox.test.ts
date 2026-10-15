@@ -45,6 +45,7 @@ import {
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   id: 1,
+  recordId: null,
   name: 'fixture',
   path: '/projects/fixture',
   stack: 'node',

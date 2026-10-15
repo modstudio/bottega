@@ -8,6 +8,7 @@ import {
 
 const project = {
   id: 1,
+  recordId: null,
   name: 'alpha',
   path: '/tmp/alpha',
   stack: null,

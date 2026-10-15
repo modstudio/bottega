@@ -20,6 +20,7 @@ console.log(
   JSON.stringify([
     {
       id: 1,
+      record_id: null,
       name: 'alpha',
       path: '/fixtures/repos/alpha',
       stack: null,
@@ -39,6 +40,7 @@ console.log(
     },
     {
       id: 2,
+      record_id: null,
       name: 'beta',
       path: '/fixtures/repos/beta',
       stack: null,
@@ -48,6 +50,7 @@ console.log(
     },
     {
       id: 3,
+      record_id: null,
       name: 'gamma',
       path: '/fixtures/repos/gamma',
       stack: null,
@@ -57,6 +60,7 @@ console.log(
     },
     {
       id: 4,
+      record_id: null,
       name: 'delta',
       path: '/fixtures/repos/delta',
       stack: null,
@@ -66,6 +70,7 @@ console.log(
     },
     {
       id: 5,
+      record_id: null,
       name: 'workshop',
       path: '/fixtures/repos/workshop',
       stack: null,
@@ -80,6 +85,7 @@ console.log(
     },
     {
       id: 6,
+      record_id: null,
       name: 'nested',
       path: '/fixtures/repos/alpha/packages/nested',
       stack: null,
@@ -89,6 +95,7 @@ console.log(
     },
     {
       id: 7,
+      record_id: null,
       name: 'epsilon',
       path: '/fixtures/repos/epsilon',
       stack: null,
@@ -98,6 +105,7 @@ console.log(
     },
     {
       id: 8,
+      record_id: null,
       name: 'zeta',
       path: '/fixtures/repos/zeta',
       stack: null,
@@ -107,6 +115,7 @@ console.log(
     },
     {
       id: 9,
+      record_id: null,
       name: 'stopal',
       path: '/fixtures/repos/stopal',
       stack: null,

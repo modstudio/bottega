@@ -10,6 +10,7 @@ import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
+import { fillProjectRecordIds } from './project-record-identity.ts'
 import {
   applyLocalProjectRename,
   assertProjectRename,
@@ -44,9 +45,10 @@ const enabledLensIds = (): string[] =>
     .map((lens) => lens.id)
 
 function listedProjectJson(project: Project) {
-  const { retiredAt, ...rest } = project
+  const { recordId, retiredAt, ...rest } = project
   return {
     ...rest,
+    record_id: recordId,
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: lifecycleForm(project.settings.worktree),
@@ -148,6 +150,7 @@ export async function addProject(
   await validateDeclaredSpace(input.settings, requireMembership)
   const candidate = {
     id: 0,
+    recordId: null,
     name: input.name,
     path: input.path,
     stack: input.stack,
@@ -159,8 +162,8 @@ export async function addProject(
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
   assertRegisterBranches(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
-  await writeHostedProject(candidate)
-  upsertProject(candidate)
+  const recordId = await writeHostedProject(candidate)
+  upsertProject({ ...candidate, recordId })
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
   return { project, wasRetired }
@@ -199,14 +202,14 @@ async function addProjectCommand(
     requireMembership,
   )
   if (has('json')) {
-    presentation.log(JSON.stringify(project))
+    presentation.log(JSON.stringify(listedProjectJson(project)))
     return
   }
   if (wasRetired) {
     presentation.log(`un-retired ${name}`)
   } else {
     presentation.log(
-      `registered ${name}  ${stack ?? '(no stack — ${PLATFORM_SLUG} project set ' + name + ' --stack ...)'}  ${path}`,
+      `registered ${name}  ${stack ?? `(no stack — ${PLATFORM_SLUG} project set ${name} --stack ...)`}  ${path}`,
     )
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {
@@ -304,14 +307,14 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
 async function writeHostedFillCandidate(
   snapshot: Project,
   candidate: FillCandidate,
-): Promise<void> {
-  if (!candidate.project) return
+): Promise<string | null> {
+  if (!candidate.project) return null
   const destination = await hostedProjectDestination(
     candidate.project.name,
     candidate.project.settings,
   )
   await refuseHostedProjectSpaceChange(snapshot, candidate.project.settings, destination)
-  await writeHostedProject(candidate.project, destination?.destinationSpaceId)
+  return writeHostedProject(candidate.project, destination?.destinationSpaceId)
 }
 
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
@@ -323,7 +326,7 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
     const checked = fillCandidate(snapshot, input)
     const branchCheck = checked.project ? registerBranchCheck(checked.project) : null
     try {
-      await writeHostedFillCandidate(snapshot, checked)
+      const recordId = await writeHostedFillCandidate(snapshot, checked)
       writeTransaction(() => {
         const current = projectByName(input.name)
         if (!current) throw new Error(`no project "${input.name}"`)
@@ -339,8 +342,8 @@ export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): 
           throw new FillAbsentProjectChanged()
         }
         assertRegisterBranches(next.project, branchCheck!)
-        upsertProject(next.project)
-        candidate = next.project
+        upsertProject({ ...next.project, recordId })
+        candidate = { ...next.project, recordId }
       })
       break
     } catch (error) {
@@ -419,7 +422,7 @@ async function persistSetProject(
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  await writeHostedProject(
+  const recordId = await writeHostedProject(
     {
       ...candidate,
       previousName: renamed ? currentName : undefined,
@@ -429,7 +432,7 @@ async function persistSetProject(
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   writeTransaction(() => {
     if (renamed) applyLocalProjectRename(renamed, currentName, nextName)
-    upsertProject(candidate)
+    upsertProject({ ...candidate, recordId })
   })
   if (previousTrunk === nextTrunk) return
   tryWriteContention({
@@ -464,6 +467,7 @@ async function setProjectCommand(
   const nextName = flags.flag('name') ?? name
   const candidate = {
     id: project.id,
+    recordId: project.recordId,
     name: nextName,
     path: flags.flag('path') ?? project.path,
     stack: flags.flag('stack') ?? project.stack,
@@ -489,7 +493,7 @@ async function setProjectCommand(
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
   await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
   if (flags.has('json')) {
-    presentation.log(JSON.stringify(projectByName(nextName)))
+    presentation.log(JSON.stringify(listedProjectJson(projectByName(nextName)!)))
     return
   }
   presentation.log(`updated ${nextName}`)
@@ -512,6 +516,31 @@ async function retireProjectCommand(
   }
   const outcome = await retireWrittenProject(name)
   presentation.log(outcome === 'already-retired' ? `already retired ${name}` : `retired ${name}`)
+}
+
+async function fillProjectRecordIdsCommand(
+  json: boolean,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  const rows = await fillProjectRecordIds()
+  if (json) {
+    presentation.log(JSON.stringify(rows))
+    return
+  }
+  for (const row of rows) {
+    presentation.log(`filled ${row.name}  ${row.recordId}  ${row.source}`)
+  }
+  presentation.log(`filled ${rows.length} project record id${rows.length === 1 ? '' : 's'}`)
+}
+
+async function pushProjectsCommand(
+  json: boolean,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  const names = await pushProjects()
+  presentation.log(
+    json ? JSON.stringify(names) : `pushed ${names.length} project${names.length === 1 ? '' : 's'}`,
+  )
 }
 
 export async function projectCommand(
@@ -615,16 +644,16 @@ export async function projectCommand(
   }
 
   if (sub === 'push') {
-    const names = await pushProjects()
-    if (has('json')) {
-      presentation.log(JSON.stringify(names))
-      return
-    }
-    presentation.log(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
+    await pushProjectsCommand(has('json'), presentation)
+    return
+  }
+
+  if (sub === 'fill-record-ids') {
+    await fillProjectRecordIdsCommand(has('json'), presentation)
     return
   }
 
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | remove | retire | push`,
+    `unknown: ${PLATFORM_SLUG} project ${sub}. Try list | add | set | remove | retire | push | fill-record-ids`,
   )
 }

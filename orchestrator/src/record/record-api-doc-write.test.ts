@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
 
@@ -30,7 +31,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     readReleases: async () => [],
     readLatestReleases: async () => [],
     readProjects: async () => [],
-    upsertProject: async () => ({ name: 'one' }),
+    upsertProject: async () => ({ id: newRecordId(), name: 'one' }),
     retireProject: async () => ({ name: 'one' }),
     listDocs: async () => [],
     listPublicDocs: async () => [],

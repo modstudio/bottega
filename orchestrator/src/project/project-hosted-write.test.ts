@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -62,7 +63,7 @@ test('fresh stores add, fill, retire, and unretire locally without a hosted call
     ...createMemoryRecordApiClient(),
     upsertProject: async (input) => {
       hosted.push(`upsert:${input.name}`)
-      return { name: input.name }
+      return { id: newRecordId(), name: input.name }
     },
     retireProject: async (name) => {
       hosted.push(`retire:${name}`)

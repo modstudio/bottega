@@ -44,6 +44,7 @@ const catalogue = (
 
 const project = (settings: Project['settings']): Project => ({
   id: 1,
+  recordId: null,
   name: 'fixture',
   path: '/fixture',
   stack: 'bun',
