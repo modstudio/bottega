@@ -10,8 +10,7 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
-import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
-import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
+import type { RecordBoardDeps } from './record-api-board.ts'
 import {
   recordCanonImportSchema,
   recordDocImportSchema,
@@ -21,13 +20,12 @@ import {
   type RecordInvitationRouteDeps,
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
-import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
-import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import type {
@@ -283,21 +281,6 @@ const noSpace = (context: Context<ApiEnvironment>) =>
 function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
-}
-
-function registerRecordWriteRoutes(
-  app: Hono<ApiEnvironment>,
-  deps: Deps,
-  ports: {
-    scope(context: Context<ApiEnvironment>): Tenant | null
-    noSpace(context: Context<ApiEnvironment>): Response
-    writeError(context: Context<ApiEnvironment>, error: unknown): Response
-  },
-): void {
-  registerRecordProjectRoutes(app, deps, ports)
-  registerRecordSettingsRoutes(app, deps, ports)
-  registerRecordBoardRoutes(app, deps, ports)
-  registerRecordDocOrderRoute(app, deps, ports)
 }
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {

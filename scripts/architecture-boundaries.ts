@@ -693,6 +693,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-public-docs.ts',
       './record-api-doc-schemas.ts',
       './record-api-doc-order.ts',
+      './record-api-write-routes.ts',
       './record-api-settings.ts',
       './record-api-subjects.ts',
       './record-api-request-space.ts',

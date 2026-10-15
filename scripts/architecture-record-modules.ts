@@ -311,6 +311,14 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-docs.ts',
   ]),
+  module('orchestrator/src/record/record-api-write-routes.ts', [
+    'hono',
+    './record-api-board.ts',
+    './record-api-doc-order.ts',
+    './record-api-projects.ts',
+    './record-api-settings.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',
