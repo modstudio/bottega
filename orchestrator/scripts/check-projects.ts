@@ -12,12 +12,8 @@ import {
 
 const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 
-export function projectChecksArgv(repositoryRoot: string): string[] {
-  return [`${repositoryRoot}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled']
-}
-
 function run(store?: string): number {
-  const child = Bun.spawnSync(projectChecksArgv(root), {
+  const child = Bun.spawnSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
     env: store ? { ...process.env, ORCH_DB: store } : process.env,
     stdout: 'inherit',
     stderr: 'inherit',

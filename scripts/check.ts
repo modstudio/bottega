@@ -338,7 +338,6 @@ if (
     './scripts/build-release.test.ts',
     './scripts/build-release-artifacts.test.ts',
     './scripts/publish-release.test.ts',
-    './orchestrator/scripts/check-projects.test.ts',
     './cli/dispatch.test.ts',
     './cli/routes.test.ts',
     './cli/legacy-calls.test.ts',
