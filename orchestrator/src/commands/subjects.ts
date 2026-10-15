@@ -2,16 +2,45 @@
 /** Registers project-subject commands. Must not own their behavior. */
 import type { Command } from 'commander'
 import { subjectCommand } from '../subject/subject-commands.ts'
-import { log, optionFlags } from './support.ts'
+import { actionCommand, log, optionFlags, values } from './support.ts'
+
+type SubjectSpec = readonly [
+  syntax: string,
+  description: string,
+  options: readonly (readonly [string, string])[],
+]
+
+const json = ['--json', 'print JSON output'] as const
+const definition = ['--definition <value>', 'set the subject definition'] as const
+const specs: readonly SubjectSpec[] = [
+  ['list [project]', 'list project subjects', [['--retired', 'include retired subjects'], json]],
+  ['add [project] [name]', 'add a project subject', [definition, json]],
+  ['rename [project] [subject] [name]', 'rename a project subject', [json]],
+  ['define [project] [subject]', 'change a project subject definition', [definition, json]],
+  ['reorder [project] [subjects...]', 'set the order of project subjects', [json]],
+  ['retire [project] [subject]', 'retire a project subject', [json]],
+]
+
+async function runSubject(verb: string, args: string[], command: Command): Promise<void> {
+  await subjectCommand(verb, ['subject', verb, ...args], optionFlags(command.opts()), { log })
+}
 
 export function register(program: Command): void {
-  program
-    .command('subject [args...]')
-    .option('--definition <value>')
-    .option('--retired')
-    .option('--json')
-    .action(async (args, options) => {
-      const argv = ['subject', ...args]
-      await subjectCommand(argv[1] ?? 'list', argv, optionFlags(options), { log })
+  const family = program
+    .command('subject')
+    .description('manage the subject vocabulary for projects')
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      const [verb = 'list', ...args] = command.args
+      return runSubject(verb, args, command)
     })
+  for (const [syntax, description, options] of specs) {
+    const verb = syntax.split(' ')[0]!
+    const command = family.command(syntax).description(description)
+    for (const [flags, optionDescription] of options) command.option(flags, optionDescription)
+    command.action((...args: unknown[]) =>
+      runSubject(verb, values(args.slice(0, -1)), actionCommand(args)),
+    )
+  }
 }

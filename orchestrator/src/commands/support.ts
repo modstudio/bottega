@@ -27,7 +27,9 @@ export function optionFlags(options: OptionValues): CliFlags {
     has: (name) =>
       name.startsWith('no-')
         ? options[optionKey(name.slice(3))] === false || Boolean(options[optionKey(name)])
-        : Boolean(options[optionKey(name)]),
+        : Array.isArray(options[optionKey(name)])
+          ? options[optionKey(name)].length > 0
+          : Boolean(options[optionKey(name)]),
     flag: (name) => {
       const value = options[optionKey(name)]
       if (Array.isArray(value)) {
@@ -45,6 +47,15 @@ export function optionFlags(options: OptionValues): CliFlags {
 }
 
 export const collect = (value: string, previous: string[]): string[] => [...previous, value]
+
+/** Extracts positional values from Commander's variadic action callback. */
+export const values = (input: unknown[]): string[] =>
+  input
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value): value is string => typeof value === 'string')
+
+/** Extracts the command from Commander's action callback arguments. */
+export const actionCommand = (input: unknown[]): Command => input.at(-1) as Command
 
 /** Carries parsed Commander values to product grammars retained for a later slice. */
 export function productArgv(command: string, args: string[], options: OptionValues): string[] {
