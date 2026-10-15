@@ -58,6 +58,7 @@ const postSchema = z
     authorMachineId: idSchema.nullable().optional(),
     authorRunId: idSchema.nullable().optional(),
     project: z.string().min(1).optional(),
+    projectId: idSchema.nullable().optional(),
     currentTaskKey: z.string().min(1).nullable().optional(),
   })
   .strict()
@@ -74,6 +75,7 @@ const replySchema = z
     authorMachineId: idSchema.nullable().optional(),
     authorRunId: idSchema.nullable().optional(),
     project: z.string().min(1).optional(),
+    projectId: idSchema.nullable().optional(),
   })
   .strict()
 const sessionBody = z.object({ authorSession: sessionSchema }).strict()
@@ -95,6 +97,7 @@ const takeClaimSchema = z
   .object({
     id: idSchema,
     project: z.string().min(1),
+    projectId: idSchema.nullable().optional(),
     subject: headerValueSchema.min(1),
     durationMs: z.number().int().positive().optional(),
     runId: idSchema.nullable().optional(),

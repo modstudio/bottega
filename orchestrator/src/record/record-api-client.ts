@@ -75,6 +75,7 @@ export type RecordDocUpsertInput = {
   checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   projectName?: string | null
+  projectId?: string | null
   reason: string
   author: string
   forceInject?: string
@@ -111,6 +112,7 @@ export type RecordDocImportInput = {
     checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     projectName?: string | null
+    projectId?: string | null
     createdAt: string
     updatedAt: string
     deletedAt: string | null
@@ -281,6 +283,7 @@ export type RecordApiClient = {
   listProjectSubjects(
     query: {
       project?: string
+      projectId?: string | null
       includeRetired?: boolean
       order?: 'catalog' | 'updated'
       cursor?: string
@@ -289,23 +292,29 @@ export type RecordApiClient = {
     destination?: RecordRequestDestination,
   ): Promise<{ items: RecordSubject[]; nextCursor: string | null; endCursor?: string | null }>
   addProjectSubject(
-    input: { id: string; project: string; name: string; definition: string },
+    input: {
+      id: string
+      project: string
+      projectId?: string | null
+      name: string
+      definition: string
+    },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
   renameProjectSubject(
-    input: { project: string; id: string; name: string },
+    input: { project: string; projectId?: string | null; id: string; name: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
   defineProjectSubject(
-    input: { project: string; id: string; definition: string },
+    input: { project: string; projectId?: string | null; id: string; definition: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
   reorderProjectSubjects(
-    input: { project: string; ids: string[] },
+    input: { project: string; projectId?: string | null; ids: string[] },
     destination?: RecordRequestDestination,
   ): Promise<{ items: RecordSubject[] }>
   retireProjectSubject(
-    input: { project: string; id: string },
+    input: { project: string; projectId?: string | null; id: string },
     destination?: RecordRequestDestination,
   ): Promise<RecordSubject>
   putScore(runId: string, input: VerdictInput): Promise<void>
@@ -742,6 +751,7 @@ export function recordApiClient(): RecordApiClient {
     listProjectSubjects: (query, destination) => {
       const search = new URLSearchParams()
       if (query.project) search.set('project', query.project)
+      if (query.projectId) search.set('projectId', query.projectId)
       if (query.includeRetired) search.set('includeRetired', 'true')
       if (query.order) search.set('order', query.order)
       if (query.cursor) search.set('cursor', query.cursor)
@@ -753,13 +763,13 @@ export function recordApiClient(): RecordApiClient {
     renameProjectSubject: (input, destination) =>
       request(`/v1/subjects/${input.id}/rename`, {
         method: 'POST',
-        body: JSON.stringify({ project: input.project, name: input.name }),
+        body: JSON.stringify({ project: input.project, projectId: input.projectId, name: input.name }),
         ...destination,
       }),
     defineProjectSubject: (input, destination) =>
       request(`/v1/subjects/${input.id}/define`, {
         method: 'POST',
-        body: JSON.stringify({ project: input.project, definition: input.definition }),
+        body: JSON.stringify({ project: input.project, projectId: input.projectId, definition: input.definition }),
         ...destination,
       }),
     reorderProjectSubjects: (input, destination) =>
@@ -771,7 +781,7 @@ export function recordApiClient(): RecordApiClient {
     retireProjectSubject: (input, destination) =>
       request(`/v1/subjects/${input.id}/retire`, {
         method: 'POST',
-        body: JSON.stringify({ project: input.project }),
+        body: JSON.stringify({ project: input.project, projectId: input.projectId }),
         ...destination,
       }),
     putScore: async (runId, input) => {

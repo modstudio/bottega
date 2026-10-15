@@ -12,13 +12,18 @@ type ReleaseRow = Record<string, unknown> & { id: number; record_id: string }
 
 export function enqueueReleaseRecord(database: Database, releaseId: number): void {
   const row = database
-    .query<ReleaseRow, [number]>('SELECT * FROM release_ledger WHERE id=?')
+    .query<ReleaseRow, [number]>(
+      `SELECT release_ledger.*, project.record_id AS project_record_id
+       FROM release_ledger LEFT JOIN project ON project.name=release_ledger.project
+       WHERE release_ledger.id=?`,
+    )
     .get(releaseId)
   if (!row) throw new Error(`release ${releaseId} does not exist and cannot be enqueued`)
   const at = nowIso()
   const payload = stringifyOutboxPayload('release', {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
+    projectId: row.project_record_id,
     projectName: row.project,
     machineId: machineId(),
     localId: row.id,

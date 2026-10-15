@@ -31,7 +31,7 @@ export function enqueueReview(database: Database, reviewId: number): void {
   const machine = machineId()
   const row = database
     .query<Record<string, unknown>, [number]>(
-      `SELECT review.*, project.name AS project_name FROM review
+      `SELECT review.*, project.name AS project_name, project.record_id AS project_record_id FROM review
       LEFT JOIN project ON project.id=review.project_id WHERE review.id=?`,
     )
     .get(reviewId)
@@ -43,6 +43,7 @@ export function enqueueReview(database: Database, reviewId: number): void {
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectId: row.project_record_id,
       projectName: row.project_name,
       machineId: machine,
       localId: row.id,
@@ -82,7 +83,7 @@ export function enqueueReviewLens(
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT lens.*, review.record_id AS review_record_id, run.record_id AS run_record_id,
-              project.name AS project_name
+              project.name AS project_name, project.record_id AS project_record_id
        FROM review_lens lens JOIN review ON review.id=lens.review_id
        JOIN run ON run.id=lens.run_id
        LEFT JOIN project ON project.id=review.project_id WHERE lens.id=?`,
@@ -97,6 +98,7 @@ export function enqueueReviewLens(
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectId: row.project_record_id,
       projectName: row.project_name,
       reviewId: row.review_record_id,
       runId: row.run_record_id,
@@ -134,7 +136,7 @@ export function enqueueReviewFinding(
   const row = database
     .query<Record<string, unknown>, [number]>(
       `SELECT finding.*, review.record_id AS review_record_id,
-            project.name AS project_name,
+            project.name AS project_name, project.record_id AS project_record_id,
             lens.record_id AS review_lens_record_id
        FROM review_finding finding JOIN review ON review.id=finding.review_id
        JOIN review_lens lens ON lens.id=finding.review_lens_id
@@ -149,6 +151,7 @@ export function enqueueReviewFinding(
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectId: row.project_record_id,
       projectName: row.project_name,
       reviewId: row.review_record_id,
       reviewLensId: row.review_lens_record_id,
@@ -174,7 +177,7 @@ export function enqueueReviewRead(database: Database, readId: number): void {
   const at = nowIso()
   const row = database
     .query<Record<string, unknown>, [number]>(
-      `SELECT review_read.*, project.name AS project_name FROM review_read
+      `SELECT review_read.*, project.name AS project_name, project.record_id AS project_record_id FROM review_read
      LEFT JOIN project ON project.id=review_read.project_id WHERE review_read.id=?`,
     )
     .get(readId)
@@ -186,6 +189,7 @@ export function enqueueReviewRead(database: Database, readId: number): void {
     {
       id: row.record_id,
       spaceId: PLATFORM_SPACE_ID,
+      projectId: row.project_record_id,
       projectName: row.project_name,
       machineId: machineId(),
       localId: row.id,

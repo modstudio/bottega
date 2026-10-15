@@ -365,7 +365,7 @@ async function takeClaimInTx(
 ): Promise<TakeOutcome> {
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, clock)
-  const projectId = await resolveVisibleProjectId(tx, input.project)
+  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
   const open = (await tx`
     SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
     ORDER BY taken_at, id

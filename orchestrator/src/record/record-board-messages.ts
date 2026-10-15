@@ -218,7 +218,21 @@ export function uniqueProjectId(ids: string[]): string | null {
   return ids.length === 1 ? ids[0]! : null
 }
 
-export async function resolveVisibleProjectId(tx: SQL, name: string): Promise<string> {
+export async function resolveVisibleProjectId(
+  tx: SQL,
+  name: string,
+  requestedId?: string | null,
+): Promise<string> {
+  if (requestedId) {
+    const rows = await tx`SELECT id,name,retired_at FROM project WHERE id=${requestedId}::uuid`
+    if (rows.length !== 1 || rows[0]!.retired_at != null)
+      throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+    if (String(rows[0]!.name) !== name)
+      console.warn(
+        `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(name)}`,
+      )
+    return String(rows[0]!.id)
+  }
   const id = uniqueProjectId(await visibleProjectIds(tx, name))
   if (id === null) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
   return id
@@ -440,7 +454,7 @@ export async function postHostedBoardMessage(
   ]
   const clock = Date.now()
   return withBoardTenant(input, true, async (tx) => {
-    const prepared = await prepareHostedPost(tx, audience, input.project)
+    const prepared = await prepareHostedPost(tx, audience, input.project, input.projectId)
     const requested: HostedBoardCreateContent = {
       kind: input.kind,
       purpose,
@@ -491,6 +505,7 @@ async function prepareHostedPost(
   tx: SQL,
   audience: Audience,
   postingProject: string | undefined,
+  postingProjectId?: string | null,
   forcedScope?: HostedBoardForcedScope,
 ): Promise<PreparedHostedPost> {
   const refusal = architectsPostingRefusal(audience, postingProject)
@@ -516,8 +531,18 @@ async function prepareHostedPost(
       `board project ${postingProject} does not match audience ${audience.kind}:${projectName}`,
       400,
     )
-  const projectId = projectName ? await resolveVisibleProjectId(tx, projectName) : null
-  const authorProjectId = postingProject ? await resolvePostingProjectId(tx, postingProject) : null
+  const projectId = projectName
+    ? await resolveVisibleProjectId(
+        tx,
+        projectName,
+        projectName === postingProject ? postingProjectId : null,
+      )
+    : null
+  const authorProjectId = postingProject
+    ? postingProjectId
+      ? await resolveVisibleProjectId(tx, postingProject, postingProjectId)
+      : await resolvePostingProjectId(tx, postingProject)
+    : null
   if (audience.kind === 'architects' && audience.value)
     await resolveVisibleProjectId(tx, audience.value)
   const derived = hostedBoardScope(audience, projectId)
@@ -554,7 +579,13 @@ export async function postHostedBoardNoticeInTransaction(
     ...senderTags,
     ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
   ]
-  const prepared = await prepareHostedPost(tx, audience, input.project, forcedScope)
+  const prepared = await prepareHostedPost(
+    tx,
+    audience,
+    input.project,
+    input.projectId,
+    forcedScope,
+  )
   const decision = await authorWindow(tx, input.userId, session, clock, false)
   if (decision === 'rate-limited') return 'rate-limited'
   await insertRoot(

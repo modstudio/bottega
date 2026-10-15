@@ -295,18 +295,7 @@ async function applyHostedUnvoid(
 async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const projectName = nullableString(row.projectName)
-    let projectId: string | null = null
-    if (projectName !== null) {
-      const projects = await tx`
-        SELECT id FROM project
-        WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}
-      `
-      if (projects.length !== 1) {
-        throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
-      }
-      projectId = String(projects[0]!.id)
-    }
+    const projectId = await projectRecordId(tx, row, principal)
     const values = runValues(row, projectId)
     const existingOwned = await existingEvidenceOwned(
       tx,
@@ -581,14 +570,37 @@ async function projectRecordId(
   row: Payload,
   principal: RecordPrincipal,
 ): Promise<string | null> {
+  const requestedId = nullableString(row.projectId)
   const projectName = nullableString(row.projectName)
-  if (projectName === null) return null
-  const projects = await tx`SELECT id FROM project
-    WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
+  if (requestedId === null && projectName === null) return null
+  const projects = requestedId
+    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id,retired_at FROM project
+        WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
   if (projects.length !== 1) {
-    throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
+    throw new OutboxRowError(
+      requestedId
+        ? `record project ${requestedId} is absent from request space ${principal.spaceId}`
+        : `record project is absent: ${projectName}`,
+      'row-validation',
+    )
   }
-  return String(projects[0]!.id)
+  const project = projects[0]!
+  if (String(project.space_id) !== principal.spaceId) {
+    throw new OutboxRowError(
+      `record project ${requestedId} is absent from request space ${principal.spaceId}`,
+      'row-validation',
+    )
+  }
+  if (project.retired_at != null) {
+    throw new OutboxRowError(`record project is retired: ${String(project.name)}`, 'row-validation')
+  }
+  if (requestedId && projectName !== null && String(project.name) !== projectName) {
+    console.warn(
+      `record project identity mismatch: id ${requestedId} is ${JSON.stringify(String(project.name))}, payload named ${JSON.stringify(projectName)}; using id`,
+    )
+  }
+  return String(project.id)
 }
 
 const recordKinds = {

@@ -61,15 +61,25 @@ export async function hostedArticleProjectId(
   tx: SQL,
   spaceId: string,
   name: string | null | undefined,
+  requestedId?: string | null,
 ): Promise<string | null> {
-  if (!name) return null
-  const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
+  if (!name && !requestedId) return null
+  const rows = requestedId
+    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id,retired_at FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) {
     throw new RecordDocError(
       `project ${name} has no hosted row in record space ${spaceId}; run \`${PLATFORM_SLUG} project push\` to create it`,
       422,
     )
   }
+  if (String(rows[0]!.space_id) !== spaceId || rows[0]!.retired_at != null) {
+    throw new RecordDocError(`project ${name} has no hosted row in record space ${spaceId}`, 422)
+  }
+  if (requestedId && name && String(rows[0]!.name) !== name)
+    console.warn(
+      `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(name)}`,
+    )
   return String(rows[0]!.id)
 }
 

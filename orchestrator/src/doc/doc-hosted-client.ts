@@ -26,6 +26,7 @@ export async function hostedDocClient(
 ): Promise<HostedDocClient> {
   const client = recordApiClient()
   const projectName = docWriteProjectName(scope, subject)
+  const projectId = projectName ? (projectRowByName(projectName)?.recordId ?? null) : null
   const destination = projectName
     ? {
         destinationSpaceId: await requireProjectRecordDestination(
@@ -39,8 +40,9 @@ export async function hostedDocClient(
     listDocs: (query) => client.listDocs(query, destination),
     getDoc: (id) => client.getDoc(id, destination),
     listRevisions: (id) => client.listRevisions(id, destination),
-    upsertDoc: (input) => client.upsertDoc(input, destination),
-    importDoc: (input) => client.importDoc(input, destination),
+    upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
+    importDoc: (input) =>
+      client.importDoc({ ...input, doc: { ...input.doc, projectId } }, destination),
     importCanon: (input) => client.importCanon(input, destination),
     deleteDoc: (id, input) => client.deleteDoc(id, input, destination),
     consumeDoc: (id, input) => client.consumeDoc(id, input, destination),

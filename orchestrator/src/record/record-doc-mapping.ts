@@ -107,6 +107,7 @@ export type RecordDocImportInput = {
     checkedAgainstCommit?: string | null
     replacementSlug?: string | null
     projectName?: string | null
+    projectId?: string | null
     createdAt: string
     updatedAt: string
     deletedAt: string | null

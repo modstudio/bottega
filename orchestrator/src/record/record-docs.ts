@@ -122,6 +122,7 @@ type RecordDocWriteInput = Tenant & {
   checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   projectName?: string | null
+  projectId?: string | null
   reason: string
   author: string
   sessionId?: string | null
@@ -210,6 +211,7 @@ export async function upsertRecordDoc(
       tx,
       input.spaceId,
       input.projectName ?? docWriteProjectName(input.scope, input.subject),
+      input.projectId,
     )
     const articleFields = await resolveHostedArticleFields(
       tx,
@@ -930,6 +932,7 @@ export async function importRecordDoc(
       tx,
       input.spaceId,
       doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
+      doc.projectId,
     )
     const importedSubjectNames = await importedArticleSubjectNames(
       tx,

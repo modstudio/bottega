@@ -17,6 +17,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
         id: 42,
         record_id: '01990000-0000-7000-8000-000000000042',
         project_name: 'project',
+        project_record_id: '01990000-0000-7000-8000-000000001214',
         started_at: '2026-09-15T01:00:00.000Z',
         retry_record_id: null,
         parent_record_id: null,
@@ -40,6 +41,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
     docRevisions: ['revision'],
     reviewProvenance: { commands_run: [] },
     startedByUserId: '01990000-0000-7000-8000-000000000123',
+    projectId: '01990000-0000-7000-8000-000000001214',
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')

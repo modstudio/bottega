@@ -11,6 +11,7 @@ type LocalScore = {
   record_id: string
   local_id: number
   project_name: string | null
+  project_record_id: string | null
   delivery: VerdictPayload['delivery']
   quality: VerdictPayload['quality']
   fidelity: VerdictPayload['fidelity']
@@ -42,6 +43,7 @@ export function buildScoreRecordPayload(
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
+    projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
     localId: row.local_id,
@@ -63,6 +65,7 @@ export function enqueueScoreRecord(database: Database, runId: number, machineId:
   const row = database
     .query<LocalScore, [number]>(
       `SELECT r.record_id, r.id AS local_id, project.name AS project_name,
+              project.record_id AS project_record_id,
               s.delivery, s.quality, s.fidelity,
               s.note, s.scored_at, s.scored_by,
               lens.reproduced, lens.coverage, lens.limits, lens.overlap

@@ -46,6 +46,10 @@ export function fakePostgres(
     runReason: 'voided with orch score --void',
   },
   onRunWrite?: (ordinal: number) => void | Promise<void>,
+  project: { id: string; name: string; spaceId?: string; retiredAt?: string | null } = {
+    id: PROJECT_ID,
+    name: 'bottega',
+  },
 ): {
   sql: SQL
   statements: string[]
@@ -103,7 +107,16 @@ export function fakePostgres(
     if (source.includes('SELECT reason FROM run_exclusion')) return []
     if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
     if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
-    return source.includes('SELECT id FROM project') ? [{ id: PROJECT_ID }] : []
+    return source.includes('FROM project')
+      ? [
+          {
+            id: project.id,
+            name: project.name,
+            space_id: project.spaceId ?? transactionSpaceIds[transaction],
+            retired_at: project.retiredAt ?? null,
+          },
+        ]
+      : []
   }) as unknown as SQL
   tx.options = {} as SQL['options']
   tx.unsafe = ((source: string, values?: unknown[]) => {

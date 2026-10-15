@@ -41,6 +41,7 @@ export type VerdictInput = VerdictGrades & {
 export type VerdictPayload = VerdictInput & {
   id: string
   spaceId: string
+  projectId: string | null
   projectName: string | null
   machineId: string
   localId: number
@@ -64,6 +65,7 @@ export const VERDICT_INPUT_SCHEMA = z.object({
 export const VERDICT_PAYLOAD_SCHEMA = VERDICT_INPUT_SCHEMA.extend({
   id: z.string(),
   spaceId: z.string(),
+  projectId: z.string().uuid().nullable(),
   projectName: z.string().nullable(),
   machineId: z.string(),
   localId: z.number().int(),
@@ -74,6 +76,7 @@ export const VERDICT_PAYLOAD_SCHEMA = VERDICT_INPUT_SCHEMA.extend({
 export const VERDICT_PAYLOAD_COLUMNS = [
   'id',
   'spaceId',
+  'projectId',
   'projectName',
   'machineId',
   'localId',

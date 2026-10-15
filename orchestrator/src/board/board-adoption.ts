@@ -294,6 +294,14 @@ async function uploadMessage(
   }
   if (candidate.kind === 'claim') throw new Error(`claim ${candidate.id} is not a board message`)
   const tags = messageTags(row.id, database).filter((tag) => tag.origin === 'sender')
+  const project = originalProject(row, roots.get(row.thread_root_id ?? -1))
+  const projectId = project
+    ? ((
+        database.query('SELECT record_id FROM project WHERE name=?').get(project) as {
+          record_id: string | null
+        } | null
+      )?.record_id ?? null)
+    : null
   const uploaded = await client.postBoardMessage({
     id: hostedId,
     kind: candidate.kind,
@@ -311,7 +319,8 @@ async function uploadMessage(
     authorHarness: row.author_harness,
     authorMachineId: machineId(),
     authorRunId,
-    project: originalProject(row, roots.get(row.thread_root_id ?? -1)),
+    project,
+    projectId,
   })
   return uploaded.id
 }
@@ -431,6 +440,12 @@ async function uploadClaim(
   const uploaded = await client.takeBoardClaim({
     id: hostedId,
     project: row.project,
+    projectId:
+      (
+        database.query('SELECT record_id FROM project WHERE name=?').get(row.project) as {
+          record_id: string | null
+        } | null
+      )?.record_id ?? null,
     subject: `${row.subject_kind}:${row.subject_value}`,
     durationMs: remaining,
     runId: runRecordId(row.run_id, database),

@@ -9,7 +9,7 @@ import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
+import { projectAt, projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type {
@@ -353,7 +353,8 @@ function hostedPostInput(
   c: ReturnType<typeof context>,
 ) {
   const actor = authorFacts(c.env)
-  const project = projectAt(c.cwd)?.name
+  const localProject = projectAt(c.cwd)
+  const project = localProject?.name
   const purpose =
     kind === 'question' ? 'request' : defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
   const expiresAt = new Date(
@@ -379,6 +380,7 @@ function hostedPostInput(
     authorMachineId: actor.machine,
     authorRunId: actor.runId,
     project,
+    projectId: localProject?.recordId ?? null,
     currentTaskKey: actor.currentTaskKey,
   }
 }
@@ -454,6 +456,7 @@ export async function boardReply(id: string, body: string, inputContext?: Contex
     authorMachineId: actor.machine,
     authorRunId: actor.runId,
     project: projectAt(c.cwd)?.name,
+    projectId: projectAt(c.cwd)?.recordId ?? null,
   })
   return {
     id: row.id,
@@ -647,6 +650,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
   const row = await hostedClient(c).takeBoardClaim({
     id: newRecordId(),
     project: claimProject(input.project, c.env, c.cwd),
+    projectId: projectRowByName(claimProject(input.project, c.env, c.cwd))?.recordId ?? null,
     subject: input.subject,
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),

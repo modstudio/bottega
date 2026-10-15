@@ -57,16 +57,28 @@ function mapped(row: Record<string, unknown>): RecordSubject {
   }
 }
 
-async function projectId(tx: SQL, spaceId: string, project: string): Promise<string> {
-  const rows = await tx`
-    SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${project}
-  `
+async function projectId(
+  tx: SQL,
+  spaceId: string,
+  project: string,
+  requestedId?: string | null,
+): Promise<string> {
+  const rows = requestedId
+    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id,retired_at FROM project WHERE space_id=${spaceId}::uuid AND name=${project}`
   if (!rows.length) {
     throw new RecordSubjectError(
       `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
       404,
     )
   }
+  if (String(rows[0]!.space_id) !== spaceId || rows[0]!.retired_at != null) {
+    throw new RecordSubjectError(`project "${project}" is not present in this record space`, 404)
+  }
+  if (requestedId && String(rows[0]!.name) !== project)
+    console.warn(
+      `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(project)}`,
+    )
   return String(rows[0]!.id)
 }
 
@@ -96,6 +108,7 @@ async function assertParent(
 export async function listRecordSubjects(
   input: Tenant & {
     project?: string
+    projectId?: string | null
     includeRetired: boolean
     order: 'catalog' | 'updated'
     cursor?: RecordCursor | null
@@ -103,13 +116,16 @@ export async function listRecordSubjects(
   },
 ): Promise<RecordSubject[]> {
   return tenant(input, async (tx) => {
+    const selectedProjectId = input.project
+      ? await projectId(tx, input.spaceId, input.project, input.projectId)
+      : null
     const rows = await tx`
       SELECT s.*,p.name AS project,
         to_char(s.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM subject s
       JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id
       WHERE s.space_id=${input.spaceId}::uuid
-        AND (${input.project ?? null}::text IS NULL OR p.name=${input.project ?? null})
+        AND (${selectedProjectId}::uuid IS NULL OR p.id=${selectedProjectId}::uuid)
         AND (${input.includeRetired} OR s.retired_at IS NULL)
         AND (${input.cursor?.at ?? null}::timestamptz IS NULL OR
           (s.updated_at,s.id) > (${input.cursor?.at ?? null}::timestamptz,${input.cursor?.id ?? null}::uuid))
@@ -126,6 +142,7 @@ export async function addRecordSubject(
   input: Tenant & {
     id?: string
     project: string
+    projectId?: string | null
     name: string
     definition: string
   },
@@ -133,7 +150,7 @@ export async function addRecordSubject(
   const definition = SubjectDefinitionSchema.parse(input.definition)
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
-    const ownedProjectId = await projectId(tx, input.spaceId, input.project)
+    const ownedProjectId = await projectId(tx, input.spaceId, input.project, input.projectId)
     const id = input.id ?? newRecordId()
     await assertParent(tx, {
       spaceId: input.spaceId,
@@ -167,13 +184,19 @@ export async function addRecordSubject(
 }
 
 async function updateRecordSubject(
-  input: Tenant & { project: string; id: string; field: 'name' | 'definition'; value: string },
+  input: Tenant & {
+    project: string
+    projectId?: string | null
+    id: string
+    field: 'name' | 'definition'
+    value: string
+  },
 ): Promise<RecordSubject> {
   const value =
     input.field === 'definition' ? SubjectDefinitionSchema.parse(input.value) : input.value
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
-    const ownedProjectId = await projectId(tx, input.spaceId, input.project)
+    const ownedProjectId = await projectId(tx, input.spaceId, input.project, input.projectId)
     let rows: Record<string, unknown>[] = []
     try {
       rows =
@@ -205,19 +228,19 @@ const unknownSubject = (project: string, id: string) =>
   )
 
 export const renameRecordSubject = (
-  input: Tenant & { project: string; id: string; name: string },
+  input: Tenant & { project: string; projectId?: string | null; id: string; name: string },
 ) => updateRecordSubject({ ...input, field: 'name', value: input.name })
 
 export const defineRecordSubject = (
-  input: Tenant & { project: string; id: string; definition: string },
+  input: Tenant & { project: string; projectId?: string | null; id: string; definition: string },
 ) => updateRecordSubject({ ...input, field: 'definition', value: input.definition })
 
 export async function reorderRecordSubjects(
-  input: Tenant & { project: string; ids: string[] },
+  input: Tenant & { project: string; projectId?: string | null; ids: string[] },
 ): Promise<RecordSubject[]> {
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
-    const ownedProjectId = await projectId(tx, input.spaceId, input.project)
+    const ownedProjectId = await projectId(tx, input.spaceId, input.project, input.projectId)
     const current = await tx`
       SELECT id FROM subject WHERE space_id=${input.spaceId}::uuid
         AND project_id=${ownedProjectId}::uuid AND retired_at IS NULL ORDER BY position,id
@@ -246,11 +269,11 @@ export async function reorderRecordSubjects(
 }
 
 export async function retireRecordSubject(
-  input: Tenant & { project: string; id: string },
+  input: Tenant & { project: string; projectId?: string | null; id: string },
 ): Promise<RecordSubject> {
   return tenant(input, async (tx) => {
     const timestamp = new Date().toISOString()
-    const ownedProjectId = await projectId(tx, input.spaceId, input.project)
+    const ownedProjectId = await projectId(tx, input.spaceId, input.project, input.projectId)
     const rows = await tx`
       UPDATE subject SET retired_at=COALESCE(retired_at,${timestamp}::timestamptz),
         updated_at=${timestamp}::timestamptz

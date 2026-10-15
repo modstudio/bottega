@@ -73,6 +73,7 @@ test('score payload maps every hosted verdict field', () => {
         record_id: RECORD_ID,
         local_id: 42,
         project_name: null,
+        project_record_id: null,
         delivery: 'full',
         quality: 'right',
         fidelity: 'faithful',

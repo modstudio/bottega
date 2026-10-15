@@ -25,6 +25,7 @@ const runPayload = (input: {
   id: string
   machineId: string
   projectName: string
+  projectId?: string | null
   spaceId: string
   startedByUserId?: string
 }) => {
@@ -136,6 +137,37 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       )
       expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
       expect(result.quarantined[0]?.error).toContain('not a member')
+      expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
+    } finally {
+      local.close()
+    }
+  })
+
+  test('hosted sync refuses a project id owned by another space', async () => {
+    const deniedSpaceId = newRecordId()
+    const deniedProjectId = newRecordId()
+    input.admin(
+      `INSERT INTO space (id,name,slug,created_at)
+       VALUES ('${deniedSpaceId}','Cross-space project proof','cross-${deniedSpaceId.slice(-8)}',now());
+       INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('${deniedProjectId}','${deniedSpaceId}','foreign-project',now());`,
+    )
+    const id = newRecordId()
+    const local = localOutbox(
+      runPayload({
+        id,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        projectId: deniedProjectId,
+        spaceId: input.writeSpaceId,
+      }),
+    )
+    try {
+      const result = await withoutDirectRecordCredentials(() =>
+        syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
+      )
+      expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 0 })
+      expect(result.quarantined).toHaveLength(1)
       expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
     } finally {
       local.close()

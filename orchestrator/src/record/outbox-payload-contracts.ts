@@ -9,9 +9,10 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
+  projectId: null,
   startedByUserId: null,
   taskKey: null,
   evidenceUnvoid: null,
@@ -20,6 +21,7 @@ const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
 
 const SCORE_RECORD_PAYLOAD_COLUMNS = VERDICT_PAYLOAD_COLUMNS
 const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
+  projectId: null,
   projectName: null,
   reproduced: null,
   coverage: null,
@@ -29,61 +31,66 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 })
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId runId workflowKey workflowCursorId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id spaceId runId workflowKey workflowCursorId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
+  projectId: null,
   filedRecordId: null,
   filedLabel: null,
   answerBasis: null,
 })
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason patchId pathSet commitMessage outdatedAt outdatedReason withheldFields createdAt updatedAt',
-  { withheldFields: null },
+  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason patchId pathSet commitMessage outdatedAt outdatedReason withheldFields createdAt updatedAt',
+  { projectId: null, withheldFields: null },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap withheldFields createdAt updatedAt',
-  { projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, withheldFields: null },
 )
 const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt withheldFields createdAt updatedAt',
-  { projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, withheldFields: null },
 )
 const REVIEW_READ_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectName machineId localId branch tip patchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',
-  { projectName: null, withheldFields: null },
+  'id spaceId projectId projectName machineId localId branch tip patchId pathSet tier note sessionId recordedAt withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, withheldFields: null },
 )
 
 const RELEASE_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectName machineId localId rung candidateCommit liveCommitBefore liveCommitAfter rollback rollbackReason actor sessionId startedAt finishedAt exitCode liveMatchesCandidate warning withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId rung candidateCommit liveCommitBefore liveCommitAfter rollback rollbackReason actor sessionId startedAt finishedAt exitCode liveMatchesCandidate warning withheldFields createdAt updatedAt',
+  { projectId: null },
 )
 
 const LANDING_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectName machineId localId branch tip trunkBefore status error sessionId startedAt finishedAt pathSet requestedAt steps causingLandingId withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip trunkBefore status error sessionId startedAt finishedAt pathSet requestedAt steps causingLandingId withheldFields createdAt updatedAt',
 )
 const LANDING_RECORD_PAYLOAD_CONTRACT = contract(LANDING_RECORD_PAYLOAD_COLUMNS, {
+  projectId: null,
   withheldFields: null,
 })
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectName machineId localId branch tip tree patchId pathSet reason sessionId at withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason sessionId at withheldFields createdAt updatedAt',
 )
 const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = contract(LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS, {
+  projectId: null,
   patchId: null,
   pathSet: null,
   withheldFields: null,
 })
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectName machineId localId branch tip tree reviewId reviewedCommit reviewedTree patchId oldBase newBase sessionId at createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree reviewId reviewedCommit reviewedTree patchId oldBase newBase sessionId at createdAt updatedAt',
 )
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_CONTRACT = contract(
   LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS,
+  { projectId: null },
 )
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectName machineId localId branch tip tree prNumber reviewIds patchId tier lensRounds findingCount admissionPath readId overrideId sessionId at createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree prNumber reviewIds patchId tier lensRounds findingCount admissionPath readId overrideId sessionId at createdAt updatedAt',
 )
 const LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_CONTRACT = contract(
   LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS,
-  { admissionPath: 'exact_review', readId: null },
+  { projectId: null, admissionPath: 'exact_review', readId: null },
 )
 const CONTENTION_RECORD_PAYLOAD_COLUMNS = columns(
   'id spaceId machineId localId at sessionId resourceKind resourceKey eventKind durationMs cause runId landingId withheldFields createdAt updatedAt',
