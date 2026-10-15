@@ -78,7 +78,7 @@ abandon an open workflow cursor
 - `--cursor <value>`: select this workflow cursor
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
-- `--arg <value>`: supply a workflow argument as name=value (default: )
+- `--arg <value>`: supply a workflow argument as name=value
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
 
@@ -98,7 +98,7 @@ attach text to the current workflow step
 - `--file <value>`: read the text from this file instead of stdin
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
-- `--arg <value>`: supply a workflow argument as name=value (default: )
+- `--arg <value>`: supply a workflow argument as name=value
 - `--json`: print JSON output
 
 ### Related
@@ -117,7 +117,7 @@ pause a workflow cursor for an external ruling
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
 - `--question <value>`: state the question that needs a ruling
-- `--arg <value>`: supply a workflow argument as name=value (default: )
+- `--arg <value>`: supply a workflow argument as name=value
 - `--json`: print JSON output
 
 ### Related
@@ -247,8 +247,8 @@ compose a workflow for a project and create its cursor when ready
 - `--catalogue-version <value>`: compose with this step catalogue version
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: compose for this registered project
-- `--arg <value>`: supply a workflow argument as name=value (default: )
-- `--autonomy <value>`: override an autonomy scope (default: )
+- `--arg <value>`: supply a workflow argument as name=value
+- `--autonomy <value>`: override an autonomy scope
 - `--json`: print JSON output
 
 ### Related
@@ -402,7 +402,7 @@ close the current step and advance a workflow cursor
 - `--task <value>`: cite a task as floor evidence
 - `--defer <value>`: record deferred floor evidence
 - `--satisfies <value>`: cite the floor this evidence satisfies
-- `--arg <value>`: supply a workflow argument as name=value (default: )
+- `--arg <value>`: supply a workflow argument as name=value
 - `--json`: print JSON output
 
 ### Related
@@ -482,7 +482,7 @@ apply a ruling to a waiting workflow cursor
 - `--project <value>`: select this registered project
 - `--ruling <value>`: supply the ruling text
 - `--from-operator`: mark the ruling as supplied by the operator
-- `--arg <value>`: supply a workflow argument as name=value (default: )
+- `--arg <value>`: supply a workflow argument as name=value
 - `--json`: print JSON output
 
 ### Related
@@ -534,8 +534,8 @@ render one workflow step by slug or position
 - `--cursor <value>`: select this workflow cursor
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
-- `--arg <value>`: supply a workflow argument as name=value (default: )
-- `--autonomy <value>`: override an autonomy scope (default: )
+- `--arg <value>`: supply a workflow argument as name=value
+- `--autonomy <value>`: override an autonomy scope
 - `--json`: print JSON output
 
 ### Related

@@ -832,9 +832,9 @@ create or revise a document
 - `--no-form`: clear the article form
 - `--article-subject <value>`: filter or set the article subject
 - `--no-article-subject`: clear the article subject
-- `--related-subject <value>`: add a related subject name or id (default: )
+- `--related-subject <value>`: add a related subject name or id
 - `--no-related-subjects`: clear all related subjects
-- `--source-file <value>`: add a repository-relative source path (default: )
+- `--source-file <value>`: add a repository-relative source path
 - `--no-source-files`: clear all source files
 - `--checked-at <commit>`: set the commit checked by this article
 - `--no-checked-at`: clear the checked commit

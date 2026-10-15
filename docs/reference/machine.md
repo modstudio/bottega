@@ -708,7 +708,7 @@ compare or write canonical settings to a settings file
 - `--user`: target the user settings file
 - `--project <name>`: registered project whose settings are rendered
 - `--json`: write the settings drift report as JSON
-- `--drop-env <key>`: environment key deliberately removed during rendering (default: )
+- `--drop-env <key>`: environment key deliberately removed during rendering
 
 ### Related
 
@@ -738,7 +738,7 @@ inspect and configure this machine interactively
 
 ### Options
 
-- `--in <folder>`: folder to inspect (default: )
+- `--in <folder>`: folder to inspect
 
 ### Related
 
@@ -755,7 +755,7 @@ apply a machine setup plan without prompts
 
 ### Options
 
-- `--in <folder>`: folder to inspect (default: )
+- `--in <folder>`: folder to inspect
 - `--yes`: apply every recommended setup answer
 - `--answers <file>`: JSON file containing explicit setup answers
 - `--json`: write the setup result as compact JSON
@@ -786,7 +786,7 @@ plan recommended machine setup actions
 
 ### Options
 
-- `--in <folder>`: folder to inspect (default: )
+- `--in <folder>`: folder to inspect
 - `--json`: write the setup plan as compact JSON
 
 ### Related

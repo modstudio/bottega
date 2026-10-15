@@ -103,7 +103,7 @@ list notes from the local record
 
 - `--project <X>`: limit notes to this project
 - `--stale`: include stale notes
-- `--session <ID>`: limit notes to this session (default: )
+- `--session <ID>`: limit notes to this session
 - `--actionable`: list notes ready for disposition
 - `--kept`: list notes acknowledged by the selected sessions
 - `--json`: write the note rows as JSON

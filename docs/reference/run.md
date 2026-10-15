@@ -136,7 +136,7 @@ list recorded run conversations
 
 ### Options
 
-- `--id <value>`: include this run conversation (default: )
+- `--id <value>`: include this run conversation
 - `--job <value>`: limit runs to this job
 - `--agent <value>`: limit runs to this agent
 - `--limit <value>`: limit the number of runs

@@ -111,8 +111,8 @@ ask a question on the architects board
 - `--title <text>`: set the question title
 - `--body <text>`: set the question body
 - `--task <key>`: tag the question with this task
-- `--path <glob>`: add a repository-relative path glob (default: )
-- `--topic <name>`: add a controlled board topic (default: )
+- `--path <glob>`: add a repository-relative path glob
+- `--topic <name>`: add a controlled board topic
 - `--expires <duration>`: set how long the question remains live
 
 ### Related
@@ -296,8 +296,8 @@ post a notice to the architects board
 - `--body <text>`: set the notice body
 - `--purpose <purpose>`: information sends one line, request sends the full body and lives four hours by default (set --expires for longer), standing also reaches later sessions
 - `--task <key>`: tag the notice with this task
-- `--path <glob>`: add a repository-relative path glob (default: )
-- `--topic <name>`: add a controlled board topic; platform is for notices about changes to the platform every project depends on (default: )
+- `--path <glob>`: add a repository-relative path glob
+- `--topic <name>`: add a controlled board topic; platform is for notices about changes to the platform every project depends on
 - `--ack-required`: require acknowledgement for an operator post, an architect post to its own project, or a platform-topic request or standing post from the platform project to architects:all
 - `--deadline <duration>`: set the acknowledgement deadline
 - `--expires <duration>`: set how long the notice remains live

@@ -85,7 +85,12 @@ function optionDefault(option: Option): DocumentationOptionDefault | null {
   if (option.envVar) return { kind: 'env', name: option.envVar }
   if (option.defaultValueDescription)
     return { kind: 'literal', text: option.defaultValueDescription }
-  if (option.defaultValue === undefined) return null
+  if (
+    option.defaultValue === undefined ||
+    option.defaultValue === '' ||
+    (Array.isArray(option.defaultValue) && option.defaultValue.length === 0)
+  )
+    return null
   if (typeof option.defaultValue === 'string' && option.defaultValue === process.cwd()) {
     return { kind: 'cwd' }
   }

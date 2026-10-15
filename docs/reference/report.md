@@ -63,7 +63,7 @@ create a scheduled report subscription
 
 - `--scope <space|project|person>`: scope covered by the report
 - `--project <name>`: project covered by a project report
-- `--member <user-id>`: member covered by a members report (default: )
+- `--member <user-id>`: member covered by a members report
 - `--cadence <daily|weekly>`: delivery cadence for the report
 - `--hour <N>`: local hour when the report is due
 - `--day <monday>`: weekday when a weekly report is due
