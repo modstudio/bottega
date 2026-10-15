@@ -311,6 +311,7 @@ try {
         DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
