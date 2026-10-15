@@ -16,9 +16,46 @@ export type DocumentationUnit = {
 export type DocumentationInventory = {
   units: DocumentationUnit[]
   notWalked: string[]
+  groups: DocumentationGroup[]
+  commands: DocumentationCommand[]
+}
+
+export type DocumentationGroup = {
+  name: string
+  description: string
+}
+
+export type DocumentationArgument = {
+  name: string
+  required: boolean
+  variadic: boolean
+}
+
+export type DocumentationOptionDefault =
+  | { kind: 'literal'; text: string }
+  | { kind: 'cwd' }
+  | { kind: 'env'; name: string }
+
+export type DocumentationOptionDetail = {
+  flags: string
+  valuePlaceholder: string | null
+  description: string
+  default: DocumentationOptionDefault | null
+}
+
+export type DocumentationCommand = {
+  spelling: string
+  group: string
+  description: string
+  arguments: DocumentationArgument[]
+  options: DocumentationOptionDetail[]
+  examples: string[]
+  optionsByHelp: boolean
 }
 
 export type DescriptionFinding = Pick<DocumentationUnit, 'kind' | 'spelling' | 'group' | 'source'>
+
+type CommandBook = Map<string, DocumentationCommand>
 
 const ownerSource = (owner: 'orch' | 'hub') =>
   owner === 'orch' ? 'orchestrator/src/cli/program.ts' : 'hub/src/cli-program.ts'
@@ -37,6 +74,93 @@ function commandAt(program: Command, path: readonly string[]): Command | null {
 
 function optionName(option: Option): string {
   return option.long ?? option.short ?? option.flags
+}
+
+function valuePlaceholder(flags: string): string | null {
+  const match = flags.match(/<[^>]+>|\[[^\]]+\]/)
+  return match ? match[0] : null
+}
+
+function optionDefault(option: Option): DocumentationOptionDefault | null {
+  if (option.envVar) return { kind: 'env', name: option.envVar }
+  if (option.defaultValueDescription) return { kind: 'literal', text: option.defaultValueDescription }
+  if (option.defaultValue === undefined) return null
+  if (typeof option.defaultValue === 'string' && option.defaultValue === process.cwd()) {
+    return { kind: 'cwd' }
+  }
+  if (
+    typeof option.defaultValue === 'string' ||
+    typeof option.defaultValue === 'number' ||
+    typeof option.defaultValue === 'boolean'
+  ) {
+    return { kind: 'literal', text: String(option.defaultValue) }
+  }
+  if (
+    Array.isArray(option.defaultValue) &&
+    option.defaultValue.every(
+      (value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean',
+    )
+  ) {
+    return { kind: 'literal', text: option.defaultValue.map(String).join(', ') }
+  }
+  return { kind: 'literal', text: 'the declared default' }
+}
+
+function optionDetail(option: Option): DocumentationOptionDetail {
+  return {
+    flags: option.flags,
+    valuePlaceholder: valuePlaceholder(option.flags),
+    description: option.description,
+    default: optionDefault(option),
+  }
+}
+
+function declaredOptionDetail(flags: string, description: string): DocumentationOptionDetail {
+  return {
+    flags,
+    valuePlaceholder: valuePlaceholder(flags),
+    description,
+    default: null,
+  }
+}
+
+function argumentDetails(command: Command): DocumentationArgument[] {
+  return command.registeredArguments.map((argument) => ({
+    name: argument.name(),
+    required: argument.required,
+    variadic: argument.variadic,
+  }))
+}
+
+function visibleOptionDetails(
+  command: Command,
+  exposed?: Readonly<Record<string, boolean>>,
+): DocumentationOptionDetail[] {
+  return command
+    .createHelp()
+    .visibleOptions(command)
+    .filter((option) => exposed === undefined || exposed[optionName(option)] !== undefined)
+    .map(optionDetail)
+}
+
+function writeCommand(
+  book: CommandBook,
+  command: DocumentationCommand,
+): DocumentationCommand {
+  const previous = book.get(command.spelling)
+  if (!previous) {
+    book.set(command.spelling, command)
+    return command
+  }
+  if (!previous.description) previous.description = command.description
+  if (previous.arguments.length === 0) previous.arguments = command.arguments
+  if (!previous.optionsByHelp) previous.options.push(...command.options)
+  if (command.optionsByHelp) {
+    previous.optionsByHelp = true
+    previous.options = []
+  }
+  if (previous.examples.length === 0) previous.examples = command.examples
+  return previous
 }
 
 function optionUnits(
