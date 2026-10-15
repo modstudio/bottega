@@ -1007,8 +1007,7 @@ type MainCheckoutInspection = {
  */
 function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
   const toplevel = gitToplevel(projectPath)
-  if (!toplevel) return null
-  if (!resolvedPathsEqual(projectPath, toplevel)) return null
+  if (!toplevel || !resolvedPathsEqual(projectPath, toplevel)) return null
   const state = inspectCheckout(projectPath)
   if (state.cleanliness === 'indeterminate') return null
   return {
