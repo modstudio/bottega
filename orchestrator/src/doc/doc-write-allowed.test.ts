@@ -43,6 +43,16 @@ test('reference writes require the explicit publisher marker for new and stored 
       generator: REFERENCE_GENERATOR,
     }),
   ).toContain('generator marker is reserved for reference documents')
+  expect(
+    referenceWriteRefusal({
+      storedForm: 'reference',
+      requestedForm: null,
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toContain('generator marker is reserved for reference documents')
+  expect(
+    referenceWriteRefusal({ storedForm: 'reference', generator: REFERENCE_GENERATOR }),
+  ).toBeNull()
 })
 
 test('article fields require an article project and distinct subject attachments', () => {

@@ -30,7 +30,8 @@ export function isReferenceGeneratorWrite(input: {
 }): boolean {
   return (
     input.generator === REFERENCE_GENERATOR &&
-    (input.requestedForm ?? input.storedForm) === 'reference'
+    // An omitted form keeps the stored one; an explicit null clears it, as the write itself resolves.
+    (input.requestedForm === undefined ? input.storedForm : input.requestedForm) === 'reference'
   )
 }
 
