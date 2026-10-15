@@ -10,25 +10,32 @@ import {
   implicitDatabaseCreationRefusal,
   linkedWorktreeDatabaseInitializationMessage,
   missingDatabaseMessage,
-  recoverMissingWorkingDirectory,
+  missingWorkingDirectoryFallback,
   unauthorizedDatabaseInitializationMessage,
 } from './database-location.ts'
 
 const livePath = '/nonexistent-live-orchestrator-store/orch.db'
 const tempPath = '/nonexistent-temp-orchestrator-store/orch.db'
 
-test('an absent working directory is replaced with the main checkout', () => {
-  const changed: string[] = []
-  expect(
-    recoverMissingWorkingDirectory(
-      '/projects/main',
-      () => {
-        throw new Error('ENOENT: uv_cwd')
-      },
-      (path) => changed.push(path),
-    ),
-  ).toBe('/projects/main')
-  expect(changed).toEqual(['/projects/main'])
+describe('missing working directory fallback', () => {
+  const facts = {
+    mainCheckout: '/projects/main',
+    binaryRepositoryRoot: '/install',
+    binaryRoot: '/install/orchestrator',
+  }
+
+  test('a removed working directory continues in the main checkout', () => {
+    const removed = Object.assign(new Error('ENOENT: process.cwd failed'), { code: 'ENOENT' })
+    expect(missingWorkingDirectoryFallback(removed, facts)).toBe('/projects/main')
+    expect(missingWorkingDirectoryFallback(removed, { ...facts, mainCheckout: undefined })).toBe(
+      '/install',
+    )
+  })
+
+  test('any other working directory failure is rethrown', () => {
+    const denied = Object.assign(new Error('EACCES: process.cwd failed'), { code: 'EACCES' })
+    expect(() => missingWorkingDirectoryFallback(denied, facts)).toThrow('EACCES')
+  })
 })
 
 describe('orchestrator database path decision', () => {

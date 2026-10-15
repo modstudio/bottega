@@ -120,8 +120,12 @@ export function resolveDatabase(
   if (callerCwd === undefined) {
     try {
       callerCwd = process.cwd()
-    } catch {
-      callerCwd = env.ORCH_MAIN_CHECKOUT ?? binaryRepository?.root ?? dirname(binaryRoot)
+    } catch (error) {
+      callerCwd = missingWorkingDirectoryFallback(error, {
+        mainCheckout: env.ORCH_MAIN_CHECKOUT,
+        binaryRepositoryRoot: binaryRepository?.root ?? null,
+        binaryRoot,
+      })
     }
   }
   const path = resolveOrchestratorDatabase(env)
@@ -163,22 +167,27 @@ export function resolveDatabase(
   }
 }
 
-/** Move a process out of an already-removed directory before loading command implementations. */
-export function recoverMissingWorkingDirectory(
-  fallback?: string,
-  cwd: () => string = process.cwd,
-  chdir: (path: string) => void = process.chdir,
+/** Where a process whose working directory was removed continues; any other cwd failure is rethrown. */
+export function missingWorkingDirectoryFallback(
+  error: unknown,
+  facts: { mainCheckout?: string; binaryRepositoryRoot: string | null; binaryRoot: string },
 ): string {
+  if ((error as { code?: unknown } | null)?.code !== 'ENOENT') throw error
+  return facts.mainCheckout ?? facts.binaryRepositoryRoot ?? dirname(facts.binaryRoot)
+}
+
+/** Move a process out of an already-removed directory before loading command implementations. */
+export function recoverMissingWorkingDirectory(): string {
   try {
-    return cwd()
-  } catch {
-    const recovered =
-      fallback ??
-      process.env.ORCH_MAIN_CHECKOUT ??
-      repositoryRootFromGit(ROOT)?.root ??
-      repositoryRootFromDotGit(ROOT)?.root ??
-      dirname(ROOT)
-    chdir(recovered)
+    return process.cwd()
+  } catch (error) {
+    const recovered = missingWorkingDirectoryFallback(error, {
+      mainCheckout: process.env.ORCH_MAIN_CHECKOUT,
+      binaryRepositoryRoot:
+        repositoryRootFromGit(ROOT)?.root ?? repositoryRootFromDotGit(ROOT)?.root ?? null,
+      binaryRoot: ROOT,
+    })
+    process.chdir(recovered)
     return recovered
   }
 }
