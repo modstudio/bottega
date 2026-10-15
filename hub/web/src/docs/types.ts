@@ -1,3 +1,4 @@
+import type { DocSnippetHighlight } from '../../../../shared/doc-snippet.ts'
 import type {
   DocArticleSubject,
   DocAudience,
@@ -51,7 +52,7 @@ export type DocsSearchMatch = {
   audiences: DocAudiences
   snippet: string
   spaceName?: string
-  highlights: { start: number; length: number }[]
+  highlights: DocSnippetHighlight[]
 }
 
 export type DocsSource = 'local' | 'hosted' | 'public'

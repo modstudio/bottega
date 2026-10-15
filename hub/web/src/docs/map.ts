@@ -1,3 +1,4 @@
+import type { DocSnippetHighlight } from '../../../../shared/doc-snippet.ts'
 import {
   DOC_FORMS,
   DOC_KINDS,
@@ -122,7 +123,7 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
 
 export function highlightSnippet(input: {
   snippet: string
-  highlights: readonly { start: number; length: number }[]
+  highlights: readonly DocSnippetHighlight[]
 }): { text: string; highlight: boolean; start: number }[] {
   const { snippet, highlights } = input
   if (highlights.length === 0) return snippet ? [{ text: snippet, highlight: false, start: 0 }] : []
@@ -140,9 +141,9 @@ export function highlightSnippet(input: {
   return parts.filter((part) => part.text.length > 0)
 }
 
-function highlightsOf(value: unknown): { start: number; length: number }[] {
+function highlightsOf(value: unknown): DocSnippetHighlight[] {
   if (!Array.isArray(value)) return []
-  const highlights: { start: number; length: number }[] = []
+  const highlights: DocSnippetHighlight[] = []
   for (const item of value) {
     if (!item || typeof item !== 'object') continue
     const start = (item as { start?: unknown }).start

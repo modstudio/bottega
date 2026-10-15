@@ -17,7 +17,9 @@ const HEADING_PREFIX = /^\s{0,3}#{1,6}(?:\s+|$)/
 const LIST_PREFIX = /^\s*(?:[-*]|[0-9]+\.)\s+/
 
 export function docPlainSnippet(marked: string): DocPlainSnippet {
-  return extractHighlights(collapseWhitespace(reduceMarkdown(marked)))
+  return extractHighlights(
+    collapseWhitespace(decodeHtmlEntities(stripHtmlTags(reduceMarkdown(marked)))),
+  )
 }
 
 function reduceMarkdown(marked: string): string {
@@ -87,6 +89,33 @@ function stripInline(text: string): string {
       .replace(/(?<![A-Za-z0-9])_(.+?)_(?![A-Za-z0-9])/g, '$1')
   }
   return current
+}
+
+const HTML_TAG = /<\/?[A-Za-z][^>]*>/g
+const HTML_ENTITY = /&(?:amp|lt|gt|quot|nbsp|#39|#x[0-9a-fA-F]+|#\d+);/gi
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&nbsp;': '\u00A0',
+}
+
+function stripHtmlTags(text: string): string {
+  return text.replace(HTML_TAG, ' ')
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(HTML_ENTITY, (entity) => {
+    const named = NAMED_HTML_ENTITIES[entity.toLowerCase()]
+    if (named !== undefined) return named
+    const hex = entity.slice(2, 3).toLowerCase() === 'x'
+    const code = Number.parseInt(entity.slice(hex ? 3 : 2, -1), hex ? 16 : 10)
+    if (!Number.isSafeInteger(code) || code < 0 || code > 0x10ffff) return entity
+    if (code === 0xe000 || code === 0xe001) return entity
+    return String.fromCodePoint(code)
+  })
 }
 
 function collapseWhitespace(text: string): string {

@@ -36,8 +36,17 @@ test('images, lists, quotes, fences, separator rows, and entities follow the sni
     'Keep &amp; entities',
   ].join('\n')
   expect(docPlainSnippet(marked)).toEqual({
-    snippet: 'alt text left · right const value = 1 Keep &amp; entities',
+    snippet: 'alt text left · right const value = 1 Keep & entities',
     highlights: [{ start: 'alt text left · right const '.length, length: 'value'.length }],
+  })
+})
+
+test('html tags become spaces, entities decode, and a literal angle stays', () => {
+  const marked = `| foo<br>bar | ${start}margin${stop}&amp; | a < b`
+  const snippet = 'foo bar · margin& · a < b'
+  expect(docPlainSnippet(marked)).toEqual({
+    snippet,
+    highlights: [{ start: snippet.indexOf('margin'), length: 'margin'.length }],
   })
 })
 
