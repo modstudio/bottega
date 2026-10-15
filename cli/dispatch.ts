@@ -49,6 +49,11 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
   }
   const owner = match[1] as OutboxOwner
   const id = match[2]!
+  // The orchestrator reads its id with Number(), which turns `1e2` or `0x10` into another row.
+  if (owner === 'orch' && !/^\d+$/.test(id)) {
+    console.error(`orch outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``)
+    return 2
+  }
   // Each owner's own command validates the verb, so its verb list has one definition.
   const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
   return entries[owner]([...prefix, verb!, id, ...extraArguments])

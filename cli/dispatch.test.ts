@@ -72,10 +72,20 @@ test('record outbox refuses bare ids and hands every verb to the owning command'
       entries(calls),
       () => '',
     )
+    for (const malformed of ['orch:1e2', 'orch:0x10'])
+      expect(
+        await dispatchBinary(
+          ['record', 'outbox', 'retry', malformed],
+          PLATFORM_SLUG,
+          entries(calls),
+          () => '',
+        ),
+      ).toBe(2)
   } finally {
     console.error = originalError
   }
   expect(errors[0]).toContain(`${PLATFORM_SLUG} record outbox`)
+  expect(errors[1]).toContain('decimal row numbers')
   expect(calls).toEqual(['orch record outbox discard 17'])
 })
 
