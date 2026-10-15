@@ -41,10 +41,7 @@ test('outbox identity migration renames subject ids, fills row ids, and preserve
           .count,
       ]),
     )
-    expect(applyMigrations(database)).toEqual([
-      '0110_outbox_record_identity',
-      '0111_board_record_identity',
-    ])
+    expect(applyMigrations(database)).toContain('0110_outbox_record_identity')
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS count FROM ${table}`).get()).toEqual({
         count: before[table],

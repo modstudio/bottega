@@ -548,17 +548,14 @@ async function uploadOneCandidate(
       context.hostedRoots.set(candidate.id, recorded!.hosted_id)
     return 'continue'
   }
+  const row = context.rows.get(candidateKey(candidate))!
   const pending = pendingLedger(
     candidate,
-    context.rows.get(candidateKey(candidate))!.record_id,
+    recorded?.hosted_id ?? row.record_id,
     context.at,
     context.database,
   )
-  const localRefusal = lastingLocalRefusal(
-    candidate,
-    context.rows.get(candidateKey(candidate))!,
-    context.database,
-  )
+  const localRefusal = lastingLocalRefusal(candidate, row, context.database)
   if (localRefusal) {
     refuseCandidate(candidate, pending.hosted_id, localRefusal, context.at, context.database)
     return 'continue'

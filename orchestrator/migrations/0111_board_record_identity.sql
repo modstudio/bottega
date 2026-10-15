@@ -56,10 +56,10 @@ SELECT *, lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' 
 FROM board_claim_before_record_identity ORDER BY id;
 UPDATE board_claim SET record_id=(
   SELECT hosted_id FROM board_hosted_adoption_ledger_before_record_identity
-  WHERE local_kind='claim' AND local_id=board_claim.id AND state='uploaded')
+  WHERE local_kind='claim' AND local_id=board_claim.id AND state IN ('pending','uploaded'))
 WHERE EXISTS (
   SELECT 1 FROM board_hosted_adoption_ledger_before_record_identity
-  WHERE local_kind='claim' AND local_id=board_claim.id AND state='uploaded');
+  WHERE local_kind='claim' AND local_id=board_claim.id AND state IN ('pending','uploaded'));
 CREATE INDEX board_claim_project_subject
   ON board_claim(project, subject_kind, subject_value, closed_at);
 CREATE INDEX board_claim_run ON board_claim(run_id, closed_at);
@@ -120,10 +120,12 @@ SELECT *, lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' 
 FROM board_message_before_record_identity ORDER BY id;
 UPDATE board_message SET record_id=(
   SELECT hosted_id FROM board_hosted_adoption_ledger_before_record_identity
-  WHERE local_kind=board_message.kind AND local_id=board_message.id AND state='uploaded')
+  WHERE local_kind=board_message.kind AND local_id=board_message.id
+    AND state IN ('pending','uploaded'))
 WHERE EXISTS (
   SELECT 1 FROM board_hosted_adoption_ledger_before_record_identity
-  WHERE local_kind=board_message.kind AND local_id=board_message.id AND state='uploaded');
+  WHERE local_kind=board_message.kind AND local_id=board_message.id
+    AND state IN ('pending','uploaded'));
 CREATE INDEX board_message_delivery ON board_message(expires_at, withdrawn_at, created_at);
 CREATE INDEX board_message_author_rate
   ON board_message(author_kind, author_session, author_run_id, created_at);

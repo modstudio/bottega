@@ -135,6 +135,42 @@ test('a new adoption upload sends the row record id as the hosted id', async () 
   ).toEqual({ hosted_id: recordId })
 })
 
+test('an adoption resume uploads with the row record id', async () => {
+  presence()
+  const posted = postNotice(
+    { audience: 'session:reader', title: 'resume identity', body: 'resume' },
+    {},
+    NOW,
+  )
+  const recordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+    .get(posted.id)!.record_id
+  db()
+    .query(
+      `INSERT INTO board_hosted_adoption_ledger
+       (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
+       VALUES ('notice',?,?,'pending',NULL,?,?,?)`,
+    )
+    .run(
+      posted.id,
+      recordId,
+      new Date(NOW).toISOString(),
+      new Date(NOW).toISOString(),
+      newRecordId(),
+    )
+  const ids: string[] = []
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage(input) {
+      ids.push(input.id)
+      return hostedMessage(input)
+    },
+  }
+  await adoptHostedBoard({ confirm: 1, clock: () => NOW + 1, client })
+  expect(ids).toEqual([recordId])
+})
+
 test('adoption preserves request and acknowledgement-required standing purposes', async () => {
   const request = postNotice(
     { audience: 'operator', title: 'Request to adopt', body: 'Request body', purpose: 'request' },
