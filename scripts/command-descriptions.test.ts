@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { CommandRoute } from '../cli/routes.ts'
-import { program as commanderFactory } from '../orchestrator/src/cli/program.ts'
+// The hub program imports without opening a store; the orchestrator program resolves its store at import.
+import { program as commanderFactory } from '../hub/src/cli-program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   descriptionBaselineFailures,
