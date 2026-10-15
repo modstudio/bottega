@@ -58,8 +58,11 @@ function machineWithMcp(
   }
 }
 
-const orchServer = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
-
+const orchServer = {
+  name: 'orch' as const,
+  command: '/bin/orch',
+  args: ['mcp'],
+}
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
   return {
     name: 'alpha-project',
@@ -130,13 +133,21 @@ test('preserves every configured value for an existing project', () => {
   )
   const plan = proposeSetup(
     machine,
-    [repository({ currentBranch: 'feature', remoteDefaultBranch: 'main', stack: 'node' })],
+    [
+      repository({
+        currentBranch: 'feature',
+        remoteDefaultBranch: 'main',
+        stack: 'node',
+      }),
+    ],
     [current],
     [],
   )
   expect(plan.questions).toEqual([])
   expect(plan.notices).toEqual([
-    expect.objectContaining({ message: 'no gate was detected for alpha-project' }),
+    expect.objectContaining({
+      message: 'no gate was detected for alpha-project',
+    }),
   ])
   expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
     kind: 'unchanged',
@@ -161,7 +172,9 @@ test('fills only a missing prefix without changing the registered name', () => {
   })
   expect(action?.kind).toBe('set')
   if (action?.kind === 'set')
-    expect(action.settingsDiff).toEqual({ keyPrefixes: { from: null, to: ['ALPHA'] } })
+    expect(action.settingsDiff).toEqual({
+      keyPrefixes: { from: null, to: ['ALPHA'] },
+    })
 })
 
 test('asks about trunk only when known branches disagree', () => {
@@ -189,7 +202,9 @@ test('asks about trunk only when known branches disagree', () => {
 test('reports a bounded git inspection timeout as a repository notice', () => {
   const plan = proposeSetup(machine, [repository({ inspectionTimedOut: true })], [], [])
   expect(plan.notices).toContainEqual(
-    expect.objectContaining({ message: expect.stringContaining('alpha-project') }),
+    expect.objectContaining({
+      message: expect.stringContaining('alpha-project'),
+    }),
   )
   expect(plan.notices[0]?.message).toContain('timed out')
 })
@@ -231,7 +246,9 @@ test('proposes a detected gate and Files-level recipe through fill-absent planni
   })
   expect(action?.kind).toBe('set')
   if (action?.kind === 'set') {
-    expect(action.fill.settings.worktree).toEqual({ recipePath: INFERRED_RECIPE_PATH })
+    expect(action.fill.settings.worktree).toEqual({
+      recipePath: INFERRED_RECIPE_PATH,
+    })
   }
 })
 
@@ -250,11 +267,19 @@ test('does not propose an existing gate or ask for an existing recipe', () => {
     [],
   )
   expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
-  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+    kind: 'unchanged',
+  })
 
   const filePlan = proposeSetup(
     machine,
-    [repository({ packageManager: 'bun', test: 'bun run test', defaultConfigExists: true })],
+    [
+      repository({
+        packageManager: 'bun',
+        test: 'bun run test',
+        defaultConfigExists: true,
+      }),
+    ],
     [
       registered({
         keyPrefixes: ['ALPHA'],
@@ -300,7 +325,9 @@ test.each(satisfiedLifecycleCases)(
       [],
     )
     expect(plan.questions.some((question) => question.id.endsWith(':worktree-recipe'))).toBe(false)
-    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+    expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+      kind: 'unchanged',
+    })
   },
 )
 
@@ -366,7 +393,9 @@ test('requires review before activating a modified inferred recipe', () => {
   const question = plan.questions.find((candidate) => candidate.id.endsWith(':worktree-recipe'))!
   expect(question.recommendation).toBe('keep-inactive')
   expect(question.question).toContain('custom.sh')
-  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({ kind: 'unchanged' })
+  expect(planSetupActions(plan, recommendedAnswers(plan))[0]).toMatchObject({
+    kind: 'unchanged',
+  })
 
   const activate = { ...recommendedAnswers(plan), [question.id]: 'activate' }
   expect(planSetupActions(plan, activate)[0]).toMatchObject({
@@ -408,7 +437,10 @@ test('answers validation refuses unknown, missing, and invalid options', () => {
   const plan = proposeSetup(machine, [repository()], [], [])
   expect(() => validateSetupAnswers(plan.questions, {})).toThrow('missing answer')
   expect(() =>
-    validateSetupAnswers(plan.questions, { ...recommendedAnswers(plan), unknown: 'value' }),
+    validateSetupAnswers(plan.questions, {
+      ...recommendedAnswers(plan),
+      unknown: 'value',
+    }),
   ).toThrow('unknown answer id')
   expect(() =>
     validateSetupAnswers(plan.questions, {
@@ -439,7 +471,9 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   const same = proposeSetup(
     machineWithMcp('codex', {
       support: 'automatic',
-      registrations: { orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] } },
+      registrations: {
+        orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
+      },
     }),
     [],
     [],
@@ -453,7 +487,14 @@ test('plans absent, same, and different MCP registration read-backs', () => {
   const different = proposeSetup(
     machineWithMcp('codex', {
       support: 'automatic',
-      registrations: { orch: { status: 'registered', command: '/old/orch', args: ['mcp'] } },
+      registrations: {
+        orch: {
+          status: 'different',
+          command: '/old/orch',
+          args: ['mcp'],
+          detail: 'registered command or arguments differ',
+        },
+      },
     }),
     [],
     [],

@@ -1,12 +1,17 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
+  classifyMcpRegistration,
   mcpAddArgv,
   mcpRemoveArgv,
   readMcpRegistration,
+  registeredCommandResolves,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandResult,
+  stableMcpServers,
 } from './setup-mcp.ts'
+import { mcpRegistrationWriteRefusal } from './setup-registration-write.ts'
 
 const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult => ({
   exitCode,
@@ -23,7 +28,9 @@ test('captures absent and registered CLI read-backs through the bounded runner',
     if (argv.includes('missing'))
       return result('', 1, "Error: No MCP server named 'missing' found.")
     return result(
-      JSON.stringify({ transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] } }),
+      JSON.stringify({
+        transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] },
+      }),
     )
   }
   expect(readMcpRegistration('codex', '/bin/codex', 'orch', runner)).toEqual({
@@ -108,15 +115,107 @@ test('rules out timeout and spawn errors before missing-server diagnostics', () 
 test('captures Grok list rows and marks unsupported harnesses manual', () => {
   const runner = () =>
     result(JSON.stringify([{ name: 'orch', command: '/bin/orch', args: ['mcp'] }]))
-  expect(captureHarnessMcpFacts('grok', '/bin/grok', ['orch'], runner)).toMatchObject({
+  const server = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
+  expect(
+    captureHarnessMcpFacts(
+      'grok',
+      '/bin/grok',
+      [server],
+      runner,
+      () => true,
+      () => null,
+    ),
+  ).toMatchObject({
     support: 'automatic',
     registrations: {
       orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
     },
   })
-  expect(captureHarnessMcpFacts('goose', '/bin/goose', ['orch'], runner)).toEqual({
-    support: 'manual',
-    registrations: {},
+  expect(
+    captureHarnessMcpFacts(
+      'goose',
+      '/bin/goose',
+      [server],
+      runner,
+      () => true,
+      () => null,
+    ),
+  ).toEqual({ support: 'manual', registrations: {} })
+})
+
+test('classifies missing, different, and matching registrations', () => {
+  const server = {
+    name: 'orch' as const,
+    command: `/bin/${PLATFORM_SLUG}`,
+    args: ['mcp', 'serve'],
+  }
+  const matching = {
+    status: 'registered' as const,
+    command: server.command,
+    args: server.args,
+  }
+  expect(classifyMcpRegistration(matching, server, false)).toEqual({
+    ...matching,
+    status: 'stale',
+    detail: 'registered command does not exist',
+  })
+  expect(
+    classifyMcpRegistration(
+      {
+        status: 'registered',
+        command: `/other/${PLATFORM_SLUG}`,
+        args: ['mcp', 'serve'],
+      },
+      server,
+      true,
+    ),
+  ).toEqual({
+    status: 'different',
+    command: `/other/${PLATFORM_SLUG}`,
+    args: ['mcp', 'serve'],
+    detail: 'registered command or arguments differ',
+  })
+  expect(classifyMcpRegistration(matching, server, true)).toEqual(matching)
+})
+
+test('resolves registered path commands directly and bare commands through PATH', () => {
+  expect(
+    registeredCommandResolves(
+      `/missing/${PLATFORM_SLUG}`,
+      () => false,
+      () => '/bin/ignored',
+    ),
+  ).toBe(false)
+  expect(
+    registeredCommandResolves(
+      PLATFORM_SLUG,
+      () => false,
+      () => `/usr/local/bin/${PLATFORM_SLUG}`,
+    ),
+  ).toBe(true)
+  expect(
+    registeredCommandResolves(
+      'missing-command',
+      () => true,
+      () => null,
+    ),
+  ).toBe(false)
+})
+
+test('linked-worktree registration refusal names the main checkout', () => {
+  expect(mcpRegistrationWriteRefusal('/repo/worktree', false, '/repo')).toBeNull()
+  expect(mcpRegistrationWriteRefusal('/repo/worktree', true, '/repo')).toContain(
+    'run this command from the main checkout /repo',
+  )
+})
+
+test('stable persisted registrations share the platform entry', () => {
+  const [orch, ask] = stableMcpServers()
+  expect(orch).toMatchObject({ name: 'orch', args: ['mcp', 'serve'] })
+  expect(ask).toMatchObject({
+    name: 'orch-ask',
+    command: orch?.command,
+    args: ['mcp', 'ask-server'],
   })
 })
 

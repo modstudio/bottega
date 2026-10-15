@@ -4,7 +4,6 @@
 import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { vendorProbeCommand } from '../agent/vendor-probe.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -520,7 +519,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('setup-ask')
     .allowExcessArguments(false)
     .action(async () => {
-      const code = await setupAskCommand(bottegaEntryArgv('ask-server'), presentation)
+      const code = await setupAskCommand(presentation)
       if (code) process.exitCode = code
     })
   program

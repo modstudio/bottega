@@ -24,11 +24,26 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-apply.ts',
       './setup-engine.ts',
       './setup-facts.ts',
+      './setup-mcp.ts',
       './setup-planner.ts',
+      './setup-registration-write.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
+    name: 'setup-registration-write-boundary',
+    file: 'orchestrator/src/setup/setup-registration-write.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/install-root.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep linked-worktree persistence refusal independent of setup planning and harness CLI grammar.',
   },
   {
     name: 'setup-repository-facts-boundary',
@@ -94,7 +109,11 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-mcp-boundary',
     file: 'orchestrator/src/setup/setup-mcp.ts',
-    allowed: ['../../../shared/brand.ts', '../../../shared/secret-shaped.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/secret-shaped.ts',
+      '../../../shared/self-spawn.ts',
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',
   },

@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
 const MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
@@ -12,9 +13,21 @@ type HarnessMcpDescriptor = {
   manualDocumentation: string | null
 }
 export const HARNESS_MCP_CATALOGUE = {
-  codex: { support: 'automatic', servers: ['orch', 'orch-ask'], manualDocumentation: null },
-  grok: { support: 'automatic', servers: ['orch', 'orch-ask'], manualDocumentation: null },
-  claude: { support: 'automatic', servers: ['orch'], manualDocumentation: null },
+  codex: {
+    support: 'automatic',
+    servers: ['orch', 'orch-ask'],
+    manualDocumentation: null,
+  },
+  grok: {
+    support: 'automatic',
+    servers: ['orch', 'orch-ask'],
+    manualDocumentation: null,
+  },
+  claude: {
+    support: 'automatic',
+    servers: ['orch'],
+    manualDocumentation: null,
+  },
   opencode: {
     support: 'manual',
     servers: ['orch'],
@@ -30,7 +43,11 @@ export type HarnessName = keyof typeof HARNESS_MCP_CATALOGUE
 export function harnessMcpServers(harness: HarnessName): readonly McpServerName[] {
   return HARNESS_MCP_CATALOGUE[harness].servers
 }
-export type McpServer = { name: McpServerName; command: string; args: string[] }
+export type McpServer = {
+  name: McpServerName
+  command: string
+  args: string[]
+}
 export type SetupCommandResult = {
   exitCode: number | null
   stdout: string
@@ -42,11 +59,26 @@ export type SetupCommandRunner = (argv: string[], timeoutMs: number) => SetupCom
 export type McpReadback =
   | { status: 'absent' }
   | { status: 'registered'; command: string; args: string[] }
+  | { status: 'stale'; command: string; args: string[]; detail: string }
+  | { status: 'different'; command: string; args: string[]; detail: string }
   | { status: 'unreadable'; detail: string }
 
 export type HarnessMcpFacts = {
   support: 'automatic' | 'manual'
   registrations: Partial<Record<McpServerName, McpReadback>>
+}
+
+/** The stable entries persisted in harness configuration. */
+export function stableMcpServers(): McpServer[] {
+  const [command, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
+  return [
+    { name: 'orch', command: command!, args: [...prefix, 'mcp', 'serve'] },
+    {
+      name: 'orch-ask',
+      command: command!,
+      args: [...prefix, 'mcp', 'ask-server'],
+    },
+  ]
 }
 
 export function runSetupCommand(
@@ -58,7 +90,12 @@ export function runSetupCommand(
     delete env.CLAUDE_CODE_SESSION_ID
     delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
     env.ORCH_DB = process.platform === 'win32' ? 'NUL' : '/dev/null'
-    const child = Bun.spawnSync(argv, { stdout: 'pipe', stderr: 'pipe', timeout: timeoutMs, env })
+    const child = Bun.spawnSync(argv, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: timeoutMs,
+      env,
+    })
     return {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),
@@ -149,7 +186,10 @@ function parseCodex(result: SetupCommandResult, name: McpServerName): McpReadbac
     if (typeof transport.command !== 'string' || !args) throw new Error('missing command or args')
     return { status: 'registered', command: transport.command, args }
   } catch {
-    return { status: 'unreadable', detail: 'parse failure: invalid Codex MCP JSON' }
+    return {
+      status: 'unreadable',
+      detail: 'parse failure: invalid Codex MCP JSON',
+    }
   }
 }
 
@@ -167,7 +207,10 @@ function parseGrok(result: SetupCommandResult, name: McpServerName): McpReadback
     if (typeof row.command !== 'string' || !args) throw new Error('missing command or args')
     return { status: 'registered', command: row.command, args }
   } catch {
-    return { status: 'unreadable', detail: 'parse failure: invalid Grok MCP JSON' }
+    return {
+      status: 'unreadable',
+      detail: 'parse failure: invalid Grok MCP JSON',
+    }
   }
 }
 
@@ -181,7 +224,10 @@ function parseClaude(result: SetupCommandResult, name: McpServerName): McpReadba
   const command = result.stdout.match(/^\s*Command:\s*(.+?)\s*$/im)?.[1]
   const rawArgs = result.stdout.match(/^\s*Args:\s*(.*?)\s*$/im)?.[1]
   if (!command || rawArgs === undefined)
-    return { status: 'unreadable', detail: 'Claude MCP output did not include Command and Args' }
+    return {
+      status: 'unreadable',
+      detail: 'Claude MCP output did not include Command and Args',
+    }
   try {
     const args = rawArgs.startsWith('[')
       ? stringArray(JSON.parse(rawArgs))
@@ -189,12 +235,18 @@ function parseClaude(result: SetupCommandResult, name: McpServerName): McpReadba
     if (!args) throw new Error('Args was not a string array')
     return { status: 'registered', command, args }
   } catch {
-    return { status: 'unreadable', detail: 'parse failure: invalid Claude MCP arguments' }
+    return {
+      status: 'unreadable',
+      detail: 'parse failure: invalid Claude MCP arguments',
+    }
   }
 }
 
 function unreadable(result: SetupCommandResult): McpReadback {
-  return { status: 'unreadable', detail: resultFailure(result) ?? 'parse failure' }
+  return {
+    status: 'unreadable',
+    detail: resultFailure(result) ?? 'parse failure',
+  }
 }
 
 export function readMcpRegistration(
@@ -212,17 +264,61 @@ export function readMcpRegistration(
 export function captureHarnessMcpFacts(
   harness: HarnessName,
   bin: string,
-  names: McpServerName[],
+  servers: McpServer[],
   runner: SetupCommandRunner = runSetupCommand,
+  commandExists: (path: string) => boolean,
+  findCommand: (name: string) => string | null,
 ): HarnessMcpFacts {
   if (HARNESS_MCP_CATALOGUE[harness].support === 'manual')
     return { support: 'manual', registrations: {} }
   return {
     support: 'automatic',
     registrations: Object.fromEntries(
-      names.map((name) => [name, readMcpRegistration(harness, bin, name, runner)]),
+      servers.map((server) => {
+        const readback = readMcpRegistration(harness, bin, server.name, runner)
+        return [
+          server.name,
+          classifyMcpRegistration(
+            readback,
+            server,
+            readback.status !== 'registered' ||
+              registeredCommandResolves(readback.command, commandExists, findCommand),
+          ),
+        ]
+      }),
     ),
   }
+}
+
+/** Resolve absolute/relative paths directly and bare commands through PATH. */
+export function registeredCommandResolves(
+  command: string,
+  commandExists: (path: string) => boolean,
+  findCommand: (name: string) => string | null,
+): boolean {
+  return /[\\/]/.test(command) ? commandExists(command) : findCommand(command) !== null
+}
+
+/** Classify a raw read-back against the stable entry using already-gathered filesystem facts. */
+export function classifyMcpRegistration(
+  readback: McpReadback,
+  server: McpServer,
+  commandExists: boolean,
+): McpReadback {
+  if (readback.status !== 'registered') return readback
+  if (!commandExists)
+    return {
+      ...readback,
+      status: 'stale',
+      detail: 'registered command does not exist',
+    }
+  if (!sameMcpRegistration(readback, server))
+    return {
+      ...readback,
+      status: 'different',
+      detail: 'registered command or arguments differ',
+    }
+  return readback
 }
 
 export function sameMcpRegistration(readback: McpReadback, server: McpServer): boolean {
