@@ -5,37 +5,40 @@ describe('docSnippet', () => {
   test('places a middle match inside a bounded window', () => {
     const result = docSnippet(`${'a'.repeat(100)}Needle${'b'.repeat(100)}`, 'needle')
     expect(result.snippet).toBe(`${'a'.repeat(60)}Needle${'b'.repeat(60)}`)
-    expect(result.matchPosition).toBe(60)
+    expect(result.highlights).toEqual([{ start: 60, length: 6 }])
   })
 
   test('keeps matches at the start and end', () => {
     expect(docSnippet(`Needle${'b'.repeat(100)}`, 'needle')).toEqual({
       snippet: `Needle${'b'.repeat(60)}`,
-      matchPosition: 0,
+      highlights: [{ start: 0, length: 6 }],
     })
     const end = docSnippet(`${'a'.repeat(100)}Needle`, 'needle')
-    expect(end).toEqual({ snippet: `${'a'.repeat(60)}Needle`, matchPosition: 60 })
+    expect(end).toEqual({
+      snippet: `${'a'.repeat(60)}Needle`,
+      highlights: [{ start: 60, length: 6 }],
+    })
   })
 
   test('uses the start of the body for title-only and absent matches', () => {
     const body = 'Body without the term.'
     expect(docSnippet(body, 'needle')).toEqual({
       snippet: body,
-      matchPosition: null,
+      highlights: [],
     })
   })
 
   test('does not split multi-byte code points and reports a usable string position', () => {
     const result = docSnippet(`${'😀'.repeat(70)}NÉÉDLE`, 'néédle')
     expect(result.snippet.startsWith('😀')).toBe(true)
-    expect(result.matchPosition).toBe(120)
-    expect(result.snippet.slice(result.matchPosition!)).toStartWith('NÉÉDLE')
+    expect(result.highlights).toEqual([{ start: 120, length: 6 }])
+    expect(result.snippet.slice(result.highlights[0]!.start)).toStartWith('NÉÉDLE')
   })
 
   test('reports an original-text offset when an earlier character expands while folding', () => {
     const result = docSnippet('İfoo', 'foo')
-    expect(result).toEqual({ snippet: 'İfoo', matchPosition: 1 })
-    expect(result.snippet.slice(result.matchPosition!)).toBe('foo')
+    expect(result).toEqual({ snippet: 'İfoo', highlights: [{ start: 1, length: 3 }] })
+    expect(result.snippet.slice(result.highlights[0]!.start)).toBe('foo')
   })
 })
 
@@ -74,7 +77,7 @@ test('local search makes one orch call and excludes a subject-only store match',
       status: 'current',
       kind: 'article',
       snippet: 'A needle in the body.',
-      matchPosition: 2,
+      highlights: [{ start: 2, length: 6 }],
     },
   ])
   expect(list).toHaveBeenCalledTimes(1)

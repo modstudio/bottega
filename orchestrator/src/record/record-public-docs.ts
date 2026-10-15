@@ -3,6 +3,12 @@
 import { SQL } from 'bun'
 import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
+  DOC_SNIPPET_START,
+  DOC_SNIPPET_STOP,
+  type DocSnippetHighlight,
+  docPlainSnippet,
+} from '../../../shared/doc-snippet.ts'
+import {
   type DocAudience,
   type DocAudiences,
   type DocKind,
@@ -13,6 +19,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { recordDocAudiences } from './record-doc-audiences.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
+const TS_HEADLINE_OPTIONS = `StartSel=${DOC_SNIPPET_START}, StopSel=${DOC_SNIPPET_STOP}, HighlightAll=false, MaxFragments=1, MaxWords=30, MinWords=12`
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -39,6 +46,7 @@ export type RecordDocSearchMatch = {
   slug: string
   title: string
   snippet: string
+  highlights: DocSnippetHighlight[]
   spaceName?: string
   status: DocStatus
   kind: DocKind
@@ -82,11 +90,13 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
 }
 
 export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDocSearchMatch {
+  const { snippet, highlights } = docPlainSnippet(String(row.snippet))
   return {
     id: String(row.id),
     slug: String(row.slug),
     title: String(row.title),
-    snippet: String(row.snippet),
+    snippet,
+    highlights,
     status: (row.status == null ? 'current' : String(row.status)) as DocStatus,
     kind: String(row.kind) as DocKind,
     audiences: recordDocAudiences(row.audiences),
@@ -170,7 +180,7 @@ async function searchedMarkedRows(
   for (const row of rows) {
     const body = docBodyForAudience(String(row.body), audience)
     const search = await tx`
-      SELECT ts_headline('english', ${body}, websearch_to_tsquery('english', ${query})) AS snippet,
+      SELECT ts_headline('english', ${body}, websearch_to_tsquery('english', ${query}), ${TS_HEADLINE_OPTIONS}) AS snippet,
              ts_rank(
                setweight(to_tsvector('english', ${String(row.title)}), 'A') ||
                setweight(to_tsvector('english', ${body}), 'B'),
@@ -208,7 +218,7 @@ export async function searchPublicRecordDocs(input: {
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
       SELECT id, slug, title, audiences, kind, updated_at, 'current' AS status,
-             ts_headline('english', body, value) AS snippet, rank
+             ts_headline('english', body, value, ${TS_HEADLINE_OPTIONS}) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, updated_at DESC, id
     `) as Record<string, unknown>[]
@@ -256,7 +266,7 @@ export async function searchRecordDocs(
           LIMIT ${DOC_SEARCH_RESULT_LIMIT}
         )
         SELECT id, slug, title, status, kind, audiences, space_name,
-               ts_headline('english', body, value) AS snippet, rank
+               ts_headline('english', body, value, ${TS_HEADLINE_OPTIONS}) AS snippet, rank
         FROM limited
         ORDER BY rank DESC, id
       `
@@ -288,7 +298,7 @@ export async function searchRecordDocs(
         LIMIT ${DOC_SEARCH_RESULT_LIMIT}
       )
       SELECT id, slug, title, status, kind, audiences, updated_at, space_name,
-             ts_headline('english', body, value) AS snippet, rank
+             ts_headline('english', body, value, ${TS_HEADLINE_OPTIONS}) AS snippet, rank
       FROM limited
       ORDER BY rank DESC, updated_at DESC, id
     `) as Record<string, unknown>[]

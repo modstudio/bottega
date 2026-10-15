@@ -1,3 +1,4 @@
+import { DOC_SNIPPET_START, DOC_SNIPPET_STOP, docPlainSnippet } from '../../shared/doc-snippet.ts'
 import type { DocAudience } from '../../shared/docs.ts'
 import { type DocSearchMatch, DocSearchSchema } from './doc-contract.ts'
 import { docList } from './orch.ts'
@@ -14,10 +15,7 @@ export type LocalDocSearchInput = {
   includeWorking?: boolean
 }
 
-export function docSnippet(
-  body: string,
-  query: string,
-): { snippet: string; matchPosition: number | null } {
+export function docSnippet(body: string, query: string) {
   const normalized = query.trim().toLocaleLowerCase()
   let foldedBody = ''
   const originalOffsets: number[] = []
@@ -33,29 +31,21 @@ export function docSnippet(
     originalOffset += point.length
   }
   const foldedMatch = normalized ? foldedBody.indexOf(normalized) : -1
+  const points = Array.from(body)
   if (foldedMatch < 0) {
-    const snippet = Array.from(body)
-      .slice(0, SNIPPET_CONTEXT_CODE_POINTS * 2)
-      .join('')
-    return {
-      snippet,
-      matchPosition: null,
-    }
+    return docPlainSnippet(points.slice(0, SNIPPET_CONTEXT_CODE_POINTS * 2).join(''))
   }
   const bodyMatch = originalOffsets[foldedMatch]!
   const foldedEnd = foldedMatch + normalized.length
   const originalEnd = originalEnds[foldedEnd - 1]!
   const codePointIndex = Array.from(body.slice(0, bodyMatch)).length
   const queryCodePoints = Array.from(body.slice(bodyMatch, originalEnd)).length
-  const points = Array.from(body)
   const start = Math.max(0, codePointIndex - SNIPPET_CONTEXT_CODE_POINTS)
-  const end = Math.min(
-    points.length,
-    codePointIndex + queryCodePoints + SNIPPET_CONTEXT_CODE_POINTS,
-  )
-  const snippet = points.slice(start, end).join('')
+  const end = Math.min(points.length, codePointIndex + queryCodePoints + SNIPPET_CONTEXT_CODE_POINTS)
   const prefix = points.slice(start, codePointIndex).join('')
-  return { snippet, matchPosition: prefix.length }
+  const match = points.slice(codePointIndex, codePointIndex + queryCodePoints).join('')
+  const suffix = points.slice(codePointIndex + queryCodePoints, end).join('')
+  return docPlainSnippet(`${prefix}${DOC_SNIPPET_START}${match}${DOC_SNIPPET_STOP}${suffix}`)
 }
 
 export async function searchLocalDocs(

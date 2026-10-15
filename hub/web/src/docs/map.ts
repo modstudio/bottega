@@ -116,26 +116,37 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     audiences: audiencesOf(row.audiences),
     snippet: String(row.snippet ?? ''),
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,
-    matchPosition: typeof row.matchPosition === 'number' ? row.matchPosition : null,
+    highlights: highlightsOf(row.highlights),
   }
 }
 
-export function highlightSnippet(
-  snippet: string,
-  matchPosition: number | null,
-  query: string,
-): { before: string; match: string; after: string } {
-  const needle = query.trim()
-  if (!needle) return { before: snippet, match: '', after: '' }
-  const at =
-    matchPosition != null && matchPosition >= 0 && matchPosition < snippet.length
-      ? matchPosition
-      : snippet.toLocaleLowerCase().indexOf(needle.toLocaleLowerCase())
-  if (at < 0) return { before: snippet, match: '', after: '' }
-  const length = needle.length
-  return {
-    before: snippet.slice(0, at),
-    match: snippet.slice(at, at + length),
-    after: snippet.slice(at + length),
+export function highlightSnippet(input: {
+  snippet: string
+  highlights: readonly { start: number; length: number }[]
+}): { text: string; highlight: boolean }[] {
+  const { snippet, highlights } = input
+  if (highlights.length === 0) return snippet ? [{ text: snippet, highlight: false }] : []
+  const parts: { text: string; highlight: boolean }[] = []
+  let cursor = 0
+  for (const { start, length } of highlights) {
+    if (start > cursor) parts.push({ text: snippet.slice(cursor, start), highlight: false })
+    if (length > 0) parts.push({ text: snippet.slice(start, start + length), highlight: true })
+    cursor = Math.max(cursor, start + length)
   }
+  if (cursor < snippet.length) parts.push({ text: snippet.slice(cursor), highlight: false })
+  return parts.filter((part) => part.text.length > 0)
+}
+
+function highlightsOf(value: unknown): { start: number; length: number }[] {
+  if (!Array.isArray(value)) return []
+  const highlights: { start: number; length: number }[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const start = (item as { start?: unknown }).start
+    const length = (item as { length?: unknown }).length
+    if (typeof start === 'number' && typeof length === 'number' && start >= 0 && length >= 0) {
+      highlights.push({ start, length })
+    }
+  }
+  return highlights
 }

@@ -51,7 +51,7 @@ export type DocsSearchMatch = {
   audiences: DocAudiences
   snippet: string
   spaceName?: string
-  matchPosition: number | null
+  highlights: { start: number; length: number }[]
 }
 
 export type DocsSource = 'local' | 'hosted' | 'public'

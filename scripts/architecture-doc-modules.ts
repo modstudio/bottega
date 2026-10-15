@@ -27,6 +27,7 @@ export const docModules: DocModule[] = [
     'micromark-extension-directive',
     './docs.ts',
   ]),
+  module('shared/doc-snippet.ts', []),
   module('orchestrator/src/doc/doc-audiences-codec.ts', ['../../../shared/docs.ts']),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
     '../project/projects.ts',

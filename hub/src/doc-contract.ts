@@ -69,7 +69,14 @@ export const DocSearchMatchSchema = z.object({
   kind: z.enum(DOC_KINDS),
   snippet: z.string(),
   spaceName: z.string().optional(),
-  matchPosition: z.number().int().nonnegative().nullable().default(null),
+  highlights: z
+    .array(
+      z.object({
+        start: z.number().int().nonnegative(),
+        length: z.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
 })
 
 export const DocTreeSchema = z.object({ items: z.array(DocTreeItemSchema) })

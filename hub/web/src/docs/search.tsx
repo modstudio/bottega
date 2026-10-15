@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Kbd } from '@/ui/kbd/kbd'
@@ -110,7 +110,7 @@ export function SearchDialog({
         ) : (
           <div id={listId} role="listbox">
             {results.map((match, index) => {
-              const parts = highlightSnippet(match.snippet, match.matchPosition, needle)
+              const parts = highlightSnippet(match)
               const selected = index === active
               return (
                 // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the search input; arrow keys move aria-selected
@@ -135,11 +135,15 @@ export function SearchDialog({
                   </div>
                   {match.snippet ? (
                     <p className="mt-0.5 text-sm text-text-muted leading-5">
-                      {parts.before}
-                      {parts.match ? (
-                        <mark className="bg-surface-sunken text-text-primary">{parts.match}</mark>
-                      ) : null}
-                      {parts.after}
+                      {parts.map((part, partIndex) =>
+                        part.highlight ? (
+                          <mark key={partIndex} className="bg-surface-sunken text-text-primary">
+                            {part.text}
+                          </mark>
+                        ) : (
+                          <Fragment key={partIndex}>{part.text}</Fragment>
+                        ),
+                      )}
                     </p>
                   ) : null}
                 </div>

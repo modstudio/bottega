@@ -130,7 +130,7 @@ describe('record client', () => {
           status: 'current',
           kind: 'article',
           snippet: 'Welcome body',
-          matchPosition: null,
+          highlights: [],
         },
       ],
     })
@@ -188,7 +188,7 @@ describe('record client', () => {
     expect(requested).toBe(
       'https://api.example.test/v1/docs/search?q=welcome&scope=project&subject=workshop&audience=technical&includeDrafts=true&acrossReadableSpaces=true',
     )
-    expect(result.items[0]).toMatchObject({ spaceName: 'Workshop', matchPosition: null })
+    expect(result.items[0]).toMatchObject({ spaceName: 'Workshop', highlights: [] })
   })
 
   test('forwards Cookie and Authorization unchanged', async () => {

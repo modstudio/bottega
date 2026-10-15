@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DOC_SNIPPET_START, DOC_SNIPPET_STOP } from '../../../shared/doc-snippet.ts'
 import {
   normalizeDocSearchQuery,
   publicRecordDocRow,
@@ -69,7 +70,7 @@ describe('record public docs', () => {
         status: 'current',
         kind: 'article',
         audiences: ['customer'],
-        snippet: '<b>Read</b> me',
+        snippet: `${DOC_SNIPPET_START}Read${DOC_SNIPPET_STOP} me`,
         space_name: 'Public',
       }),
     ).toEqual({
@@ -79,7 +80,8 @@ describe('record public docs', () => {
       status: 'current',
       kind: 'article',
       audiences: ['customer'],
-      snippet: '<b>Read</b> me',
+      snippet: 'Read me',
+      highlights: [{ start: 0, length: 4 }],
       spaceName: 'Public',
     })
   })
