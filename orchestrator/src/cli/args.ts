@@ -365,6 +365,7 @@ export const CLI_COMMANDS = new Set([
   'project',
   'question',
   'record',
+  'reference',
   'recalibrate',
   'reclaim',
   'reclassify-failures',

@@ -97,6 +97,7 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
+  isReferenceGeneratorWrite,
   referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
@@ -333,7 +334,15 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
-  if (input.generator) return
+  // Generated reference pages are checked by the reference drift check, not prose lint.
+  if (
+    isReferenceGeneratorWrite({
+      storedForm: prior?.form,
+      requestedForm: input.form,
+      generator: input.generator,
+    })
+  )
+    return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
 }
@@ -648,6 +657,8 @@ export async function consumeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+  const referenceRefusal = referenceWriteRefusal({ storedForm: doc.form })
+  if (referenceRefusal) throw new Error(referenceRefusal)
   const consumedAt = nowIso()
   let patched: { body: string; alreadyConsumed: boolean }
   try {
@@ -865,6 +876,12 @@ export async function restoreDoc(
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
   const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
+  const current = getDoc(scope, subject, slug, owner)
+  const referenceRefusal = referenceWriteRefusal({
+    storedForm: current?.form,
+    requestedForm: revision.form,
+  })
+  if (referenceRefusal) throw new Error(referenceRefusal)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     expectedCurrent,
@@ -893,11 +910,11 @@ export async function restoreDoc(
       ...localRevisionArticleReferences(revision),
       ...context,
     },
-    getDoc(scope, subject, slug, owner),
+    current,
   )
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectByName(subject!)?.id ?? null) : null
-  const liveRecordId = getDoc(scope, subject, slug, owner)?.record_id
+  const liveRecordId = current?.record_id
   const restoredParentSlug = localRestoredParentSlug({
     scope,
     subject,
@@ -919,7 +936,7 @@ export async function restoreDoc(
       featured: revision.featured,
       ...context,
     },
-    getDoc(scope, subject, slug, owner),
+    current,
   )
   assertDocSections(revision.body, tree.audiences)
   return applyRecordWriteAuthority({

@@ -16,6 +16,7 @@ import {
   type DocGenerator,
   type DocRevisionOp,
   docWriteProjectName,
+  isReferenceGeneratorWrite,
   recordDocLintRefusal,
   referenceWriteRefusal,
   refuseArticleDelivery,
@@ -220,7 +221,14 @@ export async function upsertRecordDoc(
       )
     }
     assertWrite(refuseArticleDelivery({ ...input, delivery, kind }))
-    if (!input.generator)
+    // Generated reference pages are checked by the reference drift check, not prose lint.
+    if (
+      !isReferenceGeneratorWrite({
+        storedForm: existing[0]?.form == null ? null : String(existing[0].form),
+        requestedForm: input.form,
+        generator: input.generator,
+      })
+    )
       assertWrite(
         recordDocLintRefusal(
           { ...input, kind },
@@ -661,6 +669,11 @@ export async function consumeRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertWrite(
+      referenceWriteRefusal({
+        storedForm: doc.form == null ? null : String(doc.form),
+      }),
+    )
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
@@ -726,6 +739,11 @@ export async function restoreRecordDoc(
       FOR UPDATE
     `
     if (!existing[0]) throw new RecordDocError('doc not found', 404)
+    assertWrite(
+      referenceWriteRefusal({
+        storedForm: existing[0].form == null ? null : String(existing[0].form),
+      }),
+    )
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing[0].latest_revision_id,
@@ -918,6 +936,12 @@ export async function importRecordDoc(
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
     const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
+    assertWrite(
+      referenceWriteRefusal({
+        storedForm: existing?.form == null ? null : String(existing.form),
+        requestedForm: importedDoc.form,
+      }),
+    )
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,

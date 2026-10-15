@@ -22,16 +22,27 @@ export const MISSING_HOSTED_REVISION_REMEDY =
 export const REFERENCE_GENERATOR = 'reference-publish' as const
 export type DocGenerator = typeof REFERENCE_GENERATOR
 
+export function isReferenceGeneratorWrite(input: {
+  storedForm?: string | null
+  requestedForm?: string | null
+  generator?: DocGenerator
+}): boolean {
+  return (
+    input.generator === REFERENCE_GENERATOR &&
+    (input.requestedForm ?? input.storedForm) === 'reference'
+  )
+}
+
 export function referenceWriteRefusal(input: {
   storedForm?: string | null
   requestedForm?: string | null
   generator?: DocGenerator
 }): string | null {
-  if (
-    input.generator === REFERENCE_GENERATOR ||
-    (input.storedForm !== 'reference' && input.requestedForm !== 'reference')
-  )
-    return null
+  if (input.generator === REFERENCE_GENERATOR) {
+    if (isReferenceGeneratorWrite(input)) return null
+    return 'refusing document write: the reference-publish generator marker is reserved for reference documents'
+  }
+  if (input.storedForm !== 'reference' && input.requestedForm !== 'reference') return null
   return `refusing hand write of a generated reference document\ncleared by: ${PLATFORM_SLUG} doc reference publish`
 }
 

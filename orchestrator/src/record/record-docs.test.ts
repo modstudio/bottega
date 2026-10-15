@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordDocLintRefusal } from '../doc/doc-write-allowed.ts'
+import {
+  REFERENCE_GENERATOR,
+  recordDocLintRefusal,
+  referenceWriteRefusal,
+} from '../doc/doc-write-allowed.ts'
 import { recordDocRevisionIdentityRefusal } from './record-doc-mapping.ts'
 
 const doc = (body: string) => ({
@@ -29,6 +33,26 @@ describe('record service doc lint', () => {
         doc('This was formerly different.'),
       ),
     ).toBeNull()
+  })
+})
+
+describe('hosted reference write policy', () => {
+  test('the marker cannot bypass prose lint for a non-reference document', () => {
+    expect(
+      referenceWriteRefusal({ requestedForm: null, generator: REFERENCE_GENERATOR }),
+    ).toContain('generator marker is reserved for reference documents')
+    expect(recordDocLintRefusal(doc('This was called legacy.'))).not.toBeNull()
+  })
+
+  test('restore, consume, and import refuse reference documents', () => {
+    for (const operation of ['restore', 'consume', 'import']) {
+      expect(referenceWriteRefusal({ storedForm: 'reference' }), operation).toContain(
+        `${PLATFORM_SLUG} doc reference publish`,
+      )
+    }
+    expect(referenceWriteRefusal({ requestedForm: 'reference' }), 'new import').toContain(
+      `${PLATFORM_SLUG} doc reference publish`,
+    )
   })
 })
 

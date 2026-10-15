@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { REFERENCE_GENERATOR } from './doc-write-allowed.ts'
-import { getDoc, setDoc } from './docs.ts'
+import { consumeDoc, getDoc, importDoc, listDocRevisions, restoreDoc, setDoc } from './docs.ts'
 import { publishReferenceDocs } from './reference-publish.ts'
 
 test('reference publishing is the only write path and is idempotent and removing', async () => {
@@ -47,6 +47,20 @@ test('reference publishing is the only write path and is idempotent and removing
       }),
     ).rejects.toThrow('bottega doc reference publish')
 
+    await expect(
+      setDoc({
+        scope: 'project',
+        subject: PLATFORM_SLUG,
+        slug: 'marked-prose',
+        title: 'Marked prose',
+        body: 'This was previously lint-invalid.',
+        delivery: 'demand',
+        reason: 'invalid generator marker',
+        generator: REFERENCE_GENERATOR,
+      }),
+    ).rejects.toThrow('generator marker is reserved for reference documents')
+    expect(getDoc('project', PLATFORM_SLUG, 'marked-prose')).toBeNull()
+
     expect(await publishReferenceDocs(root, [indexFile, taskFile])).toEqual([
       { slug: 'cli', disposition: 'updated' },
       { slug: 'cli-task', disposition: 'created' },
@@ -83,6 +97,26 @@ test('reference publishing is the only write path and is idempotent and removing
         generator: REFERENCE_GENERATOR,
       }),
     ).resolves.toBeTruthy()
+    const revision = listDocRevisions('project', PLATFORM_SLUG, existing.slug).at(-1)!
+    await expect(
+      consumeDoc('project', PLATFORM_SLUG, existing.slug, { reason: 'hand consume' }),
+    ).rejects.toThrow('bottega doc reference publish')
+    await expect(
+      restoreDoc('project', PLATFORM_SLUG, existing.slug, revision.id, {
+        reason: 'hand restore',
+      }),
+    ).rejects.toThrow('bottega doc reference publish')
+    await expect(
+      importDoc({
+        scope: 'project',
+        subject: PLATFORM_SLUG,
+        slug: existing.slug,
+        title: existing.title,
+        body: existing.body,
+        delivery: 'demand',
+        reason: 'hand import',
+      }),
+    ).rejects.toThrow('bottega doc reference publish')
 
     writeFileSync(join(root, indexFile), '# Command reference\n\nIndex.\n')
     expect(await publishReferenceDocs(root, [indexFile])).toContainEqual({
