@@ -79,6 +79,20 @@ export function normalizeDocCheckedAgainstCommit(input: string): string {
   return input
 }
 export const DOC_SUMMARY_MAX_LENGTH = 160
+export type DocSummarySource = 'written' | 'derived'
+
+/** Validate and normalize a written document summary at an input boundary. */
+export function normalizeDocSummary(input: string): string | null {
+  const summary = input.trim()
+  if (!summary) return null
+  if (/\r|\n/.test(summary)) {
+    throw new Error('invalid summary: summary must be a single line')
+  }
+  if (summary.length > DOC_SUMMARY_MAX_LENGTH) {
+    throw new Error(`invalid summary: summary must be at most ${DOC_SUMMARY_MAX_LENGTH} characters`)
+  }
+  return summary
+}
 
 /** Derive the short catalogue copy from the first prose paragraph in a markdown body. */
 export function docSummary(body: string): string {
@@ -122,6 +136,17 @@ export function docSummary(body: string): string {
   const cut = plain.slice(0, DOC_SUMMARY_MAX_LENGTH + 1)
   const boundary = cut.lastIndexOf(' ')
   return `${cut.slice(0, boundary > 0 ? boundary : DOC_SUMMARY_MAX_LENGTH).trimEnd()}…`
+}
+
+/** Use written catalogue copy when present, otherwise derive it from the opening paragraph. */
+export function effectiveDocSummary(
+  summary: string | null | undefined,
+  body: string,
+): { summary: string; summarySource: DocSummarySource } {
+  const written = summary?.trim()
+  return written
+    ? { summary: written, summarySource: 'written' }
+    : { summary: docSummary(body), summarySource: 'derived' }
 }
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
   (scope): scope is Exclude<DocScope, 'canon' | 'settings'> =>

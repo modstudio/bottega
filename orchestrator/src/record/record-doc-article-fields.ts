@@ -25,10 +25,15 @@ type Fields = {
   relatedSubjectIds: string[]
   sourceFiles: string[]
   checkedAgainstCommit: string | null
+  summary: string | null
 }
 
 function checkedAgainstCommitFromRow(row: Row | undefined): string | null {
   return row?.checked_against_commit == null ? null : String(row.checked_against_commit)
+}
+
+function summaryFromRow(row: Row | undefined): string | null {
+  return row?.summary == null ? null : String(row.summary)
 }
 
 export function storedRevisionArticleFields(row: Row, document: string) {
@@ -39,6 +44,7 @@ export function storedRevisionArticleFields(row: Row, document: string) {
         column: 'doc.source_files',
       }).map(String),
       checkedAgainstCommit: checkedAgainstCommitFromRow(row),
+      summary: summaryFromRow(row),
     }
   } catch (error) {
     if (error instanceof Error) throw new RecordDocError(error.message)
@@ -56,6 +62,7 @@ export type HostedArticleResponse = {
   relatedSubjects?: Array<{ id: string; name: string }>
   sourceFiles?: string[]
   checkedAgainstCommit?: string | null
+  summary?: string | null
 }
 
 export async function hostedArticleProjectId(
@@ -91,6 +98,7 @@ export async function resolveHostedArticleFields(
     relatedSubjectIds?: string[]
     sourceFiles?: string[]
     checkedAgainstCommit?: string | null
+    summary?: string | null
   },
   existing: Row | undefined,
   projectId: string | null,
@@ -119,6 +127,7 @@ export async function resolveHostedArticleFields(
     input.checkedAgainstCommit === undefined
       ? checkedAgainstCommitFromRow(existing)
       : input.checkedAgainstCommit
+  const summary = input.summary === undefined ? summaryFromRow(existing) : input.summary
   assertWrite(
     articleFieldRefusal({
       scope: input.scope,
@@ -128,6 +137,7 @@ export async function resolveHostedArticleFields(
       relatedSubjectIds,
       sourceFiles,
       checkedAgainstCommit,
+      summary,
     }),
   )
   const attached = new Set(
@@ -158,6 +168,7 @@ export async function resolveHostedArticleFields(
     relatedSubjectIds,
     sourceFiles,
     checkedAgainstCommit,
+    summary,
     subjectRows,
   }
 }
@@ -177,6 +188,7 @@ export function restoredArticleFields(revision: Row): Fields {
       column: 'doc_revision.source_files',
     }).map(String),
     checkedAgainstCommit: checkedAgainstCommitFromRow(revision),
+    summary: summaryFromRow(revision),
   }
 }
 
@@ -207,6 +219,7 @@ export async function importedArticleSubjectNames(
       relatedSubjectIds: doc.relatedSubjectIds,
       sourceFiles: doc.sourceFiles,
       checkedAgainstCommit: doc.checkedAgainstCommit,
+      summary: doc.summary,
     }),
   )
   const ids = [
@@ -240,5 +253,6 @@ export function hostedArticleResponse(fields: Fields, names: Map<string, string>
     relatedSubjects: fields.relatedSubjectIds.map((id) => ({ id, name: names.get(id)! })),
     sourceFiles: fields.sourceFiles,
     checkedAgainstCommit: fields.checkedAgainstCommit,
+    summary: fields.summary,
   }
 }

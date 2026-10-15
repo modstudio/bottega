@@ -53,6 +53,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     delivery: 'demand',
     status: 'draft',
     kind: 'working',
+    summarySource: 'derived',
     replacementSlug: null,
     spaceName: 'Workshop',
     body: 'hello',
@@ -73,6 +74,7 @@ test('record-shaped docs map onto the shared tree item and keep delivery', () =>
     kind: 'working',
     replacementSlug: null,
     summary: '',
+    summarySource: 'derived',
     featured: false,
     projectName: 'atlas',
   })
@@ -177,6 +179,8 @@ test('search highlight wraps each range and maps hosted highlights', () => {
       audiences: ['internal'],
       kind: 'article',
       snippet: 'x',
+      summary: 'Summary',
+      summarySource: 'written',
       highlights: [{ start: 0, length: 1 }],
     }),
   ).toEqual({
@@ -187,6 +191,8 @@ test('search highlight wraps each range and maps hosted highlights', () => {
     status: 'current',
     kind: 'article',
     snippet: 'x',
+    summary: 'Summary',
+    summarySource: 'written',
     highlights: [{ start: 0, length: 1 }],
   })
 })

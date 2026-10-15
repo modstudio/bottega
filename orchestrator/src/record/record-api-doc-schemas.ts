@@ -10,6 +10,7 @@ import {
   normalizeDocAudiences,
   normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
+  normalizeDocSummary,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 import { REFERENCE_GENERATOR } from '../doc/doc-generator.ts'
@@ -58,6 +59,7 @@ const recordDocTreeFieldShape = {
     .transform(normalizeDocCheckedAgainstCommit)
     .nullable()
     .optional(),
+  summary: z.string().transform(normalizeDocSummary).nullable().optional(),
   replacementSlug: z.string().min(1).nullable().optional(),
 }
 
@@ -116,6 +118,7 @@ export const recordDocImportSchema = z.object({
       .transform(normalizeDocCheckedAgainstCommit)
       .nullable()
       .optional(),
+    summary: z.string().transform(normalizeDocSummary).nullable().optional(),
     replacementSlug: z.string().min(1).nullable().optional().default(null),
     projectName: z.string().nullable().optional(),
     projectId: z.string().uuid().nullable().optional(),
@@ -149,6 +152,7 @@ export const recordDocImportSchema = z.object({
         .nullable()
         .optional()
         .default(null),
+      summary: z.string().transform(normalizeDocSummary).nullable().optional().default(null),
       replacementSlug: z.string().min(1).nullable().optional().default(null),
       author: z.string().trim().min(1),
       reason: z.string().trim().min(1),

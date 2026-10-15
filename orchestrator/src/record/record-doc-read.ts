@@ -7,7 +7,7 @@ import {
   type DocAudiences,
   type DocKind,
   type DocStatus,
-  docSummary,
+  effectiveDocSummary,
 } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
@@ -99,7 +99,7 @@ export async function listRecordDocs(input: Tenant & RecordDocListInput): Promis
       return {
         ...doc,
         body,
-        summary: docSummary(body),
+        ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
         [recordCursorAt]: String(row.cursor_at),
       }
     })

@@ -181,6 +181,23 @@ function Details({
           <EditableAbout key={doc.id} doc={doc} source={source} />
         ) : (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-md">
+            {doc.kind === 'article' ? (
+              <>
+                <dt className="text-text-muted">Summary</dt>
+                <dd
+                  className={
+                    doc.summarySource === 'derived'
+                      ? 'm-0 text-text-muted'
+                      : 'm-0 text-text-secondary'
+                  }
+                >
+                  {doc.summary || 'None'}
+                  {doc.summarySource === 'derived' ? (
+                    <span className="mt-1 block text-xs">From the opening paragraph</span>
+                  ) : null}
+                </dd>
+              </>
+            ) : null}
             <dt className="text-text-muted">Audience</dt>
             <dd className="m-0 text-text-secondary">
               {doc.audiences.map((audience) => DOC_AUDIENCE_LABELS[audience]).join(', ')}

@@ -6,9 +6,11 @@ import {
   DOC_FORMS,
   DOC_KINDS,
   DOC_STATUSES,
+  effectiveDocSummary,
   normalizeDocAudiences,
   normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
+  normalizeDocSummary,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
@@ -18,8 +20,8 @@ import {
   getDoc,
   getDocForAudience,
   getDocRevision,
-  listDocMetadata,
   listDocRevisions,
+  listDocs,
   removeDoc,
   setDoc,
   setDocStatus,
@@ -87,6 +89,7 @@ const articleFieldSchemaShape = {
   related_subjects: z.array(z.string().min(1)).optional(),
   source_files: z.array(z.string()).transform(normalizeDocSourceFiles).optional(),
   checked_against_commit: checkedAgainstCommitSchema,
+  summary: z.string().transform(normalizeDocSummary).nullable().optional(),
 }
 
 function setDocToolPayload(
@@ -159,7 +162,7 @@ export function registerDocTools(
       if (user && subject !== undefined) throw new Error('user cannot be used with subject')
       const owner = user ? await signedInDocOwner() : null
       return text(
-        listDocMetadata({
+        listDocs({
           scope: user ? 'canon' : scope,
           subject: user ? null : subject,
           scopes,
@@ -171,7 +174,7 @@ export function registerDocTools(
           status,
           kind,
           articleSubject: article_subject,
-        }),
+        }).map(({ body, ...doc }) => ({ ...doc, ...effectiveDocSummary(doc.summary, body) })),
       )
     },
   )
@@ -196,7 +199,7 @@ export function registerDocTools(
         ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
         : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
       if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
-      return text(doc)
+      return text({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })
     },
   )
   server.registerTool(
@@ -253,6 +256,7 @@ export function registerDocTools(
       related_subjects,
       source_files,
       checked_against_commit,
+      summary,
       replacement,
       force_inject,
       reason,
@@ -282,6 +286,7 @@ export function registerDocTools(
           relatedSubjects: related_subjects,
           sourceFiles: source_files,
           checkedAgainstCommit: checked_against_commit,
+          summary,
           replacementSlug: replacement,
           forceInject: force_inject,
           reason,

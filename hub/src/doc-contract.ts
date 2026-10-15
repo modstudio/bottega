@@ -26,6 +26,7 @@ export type ContractDocRow = ArticleDocFields & {
   slug: string
   title: string
   body: string
+  summary?: string | null
   delivery: 'inject' | 'demand'
   audiences: DocAudiences
   parent_id: number | null
@@ -52,6 +53,7 @@ export const DocTreeItemSchema = z.object({
   audiences: z.array(z.enum(DOC_AUDIENCES)).nonempty(),
   delivery: z.enum(['inject', 'demand']).optional(),
   summary: z.string().optional(),
+  summarySource: z.enum(['written', 'derived']),
   featured: z.boolean().optional(),
   status: z.enum(DOC_STATUSES).optional(),
   kind: z.enum(DOC_KINDS),
@@ -68,6 +70,8 @@ export const DocSearchMatchSchema = z.object({
   status: z.enum(DOC_STATUSES).default('current'),
   kind: z.enum(DOC_KINDS),
   snippet: z.string(),
+  summary: z.string(),
+  summarySource: z.enum(['written', 'derived']),
   spaceName: z.string().optional(),
   highlights: z
     .array(

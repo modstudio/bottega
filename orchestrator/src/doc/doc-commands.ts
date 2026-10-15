@@ -15,6 +15,7 @@ import {
   type DocForm,
   type DocKind,
   type DocStatus,
+  effectiveDocSummary,
   normalizeDocAudiences,
 } from '../../../shared/docs.ts'
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
@@ -341,7 +342,12 @@ function handledReadDocCommand(
     const match = flags.flag('match')
     const bodyMatch = flags.flag('body-match')
     const rows = listedDocs(filters, match, bodyMatch)
-    if (has('json')) presentation.log(JSON.stringify(rows))
+    if (has('json'))
+      presentation.log(
+        JSON.stringify(
+          rows.map((doc) => ({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) })),
+        ),
+      )
     else if (rows.length) {
       presentation.log(
         'scope    subject          slug                     title                    kind     form       article-subject  related  sources  status      delivery  bytes  updated',
@@ -368,10 +374,11 @@ function handledReadDocCommand(
     throw new Error(
       `no ${address.scope} doc "${slug}"; use ${PLATFORM_SLUG} doc list --scope ${address.scope}`,
     )
-  if (has('json')) presentation.log(JSON.stringify(doc))
+  if (has('json'))
+    presentation.log(JSON.stringify({ ...doc, ...effectiveDocSummary(doc.summary, doc.body) }))
   else
     presentation.write(
-      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nchecked against: ${doc.checkedAgainstCommit ?? '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
+      `kind: ${doc.kind}\nform: ${doc.form ?? '-'}\nsummary: ${effectiveDocSummary(doc.summary, doc.body).summary} (${effectiveDocSummary(doc.summary, doc.body).summarySource})\narticle subject: ${doc.articleSubject ? `${doc.articleSubject.name} (${doc.articleSubject.id})` : '-'}\nrelated subjects: ${doc.relatedSubjects.map(({ name, id }) => `${name} (${id})`).join(', ') || '-'}\nsource files: ${doc.sourceFiles.join(', ') || '-'}\nchecked against: ${doc.checkedAgainstCommit ?? '-'}\nstatus: ${doc.status}\nreplacement: ${doc.replacement_slug ?? '-'}\naudiences: ${doc.audiences.join(',')}\nparent: ${doc.parent_slug ?? '-'}\n\n${doc.body}`,
     )
   return true
 }
@@ -393,12 +400,15 @@ function articleTreeOptions(flags: DocFlags) {
     throw new Error('use --article-subject or --no-article-subject, not both')
   if (has('checked-at') && has('no-checked-at'))
     throw new Error('use --checked-at or --no-checked-at, not both')
+  if (has('summary') && has('no-summary'))
+    throw new Error('use --summary or --no-summary, not both')
   return {
     form: has('no-form') ? null : (rawForm as DocForm | undefined),
     articleSubject: has('no-article-subject') ? null : flag('article-subject'),
     relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
     sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
     checkedAgainstCommit: has('no-checked-at') ? null : flag('checked-at'),
+    summary: has('no-summary') ? null : flag('summary'),
   }
 }
 
@@ -415,6 +425,7 @@ function setTreeOptions(flags: DocFlags): {
   relatedSubjects: string[] | undefined
   sourceFiles: string[] | undefined
   checkedAgainstCommit: string | null | undefined
+  summary: string | null | undefined
 } {
   const { has, flag } = flags
   const audiences = docAudiences(flag('audience'))

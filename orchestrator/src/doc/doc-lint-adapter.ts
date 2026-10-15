@@ -1,6 +1,7 @@
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocKind } from '../../../shared/docs.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
@@ -21,6 +22,7 @@ type StoredDoc = {
   slug: string
   body: string
   kind: DocKind
+  summary?: string | null
 }
 
 const checkoutCache = new Map<string, DocReferenceProject['checkout']>()
@@ -98,7 +100,19 @@ export function storedDocWarnings(
   doc: StoredDoc,
   referenceProjects?: DocReferenceProject[],
 ): DocLintFinding[] {
-  return lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
+  const findings = lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
+  return doc.kind === 'article' && !doc.summary
+    ? [
+        ...findings,
+        {
+          line: 1,
+          rule: 'doc/article-summary',
+          level: 'warning',
+          message: 'article has no written summary',
+          remedy: `set one with ${PLATFORM_SLUG} doc set ${doc.slug} --summary`,
+        },
+      ]
+    : findings
 }
 
 export function storedDocLintRefusal(

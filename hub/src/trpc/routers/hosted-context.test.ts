@@ -24,6 +24,7 @@ const canonDoc: RecordDoc = {
   parentId: null,
   position: 0,
   summary: 'Use concise prose.',
+  summarySource: 'derived',
   featured: false,
   status: 'current',
   kind: 'working',

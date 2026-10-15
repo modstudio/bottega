@@ -118,6 +118,8 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
       'docs/pricing.md',
       '--source-file',
       'src/pricing.ts',
+      '--summary',
+      'Written pricing summary',
       '--checked-at',
       '1111111111111111111111111111111111111111',
     ),
@@ -132,6 +134,8 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
       { id: strategy.id, name: 'Strategy' },
     ],
     sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+    summary: 'Written pricing summary',
+    summarySource: 'written',
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
 
@@ -141,6 +145,8 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
     articleSubject: { id: pricing.id },
     relatedSubjects: [{ id: product.id }, { id: strategy.id }],
     sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+    summary: 'Written pricing summary',
+    summarySource: 'written',
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
 
@@ -240,6 +246,18 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
         articleSubject: null,
         relatedSubjects: [],
         sourceFiles: [],
+        checkedAgainstCommit: '1111111111111111111111111111111111111111',
+      },
+    ],
+    [
+      '--no-summary',
+      {
+        form: null,
+        articleSubject: null,
+        relatedSubjects: [],
+        sourceFiles: [],
+        summary: 'Cleared one field.',
+        summarySource: 'derived',
         checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],

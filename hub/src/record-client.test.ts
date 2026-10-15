@@ -87,6 +87,7 @@ describe('record client', () => {
       subject: null,
       audiences: ['user'] as const,
       summary: 'Welcome summary',
+      summarySource: 'written' as const,
       featured: false,
       kind: 'article' as const,
     }
@@ -107,6 +108,8 @@ describe('record client', () => {
               audiences: ['user'],
               kind: 'article',
               snippet: 'Welcome body',
+              summary: 'Welcome summary',
+              summarySource: 'written',
             },
           ],
         })
@@ -130,6 +133,8 @@ describe('record client', () => {
           status: 'current',
           kind: 'article',
           snippet: 'Welcome body',
+          summary: 'Welcome summary',
+          summarySource: 'written',
           highlights: [],
         },
       ],

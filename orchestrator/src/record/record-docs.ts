@@ -136,6 +136,7 @@ type RecordDocWriteInput = Tenant & {
   relatedSubjectIds?: string[]
   sourceFiles?: string[]
   checkedAgainstCommit?: string | null
+  summary?: string | null
   replacementSlug?: string | null
   projectName?: string | null
   projectId?: string | null
@@ -174,7 +175,7 @@ export async function upsertRecordDoc(
   assertUpsertAddress(input)
   return tenant(input, async (tx) => {
     const existing = await tx`
-      SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, parent_id, position, latest_revision_id FROM doc
+      SELECT id, scope, subject, owner_user_id, slug, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, latest_revision_id FROM doc
       WHERE space_id=${input.spaceId}::uuid
         AND scope=${input.scope}
         AND COALESCE(subject, '')=${input.subject ?? ''}
@@ -256,7 +257,7 @@ export async function upsertRecordDoc(
       await tx`
         UPDATE doc
         SET title=${input.title}, body=${input.body}, delivery=${delivery},
-            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${articleFields.form}, article_subject_id=${articleFields.articleSubjectId}::uuid, source_files=${bindJsonb(tx, articleFields.sourceFiles)}, checked_against_commit=${articleFields.checkedAgainstCommit}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+            audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${articleFields.form}, article_subject_id=${articleFields.articleSubjectId}::uuid, source_files=${bindJsonb(tx, articleFields.sourceFiles)}, checked_against_commit=${articleFields.checkedAgainstCommit}, summary=${articleFields.summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
             owner_user_id=${input.owner ?? null}::uuid,
             project_id=${resolvedProject}::uuid, updated_at=${now}::timestamptz
         WHERE id=${docId}::uuid AND space_id=${input.spaceId}::uuid
@@ -264,10 +265,10 @@ export async function upsertRecordDoc(
     } else {
       await tx`
         INSERT INTO doc (
-          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, parent_id, position, project_id, created_at, updated_at
+          id, space_id, scope, subject, owner_user_id, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, parent_id, position, project_id, created_at, updated_at
         ) VALUES (
           ${docId}::uuid, ${input.spaceId}::uuid, ${input.scope}, ${input.subject}, ${input.owner ?? null}::uuid, ${input.slug},
-          ${input.title}, ${input.body}, ${delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${articleFields.form}, ${articleFields.articleSubjectId}::uuid, ${bindJsonb(tx, articleFields.sourceFiles)}, ${articleFields.checkedAgainstCommit}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
+          ${input.title}, ${input.body}, ${delivery}, ${bindRecordDocAudiences(tx, audiences)}, ${featured}, ${status}, ${kind}, ${articleFields.form}, ${articleFields.articleSubjectId}::uuid, ${bindJsonb(tx, articleFields.sourceFiles)}, ${articleFields.checkedAgainstCommit}, ${articleFields.summary}, ${replacementSlug}, ${parentId}::uuid, ${position}, ${resolvedProject}::uuid,
           ${now}::timestamptz, ${now}::timestamptz
         )
       `
@@ -297,6 +298,7 @@ export async function upsertRecordDoc(
       relatedSubjectIds: articleFields.relatedSubjectIds,
       sourceFiles: articleFields.sourceFiles,
       checkedAgainstCommit: articleFields.checkedAgainstCommit,
+      summary: articleFields.summary,
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -756,8 +758,14 @@ export async function restoreRecordDoc(
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
-    const { form, articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit } =
-      restoredArticleFields(revision)
+    const {
+      form,
+      articleSubjectId,
+      relatedSubjectIds,
+      sourceFiles,
+      checkedAgainstCommit,
+      summary,
+    } = restoredArticleFields(revision)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -790,7 +798,7 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, checked_against_commit=${checkedAgainstCommit}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, checked_against_commit=${checkedAgainstCommit}, summary=${summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
@@ -819,6 +827,7 @@ export async function restoreRecordDoc(
       relatedSubjectIds,
       sourceFiles,
       checkedAgainstCommit,
+      summary,
       replacementSlug,
       author: input.author,
       reason: input.reason,

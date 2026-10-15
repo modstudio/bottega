@@ -2,9 +2,10 @@
 /** Registers the semantic search tools; the retrieval work happens in the spawned retrieval command. */
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { effectiveDocSummary } from '../../../shared/docs.ts'
 import { searchProjectCode } from '../code/code-search.ts'
 import { searchDocs } from '../doc/doc-search.ts'
-import { validateDocAddressFilter } from '../doc/docs.ts'
+import { getDoc, validateDocAddressFilter } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 
 const text = (value: unknown) => ({
@@ -29,7 +30,17 @@ export function registerSearchTools(server: McpServer): void {
     async ({ query, k, scope, subject, includeDrafts }) => {
       const filter = { scope, subject, includeDrafts }
       validateDocAddressFilter(filter)
-      return text(await searchDocs(query, k ?? 5, filter))
+      const output = await searchDocs(query, k ?? 5, filter)
+      return text({
+        ...output,
+        results: output.results.map((result) => {
+          const doc = getDoc(result.scope, result.subject, result.slug)
+          return {
+            ...result,
+            ...effectiveDocSummary(doc?.summary, doc?.body ?? ''),
+          }
+        }),
+      })
     },
   )
 
