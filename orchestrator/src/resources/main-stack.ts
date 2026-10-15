@@ -155,6 +155,52 @@ function runningMainStackPaths(): CommandResult {
   return { ok: true, output: result.stdout?.toString() ?? '' }
 }
 
+export function mainStackExecInProgress(
+  projectPath: string,
+): { value: boolean } | { value: 'unknown'; reason: string } {
+  const containers = dockerCompose(projectPath, ['ps', '--status', 'running', '-q'])
+  if (!containers.ok) return { value: 'unknown', reason: containers.reason }
+  const ids = containers.output.split('\n').filter(Boolean)
+  if (ids.length === 0) return { value: false }
+
+  const command = ['docker', 'inspect', '-f', '{{json .ExecIDs}}', ...ids]
+  let result: ReturnType<typeof Bun.spawnSync>
+  try {
+    result = Bun.spawnSync(command, {
+      cwd: projectPath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
+  } catch (error) {
+    return { value: 'unknown', reason: `${command.join(' ')} failed: ${(error as Error).message}` }
+  }
+  if (result.exitedDueToTimeout) {
+    return {
+      value: 'unknown',
+      reason: `${command.join(' ')} failed: timed out after ${MAIN_STACK_COMMAND_TIMEOUT_MS}ms`,
+    }
+  }
+  if (result.exitCode !== 0) {
+    return {
+      value: 'unknown',
+      reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || `exit ${result.exitCode}`}`,
+    }
+  }
+  try {
+    const execIds = (result.stdout?.toString() ?? '')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    if (execIds.length !== ids.length || execIds.some((entry) => !Array.isArray(entry))) {
+      return { value: 'unknown', reason: `${command.join(' ')} failed: unparseable output` }
+    }
+    return { value: execIds.some((entry) => entry.length > 0) }
+  } catch {
+    return { value: 'unknown', reason: `${command.join(' ')} failed: unparseable output` }
+  }
+}
+
 function latestActivity(
   database: Database,
   projectId: number,
@@ -212,14 +258,59 @@ function latestActivity(
   }
 }
 
-export function sweepIdleMainStacks(input: {
+type MainStackSweepInput = {
   database: Database
   projects: Project[]
   dryRun: boolean
   nowMs?: number
   log(message: string): void
   error(message: string): void
-}): boolean {
+}
+
+function sweepIdleMainStack(
+  input: MainStackSweepInput,
+  project: Project,
+  idleStopAfterMs: number,
+): boolean {
+  let activity: ReturnType<typeof latestActivity>
+  try {
+    activity = latestActivity(input.database, project.id, input.nowMs ?? Date.now())
+  } catch (error) {
+    input.error(`main stack ${project.name}: idleness unavailable: ${(error as Error).message}`)
+    return true
+  }
+  const execObservation = mainStackExecInProgress(project.path)
+  const decision = decideMainStackIdleStop({
+    recordsAvailable: true,
+    running: true,
+    execInProgress: execObservation.value,
+    ...activity,
+    nowMs: input.nowMs ?? Date.now(),
+    idleStopAfterMs,
+  })
+  if (decision === 'report') {
+    input.error(
+      `main stack ${project.name}: command activity unavailable: ${
+        execObservation.value === 'unknown' ? execObservation.reason : 'unknown state'
+      }`,
+    )
+    return true
+  }
+  if (decision !== 'stop') return false
+  if (input.dryRun) {
+    input.log(`would stop idle main stack for ${project.name}`)
+    return false
+  }
+  const stopped = dockerCompose(project.path, ['stop'])
+  if (!stopped.ok) {
+    input.error(`main stack ${project.name}: ${stopped.reason}`)
+    return true
+  }
+  input.log(`stopped idle main stack for ${project.name}`)
+  return false
+}
+
+export function sweepIdleMainStacks(input: MainStackSweepInput): boolean {
   const inventory = runningMainStackPaths()
   if (!inventory.ok) {
     input.error(inventory.reason)
@@ -235,33 +326,7 @@ export function sweepIdleMainStacks(input: {
   let failed = false
   for (const project of input.projects) {
     if (!runningPaths.has(project.path)) continue
-    let activity: ReturnType<typeof latestActivity>
-    try {
-      activity = latestActivity(input.database, project.id, input.nowMs ?? Date.now())
-    } catch (error) {
-      input.error(`main stack ${project.name}: idleness unavailable: ${(error as Error).message}`)
-      failed = true
-      continue
-    }
-    const decision = decideMainStackIdleStop({
-      recordsAvailable: true,
-      running: true,
-      ...activity,
-      nowMs: input.nowMs ?? Date.now(),
-      idleStopAfterMs,
-    })
-    if (decision !== 'stop') continue
-    if (input.dryRun) {
-      input.log(`would stop idle main stack for ${project.name}`)
-      continue
-    }
-    const stopped = dockerCompose(project.path, ['stop'])
-    if (!stopped.ok) {
-      input.error(`main stack ${project.name}: ${stopped.reason}`)
-      failed = true
-    } else {
-      input.log(`stopped idle main stack for ${project.name}`)
-    }
+    failed = sweepIdleMainStack(input, project, idleStopAfterMs) || failed
   }
   return failed
 }

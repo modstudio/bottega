@@ -46,6 +46,7 @@ test('an idle main stack is stopped, never removed, while recent activity keeps 
   const idle = {
     recordsAvailable: true,
     running: true,
+    execInProgress: false as boolean | 'unknown',
     liveRun: false,
     liveSession: false,
     lastWorktreeCreatedAtMs: 100,
@@ -58,6 +59,8 @@ test('an idle main stack is stopped, never removed, while recent activity keeps 
   expect(decideMainStackIdleStop({ ...idle, liveRun: true })).toBe('keep')
   expect(decideMainStackIdleStop({ ...idle, liveSession: true })).toBe('keep')
   expect(decideMainStackIdleStop({ ...idle, lastGateAtMs: 900 })).toBe('keep')
+  expect(decideMainStackIdleStop({ ...idle, execInProgress: true })).toBe('keep')
+  expect(decideMainStackIdleStop({ ...idle, execInProgress: 'unknown' })).toBe('report')
   expect(decideMainStackIdleStop({ ...idle, recordsAvailable: false })).toBe('report')
 })
 
