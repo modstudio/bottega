@@ -13,6 +13,10 @@ export function runArtifactsDir(id: number, runsDir: string): string {
   return join(runsDir, String(id), 'artifacts')
 }
 
+function isRunScratchPath(path: string, scratch: string): boolean {
+  return path === scratch || path.startsWith(`${scratch}/`)
+}
+
 export function persistedRunArtifactPath(
   id: number,
   runsDir: string,
@@ -22,7 +26,7 @@ export function persistedRunArtifactPath(
   const scratch = runScratchDir(id, runsDir)
   const artifacts = runArtifactsDir(id, runsDir)
   const source = entry.startsWith('/') ? entry : worktreePath ? join(worktreePath, entry) : entry
-  return source === scratch || source.startsWith(`${scratch}/`)
+  return isRunScratchPath(source, scratch)
     ? join(artifacts, relative(scratch, source))
     : join(artifacts, basename(entry))
 }
@@ -144,10 +148,6 @@ export function rewriteFilesWrittenPaths(
   return text.slice(0, span.start) + rewritten + text.slice(span.end)
 }
 
-function continuesPathSegment(character: string): boolean {
-  return /[A-Za-z0-9._-]/.test(character)
-}
-
 /** Rewrite every run scratch-dir occurrence onto the artifacts dir. */
 export function rewriteScratchDirPaths(text: string, id: number, runsDir: string): string {
   const scratch = runScratchDir(id, runsDir)
@@ -159,8 +159,9 @@ export function rewriteScratchDirPaths(text: string, id: number, runsDir: string
     if (index < 0) return rewritten + text.slice(cursor)
     rewritten += text.slice(cursor, index)
     const after = index + scratch.length
-    const next = text[after] ?? ''
-    rewritten += continuesPathSegment(next) ? scratch : artifacts
+    const next = text[after]
+    const occurrence = next === '"' || next === undefined ? scratch : `${scratch}${next}`
+    rewritten += isRunScratchPath(occurrence, scratch) ? artifacts : scratch
     cursor = after
   }
 }

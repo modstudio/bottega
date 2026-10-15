@@ -54,3 +54,20 @@ test('the bare scratch directory path is rewritten', () => {
   const id = 11055
   expect(rewriteScratchDirPaths(runScratchDir(id, runs), id, runs)).toBe(runArtifactsDir(id, runs))
 })
+
+test('sibling scratch names stay untouched and a JSON bare scratch dir is rewritten', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const id = 11055
+  const scratch = runScratchDir(id, runs)
+  const artifacts = runArtifactsDir(id, runs)
+  const siblings = [
+    join(runs, String(id), 'scratch+backup', 'x'),
+    join(runs, String(id), 'scratch~', 'x'),
+    join(runs, String(id), 'scratch@old', 'x'),
+    join(runs, String(id), 'scratch (copy)', 'x'),
+  ].join(' ')
+  expect(rewriteScratchDirPaths(siblings, id, runs)).toBe(siblings)
+  expect(rewriteScratchDirPaths(JSON.stringify({ dir: scratch }), id, runs)).toBe(
+    JSON.stringify({ dir: artifacts }),
+  )
+})
