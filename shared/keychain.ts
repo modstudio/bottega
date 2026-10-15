@@ -5,6 +5,11 @@ type SecurityResult = {
 }
 
 export type SecurityRunner = (argv: string[], stdin?: Uint8Array) => SecurityResult
+export type AsyncSecurityRunner = (
+  argv: string[],
+  stdin?: Uint8Array,
+  signal?: AbortSignal,
+) => Promise<SecurityResult>
 
 const MISSING_ITEM_EXIT_CODE = 44
 const decoder = new TextDecoder()
@@ -25,6 +30,36 @@ function runSecurity(argv: string[], stdin?: Uint8Array): SecurityResult {
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 
+async function runSecurityAsync(
+  argv: string[],
+  stdin?: Uint8Array,
+  signal?: AbortSignal,
+): Promise<SecurityResult> {
+  const holder = globalThis as typeof globalThis & { [RUNNER_KEY]?: SecurityRunner }
+  const injected = holder[RUNNER_KEY]
+  if (injected) return injected(argv, stdin)
+  if (process.env.NODE_ENV === 'test')
+    throw new Error('keychain access requires an injected security runner in tests')
+  const child = Bun.spawn(argv, {
+    ...(stdin ? { stdin } : {}),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const abort = () => child.kill()
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).bytes(),
+      new Response(child.stderr).bytes(),
+    ])
+    if (signal?.aborted) throw signal.reason
+    return { exitCode, stdout, stderr }
+  } finally {
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
 function failure(operation: string, result: SecurityResult, redactedValue?: string): Error {
   let detail = decoder.decode(result.stderr).trim()
   if (redactedValue) detail = detail.replaceAll(redactedValue, '***')
@@ -39,6 +74,22 @@ export function readKeychainItem(
   runner: SecurityRunner = runSecurity,
 ): string | null {
   const result = runner(['security', 'find-generic-password', '-a', account, '-s', service, '-w'])
+  if (result.exitCode === MISSING_ITEM_EXIT_CODE) return null
+  if (result.exitCode !== 0) throw failure('find-generic-password', result)
+  return decoder.decode(result.stdout).trim() || null
+}
+
+export async function readKeychainItemAsync(
+  service: string,
+  account: string,
+  signal?: AbortSignal,
+  runner: AsyncSecurityRunner = runSecurityAsync,
+): Promise<string | null> {
+  const result = await runner(
+    ['security', 'find-generic-password', '-a', account, '-s', service, '-w'],
+    undefined,
+    signal,
+  )
   if (result.exitCode === MISSING_ITEM_EXIT_CODE) return null
   if (result.exitCode !== 0) throw failure('find-generic-password', result)
   return decoder.decode(result.stdout).trim() || null

@@ -78,17 +78,24 @@ function recordRefresh(database: Database, at: number, outcome: string): void {
   }, database)
 }
 
-async function within<T>(operation: Promise<T>, remainingMs: number): Promise<T> {
+async function within<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  remainingMs: number,
+): Promise<T> {
   if (remainingMs <= 0) throw new Error('hosted board refresh budget spent')
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      operation,
+      operation(controller.signal).catch((error: unknown) => {
+        if (controller.signal.aborted) throw new Error('hosted board refresh budget spent')
+        throw error
+      }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('hosted board refresh budget spent')),
-          remainingMs,
-        )
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('hosted board refresh budget spent'))
+        }, remainingMs)
       }),
     ])
   } finally {
@@ -230,12 +237,16 @@ async function flushReceipts(
   for (const row of rows) {
     try {
       await within(
-        client.putBoardReceipt({
-          messageId: row.message_id,
-          readerSession: row.reader_session,
-          audienceAtPosting: row.audience_at_posting === 1,
-          delivered: true,
-        }),
+        (signal) =>
+          client.putBoardReceipt(
+            {
+              messageId: row.message_id,
+              readerSession: row.reader_session,
+              audienceAtPosting: row.audience_at_posting === 1,
+              delivered: true,
+            },
+            signal,
+          ),
         deadline - now(),
       )
       database
@@ -658,12 +669,16 @@ export async function syncCachedHostedReceipt(
   const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
   try {
     await within(
-      client.putBoardReceipt({
-        messageId: id,
-        readerSession: reader,
-        audienceAtPosting: posting,
-        delivered: true,
-      }),
+      (signal) =>
+        client.putBoardReceipt(
+          {
+            messageId: id,
+            readerSession: reader,
+            audienceAtPosting: posting,
+            delivered: true,
+          },
+          signal,
+        ),
       deadline - Date.now(),
     )
     database

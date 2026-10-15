@@ -233,11 +233,11 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
 
 export async function claimMonitorNoticesWithHosted(
   ownerSession: string,
-  input: { refreshBoard?: boolean } = {},
+  input: { refreshBoard?: boolean; budgetMs?: number } = {},
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
   const board = await pendingBoardDelivery({
     session: ownerSession,
-    budgetMs: input.refreshBoard === false ? 0 : 500,
+    budgetMs: input.refreshBoard === false ? 0 : (input.budgetMs ?? 500),
   })
   const verification =
     input.refreshBoard === false

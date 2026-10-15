@@ -5,6 +5,7 @@ import { SQL } from 'bun'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
+  readRecordSessionTokenAsync,
   type SecurityRunner,
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
@@ -87,6 +88,24 @@ export function storedRecordToken(
   if (!legacy) return null
   writeTransaction(() => {
     writeRecordSessionToken(legacy, runner)
+    local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
+  }, local)
+  return legacy
+}
+
+export async function storedRecordTokenAsync(
+  local: Database = db(),
+  signal?: AbortSignal,
+  mayMigrate = !DATABASE_RESOLUTION.linkedWorktreeBinary,
+): Promise<string | null> {
+  const keychainToken = await readRecordSessionTokenAsync(signal)
+  if (keychainToken || !mayMigrate) return keychainToken
+  const legacy = local
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(RECORD_SESSION_KEY)?.value
+  if (!legacy) return null
+  writeTransaction(() => {
+    writeRecordSessionToken(legacy)
     local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
   }, local)
   return legacy
