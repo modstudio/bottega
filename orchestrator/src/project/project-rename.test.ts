@@ -42,7 +42,7 @@ function seedNameMirrors(projectId: number, otherId: number): void {
   d.query(
     `INSERT INTO landing (record_id,project,branch,status,started_at,project_id)
      VALUES (?,?,?,?,?,?)`,
-  ).run(id(), OLD, 'main', 'ok', 't', projectId)
+  ).run(id(), OLD, 'main', 'queued', 't', projectId)
   d.query(
     `INSERT INTO landing_override (record_id,project,branch,tip,tree,reason,at,project_id)
      VALUES (?,?,?,?,?,?,?,?)`,
@@ -91,9 +91,9 @@ function seedNameMirrors(projectId: number, otherId: number): void {
   ).run(id(), OLD, 'task', 'DEV-1', 'operator', 1, 't', 't', 't')
   d.query(
     `INSERT INTO board_message
-     (record_id,kind,author_kind,body,ack_required,created_at,audience,title,author_project)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-  ).run(id(), 'notice', 'operator', 'body', 0, 't', 'architects', 'title', OLD)
+     (record_id,kind,author_kind,body,ack_required,created_at,expires_at,audience,title,author_project)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(id(), 'notice', 'operator', 'body', 0, 't', 'later', 'architects', 'title', OLD)
   d.query(
     `INSERT INTO board_reach_delivery
      (record_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
