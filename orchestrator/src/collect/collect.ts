@@ -3,7 +3,11 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'nod
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
-import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-paths.ts'
+import {
+  persistedRunArtifactPath,
+  rewriteFilesWrittenPaths,
+  rewriteScratchDirPaths,
+} from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
@@ -556,15 +560,24 @@ export function collectResult(
         presentation.error(
           `\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`,
         )
-        presentation.log(partialOutputDocument(row, output))
+        presentation.log(
+          rewriteScratchDirPaths(
+            partialOutputDocument(row, output),
+            row.id,
+            resolveRunsDirectory(process.env),
+          ),
+        )
       }
     }
   } else if (output !== null) {
     const runsRoot = resolveRunsDirectory(process.env)
-    const rewritten =
+    const rewritten = rewriteScratchDirPaths(
       rewriteFilesWrittenPaths(output, (entry) =>
         persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
-      ) ?? output
+      ) ?? output,
+      row.id,
+      runsRoot,
+    )
     presentation.log(rewritten)
   }
   const chainNote = failoverSummary(chain.attempts)

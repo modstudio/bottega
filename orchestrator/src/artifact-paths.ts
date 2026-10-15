@@ -143,3 +143,24 @@ export function rewriteFilesWrittenPaths(
   }
   return text.slice(0, span.start) + rewritten + text.slice(span.end)
 }
+
+function continuesPathSegment(character: string): boolean {
+  return /[A-Za-z0-9._-]/.test(character)
+}
+
+/** Rewrite every run scratch-dir occurrence onto the artifacts dir. */
+export function rewriteScratchDirPaths(text: string, id: number, runsDir: string): string {
+  const scratch = runScratchDir(id, runsDir)
+  const artifacts = runArtifactsDir(id, runsDir)
+  let rewritten = ''
+  let cursor = 0
+  while (true) {
+    const index = text.indexOf(scratch, cursor)
+    if (index < 0) return rewritten + text.slice(cursor)
+    rewritten += text.slice(cursor, index)
+    const after = index + scratch.length
+    const next = text[after] ?? ''
+    rewritten += continuesPathSegment(next) ? scratch : artifacts
+    cursor = after
+  }
+}
