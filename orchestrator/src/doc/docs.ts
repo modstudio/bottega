@@ -41,9 +41,9 @@ import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import {
   type DocOrderInput,
-  type LocalDocOrderRow,
   docOrderRefusal,
   hostedDocOrder,
+  type LocalDocOrderRow,
   localDocId,
 } from './doc-order.ts'
 import {
