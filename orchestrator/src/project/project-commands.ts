@@ -11,13 +11,13 @@ import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
+import { persistLocalProjectSet } from './project-rename.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
   isProjectRepository,
   type Project,
   type ProjectSettings,
-  persistLocalProjectSet,
   projectByName,
   projects,
   pushProjects,
