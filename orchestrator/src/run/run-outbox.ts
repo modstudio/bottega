@@ -11,6 +11,7 @@ type LocalRun = Record<string, unknown> & {
   id: number
   record_id: string
   project_name: string | null
+  project_record_id: string | null
   started_at: string
   retry_record_id: string | null
   parent_record_id: string | null
@@ -35,6 +36,7 @@ export function buildRunRecordPayload(
   return {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
+    projectId: row.project_record_id,
     projectName: row.project_name,
     machineId,
     localId: row.id,
@@ -108,7 +110,7 @@ export function enqueueRunRecord(
 ): void {
   const row = database
     .query<LocalRun, [number]>(
-      `SELECT r.*, project.name AS project_name,
+      `SELECT r.*, project.name AS project_name, project.record_id AS project_record_id,
               retry.record_id AS retry_record_id, parent.record_id AS parent_record_id
          FROM run r
          LEFT JOIN project ON project.id=r.project_id

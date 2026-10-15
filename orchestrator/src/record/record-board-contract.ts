@@ -205,6 +205,7 @@ export type HostedBoardPostInput = {
   authorMachineId?: string | null
   authorRunId?: string | null
   project?: string
+  projectId?: string | null
   currentTaskKey?: string | null
 }
 
@@ -216,6 +217,7 @@ export type HostedBoardReplyInput = {
   authorMachineId?: string | null
   authorRunId?: string | null
   project?: string
+  projectId?: string | null
 }
 
 export type HostedBoardSessionInput = { authorSession?: string | null }
@@ -237,6 +239,7 @@ export type HostedBoardReceiptInput = {
 export type HostedBoardTakeClaimInput = {
   id: string
   project: string
+  projectId?: string | null
   subject: string
   durationMs?: number
   runId?: string | null

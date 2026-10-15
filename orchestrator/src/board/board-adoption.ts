@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
+import { projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -282,6 +283,8 @@ async function uploadMessage(
     const rootId = row.thread_root_id!
     const hostedRoot = hostedRoots.get(rootId)
     if (!hostedRoot) throw new Error(`local reply ${row.id} has no uploaded root ${rootId}`)
+    const project = row.author_project ?? undefined
+    const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
     const uploaded = await client.replyBoardMessage(hostedRoot, {
       id: hostedId,
       body: row.body,
@@ -289,11 +292,15 @@ async function uploadMessage(
       authorHarness: row.author_harness,
       authorMachineId: machineId(),
       authorRunId,
+      project,
+      projectId,
     })
     return uploaded.id
   }
   if (candidate.kind === 'claim') throw new Error(`claim ${candidate.id} is not a board message`)
   const tags = messageTags(row.id, database).filter((tag) => tag.origin === 'sender')
+  const project = originalProject(row, roots.get(row.thread_root_id ?? -1))
+  const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
   const uploaded = await client.postBoardMessage({
     id: hostedId,
     kind: candidate.kind,
@@ -311,7 +318,8 @@ async function uploadMessage(
     authorHarness: row.author_harness,
     authorMachineId: machineId(),
     authorRunId,
-    project: originalProject(row, roots.get(row.thread_root_id ?? -1)),
+    project,
+    projectId,
   })
   return uploaded.id
 }
@@ -431,6 +439,7 @@ async function uploadClaim(
   const uploaded = await client.takeBoardClaim({
     id: hostedId,
     project: row.project,
+    projectId: projectRowByName(row.project, database)?.recordId ?? null,
     subject: `${row.subject_kind}:${row.subject_value}`,
     durationMs: remaining,
     runId: runRecordId(row.run_id, database),

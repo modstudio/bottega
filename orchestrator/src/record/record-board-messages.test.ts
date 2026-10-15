@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { BOARD_BODY_MAX_CHARS } from '../board/board-policy.ts'
-import { hostedBoardFilingFailRefusal, uniqueProjectId } from './record-board-messages.ts'
+import { hostedBoardFilingFailRefusal } from './record-board-messages.ts'
 
 test('filing-fail error is bounded and refused when secret-shaped without echoing the text', () => {
   expect(hostedBoardFilingFailRefusal('hub unavailable')).toBeNull()
@@ -17,12 +17,4 @@ test('filing-fail error is bounded and refused when secret-shaped without echoin
     'board filing failure contains secret-shaped text; remove the credential and retry',
   )
   expect(secretRefusal).not.toContain(secret)
-})
-
-test('a project name stands for a project only when exactly one row carries it', () => {
-  const projectId = '03990000-0000-7000-8000-000000000001'
-
-  expect(uniqueProjectId([projectId])).toBe(projectId)
-  expect(uniqueProjectId([])).toBeNull()
-  expect(uniqueProjectId([projectId, `${projectId}-other`])).toBeNull()
 })

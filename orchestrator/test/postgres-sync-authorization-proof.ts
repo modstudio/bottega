@@ -6,6 +6,7 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { installRecordApiClient } from './fixtures/record-api.ts'
+import { headers, notice } from './postgres-board-api-values.ts'
 
 type Input = {
   machineId: string
@@ -25,6 +26,7 @@ const runPayload = (input: {
   id: string
   machineId: string
   projectName: string
+  projectId?: string | null
   spaceId: string
   startedByUserId?: string
 }) => {
@@ -136,6 +138,38 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       )
       expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
       expect(result.quarantined[0]?.error).toContain('not a member')
+      expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
+    } finally {
+      local.close()
+    }
+  })
+
+  test('hosted sync refuses a project id owned by another space', async () => {
+    const deniedSpaceId = newRecordId()
+    const deniedProjectId = newRecordId()
+    input.admin(
+      `INSERT INTO space (id,name,slug,created_at)
+       VALUES ('${deniedSpaceId}','Cross-space project proof','cross-${deniedSpaceId.slice(-8)}',now());
+       INSERT INTO project (id,space_id,name,created_at)
+       VALUES ('${deniedProjectId}','${deniedSpaceId}','foreign-project',now());`,
+    )
+    const id = newRecordId()
+    const local = localOutbox(
+      runPayload({
+        id,
+        machineId: input.machineId,
+        projectName: input.writeProjectName,
+        projectId: deniedProjectId,
+        spaceId: input.writeSpaceId,
+      }),
+    )
+    try {
+      const result = await withoutDirectRecordCredentials(() =>
+        syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
+      )
+      expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
+      expect(result.quarantined).toHaveLength(1)
+      expect(result.quarantined[0]?.error).toContain('absent from request space')
       expect(input.admin(`SELECT count(*) FROM run WHERE id='${id}';`)).toBe('0')
     } finally {
       local.close()
@@ -643,5 +677,140 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     } finally {
       local.close()
     }
+  })
+}
+
+export function registerHostedProjectIdentityProof(input: {
+  origin(): string
+  token(): string
+  existingProjectId: string
+  admin(statement: string): string
+  caseSession(label: string): string
+}): void {
+  test('hosted routes prefer a project UUID across stale names and preserve retired route policy', async () => {
+    const spaceId = input.admin(
+      `SELECT space_id FROM project WHERE id='${input.existingProjectId}';`,
+    )
+    const projectId = newRecordId()
+    const staleProjectId = newRecordId()
+    const currentName = `identity-current-${projectId.slice(-8)}`
+    const staleName = `identity-stale-${projectId.slice(-8)}`
+    const docId = newRecordId()
+    const subjectId = newRecordId()
+    const postId = newRecordId()
+    const replyId = newRecordId()
+    const claimId = newRecordId()
+    const retiredPostId = newRecordId()
+    input.admin(
+      `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
+       ('${projectId}','${spaceId}','${currentName}',ARRAY['IDENTITY'],now()),
+       ('${staleProjectId}','${spaceId}','${staleName}',ARRAY['STALE'],now());`,
+    )
+    const requestHeaders = { ...headers(input.token()), 'x-record-space': spaceId }
+    const doc = await fetch(`${input.origin()}/v1/docs`, {
+      method: 'PUT',
+      headers: requestHeaders,
+      body: JSON.stringify({
+        id: docId,
+        scope: 'project',
+        subject: staleName,
+        projectName: staleName,
+        projectId,
+        slug: 'identity-proof',
+        title: 'Identity proof',
+        body: 'UUID-selected project.',
+        delivery: 'demand',
+        reason: 'project identity proof',
+        author: 'proof',
+      }),
+    })
+    expect(doc.status, await doc.text()).toBe(200)
+    const subject = await fetch(`${input.origin()}/v1/subjects`, {
+      method: 'PUT',
+      headers: requestHeaders,
+      body: JSON.stringify({
+        id: subjectId,
+        project: staleName,
+        projectId,
+        name: 'Identity subject',
+        definition: 'Attached by UUID despite a stale name.',
+      }),
+    })
+    expect(subject.status, await subject.text()).toBe(200)
+    const post = await fetch(`${input.origin()}/v1/board/messages`, {
+      method: 'PUT',
+      headers: headers(input.token()),
+      body: JSON.stringify(
+        notice(postId, `project:${staleName}`, input.caseSession('identity-post'), {
+          project: staleName,
+          projectId,
+        }),
+      ),
+    })
+    expect(post.status, await post.text()).toBe(200)
+    const reply = await fetch(`${input.origin()}/v1/board/messages/${postId}/replies`, {
+      method: 'POST',
+      headers: headers(input.token()),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'UUID-selected reply author.',
+        authorSession: input.caseSession('identity-reply'),
+        project: staleName,
+        projectId,
+      }),
+    })
+    expect(reply.status, await reply.text()).toBe(200)
+    const claim = await fetch(`${input.origin()}/v1/board/claims`, {
+      method: 'PUT',
+      headers: headers(input.token()),
+      body: JSON.stringify({
+        id: claimId,
+        project: staleName,
+        projectId,
+        subject: `resource:identity-${projectId.slice(-8)}`,
+        holderSession: input.caseSession('identity-claim'),
+      }),
+    })
+    expect(claim.status, await claim.text()).toBe(200)
+    expect(
+      input.admin(
+        `SELECT d.project_id || '|' || s.project_id || '|' ||
+          (m.scope_project_ids[1]) || '|' || m.author_project_id || '|' ||
+          r.author_project_id || '|' || c.project_id
+         FROM doc d, subject s, board_message m, board_message r, board_claim c
+         WHERE d.id='${docId}' AND s.id='${subjectId}' AND m.id='${postId}'
+           AND r.id='${replyId}' AND c.id='${claimId}';`,
+      ),
+    ).toBe(Array(6).fill(projectId).join('|'))
+
+    input.admin(`UPDATE project SET retired_at=now() WHERE id='${projectId}';`)
+    const retiredPost = await fetch(`${input.origin()}/v1/board/messages`, {
+      method: 'PUT',
+      headers: headers(input.token()),
+      body: JSON.stringify(
+        notice(retiredPostId, 'operator', input.caseSession('identity-retired-author'), {
+          project: staleName,
+          projectId,
+        }),
+      ),
+    })
+    expect(retiredPost.status, await retiredPost.text()).toBe(200)
+    expect(
+      input.admin(
+        `SELECT author_project_id IS NULL FROM board_message WHERE id='${retiredPostId}';`,
+      ),
+    ).toBe('t')
+    const retiredClaim = await fetch(`${input.origin()}/v1/board/claims`, {
+      method: 'PUT',
+      headers: headers(input.token()),
+      body: JSON.stringify({
+        id: newRecordId(),
+        project: staleName,
+        projectId,
+        subject: `resource:retired-${projectId.slice(-8)}`,
+        holderSession: input.caseSession('identity-retired-claim'),
+      }),
+    })
+    expect(retiredClaim.status).toBe(400)
   })
 }

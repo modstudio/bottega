@@ -29,6 +29,7 @@ import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './o
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -295,18 +296,7 @@ async function applyHostedUnvoid(
 async function pushRun(postgres: SQL, row: Payload, principal: RecordPrincipal): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const projectName = nullableString(row.projectName)
-    let projectId: string | null = null
-    if (projectName !== null) {
-      const projects = await tx`
-        SELECT id FROM project
-        WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}
-      `
-      if (projects.length !== 1) {
-        throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
-      }
-      projectId = String(projects[0]!.id)
-    }
+    const projectId = await projectRecordId(tx, row, principal)
     const values = runValues(row, projectId)
     const existingOwned = await existingEvidenceOwned(
       tx,
@@ -581,14 +571,23 @@ async function projectRecordId(
   row: Payload,
   principal: RecordPrincipal,
 ): Promise<string | null> {
+  const requestedId = nullableString(row.projectId)
   const projectName = nullableString(row.projectName)
-  if (projectName === null) return null
-  const projects = await tx`SELECT id FROM project
-    WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
-  if (projects.length !== 1) {
-    throw new OutboxRowError(`record project is absent: ${projectName}`, 'row-validation')
+  if (requestedId === null && projectName === null) return null
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName,
+    spaceId: principal.spaceId,
+  })
+  if (resolved.status !== 'found') {
+    throw new OutboxRowError(
+      requestedId
+        ? `record project ${requestedId} is absent from request space ${principal.spaceId}`
+        : `record project is absent: ${projectName}`,
+      'row-validation',
+    )
   }
-  return String(projects[0]!.id)
+  return resolved.project.id
 }
 
 const recordKinds = {

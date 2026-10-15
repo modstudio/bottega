@@ -20,6 +20,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../record/record-api-client.ts',
+    '../project/projects.ts',
     '../run/run-identifier.ts',
     './board-adoption-policy.ts',
     './board-claim-policy.ts',

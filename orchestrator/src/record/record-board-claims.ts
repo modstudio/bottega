@@ -365,7 +365,7 @@ async function takeClaimInTx(
 ): Promise<TakeOutcome> {
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, clock)
-  const projectId = await resolveVisibleProjectId(tx, input.project)
+  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
   const open = (await tx`
     SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
     ORDER BY taken_at, id
@@ -449,11 +449,11 @@ export async function releaseHostedBoardClaim(
 }
 
 export async function listHostedBoardClaims(
-  input: BoardTenant & { project: string },
+  input: BoardTenant & { project: string; projectId?: string | null },
 ): Promise<{ claims: HostedBoardClaim[] }> {
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
-    const projectId = await resolveVisibleProjectId(tx, input.project)
+    const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
     const rows = (await tx`
       SELECT * FROM board_claim WHERE project_id=${projectId}::uuid ORDER BY taken_at, id
     `) as ClaimRow[]
@@ -464,12 +464,12 @@ export async function listHostedBoardClaims(
 }
 
 export async function releaseHostedBoardTaskClaims(
-  input: BoardTenant & { project: string; key: string },
+  input: BoardTenant & { project: string; projectId?: string | null; key: string },
 ): Promise<{ released: number }> {
   if (!input.key.trim()) throw new RecordBoardError('task key is required', 400)
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
-    const projectId = await resolveVisibleProjectId(tx, input.project)
+    const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
     const rows = (await tx`
       SELECT * FROM board_claim
       WHERE project_id=${projectId}::uuid AND subject_kind=${'task'} AND subject_value=${input.key}

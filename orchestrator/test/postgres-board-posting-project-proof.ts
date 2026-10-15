@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { expiresAt, headers, json, notice } from './postgres-board-api-values.ts'
+import { registerHostedProjectIdentityProof } from './postgres-sync-authorization-proof.ts'
 
 const AMBIGUOUS_PROJECT = 'board-api-ambiguous'
 const AMBIGUOUS_PROJECT_A = '03990000-0000-7000-8000-000000000017'
@@ -20,6 +21,14 @@ export function registerBoardPostingProjectProof(input: {
   projectId: string
   originProjectId: string
 }): void {
+  registerHostedProjectIdentityProof({
+    origin: input.origin,
+    token: input.tokenA,
+    existingProjectId: input.projectId,
+    admin: (statement) => input.succeeds('postgres', 'postgres', statement),
+    caseSession: input.caseSession,
+  })
+
   test('plain architects duplicate identity includes the posting project', async () => {
     const session = input.caseSession('architects-project-duplicate')
     const firstId = newRecordId()

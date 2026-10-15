@@ -13,6 +13,10 @@ type SubjectClient = Pick<
   | 'retireProjectSubject'
 >
 
+function withProjectId<T extends { project: string }>(input: T): T & { projectId: string | null } {
+  return { ...input, projectId: projectRowByName(input.project)?.recordId ?? null }
+}
+
 async function hostedSubjectClient(project: string): Promise<SubjectClient> {
   const client = recordApiClient()
   const destination = {
@@ -33,22 +37,25 @@ async function hostedSubjectClient(project: string): Promise<SubjectClient> {
 
 export const subjectClient = {
   async add(input: { id: string; project: string; name: string; definition: string }) {
-    return (await hostedSubjectClient(input.project)).addProjectSubject(input)
+    return (await hostedSubjectClient(input.project)).addProjectSubject(withProjectId(input))
   },
   async rename(project: string, id: string, name: string) {
-    return (await hostedSubjectClient(project)).renameProjectSubject({ project, id, name })
+    return (await hostedSubjectClient(project)).renameProjectSubject(
+      withProjectId({ project, id, name }),
+    )
   },
   async define(project: string, id: string, definition: string) {
-    return (await hostedSubjectClient(project)).defineProjectSubject({ project, id, definition })
+    return (await hostedSubjectClient(project)).defineProjectSubject(
+      withProjectId({ project, id, definition }),
+    )
   },
   async reorder(project: string, ids: string[]) {
-    const result = await (await hostedSubjectClient(project)).reorderProjectSubjects({
-      project,
-      ids,
-    })
+    const result = await (await hostedSubjectClient(project)).reorderProjectSubjects(
+      withProjectId({ project, ids }),
+    )
     return result.items
   },
   async retire(project: string, id: string) {
-    return (await hostedSubjectClient(project)).retireProjectSubject({ project, id })
+    return (await hostedSubjectClient(project)).retireProjectSubject(withProjectId({ project, id }))
   },
 }

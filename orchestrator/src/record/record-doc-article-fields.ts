@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { articleFieldRefusal } from '../doc/doc-write-allowed.ts'
 import { assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 
 function hostedDocList(
   value: unknown,
@@ -61,16 +62,21 @@ export async function hostedArticleProjectId(
   tx: SQL,
   spaceId: string,
   name: string | null | undefined,
+  requestedId?: string | null,
 ): Promise<string | null> {
-  if (!name) return null
-  const rows = await tx`SELECT id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
-  if (rows.length !== 1) {
+  if (!name && !requestedId) return null
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName: name,
+    spaceId,
+  })
+  if (resolved.status !== 'found') {
     throw new RecordDocError(
       `project ${name} has no hosted row in record space ${spaceId}; run \`${PLATFORM_SLUG} project push\` to create it`,
       422,
     )
   }
-  return String(rows[0]!.id)
+  return resolved.project.id
 }
 
 export async function resolveHostedArticleFields(

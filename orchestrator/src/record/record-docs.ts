@@ -122,6 +122,7 @@ type RecordDocWriteInput = Tenant & {
   checkedAgainstCommit?: string | null
   replacementSlug?: string | null
   projectName?: string | null
+  projectId?: string | null
   reason: string
   author: string
   sessionId?: string | null
@@ -139,6 +140,15 @@ function assertUpsertAddress(input: RecordDocWriteInput): void {
     refuseSettingsAddress(input.scope, input.subject, input.owner)
   if (refusal) throw new RecordDocError(refusal)
   assertWrite(refuseMismatchedDocProject(input.scope, input.subject, input.projectName))
+}
+
+function resolvedDocProjectId(
+  tx: SQL,
+  spaceId: string,
+  doc: Pick<RecordDocWriteInput, 'scope' | 'subject' | 'projectName' | 'projectId'>,
+): Promise<string | null> {
+  const name = doc.projectName ?? docWriteProjectName(doc.scope, doc.subject)
+  return hostedArticleProjectId(tx, spaceId, name, doc.projectId)
 }
 
 export async function upsertRecordDoc(
@@ -206,11 +216,7 @@ export async function upsertRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await hostedArticleProjectId(
-      tx,
-      input.spaceId,
-      input.projectName ?? docWriteProjectName(input.scope, input.subject),
-    )
+    const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, input)
     const articleFields = await resolveHostedArticleFields(
       tx,
       { ...input, kind },
@@ -926,11 +932,7 @@ export async function importRecordDoc(
           : undefined,
       ),
     )
-    const resolvedProject = await hostedArticleProjectId(
-      tx,
-      input.spaceId,
-      doc.projectName ?? docWriteProjectName(doc.scope, doc.subject),
-    )
+    const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, doc)
     const importedSubjectNames = await importedArticleSubjectNames(
       tx,
       { spaceId: input.spaceId, subject: doc.subject },

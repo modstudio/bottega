@@ -133,6 +133,15 @@ function projectNames(local: ReturnType<typeof db>): Map<number, string> {
   return names
 }
 
+function projectRecordIds(local: ReturnType<typeof db>): Map<number, string | null> {
+  return new Map(
+    local
+      .query<{ id: number; record_id: string | null }, []>('SELECT id, record_id FROM project')
+      .all()
+      .map((row) => [row.id, row.record_id]),
+  )
+}
+
 function asRevision(
   row: LocalRevision,
   recordIds: Map<number, string>,
@@ -171,6 +180,7 @@ function groupFromLive(
   doc: LocalDoc,
   revisions: LocalRevision[],
   names: Map<number, string>,
+  projectIds: Map<number, string | null>,
   recordIds: Map<number, string>,
   relatedIds: string[],
 ): ImportGroup {
@@ -206,6 +216,7 @@ function groupFromLive(
         }),
         replacementSlug: doc.replacement_slug,
         projectName: doc.project_id == null ? null : (names.get(doc.project_id) ?? null),
+        projectId: doc.project_id == null ? null : (projectIds.get(doc.project_id) ?? null),
         createdAt: doc.created_at,
         updatedAt: doc.updated_at,
         deletedAt: null,
@@ -218,6 +229,7 @@ function groupFromLive(
 function groupFromDeleted(
   revisions: LocalRevision[],
   names: Map<number, string>,
+  projectIds: Map<number, string | null>,
   recordIds: Map<number, string>,
 ): ImportGroup {
   const ordered = [...revisions].sort((left, right) => {
@@ -256,6 +268,7 @@ function groupFromDeleted(
         parentId: last.parent_id == null ? null : (recordIds.get(last.parent_id) ?? null),
         position: last.position,
         projectName: projectId == null ? null : (names.get(projectId) ?? null),
+        projectId: projectId == null ? null : (projectIds.get(projectId) ?? null),
         createdAt: ordered[0]!.at,
         updatedAt: deleted.at,
         deletedAt: deleted.at,
@@ -267,6 +280,7 @@ function groupFromDeleted(
 
 export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): ImportGroup[] {
   const names = projectNames(local)
+  const projectIds = projectRecordIds(local)
   const docs = local
     .query<LocalDoc, []>(
       `SELECT id, record_id, scope, subject, owner, slug, title, body, delivery, audiences, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, replacement_slug, parent_id, position, project_id, created_at, updated_at
@@ -304,12 +318,19 @@ export function groupLocalDocsForImport(local: ReturnType<typeof db> = db()): Im
   for (const doc of docs) {
     seen.add(doc.id)
     groups.push(
-      groupFromLive(doc, byDoc.get(doc.id) ?? [], names, recordIds, relatedByDoc.get(doc.id) ?? []),
+      groupFromLive(
+        doc,
+        byDoc.get(doc.id) ?? [],
+        names,
+        projectIds,
+        recordIds,
+        relatedByDoc.get(doc.id) ?? [],
+      ),
     )
   }
   for (const [docId, list] of byDoc) {
     if (seen.has(docId) || list.length === 0) continue
-    groups.push(groupFromDeleted(list, names, recordIds))
+    groups.push(groupFromDeleted(list, names, projectIds, recordIds))
   }
   const byLocalId = new Map(groups.map((group) => [group.sourceDocId, group]))
   const liveByAddress = new Map(

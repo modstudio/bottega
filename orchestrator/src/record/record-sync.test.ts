@@ -478,11 +478,12 @@ test.each([
   local.close()
 })
 
-test('an old-shape run payload without withheldFields still syncs', async () => {
+test('an old-shape run payload without projectId or withheldFields still syncs by name', async () => {
   const local = localOutbox(1)
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
   delete payload.withheldFields
+  delete payload.projectId
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toMatchObject({
@@ -493,7 +494,7 @@ test('an old-shape run payload without withheldFields still syncs', async () => 
   local.close()
 })
 
-test('an old-shape score payload without review grades syncs with nulls', async () => {
+test('an old-shape score payload without projectId or review grades syncs with nulls', async () => {
   const local = localScoreOutbox()
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
@@ -501,6 +502,7 @@ test('an old-shape score payload without review grades syncs with nulls', async 
   delete payload.coverage
   delete payload.limits
   delete payload.overlap
+  delete payload.projectId
   local.query('UPDATE outbox SET payload=?').run(JSON.stringify(payload))
   const remote = fakePostgres()
 
@@ -876,9 +878,7 @@ test('a projectless payload syncs without resolving a project', async () => {
     quarantined: [],
     blocked: [],
   })
-  expect(remote.statements.some((statement) => statement.includes('SELECT id FROM project'))).toBe(
-    false,
-  )
+  expect(remote.statements.some((statement) => statement.includes('FROM project'))).toBe(false)
   local.close()
 })
 

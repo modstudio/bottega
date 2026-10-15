@@ -171,6 +171,35 @@ test('an adoption resume uploads with the row record id', async () => {
   expect(ids).toEqual([recordId])
 })
 
+test('adoption uploads a reply local project name and hosted record id', async () => {
+  presence()
+  const root = askQuestion(
+    { audience: 'session:reader', title: 'reply identity', body: 'question' },
+    {},
+    NOW,
+  )
+  const reply = replyToThread(root.id, 'reply identity body', {}, NOW + 1)
+  const project = { name: 'adoption-reply-project' }
+  const projectId = newRecordId()
+  db()
+    .query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, project.name, '/tmp/adoption-reply-project', '{}')
+  db().query('UPDATE board_message SET author_project=? WHERE id=?').run(project.name, reply.id)
+  let uploaded: Parameters<RecordApiClient['replyBoardMessage']>[1] | undefined
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async replyBoardMessage(rootId, input) {
+      uploaded = input
+      return base.replyBoardMessage(rootId, input)
+    },
+  }
+
+  await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
+
+  expect(uploaded).toMatchObject({ project: project.name, projectId })
+})
+
 test('adoption preserves request and acknowledgement-required standing purposes', async () => {
   const request = postNotice(
     { audience: 'operator', title: 'Request to adopt', body: 'Request body', purpose: 'request' },

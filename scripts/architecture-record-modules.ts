@@ -15,6 +15,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
+  module('orchestrator/src/record/record-project-identity.ts', ['bun']),
   module('orchestrator/src/record/record-api-sync.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
@@ -50,6 +51,7 @@ export const recordModules: RecordModule[] = [
     './record-release-sync.ts',
     './record-review-read.ts',
     './record-review-values.ts',
+    './record-project-identity.ts',
     './record-sync-contract.ts',
     './record-sync-decision.ts',
     './record-sync-evidence-lookup.ts',
@@ -72,6 +74,7 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
     './record-doc-list-shape.ts',
+    './record-project-identity.ts',
   ]),
   module('orchestrator/src/record/record-doc-stored-fields.ts', [
     '../../../shared/docs.ts',
@@ -96,6 +99,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     '../../../shared/subjects.ts',
     './record-cursor.ts',
+    './record-project-identity.ts',
   ]),
   module('orchestrator/src/record/record-api-request-space.ts', [
     'hono',
@@ -331,6 +335,7 @@ export const recordModules: RecordModule[] = [
     '../board/board-tags.ts',
     '../board/board-thread-policy.ts',
     './record-board-contract.ts',
+    './record-project-identity.ts',
     './record-board-scope.ts',
     './record-board-tx.ts',
   ]),
