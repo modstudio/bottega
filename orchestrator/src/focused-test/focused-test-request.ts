@@ -100,6 +100,95 @@ function formatResult(
   ].join('\n')
 }
 
+function decideCurrentExecution(scratchDir: string): {
+  execution: FocusedTestRequest | null
+  resultPath: string | null
+  decision: ReturnType<typeof decideFocusedTestRequest>
+} {
+  const execution = currentExecution(scratchDir)
+  const resultPath = execution ? join(scratchDir, focusedTestResultFile(execution.id)) : null
+  return {
+    execution,
+    resultPath,
+    decision: decideFocusedTestRequest({
+      execution,
+      finished: resultPath ? focusedTestFileExists(resultPath) : false,
+      resultPending: execution ? pendingResults.has(execution.id) : false,
+    }),
+  }
+}
+
+function startFocusedTestExecution(
+  scratchDir: string,
+  paths: string[],
+): ReturnType<typeof decideCurrentExecution> {
+  const request = { id: randomUUID(), paths }
+  if (!tryCreateExecution(scratchDir, request)) return decideCurrentExecution(scratchDir)
+  try {
+    writeFocusedTestFileAtomic(join(scratchDir, FOCUSED_TEST_REQUEST_FILE), JSON.stringify(request))
+  } catch (error) {
+    clearExecution(scratchDir, request)
+    throw error
+  }
+  return {
+    execution: request,
+    resultPath: join(scratchDir, focusedTestResultFile(request.id)),
+    decision: { action: 'start' },
+  }
+}
+
+function admitFocusedTestExecution(
+  scratchDir: string,
+  paths: string[],
+): ReturnType<typeof decideCurrentExecution> {
+  const current = decideCurrentExecution(scratchDir)
+  if (current.decision.action !== 'start') return current
+  if (current.execution) clearExecution(scratchDir, current.execution)
+  const admitted = startFocusedTestExecution(scratchDir, paths)
+  if (!admitted.execution) throw new Error('focused test execution lock has no request')
+  return admitted
+}
+
+async function waitForFocusedTestExecution(input: {
+  runId: number
+  scratchDir: string
+  signal: AbortSignal
+  execution: FocusedTestRequest
+  resultPath: string
+  introduction: string | null
+  dependencies: FocusedTestWaitDependencies
+}): Promise<string> {
+  pendingResults.add(input.execution.id)
+  const waitStartedAt = input.dependencies.now()
+  for (;;) {
+    if (input.signal.aborted) {
+      return 'The focused test wait stopped because the run_tests call was cancelled.'
+    }
+    const finished = focusedTestFileExists(input.resultPath)
+    const now = input.dependencies.now()
+    const waitDecision = decideFocusedTestWait({
+      finished,
+      waitElapsedMs: now - waitStartedAt,
+      paths: input.execution.paths,
+      waitMs: input.dependencies.waitMs,
+    })
+    if (finished) {
+      const result = parseFocusedTestResult(
+        JSON.parse(readFocusedTestRegularFile(input.resultPath)),
+      )
+      pendingResults.delete(input.execution.id)
+      const formatted = formatResult(input.runId, input.scratchDir, result)
+      return input.introduction ? `${input.introduction}\n${formatted}` : formatted
+    }
+    if (!waitDecision.wait) return waitDecision.message!
+    await waitForPoll(
+      Math.min(FOCUSED_TEST_POLL_MS, input.dependencies.waitMs - (now - waitStartedAt)),
+      input.signal,
+      input.dependencies.wait,
+    )
+  }
+}
+
 export async function requestFocusedTests(
   input: {
     runId: number
@@ -110,76 +199,24 @@ export async function requestFocusedTests(
   dependencies: FocusedTestWaitDependencies = defaultWaitDependencies,
 ): Promise<string> {
   ensureFocusedTestDirectory(input.scratchDir)
-  let execution = currentExecution(input.scratchDir)
-  let resultPath = execution ? join(input.scratchDir, focusedTestResultFile(execution.id)) : null
-  let decision = decideFocusedTestRequest({
-    execution,
-    finished: resultPath ? focusedTestFileExists(resultPath) : false,
-    resultPending: execution ? pendingResults.has(execution.id) : false,
-  })
-
-  if (decision.action === 'start' && execution) {
-    clearExecution(input.scratchDir, execution)
-    execution = null
-  }
-  if (decision.action === 'start') {
-    const request = { id: randomUUID(), paths: input.paths }
-    if (!tryCreateExecution(input.scratchDir, request)) {
-      execution = currentExecution(input.scratchDir)
-      if (!execution) throw new Error('focused test execution lock has no request')
-      resultPath = join(input.scratchDir, focusedTestResultFile(execution.id))
-      decision = decideFocusedTestRequest({
-        execution,
-        finished: focusedTestFileExists(resultPath),
-        resultPending: pendingResults.has(execution.id),
-      })
-    } else {
-      execution = request
-      resultPath = join(input.scratchDir, focusedTestResultFile(request.id))
-      try {
-        writeFocusedTestFileAtomic(
-          join(input.scratchDir, FOCUSED_TEST_REQUEST_FILE),
-          JSON.stringify(request),
-        )
-      } catch (error) {
-        clearExecution(input.scratchDir, request)
-        throw error
-      }
-    }
-  }
-
+  const { execution, resultPath, decision } = admitFocusedTestExecution(
+    input.scratchDir,
+    input.paths,
+  )
   if (!execution || !resultPath) throw new Error('focused test request has no execution')
   const introduction = formatFocusedTestRequestDecision(decision, input.paths)
-  pendingResults.add(execution.id)
-  const waitStartedAt = dependencies.now()
   const requestPath = join(input.scratchDir, FOCUSED_TEST_REQUEST_FILE)
   const requestTempPath = `${requestPath}.tmp`
   try {
-    for (;;) {
-      if (input.signal.aborted) {
-        return 'The focused test wait stopped because the run_tests call was cancelled.'
-      }
-      const finished = focusedTestFileExists(resultPath)
-      const now = dependencies.now()
-      const waitDecision = decideFocusedTestWait({
-        finished,
-        waitElapsedMs: now - waitStartedAt,
-        paths: execution.paths,
-        waitMs: dependencies.waitMs,
-      })
-      if (finished) {
-        const result = parseFocusedTestResult(JSON.parse(readFocusedTestRegularFile(resultPath)))
-        pendingResults.delete(execution.id)
-        const formatted = formatResult(input.runId, input.scratchDir, result)
-        return introduction ? `${introduction}\n${formatted}` : formatted
-      }
-      if (!waitDecision.wait) return waitDecision.message!
-      await waitForPoll(
-        Math.min(FOCUSED_TEST_POLL_MS, dependencies.waitMs - (now - waitStartedAt)),
-        input.signal,
-        dependencies.wait,
-      )
-    }
+    return await waitForFocusedTestExecution({
+      runId: input.runId,
+      scratchDir: input.scratchDir,
+      signal: input.signal,
+      execution,
+      resultPath,
+      introduction,
+      dependencies,
+    })
   } finally {
     removeFocusedTestFile(requestTempPath)
   }

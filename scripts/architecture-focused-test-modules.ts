@@ -20,6 +20,7 @@ export const focusedTestModules: ArchitectureModule[] = [
     'node:crypto',
     'node:fs',
     'node:path',
+    '../gate/gate-decision.ts',
     '../run/run-artifacts.ts',
     './focused-test-decision.ts',
     './focused-test-files.ts',
