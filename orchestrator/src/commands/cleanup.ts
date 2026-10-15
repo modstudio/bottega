@@ -54,9 +54,10 @@ function lifecycleCheckpoint(name: string): void {
 export function register(program: Command): void {
   program
     .command('sweep')
-    .option('--project <value>')
-    .option('--force')
-    .option('--dry-run')
+    .description('release terminal runs and reclaim safe stale resources')
+    .option('--project <value>', 'registered project whose resources are swept')
+    .option('--force', 'continue despite a project sweep failure')
+    .option('--dry-run', 'report releases without applying them')
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)
@@ -73,7 +74,8 @@ export function register(program: Command): void {
 
   program
     .command('discard <id>')
-    .option('--force')
+    .description('remove a run worktree and discard its branch')
+    .option('--force', 'discard a branch with unique commits')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const flags = optionFlags(options)
@@ -86,6 +88,7 @@ export function register(program: Command): void {
 
   program
     .command('stop <id>')
+    .description('stop a live run and its processes')
     .allowExcessArguments(false)
     .action(async (id) => {
       await stopRun(
@@ -101,8 +104,9 @@ export function register(program: Command): void {
 
   program
     .command('abandon <id>')
-    .option('--note <value>')
-    .option('--force')
+    .description('stop a run and abandon its worktree')
+    .option('--note <value>', 'record why the run is abandoned')
+    .option('--force', 'abandon a branch with unique commits')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const flags = optionFlags(options)

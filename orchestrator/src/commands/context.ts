@@ -7,8 +7,9 @@ import { log } from './support.ts'
 export function register(program: Command): void {
   program
     .command('context')
-    .requiredOption('--cwd <path>')
-    .option('--json')
+    .description('show the resolved architect context for a checkout')
+    .requiredOption('--cwd <path>', 'resolve context for this checkout path')
+    .option('--json', 'write the resolved context as JSON')
     .allowExcessArguments(false)
     .action((options) =>
       sessionContextCommand({ cwd: options.cwd, json: Boolean(options.json) }, { log }),

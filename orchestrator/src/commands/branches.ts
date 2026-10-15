@@ -16,10 +16,11 @@ import { log } from './support.ts'
 export function register(program: Command): void {
   const branches = program
     .command('branches')
-    .option('--project <name>')
-    .option('--key <KEY>')
-    .option('--all-local')
-    .option('--json')
+    .description('report run-minted branches and their landing state')
+    .option('--project <name>', 'limit the report to this project')
+    .option('--key <KEY>', 'limit the report to this task key')
+    .option('--all-local', 'include local branches not minted by runs')
+    .option('--json', 'write the branch report as JSON')
     .passThroughOptions()
     .allowExcessArguments(false)
     .action((options) => {
@@ -35,9 +36,10 @@ export function register(program: Command): void {
 
   branches
     .command('landed')
+    .description('record the pull request that landed a branch')
     .argument('<branch>')
-    .requiredOption('--pr <number>')
-    .option('--json')
+    .requiredOption('--pr <number>', 'name the merged pull request')
+    .option('--json', 'write the landing record as JSON')
     .allowExcessArguments(false)
     .action((branch, options) => {
       const report = recordBranchLanding(branch, Number(options.pr))
@@ -50,11 +52,12 @@ export function register(program: Command): void {
 
   branches
     .command('prune')
-    .requiredOption('--project <name>')
-    .option('--key <KEY>')
-    .option('--all-local')
-    .option('--dry-run')
-    .option('--json')
+    .description('delete branches proven safe to reclaim')
+    .requiredOption('--project <name>', 'prune branches in this project')
+    .option('--key <KEY>', 'prune run-minted branches for this task')
+    .option('--all-local', 'prune local branches not minted by runs')
+    .option('--dry-run', 'report branches without deleting them')
+    .option('--json', 'write the prune report as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       if (Boolean(options.key) === Boolean(options.allLocal)) {

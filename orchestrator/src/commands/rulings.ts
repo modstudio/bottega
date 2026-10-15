@@ -54,10 +54,11 @@ const rulingFileStores: RulingFileStores = {
 }
 
 export function register(program: Command): void {
-  const question = program.command('question')
+  const question = program.command('question').description('manage worker questions')
   question
     .command('close <id>')
-    .requiredOption('--reason <text>')
+    .description('close a question without recording a ruling')
+    .requiredOption('--reason <text>', 'record why the question is closed')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const questionId = resolveQuestionIdentifier(db(), id)
@@ -65,12 +66,13 @@ export function register(program: Command): void {
       closeQuestionByOperator(questionId, requiredText(options.reason, '--reason'))
       log(`closed question ${questionId}`)
     })
-  const ruling = program.command('ruling')
+  const ruling = program.command('ruling').description('inspect and preserve recorded rulings')
   ruling
     .command('list')
-    .option('--since <ISO>')
+    .description('list recorded run and workflow rulings')
+    .option('--since <ISO>', 'include ruling activity since this instant')
     .option('--kind <kind>', 'workflow, run, or all', 'all')
-    .requiredOption('--json')
+    .requiredOption('--json', 'write the rulings as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       if (!['workflow', 'run', 'all'].includes(options.kind))
@@ -79,10 +81,11 @@ export function register(program: Command): void {
     })
   ruling
     .command('overturn <question-id>')
-    .requiredOption('--because <reason>')
-    .option('--replacement <ruling>')
-    .option('--replacement-file <path>')
-    .option('--from-operator')
+    .description('overturn a recorded ruling')
+    .requiredOption('--because <reason>', 'record why the ruling is overturned')
+    .option('--replacement <ruling>', 'record this replacement ruling')
+    .option('--replacement-file <path>', 'read the replacement ruling from this file')
+    .option('--from-operator', 'attribute the overturn to the operator')
     .allowExcessArguments(false)
     .action((questionId, options) => {
       if (options.replacement !== undefined && options.replacementFile !== undefined) {
@@ -112,13 +115,14 @@ export function register(program: Command): void {
     })
   ruling
     .command('file <question-id>')
-    .requiredOption('--as <kind>')
-    .option('--scope <doc-scope>')
-    .option('--subject <subject>')
-    .option('--title <title>')
-    .option('--from-operator')
-    .option('--channel <channel>')
-    .option('--json')
+    .description('file a recorded ruling as a document or canon proposal')
+    .requiredOption('--as <kind>', 'file the ruling as doc or canon')
+    .option('--scope <doc-scope>', 'file the document in this scope')
+    .option('--subject <subject>', 'file the document under this subject')
+    .option('--title <title>', 'use this document title')
+    .option('--from-operator', 'attribute the filing to the operator')
+    .option('--channel <channel>', 'record the channel that requested the filing')
+    .option('--json', 'write the filing result as JSON')
     .allowExcessArguments(false)
     .action(async (questionId, options) => {
       const result = await fileRuling(

@@ -33,8 +33,8 @@ export function register(program: Command): void {
   pr.command('create [githubArgs...]')
     .description('create a pull request after review-triage admission')
     .allowUnknownOption(true)
-    .option('--override-triage <reason>')
-    .option('--from-operator')
+    .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
+    .option('--from-operator', 'confirm the override came directly from the operator')
     .action((githubArgs: string[], options) => {
       validateGithubArguments(githubArgs)
       const result = createPullRequest(
@@ -50,7 +50,7 @@ export function register(program: Command): void {
 
   pr.command('merge <number-or-url>')
     .description('merge a pull request only when its head commit is proven')
-    .option('--cwd <tree>')
+    .option('--cwd <tree>', 'verify and merge from this worktree')
     .allowExcessArguments(false)
     .action((target: string, options) => {
       log(mergePullRequest(target, options.cwd ?? process.cwd()))
@@ -58,8 +58,8 @@ export function register(program: Command): void {
 
   pr.command('override')
     .description('record an operator override for the checked-out tip')
-    .requiredOption('--reason <reason>')
-    .option('--from-operator')
+    .requiredOption('--reason <reason>', 'record why the operator admits incomplete triage')
+    .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
     .action((options) => {
       const id = recordTriageOverride(options.reason, Boolean(options.fromOperator), process.cwd())
@@ -68,9 +68,9 @@ export function register(program: Command): void {
 
   pr.command('check')
     .description('read-only pre-push triage check')
-    .requiredOption('--local-ref <ref>')
-    .requiredOption('--sha <sha>')
-    .requiredOption('--remote-ref <ref>')
+    .requiredOption('--local-ref <ref>', 'name the local ref being pushed')
+    .requiredOption('--sha <sha>', 'name the commit being pushed')
+    .requiredOption('--remote-ref <ref>', 'name the destination ref')
     .allowExcessArguments(false)
     .action((options) => {
       const result = checkPushedTip(process.cwd(), options.sha.trim(), options.remoteRef.trim())

@@ -22,8 +22,8 @@ export function registerOutboxCommands(program: Command): void {
   outbox
     .command('trace')
     .description('list non-trivial delivery outcomes, newest first')
-    .option('--row <id>', '')
-    .option('--json', '')
+    .option('--row <id>', 'outbox row whose delivery outcomes are listed')
+    .option('--json', 'write the delivery outcomes as JSON')
     .action((options: { row?: string; json?: boolean }) =>
       print(() => outboxTraceLines(options.row, options.json)),
     )

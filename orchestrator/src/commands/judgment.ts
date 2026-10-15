@@ -85,16 +85,27 @@ const cleanupPresentation: CleanupPresentation = {
 }
 
 function addJudgmentOptions(command: Command): Command {
-  command.option('--finding <value>', '', collect, [])
+  command.option('--finding <value>', 'record a finding disposition', collect, [])
+  const descriptions: Record<Exclude<(typeof commonValueFlags)[number], '--finding'>, string> = {
+    '--note': 'record this note with the verdict',
+    '--note-file': 'read the verdict note from this file',
+    '--better-than': 'record that this run is better than these runs',
+    '--worse-than': 'record that this run is worse than these runs',
+    '--same-as': 'record that this run is tied with these runs',
+    '--reproduced': 'record whether review findings were reproduced',
+    '--coverage': 'record the review coverage verdict',
+    '--limits': 'record the review limits verdict',
+    '--overlap': 'record the review overlap verdict',
+  }
   for (const name of commonValueFlags.filter((name) => name !== '--finding'))
-    command.option(`${name} <value>`)
+    command.option(`${name} <value>`, descriptions[name])
   return command
-    .option('--scorer <value>')
-    .option('--force')
-    .option('--discard')
-    .option('--void')
-    .option('--unvoid')
-    .option('--blocked-by-tree')
+    .option('--scorer <value>', 'record this scorer identity')
+    .option('--force', 'override run ownership checks')
+    .option('--discard', 'discard the judged findings run worktree')
+    .option('--void', 'exclude this run from routing evidence')
+    .option('--unvoid', 'restore this run to routing evidence')
+    .option('--blocked-by-tree', 'exclude an unscored run whose tree blocked review')
     .allowExcessArguments(false)
 }
 
@@ -136,58 +147,62 @@ function rootJob(runId: number): string {
 }
 
 export function register(program: Command): void {
-  addJudgmentOptions(program.command('score <run-id> [words...]').alias('judge')).action(
-    async (id, words, options) => {
-      const flags = resolveComparisonRunIds(optionFlags(options))
-      writableDb()
-      const runId = resolveRunIdentifier(db(), id)
-      const given = (name: string) =>
-        name === 'finding' ? flags.values('finding').length > 0 : flags.has(name)
-      if (scorePathForJob(rootJob(runId), given) === 'judge') {
-        const result = await judgeRun(
-          runId,
-          flags,
-          {
-            words,
-            note: scoreNote(flags),
-            auditReason: auditReason(flags),
-            notEvidence: NOT_EVIDENCE,
-          },
-          { log, error: console.error, pairHint },
-        )
-        if (flags.has('discard')) {
-          if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
-          discardWorktree(
-            result.row as CleanupRow,
-            'discarded',
-            false,
-            authorizeRunMutation(result.id, 'discard'),
-            { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation },
-          )
-        }
-        return
-      }
-      await scoreRun(
+  addJudgmentOptions(
+    program
+      .command('score <run-id> [words...]')
+      .alias('judge')
+      .description('record a verdict and comparisons for a run'),
+  ).action(async (id, words, options) => {
+    const flags = resolveComparisonRunIds(optionFlags(options))
+    writableDb()
+    const runId = resolveRunIdentifier(db(), id)
+    const given = (name: string) =>
+      name === 'finding' ? flags.values('finding').length > 0 : flags.has(name)
+    if (scorePathForJob(rootJob(runId), given) === 'judge') {
+      const result = await judgeRun(
         runId,
         flags,
         {
           words,
           note: scoreNote(flags),
           auditReason: auditReason(flags),
-          dashboardAuthorized:
-            flags.flag('scorer') === 'hub-dashboard' && dashboardCapabilityAuthorized(),
           notEvidence: NOT_EVIDENCE,
         },
         { log, error: console.error, pairHint },
       )
-    },
-  )
+      if (flags.has('discard')) {
+        if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
+        discardWorktree(
+          result.row as CleanupRow,
+          'discarded',
+          false,
+          authorizeRunMutation(result.id, 'discard'),
+          { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation },
+        )
+      }
+      return
+    }
+    await scoreRun(
+      runId,
+      flags,
+      {
+        words,
+        note: scoreNote(flags),
+        auditReason: auditReason(flags),
+        dashboardAuthorized:
+          flags.flag('scorer') === 'hub-dashboard' && dashboardCapabilityAuthorized(),
+        notEvidence: NOT_EVIDENCE,
+      },
+      { log, error: console.error, pairHint },
+    )
+  })
 
   program
     .command('recalibrate')
-    .option('--n <value>')
-    .option('--scorer <value>')
-    .option('--force')
+    .description('blindly rescore saved outputs and measure agreement')
+    .option('--n <value>', 'rescore this many saved outputs')
+    .option('--scorer <value>', 'sample verdicts recorded by this scorer')
+    .option('--force', 'sample verdicts from every scorer')
     .allowExcessArguments(false)
     .action(async (options) => {
       await recalibrate(optionFlags(options), {

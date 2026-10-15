@@ -147,8 +147,8 @@ function registerCollectionCommands(program: Command): void {
   program
     .command('collect')
     .description('ingest every source into hub.db')
-    .option('--since <ISO>', '')
-    .option('--only <runs|transcripts|git|tasks>', '')
+    .option('--since <ISO>', 'earliest source timestamp to ingest')
+    .option('--only <runs|transcripts|git|tasks>', 'source to ingest')
     .option('--watch', 'keep collecting on a clock; what launchd runs')
     .action(async (options: { since?: string; only?: string; watch?: boolean }) => {
       requireDatabase()
@@ -179,7 +179,7 @@ function registerCollectionCommands(program: Command): void {
   program
     .command('tasks')
     .description('what has been worked on, newest window first')
-    .option('--hours <N>', '', '48')
+    .option('--hours <N>', 'set the recent-work window in hours', '48')
     .action((options: { hours: string }) => {
       requireDatabase()
       printTasks(options.hours)
@@ -190,7 +190,7 @@ function registerServeCommands(program: Command): void {
   program
     .command('login')
     .description('print a one-time local dashboard login URL')
-    .option('--port <N>', '')
+    .option('--port <N>', 'dashboard port included in the login URL')
     .action((options: { port?: string }) =>
       console.log(
         new LocalHubAuth().mintLoginUrl(Number(options.port ?? readMachineValue('hub.port'))),
@@ -199,7 +199,7 @@ function registerServeCommands(program: Command): void {
   program
     .command('serve')
     .description('the dashboard')
-    .option('--port <N>', '')
+    .option('--port <N>', 'port where the dashboard listens')
     .action((options: { port?: string }) => {
       requireDatabase()
       startDashboardCapability()
@@ -210,7 +210,7 @@ function registerServeCommands(program: Command): void {
   program
     .command('serve-stop')
     .description("stop this checkout's recorded dashboard")
-    .option('--port <N>', '')
+    .option('--port <N>', 'port of the recorded dashboard to stop')
     .action(async (options: { port?: string }) => {
       const port = Number(options.port)
       if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -221,8 +221,8 @@ function registerServeCommands(program: Command): void {
   program
     .command('serve-check')
     .description("confirm this checkout's dashboard is not serving on N")
-    .option('--port <N>', '')
-    .option('--down', '')
+    .option('--port <N>', 'port to inspect for a recorded dashboard')
+    .option('--down', 'require the recorded dashboard to be stopped')
     .action(async (options: { port?: string; down?: boolean }) => {
       const port = Number(options.port)
       if (!options.down || !Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -236,7 +236,7 @@ function registerMaintenanceCommands(program: Command): void {
   program
     .command('reconcile')
     .description('close open intervals whose orch runs are terminal using exact run ids')
-    .option('--dry-run', '')
+    .option('--dry-run', 'report interval closures without writing them')
     .action(async (options: { dryRun?: boolean }) => {
       requireDatabase()
       printReconcile(await reconcileOpenIntervals({ dryRun: Boolean(options.dryRun) }))
@@ -244,8 +244,8 @@ function registerMaintenanceCommands(program: Command): void {
   program
     .command('reclaim-fixture-questions')
     .description('remove question, interval and task rows left by the documented gate fixtures')
-    .option('--dry-run', '')
-    .option('--json', '')
+    .option('--dry-run', 'report fixture rows without removing them')
+    .option('--json', 'write the reclaimed fixture rows as JSON')
     .action(async (options: { dryRun?: boolean; json?: boolean }) => {
       requireDatabase()
       const registered = new Set(projects().map((project) => project.name))
@@ -271,8 +271,8 @@ function registerRulingCommands(program: Command): void {
     .command('rulings')
     .description('open questions ingested from orch, with age')
     .option('--json', 'one JSON document: {stale_after, questions}')
-    .option('--stats', '')
-    .option('--days <N>', '', String(DEFAULT_STATS_DAYS))
+    .option('--stats', 'report ruling-loop measurements instead of open questions')
+    .option('--days <N>', 'measure rulings over this many days', String(DEFAULT_STATS_DAYS))
     .action((options: { json?: boolean; stats?: boolean; days: string }) => {
       requireDatabase()
       if (options.stats) {

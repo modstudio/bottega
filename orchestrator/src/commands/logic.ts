@@ -111,9 +111,18 @@ type LogicDependencies = {
   continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
 }
 
+const TREE_DESCRIPTIONS = {
+  create: 'create a project worktree and print its path',
+  open: 'open an architect-owned worktree on a finished run branch',
+  remove: 'release an architect-owned worktree',
+  refresh: 'fast-forward a clean worktree and refresh its provisions',
+  reseed: 'replace a worktree seed and its provisions',
+} as const
+
 function registerMcpServers(program: Command): void {
   program
     .command('ask-server')
+    .description('serve the worker question channel')
     .allowExcessArguments(false)
     .action(async () => {
       try {
@@ -135,52 +144,65 @@ function epicRegisteredProjectWorkingDirectoryRefusal(): string {
   return `${PLATFORM_SLUG} workflow epic requires a registered project working directory`
 }
 
-export function register(program: Command, dependencies: LogicDependencies = {}): void {
+const describedCommand = (program: Command, name: string, description: string) =>
+  program.command(name).description(description)
+
+function registerMachineAttentionCommands(program: Command): void {
   program
-    .command('enforcement')
-    .option('--project <name>')
-    .option('--all')
-    .option('--json')
+    .command('setup-ask')
+    .description('install the live worker question channel')
+    .allowExcessArguments(false)
+    .action(async () => {
+      const code = await setupAskCommand(presentation)
+      if (code) process.exitCode = code
+    })
+  program
+    .command('monitor')
+    .description('inspect machine conditions that need attention')
+    .option('--limit <value>', 'maximum monitor history rows to list')
+    .option('--ack-notices <value>', 'comma-separated notice identifiers to acknowledge')
+    .option('--backstop', 'record the monitor pass as a scheduled backstop')
+    .option('--history', 'list recorded monitor passes')
+    .option('--lock-holder', 'show the process holding the orchestrator store write lock')
+    .option('--notices', 'claim undelivered monitor notices for this session')
+    .option('--skip-board-refresh', 'claim notices without refreshing the board')
+    .option('--json', 'write the monitor result as JSON')
     .allowExcessArguments(false)
     .action((options) =>
-      enforcementCommand(options, {
-        log,
-        error: (...values) => console.error(...values),
-        setExitCode: (code) => {
-          process.exitCode = code
+      monitorCommand(
+        {
+          ackNotices: options.ackNotices,
+          notices: Boolean(options.notices),
+          history: Boolean(options.history),
+          lockHolder: Boolean(options.lockHolder),
+          backstop: Boolean(options.backstop),
+          limit: Number(options.limit ?? 20),
+          json: Boolean(options.json),
+          skipBoardRefresh: Boolean(options.skipBoardRefresh),
         },
-        cwd: process.cwd,
-      }),
+        { ...presentation, write: writeStdout },
+      ),
     )
   program
-    .command('check [kind]')
-    .option('--enabled')
-    .option('--project <value>')
-    .option('--fix')
-    .option('--message <file>')
-    .option('--range [rev-range]')
-    .option('--pr <number-or-url>')
-    .option('--report')
+    .command('reclaim <kind> [subject]')
+    .description('reclaim one classified stale resource')
+    .option('--dry-run', 'report the reclamation without applying it')
     .allowExcessArguments(false)
-    .action((kind, options) =>
-      checkCommand(productArgv('check', kind ? [kind] : [], options), {
-        log,
-        setExitCode: (code) => {
-          process.exitCode = code
-        },
-        stdinText: () => Bun.stdin.text(),
-        stdinIsTTY: () => process.stdin.isTTY,
-        cwd: process.cwd,
-      }),
+    .action((kind, subject, options) =>
+      reclaimCommand(kind, subject, Boolean(options.dryRun), presentation),
     )
-  const tree = program.command('tree')
+}
+
+function registerTreeCommands(program: Command): void {
+  const tree = program.command('tree').description('create, refresh, and release worktrees')
   tree
     .command('create')
-    .requiredOption('--name <text>')
-    .option('--key <KEY>')
-    .option('--base <ref>')
-    .option('--seed <value>')
-    .option('--cwd <path>', '', process.cwd())
+    .description(TREE_DESCRIPTIONS.create)
+    .requiredOption('--name <text>', 'name the worktree')
+    .option('--key <KEY>', 'attribute the worktree to this task')
+    .option('--base <ref>', 'create the worktree from this revision')
+    .option('--seed <value>', 'provision the worktree from this project seed')
+    .option('--cwd <path>', 'select the project from this working directory', process.cwd())
     .allowExcessArguments(false)
     .action((options) =>
       treeCreateCommand(
@@ -196,39 +218,86 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     )
   tree
     .command('open <run>')
-    .option('--seed <value>')
+    .description(TREE_DESCRIPTIONS.open)
+    .option('--seed <value>', 'provision the worktree from this project seed')
     .allowExcessArguments(false)
     .action((run, options) => treeOpenCommand(localRunId(run), options.seed, { log }))
   tree
     .command('remove <path>')
+    .description(TREE_DESCRIPTIONS.remove)
     .allowExcessArguments(false)
     .action((path) => treeRemoveCommand(path))
   tree
     .command('refresh <path>')
+    .description(TREE_DESCRIPTIONS.refresh)
     .allowExcessArguments(false)
     .action((path) => treeRefreshCommand(path, { log }))
   tree
     .command('reseed [seed]')
-    .option('--path <tree>', '', process.cwd())
+    .description(TREE_DESCRIPTIONS.reseed)
+    .option('--path <tree>', 'select the worktree to reseed', process.cwd())
     .allowExcessArguments(false)
     .action((seed, options) => treeReseedCommand(options.path, seed, { log }))
+}
+
+export function register(program: Command, dependencies: LogicDependencies = {}): void {
+  program
+    .command('enforcement')
+    .description('show the mechanical checks resolved for registered projects')
+    .option('--project <name>', 'registered project to inspect')
+    .option('--all', 'inspect every registered project')
+    .option('--json', 'write the enforcement report as JSON')
+    .allowExcessArguments(false)
+    .action((options) =>
+      enforcementCommand(options, {
+        log,
+        error: (...values) => console.error(...values),
+        setExitCode: (code) => {
+          process.exitCode = code
+        },
+        cwd: process.cwd,
+      }),
+    )
+  program
+    .command('check [kind]')
+    .description('run a project spelling, attribution, or comment check')
+    .option('--enabled', 'run every check enabled for the project')
+    .option('--project <value>', 'registered project to check')
+    .option('--fix', 'write spelling corrections')
+    .option('--message <file>', 'file containing the commit message to check')
+    .option('--range [rev-range]', 'Git revision range whose commits are checked')
+    .option('--pr <number-or-url>', 'pull request number or URL to check')
+    .option('--report', 'report comment findings without refusing them')
+    .allowExcessArguments(false)
+    .action((kind, options) =>
+      checkCommand(productArgv('check', kind ? [kind] : [], options), {
+        log,
+        setExitCode: (code) => {
+          process.exitCode = code
+        },
+        stdinText: () => Bun.stdin.text(),
+        stdinIsTTY: () => process.stdin.isTTY,
+        cwd: process.cwd,
+      }),
+    )
+  registerTreeCommands(program)
   program
     .command('migrate')
-    .option('--backfill-spec-sha')
+    .description('apply pending orchestrator store migrations')
+    .option('--backfill-spec-sha', 'backfill missing run specification hashes')
     .allowExcessArguments(false)
     .action(() => migrateCommand(presentation))
-  program
-    .command('reconcile <id>')
+  describedCommand(program, 'reconcile <id>', 'reconcile a completed run with its saved artifacts')
     .allowExcessArguments(false)
     .action((id) => reconcileCommand(localRunId(id), presentation))
-  program
-    .command('contract <job>')
+  describedCommand(program, 'contract <job>', 'print the worker reply contract for a job')
     .allowExcessArguments(false)
     .action((job) => contractCommand(job, { write }))
   program
     .command('mcp [verb]')
-    .option('--config')
-    .option('--project <value>')
+    .description('serve an orchestrator model-context-protocol endpoint')
+    .option('--config', 'print the server configuration instead of serving')
+    .option('--project <value>', 'project exposed by the server')
     .allowExcessArguments(false)
     .action((verb, options) =>
       mcpCommand(
@@ -243,9 +312,9 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   registerLensCommands(program)
   program
     .command('fix-defect [key]')
-    .option('--waiting')
-    .option('--cwd <path>')
-    .option('--json')
+    .option('--waiting', 'list filed defect issues waiting in the queue')
+    .option('--cwd <path>', 'resolve the waiting queue from this project checkout')
+    .option('--json', 'write the waiting queue as JSON')
     .allowExcessArguments(false)
     .action((key, options) =>
       fixDefectCommand(
@@ -267,16 +336,14 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('state')
-    .option('--days <value>')
+  describedCommand(program, 'state', 'print the orchestrator state as JSON')
+    .option('--days <value>', 'limit history to this many days')
     .allowExcessArguments(false)
     .action((options) => stateCommand(options.days ? Number(options.days) : null, presentation))
-  program
-    .command('search <query>')
-    .option('--limit <value>')
-    .option('--full')
-    .option('--json')
+  describedCommand(program, 'search <query>', 'search saved run prompts, replies, and notes')
+    .option('--limit <value>', 'limit the number of matches')
+    .option('--full', 'print complete matching content')
+    .option('--json', 'write the search results as JSON')
     .allowExcessArguments(false)
     .action((query, options) =>
       searchCommand(
@@ -289,23 +356,20 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('tell <id> [message...]')
+  describedCommand(program, 'tell <id> [message...]', 'queue a message for a running worker')
     .allowUnknownOption(true)
-    .option('--file <value>')
-    .option('--ping')
+    .option('--file <value>', 'read the message from this file')
+    .option('--ping', 'print the run state after queuing the message')
     .action((id, _message, options, command) =>
       tellByIdentifier(id, command, Boolean(options.ping)),
     )
-  program
-    .command('relay <id>')
-    .requiredOption('--note <why>')
+  describedCommand(program, 'relay <id>', 'relay a worker question to the operator')
+    .requiredOption('--note <why>', 'record why the question needs the operator')
     .allowUnknownOption(true)
     .action((id, options, command) => relayByIdentifier(id, command, options.note))
-  program
-    .command('waiting')
-    .option('--json')
-    .option('--claim-notifications')
+  describedCommand(program, 'waiting', 'list questions waiting on the operator')
+    .option('--json', 'write the waiting questions as JSON')
+    .option('--claim-notifications', 'claim and include pending operator notifications')
     .allowExcessArguments(false)
     .action((options) =>
       waitingCommand(
@@ -313,10 +377,9 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('peek <id>')
-    .option('--events <value>')
-    .option('--json')
+  describedCommand(program, 'peek <id>', 'show a run summary and its recent events')
+    .option('--events <value>', 'include this many recent events')
+    .option('--json', 'write the run summary as JSON')
     .allowExcessArguments(false)
     .action((id, options) =>
       peekCommand(
@@ -328,23 +391,20 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('result <id>')
-    .option('--quiet')
-    .option('--artifacts')
+  describedCommand(program, 'result <id>', 'collect a finished run result')
+    .option('--quiet', 'suppress status guidance')
+    .option('--artifacts', 'print the run artifact manifest')
     .allowExcessArguments(false)
     .action((id, options) => resultByIdentifier(id, options))
-  program
-    .command('wait <ids...>')
-    .option('--timeout <value>')
+  describedCommand(program, 'wait <ids...>', 'wait for runs to reach a terminal state')
+    .option('--timeout <value>', 'stop waiting after this duration')
     .action(async (ids, options) => waitByIdentifiers(ids, options))
-  program
-    .command('retry <id>')
-    .option('--agent <value>')
-    .option('--model <value>')
-    .option('--follow')
-    .option('--detach')
-    .option('--quiet')
+  describedCommand(program, 'retry <id>', 'retry a failed run with its saved prompt')
+    .option('--agent <value>', 'use this agent for the retry')
+    .option('--model <value>', 'use this model for the retry')
+    .option('--follow', 'wait for the retry and print its result')
+    .option('--detach', 'return after starting the retry')
+    .option('--quiet', 'suppress collection guidance and followed output')
     .allowExcessArguments(false)
     .action((id, options) =>
       retryCommand(
@@ -353,17 +413,20 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('answer <id> [message...]')
+  describedCommand(
+    program,
+    'answer <id> [message...]',
+    'record rulings for a worker and resume its run',
+  )
     .allowUnknownOption(true)
-    .option('--file <value>')
-    .option('--follow')
-    .option('--detach')
-    .option('--quiet')
-    .option('--record-only')
-    .option('--from-operator')
-    .option('--channel <value>')
-    .option('--json')
+    .option('--file <value>', 'read the ruling from this file')
+    .option('--follow', 'wait for the resumed run and print its result')
+    .option('--detach', 'return after resuming the run')
+    .option('--quiet', 'suppress collection guidance and followed output')
+    .option('--record-only', 'record the ruling without resuming the run')
+    .option('--from-operator', 'attribute the ruling to the operator')
+    .option('--channel <value>', 'record the channel that supplied the ruling')
+    .option('--json', 'write the answer result as JSON')
     .action((id, _message, options, command) =>
       answerCommand(
         localRunId(id),
@@ -374,14 +437,13 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('continue <id> [message...]')
+  describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
     .allowUnknownOption(true)
-    .option('--file <value>')
-    .option('--follow')
-    .option('--detach')
-    .option('--quiet')
-    .option('--findings')
+    .option('--file <value>', 'read the continuation message from this file')
+    .option('--follow', 'wait for the continuation and print its result')
+    .option('--detach', 'return after starting the continuation')
+    .option('--quiet', 'suppress collection guidance and followed output')
+    .option('--findings', 'include prior review findings in the continuation')
     .action((id, _message, options, command) =>
       continueCommand(
         localRunId(id),
@@ -398,11 +460,15 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         dependencies.continueCommandDependencies,
       ),
     )
-  const doVerb = program.command('do <job> [prompt...]')
+  const doVerb = describedCommand(
+    program,
+    'do <job> [prompt...]',
+    'dispatch a job to a routed agent',
+  )
   for (const option of ORCH_DO_OPTIONS) {
     if ('name' in option && option.name === 'deliverable')
-      doVerb.option(option.flags, '', collect, [])
-    else doVerb.option(option.flags)
+      doVerb.option(option.flags, option.description, collect, [])
+    else doVerb.option(option.flags, option.description)
   }
   doVerb.action((_job, _prompt, _options, command) =>
     doCommand(rawArgv(command), {
@@ -435,13 +501,12 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .description('clear a vendor-quota exclusion once the agent answers')
     .allowExcessArguments(false)
     .action((agent) => vendorProbeCommand(agent, presentation))
-  program
-    .command('pick <job>')
-    .option('--agent <value>')
-    .option('--avoid <value>')
-    .option('--distinct-from <value>')
-    .option('--stack <value>')
-    .option('--lens <value>')
+  describedCommand(program, 'pick <job>', 'preview the agent selected for a job')
+    .option('--agent <value>', 'select this agent if it is eligible')
+    .option('--avoid <value>', 'exclude this agent from the preview')
+    .option('--distinct-from <value>', 'exclude the model used by this run')
+    .option('--stack <value>', 'evaluate routing for this project stack')
+    .option('--lens <value>', 'evaluate routing for this review lens')
     .allowExcessArguments(false)
     .action((job, options) =>
       pickPreviewCommand(productArgv('pick', [job], options), {
@@ -452,66 +517,23 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       }),
     )
   registerMcpServers(program)
-  program
-    .command('setup-ask')
-    .allowExcessArguments(false)
-    .action(async () => {
-      const code = await setupAskCommand(presentation)
-      if (code) process.exitCode = code
-    })
-  program
-    .command('monitor')
-    .option('--limit <value>')
-    .option('--ack-notices <value>')
-    .option('--backstop')
-    .option('--history')
-    .option('--lock-holder')
-    .option('--notices')
-    .option('--skip-board-refresh')
-    .option('--json')
-    .allowExcessArguments(false)
-    .action((options) =>
-      monitorCommand(
-        {
-          ackNotices: options.ackNotices,
-          notices: Boolean(options.notices),
-          history: Boolean(options.history),
-          lockHolder: Boolean(options.lockHolder),
-          backstop: Boolean(options.backstop),
-          limit: Number(options.limit ?? 20),
-          json: Boolean(options.json),
-          skipBoardRefresh: Boolean(options.skipBoardRefresh),
-        },
-        { ...presentation, write: writeStdout },
-      ),
-    )
-  program
-    .command('reclaim <kind> [subject]')
-    .option('--dry-run')
-    .allowExcessArguments(false)
-    .action((kind, subject, options) =>
-      reclaimCommand(kind, subject, Boolean(options.dryRun), presentation),
-    )
-  program
-    .command('close-out <id>')
-    .option('--non-blocking')
+  registerMachineAttentionCommands(program)
+  describedCommand(program, 'close-out <id>', 'release a terminal run worktree and its claims')
+    .option('--non-blocking', 'refuse instead of waiting for the cleanup lock')
     .allowExcessArguments(false)
     .action((id, options) =>
       closeOutCommand(localRunId(id), Boolean(options.nonBlocking), presentation),
     )
-  program
-    .command('spawns')
-    .option('--limit <value>')
+  describedCommand(program, 'spawns', 'report subagent spawn-gate decisions')
+    .option('--limit <value>', 'show this many recent spawn decisions')
     .allowExcessArguments(false)
     .action((options) => spawnsCommand(Number(options.limit ?? 15), presentation))
-  program
-    .command('pending')
+  describedCommand(program, 'pending', 'list your runs awaiting verdicts or comparisons')
     .allowExcessArguments(false)
     .action(() => pendingCommand(pairHint, presentation))
-  program
-    .command('metric [action]')
-    .option('--days <value>')
-    .option('--window <value>')
+  describedCommand(program, 'metric [action]', 'collect or report orchestration efficiency metrics')
+    .option('--days <value>', 'collect this many days of metric inputs')
+    .option('--window <value>', 'report metrics over this many days')
     .allowExcessArguments(false)
     .action((action, options) =>
       metricCommand(
@@ -525,35 +547,32 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     )
   program
     .command('epic <key>')
-    .option('--json')
+    .option('--json', 'write the scoreboard as JSON')
     .allowExcessArguments(false)
     .action((key, options) => {
       const project = projectAt(process.cwd())
       if (!project) throw new Error(epicRegisteredProjectWorkingDirectoryRefusal())
       return epicCommand(project.name, key, Boolean(options.json), presentation)
     })
-  program
-    .command('jobs')
-    .option('--json')
+  describedCommand(program, 'jobs', 'list jobs and their capability requirements')
+    .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  program
-    .command('agent [args...]')
-    .option('--harness <value>')
-    .option('--backend <value>')
-    .option('--model <value>')
-    .option('--base-url <value>')
-    .option('--context-tokens <value>')
-    .option('--jobs <value>')
-    .option('--prefer <value>')
-    .option('--max-concurrent <value>')
-    .option('--enabled <value>')
-    .option('--reason <value>')
-    .option('--json')
+  describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
+    .option('--harness <value>', 'set the agent harness')
+    .option('--backend <value>', 'set the model backend')
+    .option('--model <value>', 'set the model identifier')
+    .option('--base-url <value>', 'set the model endpoint URL')
+    .option('--context-tokens <value>', 'set the served context window')
+    .option('--jobs <value>', 'allow these comma-separated jobs or any')
+    .option('--prefer <value>', 'prefer these comma-separated jobs')
+    .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
+    .option('--enabled <value>', 'enable or disable the agent')
+    .option('--reason <value>', 'record why the agent is disabled')
+    .option('--json', 'write the agent listing as JSON')
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
-  program
-    .command('agents')
-    .option('--json')
+  describedCommand(program, 'agents', 'list agents and their readiness')
+    .option('--json', 'write agent capabilities as JSON')
     .allowExcessArguments(false)
     .action((options) => agentsCommand(Boolean(options.json), presentation))
 }
