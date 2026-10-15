@@ -1,0 +1,2 @@
+ALTER TABLE "doc" DROP CONSTRAINT "doc_form_check", ADD CONSTRAINT "doc_form_check" CHECK ("form" IS NULL OR "form" IN ('feature','how-to','rule','model','overview','reference'));--> statement-breakpoint
+ALTER TABLE "doc_revision" DROP CONSTRAINT "doc_revision_form_check", ADD CONSTRAINT "doc_revision_form_check" CHECK ("form" IS NULL OR "form" IN ('feature','how-to','rule','model','overview','reference'));

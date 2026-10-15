@@ -83,7 +83,8 @@ function valuePlaceholder(flags: string): string | null {
 
 function optionDefault(option: Option): DocumentationOptionDefault | null {
   if (option.envVar) return { kind: 'env', name: option.envVar }
-  if (option.defaultValueDescription) return { kind: 'literal', text: option.defaultValueDescription }
+  if (option.defaultValueDescription)
+    return { kind: 'literal', text: option.defaultValueDescription }
   if (option.defaultValue === undefined) return null
   if (typeof option.defaultValue === 'string' && option.defaultValue === process.cwd()) {
     return { kind: 'cwd' }
@@ -98,7 +99,8 @@ function optionDefault(option: Option): DocumentationOptionDefault | null {
   if (
     Array.isArray(option.defaultValue) &&
     option.defaultValue.every(
-      (value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean',
+      (value) =>
+        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean',
     )
   ) {
     return { kind: 'literal', text: option.defaultValue.map(String).join(', ') }
@@ -143,10 +145,7 @@ function visibleOptionDetails(
     .map(optionDetail)
 }
 
-function writeCommand(
-  book: CommandBook,
-  command: DocumentationCommand,
-): DocumentationCommand {
+function writeCommand(book: CommandBook, command: DocumentationCommand): DocumentationCommand {
   const previous = book.get(command.spelling)
   if (!previous) {
     book.set(command.spelling, command)
@@ -243,8 +242,25 @@ function isArgsStyle(command: Command): boolean {
   )
 }
 
-function compositeRouteUnits(route: CommandRoute, programs: CommandPrograms): DocumentationUnit[] {
+function compositeRouteUnits(
+  route: CommandRoute,
+  programs: CommandPrograms,
+  book: CommandBook,
+): DocumentationUnit[] {
   const commandUnit = routeCommandUnit(route, route.description ?? '', 'cli/routes.ts')
+  const options = (route.composite ?? []).flatMap((part) => {
+    const command = resolveOwnerCommand(route, part.owner, part.argv, programs)
+    return visibleOptionDetails(command, part.options)
+  })
+  writeCommand(book, {
+    spelling: commandUnit.spelling,
+    group: commandUnit.group,
+    description: commandUnit.description,
+    arguments: [],
+    options,
+    examples: [],
+    optionsByHelp: false,
+  })
   const optionDocumentation = (route.composite ?? []).flatMap((part) => {
     const command = resolveOwnerCommand(route, part.owner, part.argv, programs)
     return optionUnits(
@@ -258,12 +274,25 @@ function compositeRouteUnits(route: CommandRoute, programs: CommandPrograms): Do
   return [commandUnit, ...optionDocumentation]
 }
 
-function outboxRouteUnits(route: CommandRoute, programs: CommandPrograms): DocumentationUnit[] {
+function outboxRouteUnits(
+  route: CommandRoute,
+  programs: CommandPrograms,
+  book: CommandBook,
+): DocumentationUnit[] {
   const spelling = routeSpelling(route)
-  const units = [
-    routeCommandUnit(route, route.description ?? '', 'cli/routes.ts'),
-    ...declaredOptionUnits(route, spelling),
-  ]
+  const parent = routeCommandUnit(route, route.description ?? '', 'cli/routes.ts')
+  writeCommand(book, {
+    spelling,
+    group: parent.group,
+    description: parent.description,
+    arguments: [],
+    options: (route.options ?? []).map((option) =>
+      declaredOptionDetail(option.flags, option.description),
+    ),
+    examples: [],
+    optionsByHelp: false,
+  })
+  const units = [parent, ...declaredOptionUnits(route, spelling)]
   const orch = resolveOwnerCommand(route, 'orch', ['record', 'outbox'], programs)
   const hub = resolveOwnerCommand(route, 'hub', ['outbox'], programs)
   const orchVerbs = new Map(
@@ -288,6 +317,15 @@ function outboxRouteUnits(route: CommandRoute, programs: CommandPrograms): Docum
       : (hubVerb?.description() ?? orchVerb?.description() ?? '')
     const sourceOwner = orchVerb ? 'orch' : 'hub'
     const verbSpelling = `${spelling} ${name}`
+    writeCommand(book, {
+      spelling: verbSpelling,
+      group: route.command[0]!,
+      description,
+      arguments: argumentDetails(selected),
+      options: visibleOptionDetails(selected),
+      examples: [],
+      optionsByHelp: false,
+    })
     units.push(
       {
         kind: 'command',
@@ -307,6 +345,7 @@ function ownerRouteUnits(
   programs: CommandPrograms,
   routedSpellings: ReadonlySet<string>,
   notWalked: Set<string>,
+  book: CommandBook,
 ): DocumentationUnit[] {
   if (route.owner !== 'orch' && route.owner !== 'hub') return []
   const command = resolveOwnerCommand(route, route.owner, route.argv ?? [], programs)
@@ -315,13 +354,31 @@ function ownerRouteUnits(
   const source = ownerSource(route.owner)
   const units = optionUnits(spelling, group, command, source)
   if (route.command.length > 1) {
-    units.unshift(
-      routeCommandUnit(
-        route,
-        route.description === undefined ? command.description() : route.description,
-        route.description === undefined ? source : 'cli/routes.ts',
-      ),
+    const commandUnit = routeCommandUnit(
+      route,
+      route.description === undefined ? command.description() : route.description,
+      route.description === undefined ? source : 'cli/routes.ts',
     )
+    units.unshift(commandUnit)
+    writeCommand(book, {
+      spelling,
+      group,
+      description: commandUnit.description,
+      arguments: argumentDetails(command),
+      options: isArgsStyle(command) ? [] : visibleOptionDetails(command),
+      examples: [],
+      optionsByHelp: isArgsStyle(command),
+    })
+  } else {
+    writeCommand(book, {
+      spelling,
+      group,
+      description: route.description === undefined ? command.description() : route.description,
+      arguments: argumentDetails(command),
+      options: isArgsStyle(command) ? [] : visibleOptionDetails(command),
+      examples: [],
+      optionsByHelp: isArgsStyle(command),
+    })
   }
 
   function appendSubcommands(parent: Command, parentSpelling: string) {
@@ -329,6 +386,16 @@ function ownerRouteUnits(
     for (const subcommand of parent.createHelp().visibleCommands(parent)) {
       const subcommandSpelling = `${parentSpelling} ${subcommand.name()}`
       if (routedSpellings.has(subcommandSpelling)) continue
+      const argsStyle = isArgsStyle(subcommand)
+      writeCommand(book, {
+        spelling: subcommandSpelling,
+        group,
+        description: subcommand.description(),
+        arguments: argumentDetails(subcommand),
+        options: argsStyle ? [] : visibleOptionDetails(subcommand),
+        examples: [],
+        optionsByHelp: argsStyle,
+      })
       units.push(
         {
           kind: 'command',
@@ -352,18 +419,28 @@ function routeUnits(
   programs: CommandPrograms,
   routedSpellings: ReadonlySet<string>,
   notWalked: Set<string>,
+  book: CommandBook,
 ): DocumentationUnit[] {
   if (route.hidden) return []
-  if (route.owner === 'composite') return compositeRouteUnits(route, programs)
-  if (route.owner === 'outbox') return outboxRouteUnits(route, programs)
+  if (route.owner === 'composite') return compositeRouteUnits(route, programs, book)
+  if (route.owner === 'outbox') return outboxRouteUnits(route, programs, book)
   if (route.owner === 'local') {
     const spelling = routeSpelling(route)
-    return [
-      routeCommandUnit(route, route.description ?? '', 'cli/routes.ts'),
-      ...declaredOptionUnits(route, spelling),
-    ]
+    const commandUnit = routeCommandUnit(route, route.description ?? '', 'cli/routes.ts')
+    writeCommand(book, {
+      spelling,
+      group: commandUnit.group,
+      description: commandUnit.description,
+      arguments: [],
+      options: (route.options ?? []).map((option) =>
+        declaredOptionDetail(option.flags, option.description),
+      ),
+      examples: [],
+      optionsByHelp: false,
+    })
+    return [commandUnit, ...declaredOptionUnits(route, spelling)]
   }
-  return ownerRouteUnits(route, programs, routedSpellings, notWalked)
+  return ownerRouteUnits(route, programs, routedSpellings, notWalked, book)
 }
 
 export function documentationInventory(
@@ -371,18 +448,32 @@ export function documentationInventory(
   routes: readonly CommandRoute[],
   programs: CommandPrograms,
 ): DocumentationInventory {
-  const units: DocumentationUnit[] = groups.map(([group, description]) => ({
-    kind: 'command',
-    spelling: `${PLATFORM_SLUG} ${group}`,
-    group,
-    description,
-    source: 'cli/routes.ts',
-  }))
+  const book: CommandBook = new Map()
+  const units: DocumentationUnit[] = groups.map(([group, description]) => {
+    const spelling = `${PLATFORM_SLUG} ${group}`
+    writeCommand(book, {
+      spelling,
+      group,
+      description,
+      arguments: [],
+      options: [],
+      examples: [],
+      optionsByHelp: false,
+    })
+    return {
+      kind: 'command',
+      spelling,
+      group,
+      description,
+      source: 'cli/routes.ts',
+    }
+  })
   const routedSpellings = new Set(
     routes.filter((route) => !route.hidden).map((route) => routeSpelling(route)),
   )
   const notWalked = new Set<string>()
-  for (const route of routes) units.push(...routeUnits(route, programs, routedSpellings, notWalked))
+  for (const route of routes)
+    units.push(...routeUnits(route, programs, routedSpellings, notWalked, book))
 
   const unique = new Map<string, DocumentationUnit>()
   for (const unit of units) {
@@ -395,12 +486,20 @@ export function documentationInventory(
     }
     unique.set(key, unit)
   }
+  for (const spelling of notWalked) {
+    const command = book.get(spelling)
+    if (!command) continue
+    command.optionsByHelp = true
+    command.options = []
+  }
   return {
     units: [...unique.values()].sort(
       (left, right) =>
         left.spelling.localeCompare(right.spelling) || left.kind.localeCompare(right.kind),
     ),
     notWalked: [...notWalked].sort(),
+    groups: groups.map(([name, description]) => ({ name, description })),
+    commands: [...book.values()].sort((left, right) => left.spelling.localeCompare(right.spelling)),
   }
 }
 
