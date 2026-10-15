@@ -3,7 +3,11 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'nod
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
-import { persistedRunArtifactPath, rewriteFilesWrittenPaths } from '../artifact-paths.ts'
+import {
+  persistedRunArtifactPath,
+  rewriteFilesWrittenPaths,
+  rewriteScratchDirPaths,
+} from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
@@ -471,6 +475,45 @@ const consoleCollectResultPresentation: CollectResultPresentation = {
   exit: (code) => process.exit(code),
 }
 
+function presentCollectedOutput(
+  row: {
+    id: number
+    record_id: string
+    agent: string
+    status: string
+    failure_kind: string | null
+    exit_code: number | null
+    cwd: string | null
+  },
+  output: string | null,
+  ok: boolean,
+  presentation: CollectResultPresentation,
+): void {
+  if (output === null) return
+  const runsRoot = resolveRunsDirectory(process.env)
+  if (!ok) {
+    if (row.failure_kind === 'truncated') {
+      presentation.log('TRUNCATED at the output ceiling — this is the transcript, not a result')
+      presentation.log(
+        utf8Tail(visibleTranscriptText(row.agent, output), TRUNCATED_TRANSCRIPT_BYTES),
+      )
+      return
+    }
+    presentation.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
+    presentation.log(rewriteScratchDirPaths(partialOutputDocument(row, output), row.id, runsRoot))
+    return
+  }
+  presentation.log(
+    rewriteScratchDirPaths(
+      rewriteFilesWrittenPaths(output, (entry) =>
+        persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
+      ) ?? output,
+      row.id,
+      runsRoot,
+    ),
+  )
+}
+
 export function collectResult(
   database: Database,
   argv: string[],
@@ -545,28 +588,7 @@ export function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  if (!outcome.ok) {
-    if (output !== null) {
-      if (row.failure_kind === 'truncated') {
-        presentation.log('TRUNCATED at the output ceiling — this is the transcript, not a result')
-        presentation.log(
-          utf8Tail(visibleTranscriptText(row.agent, output), TRUNCATED_TRANSCRIPT_BYTES),
-        )
-      } else {
-        presentation.error(
-          `\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`,
-        )
-        presentation.log(partialOutputDocument(row, output))
-      }
-    }
-  } else if (output !== null) {
-    const runsRoot = resolveRunsDirectory(process.env)
-    const rewritten =
-      rewriteFilesWrittenPaths(output, (entry) =>
-        persistedRunArtifactPath(row.id, runsRoot, entry, row.cwd),
-      ) ?? output
-    presentation.log(rewritten)
-  }
+  presentCollectedOutput(row, output, outcome.ok, presentation)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
   if (asking) {

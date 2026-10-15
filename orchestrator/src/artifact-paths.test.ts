@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { persistedRunArtifactPath, runArtifactsDir, runScratchDir } from './artifact-paths.ts'
+import {
+  persistedRunArtifactPath,
+  rewriteScratchDirPaths,
+  runArtifactsDir,
+  runScratchDir,
+} from './artifact-paths.ts'
 
 test('persisted artifact paths follow the scratch rename and named-file copies', () => {
   const runs = join('/tmp', 'orch-runs')
@@ -19,5 +24,50 @@ test('persisted artifact paths follow the scratch rename and named-file copies',
   )
   expect(persistedRunArtifactPath(42, runs, 'reports/findings.json', worktree)).toBe(
     join(artifacts, 'findings.json'),
+  )
+})
+
+test('a scratch path inside a prose string field is rewritten to the artifacts path', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const id = 11055
+  const input = JSON.stringify({
+    summary: `screenshot at ${join(runScratchDir(id, runs), 'header-strip.png')}`,
+  })
+  expect(rewriteScratchDirPaths(input, id, runs)).toBe(
+    JSON.stringify({
+      summary: `screenshot at ${join(runArtifactsDir(id, runs), 'header-strip.png')}`,
+    }),
+  )
+})
+
+test('a prefix-sharing run id and a scratchpad sibling stay untouched', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const id = 11055
+  const other = join(runScratchDir(110550, runs), 'shot.png')
+  const sibling = join(runs, String(id), 'scratchpad', 'notes.md')
+  const text = `${other} ${sibling}`
+  expect(rewriteScratchDirPaths(text, id, runs)).toBe(text)
+})
+
+test('the bare scratch directory path is rewritten', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const id = 11055
+  expect(rewriteScratchDirPaths(runScratchDir(id, runs), id, runs)).toBe(runArtifactsDir(id, runs))
+})
+
+test('sibling scratch names stay untouched and a JSON bare scratch dir is rewritten', () => {
+  const runs = join('/tmp', 'orch-runs')
+  const id = 11055
+  const scratch = runScratchDir(id, runs)
+  const artifacts = runArtifactsDir(id, runs)
+  const siblings = [
+    join(runs, String(id), 'scratch+backup', 'x'),
+    join(runs, String(id), 'scratch~', 'x'),
+    join(runs, String(id), 'scratch@old', 'x'),
+    join(runs, String(id), 'scratch (copy)', 'x'),
+  ].join(' ')
+  expect(rewriteScratchDirPaths(siblings, id, runs)).toBe(siblings)
+  expect(rewriteScratchDirPaths(JSON.stringify({ dir: scratch }), id, runs)).toBe(
+    JSON.stringify({ dir: artifacts }),
   )
 })
