@@ -22,7 +22,6 @@ import {
 } from '../../orch.ts'
 import type { Context } from '../context.ts'
 import { fromOrch } from '../orch-error.ts'
-import { recordClient } from './record.ts'
 
 const t = initTRPC.context<Context>().create()
 
@@ -37,22 +36,16 @@ const audiences = z
     'Audiences must not contain duplicates',
   )
   .transform(normalizeDocAudiences)
-export const docReorderProcedure = t.procedure
+const docReorderProcedure = t.procedure
   .input(
     z.object({
       scope,
       subject,
       parentId: z.string().nullable(),
       orderedIds: z.array(z.string()),
-      spaceId: z.string().uuid().optional(),
     }),
   )
-  .mutation(({ ctx, input }) => {
-    const { spaceId, ...order } = input
-    return spaceId
-      ? recordClient(ctx).reorderDocs(order, spaceId)
-      : fromOrch(() => docReorder(order), true)
-  })
+  .mutation(({ input }) => fromOrch(() => docReorder(input), true))
 export const docRouter = t.router({
   reorder: docReorderProcedure,
   list: t.procedure

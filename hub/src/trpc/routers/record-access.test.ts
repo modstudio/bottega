@@ -82,6 +82,29 @@ test('hosted document mutations bind the destination, authenticated author, and 
   expect(saved).toEqual({ revision: revisionId })
 })
 
+test('hosted document reorder binds the destination and complete sibling order', async () => {
+  process.env.HUB_RECORD_API_URL = 'https://record.example.test'
+  let request: { path: string; init: RequestInit } | null = null
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    request = { path: new URL(String(input)).pathname, init: init ?? {} }
+    return Response.json({ orderedIds: [spaceId] })
+  }) as typeof fetch
+  const api = recordRouter.createCaller({ authorization: 'Bearer token' })
+
+  expect(
+    await api.reorderDocs({
+      spaceId,
+      scope: 'project',
+      subject: PLATFORM_NAME,
+      parentId: null,
+      orderedIds: [spaceId],
+    }),
+  ).toEqual({ orderedIds: [spaceId] })
+  expect(request).not.toBeNull()
+  expect(request!.path).toBe('/v1/docs/order')
+  expect(new Headers(request!.init.headers).get('x-record-space')).toBe(spaceId)
+})
+
 test('hosted document save sends explicit article clears and refuses invalid fields at the edge', async () => {
   process.env.HUB_RECORD_API_URL = 'https://record.example.test'
   let savedBody: unknown

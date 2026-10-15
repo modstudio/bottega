@@ -582,9 +582,34 @@ function handledReadOrRevisionDocCommand(
   address: { scope: string | undefined; subject: string | null; owner: string | null },
 ): boolean {
   return (
+    handledReorderDocCommand(sub, flags, presentation, address) ||
     handledReadDocCommand(sub, argv, flags, presentation, address) ||
     handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
   )
+}
+
+function handledReorderDocCommand(
+  sub: string,
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null },
+): boolean {
+  if (sub !== 'reorder') return false
+  if (!address.scope)
+    throw new Error(
+      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+    )
+  const orderedIds = flags.values?.('id') ?? []
+  const result = reorderLocalDocs({
+    scope: address.scope,
+    subject: address.subject,
+    parentId: flags.flag('parent-id') ?? null,
+    orderedIds,
+  })
+  presentation.log(
+    flags.has('json') ? JSON.stringify(result) : `reordered ${orderedIds.length} documents`,
+  )
+  return true
 }
 
 function docConsumeUsage(): string {
@@ -608,23 +633,6 @@ export async function docCommand(
     return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
     return
-  if (sub === 'reorder') {
-    if (!scope)
-      throw new Error(
-        `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
-      )
-    const orderedIds = flags.values?.('id') ?? []
-    const result = reorderLocalDocs({
-      scope,
-      subject,
-      parentId: flag('parent-id') ?? null,
-      orderedIds,
-    })
-    presentation.log(
-      has('json') ? JSON.stringify(result) : `reordered ${orderedIds.length} documents`,
-    )
-    return
-  }
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(docConsumeUsage())

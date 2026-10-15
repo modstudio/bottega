@@ -374,6 +374,20 @@ export const recordRouter = t.router({
       )
       return { revision: saved.revisionId }
     }),
+  reorderDocs: t.procedure
+    .input(
+      z.object({
+        spaceId: uuid,
+        scope: z.string().min(1),
+        subject: z.string().nullable(),
+        parentId: uuid.nullable(),
+        orderedIds: z.array(uuid),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { spaceId, ...order } = input
+      return recordClient(ctx).reorderDocs(order, spaceId)
+    }),
   deleteDoc: t.procedure
     .input(
       z.object({

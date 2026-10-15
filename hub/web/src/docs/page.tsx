@@ -189,13 +189,15 @@ export function DocsPage() {
     void navigate({ ...docsLocation(selected, source), replace: true })
   }, [navigate, selected, source])
   const mayEdit = canEditSelected(selected, source, whoami.data?.memberships)
-  const reorder = useMutation(trpc.doc.reorder.mutationOptions())
+  const localReorder = useMutation(trpc.doc.reorder.mutationOptions())
+  const hostedReorder = useMutation(trpc.record.reorderDocs.mutationOptions())
   const canReorder = useCallback(
     (item: DocsTreeItem) =>
-      !reorder.isPending &&
+      !localReorder.isPending &&
+      !hostedReorder.isPending &&
       item.kind === 'article' &&
       canEditDoc(source, whoami.data?.memberships, item.spaceId),
-    [reorder.isPending, source, whoami.data?.memberships],
+    [localReorder.isPending, hostedReorder.isPending, source, whoami.data?.memberships],
   )
   const reorderDocs = useCallback(
     async (activeId: string, overId: string) => {
@@ -207,13 +209,17 @@ export function DocsPage() {
       const key = orderKey(active)
       setOptimisticOrders((current) => new Map(current).set(key, orderedIds))
       try {
-        await reorder.mutateAsync({
+        const order = {
           scope: active.scope as DocScope,
           subject: active.subject,
           parentId: active.parentId,
           orderedIds,
-          spaceId: source === 'hosted' ? active.spaceId : undefined,
-        })
+        }
+        if (source === 'hosted' && active.spaceId) {
+          await hostedReorder.mutateAsync({ ...order, spaceId: active.spaceId })
+        } else {
+          await localReorder.mutateAsync(order)
+        }
         await queryClient.invalidateQueries()
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Could not save the document order')
@@ -225,7 +231,7 @@ export function DocsPage() {
         })
       }
     },
-    [orderedCatalogItems, canReorder, orderKey, reorder, source],
+    [orderedCatalogItems, canReorder, orderKey, hostedReorder, localReorder, source],
   )
   const editing = isEditingArticle(search?.edit, mayEdit, Boolean(reading.document))
   const editor = useArticleEditor({

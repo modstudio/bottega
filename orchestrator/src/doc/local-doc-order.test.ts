@@ -79,6 +79,11 @@ test('reorder changes only live positions', async () => {
       'SELECT id, updated_at FROM doc WHERE id IN (?, ?) ORDER BY id',
     )
     .all(first.id, second.id)
+  const revisionsBefore = db()
+    .query<{ count: number }, [number, number]>(
+      'SELECT count(*) AS count FROM doc_revision WHERE doc_id IN (?, ?)',
+    )
+    .get(first.id, second.id)!.count
 
   reorderLocalDocs({
     scope: 'global',
@@ -100,4 +105,11 @@ test('reorder changes only live positions', async () => {
       )
       .all(first.id, second.id),
   ).toEqual(before)
+  expect(
+    db()
+      .query<{ count: number }, [number, number]>(
+        'SELECT count(*) AS count FROM doc_revision WHERE doc_id IN (?, ?)',
+      )
+      .get(first.id, second.id)!.count,
+  ).toBe(revisionsBefore)
 })

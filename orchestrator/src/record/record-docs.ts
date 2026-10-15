@@ -35,14 +35,12 @@ import {
 } from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
-import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
   recordDocumentLifecycle,
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
-
 import {
   importedLiveArticleFields,
   newerHostedImportRefusal,
@@ -50,6 +48,7 @@ import {
   type RecordDocImportInput,
   recordDocRevisionIdentityRefusal,
 } from './record-doc-mapping.ts'
+import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   storedDocAudiences,

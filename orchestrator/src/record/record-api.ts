@@ -11,10 +11,10 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
+import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
 import {
   recordCanonImportSchema,
   recordDocImportSchema,
-  recordDocOrderSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
 import {
@@ -444,6 +444,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
   registerRecordSettingsRoutes(app, deps, { scope, noSpace, writeError })
   registerRecordBoardRoutes(app, deps, { noSpace, writeError })
+  registerRecordDocOrderRoute(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({
@@ -821,17 +822,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
       return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.put('/v1/docs/order', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
-    const body = recordDocOrderSchema.safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid doc order' }, 400)
-    try {
-      return context.json(await deps.reorderDocs({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }
