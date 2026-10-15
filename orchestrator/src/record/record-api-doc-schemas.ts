@@ -10,9 +10,9 @@ import {
   normalizeDocAudiences,
   normalizeDocCheckedAgainstCommit,
   normalizeDocSourceFiles,
-  REFERENCE_GENERATOR,
 } from '../../../shared/docs.ts'
 import { isUserCanonSlug } from '../canon/user-canon-home.ts'
+import { REFERENCE_GENERATOR } from '../doc/doc-generator.ts'
 
 /** The reference publisher marker as the HTTP edge accepts it. */
 export const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()

@@ -25,7 +25,9 @@ export const docModules: DocModule[] = [
     '../../../shared/docs.ts',
     '../../../shared/git.ts',
     './docs.ts',
+    './doc-generator.ts',
   ]),
+  module('orchestrator/src/doc/doc-generator.ts', []),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
     '../../../shared/brand.ts',
@@ -35,6 +37,7 @@ export const docModules: DocModule[] = [
     '../subject/subjects.ts',
     './doc-read-store.ts',
     './doc-write-allowed.ts',
+    './doc-generator.ts',
   ]),
   module('shared/doc-sections.ts', [
     'mdast-util-directive',

@@ -4,17 +4,16 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
-  type DocGenerator,
   type DocKind,
   type DocScope,
   docScopeHasProjectSubject,
-  REFERENCE_GENERATOR,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
+import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
 
 export { refuseSettingsBody }

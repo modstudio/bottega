@@ -4,8 +4,8 @@
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {

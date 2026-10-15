@@ -16,6 +16,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/docs.ts',
     '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
+    '../doc/doc-generator.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),

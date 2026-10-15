@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
-import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { hostedDocOrder } from './doc-order.ts'
 import { reorderDocs } from './docs.ts'
 

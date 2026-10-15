@@ -6,13 +6,8 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
-import {
-  DOC_AUDIENCES,
-  DOC_KINDS,
-  DOC_STATUSES,
-  type DocAudience,
-  type DocGenerator,
-} from '../../../shared/docs.ts'
+import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'

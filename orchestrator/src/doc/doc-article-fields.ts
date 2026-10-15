@@ -4,7 +4,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type DocAudiences,
   type DocForm,
-  type DocGenerator,
   type DocKind,
   type DocStatus,
   normalizeDocCheckedAgainstCommit,
@@ -13,6 +12,7 @@ import {
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
 import { resolveSubject } from '../subject/subjects.ts'
+import type { DocGenerator } from './doc-generator.ts'
 import type { Doc, DocRevision } from './doc-read-store.ts'
 import { articleFieldRefusal, type CanonWriteTree } from './doc-write-allowed.ts'
 

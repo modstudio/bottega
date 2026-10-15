@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
+import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
   articleFieldRefusal,
   canonRemovalRefusal,

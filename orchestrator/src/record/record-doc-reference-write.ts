@@ -1,7 +1,8 @@
 // concern: record-doc-reference-write
 /** Applies generated-reference write authority at hosted document service boundaries. */
 
-import type { DocGenerator, DocKind } from '../../../shared/docs.ts'
+import type { DocKind } from '../../../shared/docs.ts'
+import type { DocGenerator } from '../doc/doc-generator.ts'
 import {
   isReferenceGeneratorWrite,
   recordDocLintRefusal,

@@ -5,13 +5,13 @@ import type {
   DocAudience,
   DocAudiences,
   DocForm,
-  DocGenerator,
   DocKind,
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
+import type { DocGenerator } from '../doc/doc-generator.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
