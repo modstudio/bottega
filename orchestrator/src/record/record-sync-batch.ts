@@ -22,7 +22,7 @@ type RecordSyncBatchStep =
   | { disposition: 'stop' }
 
 function oversizedRecordSyncReason(payloadBytes: number, payloadLimit: number): string {
-  return `record sync payload is ${payloadBytes} bytes, exceeding the ${payloadLimit} byte limit; retire its row with \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
+  return `record sync payload is ${payloadBytes} bytes, exceeding the ${payloadLimit} byte limit; retire its row with \`${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
 }
 
 function oversizedRecordSyncRequestReason(
@@ -30,7 +30,7 @@ function oversizedRecordSyncRequestReason(
   requestBytes: number,
   requestLimit: number,
 ): string {
-  return `record sync serialized row is ${serializedBytes} bytes and requires a ${requestBytes} byte request, exceeding the ${requestLimit} byte client request budget; retire its row with \`${PLATFORM_SLUG} record outbox retire <row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
+  return `record sync serialized row is ${serializedBytes} bytes and requires a ${requestBytes} byte request, exceeding the ${requestLimit} byte client request budget; retire its row with \`${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>\`, then retry \`${PLATFORM_SLUG} record sync\``
 }
 
 /** Classifies one row against the current batch without reading or parsing any stored data. */

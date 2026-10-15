@@ -222,8 +222,8 @@ export function db(writable = false): Database {
   // anywhere near that in a session, so the default never fires: the log was
   // measured at 1.4MB against an 80KB database, all of it uncheckpointed. A
   // lower threshold folds pages back in as they accumulate, and the size limit
-  // lets the file shrink again once a checkpoint can restart it — `orch serve`
-  // holds a connection open for hours, and a long-lived reader blocks
+  // lets the file shrink again once a checkpoint can restart it — a long-lived
+  // process holds a connection open for hours, and a long-lived reader blocks
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)

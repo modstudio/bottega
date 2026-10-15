@@ -8,6 +8,7 @@ import { type CleanupPresentation, type CleanupRow, discardWorktree } from '../c
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { job } from '../jobs/jobs.ts'
 import { judgeRun, scoreRun } from '../judgment.ts'
 import { authorizeRunMutation } from '../run/run-authority.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -83,52 +84,91 @@ const cleanupPresentation: CleanupPresentation = {
     `kept branch ${branch}: ${after === null ? `${unique} commit(s) reachable only from this branch` : `deleting it would lose commits reachable from no other ref; ${after} commit(s) after the cut`} — merge it, or ${PLATFORM_SLUG} run discard ${id} --force to delete it after checking no other run owns it`,
 }
 
-function addJudgmentOptions(command: Command, judge: boolean): Command {
+function addJudgmentOptions(command: Command): Command {
   command.option('--finding <value>', '', collect, [])
   for (const name of commonValueFlags.filter((name) => name !== '--finding'))
     command.option(`${name} <value>`)
-  if (!judge) command.option('--scorer <value>')
-  command.option('--force').allowExcessArguments(false)
-  return judge
-    ? command.option('--discard')
-    : command.option('--void').option('--unvoid').option('--blocked-by-tree')
+  return command
+    .option('--scorer <value>')
+    .option('--force')
+    .option('--discard')
+    .option('--void')
+    .option('--unvoid')
+    .option('--blocked-by-tree')
+    .allowExcessArguments(false)
+}
+
+/** Options only the score path acts on: voiding, a tree block and the scorer label. */
+const SCORE_PATH_OPTIONS = ['void', 'unvoid', 'blocked-by-tree', 'scorer'] as const
+
+/** Options only the judge path reads; the score path would drop them silently. */
+const JUDGE_PATH_OPTIONS = ['discard', 'finding'] as const
+
+/**
+ * A findings run is judged with its axes and finding verdicts unless a score-path
+ * option is given; voiding a lens run must void it rather than be dropped. The
+ * score path reads neither finding verdicts nor `--discard`, so it refuses them.
+ */
+export function scorePathForJob(
+  jobName: string,
+  given: (name: string) => boolean = () => false,
+): 'judge' | 'score' {
+  const scoreOption = SCORE_PATH_OPTIONS.some(given)
+  if (job(jobName).findings && !scoreOption) return 'judge'
+  const dropped = JUDGE_PATH_OPTIONS.filter(given)
+  if (dropped.length)
+    throw new Error(
+      `${dropped.map((name) => `--${name}`).join(' and ')} applies only when judging a findings run; drop it or the ${SCORE_PATH_OPTIONS.map((name) => `--${name}`).join(', ')} option`,
+    )
+  return 'score'
+}
+
+function rootJob(runId: number): string {
+  const row = db()
+    .query<{ job: string }, [number]>(
+      `SELECT root.job FROM run requested
+       JOIN run root ON root.id=COALESCE(requested.parent_run_id,requested.id)
+       WHERE requested.id=?`,
+    )
+    .get(runId)
+  if (!row) throw new Error(`no run ${runId}`)
+  return row.job
 }
 
 export function register(program: Command): void {
-  addJudgmentOptions(program.command('judge <run-id> [words...]'), true).action(
+  addJudgmentOptions(program.command('score <run-id> [words...]').alias('judge')).action(
     async (id, words, options) => {
       const flags = resolveComparisonRunIds(optionFlags(options))
       writableDb()
-      const result = await judgeRun(
-        resolveRunIdentifier(db(), id),
-        flags,
-        {
-          words,
-          note: scoreNote(flags),
-          auditReason: auditReason(flags),
-          notEvidence: NOT_EVIDENCE,
-        },
-        { log, error: console.error, pairHint },
-      )
-      if (flags.has('discard')) {
-        if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
-        discardWorktree(
-          result.row as CleanupRow,
-          'discarded',
-          false,
-          authorizeRunMutation(result.id, 'discard'),
-          { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation },
+      const runId = resolveRunIdentifier(db(), id)
+      const given = (name: string) =>
+        name === 'finding' ? flags.values('finding').length > 0 : flags.has(name)
+      if (scorePathForJob(rootJob(runId), given) === 'judge') {
+        const result = await judgeRun(
+          runId,
+          flags,
+          {
+            words,
+            note: scoreNote(flags),
+            auditReason: auditReason(flags),
+            notEvidence: NOT_EVIDENCE,
+          },
+          { log, error: console.error, pairHint },
         )
+        if (flags.has('discard')) {
+          if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
+          discardWorktree(
+            result.row as CleanupRow,
+            'discarded',
+            false,
+            authorizeRunMutation(result.id, 'discard'),
+            { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation },
+          )
+        }
+        return
       }
-    },
-  )
-
-  addJudgmentOptions(program.command('score <run-id> [words...]'), false).action(
-    async (id, words, options) => {
-      const flags = resolveComparisonRunIds(optionFlags(options))
-      writableDb()
       await scoreRun(
-        resolveRunIdentifier(db(), id),
+        runId,
         flags,
         {
           words,

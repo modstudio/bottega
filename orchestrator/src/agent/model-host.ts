@@ -211,15 +211,6 @@ export function localAgentHealth(name: string): LocalHealth | null {
 }
 
 /**
- * Forget the probe, so the next caller takes a fresh one.
- *
- * The cache is right for `bottega run start`, which lives for one run. It is wrong for
- * anything long-lived — `orch serve` runs for days, and a verdict taken when the
- * box happened to be rebooting would outlive the reboot by the life of the
- * process. Whoever holds a process open longer than a run is responsible for
- * calling this.
- */
-/**
  * Why this agent cannot be used at all, or null if it can.
  *
  * The reason is returned rather than a bare boolean because it is the thing

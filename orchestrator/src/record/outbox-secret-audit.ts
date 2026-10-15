@@ -43,8 +43,8 @@ function parseOutboxObject(payload: string): Record<string, unknown> | null {
 function unreadableOutboxAuditMessage(ids: number[], includeIds: boolean): string {
   const named = includeIds ? ` (outbox ids ${ids.join(',')})` : ''
   const clear = includeIds
-    ? `repair the stored JSON or retire those rows with ${PLATFORM_SLUG} record outbox retire`
-    : `rerun with --ids to name the unreadable rows, then repair their stored JSON or retire them with ${PLATFORM_SLUG} record outbox retire`
+    ? `repair the stored JSON or retire those rows with ${PLATFORM_SLUG} record outbox retire orch:<row-id>`
+    : `rerun with --ids to name the unreadable rows, then repair their stored JSON or retire them with ${PLATFORM_SLUG} record outbox retire orch:<row-id>`
   return (
     `refusing outbox secret audit: ${ids.length} rows were unreadable${named}\n` +
     'invariant: An audit never reports emptiness for rows it could not read.\n' +

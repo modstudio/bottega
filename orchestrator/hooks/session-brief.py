@@ -742,7 +742,7 @@ def main() -> int:
         if unscored_loop_runs:
             ids = ", ".join(str(item["runId"]) for item in unscored_loop_runs)
             message = (
-                f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with bottega run result <id>, score with bottega score judge <id>"
+                f"{len(unscored_loop_runs)} filed-issue loop run(s) await scoring: {ids} - read with bottega run result <id>, score with bottega score <id>"
             )
             notices.append(message)
             issues_lines.append(message)

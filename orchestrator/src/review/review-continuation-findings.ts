@@ -43,7 +43,7 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
     })
     throw new Error(
       `review round is not triage-complete:\n${details.join('\n')}\n` +
-        `cleared by: complete the review with ${PLATFORM_SLUG} score judge`,
+        `cleared by: complete the review with ${PLATFORM_SLUG} score`,
     )
   }
 

@@ -115,7 +115,7 @@ test('refuses incomplete triage with the judge remedy', () => {
       },
     ),
   ).toThrow(
-    `review triage for DEV-1110-record is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score judge`,
+    `review triage for DEV-1110-record is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score`,
   )
 })
 

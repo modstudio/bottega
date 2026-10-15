@@ -7,11 +7,56 @@ import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
 export type BinaryEntries = {
   orch(argv: string[]): Promise<number>
   hub(argv: string[]): Promise<number>
+  orchOutbox(): Promise<Record<string, unknown>[]>
+  hubOutbox(): Promise<Record<string, unknown>[]>
   runExec(argv: string[]): Promise<number>
   askProxy(argv: string[]): Promise<number>
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
   schemaCheck(argv: string[]): Promise<number>
+}
+
+type OutboxOwner = 'orch' | 'hub'
+
+function qualifiedOutboxRows(
+  owner: OutboxOwner,
+  rows: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return rows.map((row) => ({ ...row, id: `${owner}:${String(row.id)}`, owner }))
+}
+
+async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<number> {
+  if (rest.length === 0 || (rest.length === 1 && rest[0] === '--json')) {
+    const rows = [
+      ...qualifiedOutboxRows('orch', await entries.orchOutbox()),
+      ...qualifiedOutboxRows('hub', await entries.hubOutbox()),
+    ]
+    if (rest[0] === '--json') console.log(JSON.stringify(rows))
+    else if (!rows.length) console.log('record outbox is empty')
+    else {
+      for (const { id, owner, ...row } of rows)
+        console.log(`${String(id)} ${JSON.stringify({ owner, ...row })}`)
+    }
+    return 0
+  }
+  const [verb, qualifiedId, ...extraArguments] = rest
+  const match = qualifiedId?.match(/^(orch|hub):(.+)$/)
+  if (!match) {
+    console.error(
+      `outbox entry ids must include their owner; run \`${PLATFORM_SLUG} record outbox\` to list them`,
+    )
+    return 2
+  }
+  const owner = match[1] as OutboxOwner
+  const id = match[2]!
+  // The orchestrator reads its id with Number(), which turns `1e2` or `0x10` into another row.
+  if (owner === 'orch' && !/^\d+$/.test(id)) {
+    console.error(`orch outbox ids are decimal row numbers; run \`${PLATFORM_SLUG} record outbox\``)
+    return 2
+  }
+  // Each owner's own command validates the verb, so its verb list has one definition.
+  const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
+  return entries[owner]([...prefix, verb!, id, ...extraArguments])
 }
 
 function topHelp(): void {
@@ -132,6 +177,7 @@ export async function dispatchBinary(
     return 2
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
+  if (resolved.route.owner === 'outbox') return dispatchOutbox(resolved.rest, entries)
   if (resolved.route.owner === 'composite') return composite(resolved.route, resolved.rest, entries)
   const ownerArgv = [...(resolved.route.argv ?? []), ...resolved.rest]
   return entries[resolved.route.owner](ownerArgv)

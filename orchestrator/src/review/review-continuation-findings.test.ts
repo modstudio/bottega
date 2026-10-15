@@ -111,9 +111,7 @@ test('refuses a round with an untriaged finding and names its remedy', () => {
   const database = fixture()
   addReview(database, 11, 'correctness', [{ ordinal: 3, disposition: null }])
   expect(() => continuationFindings(database, group, 'message')).toThrow(
-    new RegExp(
-      `review 11: untriaged finding ordinal\\(s\\) 3[\\s\\S]*${PLATFORM_SLUG} score judge`,
-    ),
+    new RegExp(`review 11: untriaged finding ordinal\\(s\\) 3[\\s\\S]*${PLATFORM_SLUG} score`),
   )
 })
 

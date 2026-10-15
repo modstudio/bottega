@@ -99,7 +99,7 @@
       "Bash(*bottega task set *)",
       "Bash(git push origin main)"
     ],
-    "ask": ["Bash(*bottega score judge*)", "Bash(*bottega score recalibrate*)"]
+    "ask": ["Bash(*bottega score recalibrate*)"]
   },
   "hooks": {
     "PreToolUse": [

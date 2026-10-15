@@ -5,6 +5,8 @@ import { dispatchBinary } from './dispatch.ts'
 const entries = {
   orch: async (argv: string[]) => (await import('../orchestrator/src/cli/orch.ts')).main(argv),
   hub: async (argv: string[]) => (await import('../hub/src/cli.ts')).main(argv),
+  orchOutbox: async () => (await import('../orchestrator/src/cli/orch.ts')).outboxEntries(),
+  hubOutbox: async () => (await import('../hub/src/cli.ts')).outboxEntries(),
   runExec: async (argv: string[]) => (await import('../orchestrator/src/run/exec.ts')).main(argv),
   askProxy: async (argv: string[]) =>
     (await import('../orchestrator/src/ask/ask-proxy.ts')).main(argv),

@@ -756,6 +756,21 @@ describe('judge ruling', () => {
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
+  test('a lens without axes and finding verdicts names every score remedy', async () => {
+    const id = insert('ok', 'review-lens')
+    db().query("UPDATE run SET lens='correctness',model='m' WHERE id=?").run(id)
+    recordReview(id, reviewReply(1), db())
+    await expect(judge(id, [])).rejects.toThrow(
+      new RegExp(
+        `${PLATFORM_SLUG} score ${id} is missing:[\\s\\S]*` +
+          `<none\\|partial\\|full>[\\s\\S]*<wrong\\|mixed\\|right>[\\s\\S]*` +
+          `--reproduced[\\s\\S]*--coverage[\\s\\S]*--limits[\\s\\S]*--overlap[\\s\\S]*` +
+          '--finding 1=',
+      ),
+    )
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+  })
+
   test('judge none closes review debt without entering reviewer calibration', async () => {
     const id = insert('ok', 'review-lens')
     db().query('UPDATE run SET lens=?,model=? WHERE id=?').run('correctness', 'm', id)

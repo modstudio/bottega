@@ -45,7 +45,6 @@ import {
   fixDefectCommand,
   noteCommand,
   searchCommand,
-  serveCommand,
   stateCommand,
 } from '../record/record-commands.ts'
 import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
@@ -588,10 +587,6 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  program
-    .command('serve')
-    .allowExcessArguments(false)
-    .action(() => serveCommand(presentation))
   program
     .command('epic <key>')
     .option('--json')

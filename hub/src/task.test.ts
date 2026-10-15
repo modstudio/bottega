@@ -223,7 +223,7 @@ describe('hosted-authoritative existing-row edits', () => {
     }
     expect(messages).toEqual([
       'hosted change sent',
-      'hosted change rejected: policy says no; inspect it with `hub outbox`',
+      `hosted change rejected: policy says no; inspect it with \`${PLATFORM_SLUG} record outbox\``,
     ])
     expect(stdout).toEqual([])
     expect(
@@ -263,7 +263,7 @@ describe('hosted-authoritative existing-row edits', () => {
     }
     expect(sends).toBe(0)
     expect(messages).toEqual([
-      'hosted change saved and queued: another process is draining; the collector fast cycle will send it; inspect it with `hub outbox`',
+      `hosted change saved and queued: another process is draining; the collector fast cycle will send it; inspect it with \`${PLATFORM_SLUG} record outbox\``,
     ])
     expect(db().query(`SELECT 1 FROM hosted_outbox WHERE row_id=?`).get(id)).not.toBeNull()
   })

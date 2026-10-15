@@ -380,7 +380,6 @@ export const CLI_COMMANDS = new Set([
   'runs',
   'score',
   'search',
-  'serve',
   'subject',
   'settings',
   'setup',

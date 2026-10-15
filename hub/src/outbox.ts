@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
@@ -766,7 +767,9 @@ export async function hostedOutboxDoctorLines(
     )
     .get()!.count
   const lines = count
-    ? [`hosted outbox ${count} quarantined; run \`hub outbox\` and \`hub outbox retry <ID>\``]
+    ? [
+        `hosted outbox ${count} quarantined; run \`${PLATFORM_SLUG} record outbox\` and \`${PLATFORM_SLUG} record outbox retry hub:<ID>\``,
+      ]
     : []
   let rows = prepareOutboxRows(loadPendingOutboxRows()).rows
   if (!rows.length) return lines
@@ -813,7 +816,9 @@ export function showHostedOutboxEntry(id: string): string[] {
 
 export function discardHostedOutboxEntryCommand(id: string): string[] {
   if (!discardHostedOutboxEntry(id))
-    throw new Error(`outbox entry ${id} is not quarantined; use \`hub outbox retry ${id}\``)
+    throw new Error(
+      `outbox entry ${id} is not quarantined; use \`${PLATFORM_SLUG} record outbox retry hub:${id}\``,
+    )
   return [`outbox entry ${id} discarded`]
 }
 
@@ -821,7 +826,7 @@ export function retryHostedOutboxEntryCommand(id: string): string[] {
   const outcome = retryHostedOutboxEntryOutcome(id)
   if (outcome === 'missing-row')
     throw new Error(
-      `outbox entry ${id} has no machine row; use \`hub outbox show ${id}\` then \`hub outbox discard ${id}\``,
+      `outbox entry ${id} has no machine row; use \`${PLATFORM_SLUG} record outbox show hub:${id}\` then \`${PLATFORM_SLUG} record outbox discard hub:${id}\``,
     )
   if (outcome !== 'retried') throw new Error(`outbox entry ${id} is not quarantined and unsent`)
   return [`outbox entry ${id} queued for retry`]

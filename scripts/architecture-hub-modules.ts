@@ -127,7 +127,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/cli.ts',
-    allowed: ['./cli-program.ts'],
+    allowed: ['./cli-program.ts', './db.ts', './outbox.ts'],
   },
   {
     file: 'hub/src/cli-program.ts',
