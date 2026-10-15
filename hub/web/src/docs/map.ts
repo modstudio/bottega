@@ -1,3 +1,4 @@
+import type { DocSnippetHighlight } from '../../../../shared/doc-snippet.ts'
 import {
   DOC_FORMS,
   DOC_KINDS,
@@ -116,26 +117,40 @@ export function mapSearchMatch(row: Record<string, unknown>): DocsSearchMatch {
     audiences: audiencesOf(row.audiences),
     snippet: String(row.snippet ?? ''),
     spaceName: typeof row.spaceName === 'string' ? row.spaceName : undefined,
-    matchPosition: typeof row.matchPosition === 'number' ? row.matchPosition : null,
+    highlights: highlightsOf(row.highlights),
   }
 }
 
-export function highlightSnippet(
-  snippet: string,
-  matchPosition: number | null,
-  query: string,
-): { before: string; match: string; after: string } {
-  const needle = query.trim()
-  if (!needle) return { before: snippet, match: '', after: '' }
-  const at =
-    matchPosition != null && matchPosition >= 0 && matchPosition < snippet.length
-      ? matchPosition
-      : snippet.toLocaleLowerCase().indexOf(needle.toLocaleLowerCase())
-  if (at < 0) return { before: snippet, match: '', after: '' }
-  const length = needle.length
-  return {
-    before: snippet.slice(0, at),
-    match: snippet.slice(at, at + length),
-    after: snippet.slice(at + length),
+export function highlightSnippet(input: {
+  snippet: string
+  highlights: readonly DocSnippetHighlight[]
+}): { text: string; highlight: boolean; start: number }[] {
+  const { snippet, highlights } = input
+  if (highlights.length === 0) return snippet ? [{ text: snippet, highlight: false, start: 0 }] : []
+  const parts: { text: string; highlight: boolean; start: number }[] = []
+  let cursor = 0
+  for (const { start, length } of highlights) {
+    if (start > cursor)
+      parts.push({ text: snippet.slice(cursor, start), highlight: false, start: cursor })
+    if (length > 0)
+      parts.push({ text: snippet.slice(start, start + length), highlight: true, start })
+    cursor = Math.max(cursor, start + length)
   }
+  if (cursor < snippet.length)
+    parts.push({ text: snippet.slice(cursor), highlight: false, start: cursor })
+  return parts.filter((part) => part.text.length > 0)
+}
+
+function highlightsOf(value: unknown): DocSnippetHighlight[] {
+  if (!Array.isArray(value)) return []
+  const highlights: DocSnippetHighlight[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const start = (item as { start?: unknown }).start
+    const length = (item as { length?: unknown }).length
+    if (typeof start === 'number' && typeof length === 'number' && start >= 0 && length >= 0) {
+      highlights.push({ start, length })
+    }
+  }
+  return highlights
 }

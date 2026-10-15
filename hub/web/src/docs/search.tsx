@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { Fragment, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
 import { Dialog } from '@/ui/dialog/dialog'
 import { Input } from '@/ui/field/input'
 import { Kbd } from '@/ui/kbd/kbd'
@@ -7,6 +7,55 @@ import { classes } from '@/ui/text/classes'
 import { highlightSnippet } from './map.ts'
 import { DocStatusBadge } from './status-badge.tsx'
 import type { DocsSearchMatch, DocsTreeItem } from './types.ts'
+
+function SearchSnippet({ match }: { match: DocsSearchMatch }) {
+  return (
+    <p className="mt-0.5 text-sm text-text-muted leading-5">
+      {highlightSnippet(match).map((part) =>
+        part.highlight ? (
+          <mark key={part.start} className="bg-surface-sunken text-text-primary">
+            {part.text}
+          </mark>
+        ) : (
+          <Fragment key={part.start}>{part.text}</Fragment>
+        ),
+      )}
+    </p>
+  )
+}
+
+function SearchResultRow({
+  match,
+  selected,
+  onHover,
+  onChoose,
+}: {
+  match: DocsSearchMatch
+  selected: boolean
+  onHover: () => void
+  onChoose: () => void
+}) {
+  return (
+    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the search input; arrow keys move aria-selected
+    <div
+      role="option"
+      aria-selected={selected}
+      onMouseEnter={onHover}
+      onPointerDown={(event) => event.preventDefault()}
+      onPointerUp={onChoose}
+      className={classes('cursor-pointer rounded-sm px-2.5 py-2', selected && 'bg-control-hover')}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="text-md text-text-primary">{match.title}</span>
+        <DocStatusBadge status={match.status} />
+        {match.spaceName ? (
+          <span className="text-text-muted text-xs">{match.spaceName}</span>
+        ) : null}
+      </div>
+      {match.snippet ? <SearchSnippet match={match} /> : null}
+    </div>
+  )
+}
 
 export function SearchDialog({
   open,
@@ -109,42 +158,15 @@ export function SearchDialog({
           <p className="mx-2.5 my-3.5 text-md text-text-muted">{hint}</p>
         ) : (
           <div id={listId} role="listbox">
-            {results.map((match, index) => {
-              const parts = highlightSnippet(match.snippet, match.matchPosition, needle)
-              const selected = index === active
-              return (
-                // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the search input; arrow keys move aria-selected
-                <div
-                  key={`${match.id}:${match.slug}`}
-                  role="option"
-                  aria-selected={selected}
-                  onMouseEnter={() => setActive(index)}
-                  onPointerDown={(event) => event.preventDefault()}
-                  onPointerUp={() => choose(match)}
-                  className={classes(
-                    'cursor-pointer rounded-sm px-2.5 py-2',
-                    selected && 'bg-control-hover',
-                  )}
-                >
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-md text-text-primary">{match.title}</span>
-                    <DocStatusBadge status={match.status} />
-                    {match.spaceName ? (
-                      <span className="text-text-muted text-xs">{match.spaceName}</span>
-                    ) : null}
-                  </div>
-                  {match.snippet ? (
-                    <p className="mt-0.5 text-sm text-text-muted leading-5">
-                      {parts.before}
-                      {parts.match ? (
-                        <mark className="bg-surface-sunken text-text-primary">{parts.match}</mark>
-                      ) : null}
-                      {parts.after}
-                    </p>
-                  ) : null}
-                </div>
-              )
-            })}
+            {results.map((match, index) => (
+              <SearchResultRow
+                key={`${match.id}:${match.slug}`}
+                match={match}
+                selected={index === active}
+                onHover={() => setActive(index)}
+                onChoose={() => choose(match)}
+              />
+            ))}
           </div>
         )}
       </div>

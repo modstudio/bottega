@@ -294,6 +294,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-public-docs.ts', [
     'bun',
     '../../../shared/doc-sections.ts',
+    '../../../shared/doc-snippet.ts',
     '../../../shared/docs.ts',
     '../../../shared/record/tenant.ts',
     './record-doc-audiences.ts',

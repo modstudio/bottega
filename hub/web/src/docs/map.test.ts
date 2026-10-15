@@ -155,12 +155,20 @@ test('hosted projectName is used as-is; local and public derive it from project 
   ).toBe('atlas')
 })
 
-test('search highlight uses matchPosition when it falls inside the snippet', () => {
-  expect(highlightSnippet('the worktree is disposable', 4, 'worktree')).toEqual({
-    before: 'the ',
-    match: 'worktree',
-    after: ' is disposable',
-  })
+test('search highlight wraps each range and maps hosted highlights', () => {
+  expect(
+    highlightSnippet({
+      snippet: 'the worktree is disposable',
+      highlights: [{ start: 4, length: 8 }],
+    }),
+  ).toEqual([
+    { text: 'the ', highlight: false, start: 0 },
+    { text: 'worktree', highlight: true, start: 4 },
+    { text: ' is disposable', highlight: false, start: 12 },
+  ])
+  expect(highlightSnippet({ snippet: 'plain text', highlights: [] })).toEqual([
+    { text: 'plain text', highlight: false, start: 0 },
+  ])
   expect(
     mapSearchMatch({
       id: '1',
@@ -169,7 +177,7 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
       audiences: ['internal'],
       kind: 'article',
       snippet: 'x',
-      matchPosition: 0,
+      highlights: [{ start: 0, length: 1 }],
     }),
   ).toEqual({
     id: '1',
@@ -179,6 +187,6 @@ test('search highlight uses matchPosition when it falls inside the snippet', () 
     status: 'current',
     kind: 'article',
     snippet: 'x',
-    matchPosition: 0,
+    highlights: [{ start: 0, length: 1 }],
   })
 })
