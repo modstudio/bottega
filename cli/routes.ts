@@ -12,6 +12,10 @@ export type CommandRoute = {
   }[]
   continueOnFailure?: boolean
   description?: string
+  options?: readonly {
+    flags: string
+    description: string
+  }[]
   hidden?: boolean
 }
 
@@ -42,8 +46,13 @@ const route = (
   command: string,
   owner: 'orch' | 'hub',
   argv: string,
-  description = '',
-): CommandRoute => ({ command: command.split(' '), owner, argv: argv.split(' '), description })
+  description?: string,
+): CommandRoute => ({
+  command: command.split(' '),
+  owner,
+  argv: argv.split(' '),
+  ...(description === undefined ? {} : { description }),
+})
 
 export const ROUTES = (
   [
@@ -136,6 +145,7 @@ export const ROUTES = (
       command: ['record', 'outbox'],
       owner: 'outbox',
       description: 'inspect and retry pending record writes',
+      options: [{ flags: '--json', description: 'print entries as JSON' }],
     },
     route('record', 'orch', 'record'),
     route('agent show', 'orch', 'agent'),
@@ -208,6 +218,13 @@ export const ROUTES = (
       command: ['machine', 'legacy-calls'],
       owner: 'local',
       description: 'report legacy orch and hub invocations',
+      options: [
+        {
+          flags: '--since <timestamp>',
+          description: 'include calls at or after this ISO timestamp',
+        },
+        { flags: '--json', description: 'print the report as JSON' },
+      ],
     },
     route('mcp serve', 'orch', 'mcp'),
     route('mcp ask-server', 'orch', 'ask-server'),

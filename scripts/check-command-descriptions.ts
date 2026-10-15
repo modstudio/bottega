@@ -8,16 +8,24 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   descriptionBaselineFailures,
   descriptionFindings,
-  documentationUnits,
+  documentationInventory,
 } from './command-descriptions.ts'
 
 const BASELINE_PATH = fileURLToPath(new URL('./quality/command-descriptions.json', import.meta.url))
 const REGENERATE_COMMAND = 'bun scripts/check-command-descriptions.ts --write-baseline'
 
+function currentInventory() {
+  return documentationInventory(GROUPS, ROUTES, { orch: orchProgram, hub: hubProgram })
+}
+
 function currentFindings() {
-  return descriptionFindings(
-    documentationUnits(GROUPS, ROUTES, { orch: orchProgram, hub: hubProgram }),
-  )
+  return descriptionFindings(currentInventory().units)
+}
+
+function printNotWalked(notWalked: readonly string[]) {
+  for (const spelling of notWalked) {
+    console.log(`not walked: converted by DEV-1332: ${spelling}`)
+  }
 }
 
 function readBaseline(): string[] {
@@ -37,7 +45,8 @@ function writeBaseline() {
 }
 
 function checkBaseline(): boolean {
-  const findings = currentFindings()
+  const inventory = currentInventory()
+  const findings = descriptionFindings(inventory.units)
   const failures = descriptionBaselineFailures(findings, readBaseline())
   if (failures.length) {
     console.error('command description check failed:')
@@ -46,6 +55,7 @@ function checkBaseline(): boolean {
     return false
   }
   console.log(`command descriptions: ${findings.length} baseline findings remain`)
+  printNotWalked(inventory.notWalked)
   return true
 }
 
