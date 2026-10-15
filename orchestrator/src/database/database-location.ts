@@ -109,13 +109,21 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
 }
 
 export function resolveDatabase(
-  cwd = process.cwd(),
+  cwd: string | undefined = undefined,
   env: StateEnvironment = process.env as StateEnvironment,
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = embeddedDistributionManifest()
     ? null
     : (repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot))
+  let callerCwd = cwd
+  if (callerCwd === undefined) {
+    try {
+      callerCwd = process.cwd()
+    } catch {
+      callerCwd = env.ORCH_MAIN_CHECKOUT ?? binaryRepository?.root ?? dirname(binaryRoot)
+    }
+  }
   const path = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
     // ORCH_DB is independently sufficient. When HOME is available, retaining
@@ -137,7 +145,7 @@ export function resolveDatabase(
     }
   }
   const mainStorePath = path
-  const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
+  const repository = repositoryRootFromGit(callerCwd) ?? repositoryRootFromDotGit(callerCwd)
   return {
     path: mainStorePath,
     method: 'state-root',
@@ -152,6 +160,26 @@ export function resolveDatabase(
     ),
     linkedWorktreeBinary: Boolean(binaryRepository?.linked),
     mainStorePath,
+  }
+}
+
+/** Move a process out of an already-removed directory before loading command implementations. */
+export function recoverMissingWorkingDirectory(
+  fallback?: string,
+  cwd: () => string = process.cwd,
+  chdir: (path: string) => void = process.chdir,
+): string {
+  try {
+    return cwd()
+  } catch {
+    const recovered =
+      fallback ??
+      process.env.ORCH_MAIN_CHECKOUT ??
+      repositoryRootFromGit(ROOT)?.root ??
+      repositoryRootFromDotGit(ROOT)?.root ??
+      dirname(ROOT)
+    chdir(recovered)
+    return recovered
   }
 }
 

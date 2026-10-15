@@ -37,6 +37,7 @@ import { removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -606,6 +607,15 @@ function attemptCloseOutRun(
       worktree: treePath,
       outcome: 'failed',
       detail: 'repository root not found',
+    }
+
+  const cwdRefusal = removalWorkingDirectoryRefusal(treePath, repoRoot)
+  if (cwdRefusal)
+    return {
+      runId: row.root_id,
+      worktree: treePath,
+      outcome: 'failed',
+      detail: cwdRefusal,
     }
 
   const conversationIds = (

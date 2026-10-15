@@ -10,11 +10,26 @@ import {
   implicitDatabaseCreationRefusal,
   linkedWorktreeDatabaseInitializationMessage,
   missingDatabaseMessage,
+  recoverMissingWorkingDirectory,
   unauthorizedDatabaseInitializationMessage,
 } from './database-location.ts'
 
 const livePath = '/nonexistent-live-orchestrator-store/orch.db'
 const tempPath = '/nonexistent-temp-orchestrator-store/orch.db'
+
+test('an absent working directory is replaced with the main checkout', () => {
+  const changed: string[] = []
+  expect(
+    recoverMissingWorkingDirectory(
+      '/projects/main',
+      () => {
+        throw new Error('ENOENT: uv_cwd')
+      },
+      (path) => changed.push(path),
+    ),
+  ).toBe('/projects/main')
+  expect(changed).toEqual(['/projects/main'])
+})
 
 describe('orchestrator database path decision', () => {
   test('test process + non-ORCH_DB method: refuses the live fallback', () => {
