@@ -1,7 +1,6 @@
 // concern: record-projects
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
-import { DOC_SCOPE_SUBJECT_KIND } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -72,12 +71,7 @@ async function renameHostedDocSubjects(
   from: string,
   to: string,
 ): Promise<void> {
-  const projectScopes = tx.array(
-    Object.entries(DOC_SCOPE_SUBJECT_KIND)
-      .filter(([, kind]) => kind === 'project')
-      .map(([scope]) => scope),
-    'text',
-  )
+  const projectScopes = tx.array(['project', 'resume', 'canon', 'settings'], 'text')
   await tx`
     UPDATE doc SET subject=${to}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}

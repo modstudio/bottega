@@ -615,7 +615,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../lens/lenses.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
-      './project-rename.ts',
       './projects.ts',
       '../worktree/worktree-lifecycle.ts',
       '../worktree/worktree-template.ts',

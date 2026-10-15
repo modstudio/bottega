@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writeTransaction } from '../database/db.ts'
-import { persistLocalProjectSet } from './project-rename.ts'
-import { projectByName, upsertProject } from './projects.ts'
+import { persistLocalProjectSet, projectByName, upsertProject } from './projects.ts'
 
 const OLD = 'rename-from'
 const NEXT = 'rename-to'

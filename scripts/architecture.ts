@@ -515,7 +515,6 @@ export const modules: ArchitectureModule[] = [
     '../record/record-write-authority.ts',
     './projects.ts',
   ]),
-  module('orchestrator/src/project/project-rename.ts', ['../database/db.ts']),
   module('orchestrator/src/database/project-register-store.ts', [
     'bun:sqlite',
     'node:fs',
