@@ -1,5 +1,6 @@
 // concern: project-record-identity
 /** Fills the one sanctioned project-name match from the hosted record. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
@@ -14,7 +15,7 @@ export type FilledProjectRecordId = {
 
 /** Fill only missing identities; existing local identities are never name-matched again. */
 export async function fillProjectRecordIds(): Promise<FilledProjectRecordId[]> {
-  requireHostedRecord('bottega project fill-record-ids')
+  requireHostedRecord(`${PLATFORM_SLUG} project fill-record-ids`)
   const client = recordApiClient()
   const filled: FilledProjectRecordId[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {

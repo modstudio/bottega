@@ -905,7 +905,9 @@ export function projectsForDryRun(path: string): Project[] {
     const readonly = new Database(path, { readonly: true })
     try {
       const rows = readonly
-        .query('SELECT id, record_id, name, path, stack, canon, settings FROM project ORDER BY name')
+        .query(
+          'SELECT id, record_id, name, path, stack, canon, settings FROM project ORDER BY name',
+        )
         .all() as {
         id: number
         record_id: string | null
