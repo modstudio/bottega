@@ -5,6 +5,10 @@ function byPositionThenTitle(a: DocsTreeItem, b: DocsTreeItem) {
   return a.title.localeCompare(b.title)
 }
 
+export function siblingKey(item: DocsTreeItem): string {
+  return JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId])
+}
+
 /** Move one sibling immediately before the sibling it was dragged over. */
 export function orderedIdsAfterDrag(
   siblings: readonly DocsTreeItem[],

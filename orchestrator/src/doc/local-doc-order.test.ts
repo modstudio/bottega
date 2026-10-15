@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
-import { reorderLocalDocs } from './docs.ts'
-import { hostedDocOrder } from './local-doc-order.ts'
+import { hostedDocOrder } from './doc-order.ts'
+import { reorderDocs } from './docs.ts'
 
 test('reorder refuses an id list that is not the complete current sibling set', async () => {
   const parent = await setDoc({
@@ -37,7 +37,7 @@ test('reorder refuses an id list that is not the complete current sibling set', 
   })
 
   await expect(
-    reorderLocalDocs({
+    reorderDocs({
       scope: 'global',
       subject: null,
       parentId: String(parent.id),
@@ -87,7 +87,7 @@ test('reorder changes only live positions', async () => {
     )
     .get(first.id, second.id)!.count
 
-  await reorderLocalDocs({
+  await reorderDocs({
     scope: 'global',
     subject: null,
     parentId: String(parent.id),

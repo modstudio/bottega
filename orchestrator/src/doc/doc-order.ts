@@ -8,6 +8,44 @@ export type DocOrderInput = {
   orderedIds: string[]
 }
 
+export type LocalDocOrderRow = { id: number; slug: string; record_id: string | null }
+
+export function localDocId(id: string): number {
+  const parsed = Number(id)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`refusing document reorder: id "${id}" is not a positive integer`)
+  }
+  return parsed
+}
+
+export function hostedDocOrder(
+  input: DocOrderInput,
+  siblings: readonly LocalDocOrderRow[],
+  parent: LocalDocOrderRow | null,
+  missingRecordIdRemedy: string,
+): DocOrderInput {
+  const byId = new Map(siblings.map((doc) => [doc.id, doc]))
+  const translated = input.orderedIds.map((id) => {
+    const doc = byId.get(localDocId(id))
+    if (!doc) throw new Error(`refusing document reorder: local document id "${id}" was not found`)
+    if (!doc.record_id) {
+      throw new Error(
+        `document "${doc.slug}" has no hosted record id; cleared by: ${missingRecordIdRemedy}`,
+      )
+    }
+    return doc.record_id
+  })
+  if (input.parentId !== null && !parent) {
+    throw new Error(`refusing document reorder: local parent id "${input.parentId}" was not found`)
+  }
+  if (parent && !parent.record_id) {
+    throw new Error(
+      `parent "${parent.slug}" has no hosted record id; cleared by: ${missingRecordIdRemedy}`,
+    )
+  }
+  return { ...input, parentId: parent?.record_id ?? null, orderedIds: translated }
+}
+
 export function docOrderRefusal(
   currentIds: readonly string[],
   orderedIds: readonly string[],

@@ -16,14 +16,10 @@ import {
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
-import { treePath } from './tree.ts'
+import { siblingKey, treePath } from './tree.ts'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
-
-function siblingKey(item: DocsTreeItem): string {
-  return JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId])
-}
 
 const siblingCollision: CollisionDetection = (input) => {
   const activeKey = input.active.data.current?.siblingKey

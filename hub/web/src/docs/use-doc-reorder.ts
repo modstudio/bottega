@@ -4,12 +4,9 @@ import { queryClient, trpc } from '@/trpc/client'
 import { toast } from '@/ui/toast/toast.tsx'
 import type { DocScope } from '../../../../shared/docs.ts'
 import { canEditDoc } from './edit-permission.ts'
-import { orderedIdsAfterDrag } from './tree.ts'
+import { orderedIdsAfterDrag, siblingKey } from './tree.ts'
 import type { DocsSource, DocsTreeItem } from './types.ts'
 import { useDocsTree } from './use-docs.ts'
-
-const siblingKey = (item: DocsTreeItem) =>
-  JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId])
 
 export function useReorderableDocsTree(
   source: DocsSource,
