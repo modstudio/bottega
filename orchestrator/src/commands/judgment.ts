@@ -98,8 +98,25 @@ function addJudgmentOptions(command: Command): Command {
     .allowExcessArguments(false)
 }
 
-export function scorePathForJob(jobName: string): 'judge' | 'score' {
-  return job(jobName).findings ? 'judge' : 'score'
+/** Options only the score path acts on: voiding, a tree block and the scorer label. */
+const SCORE_PATH_OPTIONS = ['void', 'unvoid', 'blocked-by-tree', 'scorer'] as const
+
+/**
+ * A findings run is judged with its axes and finding verdicts unless a score-path
+ * option is given; voiding a lens run must void it rather than be dropped. The
+ * score path cannot discard a worktree, so `--discard` there is refused.
+ */
+export function scorePathForJob(
+  jobName: string,
+  given: (name: string) => boolean = () => false,
+): 'judge' | 'score' {
+  const scoreOption = SCORE_PATH_OPTIONS.some(given)
+  if (job(jobName).findings && !scoreOption) return 'judge'
+  if (given('discard'))
+    throw new Error(
+      `--discard applies only when judging a findings run; drop --discard or the ${SCORE_PATH_OPTIONS.map((name) => `--${name}`).join(', ')} option`,
+    )
+  return 'score'
 }
 
 function rootJob(runId: number): string {
@@ -115,12 +132,12 @@ function rootJob(runId: number): string {
 }
 
 export function register(program: Command): void {
-  addJudgmentOptions(program.command('score <run-id> [words...]')).action(
+  addJudgmentOptions(program.command('score <run-id> [words...]').alias('judge')).action(
     async (id, words, options) => {
       const flags = resolveComparisonRunIds(optionFlags(options))
       writableDb()
       const runId = resolveRunIdentifier(db(), id)
-      if (scorePathForJob(rootJob(runId)) === 'judge') {
+      if (scorePathForJob(rootJob(runId), (name) => flags.has(name)) === 'judge') {
         const result = await judgeRun(
           runId,
           flags,

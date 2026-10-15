@@ -66,3 +66,16 @@ test('findings jobs take the judge path and another job takes the score path', (
   expect(scorePathForJob('review-lens')).toBe('judge')
   expect(scorePathForJob('implement')).toBe('score')
 })
+
+test('voiding a findings run takes the score path, and the score path refuses discard', () => {
+  const given =
+    (...names: string[]) =>
+    (name: string) =>
+      names.includes(name)
+  expect(scorePathForJob('review-lens', given('void'))).toBe('score')
+  expect(scorePathForJob('review-lens', given('discard'))).toBe('judge')
+  expect(() => scorePathForJob('implement', given('discard'))).toThrow('--discard applies only')
+  expect(() => scorePathForJob('review-lens', given('void', 'discard'))).toThrow(
+    '--discard applies only',
+  )
+})
