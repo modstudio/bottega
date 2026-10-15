@@ -13,9 +13,11 @@ import {
   canonFindingsRefusal,
   consumeDocBody,
   type DocDelivery,
+  type DocGenerator,
   type DocRevisionOp,
   docWriteProjectName,
   recordDocLintRefusal,
+  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseDocWrite,
   refuseMismatchedDocProject,
@@ -140,6 +142,7 @@ type RecordDocWriteInput = Tenant & {
   id?: string
   revisionId?: string
   expectedRevision?: string
+  generator?: DocGenerator
 }
 
 function assertUpsertAddress(input: RecordDocWriteInput): void {
@@ -174,6 +177,13 @@ export async function upsertRecordDoc(
         AND deleted_at IS NULL
       FOR UPDATE
     `
+    assertWrite(
+      referenceWriteRefusal({
+        storedForm: existing[0]?.form == null ? null : String(existing[0].form),
+        requestedForm: input.form,
+        generator: input.generator,
+      }),
+    )
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing[0]?.latest_revision_id,
@@ -210,20 +220,21 @@ export async function upsertRecordDoc(
       )
     }
     assertWrite(refuseArticleDelivery({ ...input, delivery, kind }))
-    assertWrite(
-      recordDocLintRefusal(
-        { ...input, kind },
-        existing[0]
-          ? {
-              scope: String(existing[0].scope),
-              subject: existing[0].subject == null ? null : String(existing[0].subject),
-              slug: String(existing[0].slug),
-              body: String(existing[0].body),
-              kind: (existing[0].kind == null ? 'working' : String(existing[0].kind)) as DocKind,
-            }
-          : undefined,
-      ),
-    )
+    if (!input.generator)
+      assertWrite(
+        recordDocLintRefusal(
+          { ...input, kind },
+          existing[0]
+            ? {
+                scope: String(existing[0].scope),
+                subject: existing[0].subject == null ? null : String(existing[0].subject),
+                slug: String(existing[0].slug),
+                body: String(existing[0].body),
+                kind: (existing[0].kind == null ? 'working' : String(existing[0].kind)) as DocKind,
+              }
+            : undefined,
+        ),
+      )
     const resolvedProject = await resolvedDocProjectId(tx, input.spaceId, input)
     const articleFields = await resolveHostedArticleFields(
       tx,
@@ -557,6 +568,7 @@ export async function deleteRecordDoc(
     author: string
     sessionId?: string | null
     expectedRevision?: string
+    generator?: DocGenerator
   },
 ): Promise<{ id: string; revisionId: string }> {
   return tenant(input, async (tx) => {
@@ -565,6 +577,12 @@ export async function deleteRecordDoc(
     `
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
+    assertWrite(
+      referenceWriteRefusal({
+        storedForm: doc.form == null ? null : String(doc.form),
+        generator: input.generator,
+      }),
+    )
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,

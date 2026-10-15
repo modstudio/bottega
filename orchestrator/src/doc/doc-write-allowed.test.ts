@@ -6,6 +6,8 @@ import {
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
+  REFERENCE_GENERATOR,
+  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
   refuseMismatchedDocProject,
@@ -13,6 +15,22 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('reference writes require the explicit publisher marker for new and stored rows', () => {
+  expect(referenceWriteRefusal({ requestedForm: 'reference' })).toContain(
+    `${PLATFORM_SLUG} doc reference publish`,
+  )
+  expect(referenceWriteRefusal({ storedForm: 'reference' })).toContain(
+    `${PLATFORM_SLUG} doc reference publish`,
+  )
+  expect(
+    referenceWriteRefusal({
+      storedForm: 'reference',
+      requestedForm: 'reference',
+      generator: REFERENCE_GENERATOR,
+    }),
+  ).toBeNull()
+})
 
 test('article fields require an article project and distinct subject attachments', () => {
   const valid = {

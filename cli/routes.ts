@@ -107,6 +107,12 @@ export const ROUTES = (
     route('doc canon', 'orch', 'canon'),
     route('doc code', 'orch', 'code'),
     route('doc port', 'orch', 'port'),
+    route(
+      'doc reference publish',
+      'orch',
+      'reference publish',
+      'publish the generated command reference',
+    ),
     route('doc', 'orch', 'doc'),
     route('project', 'orch', 'project'),
     route('tree branch', 'orch', 'branches'),

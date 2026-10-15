@@ -11,7 +11,7 @@ import type {
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
-import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
+import type { DocDelivery, DocGenerator, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
@@ -84,6 +84,7 @@ export type RecordDocUpsertInput = {
   id?: string
   revisionId?: string
   expectedRevision?: string
+  generator?: DocGenerator
 }
 type RecordDocOrderInput = {
   scope: string
@@ -252,7 +253,7 @@ export type RecordApiClient = {
   ): Promise<RecordCanonImportResult>
   deleteDoc(
     id: string,
-    input: { reason: string; author: string; expectedRevision?: string },
+    input: { reason: string; author: string; expectedRevision?: string; generator?: DocGenerator },
     destination?: RecordRequestDestination,
   ): Promise<{ id: string; revisionId: string }>
   consumeDoc(

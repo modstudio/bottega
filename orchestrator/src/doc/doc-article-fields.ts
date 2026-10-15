@@ -12,7 +12,7 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
 import { resolveSubject } from '../subject/subjects.ts'
 import type { Doc, DocRevision } from './doc-read-store.ts'
-import { articleFieldRefusal, type CanonWriteTree } from './doc-write-allowed.ts'
+import { articleFieldRefusal, type CanonWriteTree, type DocGenerator } from './doc-write-allowed.ts'
 
 export type DocWriteContext = {
   author?: string
@@ -24,6 +24,7 @@ export type DocWriteContext = {
   expectedRevision?: string
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
+  generator?: DocGenerator
 }
 
 export type DocWriteInput = {

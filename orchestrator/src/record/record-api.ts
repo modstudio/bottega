@@ -143,13 +143,20 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       id?: string
       revisionId?: string
       expectedRevision?: string
+      generator?: 'reference-publish'
     },
   ): Promise<{ id: string; revisionId: string }>
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
-    input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
+    input: Tenant & {
+      id: string
+      reason: string
+      author: string
+      expectedRevision?: string
+      generator?: 'reference-publish'
+    },
   ): Promise<{ id: string; revisionId: string }>
   consumeDoc(
     input: Tenant & { id: string; reason: string; author: string; expectedRevision?: string },
@@ -272,6 +279,7 @@ const docWriteContextSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
   expectedRevision: z.string().uuid().optional(),
+  generator: z.literal('reference-publish').optional(),
 })
 const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`
 

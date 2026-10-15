@@ -70,6 +70,7 @@ export const recordDocUpsertSchema = z.object({
   id: z.string().uuid().optional(),
   revisionId: z.string().uuid().optional(),
   expectedRevision: z.string().uuid().optional(),
+  generator: z.literal('reference-publish').optional(),
 })
 
 export const recordDocOrderSchema = z.object({

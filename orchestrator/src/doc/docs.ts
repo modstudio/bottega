@@ -97,6 +97,7 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
+  referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
   refuseOversizedInject,
@@ -332,6 +333,7 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
+  if (input.generator) return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
 }
@@ -346,6 +348,12 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
+  const referenceRefusal = referenceWriteRefusal({
+    storedForm: prior?.form,
+    requestedForm: input.form,
+    generator: input.generator,
+  })
+  if (referenceRefusal) throw new Error(referenceRefusal)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
@@ -414,6 +422,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         op: requestedOp ?? (prior ? 'set' : 'create'),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
+        generator: input.generator,
       }
       const hosted = await client.upsertDoc(hostedInput)
       const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
@@ -556,6 +565,11 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
+  const referenceRefusal = referenceWriteRefusal({
+    storedForm: doc.form,
+    generator: context.generator,
+  })
+  if (referenceRefusal) throw new Error(referenceRefusal)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     doc.revision,
@@ -593,6 +607,7 @@ export async function removeDoc(
           author: identity.author,
           id: undefined,
           expectedRevision: context.expectedRevision,
+          generator: context.generator,
         })
         recordId = created.id
         hostedExpected = created.revisionId
@@ -601,6 +616,7 @@ export async function removeDoc(
         reason: identity.reason,
         author: identity.author,
         expectedRevision: hostedExpected,
+        generator: context.generator,
       })
       return commitDocRemove({
         scope,

@@ -19,6 +19,21 @@ export { refuseSettingsBody }
 export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
+export const REFERENCE_GENERATOR = 'reference-publish' as const
+export type DocGenerator = typeof REFERENCE_GENERATOR
+
+export function referenceWriteRefusal(input: {
+  storedForm?: string | null
+  requestedForm?: string | null
+  generator?: DocGenerator
+}): string | null {
+  if (
+    input.generator === REFERENCE_GENERATOR ||
+    (input.storedForm !== 'reference' && input.requestedForm !== 'reference')
+  )
+    return null
+  return `refusing hand write of a generated reference document\ncleared by: ${PLATFORM_SLUG} doc reference publish`
+}
 
 export type DocDelivery = 'inject' | 'demand'
 export type DocRevisionOp =
