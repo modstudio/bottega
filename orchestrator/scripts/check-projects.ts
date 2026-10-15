@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
 import {
   classifyStore,
@@ -11,8 +12,12 @@ import {
 
 const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 
+export function projectChecksArgv(repositoryRoot: string): string[] {
+  return [`${repositoryRoot}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled']
+}
+
 function run(store?: string): number {
-  const child = Bun.spawnSync([`${root}/bin/orch`, 'check', '--enabled'], {
+  const child = Bun.spawnSync(projectChecksArgv(root), {
     env: store ? { ...process.env, ORCH_DB: store } : process.env,
     stdout: 'inherit',
     stderr: 'inherit',
