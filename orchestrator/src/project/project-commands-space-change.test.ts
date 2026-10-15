@@ -94,6 +94,7 @@ test('project set attributes an existing hosted row to its own space slug', asyn
 
 test('project set succeeds when no hosted row exists outside the destination', async () => {
   upsertProject({ name: 'space-new', path: '/w/space-new' })
+  const hostedId = newRecordId()
   const writes: Array<string | undefined> = []
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
@@ -101,7 +102,7 @@ test('project set succeeds when no hosted row exists outside the destination', a
     listProjects: async () => [],
     upsertProject: async (input, destination) => {
       writes.push(destination?.destinationSpaceId)
-      return { id: newRecordId(), name: input.name }
+      return { id: hostedId, name: input.name }
     },
   })
   await runProject(['project', 'set', 'space-new'], {
@@ -109,6 +110,7 @@ test('project set succeeds when no hosted row exists outside the destination', a
   })
   expect(writes).toEqual(['space-next'])
   expect(projectByName('space-new')?.settings.space).toBe('next-team')
+  expect(projectByName('space-new')?.recordId).toBe(hostedId)
 })
 
 test('fill-absent refuses a hosted row elsewhere before writing hosted or local settings', async () => {

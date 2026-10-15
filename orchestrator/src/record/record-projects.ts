@@ -98,12 +98,9 @@ export async function upsertHostedProjectRow(
     id?: string
   },
 ): Promise<string> {
-  const existing = await tx`
-    SELECT id FROM project WHERE space_id = ${input.spaceId}::uuid AND name = ${input.name}
-  `
-  const id = existing.length ? String(existing[0]!.id) : (input.id ?? newRecordId())
+  const id = input.id ?? newRecordId()
   const columns = input.columns
-  await tx`
+  const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       landing_branch, production_branch, gate, require_clean_main, color,
@@ -157,8 +154,9 @@ export async function upsertHostedProjectRow(
       tracker = EXCLUDED.tracker,
       worktree = EXCLUDED.worktree,
       retired_at = EXCLUDED.retired_at
+    RETURNING id
   `
-  return id
+  return String(rows[0]!.id)
 }
 
 export async function listRecordProjects(

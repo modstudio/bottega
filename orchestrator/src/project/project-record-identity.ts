@@ -13,13 +13,36 @@ export type FilledProjectRecordId = {
   source: 'hosted' | 'created' | 'local'
 }
 
+export type ProjectRecordIdDecision =
+  | { kind: 'already-filled' }
+  | { kind: 'use-hosted'; recordId: string }
+  | { kind: 'create-hosted' }
+  | { kind: 'mint-local' }
+
+/** Decide identity provenance without performing either hosted or local I/O. */
+export function decideProjectRecordId(input: {
+  recordId: string | null
+  hostedRecordId: string | null
+  retired: boolean
+}): ProjectRecordIdDecision {
+  if (input.recordId) return { kind: 'already-filled' }
+  if (input.hostedRecordId) return { kind: 'use-hosted', recordId: input.hostedRecordId }
+  if (input.retired) return { kind: 'mint-local' }
+  return { kind: 'create-hosted' }
+}
+
 /** Fill only missing identities; existing local identities are never name-matched again. */
 export async function fillProjectRecordIds(): Promise<FilledProjectRecordId[]> {
   requireHostedRecord(`${PLATFORM_SLUG} project fill-record-ids`)
   const client = recordApiClient()
   const filled: FilledProjectRecordId[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {
-    if (project.recordId) continue
+    const localDecision = decideProjectRecordId({
+      recordId: project.recordId,
+      hostedRecordId: null,
+      retired: Boolean(project.retiredAt),
+    })
+    if (localDecision.kind === 'already-filled') continue
     const destinationSpaceId = await requireProjectRecordDestination(
       project.name,
       project.settings,
@@ -29,12 +52,18 @@ export async function fillProjectRecordIds(): Promise<FilledProjectRecordId[]> {
     const hosted = (await client.listProjects(destination)).find(
       (candidate) => candidate.name === project.name,
     )
+    const decision = decideProjectRecordId({
+      recordId: project.recordId,
+      hostedRecordId: hosted?.id ?? null,
+      retired: Boolean(project.retiredAt),
+    })
+    if (decision.kind === 'already-filled') continue
     let recordId: string
     let source: FilledProjectRecordId['source']
-    if (hosted) {
-      recordId = hosted.id
+    if (decision.kind === 'use-hosted') {
+      recordId = decision.recordId
       source = 'hosted'
-    } else if (project.retiredAt) {
+    } else if (decision.kind === 'mint-local') {
       recordId = newRecordId()
       source = 'local'
     } else {
@@ -53,7 +82,7 @@ export async function fillProjectRecordIds(): Promise<FilledProjectRecordId[]> {
       recordId = result.id
       source = 'created'
     }
-    storeProjectRecordId(project.name, recordId)
+    storeProjectRecordId(project.id, recordId)
     filled.push({
       name: project.name,
       recordId,

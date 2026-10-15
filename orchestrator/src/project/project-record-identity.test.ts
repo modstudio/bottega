@@ -2,13 +2,21 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { OrchProjectSchema } from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { projectCommand } from './project-commands.ts'
-import { projectByName, projectRowByName, retireProject, upsertProject } from './projects.ts'
+import { decideProjectRecordId } from './project-record-identity.ts'
+import {
+  projectByName,
+  projectRowByName,
+  pushProjects,
+  retireProject,
+  upsertProject,
+} from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -51,6 +59,49 @@ test('registration stores the hosted project identity', async () => {
   const path = mkdtempSync(join(tmpdir(), 'orch-project-identity-'))
   await runProject(['project', 'add', path], { name: 'identity-registration' })
   expect(projectByName('identity-registration')?.recordId).toBe(hostedId)
+})
+
+test('project add and set JSON use the published contract and carry record_id', async () => {
+  const addId = newRecordId()
+  const setId = newRecordId()
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => ({
+      id: input.name === 'identity-json-add' ? addId : setId,
+      name: input.name,
+    }),
+  })
+  const path = mkdtempSync(join(tmpdir(), 'orch-project-json-'))
+  const added = OrchProjectSchema.parse(
+    JSON.parse(
+      await runProject(['project', 'add', path], { name: 'identity-json-add', json: true }),
+    ),
+  )
+  expect(added.record_id).toBe(addId)
+
+  upsertProject({ name: 'identity-json-set', path: '/w/identity-json-set' })
+  const set = OrchProjectSchema.parse(
+    JSON.parse(await runProject(['project', 'set', 'identity-json-set'], { json: true })),
+  )
+  expect(set.record_id).toBe(setId)
+})
+
+test('the project identity decision is pure over local, hosted, and retirement facts', () => {
+  const local = newRecordId()
+  const hosted = newRecordId()
+  expect(
+    decideProjectRecordId({ recordId: local, hostedRecordId: hosted, retired: false }),
+  ).toEqual({ kind: 'already-filled' })
+  expect(decideProjectRecordId({ recordId: null, hostedRecordId: hosted, retired: true })).toEqual({
+    kind: 'use-hosted',
+    recordId: hosted,
+  })
+  expect(decideProjectRecordId({ recordId: null, hostedRecordId: null, retired: false })).toEqual({
+    kind: 'create-hosted',
+  })
+  expect(decideProjectRecordId({ recordId: null, hostedRecordId: null, retired: true })).toEqual({
+    kind: 'mint-local',
+  })
 })
 
 test('fill-record-ids stores hosted identities and proposes a minted id for missing projects', async () => {
@@ -103,4 +154,48 @@ test('project list JSON publishes nullable record_id beside the local id', async
     name: string
   }>
   expect(rows.find((row) => row.name === 'identity-list')).toMatchObject({ record_id: null })
+})
+
+test('project push stores returned identities without overwriting concurrent set or retire writes', async () => {
+  const setId = newRecordId()
+  const retiredId = newRecordId()
+  const alreadyRetiredId = newRecordId()
+  upsertProject({ name: 'identity-push-set', path: '/w/identity-push-set', stack: 'before' })
+  upsertProject({ name: 'identity-push-retire', path: '/w/identity-push-retire' })
+  upsertProject({ name: 'identity-push-already-retired', path: '/w/identity-push-already-retired' })
+  retireProject('identity-push-already-retired')
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      if (input.name === 'identity-push-set') {
+        upsertProject({ name: input.name, path: '/w/identity-push-set-after', stack: 'after' })
+        return { id: setId, name: input.name }
+      }
+      if (input.name === 'identity-push-retire') {
+        retireProject(input.name)
+        return { id: retiredId, name: input.name }
+      }
+      if (input.name === 'identity-push-already-retired') {
+        expect(input.retiredAt).toBeString()
+        return { id: alreadyRetiredId, name: input.name }
+      }
+      return { id: input.id ?? newRecordId(), name: input.name }
+    },
+  })
+
+  await pushProjects()
+
+  expect(projectByName('identity-push-set')).toMatchObject({
+    recordId: setId,
+    path: '/w/identity-push-set-after',
+    stack: 'after',
+  })
+  expect(projectRowByName('identity-push-retire')).toMatchObject({
+    recordId: retiredId,
+    retiredAt: expect.any(String),
+  })
+  expect(projectRowByName('identity-push-already-retired')).toMatchObject({
+    recordId: alreadyRetiredId,
+    retiredAt: expect.any(String),
+  })
 })

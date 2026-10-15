@@ -202,7 +202,7 @@ async function addProjectCommand(
     requireMembership,
   )
   if (has('json')) {
-    presentation.log(JSON.stringify(project))
+    presentation.log(JSON.stringify(listedProjectJson(project)))
     return
   }
   if (wasRetired) {
@@ -493,7 +493,7 @@ async function setProjectCommand(
   await refuseHostedProjectSpaceChange(project, candidate.settings, destination)
   await persistSetProject(name, nextName, previousTrunk, candidate, destination?.destinationSpaceId)
   if (flags.has('json')) {
-    presentation.log(JSON.stringify(projectByName(nextName)))
+    presentation.log(JSON.stringify(listedProjectJson(projectByName(nextName)!)))
     return
   }
   presentation.log(`updated ${nextName}`)

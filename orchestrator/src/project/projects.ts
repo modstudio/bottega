@@ -193,6 +193,13 @@ export function projectRowByName(name: string, d = db()): Project | null {
   return r ? parse(r) : null
 }
 
+function projectRowById(id: number, d = db()): Project | null {
+  const row = d.query('SELECT * FROM project WHERE id = ?').get(id) as
+    | Parameters<typeof parse>[0]
+    | null
+  return row ? parse(row) : null
+}
+
 export function projectByName(name: string, d = db()): Project | null {
   const project = projectRowByName(name, d)
   return project?.retiredAt ? null : project
@@ -275,17 +282,23 @@ export function upsertProject(p: {
   })
 }
 
-/** Store the hosted identity once, refusing any attempt to replace it. */
-export function storeProjectRecordId(name: string, recordId: string): void {
+/** Store the hosted identity once on the exact snapshotted row. */
+export function storeProjectRecordId(id: number, recordId: string): void {
   writableDb()
   const result = db()
-    .query('UPDATE project SET record_id=? WHERE name=? AND record_id IS NULL')
-    .run(recordId, name)
+    .query('UPDATE project SET record_id=? WHERE id=? AND record_id IS NULL')
+    .run(recordId, id)
   if (result.changes > 0) return
-  const project = projectRowByName(name)
-  if (!project) throw new Error(`no project "${name}"`)
+  const project = projectRowById(id)
+  if (!project) {
+    throw new Error(
+      `project row ${id} was removed while its hosted identity was being stored; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+    )
+  }
   if (project.recordId !== recordId) {
-    throw new Error(`project ${name} already has hosted identity ${project.recordId}`)
+    throw new Error(
+      `project ${project.name} already has hosted identity ${project.recordId}; inspect \`${PLATFORM_SLUG} project list --json\` and the hosted project before retrying`,
+    )
   }
 }
 
@@ -331,7 +344,7 @@ export async function pushProjects(): Promise<string[]> {
       settings: project.settings,
       retiredAt: project.retiredAt,
     })
-    upsertProject({ ...project, recordId })
+    storeProjectRecordId(project.id, recordId)
     names.push(project.name)
   }
   return names
