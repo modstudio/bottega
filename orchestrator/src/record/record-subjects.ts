@@ -64,15 +64,15 @@ async function projectId(
   requestedId?: string | null,
 ): Promise<string> {
   const rows = requestedId
-    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
-    : await tx`SELECT id,name,space_id,retired_at FROM project WHERE space_id=${spaceId}::uuid AND name=${project}`
+    ? await tx`SELECT id,name,space_id FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id FROM project WHERE space_id=${spaceId}::uuid AND name=${project}`
   if (!rows.length) {
     throw new RecordSubjectError(
       `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
       404,
     )
   }
-  if (String(rows[0]!.space_id) !== spaceId || rows[0]!.retired_at != null) {
+  if (String(rows[0]!.space_id) !== spaceId) {
     throw new RecordSubjectError(`project "${project}" is not present in this record space`, 404)
   }
   if (requestedId && String(rows[0]!.name) !== project)

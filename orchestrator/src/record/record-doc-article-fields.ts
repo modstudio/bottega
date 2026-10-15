@@ -65,15 +65,15 @@ export async function hostedArticleProjectId(
 ): Promise<string | null> {
   if (!name && !requestedId) return null
   const rows = requestedId
-    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
-    : await tx`SELECT id,name,space_id,retired_at FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
+    ? await tx`SELECT id,name,space_id FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id FROM project WHERE space_id=${spaceId}::uuid AND name=${name}`
   if (rows.length !== 1) {
     throw new RecordDocError(
       `project ${name} has no hosted row in record space ${spaceId}; run \`${PLATFORM_SLUG} project push\` to create it`,
       422,
     )
   }
-  if (String(rows[0]!.space_id) !== spaceId || rows[0]!.retired_at != null) {
+  if (String(rows[0]!.space_id) !== spaceId) {
     throw new RecordDocError(`project ${name} has no hosted row in record space ${spaceId}`, 422)
   }
   if (requestedId && name && String(rows[0]!.name) !== name)

@@ -574,8 +574,8 @@ export async function projectRecordId(
   const projectName = nullableString(row.projectName)
   if (requestedId === null && projectName === null) return null
   const projects = requestedId
-    ? await tx`SELECT id,name,space_id,retired_at FROM project WHERE id=${requestedId}::uuid`
-    : await tx`SELECT id,name,space_id,retired_at FROM project
+    ? await tx`SELECT id,name,space_id FROM project WHERE id=${requestedId}::uuid`
+    : await tx`SELECT id,name,space_id FROM project
         WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
   if (projects.length !== 1) {
     throw new OutboxRowError(
@@ -591,9 +591,6 @@ export async function projectRecordId(
       `record project ${requestedId} is absent from request space ${principal.spaceId}`,
       'row-validation',
     )
-  }
-  if (project.retired_at != null) {
-    throw new OutboxRowError(`record project is retired: ${String(project.name)}`, 'row-validation')
   }
   if (requestedId && projectName !== null && String(project.name) !== projectName) {
     console.warn(
