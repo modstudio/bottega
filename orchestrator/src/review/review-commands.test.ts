@@ -2,16 +2,28 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
+import { Command } from 'commander'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
-import { reviewCommand } from './review-commands.ts'
 import { serializePathSet } from './review-group.ts'
 
 // Deterministic identities produced by importRebasedHistory.
 const FIXTURE_BASE = '43942e40f9cf710824da11cd689c453b33cac3d2'
 const FIXTURE_WRITER_HEAD = 'afc52b0ea3040a2b0c4a2f75a17bb90821be29c0'
+
+async function runReview(argv: string[], output: string[]): Promise<void> {
+  const program = new Command().exitOverride()
+  registerReviewCommand(program, {
+    log: (...values) => output.push(values.join(' ')),
+    usage: () => {
+      throw new Error('unexpected usage')
+    },
+  })
+  await program.parseAsync(['node', 'orch', ...argv])
+}
 
 function git(repo: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -111,19 +123,9 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
       )
       .run(review.id, run.id)
 
-    await reviewCommand(
-      'tier',
-      ['review', 'tier', 'DEV-992-fixture'],
-      {
-        has: () => false,
-        flag: (name) => (name === 'cwd' ? relative(process.cwd(), repo) : undefined),
-      },
-      {
-        log: (...values) => output.push(values.join(' ')),
-        usage: () => {
-          throw new Error('unexpected usage')
-        },
-      },
+    await runReview(
+      ['review', 'tier', 'DEV-992-fixture', '--cwd', relative(process.cwd(), repo)],
+      output,
     )
 
     expect(output).toContain('tier 0')
@@ -172,17 +174,7 @@ test('review tier reports stack and generic profile sources resolved for its pro
       .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!
     const output: string[] = []
 
-    await reviewCommand(
-      'tier',
-      ['review', 'tier', String(run.id)],
-      { has: () => false, flag: () => undefined },
-      {
-        log: (...values) => output.push(values.join(' ')),
-        usage: () => {
-          throw new Error('unexpected usage')
-        },
-      },
-    )
+    await runReview(['review', 'tier', String(run.id)], output)
 
     expect(output).toContain('lens correctness  framework=stack')
     expect(output).toContain('lens craft  framework=generic')
