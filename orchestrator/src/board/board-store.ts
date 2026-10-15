@@ -5,6 +5,7 @@ import {
 } from '../../../shared/board-duration.ts'
 import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, SESSION_LIVE_MS, type writableDb } from '../database/db.ts'
 import { projectAt, projects } from '../project/projects.ts'
@@ -89,6 +90,7 @@ export type MessageRow = {
   note_pending_error: string | null
   note_filing_started_at: string | null
   claim_id: number | null
+  record_id: string
 }
 
 function rootPurpose(
@@ -463,10 +465,10 @@ function recordRecipients(
   ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,1,NULL,NULL)`,
+     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+     VALUES (?,?,1,NULL,NULL,?)`,
   )
-  for (const reader of readers) add.run(messageId, reader)
+  for (const reader of readers) add.run(messageId, reader, newRecordId())
   return readers.length
 }
 
@@ -551,8 +553,8 @@ export function insertRootMessage(
     .query(
       `INSERT INTO board_message
        (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,audience,title,body,
-        ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+        ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)`,
     )
     .run(
       kind,
@@ -569,12 +571,13 @@ export function insertRootMessage(
       deadline,
       expiresAt,
       createdAt,
+      newRecordId(),
     )
   const id = Number(inserted.lastInsertRowid)
   const addTag = database.query(
-    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin) VALUES (?,?,?,?)`,
+    `INSERT OR IGNORE INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,?,?)`,
   )
-  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin)
+  for (const tag of tags) addTag.run(id, tag.kind, tag.value, tag.origin, newRecordId())
   const reached = recordRecipients(
     id,
     audienceExpression,

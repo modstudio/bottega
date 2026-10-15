@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
@@ -290,8 +291,8 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
     .query(
       `INSERT INTO board_claim
        (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
-        taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)`,
+        taken_at,renewed_at,lapses_at,closed_at,close_reason,superseded_by_claim_id,record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,?)`,
     )
     .run(
       context.project,
@@ -305,6 +306,7 @@ function insertTakenClaim(conflicts: ClaimRow[], context: TakeTransaction): Take
       now,
       now,
       new Date(context.clock + context.duration).toISOString(),
+      newRecordId(),
     )
   const row = claimById(Number(inserted.lastInsertRowid), context.database)
   const close = context.database.query(

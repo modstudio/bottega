@@ -85,6 +85,7 @@ test('remaining store identity migration fills ids and preserves rows, keys, and
     expect(applyMigrations(database)).toEqual([
       '0109_remaining_store_record_identity',
       '0110_outbox_record_identity',
+      '0111_board_record_identity',
     ])
     for (const table of TABLES) {
       expect(database.query(`SELECT count(*) AS n FROM ${table}`).get(), table).toEqual({

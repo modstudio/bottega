@@ -2,7 +2,7 @@
 /** Plans and performs the one-time, resumable move from the local board to the hosted board. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -79,6 +79,7 @@ function ledger(database: Database): Map<string, LedgerRow> {
 
 type ClaimRow = {
   id: number
+  record_id: string
   project: string
   subject_kind: 'task' | 'path' | 'resource'
   subject_value: string
@@ -195,15 +196,20 @@ function planFor(
   } satisfies BoardAdoptionPlan
 }
 
-function pendingLedger(candidate: Candidate, at: string, database: Database): LedgerRow {
+function pendingLedger(
+  candidate: Candidate,
+  hostedId: string,
+  at: string,
+  database: Database,
+): LedgerRow {
   return writeTransaction(() => {
     database
       .query(
         `INSERT OR IGNORE INTO board_hosted_adoption_ledger
-         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at)
-         VALUES (?,?,?,'pending',NULL,?,?)`,
+         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
+         VALUES (?,?,?,'pending',NULL,?,?,?)`,
       )
-      .run(candidate.kind, candidate.id, newRecordId(), at, at)
+      .run(candidate.kind, candidate.id, hostedId, at, at, newRecordId())
     return database
       .query<LedgerRow, [LocalKind, number]>(
         `SELECT local_kind,local_id,hosted_id,state,refusal FROM board_hosted_adoption_ledger
@@ -407,9 +413,9 @@ function recordReceiptUpload(
     database
       .query(
         `INSERT INTO board_hosted_adoption_receipt
-         (local_message_id,reader_session,state,refusal,updated_at) VALUES (?,?,?,?,?)`,
+         (local_message_id,reader_session,state,refusal,updated_at,record_id) VALUES (?,?,?,?,?,?)`,
       )
-      .run(messageId, readerSession, state, refusal, new Date(clock).toISOString())
+      .run(messageId, readerSession, state, refusal, new Date(clock).toISOString(), newRecordId())
   }, database)
 }
 
@@ -542,7 +548,12 @@ async function uploadOneCandidate(
       context.hostedRoots.set(candidate.id, recorded!.hosted_id)
     return 'continue'
   }
-  const pending = pendingLedger(candidate, context.at, context.database)
+  const pending = pendingLedger(
+    candidate,
+    context.rows.get(candidateKey(candidate))!.record_id,
+    context.at,
+    context.database,
+  )
   const localRefusal = lastingLocalRefusal(
     candidate,
     context.rows.get(candidateKey(candidate))!,

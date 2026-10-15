@@ -13,6 +13,14 @@ export type IdentityInventory = {
 const CONVERTED_TABLES = [
   'agent',
   'blocker',
+  'board_claim',
+  'board_hosted_adoption_ledger',
+  'board_hosted_adoption_receipt',
+  'board_message',
+  'board_message_tag',
+  'board_reach_delivery',
+  'board_reach_recording_failure',
+  'board_receipt',
   'branch_landing_record',
   'calibration',
   'canon_pack',
@@ -103,17 +111,7 @@ export const EXEMPT_TABLES: readonly IdentityExemption[] = [
   },
 ]
 
-export const IDENTITY_BASELINE = [
-  'board_claim',
-  'board_hosted_adoption_ledger',
-  'board_hosted_adoption_receipt',
-  'board_message',
-  'board_message_tag',
-  'board_reach_delivery',
-  'board_reach_recording_failure',
-  'board_receipt',
-  'project',
-] as const
+export const IDENTITY_BASELINE = ['project'] as const
 
 const IDENTITY_COLUMNS: Readonly<Record<string, string>> = { subject: 'id' }
 

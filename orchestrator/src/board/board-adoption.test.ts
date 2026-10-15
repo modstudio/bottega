@@ -43,10 +43,10 @@ function receipt(messageId: number, reader: string) {
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,1,?,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,1,?,NULL,?)`,
     )
-    .run(messageId, reader, new Date(NOW).toISOString())
+    .run(messageId, reader, new Date(NOW).toISOString(), newRecordId())
 }
 
 function claim(runId: number | null = null) {
@@ -54,8 +54,8 @@ function claim(runId: number | null = null) {
     .query(
       `INSERT INTO board_claim
        (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
-        taken_at,renewed_at,lapses_at)
-       VALUES (?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?)
+        taken_at,renewed_at,lapses_at,record_id)
+       VALUES (?,'task','DEV-968','architect','reader','moving',?,3600000,?,?,?,?)
        RETURNING id`,
     )
     .get(
@@ -64,6 +64,7 @@ function claim(runId: number | null = null) {
       new Date(NOW - 1_000).toISOString(),
       new Date(NOW - 1_000).toISOString(),
       new Date(NOW + 3_600_000).toISOString(),
+      newRecordId(),
     ) as { id: number }
 }
 
@@ -105,6 +106,34 @@ function hostedMessage(
     ackDeadline: input.ackDeadline ?? null,
   }
 }
+
+test('a new adoption upload sends the row record id as the hosted id', async () => {
+  presence()
+  const posted = postNotice(
+    { audience: 'session:reader', title: 'identity', body: 'identity' },
+    {},
+    NOW,
+  )
+  const recordId = db()
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+    .get(posted.id)!.record_id
+  const ids: string[] = []
+  const base = capturingClient([]).client
+  const client: RecordApiClient = {
+    ...base,
+    async postBoardMessage(input) {
+      ids.push(input.id)
+      return hostedMessage(input)
+    },
+  }
+  await adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
+  expect(ids).toEqual([recordId])
+  expect(
+    db()
+      .query<{ hosted_id: string }, []>('SELECT hosted_id FROM board_hosted_adoption_ledger')
+      .get(),
+  ).toEqual({ hosted_id: recordId })
+})
 
 test('adoption preserves request and acknowledgement-required standing purposes', async () => {
   const request = postNotice(
@@ -269,10 +298,10 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,'reader',1,?,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,'reader',1,?,NULL,?)`,
     )
-    .run(notice.id, new Date(NOW - 2_000).toISOString())
+    .run(notice.id, new Date(NOW - 2_000).toISOString(), newRecordId())
   const question = askQuestion(
     { audience: 'session:reader', title: 'second', body: 'question' },
     {},
@@ -533,10 +562,17 @@ test('uses the hosted message ids returned for duplicate roots, replies, receipt
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,'reader',1,?,NULL),(?,'reader',1,?,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,'reader',1,?,NULL,?),(?,'reader',1,?,NULL,?)`,
     )
-    .run(root.id, new Date(NOW).toISOString(), reply.id, new Date(NOW).toISOString())
+    .run(
+      root.id,
+      new Date(NOW).toISOString(),
+      newRecordId(),
+      reply.id,
+      new Date(NOW).toISOString(),
+      newRecordId(),
+    )
   const base = capturingClient([]).client
   const receiptIds: string[] = []
   let replyRoot = ''
@@ -591,10 +627,10 @@ test('counts refused receipts without blocking adoption', async () => {
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,'reader',1,?,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,'reader',1,?,NULL,?)`,
     )
-    .run(notice.id, new Date(NOW).toISOString())
+    .run(notice.id, new Date(NOW).toISOString(), newRecordId())
   const base = capturingClient([]).client
   const refusedClient: RecordApiClient = {
     ...base,
@@ -616,10 +652,10 @@ test('a receipt network failure stops adoption with its mark unset', async () =>
   db()
     .query(
       `INSERT OR REPLACE INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,'reader',1,?,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,'reader',1,?,NULL,?)`,
     )
-    .run(notice.id, new Date(NOW).toISOString())
+    .run(notice.id, new Date(NOW).toISOString(), newRecordId())
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
@@ -732,10 +768,16 @@ test('an install with uploaded message ledger rows and no receipt ledger complet
     db()
       .query(
         `INSERT INTO board_hosted_adoption_ledger
-         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at)
-         VALUES ('notice',?,?,'uploaded',NULL,?,?)`,
+         (local_kind,local_id,hosted_id,state,refusal,created_at,updated_at,record_id)
+         VALUES ('notice',?,?,'uploaded',NULL,?,?,?)`,
       )
-      .run(notice.id, hostedId, new Date(NOW).toISOString(), new Date(NOW).toISOString())
+      .run(
+        notice.id,
+        hostedId,
+        new Date(NOW).toISOString(),
+        new Date(NOW).toISOString(),
+        newRecordId(),
+      )
     db()
       .query('UPDATE board_message SET withdrawn_at=? WHERE id=?')
       .run(new Date(NOW + 10).toISOString(), notice.id)

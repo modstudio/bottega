@@ -61,6 +61,48 @@ function postingProject() {
   return { cwd, project }
 }
 
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+test('a created message, tag and receipt carry a version-7 record id', () => {
+  const clock = Date.now()
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,cwd,current_task_key,last_seen)
+     VALUES ('board-id-reader','claude-code','architect','test',?,'/tmp',NULL,?)`,
+    )
+    .run(PLATFORM_SLUG, new Date(clock).toISOString())
+  const posted = postNotice(
+    {
+      audience: 'architects:all',
+      title: 'Identity',
+      body: 'Minted ids.',
+      purpose: 'information',
+      task: 'DEV-1214',
+    },
+    {},
+    clock,
+  )
+  expect(
+    db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_message WHERE id=?')
+      .get(posted.id)?.record_id,
+  ).toMatch(UUID_V7)
+  expect(
+    db()
+      .query<{ record_id: string }, [number]>(
+        'SELECT record_id FROM board_message_tag WHERE message_id=?',
+      )
+      .get(posted.id)?.record_id,
+  ).toMatch(UUID_V7)
+  expect(
+    db()
+      .query<{ record_id: string }, [number]>(
+        'SELECT record_id FROM board_receipt WHERE message_id=?',
+      )
+      .get(posted.id)?.record_id,
+  ).toMatch(UUID_V7)
+})
+
 test('notice store round-trip resolves, renders, delivers, and explicitly acknowledges', () => {
   const clock = Date.now()
   db()

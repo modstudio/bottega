@@ -287,11 +287,11 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .query(
       `INSERT INTO board_claim
        (project,subject_kind,subject_value,holder_kind,holder_session,note,run_id,duration_ms,
-        taken_at,renewed_at,lapses_at,closed_at,close_reason)
+        taken_at,renewed_at,lapses_at,closed_at,close_reason,record_id)
        VALUES ('cache-project','task','DEV-CLAIM','architect','claim-holder',NULL,NULL,3600000,
-               ?,?,?,NULL,NULL)`,
+               ?,?,?,NULL,NULL,?)`,
     )
-    .run(createdAt, createdAt, '2099-01-01T00:00:00.000Z')
+    .run(createdAt, createdAt, '2099-01-01T00:00:00.000Z', newRecordId())
   expect(addressed('task:DEV-CLAIM', 'claim-holder')).toBe(true)
   expect(addressed('session:cache-reader', 'cache-reader')).toBe(true)
   expect(addressed(`run:${recordId}`, `run:${root.id}`)).toBe(true)
