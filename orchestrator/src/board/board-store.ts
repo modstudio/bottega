@@ -579,7 +579,7 @@ function insertRootRow(
   kind: 'notice' | 'question',
   purpose: BoardPurpose,
   actor: BoardActor,
-  origin: BoardOrigin,
+  origin: Pick<BoardOrigin, 'harness' | 'project'>,
   audienceExpression: string,
   input: PostNoticeInput,
   ackRequired: boolean,
