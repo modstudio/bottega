@@ -20,14 +20,25 @@ function measure(value: string, previous: { rule: string; pattern: string }[]) {
 export function register(program: Command): void {
   program
     .command('ratchet')
-    .requiredOption('--format <name>')
-    .option('--staged')
-    .option('--base <ref>')
-    .option('--support <path>', '', (value, previous: string[]) => [...previous, value], [])
-    .option('--head-report <file>')
-    .option('--base-report <file>')
-    .option('--report-root <path>')
-    .option('--measure <rule=pattern>', '', measure, [])
+    .description('refuse new findings relative to a comparison base')
+    .requiredOption('--format <name>', 'format of the linter output or reports')
+    .option('--staged', 'compare staged changes with the current commit')
+    .option('--base <ref>', 'Git revision used as the comparison base')
+    .option(
+      '--support <path>',
+      'relative support path made available to the linter',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
+    .option('--head-report <file>', 'report file for the current changes')
+    .option('--base-report <file>', 'report file for the comparison base')
+    .option('--report-root <path>', 'root used to resolve paths in reports')
+    .option(
+      '--measure <rule=pattern>',
+      'rule and message pattern measured as one finding',
+      measure,
+      [],
+    )
     .argument('[command...]')
     .allowUnknownOption(true)
     .action(async (command, options) => {

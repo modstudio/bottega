@@ -29,7 +29,8 @@ const strandedRecovery = (id: number) =>
 export function register(program: Command): void {
   program
     .command('run <run-id>')
-    .option('--receipt')
+    .description('show the complete record for a run')
+    .option('--receipt', 'include the run receipt')
     .allowExcessArguments(false)
     .action(async (id, options) => {
       const { runDetail } = await import('../state/serve.ts')
@@ -41,13 +42,14 @@ export function register(program: Command): void {
 
   program
     .command('runs')
-    .option('--id <value>', '', collect, [])
-    .option('--job <value>')
-    .option('--agent <value>')
-    .option('--limit <value>')
-    .option('--since <value>')
-    .option('--json [version]')
-    .option('--unscored')
+    .description('list recorded run conversations')
+    .option('--id <value>', 'include this run conversation', collect, [])
+    .option('--job <value>', 'limit runs to this job')
+    .option('--agent <value>', 'limit runs to this agent')
+    .option('--limit <value>', 'limit the number of runs')
+    .option('--since <value>', 'include activity since this ISO instant')
+    .option('--json [version]', 'write runs as JSON in the selected version')
+    .option('--unscored', 'list only runs awaiting a verdict')
     .allowExcessArguments(false)
     .action(async (options) => {
       const flags = optionFlags(options)

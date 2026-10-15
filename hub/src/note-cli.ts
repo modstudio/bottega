@@ -161,7 +161,8 @@ async function resolveDuplicateNote(
 function registerNoteReferenceCommands(note: Command): void {
   note
     .command('same <target> <source>')
-    .option('--project <name>', '')
+    .description('merge another sighting into an existing note')
+    .option('--project <name>', 'resolve both notes in this project')
     .action(async (target, source, options: NoteOptions) => {
       open()
       const row = await mergeNote(
@@ -172,15 +173,17 @@ function registerNoteReferenceCommands(note: Command): void {
     })
   note
     .command('keep <references...>')
-    .option('--project <name>', '')
+    .description('acknowledge notes for the current session')
+    .option('--project <name>', 'resolve the notes in this project')
     .action(async (references, options: NoteOptions) => {
       open()
       await keepNoteCommand(references, options.project)
     })
   note
     .command('promote <reference>')
-    .option('--task <key>', '')
-    .option('--project <name>', '')
+    .description('promote a note to current task work')
+    .option('--task <key>', 'link the note to this existing task')
+    .option('--project <name>', 'resolve the note in this project')
     .action(async (noteReference, options: NoteOptions) => {
       open()
       const row = await promoteNoteCommand(
@@ -192,8 +195,9 @@ function registerNoteReferenceCommands(note: Command): void {
     })
   note
     .command('drop <reference>')
-    .option('--reason <reason>', '')
-    .option('--project <name>', '')
+    .description('drop a note with a recorded reason')
+    .option('--reason <reason>', 'record why the note is dropped')
+    .option('--project <name>', 'resolve the note in this project')
     .action(async (noteReference, options: NoteOptions) => {
       open()
       if (!options.reason)
@@ -214,15 +218,17 @@ function registerNoteMaintenanceCommands(note: Command): void {
     })
   note
     .command('curate')
-    .option('--scheduled', '')
+    .description('ask the curator to propose dispositions for open notes')
+    .option('--scheduled', 'honor the curator enablement setting')
     .action(async (options: NoteOptions) => {
       open()
       await curateNoteCommand(Boolean(options.scheduled))
     })
   note
     .command('curator')
-    .option('--enable', '')
-    .option('--disable', '')
+    .description('show or change scheduled note curation')
+    .option('--enable', 'enable scheduled note curation')
+    .option('--disable', 'disable scheduled note curation')
     .action((options: NoteOptions) => {
       open()
       curatorNoteCommand(options)
@@ -230,7 +236,7 @@ function registerNoteMaintenanceCommands(note: Command): void {
   note
     .command('push')
     .description('migrate and verify the local note cache')
-    .option('--dry-run', '')
+    .option('--dry-run', 'report local counts without writing hosted notes')
     .action(async (options: NoteOptions) => {
       open()
       const result = await pushNotes({ dryRun: Boolean(options.dryRun) })
@@ -245,25 +251,27 @@ export function registerNoteCommands(program: Command): void {
   })
   note
     .command('new <text>')
-    .option('--project <name>', '')
-    .option('--same-as <reference>', '')
-    .option('--new', '')
-    .option('--area <area>', '')
-    .option('--anchor-json <json>', '')
-    .option('--json', '')
+    .description('file a new observation or another sighting')
+    .option('--project <name>', 'file the note for this project')
+    .option('--same-as <reference>', 'record a sighting of this existing note')
+    .option('--new', 'file a distinct note despite possible duplicates')
+    .option('--area <area>', 'classify the note under this area')
+    .option('--anchor-json <json>', 'use this explicit provenance anchor')
+    .option('--json', 'write the filed note and candidates as JSON')
     .action(async (text, options: NoteOptions) => {
       open()
       await newNoteCommand(text, options)
     })
   note
     .command('list [text]')
-    .option('--project <X>', '')
-    .option('--stale', '')
-    .option('--session <ID>', '', repeat, [])
-    .option('--actionable', '')
-    .option('--kept', '')
-    .option('--json', '')
-    .option('--new', '')
+    .description('list notes from the local record')
+    .option('--project <X>', 'limit notes to this project')
+    .option('--stale', 'include stale notes')
+    .option('--session <ID>', 'limit notes to this session', repeat, [])
+    .option('--actionable', 'list notes ready for disposition')
+    .option('--kept', 'list notes acknowledged by the selected sessions')
+    .option('--json', 'write the note rows as JSON')
+    .option('--new', 'treat list as note text and show the filing remedy')
     .action((text: string | undefined, options: NoteOptions) => {
       if (text !== undefined || options.new) throw listAsTextHint()
       open()

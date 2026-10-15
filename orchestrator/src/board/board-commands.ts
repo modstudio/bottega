@@ -31,9 +31,27 @@ import { watchHostedBoard } from './board-watch.ts'
 const ARCHITECTS_AUDIENCE_HELP =
   'recipient; architects means this project, architects:all means every project, architects:<project> names one project'
 
+const BOARD_DESCRIPTIONS = {
+  board: 'exchange messages and claims among architects',
+  adopt: 'move eligible machine-local board records to the hosted board',
+  list: 'list board notices and questions',
+  ask: 'ask a question on the architects board',
+  reply: 'reply to a board notice or question',
+  thread: 'show a board thread and its replies',
+  accept: 'accept a reply as the answer to a question',
+  fileNote: 'file the accepted answer as a note',
+  read: 'read board notices addressed to this session',
+  acknowledge: 'acknowledge a board notice',
+  status: 'show a board message and its delivery status',
+  withdraw: 'withdraw a live board notice or question',
+  suggestionPost: 'post a worker suggestion to the board',
+  suggestionDecline: 'decline and withdraw a worker suggestion',
+} as const
+
 function registerBoardWatchCommand(board: Command): void {
   board
     .command('presence')
+    .description('record this architect session as present')
     .option('--started-at <instant>', 'session-start instant', (value: string) => {
       const parsed = new Date(value)
       if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value)
@@ -70,6 +88,7 @@ const deliveryPoint = (value: string): BoardDeliveryPoint => {
 function registerBoardDeliveredCommand(board: Command): void {
   board
     .command('delivered <ids>')
+    .description('record board messages emitted by a delivery hook')
     .option('--session <id>', 'session whose hook emitted the messages')
     .option('--point <point>', 'hook delivery point', deliveryPoint)
     .option('--emission <id>', 'identity of this hook emission')
@@ -96,10 +115,11 @@ function registerBoardDeliveredCommand(board: Command): void {
 function registerBoardPendingCommand(board: Command): void {
   board
     .command('pending')
-    .requiredOption('--session <id>')
+    .description('list messages due for delivery to a session')
+    .requiredOption('--session <id>', 'select the recipient session')
     .option('--recently-injected <ids>', 'comma-separated message ids not yet due for reminder')
-    .option('--exclude-acknowledgement-required')
-    .option('--json')
+    .option('--exclude-acknowledgement-required', 'omit messages requiring acknowledgement')
+    .option('--json', 'write the pending delivery as JSON')
     .action(async (options) => {
       const delivery = await pendingBoardDelivery({
         session: options.session,
@@ -132,14 +152,15 @@ function registerBoardPendingCommand(board: Command): void {
 function registerBoardPostCommand(board: Command): void {
   board
     .command('post')
+    .description('post a notice to the architects board')
     .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
-    .requiredOption('--title <text>')
-    .requiredOption('--body <text>')
+    .requiredOption('--title <text>', 'set the notice title')
+    .requiredOption('--body <text>', 'set the notice body')
     .option(
       '--purpose <purpose>',
       'information sends one line, request sends the full body and lives four hours by default (set --expires for longer), standing also reaches later sessions',
     )
-    .option('--task <key>')
+    .option('--task <key>', 'tag the notice with this task')
     .option('--path <glob>', 'add a repository-relative path glob', collect, [])
     .option(
       '--topic <name>',
@@ -151,8 +172,8 @@ function registerBoardPostCommand(board: Command): void {
       '--ack-required',
       'require acknowledgement for an operator post, an architect post to its own project, or a platform-topic request or standing post from the platform project to architects:all',
     )
-    .option('--deadline <duration>')
-    .option('--expires <duration>')
+    .option('--deadline <duration>', 'set the acknowledgement deadline')
+    .option('--expires <duration>', 'set how long the notice remains live')
     .action(async (options) => {
       if (options.deadline && !options.ackRequired)
         throw new Error('--deadline requires --ack-required')
@@ -175,132 +196,15 @@ function registerBoardPostCommand(board: Command): void {
     })
 }
 
-export function registerBoardCommands(program: Command): void {
-  const board = program.command('board')
-  registerBoardClaimCommands(board, parseBoardDuration)
-  registerBoardReachCommand(board)
-  registerBoardDeliveredCommand(board)
-  registerBoardPendingCommand(board)
-  registerBoardPostCommand(board)
-  board
-    .command('adopt')
-    .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
-      const total = Number(value)
-      if (!/^\d+$/.test(value) || !Number.isSafeInteger(total))
-        throw new Error('--confirm must be a non-negative integer')
-      return total
-    })
-    .option('--json')
-    .action(async (options) => {
-      const result = await adoptHostedBoard({ confirm: options.confirm })
-      if (options.json) return console.log(JSON.stringify(result))
-      console.log(result.note)
-      for (const kind of ['notice', 'question', 'reply', 'claim'] as const)
-        console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
-      console.log(`receipt: ${result.receipts} will be uploaded`)
-      for (const row of result.stays)
-        console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
-      if (result.status === 'plan')
-        console.log(`rerun with: ${PLATFORM_SLUG} board adopt --confirm ${result.total}`)
-      else {
-        console.log(
-          `moved ${result.uploaded}; stayed ${result.refused}; remaining ${result.remaining}`,
-        )
-        if (result.message) console.log(result.message)
-      }
-    })
-  registerBoardWatchCommand(board)
-  board
-    .command('list')
-    .option('--kind <kind>', 'limit to notice or question', (value: string) => {
-      if (value !== 'notice' && value !== 'question')
-        throw new Error('--kind must be notice or question')
-      return value
-    })
-    .option('--open', 'list unanswered questions only')
-    .option('--include-ended', 'include withdrawn and expired roots')
-    .action(async (options) => {
-      console.log(
-        JSON.stringify(
-          await listBoardOverview({
-            kind: options.kind,
-            open: Boolean(options.open),
-            includeEnded: Boolean(options.includeEnded),
-          }),
-        ),
-      )
-    })
-  board
-    .command('ask')
-    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
-    .requiredOption('--title <text>')
-    .requiredOption('--body <text>')
-    .option('--task <key>')
-    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
-    .option('--topic <name>', 'add a controlled board topic', collect, [])
-    .option('--expires <duration>')
-    .action(async (options) => {
-      console.log(
-        JSON.stringify(
-          await boardAsk({
-            audience: options.audience,
-            title: options.title,
-            body: options.body,
-            task: options.task,
-            paths: options.path,
-            topics: options.topic,
-            expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
-          }),
-        ),
-      )
-    })
-  board
-    .command('reply <root-id>')
-    .requiredOption('--body <text>')
-    .action(async (id, options) =>
-      console.log(JSON.stringify(await boardReply(String(id), options.body))),
-    )
-  board
-    .command('thread <id>')
-    .action(async (id) => console.log(JSON.stringify(await boardThread(String(id)))))
-  board.command('accept <question-id> <reply-id>').action(async (questionId, replyId) => {
-    const accepted = await boardAccept(String(questionId), String(replyId))
-    console.log(JSON.stringify(accepted))
-  })
-  board.command('file-note <question-id>').action(async (questionId) => {
-    console.log(JSON.stringify(await boardFileNote(String(questionId))))
-  })
-  board
-    .command('read')
-    .option('--all')
-    .option('--claim', 'read without stamping delivery (for the session-start hook)')
-    .action(async (options) => {
-      const delivery = options.claim
-        ? await claimBoardNotices(Boolean(options.all))
-        : await readBoardNotices(Boolean(options.all))
-      console.log(
-        JSON.stringify({
-          ...delivery,
-          notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
-        }),
-      )
-    })
-  board
-    .command('ack <id>')
-    .action(async (id) => console.log(JSON.stringify(await boardAcknowledge(String(id)))))
-  board
-    .command('status <id>')
-    .action(async (id) => console.log(JSON.stringify(await boardStatus(String(id)))))
-  board
-    .command('withdraw <id>')
-    .action(async (id) => console.log(JSON.stringify(await boardWithdraw(String(id)))))
-  const suggestion = board.command('suggestion')
+function registerBoardSuggestionCommands(board: Command): void {
+  const suggestion = board.command('suggestion').description('dispose of worker board suggestions')
   suggestion
     .command('post <id>')
+    .description(BOARD_DESCRIPTIONS.suggestionPost)
     .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
-    .option('--title <text>')
-    .option('--body <text>')
-    .option('--task <key>')
+    .option('--title <text>', 'replace the suggested title')
+    .option('--body <text>', 'replace the suggested body')
+    .option('--task <key>', 'replace the suggested task tag')
     .option('--path <glob>', 'replace repository-relative path globs', collect)
     .option('--topic <name>', 'replace controlled board topics', collect)
     .action((id, options) => {
@@ -322,5 +226,143 @@ export function registerBoardCommands(program: Command): void {
     })
   suggestion
     .command('decline <id>')
+    .description(BOARD_DESCRIPTIONS.suggestionDecline)
     .action((id) => declineBoardSuggestion(localBoardId(String(id))))
+}
+
+export function registerBoardCommands(program: Command): void {
+  const board = program.command('board').description(BOARD_DESCRIPTIONS.board)
+  registerBoardClaimCommands(board, parseBoardDuration)
+  registerBoardReachCommand(board)
+  registerBoardDeliveredCommand(board)
+  registerBoardPendingCommand(board)
+  registerBoardPostCommand(board)
+  board
+    .command('adopt')
+    .description(BOARD_DESCRIPTIONS.adopt)
+    .option('--confirm <total>', 'confirm the current candidate count', (value: string) => {
+      const total = Number(value)
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(total))
+        throw new Error('--confirm must be a non-negative integer')
+      return total
+    })
+    .option('--json', 'write the adoption result as JSON')
+    .action(async (options) => {
+      const result = await adoptHostedBoard({ confirm: options.confirm })
+      if (options.json) return console.log(JSON.stringify(result))
+      console.log(result.note)
+      for (const kind of ['notice', 'question', 'reply', 'claim'] as const)
+        console.log(`${kind}: ${result.counts[kind]} will be uploaded`)
+      console.log(`receipt: ${result.receipts} will be uploaded`)
+      for (const row of result.stays)
+        console.log(`${row.kind} ${row.id} stays local: ${row.reason}`)
+      if (result.status === 'plan')
+        console.log(`rerun with: ${PLATFORM_SLUG} board adopt --confirm ${result.total}`)
+      else {
+        console.log(
+          `moved ${result.uploaded}; stayed ${result.refused}; remaining ${result.remaining}`,
+        )
+        if (result.message) console.log(result.message)
+      }
+    })
+  registerBoardWatchCommand(board)
+  board
+    .command('list')
+    .description(BOARD_DESCRIPTIONS.list)
+    .option('--kind <kind>', 'limit to notice or question', (value: string) => {
+      if (value !== 'notice' && value !== 'question')
+        throw new Error('--kind must be notice or question')
+      return value
+    })
+    .option('--open', 'list unanswered questions only')
+    .option('--include-ended', 'include withdrawn and expired roots')
+    .action(async (options) => {
+      console.log(
+        JSON.stringify(
+          await listBoardOverview({
+            kind: options.kind,
+            open: Boolean(options.open),
+            includeEnded: Boolean(options.includeEnded),
+          }),
+        ),
+      )
+    })
+  board
+    .command('ask')
+    .description(BOARD_DESCRIPTIONS.ask)
+    .requiredOption('--audience <expr>', ARCHITECTS_AUDIENCE_HELP)
+    .requiredOption('--title <text>', 'set the question title')
+    .requiredOption('--body <text>', 'set the question body')
+    .option('--task <key>', 'tag the question with this task')
+    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
+    .option('--topic <name>', 'add a controlled board topic', collect, [])
+    .option('--expires <duration>', 'set how long the question remains live')
+    .action(async (options) => {
+      console.log(
+        JSON.stringify(
+          await boardAsk({
+            audience: options.audience,
+            title: options.title,
+            body: options.body,
+            task: options.task,
+            paths: options.path,
+            topics: options.topic,
+            expiresMs: options.expires ? parseBoardDuration(options.expires) : undefined,
+          }),
+        ),
+      )
+    })
+  board
+    .command('reply <root-id>')
+    .description(BOARD_DESCRIPTIONS.reply)
+    .requiredOption('--body <text>', 'set the reply body')
+    .action(async (id, options) =>
+      console.log(JSON.stringify(await boardReply(String(id), options.body))),
+    )
+  board
+    .command('thread <id>')
+    .description(BOARD_DESCRIPTIONS.thread)
+    .action(async (id) => console.log(JSON.stringify(await boardThread(String(id)))))
+  board
+    .command('accept <question-id> <reply-id>')
+    .description(BOARD_DESCRIPTIONS.accept)
+    .action(async (questionId, replyId) => {
+      const accepted = await boardAccept(String(questionId), String(replyId))
+      console.log(JSON.stringify(accepted))
+    })
+  board
+    .command('file-note <question-id>')
+    .description(BOARD_DESCRIPTIONS.fileNote)
+    .action(async (questionId) => {
+      console.log(JSON.stringify(await boardFileNote(String(questionId))))
+    })
+  board
+    .command('read')
+    .description(BOARD_DESCRIPTIONS.read)
+    .option('--all', 'include notices already delivered to this session')
+    .option('--claim', 'read without stamping delivery (for the session-start hook)')
+    .action(async (options) => {
+      const delivery = options.claim
+        ? await claimBoardNotices(Boolean(options.all))
+        : await readBoardNotices(Boolean(options.all))
+      console.log(
+        JSON.stringify({
+          ...delivery,
+          notices: delivery.notices.map((notice) => ({ ...notice, id: String(notice.id) })),
+        }),
+      )
+    })
+  board
+    .command('ack <id>')
+    .description(BOARD_DESCRIPTIONS.acknowledge)
+    .action(async (id) => console.log(JSON.stringify(await boardAcknowledge(String(id)))))
+  board
+    .command('status <id>')
+    .description(BOARD_DESCRIPTIONS.status)
+    .action(async (id) => console.log(JSON.stringify(await boardStatus(String(id)))))
+  board
+    .command('withdraw <id>')
+    .description(BOARD_DESCRIPTIONS.withdraw)
+    .action(async (id) => console.log(JSON.stringify(await boardWithdraw(String(id)))))
+  registerBoardSuggestionCommands(board)
 }

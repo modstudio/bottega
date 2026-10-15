@@ -7,7 +7,8 @@ import { log } from './support.ts'
 export function register(program: Command): void {
   program
     .command('sync')
-    .option('--backfill')
+    .description('push pending orchestrator records to the hosted record')
+    .option('--backfill', 'enqueue older records before pushing')
     .allowExcessArguments(false)
     .action((options) => syncCommand({ backfill: Boolean(options.backfill) }, { log }))
 }

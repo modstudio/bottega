@@ -204,26 +204,30 @@ function taskOptions(command: Command): TaskOptions {
 }
 
 const commonBody = (command: Command) =>
-  command.option('--body <text>', '').option('--body-file <path>', '')
+  command
+    .option('--body <text>', 'use this text as the task body')
+    .option('--body-file <path>', 'read the task body from this file')
 
 function registerTaskCreationCommands(task: Command): void {
   commonBody(
     task
       .command('new')
-      .option('--project <X>', '')
-      .option('--title <text>', '')
-      .option('--status <Y>', '')
-      .option('--parent <key>', '')
-      .option('--allow-duplicate <reason>', ''),
+      .description('create a task in its configured destination')
+      .option('--project <X>', 'name the task project')
+      .option('--title <text>', 'set the task title')
+      .option('--status <Y>', 'set the initial task status')
+      .option('--parent <key>', 'set the parent task key')
+      .option('--allow-duplicate <reason>', 'allow a possible duplicate for this reason'),
   ).action(async (_options, command) => {
     open()
     await createTaskCommand(taskOptions(command))
   })
   task
     .command('duplicates')
-    .option('--project <X>', '')
-    .option('--title <text>', '')
-    .option('--json', '')
+    .description('find possible duplicate tasks for a title')
+    .option('--project <X>', 'search tasks in this project')
+    .option('--title <text>', 'find tasks similar to this title')
+    .option('--json', 'write the candidates as JSON')
     .action((_options, command) => {
       open()
       const options = taskOptions(command)
@@ -236,9 +240,10 @@ function registerTaskCreationCommands(task: Command): void {
     })
   task
     .command('tracker-new')
-    .option('--project <X>', '')
-    .option('--title <text>', '')
-    .option('--body <text>', '')
+    .description('create a task directly in the configured tracker')
+    .option('--project <X>', 'name the tracker project')
+    .option('--title <text>', 'set the task title')
+    .option('--body <text>', 'set the task body')
     .action(async (_options, command) => {
       open()
       const options = taskOptions(command)
@@ -273,10 +278,11 @@ function registerTaskCreationCommands(task: Command): void {
 function registerTaskQueryCommands(task: Command): void {
   task
     .command('list')
-    .option('--project <X>', '')
-    .option('--status <Y>', '')
-    .option('--parent <key>', '')
-    .option('--json', '')
+    .description('list tasks from the local record')
+    .option('--project <X>', 'limit tasks to this project')
+    .option('--status <Y>', 'limit tasks to this status')
+    .option('--parent <key>', 'limit tasks to this parent task')
+    .option('--json', 'write the task rows as JSON')
     .action((_options, command) => {
       open()
       const options = taskOptions(command)
@@ -291,9 +297,10 @@ function registerTaskQueryCommands(task: Command): void {
     })
   task
     .command('show <key>')
-    .option('--project <X>', '')
-    .option('--json', '')
-    .option('--fresh', '')
+    .description('show a task with its documents and comments')
+    .option('--project <X>', 'resolve the task in this project')
+    .option('--json', 'write the task record as JSON')
+    .option('--fresh', 'refresh the task from its tracker before showing it')
     .action(async (key, _options, command) => {
       open()
       await showTaskCommand(key, taskOptions(command))
@@ -301,14 +308,15 @@ function registerTaskQueryCommands(task: Command): void {
   commonBody(
     task
       .command('set <key>')
-      .option('--project <X>', '')
-      .option('--title <text>', '')
-      .option('--status <Y>', '')
-      .option('--parent <key>', '')
-      .addOption(new PresenceOption('--no-parent', ''))
-      .option('--assignee <name>', '')
-      .option('--force', '')
-      .option('--abandon <reason>', ''),
+      .description('change fields on a local task')
+      .option('--project <X>', 'resolve the task in this project')
+      .option('--title <text>', 'replace the task title')
+      .option('--status <Y>', 'replace the task status')
+      .option('--parent <key>', 'replace the parent task key')
+      .addOption(new PresenceOption('--no-parent', 'clear the parent task'))
+      .option('--assignee <name>', 'replace the task assignee')
+      .option('--force', 'allow replacing an existing task body')
+      .option('--abandon <reason>', 'record why unlanded work may be abandoned'),
   ).action(async (key, _options, command) => {
     open()
     const options = taskOptions(command)
@@ -340,16 +348,18 @@ function registerTaskQueryCommands(task: Command): void {
 function registerTaskLifecycleCommands(task: Command): void {
   task
     .command('close <key>')
-    .option('--project <X>', '')
-    .option('--keep-branches', '')
-    .option('--abandon <reason>', '')
+    .description('close a task, release its claims, and prune its branches')
+    .option('--project <X>', 'resolve the task in this project')
+    .option('--keep-branches', 'leave the task branches unpruned')
+    .option('--abandon <reason>', 'record why unlanded work may be abandoned')
     .action(async (key, _options, command) => {
       open()
       await closeTask(key, taskOptions(command))
     })
   task
     .command('comment <key> <text>')
-    .option('--project <X>', '')
+    .description('add a comment to a task')
+    .option('--project <X>', 'resolve the task in this project')
     .action(async (key, text, _options, command) => {
       open()
       const comment = await commentTask(key, { project: taskOptions(command).project }, text)
@@ -365,19 +375,20 @@ function registerTaskLifecycleCommands(task: Command): void {
   task
     .command('push')
     .description('audit hosted identity sets; --repair queues missing machine rows')
-    .option('--repair', '')
-    .option('--json', '')
+    .option('--repair', 'queue machine task rows missing from the hosted record')
+    .option('--json', 'write the audit report as JSON')
     .action(async (_options, command) => {
       open()
       await runHostedTaskMaintenance('push', taskOptions(command))
     })
   task
     .command('prune-foreign')
-    .option('--dry-run', '')
-    .option('--confirm <N>', '')
-    .option('--project <name>', '')
-    .option('--only-present-elsewhere', '')
-    .option('--json', '')
+    .description('soft-delete foreign tasks from the active hosted space')
+    .option('--dry-run', 'list candidates without deleting them')
+    .option('--confirm <N>', 'confirm the exact candidate count')
+    .option('--project <name>', 'limit candidates to this project')
+    .option('--only-present-elsewhere', 'limit candidates to tasks found in their target space')
+    .option('--json', 'write the result as JSON')
     .action(async (_options, command) => {
       await runHostedTaskMaintenance('prune-foreign', taskOptions(command))
     })
@@ -387,9 +398,10 @@ function registerTaskDocumentReadCommands(document: Command): void {
   commonBody(
     document
       .command('new <key>')
-      .option('--project <X>', '')
-      .option('--title <text>', '')
-      .option('--role <role>', ''),
+      .description('create a document attached to a task')
+      .option('--project <X>', 'resolve the task in this project')
+      .option('--title <text>', 'set the document title')
+      .option('--role <role>', 'assign this document role'),
   ).action(async (key, _options, command) => {
     open()
     const options = taskOptions(command)
@@ -406,8 +418,9 @@ function registerTaskDocumentReadCommands(document: Command): void {
   })
   document
     .command('list <key>')
-    .option('--project <X>', '')
-    .option('--json', '')
+    .description('list documents attached to a task')
+    .option('--project <X>', 'resolve the task in this project')
+    .option('--json', 'write the document summaries as JSON')
     .action((key, _options, command) => {
       open()
       const options = taskOptions(command)
@@ -420,8 +433,9 @@ function registerTaskDocumentReadCommands(document: Command): void {
     })
   document
     .command('show <reference>')
-    .option('--project <X>', '')
-    .option('--json', '')
+    .description('show a task document')
+    .option('--project <X>', 'resolve the document in this project')
+    .option('--json', 'write the document as JSON')
     .action((reference, _options, command) => {
       open()
       const options = taskOptions(command)
@@ -441,11 +455,12 @@ function registerTaskDocumentWriteCommands(document: Command): void {
   commonBody(
     document
       .command('set <reference>')
-      .option('--project <X>', '')
-      .option('--title <text>', '')
-      .option('--role <role>', '')
-      .addOption(new PresenceOption('--no-role', ''))
-      .option('--version <token>', ''),
+      .description('change fields on a task document')
+      .option('--project <X>', 'resolve the document in this project')
+      .option('--title <text>', 'replace the document title')
+      .option('--role <role>', 'replace the document role')
+      .addOption(new PresenceOption('--no-role', 'clear the document role'))
+      .option('--version <token>', 'require this current document version'),
   ).action(async (reference, _options, command) => {
     open()
     const options = taskOptions(command)
@@ -471,7 +486,8 @@ function registerTaskDocumentWriteCommands(document: Command): void {
   })
   document
     .command('rm <reference>')
-    .option('--project <X>', '')
+    .description('remove a task document')
+    .option('--project <X>', 'resolve the document in this project')
     .action(async (reference, _options, command) => {
       open()
       const options = taskOptions(command)
@@ -483,11 +499,14 @@ function registerTaskDocumentWriteCommands(document: Command): void {
 }
 
 export function registerTaskCommands(program: Command): void {
-  const task = program.command('task')
+  const task = program.command('task').description('manage tasks and their documents')
   registerTaskCreationCommands(task)
   registerTaskQueryCommands(task)
   registerTaskLifecycleCommands(task)
-  const document = task.command('doc').alias('document')
+  const document = task
+    .command('doc')
+    .description('manage documents attached to tasks')
+    .alias('document')
   registerTaskDocumentReadCommands(document)
   registerTaskDocumentWriteCommands(document)
 }
