@@ -33,7 +33,7 @@ import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reviewRoundIdentity } from './review-yield.ts'
 
 type ReviewFlags = { has(name: string): boolean; flag(name: string): string | undefined }
-type ReviewPresentation = { log(...values: unknown[]): void; usage(): never }
+type ReviewPresentation = { log(...values: unknown[]): void }
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
