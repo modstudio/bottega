@@ -10,7 +10,7 @@ import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
-import { log, optionFlags, write, writeStdout } from './support.ts'
+import { actionCommand, collect, log, optionFlags, values, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
 type Opt = readonly [flags: string, description: string, collect?: true]
@@ -95,23 +95,16 @@ const descriptions: Record<string, string> = {
 
 const key = (flags: string) => flags.match(/^--([^ <]+)/)?.[1] ?? flags
 const o = (flags: string, collect?: true): Opt => [flags, descriptions[key(flags)]!, collect]
-const collect = (value: string, previous: string[] | undefined) => [...(previous ?? []), value]
-
 function options(command: Command, specs: readonly Opt[]): Command {
   for (const [flags, description, repeated] of specs) {
     if (flags.startsWith('--no-') && !['--no-featured', '--no-canon'].includes(flags))
       command.addOption(new PresenceOption(flags, description))
-    else if (repeated) command.option(flags, description, collect)
+    else if (repeated) command.option(flags, description, collect, [])
     else command.option(flags, description)
   }
   return command
 }
 
-const values = (input: unknown[]) =>
-  input
-    .flatMap((value) => (Array.isArray(value) ? value : [value]))
-    .filter((value): value is string => typeof value === 'string')
-const actionCommand = (input: unknown[]): Command => input.at(-1) as Command
 const json = [o('--json')]
 const address = [o('--scope <value>'), o('--subject <value>'), o('--user')]
 const revision = [o('--reason <value>'), o('--author <value>'), o('--expect <revision>')]
@@ -245,14 +238,15 @@ const docSpecs: readonly Spec[] = [
 ]
 
 function registerDoc(program: Command): void {
-  const family = options(
-    program.command('doc').description('manage operator documents').allowExcessArguments(true),
-    docSpecs[0]![2],
-  ).action((...input: unknown[]) => {
-    const command = actionCommand(input)
-    const [verb = 'list', ...args] = command.args
-    return runDoc(verb, args, command)
-  })
+  const family = program
+    .command('doc')
+    .description('manage operator documents')
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      const [verb = 'list', ...args] = command.args
+      return runDoc(verb, args, command)
+    })
   for (const [syntax, description, opts] of docSpecs) {
     const verb = syntax.split(' ')[0]!
     options(family.command(syntax).description(description), opts).action((...args: unknown[]) =>
@@ -296,7 +290,7 @@ const canonSpecs: readonly Spec[] = [
   [
     'diff',
     'show or accept a canon pack difference',
-    [o('--cwd <value>'), o('--job <value>'), o('--accept')],
+    [o('--cwd <value>'), o('--job <value>'), o('--accept'), ...json],
   ],
   [
     'eval',
@@ -504,17 +498,15 @@ async function runProject(verb: string, args: string[], command: Command): Promi
 }
 
 function registerProject(program: Command): void {
-  const family = options(
-    program
-      .command('project')
-      .description('manage the project register')
-      .allowExcessArguments(true),
-    projectSpecs[0]![2],
-  ).action((...input: unknown[]) => {
-    const command = actionCommand(input)
-    const [verb = 'list', ...args] = command.args
-    return runProject(verb, args, command)
-  })
+  const family = program
+    .command('project')
+    .description('manage the project register')
+    .allowExcessArguments(true)
+    .action((...input: unknown[]) => {
+      const command = actionCommand(input)
+      const [verb = 'list', ...args] = command.args
+      return runProject(verb, args, command)
+    })
   for (const [syntax, description, opts] of projectSpecs) {
     const verb = syntax.split(' ')[0]!
     options(family.command(syntax).description(description), opts).action((...args: unknown[]) =>

@@ -6,93 +6,9 @@ import { Command, CommanderError } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assertUserCanonHydrateAllowed, register } from './docs.ts'
 import { register as registerSubjects } from './subjects.ts'
-import { drainStdout, optionFlags } from './support.ts'
+import { drainStdout } from './support.ts'
 
 const flags = (...names: string[]) => ({ has: (name: string) => names.includes(name) })
-
-async function parseDocOptions(argv: string[]) {
-  const program = new Command().enablePositionalOptions().exitOverride()
-  register(program)
-  const family = program.commands.find((candidate) => candidate.name() === 'doc')!
-  const command = family.commands.find((candidate) => candidate.name() === argv[0])!
-  command.action(() => undefined)
-  await program.parseAsync(['node', 'orch', 'doc', ...argv])
-  const parsed = command.parseOptions(argv.slice(1))
-  return {
-    parsed: { ...parsed, operands: [argv[0], ...parsed.operands] },
-    options: command.opts(),
-  }
-}
-
-test('the registered doc command parses status, set, and filtered list lifecycle flags', async () => {
-  expect(
-    await parseDocOptions([
-      'status',
-      'guide',
-      '--scope',
-      'global',
-      '--status',
-      'superseded',
-      '--replacement',
-      'new-guide',
-    ]),
-  ).toMatchObject({
-    parsed: { operands: ['status', 'guide'], unknown: [] },
-    options: { scope: 'global', status: 'superseded', replacement: 'new-guide' },
-  })
-  expect(
-    await parseDocOptions(['set', 'guide', '--scope', 'global', '--status', 'draft']),
-  ).toMatchObject({
-    parsed: { operands: ['set', 'guide'], unknown: [] },
-    options: { scope: 'global', status: 'draft' },
-  })
-  expect(await parseDocOptions(['list', '--status', 'archived'])).toMatchObject({
-    parsed: { operands: ['list'], unknown: [] },
-    options: { status: 'archived' },
-  })
-  expect(await parseDocOptions(['set', 'guide', '--kind', 'article'])).toMatchObject({
-    parsed: { operands: ['set', 'guide'], unknown: [] },
-    options: { kind: 'article' },
-  })
-  expect(await parseDocOptions(['list', '--kind', 'working'])).toMatchObject({
-    parsed: { operands: ['list'], unknown: [] },
-    options: { kind: 'working' },
-  })
-})
-
-test('the registered doc clear options are presence flags', async () => {
-  const clearFlags = [
-    'no-parent',
-    'no-form',
-    'no-article-subject',
-    'no-related-subjects',
-    'no-source-files',
-    'no-checked-at',
-  ]
-
-  const absent = optionFlags((await parseDocOptions(['set', 'guide'])).options)
-  for (const flag of clearFlags) expect(absent.has(flag)).toBeFalse()
-
-  for (const flag of clearFlags) {
-    const given = optionFlags((await parseDocOptions(['set', 'guide', `--${flag}`])).options)
-    expect(given.has(flag)).toBeTrue()
-  }
-
-  const relatedSubject = optionFlags(
-    (await parseDocOptions(['set', 'guide', '--related-subject', 'subject'])).options,
-  )
-  expect(relatedSubject.has('no-related-subjects')).toBeFalse()
-
-  const sourceFile = optionFlags(
-    (await parseDocOptions(['set', 'guide', '--source-file', 'docs/guide.md'])).options,
-  )
-  expect(sourceFile.has('no-source-files')).toBeFalse()
-
-  const checkedAt = optionFlags(
-    (await parseDocOptions(['set', 'guide', '--checked-at', '1'.repeat(40)])).options,
-  )
-  expect(checkedAt.has('no-checked-at')).toBeFalse()
-})
 
 test('an orch worker cannot hydrate user canon but can check it', () => {
   const inventory = {
@@ -145,6 +61,25 @@ async function runRegisteredCommand(argv: readonly string[]) {
   process.exitCode = originalExitCode
   return { code, firstLine: stdout.join('').split('\n')[0] ?? '' }
 }
+
+test('converted families execute leaf options and refuse options before the verb', async () => {
+  expect(await runRegisteredCommand(['doc', 'list', '--scope', 'global', '--json'])).toEqual({
+    code: 0,
+    firstLine: '[]',
+  })
+  expect(await runRegisteredCommand(['canon', 'diff', '--json'])).toMatchObject({
+    code: 0,
+    firstLine: expect.stringContaining('"job"'),
+  })
+  expect(await runRegisteredCommand(['doc', '--json', 'list'])).toMatchObject({
+    code: 2,
+    firstLine: "error: unknown option '--json'",
+  })
+  expect(await runRegisteredCommand(['project', '--json', 'list'])).toMatchObject({
+    code: 2,
+    firstLine: "error: unknown option '--json'",
+  })
+})
 
 test('converted command families preserve trunk output and exit status without optional arguments', async () => {
   const originalCwd = process.cwd()

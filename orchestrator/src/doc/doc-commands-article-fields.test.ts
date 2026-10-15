@@ -1,53 +1,48 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { register } from '../commands/docs.ts'
-import { optionFlags } from '../commands/support.ts'
+import { drainStdout } from '../commands/support.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
-import { docCommand } from './doc-commands.ts'
-import { selectDocWriteTree } from './doc-write-tree.ts'
 
 async function command(args: string[], stdin = '') {
+  const fixture = stdin ? mkdtempSync(join(tmpdir(), 'doc-command-body-')) : null
+  const bodyFile = fixture ? join(fixture, 'body.md') : null
+  if (bodyFile) writeFileSync(bodyFile, stdin)
   const program = new Command().enablePositionalOptions().exitOverride()
   register(program)
-  const registered = program.commands.find((candidate) => candidate.name() === 'doc')!
   const out: string[] = []
   const err: string[] = []
+  const originalWrite = process.stdout.write
+  const originalError = console.error
+  const originalExitCode = process.exitCode
+  process.exitCode = 0
+  process.stdout.write = ((value: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+    out.push(String(value))
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+    if (typeof done === 'function') done()
+    return true
+  }) as typeof process.stdout.write
+  console.error = (...values: unknown[]) => err.push(values.join(' '))
   let code = 0
-  for (const subcommand of registered.commands) {
-    subcommand.action(async (...values: unknown[]) => {
-      const command = values.pop() as Command
-      const operands = values
-        .flatMap((value) => (Array.isArray(value) ? value : [value]))
-        .filter((value): value is string => typeof value === 'string')
-      await docCommand(
-        subcommand.name(),
-        ['doc', subcommand.name(), ...operands],
-        optionFlags(command.opts()),
-        {
-          log: (...parts: unknown[]) => out.push(parts.join(' ')),
-          error: (...parts: unknown[]) => err.push(parts.join(' ')),
-          write: (value: string) => out.push(value),
-          stdinText: async () => stdin,
-          stdinIsTTY: false,
-          cwd: () => process.cwd(),
-          exitCode: (value: number) => {
-            code = value
-          },
-        },
-        { selectDocWriteTree, collectCanonLintInput },
-      )
-    })
-  }
   try {
-    await program.parseAsync(['node', 'orch', ...args])
+    await program.parseAsync(['node', 'orch', ...args, ...(bodyFile ? ['--file', bodyFile] : [])])
   } catch (error) {
     code = 1
     err.push((error as Error).message)
+  } finally {
+    await drainStdout()
+    process.stdout.write = originalWrite
+    console.error = originalError
+    code = Number(process.exitCode || code)
+    process.exitCode = originalExitCode
+    if (fixture) rmSync(fixture, { recursive: true, force: true })
   }
-  return { code, out: out.join('\n'), err: err.join('\n') }
+  return { code, out: out.join('').trimEnd(), err: err.join('\n') }
 }
 
 const setArgs = (slug: string, ...options: string[]) => [

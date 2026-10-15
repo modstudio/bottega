@@ -2,7 +2,7 @@
 /** Registers project-subject commands. Must not own their behavior. */
 import type { Command } from 'commander'
 import { subjectCommand } from '../subject/subject-commands.ts'
-import { log, optionFlags } from './support.ts'
+import { actionCommand, log, optionFlags, values } from './support.ts'
 
 type SubjectSpec = readonly [
   syntax: string,
@@ -20,12 +20,6 @@ const specs: readonly SubjectSpec[] = [
   ['reorder [project] [subjects...]', 'set the order of project subjects', [json]],
   ['retire [project] [subject]', 'retire a project subject', [json]],
 ]
-
-const values = (input: unknown[]) =>
-  input
-    .flatMap((value) => (Array.isArray(value) ? value : [value]))
-    .filter((value): value is string => typeof value === 'string')
-const actionCommand = (input: unknown[]): Command => input.at(-1) as Command
 
 async function runSubject(verb: string, args: string[], command: Command): Promise<void> {
   await subjectCommand(verb, ['subject', verb, ...args], optionFlags(command.opts()), { log })
