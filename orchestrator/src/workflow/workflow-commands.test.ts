@@ -1,14 +1,17 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { program } from '../cli/program.ts'
+import { program, run } from '../cli/program.ts'
+import { setRawArgv } from '../commands/support.ts'
+import { registerWorkflowCommands } from '../commands/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import {
   commandOutcome,
-  workflowChildCommandInvocation,
-  workflowCommand,
+  type WorkflowCommandOptions,
+  type WorkflowPresentation,
   workflowImportLines,
 } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -19,6 +22,30 @@ const presentation = (lines: string[]) => ({
   log: (line: string) => lines.push(line),
   error: () => {},
   setExitCode: () => {},
+})
+
+async function workflowCommand(
+  argv: string[],
+  shown: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const command = new Command().exitOverride().enablePositionalOptions()
+  registerWorkflowCommands(command, shown, options)
+  setRawArgv(argv)
+  await command.parseAsync(['node', 'orch', ...argv])
+}
+
+test('workflow preserves the unknown-verb refusal and exit status', async () => {
+  const errors: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  try {
+    expect(await run(['workflow', 'bogus-verb'])).toBe(1)
+  } finally {
+    error.mockRestore()
+  }
+  expect(errors).toEqual([
+    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+  ])
 })
 
 const outcomePresentation = () => {
@@ -148,6 +175,12 @@ test('workflow exec requires a separator before the child command', async () => 
   )
 })
 
+test('workflow probe and exec refuse an unknown option before the child separator', async () => {
+  for (const verb of ['probe', 'exec']) {
+    expect(await run(['workflow', verb, '--cdw', '.', '--', '/usr/bin/true'])).toBe(2)
+  }
+})
+
 test('workflow attach reads text from stdin and prints its close reference', async () => {
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   try {
@@ -188,38 +221,30 @@ test('workflow attach reads text from stdin and prints its close reference', asy
   }
 })
 
-test('workflow attach refuses text in an argument', async () => {
+test('workflow attach declares no positional text argument', async () => {
   await expect(
     workflowCommand(
       ['workflow', 'attach', 'flow', 'argument text', '--cursor', '1'],
       presentation([]),
       { stdinIsTTY: () => true },
     ),
-  ).rejects.toThrow('workflow text is not accepted as an argument')
+  ).rejects.toThrow("error: too many arguments for 'attach'. Expected 1 argument but got 2")
 })
 
-test('workflow child command invocation preserves an embedded separator in exec argv', () => {
-  expect(
-    workflowChildCommandInvocation(
-      ['exec'],
-      [
-        'bun',
-        'orch',
-        'workflow',
-        'exec',
-        '--',
-        '/usr/bin/printf',
-        '[%s]\\n',
-        'first',
-        '--',
-        'tail',
-      ],
-      {},
-    ),
-  ).toEqual({
-    argv: ['workflow', 'exec', '--', '/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'],
-    options: { cwd: undefined, json: false },
-  })
+test('workflow child command invocation preserves an embedded separator in exec argv', async () => {
+  registerCurrentProject('workflow-child-invocation')
+  let received: { command: string[]; cwd: string } | undefined
+  await workflowCommand(
+    ['workflow', 'probe', '--', '/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'],
+    presentation([]),
+    {
+      probeRunner: (input) => {
+        received = input
+        return { exitCode: 0, output: '' }
+      },
+    },
+  )
+  expect(received?.command).toEqual(['/usr/bin/printf', '[%s]\\n', 'first', '--', 'tail'])
 })
 
 test('Commander refuses workflow exec without a separator before running the child', async () => {
@@ -229,6 +254,7 @@ test('Commander refuses workflow exec without a separator before running the chi
     delete process.env.ORCH_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
     const before = (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
+    setRawArgv(['workflow', 'exec', '/usr/bin/printf', '%s', '--cwd', 'child-dir', '--json'])
 
     await expect(
       program.parseAsync([
@@ -255,17 +281,17 @@ test('Commander refuses workflow exec without a separator before running the chi
   }
 })
 
-test('workflow child command invocation keeps cwd and json options out of exec argv', () => {
-  expect(
-    workflowChildCommandInvocation(
-      ['exec'],
+test('workflow probe and exec preserve child options after the real argv separator', async () => {
+  registerCurrentProject('workflow-child-options')
+  for (const verb of ['probe', 'exec']) {
+    let received: { command: string[]; cwd: string } | undefined
+    await workflowCommand(
       [
-        'bun',
-        'orch',
         'workflow',
-        'exec',
+        verb,
         '--cwd',
         '.',
+        '--json',
         '--',
         '/usr/bin/printf',
         '%s%s%s%s',
@@ -274,22 +300,28 @@ test('workflow child command invocation keeps cwd and json options out of exec a
         'child-dir',
         '--json',
       ],
-      { cwd: '.', json: true },
-    ),
-  ).toEqual({
-    argv: [
-      'workflow',
-      'exec',
-      '--',
-      '/usr/bin/printf',
-      '%s%s%s%s',
-      '--x',
-      '--cwd',
-      'child-dir',
-      '--json',
-    ],
-    options: { cwd: '.', json: true },
-  })
+      presentation([]),
+      {
+        probeRunner: (input) => {
+          received = input
+          return { exitCode: 0, output: '' }
+        },
+      },
+    )
+    const expected = {
+      command: ['/usr/bin/printf', '%s%s%s%s', '--x', '--cwd', 'child-dir', '--json'],
+      cwd: process.cwd(),
+    }
+    if (verb === 'probe') expect(received).toEqual(expected)
+    else {
+      const row = db()
+        .query<{ command: string; cwd: string }, []>(
+          "SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY id DESC LIMIT 1",
+        )
+        .get()
+      expect(row).toEqual({ command: JSON.stringify(expected.command), cwd: expected.cwd })
+    }
+  }
 })
 
 test('workflow exec service returns each child exit code after recording its row', async () => {

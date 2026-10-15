@@ -29,7 +29,6 @@ import {
 } from '../hook-tree/tree-commands.ts'
 import { jobsCommand } from '../jobs/job-commands.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { lensCommand } from '../lens/lens-commands.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
 import { readerMcpProxyCommand } from '../mcp/mcp-reader-proxy.ts'
@@ -56,10 +55,10 @@ import {
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
-import { workflowChildCommandInvocation, workflowCommand } from '../workflow/workflow-commands.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
-
+import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
+import { registerWorkflowCommands } from './workflow.ts'
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const presentation = {
@@ -130,40 +129,6 @@ function registerMcpServers(program: Command): void {
     .action((project: string, server: string, tree: string) =>
       readerMcpProxyCommand(project, server, tree),
     )
-}
-
-function workflowCommandOptions(program: Command): Command {
-  return program
-    .command('workflow [args...]')
-    .option('--version <value>')
-    .option('--catalogue-version <value>')
-    .option('--cursor <value>')
-    .option('--file <value>')
-    .option('--reason <value>')
-    .option('--author <value>')
-    .option('--from <value>')
-    .option('--mode <value>')
-    .option('--project <value>')
-    .option('--session <value>')
-    .option('--note <value>')
-    .option('--question <value>')
-    .option('--ruling <value>')
-    .option('--self-ruling <value>')
-    .option('--basis <value>')
-    .option('--review <value>')
-    .option('--gate <value>')
-    .option('--run <value>')
-    .option('--artifact <value>')
-    .option('--task <value>')
-    .option('--defer <value>')
-    .option('--satisfies <value>')
-    .option('--from-operator')
-    .option('--cwd <value>')
-    .option('--check')
-    .option('--all')
-    .option('--arg <value>', '', collect, [])
-    .option('--autonomy <value>', '', collect, [])
-    .option('--json')
 }
 
 function epicRegisteredProjectWorkingDirectoryRefusal(): string {
@@ -274,36 +239,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  workflowCommandOptions(program).action((args, options, command) => {
-    const resolvedOptions =
-      options.run === undefined ? options : { ...options, run: String(localRunId(options.run)) }
-    const childInvocation = workflowChildCommandInvocation(
-      args,
-      command.parent?.rawArgs ?? [],
-      resolvedOptions,
-    )
-    return workflowCommand(
-      childInvocation?.argv ?? productArgv('workflow', args, resolvedOptions),
-      presentation,
-      childInvocation?.options,
-    )
-  })
-  program
-    .command('lens [args...]')
-    .option('--title <value>')
-    .option('--question <value>')
-    .option('--excludes <value>')
-    .option('--slots <value>')
-    .option('--slots-file <value>')
-    .option('--enabled <value>')
-    .option('--requires-execution <value>')
-    .option('--reason <value>')
-    .option('--axis <value>')
-    .option('--name <value>')
-    .option('--body <value>')
-    .option('--body-file <value>')
-    .option('--json')
-    .action((args, options) => lensCommand(productArgv('lens', args, options), presentation))
+  registerWorkflowCommands(program)
+  registerLensCommands(program)
   program
     .command('fix-defect [key]')
     .option('--waiting')

@@ -1,5 +1,8 @@
-import { expect, test } from 'bun:test'
-import { lensCommand } from './lens-commands.ts'
+import { expect, spyOn, test } from 'bun:test'
+import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { run } from '../cli/program.ts'
+import { registerLensCommands } from '../commands/lens.ts'
 
 const slots = JSON.stringify({
   type: 'object',
@@ -30,11 +33,25 @@ function setCommand(title: string, requiresExecution: boolean): string[] {
   ]
 }
 
-test('lens set adds and changes a lens including requires-execution', () => {
+test('review lens preserves the unknown-verb refusal and exit status', async () => {
+  const errors: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  try {
+    expect(await run(['lens', 'bogus'])).toBe(1)
+  } finally {
+    error.mockRestore()
+  }
+  expect(errors).toEqual([`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`])
+})
+
+test('lens set adds and changes a lens including requires-execution', async () => {
   const output: string[] = []
   const presentation = { log: (value: string) => output.push(value) }
-  lensCommand(setCommand('First title', false), presentation)
-  lensCommand(setCommand('Changed title', true), presentation)
+  for (const argv of [setCommand('First title', false), setCommand('Changed title', true)]) {
+    const program = new Command().exitOverride()
+    registerLensCommands(program, presentation)
+    await program.parseAsync(['node', 'orch', ...argv])
+  }
 
   expect(JSON.parse(output[0]!)).toMatchObject({
     id: 'command-fixture',

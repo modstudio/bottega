@@ -5,13 +5,6 @@ import { db } from '../database/db.ts'
 import { register } from './logic.ts'
 import { setRawArgv } from './support.ts'
 
-test('lens set accepts the requires-execution option at the CLI edge', () => {
-  const program = new Command()
-  register(program)
-  const lens = program.commands.find((command) => command.name() === 'lens')
-  expect(lens?.options.some((option) => option.long === '--requires-execution')).toBe(true)
-})
-
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {
   const program = new Command().exitOverride()
   let received: string | undefined
