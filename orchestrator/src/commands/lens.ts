@@ -2,6 +2,7 @@
 /** Registers review-lens adapters. Must not own lens registry decisions. */
 
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   lensEmitter,
   listLensesCommand,
@@ -21,7 +22,18 @@ export function registerLensCommands(
   program: Command,
   presentation: { log(value: string): void } = { log },
 ): void {
-  const lens = program.command('lens').description('inspect and change review lenses and profiles')
+  const lens = program
+    .command('lens')
+    .description('inspect and change review lenses and profiles')
+    .action(() => {
+      throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
+    })
+  lens
+    .command('*', { hidden: true })
+    .description('refuse an unknown review lens command')
+    .action(() => {
+      throw new Error(`unknown: ${PLATFORM_SLUG} review lens. Try list | show | set | profile`)
+    })
   jsonOption(lens.command('list').description('list review lenses'))
     .allowExcessArguments(false)
     .action((options) =>
@@ -53,7 +65,18 @@ export function registerLensCommands(
       setLensCommand(argv, lensEmitter(argv, presentation))
     })
 
-  const profile = lens.command('profile').description('inspect and change review lens profiles')
+  const profile = lens
+    .command('profile')
+    .description('inspect and change review lens profiles')
+    .action(() => {
+      throw new Error(`unknown: ${PLATFORM_SLUG} review lens profile. Try list | show | set`)
+    })
+  profile
+    .command('*', { hidden: true })
+    .description('refuse an unknown review lens profile command')
+    .action(() => {
+      throw new Error(`unknown: ${PLATFORM_SLUG} review lens profile. Try list | show | set`)
+    })
   jsonOption(profile.command('list [lens]').description('list review lens profiles'))
     .allowExcessArguments(false)
     .action((id, options) => {

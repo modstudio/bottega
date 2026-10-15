@@ -190,6 +190,19 @@ function workflowRegistration(
   const workflow = program
     .command('workflow')
     .description('inspect and operate workflows and their cursors')
+    .action(() => {
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+      )
+    })
+  workflow
+    .command('*', { hidden: true })
+    .description('refuse an unknown workflow command')
+    .action(() => {
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+      )
+    })
   return { workflow, workflowPresentation, handlerOptions, output }
 }
 
@@ -500,6 +513,19 @@ function registerWorkflowCatalogue({ workflow, output }: WorkflowRegistration): 
   const catalogue = workflow
     .command('catalogue')
     .description('inspect and change the workflow step catalogue')
+    .action(() => {
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} workflow catalogue. Try show | set | promote | retire | fork | versions`,
+      )
+    })
+  catalogue
+    .command('*', { hidden: true })
+    .description('refuse an unknown workflow catalogue command')
+    .action(() => {
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} workflow catalogue. Try show | set | promote | retire | fork | versions`,
+      )
+    })
   jsonOption(
     catalogue
       .command('show')
