@@ -306,13 +306,19 @@ export function hostedBoardStatusResult(
   message: HostedBoardMessage,
   receipts: HostedBoardReceipt[] = [],
 ): BoardStatusResult {
+  const acknowledgementReceipts = receipts.filter(
+    (receipt) =>
+      receipt.readerUserId !== message.authorUserId ||
+      receipt.readerSession !== (message.authorSession ?? OPERATOR_READER),
+  )
   return {
     message: hostedMessage(message),
     receipts: receipts.map((receipt) => ({ ...receipt })),
     reached: receipts.length,
-    acknowledged: receipts.filter((receipt) => receipt.acknowledgedAt !== null).length,
+    acknowledged: acknowledgementReceipts.filter((receipt) => receipt.acknowledgedAt !== null)
+      .length,
     unacknowledged: message.ackRequired
-      ? receipts
+      ? acknowledgementReceipts
           .filter((receipt) => receipt.acknowledgedAt === null)
           .map((receipt) => receipt.readerSession)
           .sort()

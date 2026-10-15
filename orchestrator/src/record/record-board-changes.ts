@@ -37,9 +37,10 @@ export async function listHostedBoardChanges(
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
     const messages = (await tx`
-      SELECT * FROM board_message
-      WHERE revision > ${input.after}::bigint
-      ORDER BY revision
+      SELECT board_message.*, project.name AS author_project_name FROM board_message
+      LEFT JOIN project ON project.id=board_message.author_project_id
+      WHERE board_message.revision > ${input.after}::bigint
+      ORDER BY board_message.revision
       LIMIT ${limit}
     `) as Record<string, unknown>[]
     if (messages.length === 0) return { userId: input.userId, items: [], highestRevision: null }

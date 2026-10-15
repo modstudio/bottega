@@ -459,15 +459,15 @@ export function cachedMessageAddressed(
 }
 
 function delivered(database: Database, id: string, reader: string): boolean {
-  return Boolean(
-    (
-      database
-        .query(
-          'SELECT delivered_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
-        )
-        .get(id, reader) as { delivered_at: string | null } | null
-    )?.delivered_at,
-  )
+  const receipt = database
+    .query(
+      'SELECT delivered_at,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
+    )
+    .get(id, reader) as {
+    delivered_at: string | null
+    acknowledged_at: string | null
+  } | null
+  return Boolean(receipt?.delivered_at || receipt?.acknowledged_at)
 }
 
 export function hostedBoardVerificationWarning(database: Database = db()): string | null {
@@ -525,6 +525,7 @@ function renderCached(
   return renderBoardNotice({
     id: message.id,
     kind: message.kind,
+    purpose: message.purpose ?? 'information',
     authorKind: message.origin.kind,
     authorSession: message.authorSession,
     authorHarness: message.origin.harness,
