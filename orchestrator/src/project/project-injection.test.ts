@@ -270,6 +270,7 @@ describe('project workflow injection', () => {
   test('resolves every requested fact with its stored type', () => {
     const project: Project = {
       id: 1,
+      recordId: null,
       name: 'fixture',
       path: '/fixture',
       stack: 'node',
@@ -652,6 +653,7 @@ describe('project workflow injection', () => {
   test('one refusal names every missing fact and its project update command', () => {
     const project: Project = {
       id: 1,
+      recordId: null,
       name: 'fixture',
       path: '/fixture',
       stack: null,

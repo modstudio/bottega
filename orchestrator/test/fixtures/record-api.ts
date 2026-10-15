@@ -651,7 +651,7 @@ export function createMemoryRecordApiClient(): RecordApiClient {
       return { id, revisionId }
     },
     async upsertProject(input) {
-      return { name: input.name }
+      return { id: newRecordId(), name: input.name }
     },
     async listProjects() {
       return []

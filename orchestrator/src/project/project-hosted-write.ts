@@ -2,6 +2,7 @@
 /** Applies project-register write authority at the hosted-record boundary. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -22,6 +23,7 @@ import type { ProjectSettings, StoredProjectSettings } from './project-settings.
 
 export async function writeProjectToHostedRecord(
   p: {
+    recordId?: string | null
     name: string
     previousName?: string
     path: string
@@ -31,15 +33,16 @@ export async function writeProjectToHostedRecord(
     retiredAt?: string | null
   },
   destinationSpaceId?: string,
-): Promise<void> {
-  await applyRecordWriteAuthority({
-    local: () => undefined,
+): Promise<string> {
+  return applyRecordWriteAuthority({
+    local: () => p.recordId ?? newRecordId(),
     hosted: async () => {
       const client = recordApiClient()
       const destination =
         destinationSpaceId ?? (await requireProjectRecordDestination(p.name, p.settings, client))
-      return client.upsertProject(
+      const result = await client.upsertProject(
         {
+          id: p.recordId ?? undefined,
           name: p.name,
           previousName: p.previousName,
           path: p.path.replace(/\/$/, ''),
@@ -50,6 +53,7 @@ export async function writeProjectToHostedRecord(
         },
         { destinationSpaceId: destination },
       )
+      return result.id
     },
   })
 }

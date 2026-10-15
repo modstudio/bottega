@@ -14,6 +14,7 @@ test('a fully qualified base name is claimed while its chain is asking and relea
   ).id
   const project: Project = {
     id: projectId,
+    recordId: null,
     name: 'live-base-claim',
     path: '/unused',
     stack: null,

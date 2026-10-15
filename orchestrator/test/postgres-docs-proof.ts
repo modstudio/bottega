@@ -492,6 +492,29 @@ async function proveRequestedProjectSpace(
   activeSpaceId: string,
   destinationSpaceId: string,
 ): Promise<void> {
+  const suppliedId = newRecordId()
+  const ignoredId = newRecordId()
+  const identityName = `project-identity-${suppliedId}`
+  const putIdentity = async (id: string) => {
+    const response = await fetch(`${origin}/v1/projects`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        id,
+        name: identityName,
+        path: `/tmp/${identityName}`,
+        stack: null,
+        canon: false,
+        settings: {},
+        retiredAt: null,
+      }),
+    })
+    expect(response.status).toBe(200)
+    return response.json() as Promise<{ id: string; name: string }>
+  }
+  expect((await putIdentity(suppliedId)).id).toBe(suppliedId)
+  expect((await putIdentity(ignoredId)).id).toBe(suppliedId)
+
   const activeProjectName = `active-project-${newRecordId()}`
   const activeProject = await fetch(`${origin}/v1/projects`, {
     method: 'PUT',

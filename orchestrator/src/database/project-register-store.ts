@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
 
@@ -16,6 +17,7 @@ export const DEFAULT_LOCAL_PROJECT_SETTINGS: ProjectSettings = {
 }
 
 export type ProjectRegisterWrite = {
+  recordId?: string | null
   name: string
   path: string
   stack?: string | null
@@ -27,12 +29,14 @@ export type ProjectRegisterWrite = {
 export function writeProjectRegisterRow(database: Database, project: ProjectRegisterWrite): void {
   database
     .query(
-      `INSERT INTO project (name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,NULL)
+      `INSERT INTO project (record_id, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,NULL)
        ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
                                        canon=excluded.canon, settings=excluded.settings,
+                                       record_id=COALESCE(excluded.record_id, project.record_id),
                                        retired_at=NULL`,
     )
     .run(
+      project.recordId ?? null,
       project.name,
       project.path.replace(/\/$/, ''),
       project.stack ?? null,
@@ -55,6 +59,7 @@ export function initializeDefaultLocalProject(
   const path = join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
   mkdirSync(path, { recursive: true })
   writeProjectRegisterRow(database, {
+    recordId: newRecordId(),
     name: DEFAULT_LOCAL_PROJECT_NAME,
     path,
     stack: null,

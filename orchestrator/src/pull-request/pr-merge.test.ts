@@ -277,6 +277,7 @@ test('an admitted head records a snapshot with the pull request number before me
           change: {
             project: {
               id: project.id,
+              recordId: null,
               name: 'merge-fixture',
               path: admissionCwd,
               stack: 'bun',

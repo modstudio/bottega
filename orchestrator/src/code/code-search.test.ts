@@ -4,6 +4,7 @@ import { searchProjectCode } from './code-search.ts'
 
 const project = (enabled: boolean): Project => ({
   id: 1,
+  recordId: null,
   name: 'fixture',
   path: '/projects/fixture',
   stack: null,

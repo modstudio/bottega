@@ -31,6 +31,7 @@ test('records the exact triage snapshot and outboxes it', () => {
   const change: PullRequestChange = {
     project: {
       id: project.id,
+      recordId: null,
       name: 'snapshot-fixture',
       path: '/tmp/snapshot-fixture',
       stack: null,
@@ -122,6 +123,7 @@ test('merge admission leaves an existing snapshot unchanged', () => {
   const change: PullRequestChange = {
     project: {
       id: project.id,
+      recordId: null,
       name: 'existing-snapshot',
       path: '/tmp/existing-snapshot',
       stack: null,

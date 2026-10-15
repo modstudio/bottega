@@ -5,6 +5,7 @@ import { enforcementCommand } from './enforcement-commands.ts'
 
 const project = (name: string): Project => ({
   id: 1,
+  recordId: null,
   name,
   path: `/work/${name}`,
   stack: 'node',

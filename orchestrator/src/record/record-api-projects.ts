@@ -14,6 +14,7 @@ type Tenant = {
 }
 
 const projectUpsertSchema = z.object({
+  id: z.string().uuid().optional(),
   name: z.string().trim().min(1),
   previousName: z.string().trim().min(1).optional(),
   path: z.string().min(1),
@@ -27,7 +28,7 @@ export function registerRecordProjectRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
     readProjects(input: Tenant): Promise<RecordProject[]>
-    upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ name: string }>
+    upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
     retireProject(input: Tenant & { name: string }): Promise<{ name: string }>
   },
   helpers: {
