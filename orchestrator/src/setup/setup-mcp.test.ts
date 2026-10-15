@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
   mcpAddArgv,
+  mcpRegistrationWriteRefusal,
   mcpRemoveArgv,
   readMcpRegistration,
+  registeredCommandResolves,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandResult,
   stableMcpServers,
@@ -26,7 +27,9 @@ test('captures absent and registered CLI read-backs through the bounded runner',
     if (argv.includes('missing'))
       return result('', 1, "Error: No MCP server named 'missing' found.")
     return result(
-      JSON.stringify({ transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] } }),
+      JSON.stringify({
+        transport: { type: 'stdio', command: '/bin/orch', args: ['mcp'] },
+      }),
     )
   }
   expect(readMcpRegistration('codex', '/bin/codex', 'orch', runner)).toEqual({
@@ -124,19 +127,70 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
   })
 })
 
-test('classifies a matching registration with a missing command as stale', () => {
+test('classifies missing, different, and matching registrations', () => {
   const server = {
     name: 'orch' as const,
-    command: `/missing/bin/${PLATFORM_SLUG}`,
+    command: '/bin/bottega',
     args: ['mcp', 'serve'],
   }
-  const raw = { status: 'registered' as const, command: server.command, args: server.args }
-  expect(raw.status).toBe('registered')
-  expect(classifyMcpRegistration(raw, server, false)).toEqual({
-    ...raw,
+  const matching = {
+    status: 'registered' as const,
+    command: server.command,
+    args: server.args,
+  }
+  expect(classifyMcpRegistration(matching, server, false)).toEqual({
+    ...matching,
     status: 'stale',
     detail: 'registered command does not exist',
   })
+  expect(
+    classifyMcpRegistration(
+      {
+        status: 'registered',
+        command: '/other/bottega',
+        args: ['mcp', 'serve'],
+      },
+      server,
+      true,
+    ),
+  ).toEqual({
+    status: 'different',
+    command: '/other/bottega',
+    args: ['mcp', 'serve'],
+    detail: 'registered command or arguments differ',
+  })
+  expect(classifyMcpRegistration(matching, server, true)).toEqual(matching)
+})
+
+test('resolves registered path commands directly and bare commands through PATH', () => {
+  expect(
+    registeredCommandResolves(
+      '/missing/bottega',
+      () => false,
+      () => '/bin/ignored',
+    ),
+  ).toBe(false)
+  expect(
+    registeredCommandResolves(
+      'bottega',
+      () => false,
+      () => '/usr/local/bin/bottega',
+    ),
+  ).toBe(true)
+  expect(
+    registeredCommandResolves(
+      'missing-command',
+      () => true,
+      () => null,
+    ),
+  ).toBe(false)
+})
+
+test('linked-worktree registration refusal names the main checkout', () => {
+  expect(mcpRegistrationWriteRefusal('/repo/worktree', false, '/repo')).toBeNull()
+  expect(mcpRegistrationWriteRefusal('/repo/worktree', true, '/repo')).toContain(
+    'run this command from the main checkout /repo',
+  )
 })
 
 test('stable persisted registrations share the platform entry', () => {

@@ -37,11 +37,18 @@ export type SetupAgent = {
 export type SetupLifecycleResolver = (
   worktree: ProjectSettings['worktree'] | null | undefined,
   defaultConfigExists: boolean,
-) => { form: 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none' }
+) => {
+  form: 'command-templates' | 'inline-recipe' | 'tracked-recipe' | 'none'
+}
 export type SetupProposal = {
   repository: RepositoryFacts
   current: Project | null
-  project: { name: string; path: string; stack: string | null; settings: ProjectSettings }
+  project: {
+    name: string
+    path: string
+    stack: string | null
+    settings: ProjectSettings
+  }
   prefixQuestionId: string | null
   trunkQuestionId: string | null
   recipeQuestionId: string | null
@@ -54,7 +61,7 @@ type SetupRegistrationProposal = {
   server: McpServer
   current: McpReadback
   questionId: string | null
-  state: 'absent' | 'same' | 'stale' | 'unreadable'
+  state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
@@ -120,7 +127,14 @@ function proposeHarnessRegistrations(
       detail: 'registration was not captured',
     }
     if (sameMcpRegistration(current, server)) {
-      return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
+      return {
+        harness,
+        bin: facts.path!,
+        server,
+        current,
+        questionId: null,
+        state: 'same',
+      }
     }
     if (current.status === 'absent') {
       return {
@@ -148,11 +162,11 @@ function proposeHarnessRegistrations(
           why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
         },
       ],
-      recommendation: current.status === 'unreadable' ? 'keep' : 'replace',
+      recommendation: current.status === 'stale' ? 'replace' : 'keep',
       why:
         current.status === 'stale'
           ? `The existing registration is stale: ${current.detail}.`
-          : current.status === 'registered'
+          : current.status === 'different' || current.status === 'registered'
             ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
             : `The existing registration could not be read exactly: ${current.detail}`,
     })
@@ -167,7 +181,12 @@ function proposeHarnessRegistrations(
       server,
       current,
       questionId: replaceQuestionId,
-      state: current.status === 'registered' || current.status === 'stale' ? 'stale' : 'unreadable',
+      state:
+        current.status === 'registered' || current.status === 'different'
+          ? 'different'
+          : current.status === 'stale'
+            ? 'stale'
+            : 'unreadable',
     }
   })
 }
@@ -203,7 +222,10 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   if (!machine.git.path) notices.push({ message: 'git is missing', fix: 'install git' })
   if (!machine.gh.path) notices.push({ message: 'gh is missing', fix: 'install gh' })
   else if (!machine.gh.loggedIn)
-    notices.push({ message: 'gh is signed out', fix: 'gh auth login --hostname github.com' })
+    notices.push({
+      message: 'gh is signed out',
+      fix: 'gh auth login --hostname github.com',
+    })
   return notices
 }
 
@@ -530,5 +552,11 @@ export function proposeSetup(
       recipeContent,
     }
   })
-  return { facts: { machine, repositories }, proposals, registrations, questions, notices }
+  return {
+    facts: { machine, repositories },
+    proposals,
+    registrations,
+    questions,
+    notices,
+  }
 }

@@ -8,6 +8,7 @@ test('setup-ask exits non-zero when any registration fails', async () => {
   const code = await setupAskCommand(
     { log: (line) => output.push(line) },
     {
+      assertWriteAllowed: () => {},
       find: (name) => `/bin/${name}`,
       commandExists: () => true,
       runner: (argv) => ({
@@ -27,7 +28,7 @@ test('setup-ask exits non-zero when any registration fails', async () => {
   expect(output.join('\n')).toContain('FAIL grok')
 })
 
-test('setup-ask replaces a stale differing registration', async () => {
+test('setup-ask refuses a present differing registration without adding it', async () => {
   const output: string[] = []
   const calls: string[][] = []
   const replaced = new Set<string>()
@@ -35,6 +36,7 @@ test('setup-ask replaces a stale differing registration', async () => {
   const code = await setupAskCommand(
     { log: (line) => output.push(line) },
     {
+      assertWriteAllowed: () => {},
       find: (name) => `/bin/${name}`,
       commandExists: () => true,
       runner: (argv) => {
@@ -46,7 +48,48 @@ test('setup-ask replaces a stale differing registration', async () => {
         const stdout = argv.includes('get')
           ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
           : JSON.stringify([{ name: 'orch-ask', ...entry }])
-        return { exitCode: 0, stdout, stderr: '', timedOut: false, error: null }
+        return {
+          exitCode: 0,
+          stdout,
+          stderr: '',
+          timedOut: false,
+          error: null,
+        }
+      },
+    },
+  )
+  expect(code).toBe(1)
+  expect(calls.filter((argv) => argv.includes('add'))).toHaveLength(0)
+  expect(output.join('\n')).toContain('machine setup apply to review and replace it')
+})
+
+test('setup-ask replaces a registration whose command is missing', async () => {
+  const output: string[] = []
+  const calls: string[][] = []
+  const replaced = new Set<string>()
+  const desired = stableMcpServers().find((server) => server.name === 'orch-ask')!
+  const code = await setupAskCommand(
+    { log: (line) => output.push(line) },
+    {
+      assertWriteAllowed: () => {},
+      find: (name) => `/bin/${name}`,
+      commandExists: (path) => path === desired.command,
+      runner: (argv) => {
+        calls.push(argv)
+        if (argv.includes('add')) replaced.add(argv[0]!)
+        const entry = replaced.has(argv[0]!)
+          ? { command: desired.command, args: desired.args }
+          : { command: '/missing/bottega', args: ['mcp', 'ask-server'] }
+        const stdout = argv.includes('get')
+          ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
+          : JSON.stringify([{ name: 'orch-ask', ...entry }])
+        return {
+          exitCode: 0,
+          stdout,
+          stderr: '',
+          timedOut: false,
+          error: null,
+        }
       },
     },
   )

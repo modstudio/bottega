@@ -163,6 +163,7 @@ export async function gatherSetupFacts(
                 desiredServers(name),
                 registrationRunner,
                 existsSync,
+                (command) => which(command, { PATH: process.env.PATH }),
               )
             : undefined,
         },

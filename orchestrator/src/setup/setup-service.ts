@@ -24,6 +24,7 @@ import {
   type SetupAnswers,
   validateSetupAnswers,
 } from './setup-planner.ts'
+import { assertMcpRegistrationWriteAllowed } from './setup-registration-write.ts'
 
 type SetupApplyOutcome = {
   plan: SetupPlan
@@ -61,7 +62,10 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   )
 }
 
-function readSetupState(): { projects: ReturnType<typeof projects>; agents: SetupAgent[] } {
+function readSetupState(): {
+  projects: ReturnType<typeof projects>
+  agents: SetupAgent[]
+} {
   if (!existsSync(DB_PATH)) return { projects: [], agents: [] }
   const database = new Database(DB_PATH, { readonly: true })
   try {
@@ -89,6 +93,9 @@ function setupProjectService(): SetupProjectService {
 }
 
 export function applySetupPlan(actions: SetupAction[]): Promise<SetupActionResult[]> {
+  if (actions.some((action) => action.kind === 'register-mcp')) {
+    assertMcpRegistrationWriteAllowed()
+  }
   return applySetupActions(actions, setupProjectService())
 }
 

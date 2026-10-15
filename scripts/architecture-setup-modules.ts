@@ -26,10 +26,24 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-planner.ts',
+      './setup-registration-write.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
+    name: 'setup-registration-write-boundary',
+    file: 'orchestrator/src/setup/setup-registration-write.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/install-root.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep linked-worktree persistence refusal independent of setup planning and harness CLI grammar.',
   },
   {
     name: 'setup-repository-facts-boundary',
