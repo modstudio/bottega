@@ -1,11 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { hostedProjectColumns } from '../record/record-project-columns.ts'
 import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
 type SourceProject = {
   id: number
+  record_id: string | null
   name: string
   path: string
   stack: string | null
@@ -63,7 +65,7 @@ function readSources(
     return {
       projects: orch
         .query<SourceProject, []>(
-          'SELECT id, name, path, stack, canon, settings, retired_at FROM project ORDER BY id',
+          'SELECT id, record_id, name, path, stack, canon, settings, retired_at FROM project ORDER BY id',
         )
         .all(),
       sequences: hub.query<SourceSequence, []>('SELECT name, next FROM seq ORDER BY name').all(),
@@ -72,6 +74,13 @@ function readSources(
     orch.close()
     hub.close()
   }
+}
+
+export function projectImportRecordId(
+  recordId: string | null,
+  mint: () => string = newRecordId,
+): string {
+  return recordId ?? mint()
 }
 
 function sequenceImportDecision(
@@ -134,6 +143,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
           owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
         }
         const id = await upsertHostedProjectRow(tx, {
+          id: projectImportRecordId(row.record_id),
           spaceId: options.spaceId,
           name: row.name,
           path: row.path,
