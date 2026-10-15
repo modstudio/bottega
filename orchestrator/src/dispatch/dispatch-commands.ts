@@ -412,7 +412,7 @@ export async function dispatchCommand(
   const timeoutMinutes = timeoutRaw === undefined ? undefined : Number(timeoutRaw)
   if (timeoutMinutes !== undefined) resolveJobTimeoutMs(requested, 1, timeoutMinutes)
   if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
-    throw new Error('--keep-tree is only valid for lens and reader jobs')
+    throw new Error(`--keep-tree is only valid for jobs that read the repository (${jobName})`)
   }
   if (!porcelain && !dispatchProjectName) {
     error(

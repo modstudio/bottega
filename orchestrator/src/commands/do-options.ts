@@ -127,7 +127,7 @@ export const ORCH_DO_OPTIONS = [
     flags: '--mcp [mode]',
     name: 'mcp',
     value: 'optional',
-    description: 'require MCP servers, or prefer them with --mcp=prefer',
+    description: 'require MCP servers, or prefer them with prefer',
   },
 ] as const
 
@@ -136,3 +136,22 @@ export const orchDoValueOptionNames: ReadonlyMap<string, 'required' | 'optional'
     'name' in option ? [[option.name, option.value] as const] : [],
   ),
 )
+
+/** The prompt words of a `do` argv, consuming option values by the same rules Commander applies. */
+export function doPositionals(argv: readonly string[]): string[] {
+  const positionals: string[] = []
+  for (let index = 2; index < argv.length; index++) {
+    const arg = argv[index]!
+    if (arg === '--') return [...positionals, ...argv.slice(index + 1)]
+    if (!arg.startsWith('--')) {
+      positionals.push(arg)
+      continue
+    }
+    if (arg.includes('=')) continue
+    const kind = orchDoValueOptionNames.get(arg.slice(2))
+    const next = argv[index + 1]
+    if (kind === 'required' || (kind === 'optional' && next !== undefined && !next.startsWith('-')))
+      index++
+  }
+  return positionals
+}

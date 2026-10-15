@@ -15,12 +15,13 @@ import {
 } from '../branch/task-branch.ts'
 import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
+import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
-import { effectiveMcpRequest, type McpRequest, requiredMcpServer } from '../mcp/mcp-preflight.ts'
+import { effectiveMcpRequest, parseRequestedMcp, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
@@ -205,13 +206,6 @@ async function routeConstraints(
   return { avoid, distinctModels: await Promise.all(ids.map(modelForDistinct)) }
 }
 
-function requestedMcp(argv: string[]): McpRequest | undefined {
-  const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
-  if (values.length > 1) throw new Error('--mcp may be supplied only once')
-  if (!values.length) return undefined
-  return values[0] === '--mcp=prefer' ? 'prefer' : 'require'
-}
-
 function warnCallerDrift(
   cwd: string,
   baseRef: string | undefined,
@@ -321,28 +315,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const has = (name: string) =>
     argv.includes(`--${name}`) || argv.some((arg) => arg.startsWith(`--${name}=`))
   const values = (name: string) => flagValues(argv, name)
-  const positional = argv.slice(2).filter((value, index, rest) => {
-    const consuming = new Set([
-      '--agent',
-      '--file',
-      '--schema',
-      '--model',
-      '--transport',
-      '--seed',
-      '--key',
-      '--repo',
-      '--base',
-      '--review',
-      '--avoid',
-      '--distinct-from',
-      '--label',
-      '--lens',
-      '--deliverable',
-      '--timeout',
-      '--cwd',
-    ])
-    return !consuming.has(rest[index - 1] ?? '') && !value.startsWith('--')
-  })
+  const positional = doPositionals(argv)
   const prompt = async () =>
     (await readMessageText({
       missing: 'no prompt: pass it as an argument, via --file, or on stdin',
@@ -364,7 +337,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       transport,
       transportExplicit: explicit,
       ...(await routeConstraints(argv, flag('agent'))),
-      mcp: requestedMcp(argv),
+      mcp: parseRequestedMcp(argv),
     }
   }
   const detach = async (jobName: string, text: string, spec: DetachSpec) => {
