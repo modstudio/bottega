@@ -31,6 +31,8 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
 }
 
 async function fullCli(argv: string[], storeFree: boolean): Promise<number> {
+  const { recoverMissingWorkingDirectory } = await import('../database/database-location.ts')
+  recoverMissingWorkingDirectory()
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
   if (!storeFree && argv[0] !== 'migrate') {

@@ -109,13 +109,25 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
 }
 
 export function resolveDatabase(
-  cwd = process.cwd(),
+  cwd: string | undefined = undefined,
   env: StateEnvironment = process.env as StateEnvironment,
   binaryRoot = ROOT,
 ): DatabaseResolution {
   const binaryRepository = embeddedDistributionManifest()
     ? null
     : (repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot))
+  let callerCwd = cwd
+  if (callerCwd === undefined) {
+    try {
+      callerCwd = process.cwd()
+    } catch (error) {
+      callerCwd = missingWorkingDirectoryFallback(error, {
+        mainCheckout: env.ORCH_MAIN_CHECKOUT,
+        binaryRepositoryRoot: binaryRepository?.root ?? null,
+        binaryRoot,
+      })
+    }
+  }
   const path = resolveOrchestratorDatabase(env)
   if (env.ORCH_DB) {
     // ORCH_DB is independently sufficient. When HOME is available, retaining
@@ -137,7 +149,7 @@ export function resolveDatabase(
     }
   }
   const mainStorePath = path
-  const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
+  const repository = repositoryRootFromGit(callerCwd) ?? repositoryRootFromDotGit(callerCwd)
   return {
     path: mainStorePath,
     method: 'state-root',
@@ -152,6 +164,31 @@ export function resolveDatabase(
     ),
     linkedWorktreeBinary: Boolean(binaryRepository?.linked),
     mainStorePath,
+  }
+}
+
+/** Where a process whose working directory was removed continues; any other cwd failure is rethrown. */
+export function missingWorkingDirectoryFallback(
+  error: unknown,
+  facts: { mainCheckout?: string; binaryRepositoryRoot: string | null; binaryRoot: string },
+): string {
+  if ((error as { code?: unknown } | null)?.code !== 'ENOENT') throw error
+  return facts.mainCheckout ?? facts.binaryRepositoryRoot ?? dirname(facts.binaryRoot)
+}
+
+/** Move a process out of an already-removed directory before loading command implementations. */
+export function recoverMissingWorkingDirectory(): string {
+  try {
+    return process.cwd()
+  } catch (error) {
+    const recovered = missingWorkingDirectoryFallback(error, {
+      mainCheckout: process.env.ORCH_MAIN_CHECKOUT,
+      binaryRepositoryRoot:
+        repositoryRootFromGit(ROOT)?.root ?? repositoryRootFromDotGit(ROOT)?.root ?? null,
+      binaryRoot: ROOT,
+    })
+    process.chdir(recovered)
+    return recovered
   }
 }
 

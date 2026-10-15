@@ -27,6 +27,7 @@ import {
 import { teardownTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from '../resources/ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from '../resources/resource-claims.ts'
+import { removalWorkingDirectoryRefusal } from './removal-working-directory.ts'
 import { snapshotlessTrackedRecipeRefusal } from './snapshotless-tracked-recipe.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
 import { runShellTool } from './worktree-tool.ts'
@@ -554,6 +555,8 @@ export function removeFor(
   skipGitRemoval = false,
   scratchAlreadyArchived = false,
 ): WorktreeRemovalResult {
+  const cwdRefusal = removalWorkingDirectoryRefusal(w.path, repoRoot)
+  if (cwdRefusal) return { removed: false, detail: cwdRefusal }
   // The marker identifies who created a tree; it does not transfer that run's
   // branch ownership to a later attacher. Cleanup names only the discarding
   // run's minted branch.
@@ -619,6 +622,8 @@ export function removeWorktree(
         }
       : { removed: true, detail: `${w.path} was already gone` }
   }
+  const cwdRefusal = removalWorkingDirectoryRefusal(w.path, w.repoRoot)
+  if (cwdRefusal) return { removed: false, detail: cwdRefusal }
   // REPORTED, not swallowed. This function's own comment says a removal that
   // silently fails leaves the run's changes on disk with nothing pointing at
   // them — and then it discarded git's answer, after which `bottega run discard`
