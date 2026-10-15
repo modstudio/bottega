@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 test('board reach heartbeat migration preserves rows and emission uniqueness', () => {
@@ -33,7 +34,16 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
       )
       .run()
     expect(applyMigrations(database)).toContain('0102_board_reach_heartbeat')
-    expect(database.query('SELECT * FROM board_reach_delivery').get()).toEqual({
+    expect(
+      database
+        .query(
+          `SELECT id,message_source,message_id,reader_session,reader_project,delivery_point,
+                  blocked_stop,audience,acknowledgement_required,purpose,posted_at,expires_at,
+                  session_started_at,posting_timing,concern,recorded_at,emission_id
+           FROM board_reach_delivery`,
+        )
+        .get(),
+    ).toEqual({
       id: 1,
       message_source: 'hosted',
       message_id: 'message-1',
@@ -56,14 +66,14 @@ test('board reach heartbeat migration preserves rows and emission uniqueness', (
       `INSERT INTO board_reach_delivery
        (message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
         audience,acknowledgement_required,posted_at,session_started_at,posting_timing,concern,
-        recorded_at,emission_id)
+        recorded_at,emission_id,record_id)
        VALUES ('hosted','message-1','reader-2','project-2','heartbeat-monitor',0,
         'architects',0,'2026-10-13T10:02:00.000Z','2026-10-13T09:00:00.000Z',
-        'after-session','not-concerned','2026-10-13T10:03:00.000Z',?)`,
+        'after-session','not-concerned','2026-10-13T10:03:00.000Z',?,?)`,
     )
-    expect(() => insert.run('emission-1')).toThrow()
-    insert.run(null)
-    insert.run(null)
+    expect(() => insert.run('emission-1', newRecordId())).toThrow()
+    insert.run(null, newRecordId())
+    insert.run(null, newRecordId())
     expect(
       database
         .query('SELECT COUNT(*) count FROM board_reach_delivery WHERE emission_id IS NULL')

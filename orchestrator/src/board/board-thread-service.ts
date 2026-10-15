@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -133,8 +134,8 @@ export function replyToThread(
         `INSERT INTO board_message
          (kind,author_kind,author_session,author_run_id,author_harness,author_project,
           audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,
-          thread_root_id)
-         VALUES ('reply',?,?,NULL,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?)`,
+          thread_root_id,record_id)
+         VALUES ('reply',?,?,NULL,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?,?)`,
       )
       .run(
         actor.kind,
@@ -144,6 +145,7 @@ export function replyToThread(
         body,
         createdAt,
         root.id,
+        newRecordId(),
       )
     const replyId = Number(inserted.lastInsertRowid)
     const earlierAuthors = database
@@ -159,10 +161,10 @@ export function replyToThread(
     )
     const addReceipt = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,1,NULL,NULL)`,
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,1,NULL,NULL,?)`,
     )
-    for (const participant of participants) addReceipt.run(replyId, participant)
+    for (const participant of participants) addReceipt.run(replyId, participant, newRecordId())
     return { id: replyId, rootId: root.id, dropped: false, reached: participants.length }
   }, database)
 }

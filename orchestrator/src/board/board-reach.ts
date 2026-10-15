@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
@@ -194,8 +195,8 @@ export function recordBoardReach(input: PreparedBoardReach, database: Database):
       `INSERT INTO board_reach_delivery
        (emission_id,message_source,message_id,reader_session,reader_project,delivery_point,blocked_stop,
         audience,acknowledgement_required,purpose,posted_at,expires_at,session_started_at,posting_timing,
-        concern,recorded_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        concern,recorded_at,record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(emission_id,message_source,message_id) WHERE emission_id IS NOT NULL DO NOTHING`,
     )
     .run(
@@ -215,6 +216,7 @@ export function recordBoardReach(input: PreparedBoardReach, database: Database):
       input.postedAt < input.sessionStartedAt ? 'before-session' : 'after-session',
       input.concern,
       input.recordedAt,
+      newRecordId(),
     )
 }
 
@@ -229,8 +231,8 @@ export function reapBoardReach(clock = Date.now(), database: Database = db()): n
 
 export function noteBoardReachRecordingFailure(database: Database, recordedAt: string): void {
   database
-    .query('INSERT INTO board_reach_recording_failure(recorded_at) VALUES (?)')
-    .run(recordedAt)
+    .query('INSERT INTO board_reach_recording_failure(recorded_at,record_id) VALUES (?,?)')
+    .run(recordedAt, newRecordId())
 }
 
 export function countBoardReach(rows: BoardReachRow[]) {

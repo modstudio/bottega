@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -285,11 +286,11 @@ export function markRunNoticesDelivered(runId: number, ids: number[], clock = Da
   writeTransaction(() => {
     const stamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.id, reader, deliveredAt)
+    for (const row of rows) stamp.run(row.id, reader, deliveredAt, newRecordId())
   }, database)
 }
 
@@ -359,11 +360,11 @@ export function markNoticesDelivered(
   writeTransaction(() => {
     const stamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.id, reader, deliveredAt)
+    for (const row of rows) stamp.run(row.id, reader, deliveredAt, newRecordId())
   }, database)
 }
 
@@ -396,12 +397,12 @@ export function acknowledgeNotice(id: number, env: Environment = process.env, cl
   writableDb()
     .query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,0,?,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,?,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
        acknowledged_at=excluded.acknowledged_at`,
     )
-    .run(id, reader, new Date(clock).toISOString(), new Date(clock).toISOString())
+    .run(id, reader, new Date(clock).toISOString(), new Date(clock).toISOString(), newRecordId())
 }
 
 export function noticeStatus(id: number, env: Environment = process.env, clock = Date.now()) {
@@ -466,11 +467,11 @@ export function markSessionMessagesDelivered(session: string, ids: number[], at 
     database
       .query(
         `INSERT INTO board_receipt
-         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-         VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+         VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
       )
-      .run(id, session, at)
+      .run(id, session, at, newRecordId())
 }
 
 export function boardEscalations(clock = Date.now()) {

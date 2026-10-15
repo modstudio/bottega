@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../shared/record-id.ts'
 import { adoptHostedBoard } from '../src/board/board-adoption.ts'
 import { db } from '../src/database/db.ts'
 import { machineId } from '../src/record/machine-identity.ts'
@@ -63,11 +64,12 @@ function seedLocalBoard(input: ProofInput) {
   const notice = local
     .query(
       `INSERT INTO board_message
-       (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES ('notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?) RETURNING id`,
+       VALUES (?,'notice','architect',?,?,'Adopt notice','Notice',0,?,?,'claude',?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       input.caseSession('adopt-notice'),
       `session:${input.caseSession('adopt-notice')}`,
       input.expiresAt,
@@ -85,18 +87,19 @@ function seedLocalBoard(input: ProofInput) {
   local
     .query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,1,?,NULL)`,
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,?,1,?,NULL)`,
     )
-    .run(notice.id, receiptReader, created)
+    .run(newRecordId(), notice.id, receiptReader, created)
   const question = local
     .query(
       `INSERT INTO board_message
-       (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project)
-       VALUES ('question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?) RETURNING id`,
+       VALUES (?,'question','architect',?,?,'Adopt question','Question',0,?,?,'claude',?) RETURNING id`,
     )
     .get(
+      newRecordId(),
       input.caseSession('adopt-question'),
       `session:${input.caseSession('adopt-question')}`,
       input.expiresAt,
@@ -106,19 +109,20 @@ function seedLocalBoard(input: ProofInput) {
   local
     .query(
       `INSERT INTO board_message
-       (kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
+       (record_id,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,created_at,
         author_harness,author_project,thread_root_id)
-       VALUES ('reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)`,
+       VALUES (?,'reply','architect',?,NULL,NULL,'Answer',0,NULL,?,'claude',?,?)`,
     )
-    .run(input.caseSession('adopt-reply'), created, input.project, question.id)
+    .run(newRecordId(), input.caseSession('adopt-reply'), created, input.project, question.id)
   local
     .query(
       `INSERT INTO board_claim
-       (project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,
+       (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,
         renewed_at,lapses_at)
-       VALUES (?,'resource','adoption-proof','architect',?,3600000,?,?,?)`,
+       VALUES (?,?,'resource','adoption-proof','architect',?,3600000,?,?,?)`,
     )
     .run(
+      newRecordId(),
       input.project,
       input.caseSession('adopt-claim'),
       created,

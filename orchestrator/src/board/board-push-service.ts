@@ -2,6 +2,7 @@
 /** Resolves bounded delivery and pending acknowledgement across local and hosted boards. */
 
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
@@ -256,11 +257,11 @@ export async function markBoardDeliveryDelivered(input: {
   writeTransaction(() => {
     const localStamp = database.query(
       `INSERT INTO board_receipt
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-       VALUES (?,?,0,?,NULL) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const id of local) localStamp.run(id, input.session, deliveredAt)
+    for (const id of local) localStamp.run(id, input.session, deliveredAt, newRecordId())
     const hostedStamp = database.query(
       `INSERT INTO hosted_board_receipt_cache
        (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)

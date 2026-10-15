@@ -1,5 +1,6 @@
 // concern: board-suggestions
 import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import {
@@ -107,16 +108,24 @@ export function suggestBoardPost(
         .query(
           `INSERT INTO board_message
            (kind,purpose,author_kind,author_session,author_run_id,author_harness,author_project,
-            audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at)
-           VALUES ('suggestion','request','worker',NULL,?,NULL,?,?,?, ?,0,NULL,?,?,NULL)`,
+            audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,record_id)
+           VALUES ('suggestion','request','worker',NULL,?,NULL,?,?,?, ?,0,NULL,?,?,NULL,?)`,
         )
-        .run(run.id, run.repo, audience, input.title, input.body, expiresAt, createdAt)
-        .lastInsertRowid,
+        .run(
+          run.id,
+          run.repo,
+          audience,
+          input.title,
+          input.body,
+          expiresAt,
+          createdAt,
+          newRecordId(),
+        ).lastInsertRowid,
     )
     const addTag = database.query(
-      `INSERT INTO board_message_tag (message_id,kind,value,origin) VALUES (?,?,?,'sender')`,
+      `INSERT INTO board_message_tag (message_id,kind,value,origin,record_id) VALUES (?,?,?,'sender',?)`,
     )
-    for (const tag of senderTags) addTag.run(id, tag.kind, tag.value)
+    for (const tag of senderTags) addTag.run(id, tag.kind, tag.value, newRecordId())
   }, database)
   return { id, dropped: false }
 }

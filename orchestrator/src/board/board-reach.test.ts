@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { parseAudience } from './board-policy.ts'
 import { markBoardDeliveryDelivered } from './board-push-service.ts'
@@ -371,8 +372,8 @@ test('reach retention leaves recent rows and failures in place', () => {
   const old = new Date(now - (BOARD_REACH_RETENTION_HOURS + 1) * 60 * 60 * 1_000).toISOString()
   const recent = new Date(now - 60 * 60 * 1_000).toISOString()
   db()
-    .query('INSERT INTO board_reach_recording_failure(recorded_at) VALUES (?),(?)')
-    .run(old, recent)
+    .query('INSERT INTO board_reach_recording_failure(recorded_at,record_id) VALUES (?,?),(?,?)')
+    .run(old, newRecordId(), recent, newRecordId())
   reapBoardReach(now, db())
   expect(db().query('SELECT recorded_at FROM board_reach_recording_failure').all()).toEqual([
     { recorded_at: recent },

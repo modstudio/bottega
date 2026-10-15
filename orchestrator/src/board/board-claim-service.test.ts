@@ -30,6 +30,19 @@ function presence(session: string, task: string | null, clock: number) {
 
 const env = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
 const claimNoticesFor = (session: string, clock: number) => claimNotices(false, env(session), clock)
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+test('a created claim carries a version-7 record id', () => {
+  const { cwd } = fixtureProject()
+  const clock = Date.now()
+  presence('id-holder', null, clock)
+  const taken = takeClaim({ subject: 'path:src/**' }, env('id-holder'), clock, cwd)
+  expect(
+    db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM board_claim WHERE id=?')
+      .get(taken.id)?.record_id,
+  ).toMatch(UUID_V7)
+})
 
 test('a conflicting take is refused and tells the holder with an interrupting notice', () => {
   const { cwd } = fixtureProject()
