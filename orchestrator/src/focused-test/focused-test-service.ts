@@ -1,0 +1,32 @@
+// concern: focused-test-service
+/** Loads run context and applies eligibility policy for focused-test requests. */
+
+import { authenticatedWorkerRun } from '../ask/worker-auth.ts'
+import { db } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
+import {
+  decideFocusedTestEligibility,
+  type FocusedTestEligibility,
+  parseFocusedTestRunner,
+} from './focused-test-decision.ts'
+
+export function focusedTestEligibility(runId: number, token: string): FocusedTestEligibility {
+  const row = db()
+    .query(
+      `SELECT r.job,p.settings FROM run r
+       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
+    )
+    .get(runId) as { job: string; settings: string | null } | null
+  let runner = null
+  try {
+    const settings = JSON.parse(row?.settings ?? '{}') as { focusedTests?: unknown }
+    runner = parseFocusedTestRunner(settings.focusedTests)
+  } catch {
+    runner = null
+  }
+  return decideFocusedTestEligibility({
+    authenticated: authenticatedWorkerRun(runId, token),
+    writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
+    runner,
+  })
+}

@@ -3,6 +3,7 @@
 
 import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
+import type { FocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
@@ -16,8 +17,6 @@ import type {
 } from './project-injection.ts'
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
-
-export type FocusedTestRunnerSettings = { command: string; args: string[] }
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
@@ -160,7 +159,7 @@ export type ProjectSettings = {
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
   /** Fixed executable and argv prefix for writer-requested project-relative test paths. */
-  focusedTests?: FocusedTestRunnerSettings
+  focusedTests?: FocusedTestRunner
   /** Ordered promotion and remote-admission facts after the landing branch merges. */
   release?: ReleaseSettings
   /** Where shared workflows read and write this project's docs and canon. */

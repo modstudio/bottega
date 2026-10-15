@@ -9,23 +9,33 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const focusedTestModules: ArchitectureModule[] = [
-  module('orchestrator/src/focused-test/focused-test-decision.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/focused-test/focused-test-decision.ts', ['node:path']),
+  module('orchestrator/src/focused-test/focused-test-paths.ts', [
+    'node:fs',
+    'node:path',
+    './focused-test-decision.ts',
+  ]),
+  module('orchestrator/src/focused-test/focused-test-files.ts', ['node:fs']),
   module('orchestrator/src/focused-test/focused-test-request.ts', [
     'node:crypto',
     'node:fs',
     'node:path',
     '../run/run-artifacts.ts',
     './focused-test-decision.ts',
+    './focused-test-files.ts',
   ]),
   module('orchestrator/src/focused-test/focused-test-tool.ts', [
     '@modelcontextprotocol/server',
     'zod',
+    '../run/run-artifacts.ts',
+    './focused-test-request.ts',
+    './focused-test-service.ts',
+  ]),
+  module('orchestrator/src/focused-test/focused-test-service.ts', [
     '../ask/worker-auth.ts',
     '../database/db.ts',
     '../jobs/jobs.ts',
-    '../run/run-artifacts.ts',
     './focused-test-decision.ts',
-    './focused-test-request.ts',
   ]),
   module('orchestrator/src/focused-test/focused-test-broker.ts', [
     'node:child_process',
@@ -39,6 +49,8 @@ export const focusedTestModules: ArchitectureModule[] = [
     '../project/project-settings.ts',
     '../resources/main-stack.ts',
     './focused-test-decision.ts',
+    './focused-test-files.ts',
+    './focused-test-paths.ts',
     './focused-test-request.ts',
   ]),
 ]

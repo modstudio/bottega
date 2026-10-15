@@ -2,19 +2,11 @@
 /** Scratch-file request transport used by the worker-facing run_tests tool. */
 
 import { randomUUID } from 'node:crypto'
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { closeSync, constants, existsSync, mkdirSync, openSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { decideFocusedTestRequest, parseFocusedTestResult } from './focused-test-decision.ts'
+import { readFocusedTestRegularFile, writeFocusedTestFileAtomic } from './focused-test-files.ts'
 
 export const FOCUSED_TEST_LOCK_FILE = 'focused-test.lock'
 export const FOCUSED_TEST_REQUEST_FILE = 'focused-test-request.json'
@@ -39,7 +31,13 @@ function waitForPoll(ms: number, signal: AbortSignal): Promise<void> {
 function acquireRequestLock(scratchDir: string): string | null {
   const path = join(scratchDir, FOCUSED_TEST_LOCK_FILE)
   try {
-    closeSync(openSync(path, 'wx'))
+    closeSync(
+      openSync(
+        path,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      ),
+    )
     return null
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
@@ -65,8 +63,7 @@ export async function requestFocusedTests(input: {
   let submitted = false
   try {
     rmSync(resultPath, { force: true })
-    writeFileSync(requestTempPath, JSON.stringify(request))
-    renameSync(requestTempPath, requestPath)
+    writeFocusedTestFileAtomic(requestPath, JSON.stringify(request))
     submitted = true
     while (!existsSync(resultPath)) {
       if (input.signal.aborted) {
@@ -74,12 +71,14 @@ export async function requestFocusedTests(input: {
       }
       await waitForPoll(FOCUSED_TEST_POLL_MS, input.signal)
     }
-    const result = parseFocusedTestResult(JSON.parse(readFileSync(resultPath, 'utf8')))
+    const result = parseFocusedTestResult(JSON.parse(readFocusedTestRegularFile(resultPath)))
     rmSync(resultPath, { force: true })
+    const liveLog = join(input.scratchDir, result.logName)
     const artifact = join(runArtifactsDir(input.runId), result.logName)
     return [
       `Focused tests exited ${result.exitCode}${result.timedOut ? ' after timing out' : ''} in ${result.elapsedMs}ms.`,
-      `Full log: ${artifact}`,
+      `Full log: ${liveLog}`,
+      `After the run closes: ${artifact}`,
       result.outputTail ? `Output tail:\n${result.outputTail}` : 'Output tail: (empty)',
     ].join('\n')
   } finally {

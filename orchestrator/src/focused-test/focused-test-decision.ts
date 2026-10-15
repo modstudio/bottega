@@ -1,13 +1,16 @@
 // concern: focused-test-decision
-/** Pure contracts and path confinement for project-registered focused test runs. */
+/** Pure contracts and decisions for project-registered focused test runs. */
 
-import { realpathSync, statSync } from 'node:fs'
 import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 export const FOCUSED_TEST_MAX_PATHS = 64
 const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 
 export type FocusedTestRunner = { command: string; args: string[] }
+export type FocusedTestRunnerValidation = {
+  runner: FocusedTestRunner | null
+  problems: string[]
+}
 export type FocusedTestRequest = { id: string; paths: string[] }
 export type FocusedTestResult = {
   exitCode: number
@@ -17,9 +20,7 @@ export type FocusedTestResult = {
   outputTail: string
 }
 
-export type FocusedTestEligibility =
-  | { eligible: true; runner: FocusedTestRunner }
-  | { eligible: false; message: string }
+export type FocusedTestEligibility = { eligible: true } | { eligible: false; message: string }
 
 export function decideFocusedTestEligibility(input: {
   authenticated: boolean
@@ -38,7 +39,7 @@ export function decideFocusedTestEligibility(input: {
       message: "This run's project has no registered focused test runner, so nothing was run.",
     }
   }
-  return { eligible: true, runner: input.runner }
+  return { eligible: true }
 }
 
 export function decideFocusedTestRequest(busy: boolean): string | null {
@@ -52,19 +53,33 @@ function parseStringArray(value: unknown, location: string): string[] {
   return value as string[]
 }
 
-export function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null {
-  if (value === undefined || value === null) return null
+export function validateFocusedTestRunner(value: unknown): FocusedTestRunnerValidation {
+  if (value === undefined || value === null) return { runner: null, problems: [] }
   if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('focusedTests must be an object')
+    return { runner: null, problems: ['focusedTests must be an object'] }
   }
   const candidate = value as Record<string, unknown>
+  const problems: string[] = []
   if (typeof candidate.command !== 'string' || !candidate.command.trim()) {
-    throw new Error('focusedTests.command must be a non-empty string')
+    problems.push('focusedTests.command must be a non-empty string')
   }
+  if (!Array.isArray(candidate.args) || candidate.args.some((item) => typeof item !== 'string')) {
+    problems.push('focusedTests.args must be an array of strings')
+  }
+  if (problems.length) return { runner: null, problems }
   return {
-    command: candidate.command.trim(),
-    args: parseStringArray(candidate.args, 'focusedTests.args'),
+    runner: {
+      command: (candidate.command as string).trim(),
+      args: candidate.args as string[],
+    },
+    problems: [],
   }
+}
+
+export function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null {
+  const validation = validateFocusedTestRunner(value)
+  if (validation.problems.length) throw new Error(validation.problems.join('; '))
+  return validation.runner
 }
 
 export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {
@@ -104,28 +119,40 @@ function beneath(root: string, candidate: string): boolean {
   return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 }
 
-export function validateFocusedTestPaths(paths: readonly string[], worktree: string): string[] {
+export function normalizeFocusedTestPaths(paths: readonly string[]): string[] {
   if (!paths.length) throw new Error('paths must contain at least one project-relative path')
   if (paths.length > FOCUSED_TEST_MAX_PATHS) {
     throw new Error(`paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`)
   }
-  const root = realpathSync(worktree)
   return paths.map((entry) => {
     if (!entry || isAbsolute(entry)) {
       throw new Error(`focused test path ${JSON.stringify(entry)} must be relative`)
+    }
+    if (entry.startsWith('-')) {
+      throw new Error(`focused test path ${JSON.stringify(entry)} must not start with '-'`)
     }
     const normalized = normalize(entry)
     if (normalized.split(sep).includes('..')) {
       throw new Error(`focused test path ${JSON.stringify(entry)} contains a parent segment`)
     }
-    let actual: string
-    try {
-      actual = realpathSync(resolve(root, normalized))
-      statSync(actual)
-    } catch {
+    return normalized
+  })
+}
+
+export type FocusedTestPathFact = {
+  entry: string
+  normalized: string
+  resolvedRoot: string
+  resolvedCandidate: string | null
+  exists: boolean
+}
+
+export function decideFocusedTestPathFacts(facts: readonly FocusedTestPathFact[]): string[] {
+  return facts.map(({ entry, normalized, resolvedRoot, resolvedCandidate, exists }) => {
+    if (!exists || !resolvedCandidate) {
       throw new Error(`focused test path ${JSON.stringify(entry)} does not exist`)
     }
-    if (!beneath(root, actual)) {
+    if (!beneath(resolvedRoot, resolvedCandidate)) {
       throw new Error(
         `focused test path ${JSON.stringify(entry)} resolves outside the run worktree`,
       )
@@ -140,7 +167,10 @@ export function focusedTestInvocation(
   worktree: string,
 ): { command: string; argv: string[] } {
   return {
-    command: isAbsolute(runner.command) ? runner.command : resolve(worktree, runner.command),
+    command:
+      isAbsolute(runner.command) || !runner.command.includes('/')
+        ? runner.command
+        : resolve(worktree, runner.command),
     argv: [...runner.args, ...paths],
   }
 }

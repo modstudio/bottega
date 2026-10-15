@@ -9,10 +9,11 @@ import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { registerLiveGate } from './run-process.ts'
 
-export type WorkerExecutionBrokers = { gate: GateBroker; focusedTests: FocusedTestBroker }
+export type WorkerExecutionBrokers = { gate: GateBroker; focusedTests: FocusedTestBroker | null }
 
 export function startWorkerExecutionBrokers(input: {
   repoJob: boolean
+  writesRepo: boolean
   worktree: Worktree | null
   runId: number
   scratchDir: string
@@ -30,12 +31,14 @@ export function startWorkerExecutionBrokers(input: {
       onExecutionStart: ({ at }) => input.onGateStart(at),
       onExecutionFinish: ({ at }) => input.onGateFinish(at),
     }),
-    focusedTests: startFocusedTestBroker({
-      runId: input.runId,
-      scratchDir: input.scratchDir,
-      environment: input.environment,
-      registerActive: registerLiveGate,
-    }),
+    focusedTests: input.writesRepo
+      ? startFocusedTestBroker({
+          runId: input.runId,
+          scratchDir: input.scratchDir,
+          environment: input.environment,
+          registerActive: registerLiveGate,
+        })
+      : null,
   }
 }
 
@@ -44,5 +47,5 @@ export async function closeWorkerExecutionBrokers(
 ): Promise<void> {
   if (!brokers) return
   await brokers.gate.close()
-  await brokers.focusedTests.close()
+  await brokers.focusedTests?.close()
 }

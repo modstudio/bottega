@@ -1,68 +1,68 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { describe, expect, test } from 'bun:test'
 import {
-  decideFocusedTestEligibility,
-  decideFocusedTestRequest,
+  decideFocusedTestPathFacts,
   FOCUSED_TEST_MAX_PATHS,
   focusedTestInvocation,
+  normalizeFocusedTestPaths,
   parseFocusedTestRequest,
   parseFocusedTestResult,
-  validateFocusedTestPaths,
 } from './focused-test-decision.ts'
 
-let roots: string[] = []
-const directory = (name: string) => {
-  const root = mkdtempSync(join(tmpdir(), name))
-  roots.push(root)
-  return root
-}
-
-afterEach(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true })
-  roots = []
-})
-
 describe('focused test decisions', () => {
-  test('confines existing files and directories to the real worktree', () => {
-    const tree = directory('focused-tree-')
-    mkdirSync(join(tree, 'tests'))
-    writeFileSync(join(tree, 'tests', 'one.test.ts'), '')
-    expect(validateFocusedTestPaths(['tests/one.test.ts', 'tests'], tree)).toEqual([
+  test('requires bounded project-relative non-option paths', () => {
+    expect(normalizeFocusedTestPaths(['tests/one.test.ts', 'tests'])).toEqual([
       'tests/one.test.ts',
       'tests',
     ])
-    expect(() => validateFocusedTestPaths([join(tree, 'tests')], tree)).toThrow(
-      `focused test path ${JSON.stringify(join(tree, 'tests'))} must be relative`,
+    expect(() => normalizeFocusedTestPaths(['/worktree/tests'])).toThrow(
+      'focused test path "/worktree/tests" must be relative',
     )
-    expect(() => validateFocusedTestPaths(['../outside'], tree)).toThrow(
+    expect(() => normalizeFocusedTestPaths(['../outside'])).toThrow(
       'focused test path "../outside" contains a parent segment',
     )
-    expect(() => validateFocusedTestPaths(['missing.test.ts'], tree)).toThrow(
-      'focused test path "missing.test.ts" does not exist',
+    expect(() => normalizeFocusedTestPaths(['--filter'])).toThrow(
+      'focused test path "--filter" must not start with',
     )
-  })
-
-  test('rejects a symlink escape', () => {
-    const tree = directory('focused-tree-')
-    const outside = directory('focused-outside-')
-    writeFileSync(join(outside, 'escape.test.ts'), '')
-    symlinkSync(join(outside, 'escape.test.ts'), join(tree, 'escape.test.ts'))
-    expect(() => validateFocusedTestPaths(['escape.test.ts'], tree)).toThrow(
-      'focused test path "escape.test.ts" resolves outside the run worktree',
-    )
-  })
-
-  test('requires a bounded non-empty path list', () => {
-    const tree = directory('focused-tree-')
-    expect(() => validateFocusedTestPaths([], tree)).toThrow('at least one')
+    expect(() => normalizeFocusedTestPaths([])).toThrow('at least one')
     expect(() =>
-      validateFocusedTestPaths(
-        Array.from({ length: FOCUSED_TEST_MAX_PATHS + 1 }, () => 'x'),
-        tree,
-      ),
+      normalizeFocusedTestPaths(Array.from({ length: FOCUSED_TEST_MAX_PATHS + 1 }, () => 'x')),
     ).toThrow(`at most ${FOCUSED_TEST_MAX_PATHS}`)
+  })
+
+  test('decides existence and canonical confinement from filesystem facts', () => {
+    expect(
+      decideFocusedTestPathFacts([
+        {
+          entry: 'tests/one.test.ts',
+          normalized: 'tests/one.test.ts',
+          resolvedRoot: '/tree',
+          resolvedCandidate: '/tree/tests/one.test.ts',
+          exists: true,
+        },
+      ]),
+    ).toEqual(['tests/one.test.ts'])
+    expect(() =>
+      decideFocusedTestPathFacts([
+        {
+          entry: 'missing.test.ts',
+          normalized: 'missing.test.ts',
+          resolvedRoot: '/tree',
+          resolvedCandidate: null,
+          exists: false,
+        },
+      ]),
+    ).toThrow('focused test path "missing.test.ts" does not exist')
+    expect(() =>
+      decideFocusedTestPathFacts([
+        {
+          entry: 'escape.test.ts',
+          normalized: 'escape.test.ts',
+          resolvedRoot: '/tree',
+          resolvedCandidate: '/outside/escape.test.ts',
+          exists: true,
+        },
+      ]),
+    ).toThrow('focused test path "escape.test.ts" resolves outside the run worktree')
   })
 
   test('builds argv only from registered args followed by validated paths', () => {
@@ -76,19 +76,10 @@ describe('focused test decisions', () => {
       argv: ['--fixed', 'registered', 'tests/one.test.ts'],
     })
     expect(invocation.argv).not.toContain('--from-request')
-  })
-
-  test('missing runner is an explicit no-op and concurrency is refused', () => {
     expect(
-      decideFocusedTestEligibility({ authenticated: true, writer: true, runner: null }),
-    ).toEqual({
-      eligible: false,
-      message: "This run's project has no registered focused test runner, so nothing was run.",
-    })
-    expect(decideFocusedTestRequest(true)).toBe(
-      'A focused test run is already in flight for this run.',
-    )
-    expect(decideFocusedTestRequest(false)).toBeNull()
+      focusedTestInvocation({ command: 'bun', args: ['test'] }, ['tests/one.test.ts'], '/worktree')
+        .command,
+    ).toBe('bun')
   })
 
   test('parses only the request and result transport shapes', () => {

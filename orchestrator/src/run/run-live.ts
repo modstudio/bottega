@@ -351,6 +351,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     executionBrokers = startWorkerExecutionBrokers({
       repoJob,
+      writesRepo: writesJob,
       worktree,
       runId: claim.id,
       scratchDir,

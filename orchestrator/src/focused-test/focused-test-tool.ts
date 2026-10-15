@@ -3,35 +3,11 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { authenticatedWorkerRun } from '../ask/worker-auth.ts'
-import { db } from '../database/db.ts'
-import { JOBS } from '../jobs/jobs.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
-import { decideFocusedTestEligibility, parseFocusedTestRunner } from './focused-test-decision.ts'
 import { requestFocusedTests } from './focused-test-request.ts'
+import { focusedTestEligibility } from './focused-test-service.ts'
 
 type TextResult = { content: Array<{ type: 'text'; text: string }>; isError?: true }
-
-function eligibility(runId: number, token: string) {
-  const row = db()
-    .query(
-      `SELECT r.job,p.settings FROM run r
-       LEFT JOIN project p ON p.id=r.project_id WHERE r.id=?`,
-    )
-    .get(runId) as { job: string; settings: string | null } | null
-  let runner = null
-  try {
-    const settings = JSON.parse(row?.settings ?? '{}') as { focusedTests?: unknown }
-    runner = parseFocusedTestRunner(settings.focusedTests)
-  } catch {
-    runner = null
-  }
-  return decideFocusedTestEligibility({
-    authenticated: authenticatedWorkerRun(runId, token),
-    writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
-    runner,
-  })
-}
 
 export function registerFocusedTestTool(input: {
   registerTool: McpServer['registerTool']
@@ -49,7 +25,7 @@ export function registerFocusedTestTool(input: {
     },
     async ({ paths }, context) => {
       try {
-        const decision = eligibility(input.runId, input.token)
+        const decision = focusedTestEligibility(input.runId, input.token)
         if (!decision.eligible) return input.text(decision.message)
         return input.text(
           await requestFocusedTests({

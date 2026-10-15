@@ -319,6 +319,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     [
       '../../../shared/trackers.ts',
       '../enforcement/mechanical-check-declaration.ts',
+      '../focused-test/focused-test-decision.ts',
       '../recipe/recipe.ts',
       '../workflow/autonomy.ts',
       '../worktree/worktree-provision.ts',

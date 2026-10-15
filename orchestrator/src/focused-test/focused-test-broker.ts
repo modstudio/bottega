@@ -2,17 +2,7 @@
 /** Host-side execution of focused test requests from a sandboxed writing worker. */
 
 import { spawn } from 'node:child_process'
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-  writeSync,
-} from 'node:fs'
+import { closeSync, existsSync, mkdirSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -28,8 +18,14 @@ import {
   focusedTestInvocation,
   parseFocusedTestRequest,
   parseFocusedTestRunner,
-  validateFocusedTestPaths,
 } from './focused-test-decision.ts'
+import {
+  createFocusedTestFile,
+  readFocusedTestRegularFile,
+  writeFocusedTestFileAtomic,
+  writeFocusedTestFileExclusive,
+} from './focused-test-files.ts'
+import { validateFocusedTestPaths } from './focused-test-paths.ts'
 import {
   FOCUSED_TEST_ACTIVE_FILE,
   FOCUSED_TEST_LOCK_FILE,
@@ -101,22 +97,23 @@ function ensureFocusedTestMainStack(
 
 function writeResult(scratchDir: string, requestId: string, result: FocusedTestResult): void {
   const path = join(scratchDir, focusedTestResultFile(requestId))
-  const temporary = `${path}.tmp`
-  writeFileSync(temporary, JSON.stringify(result))
-  renameSync(temporary, path)
+  writeFocusedTestFileAtomic(path, JSON.stringify(result))
 }
 
 function claimRequest(scratchDir: string): FocusedTestRequest | null {
   const requestPath = join(scratchDir, FOCUSED_TEST_REQUEST_FILE)
   if (!existsSync(requestPath)) return null
   const activePath = join(scratchDir, FOCUSED_TEST_ACTIVE_FILE)
+  let contents: string
   try {
-    renameSync(requestPath, activePath)
+    contents = readFocusedTestRegularFile(requestPath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
-  return parseFocusedTestRequest(JSON.parse(readFileSync(activePath, 'utf8')))
+  writeFocusedTestFileExclusive(activePath, contents)
+  rmSync(requestPath)
+  return parseFocusedTestRequest(JSON.parse(contents))
 }
 
 function startFocusedTest(input: {
@@ -146,7 +143,7 @@ function startFocusedTest(input: {
   completion = (async () => {
     const logName = `focused-test-${input.request.id}.log`
     const logPath = join(input.scratchDir, logName)
-    const fd = openSync(logPath, 'w')
+    const fd = createFocusedTestFile(logPath)
     const started = Date.now()
     let outputTail = ''
     let exitCode = -1
@@ -235,7 +232,10 @@ export function startFocusedTestBroker(input: {
         logName: 'focused-test-invalid-request.log',
         outputTail,
       })
-      writeFileSync(join(input.scratchDir, 'focused-test-invalid-request.log'), outputTail)
+      writeFocusedTestFileExclusive(
+        join(input.scratchDir, 'focused-test-invalid-request.log'),
+        outputTail,
+      )
       rmSync(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE), { force: true })
       rmSync(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE), { force: true })
       return
