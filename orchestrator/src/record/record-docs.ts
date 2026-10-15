@@ -41,7 +41,6 @@ import {
   recordDocumentLifecycle,
   validateImportedDocumentLifecycles,
 } from './record-doc-lifecycle.ts'
-
 import {
   importedLiveArticleFields,
   newerHostedImportRefusal,
@@ -49,6 +48,7 @@ import {
   type RecordDocImportInput,
   recordDocRevisionIdentityRefusal,
 } from './record-doc-mapping.ts'
+import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import {
   storedDocAudiences,
@@ -89,6 +89,8 @@ export type RecordCanonImportResult = {
 type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
 
+export type RecordDocOrderInput = Omit<RecordDocOrder, 'spaceId'>
+
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
   try {
@@ -99,6 +101,12 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   } finally {
     await client.close()
   }
+}
+
+export async function reorderRecordDocs(
+  input: Tenant & RecordDocOrderInput,
+): Promise<{ orderedIds: string[] }> {
+  return reorderRecordDocRows(input)
 }
 
 type RecordDocWriteInput = Tenant & {

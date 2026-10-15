@@ -11,6 +11,12 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-order.ts', []),
+  module('orchestrator/src/doc/local-doc-order.ts', [
+    '../database/db.ts',
+    './doc-order.ts',
+    './doc-write-guard.ts',
+  ]),
   module('orchestrator/src/doc/doc-resume-frontmatter.ts', []),
   module('orchestrator/src/doc/doc-article-fields.ts', [
     '../../../shared/brand.ts',

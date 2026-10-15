@@ -11,7 +11,15 @@ import {
 } from '../../../../shared/docs.ts'
 import { localDocSearch } from '../../doc-search.ts'
 import { localDocRead, localDocRevisionRead, localDocsTree } from '../../local-docs.ts'
-import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
+import {
+  docGet,
+  docHistory,
+  docList,
+  docRemove,
+  docReorder,
+  docSet,
+  docSubjects,
+} from '../../orch.ts'
 import type { Context } from '../context.ts'
 import { fromOrch } from '../orch-error.ts'
 
@@ -28,7 +36,18 @@ const audiences = z
     'Audiences must not contain duplicates',
   )
   .transform(normalizeDocAudiences)
+const docReorderProcedure = t.procedure
+  .input(
+    z.object({
+      scope,
+      subject,
+      parentId: z.string().nullable(),
+      orderedIds: z.array(z.string()),
+    }),
+  )
+  .mutation(({ input }) => fromOrch(() => docReorder(input), true))
 export const docRouter = t.router({
+  reorder: docReorderProcedure,
   list: t.procedure
     .input(
       z

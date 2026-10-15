@@ -92,10 +92,12 @@ import {
 } from './board-contract.ts'
 import {
   type DocListFilters,
+  type DocReorderInput,
   type DocRevisionMetadata,
   type DocSetInput,
   type DocSubjects,
   docArgv,
+  docReorderArgv,
 } from './orch-doc-argv.ts'
 import { refreshProjects } from './projects.ts'
 
@@ -881,6 +883,9 @@ export const docGet = (
 
 export const docSet = (input: DocSetInput) =>
   jsonDocument<DocRow>(docArgv('set', input), { stdin: input.body })
+
+export const docReorder = (input: DocReorderInput) =>
+  jsonDocument<{ orderedIds: string[] }>(docReorderArgv(input))
 
 export const docRemove = (
   scope: string,

@@ -12,6 +12,7 @@ type HostedDocClient = Pick<
   | 'getDoc'
   | 'listRevisions'
   | 'upsertDoc'
+  | 'reorderDocs'
   | 'importDoc'
   | 'importCanon'
   | 'deleteDoc'
@@ -41,6 +42,7 @@ export async function hostedDocClient(
     getDoc: (id) => client.getDoc(id, destination),
     listRevisions: (id) => client.listRevisions(id, destination),
     upsertDoc: (input) => client.upsertDoc({ ...input, projectId }, destination),
+    reorderDocs: (input) => client.reorderDocs(input, destination),
     importDoc: (input) =>
       client.importDoc({ ...input, doc: { ...input.doc, projectId } }, destination),
     importCanon: (input) => client.importCanon(input, destination),

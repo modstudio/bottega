@@ -10,7 +10,7 @@ import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
-import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-board.ts'
+import type { RecordBoardDeps } from './record-api-board.ts'
 import {
   recordCanonImportSchema,
   recordDocImportSchema,
@@ -20,13 +20,12 @@ import {
   type RecordInvitationRouteDeps,
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
-import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
-import { registerRecordSettingsRoutes } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import type {
@@ -53,6 +52,7 @@ import {
   RecordDocError,
   type RecordDocImportInput,
   type RecordDocListInput,
+  type RecordDocOrderInput,
   type RecordDocRevision,
 } from './record-docs.ts'
 import {
@@ -145,6 +145,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>
+  reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
@@ -438,9 +439,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     throw error
   }
-  registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordSettingsRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordBoardRoutes(app, deps, { noSpace, writeError })
+  registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

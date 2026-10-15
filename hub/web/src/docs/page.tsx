@@ -23,7 +23,8 @@ import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement 
 import { type RevisionMode, RevisionViewer, useRevisionView } from './revision-viewer.tsx'
 import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
-import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
+import { useReorderableDocsTree } from './use-doc-reorder.ts'
+import { useDocsDocument, useDocsSearch } from './use-docs.ts'
 import { DocsView } from './view.tsx'
 
 function enterDocEdit(
@@ -71,6 +72,11 @@ function docsSourceName(
   )
 }
 
+const selectedRevision = (
+  source: ReturnType<typeof docsSource>,
+  revision: string | number | undefined,
+) => (source !== 'public' && revision !== undefined ? String(revision) : undefined)
+
 export function DocsPage() {
   const hosted = isHostedMode()
   const origin = hostedOrigin()
@@ -96,7 +102,7 @@ export function DocsPage() {
   const [showDrafts, setShowDrafts] = useState(false)
   const [showWorking, setShowWorking] = useState(false)
   const [revisionMode, setRevisionMode] = useState<RevisionMode>('version')
-  const catalog = useDocsTree(source)
+  const catalog = useReorderableDocsTree(source, whoami.data?.memberships)
   const includeDrafts = source !== 'public' && showDrafts
   const navigationItems = useMemo(
     () => docsVisibleByStatus(catalog.items, includeDrafts),
@@ -128,8 +134,7 @@ export function DocsPage() {
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected, selectedAudience(filters))
-  const revisionId =
-    source !== 'public' && search?.revision !== undefined ? String(search.revision) : undefined
+  const revisionId = selectedRevision(source, search?.revision)
   useEffect(() => {
     if (!revisionId) setRevisionMode('version')
   }, [revisionId])
@@ -221,6 +226,7 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
+        treeReorder={catalog.treeReorder}
         ready={docsWorkspaceReady(
           catalog.isPending,
           emptyChooserSet,

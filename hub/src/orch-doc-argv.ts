@@ -81,6 +81,24 @@ export type DocArgvInput = {
 
 export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
 
+export type DocReorderInput = {
+  scope: string
+  subject: string | null
+  parentId: string | null
+  orderedIds: string[]
+}
+
+export function docReorderArgv(input: DocReorderInput): string[] {
+  return [
+    'doc',
+    'reorder',
+    ...docAddressFlags(input),
+    ...(input.parentId ? ['--parent-id', input.parentId] : []),
+    ...input.orderedIds.flatMap((id) => ['--id', id]),
+    '--json',
+  ]
+}
+
 function subjectFlags(subject: string | null | undefined): string[] {
   return subject ? ['--subject', subject] : []
 }

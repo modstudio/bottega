@@ -11,6 +11,7 @@ import {
   unusedBoardClientMethods,
   unusedIdentityAndSpaceClientMethods,
 } from './fixtures/record-api.ts'
+import { proveHostedCanonRefusal } from './postgres-canon-refusal-proof.ts'
 import { proveEqualTimestampDocPaging } from './postgres-doc-cursor-proof.ts'
 import { proveProjectIdentity } from './postgres-project-identity-proof.ts'
 import { proveSubjects } from './postgres-subject-cursor-proof.ts'
@@ -80,6 +81,21 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     getDoc: unused,
     listRevisions: unused,
     upsertDoc: unused,
+    reorderDocs: async (input, destination) => {
+      const response = await fetch(`${origin}/v1/docs/order`, {
+        method: 'PUT',
+        headers: destination?.destinationSpaceId
+          ? {
+              ...headers,
+              'content-type': 'application/json',
+              'x-record-space': destination.destinationSpaceId,
+            }
+          : { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!response.ok) throw new Error(`/v1/docs/order ${response.status}`)
+      return response.json() as Promise<{ orderedIds: string[] }>
+    },
     applySettingsPermission: unused,
     importDoc: unused,
     importCanon: unused,
@@ -95,27 +111,6 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     unvoidRun: unused,
     counts: unused,
   }
-}
-
-async function proveCanonRefusal(origin: string, headers: Record<string, string>): Promise<void> {
-  const canon = await fetch(`${origin}/v1/docs`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      scope: 'canon',
-      subject: null,
-      slug: '.agents/rules/unlinted.md',
-      title: 'No',
-      body: 'Rule without required metadata.\n',
-      delivery: 'demand',
-      reason: 'prove canon refusal',
-      author: 'proof',
-    }),
-  })
-  expect(canon.status).toBe(400)
-  expect(await canon.json()).toMatchObject({
-    error: expect.stringContaining('refusing canon write'),
-  })
 }
 
 type CanonProofAddress = { kind: 'user' } | { kind: 'project'; subject: string }
@@ -608,7 +603,7 @@ export async function proveHostedDocs(input: {
   origin: string
   token: string
   otherToken: string
-}): Promise<void> {
+}): Promise<string> {
   const headers = {
     Authorization: `Bearer ${input.token}`,
     'content-type': 'application/json',
@@ -841,7 +836,7 @@ export async function proveHostedDocs(input: {
     }),
   })
   expect(inject.status).toBe(400)
-  await proveCanonRefusal(input.origin, headers)
+  await proveHostedCanonRefusal(input.origin, headers)
   await selectSpace(identity.personalSpaceId)
   await proveCanonImports(input.origin, headers)
 
@@ -873,6 +868,7 @@ export async function proveHostedDocs(input: {
   await proveCachePull(input.origin, input.token, headers)
   await proveEqualTimestampDocPaging(input.origin, headers)
   await proveDocImport(input.origin, headers)
+  return memberSpaceId
 }
 
 function importBody(input: {

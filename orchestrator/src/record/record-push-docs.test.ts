@@ -128,6 +128,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
     },
     listRevisions: unused,
     upsertDoc: unused,
+    reorderDocs: unused,
     importDoc: async (input) => {
       imports.push(structuredClone(input))
       const id = input.doc.id!

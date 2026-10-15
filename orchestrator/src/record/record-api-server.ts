@@ -61,6 +61,7 @@ import {
   listRecordDocRevisions,
   listRecordDocs,
   renameRecordDocSubject,
+  reorderRecordDocs,
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
@@ -163,6 +164,27 @@ function serveRecordApi(
   return server
 }
 
+function recordDocDependencies() {
+  return {
+    listDocs: listRecordDocs,
+    listPublicDocs: listPublicRecordDocs,
+    readPublicDoc: getPublicRecordDoc,
+    searchPublicDocs: searchPublicRecordDocs,
+    searchDocs: searchRecordDocs,
+    readDoc: getRecordDoc,
+    listDocRevisions: listRecordDocRevisions,
+    upsertDoc: upsertRecordDoc,
+    reorderDocs: reorderRecordDocs,
+    importDoc: importRecordDoc,
+    importCanon: importRecordCanon,
+    deleteDoc: deleteRecordDoc,
+    consumeDoc: consumeRecordDoc,
+    restoreDoc: restoreRecordDoc,
+    renameDocSubject: renameRecordDocSubject,
+    countDocs: countRecordDocs,
+  }
+}
+
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
   const config = recordApiServerConfig(environment)
   const auth = recordAuth(config.recordUrl, environment, config.authDatabaseUrl)
@@ -189,21 +211,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     defineSubject: defineRecordSubject,
     reorderSubjects: reorderRecordSubjects,
     retireSubject: retireRecordSubject,
-    listDocs: listRecordDocs,
-    listPublicDocs: listPublicRecordDocs,
-    readPublicDoc: getPublicRecordDoc,
-    searchPublicDocs: searchPublicRecordDocs,
-    searchDocs: searchRecordDocs,
-    readDoc: getRecordDoc,
-    listDocRevisions: listRecordDocRevisions,
-    upsertDoc: upsertRecordDoc,
-    importDoc: importRecordDoc,
-    importCanon: importRecordCanon,
-    deleteDoc: deleteRecordDoc,
-    consumeDoc: consumeRecordDoc,
-    restoreDoc: restoreRecordDoc,
-    renameDocSubject: renameRecordDocSubject,
-    countDocs: countRecordDocs,
+    ...recordDocDependencies(),
     applySettingsPermission: applyRecordSettingsPermission,
     upsertScore: async (input) =>
       upsertRecordScore({

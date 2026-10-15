@@ -5,6 +5,25 @@ function byPositionThenTitle(a: DocsTreeItem, b: DocsTreeItem) {
   return a.title.localeCompare(b.title)
 }
 
+export function siblingKey(item: DocsTreeItem): string {
+  return JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId])
+}
+
+/** Move one sibling immediately before the sibling it was dragged over. */
+export function orderedIdsAfterDrag(
+  siblings: readonly DocsTreeItem[],
+  activeId: string,
+  overId: string,
+): string[] {
+  const ordered = [...siblings].sort(byPositionThenTitle).map((item) => item.id)
+  const from = ordered.indexOf(activeId)
+  const over = ordered.indexOf(overId)
+  if (from < 0 || over < 0 || from === over) return ordered
+  const [active] = ordered.splice(from, 1)
+  ordered.splice(over, 0, active!)
+  return ordered
+}
+
 /** True when following parentId from this item would return to it. */
 export function parentEdgeCycles(
   item: DocsTreeItem,

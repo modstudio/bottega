@@ -68,6 +68,7 @@ describe('hostedRouter', () => {
       'record.projects',
       'record.ratio',
       'record.removeReportSubscription',
+      'record.reorderDocs',
       'record.review',
       'record.reviews',
       'record.routing',

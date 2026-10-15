@@ -40,6 +40,13 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import {
+  type DocOrderInput,
+  docOrderRefusal,
+  hostedDocOrder,
+  type LocalDocOrderRow,
+  localDocId,
+} from './doc-order.ts'
+import {
   type Doc,
   type DocRevision,
   type DocRevisionMetadata,
@@ -54,6 +61,7 @@ import {
   validDocSubjects,
 } from './doc-subjects.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
+import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
   assertLocalDocRemovalAllowed,
@@ -451,6 +459,44 @@ export async function setDoc(input: DocWriteInput): Promise<Doc> {
     }
   }
   return setDocWithOp(input)
+}
+
+export async function reorderDocs(input: DocOrderInput): Promise<{ orderedIds: string[] }> {
+  assertWorkerDocStoreWriteAllowed('reorderDocs')
+  return applyRecordWriteAuthority({
+    local: () => executeLocalDocOrder(input),
+    hosted: async () => {
+      const parentId = input.parentId === null ? null : localDocId(input.parentId)
+      const siblings = db()
+        .query<LocalDocOrderRow, [string, string, number | null]>(
+          `SELECT id, slug, record_id FROM doc
+           WHERE scope=? AND COALESCE(subject, '')=? AND parent_id IS ?
+           ORDER BY position, title, id`,
+        )
+        .all(input.scope, input.subject ?? '', parentId)
+      const refusal = docOrderRefusal(
+        siblings.map((row) => String(row.id)),
+        input.orderedIds,
+      )
+      if (refusal) throw new Error(refusal)
+      const parent =
+        parentId === null
+          ? null
+          : (db()
+              .query<LocalDocOrderRow, [number]>('SELECT id, slug, record_id FROM doc WHERE id=?')
+              .get(parentId) ?? null)
+      const client = await hostedDocClient(input.scope, input.subject)
+      await client.reorderDocs(
+        hostedDocOrder(
+          input,
+          siblings,
+          parent,
+          `run ${PLATFORM_SLUG} record push-docs before reordering documents`,
+        ),
+      )
+      return executeLocalDocOrder(input)
+    },
+  })
 }
 
 export async function setDocStatus(

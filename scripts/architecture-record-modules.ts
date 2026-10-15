@@ -300,6 +300,26 @@ export const recordModules: RecordModule[] = [
     './record-doc-audiences.ts',
   ]),
   module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
+  module('orchestrator/src/record/record-doc-order.ts', [
+    'bun',
+    '../../../shared/record/tenant.ts',
+    '../doc/doc-order.ts',
+    './record-doc-errors.ts',
+  ]),
+  module('orchestrator/src/record/record-api-doc-order.ts', [
+    'hono',
+    './record-api-doc-schemas.ts',
+    './record-auth.ts',
+    './record-docs.ts',
+  ]),
+  module('orchestrator/src/record/record-api-write-routes.ts', [
+    'hono',
+    './record-api-board.ts',
+    './record-api-doc-order.ts',
+    './record-api-projects.ts',
+    './record-api-settings.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',

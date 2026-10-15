@@ -37,6 +37,7 @@ import {
   listOpenResumes,
   readDocRevision,
   removeDoc,
+  reorderDocs,
   restoreDoc,
   setDoc,
   setDocStatus,
@@ -501,6 +502,30 @@ async function handleSetDocCommand(
   return true
 }
 
+async function handleReorderDocCommand(
+  sub: string,
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null },
+): Promise<boolean> {
+  if (sub !== 'reorder') return false
+  if (!address.scope)
+    throw new Error(
+      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+    )
+  const orderedIds = flags.values?.('id') ?? []
+  const result = await reorderDocs({
+    scope: address.scope,
+    subject: address.subject,
+    parentId: flags.flag('parent-id') ?? null,
+    orderedIds,
+  })
+  presentation.log(
+    flags.has('json') ? JSON.stringify(result) : `reordered ${orderedIds.length} documents`,
+  )
+  return true
+}
+
 async function handleStatusDocCommand(
   sub: string,
   argv: string[],
@@ -573,13 +598,13 @@ function handledRevisionDocCommand(
   return true
 }
 
-function handledReadOrRevisionDocCommand(
+async function handledReadOrRevisionDocCommand(
   sub: string,
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
-): boolean {
+): Promise<boolean> {
   return (
     handledReadDocCommand(sub, argv, flags, presentation, address) ||
     handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
@@ -588,6 +613,20 @@ function handledReadOrRevisionDocCommand(
 
 function docConsumeUsage(): string {
   return `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`
+}
+
+async function handledWriteDocCommand(
+  sub: string,
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  address: { scope: string | undefined; subject: string | null; owner: string | null },
+  ports: DocCommandPorts,
+): Promise<boolean> {
+  return (
+    (await handleSetDocCommand(sub, argv, flags, presentation, address, ports)) ||
+    (await handleReorderDocCommand(sub, flags, presentation, address))
+  )
 }
 
 export async function docCommand(
@@ -602,11 +641,10 @@ export async function docCommand(
   const scope = userAddressScope(has('user'), flag('scope'))
   const subject = has('user') ? null : (flag('subject') ?? null)
   const owner = has('user') ? await signedInDocOwner() : null
+  const address = { scope, subject, owner }
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (handledReadOrRevisionDocCommand(sub, argv, flags, presentation, { scope, subject, owner }))
-    return
-  if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
-    return
+  if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
+  if (await handledWriteDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(docConsumeUsage())
@@ -767,6 +805,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
+    `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }

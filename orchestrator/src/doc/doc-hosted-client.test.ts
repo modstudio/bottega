@@ -44,6 +44,10 @@ test('a project-addressed document client binds every call to the declared space
       capture(destination)
       return { id: 'doc', revisionId: 'rev' }
     },
+    reorderDocs: async ({ orderedIds }, destination) => {
+      capture(destination)
+      return { orderedIds }
+    },
     importDoc: async (_input, destination) => {
       capture(destination)
       return { id: 'doc', revisionIds: [] }
@@ -86,6 +90,12 @@ test('a project-addressed document client binds every call to the declared space
     reason: 'test',
     author: 'tester',
   })
+  await client.reorderDocs({
+    scope: 'project',
+    subject: 'routed-docs',
+    parentId: null,
+    orderedIds: [],
+  })
   await client.importDoc({
     doc: {
       scope: 'project',
@@ -119,7 +129,7 @@ test('a project-addressed document client binds every call to the declared space
     reason: 'test',
     expectedRevision: 'rev',
   })
-  expect(destinations).toEqual(Array.from({ length: 10 }, () => 'docs-space'))
+  expect(destinations).toEqual(Array.from({ length: 11 }, () => 'docs-space'))
 })
 
 test('a retired project still supplies its declared document destination', async () => {
