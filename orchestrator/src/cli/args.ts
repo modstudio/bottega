@@ -349,6 +349,7 @@ export const CLI_COMMANDS = new Set([
   'fix-defect',
   'gate',
   'jobs',
+  'judge',
   'lens',
   'mcp',
   'metric',
