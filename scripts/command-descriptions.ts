@@ -162,7 +162,7 @@ function outboxRouteUnits(route: CommandRoute, programs: CommandPrograms): Docum
     const description = orchVerb?.description().trim()
       ? orchVerb.description()
       : (hubVerb?.description() ?? orchVerb?.description() ?? '')
-    const sourceOwner = orchVerb?.description().trim() ? 'orch' : hubVerb ? 'hub' : 'orch'
+    const sourceOwner = orchVerb ? 'orch' : 'hub'
     const verbSpelling = `${spelling} ${name}`
     units.push(
       {
