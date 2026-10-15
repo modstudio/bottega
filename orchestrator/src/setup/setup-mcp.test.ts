@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
   mcpAddArgv,
-  mcpRegistrationWriteRefusal,
   mcpRemoveArgv,
   readMcpRegistration,
   registeredCommandResolves,
@@ -11,6 +11,7 @@ import {
   type SetupCommandResult,
   stableMcpServers,
 } from './setup-mcp.ts'
+import { mcpRegistrationWriteRefusal } from './setup-registration-write.ts'
 
 const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult => ({
   exitCode,
@@ -115,22 +116,37 @@ test('captures Grok list rows and marks unsupported harnesses manual', () => {
   const runner = () =>
     result(JSON.stringify([{ name: 'orch', command: '/bin/orch', args: ['mcp'] }]))
   const server = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
-  expect(captureHarnessMcpFacts('grok', '/bin/grok', [server], runner, () => true)).toMatchObject({
+  expect(
+    captureHarnessMcpFacts(
+      'grok',
+      '/bin/grok',
+      [server],
+      runner,
+      () => true,
+      () => null,
+    ),
+  ).toMatchObject({
     support: 'automatic',
     registrations: {
       orch: { status: 'registered', command: '/bin/orch', args: ['mcp'] },
     },
   })
-  expect(captureHarnessMcpFacts('goose', '/bin/goose', [server], runner, () => true)).toEqual({
-    support: 'manual',
-    registrations: {},
-  })
+  expect(
+    captureHarnessMcpFacts(
+      'goose',
+      '/bin/goose',
+      [server],
+      runner,
+      () => true,
+      () => null,
+    ),
+  ).toEqual({ support: 'manual', registrations: {} })
 })
 
 test('classifies missing, different, and matching registrations', () => {
   const server = {
     name: 'orch' as const,
-    command: '/bin/bottega',
+    command: `/bin/${PLATFORM_SLUG}`,
     args: ['mcp', 'serve'],
   }
   const matching = {
@@ -147,7 +163,7 @@ test('classifies missing, different, and matching registrations', () => {
     classifyMcpRegistration(
       {
         status: 'registered',
-        command: '/other/bottega',
+        command: `/other/${PLATFORM_SLUG}`,
         args: ['mcp', 'serve'],
       },
       server,
@@ -155,7 +171,7 @@ test('classifies missing, different, and matching registrations', () => {
     ),
   ).toEqual({
     status: 'different',
-    command: '/other/bottega',
+    command: `/other/${PLATFORM_SLUG}`,
     args: ['mcp', 'serve'],
     detail: 'registered command or arguments differ',
   })
@@ -165,16 +181,16 @@ test('classifies missing, different, and matching registrations', () => {
 test('resolves registered path commands directly and bare commands through PATH', () => {
   expect(
     registeredCommandResolves(
-      '/missing/bottega',
+      `/missing/${PLATFORM_SLUG}`,
       () => false,
       () => '/bin/ignored',
     ),
   ).toBe(false)
   expect(
     registeredCommandResolves(
-      'bottega',
+      PLATFORM_SLUG,
       () => false,
-      () => '/usr/local/bin/bottega',
+      () => `/usr/local/bin/${PLATFORM_SLUG}`,
     ),
   ).toBe(true)
   expect(

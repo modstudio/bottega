@@ -79,7 +79,7 @@ test('setup-ask replaces a registration whose command is missing', async () => {
         if (argv.includes('add')) replaced.add(argv[0]!)
         const entry = replaced.has(argv[0]!)
           ? { command: desired.command, args: desired.args }
-          : { command: '/missing/bottega', args: ['mcp', 'ask-server'] }
+          : { command: `/missing/${PLATFORM_SLUG}`, args: ['mcp', 'ask-server'] }
         const stdout = argv.includes('get')
           ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
           : JSON.stringify([{ name: 'orch-ask', ...entry }])

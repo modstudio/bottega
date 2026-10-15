@@ -77,6 +77,12 @@ const registrationQuestionId = (harness: string, server?: string) =>
 
 type HarnessFacts = SetupFacts['harnesses'][keyof SetupFacts['harnesses']]
 
+function registrationState(current: McpReadback): SetupRegistrationProposal['state'] {
+  if (current.status === 'registered' || current.status === 'different') return 'different'
+  if (current.status === 'stale') return 'stale'
+  return 'unreadable'
+}
+
 function proposeHarnessRegistrations(
   harness: keyof SetupFacts['harnesses'],
   facts: HarnessFacts,
@@ -127,14 +133,7 @@ function proposeHarnessRegistrations(
       detail: 'registration was not captured',
     }
     if (sameMcpRegistration(current, server)) {
-      return {
-        harness,
-        bin: facts.path!,
-        server,
-        current,
-        questionId: null,
-        state: 'same',
-      }
+      return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
     }
     if (current.status === 'absent') {
       return {
@@ -181,12 +180,7 @@ function proposeHarnessRegistrations(
       server,
       current,
       questionId: replaceQuestionId,
-      state:
-        current.status === 'registered' || current.status === 'different'
-          ? 'different'
-          : current.status === 'stale'
-            ? 'stale'
-            : 'unreadable',
+      state: registrationState(current),
     }
   })
 }
@@ -552,11 +546,5 @@ export function proposeSetup(
       recipeContent,
     }
   })
-  return {
-    facts: { machine, repositories },
-    proposals,
-    registrations,
-    questions,
-    notices,
-  }
+  return { facts: { machine, repositories }, proposals, registrations, questions, notices }
 }
