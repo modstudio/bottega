@@ -14,6 +14,7 @@ import { type RecordBoardDeps, registerRecordBoardRoutes } from './record-api-bo
 import {
   recordCanonImportSchema,
   recordDocImportSchema,
+  recordDocOrderSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
 import {
@@ -53,6 +54,7 @@ import {
   RecordDocError,
   type RecordDocImportInput,
   type RecordDocListInput,
+  type RecordDocOrderInput,
   type RecordDocRevision,
 } from './record-docs.ts'
 import {
@@ -145,6 +147,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>
+  reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
   importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
   importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
   deleteDoc(
@@ -818,6 +821,17 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
       return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.put('/v1/docs/order', async (context) => {
+    const tenant = scope(context)
+    if (!tenant) return noSpace(context)
+    const body = recordDocOrderSchema.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid doc order' }, 400)
+    try {
+      return context.json(await deps.reorderDocs({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

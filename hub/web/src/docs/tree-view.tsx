@@ -1,10 +1,39 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  type CollisionDetection,
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { type MutableRefObject, useEffect, useRef } from 'react'
 import { classes } from '@/ui/text/classes'
 import { treePath } from './tree.ts'
 import type { DocsTreeGroup, DocsTreeItem, TreeNode } from './types.ts'
 
 const eyebrow = 'font-mono text-text-muted text-xs tracking-[0.14em] uppercase'
+
+function siblingKey(item: DocsTreeItem): string {
+  return JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId])
+}
+
+const siblingCollision: CollisionDetection = (input) => {
+  const activeKey = input.active.data.current?.siblingKey
+  return closestCenter({
+    ...input,
+    droppableContainers: input.droppableContainers.filter(
+      (container) => container.data.current?.siblingKey === activeKey,
+    ),
+  })
+}
 
 function TreeDocumentRow({
   node,
@@ -68,25 +97,56 @@ function TreeRow({
   collapsed,
   onToggle,
   onSelect,
+  canReorder,
+  onReorder,
 }: {
   node: TreeNode
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
+  canReorder?: (item: DocsTreeItem) => boolean
+  onReorder?: (activeId: string, overId: string) => void
 }) {
   const current = node.id === selectedId
   const ancestor = !current && selectedId !== null && treePath(node.children, selectedId).length > 0
   const open = !collapsed.has(node.id)
   const { children, ...item } = node
   const rowRef = useRef<HTMLElement>(null)
+  const reorderable = Boolean(canReorder?.(item))
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: node.id,
+    disabled: !reorderable,
+    data: { siblingKey: siblingKey(item) },
+  })
   useEffect(() => {
     if (!current) return
     rowRef.current?.scrollIntoView({ block: 'nearest' })
   }, [current])
   return (
-    <li className="m-0">
-      <div className="flex items-start">
+    <li
+      ref={setNodeRef}
+      className="m-0"
+      style={{
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`
+          : undefined,
+        transition,
+        opacity: isDragging ? 0.6 : undefined,
+      }}
+    >
+      <div className="group flex items-start">
+        {reorderable ? (
+          <button
+            type="button"
+            aria-label={`Reorder ${node.title}`}
+            className="grid size-7 shrink-0 touch-none cursor-grab place-items-center rounded-sm text-text-muted opacity-0 hover:bg-control-hover hover:text-text-primary focus:opacity-100 focus-visible:outline-2 focus-visible:outline-focus-ring group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-3.5" aria-hidden />
+          </button>
+        ) : null}
         <TreeDocumentRow
           node={node}
           item={item}
@@ -120,6 +180,8 @@ function TreeRow({
             collapsed={collapsed}
             onToggle={onToggle}
             onSelect={onSelect}
+            canReorder={canReorder}
+            onReorder={onReorder}
           />
         </div>
       ) : null}
@@ -133,26 +195,58 @@ export function TreeList({
   collapsed,
   onToggle,
   onSelect,
+  canReorder,
+  onReorder,
 }: {
   nodes: readonly TreeNode[]
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
+  canReorder?: (item: DocsTreeItem) => boolean
+  onReorder?: (activeId: string, overId: string) => void
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
   return (
-    <ul className="m-0 list-none p-0 text-md">
-      {nodes.map((node) => (
-        <TreeRow
-          key={node.id}
-          node={node}
-          selectedId={selectedId}
-          collapsed={collapsed}
-          onToggle={onToggle}
-          onSelect={onSelect}
-        />
-      ))}
-    </ul>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={siblingCollision}
+      accessibility={{
+        announcements: {
+          onDragStart: ({ active }) => `Picked up document ${String(active.id)}.`,
+          onDragOver: ({ active, over }) =>
+            over ? `Document ${String(active.id)} is over ${String(over.id)}.` : undefined,
+          onDragEnd: ({ active, over }) =>
+            over
+              ? `Dropped document ${String(active.id)} at ${String(over.id)}.`
+              : 'Document was dropped.',
+          onDragCancel: ({ active }) => `Cancelled dragging document ${String(active.id)}.`,
+        },
+      }}
+      onDragEnd={({ active, over }) => {
+        if (over && active.id !== over.id) onReorder?.(String(active.id), String(over.id))
+      }}
+    >
+      <SortableContext items={nodes.map((node) => node.id)} strategy={verticalListSortingStrategy}>
+        <ul className="m-0 list-none p-0 text-md">
+          {nodes.map((node) => (
+            <TreeRow
+              key={node.id}
+              node={node}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              canReorder={canReorder}
+              onReorder={onReorder}
+            />
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
   )
 }
 
@@ -162,12 +256,16 @@ export function GroupedTree({
   collapsed,
   onToggle,
   onSelect,
+  canReorder,
+  onReorder,
 }: {
   groups: readonly DocsTreeGroup[]
   selectedId: string | null
   collapsed: ReadonlySet<string>
   onToggle: (id: string) => void
   onSelect: (item: DocsTreeItem) => void
+  canReorder?: (item: DocsTreeItem) => boolean
+  onReorder?: (activeId: string, overId: string) => void
 }) {
   return (
     <div>
@@ -180,6 +278,8 @@ export function GroupedTree({
             collapsed={collapsed}
             onToggle={onToggle}
             onSelect={onSelect}
+            canReorder={canReorder}
+            onReorder={onReorder}
           />
         </div>
       ))}

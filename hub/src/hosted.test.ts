@@ -46,6 +46,7 @@ describe('hostedRouter', () => {
       'context.userCanon.list',
       'context.userCanon.remove',
       'context.userCanon.set',
+      'doc.reorder',
       'publicDocs.get',
       'publicDocs.search',
       'publicDocs.tree',

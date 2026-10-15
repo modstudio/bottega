@@ -35,6 +35,7 @@ import {
 } from './record-doc-article-fields.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
+import { type RecordDocOrder, reorderRecordDocRows } from './record-doc-order.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { writeImportedRecordDoc } from './record-doc-import-write.ts'
 import {
@@ -89,6 +90,8 @@ export type RecordCanonImportResult = {
 type Tenant = { url: string } & TenantPrincipal
 type StoredDocRow = Record<string, unknown>
 
+export type RecordDocOrderInput = Omit<RecordDocOrder, 'spaceId'>
+
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   const client = new SQL(input.url)
   try {
@@ -99,6 +102,12 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   } finally {
     await client.close()
   }
+}
+
+export async function reorderRecordDocs(
+  input: Tenant & RecordDocOrderInput,
+): Promise<{ orderedIds: string[] }> {
+  return tenant(input, (tx) => reorderRecordDocRows(tx, input))
 }
 
 type RecordDocWriteInput = Tenant & {

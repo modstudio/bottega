@@ -16,6 +16,7 @@ const docGet = mock(
   async (_scope: string, _subject: string | null, _slug: string) => ({}) as unknown,
 )
 const docSet = mock(async (_input: unknown) => ({}) as unknown)
+const docReorder = mock(async (input: { orderedIds: string[] }) => ({ orderedIds: input.orderedIds }))
 const docRemove = mock(
   async (
     _scope: string,
@@ -150,6 +151,7 @@ mock.module('../orch.ts', () => ({
   docList,
   docGet,
   docSet,
+  docReorder,
   docRemove,
   docHistory,
   docSubjects,
@@ -541,6 +543,17 @@ describe('doc router', () => {
     const got = await caller.doc.set(input)
     expect(docSet).toHaveBeenCalledWith(input)
     expect(got).toEqual(row)
+  })
+
+  test('reorder passes a complete local sibling order to docReorder', async () => {
+    const input = {
+      scope: 'global' as const,
+      subject: null,
+      parentId: '7',
+      orderedIds: ['9', '8'],
+    }
+    expect(await caller.doc.reorder(input)).toEqual({ orderedIds: input.orderedIds })
+    expect(docReorder).toHaveBeenCalledWith(input)
   })
 
   test('remove passes scope, subject and slug to docRemove', async () => {

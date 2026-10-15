@@ -358,6 +358,7 @@ type RecordDocListInput = {
 }
 
 const docWriteResultSchema = z.object({ id: z.string().uuid(), revisionId: z.string().uuid() })
+const docOrderResultSchema = z.object({ orderedIds: z.array(z.string().uuid()) })
 const deletedResultSchema = z.object({ id: z.string().uuid(), revisionId: z.string().uuid() })
 const configEntrySchema = z.object({
   key: z.string(),
@@ -709,6 +710,23 @@ export function createRecordClient(options: RecordClientOptions) {
         headers: {
           'content-type': 'application/json',
           ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+        },
+        body: JSON.stringify(input),
+      }),
+    reorderDocs: (
+      input: {
+        scope: string
+        subject: string | null
+        parentId: string | null
+        orderedIds: string[]
+      },
+      destinationSpaceId: string,
+    ) =>
+      request(options, '/v1/docs/order', docOrderResultSchema, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'x-record-space': destinationSpaceId,
         },
         body: JSON.stringify(input),
       }),

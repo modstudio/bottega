@@ -41,6 +41,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
+    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
     importDoc: async () => ({ id, revisionIds: [id] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id, revisionId: id }),
@@ -85,6 +86,24 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API doc write refusals', () => {
+  test('reorder forwards the tenant-bound complete sibling order', async () => {
+    let received: Record<string, unknown> | null = null
+    const app = appWith(identity, {
+      reorderDocs: async (input: Record<string, unknown>) => {
+        received = input
+        return { orderedIds: input.orderedIds as string[] }
+      },
+    })
+    const body = { scope: 'project', subject: 'bottega', parentId: null, orderedIds: [id] }
+    const response = await app.request('/v1/docs/order', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    expect(response.status).toBe(200)
+    expect(received).toMatchObject({ ...body, userId: identity.user.id })
+  })
+
   async function put(body: Record<string, unknown>) {
     const app = appWith(identity, {
       upsertDoc: async (input: {

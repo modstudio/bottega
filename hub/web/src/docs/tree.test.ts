@@ -7,6 +7,7 @@ import {
   groupRootsBySubject,
   neighbors,
   openableItems,
+  orderedIdsAfterDrag,
   parentEdgeCycles,
   treeForAudience,
   treePath,
@@ -47,6 +48,16 @@ test('siblings order by position then title, and a missing parent is a root', ()
   ])
   expect(tree.map((node) => node.id)).toEqual(['z', 'a', 'b'])
   expect(tree[1]!.children.map((node) => node.id)).toEqual(['c'])
+})
+
+test('a drag computes the complete sibling order by moving one id over another', () => {
+  const siblings = [
+    item({ id: 'c', title: 'Charlie', position: 2 }),
+    item({ id: 'a', title: 'Alpha', position: 0 }),
+    item({ id: 'b', title: 'Beta', position: 1 }),
+  ]
+  expect(orderedIdsAfterDrag(siblings, 'c', 'a')).toEqual(['c', 'a', 'b'])
+  expect(orderedIdsAfterDrag(siblings, 'a', 'c')).toEqual(['b', 'c', 'a'])
 })
 
 test('a document with children is present as a selectable node with those children', () => {

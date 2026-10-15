@@ -51,6 +51,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id: 'x', revisionId: 'x' }),
+    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
     importDoc: async () => ({ id: 'x', revisionIds: ['x'] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id: 'x', revisionId: 'x' }),

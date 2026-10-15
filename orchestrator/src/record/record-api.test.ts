@@ -49,6 +49,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
+    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
     importDoc: async () => ({ id, revisionIds: [id] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id, revisionId: id }),

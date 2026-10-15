@@ -61,6 +61,7 @@ import {
   listRecordDocRevisions,
   listRecordDocs,
   renameRecordDocSubject,
+  reorderRecordDocs,
   restoreRecordDoc,
   upsertRecordDoc,
 } from './record-docs.ts'
@@ -197,6 +198,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     readDoc: getRecordDoc,
     listDocRevisions: listRecordDocRevisions,
     upsertDoc: upsertRecordDoc,
+    reorderDocs: reorderRecordDocs,
     importDoc: importRecordDoc,
     importCanon: importRecordCanon,
     deleteDoc: deleteRecordDoc,

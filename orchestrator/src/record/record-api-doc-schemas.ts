@@ -72,6 +72,13 @@ export const recordDocUpsertSchema = z.object({
   expectedRevision: z.string().uuid().optional(),
 })
 
+export const recordDocOrderSchema = z.object({
+  scope: z.string().min(1),
+  subject: z.string().nullable(),
+  parentId: z.string().uuid().nullable(),
+  orderedIds: z.array(z.string().uuid()),
+})
+
 export const recordDocImportSchema = z.object({
   expectedRevision: z.string().uuid().optional(),
   doc: z.object({

@@ -1,5 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import type { Context } from './context.ts'
+import { docReorderProcedure } from './routers/doc.ts'
 import { hostedBoardRouter } from './routers/hosted-board.ts'
 import { hostedContextRouter } from './routers/hosted-context.ts'
 import { publicDocsRouter } from './routers/public-docs.ts'
@@ -12,6 +13,7 @@ export const hostedRouter = t.router({
   context: hostedContextRouter,
   record: recordRouter,
   publicDocs: publicDocsRouter,
+  doc: t.router({ reorder: docReorderProcedure }),
 })
 
 export type HostedRouter = typeof hostedRouter

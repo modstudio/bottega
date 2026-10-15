@@ -63,6 +63,8 @@ export type DocsViewProps = {
   /** Where the article's fields are saved, when this reader may edit them in place. */
   fieldSource?: Docs.DocsSource
   canManage?: boolean
+  canReorder?: (item: Docs.DocsTreeItem) => boolean
+  onReorder?: (activeId: string, overId: string) => void
 }
 
 type DocsControlsProps = {
@@ -174,6 +176,8 @@ function DocsRail({
   onSearch,
   loading,
   emptyMessage,
+  canReorder,
+  onReorder,
 }: {
   tree: readonly Docs.TreeNode[]
   groups: readonly Docs.DocsTreeGroup[] | null
@@ -184,6 +188,8 @@ function DocsRail({
   onSearch: () => void
   loading?: boolean
   emptyMessage: string
+  canReorder?: (item: Docs.DocsTreeItem) => boolean
+  onReorder?: (activeId: string, overId: string) => void
 }) {
   const hasTree = groups ? groups.length > 0 : tree.length > 0
   const panel = useRef<HTMLElement>(null)
@@ -212,6 +218,8 @@ function DocsRail({
               collapsed={collapsed}
               onToggle={onToggle}
               onSelect={onSelect}
+              canReorder={canReorder}
+              onReorder={onReorder}
             />
           ) : (
             <TreeList
@@ -220,6 +228,8 @@ function DocsRail({
               collapsed={collapsed}
               onToggle={onToggle}
               onSelect={onSelect}
+              canReorder={canReorder}
+              onReorder={onReorder}
             />
           )
         ) : loading ? null : (
@@ -465,6 +475,8 @@ export function DocsView({
   bodyView,
   viewedRevision,
   canManage,
+  canReorder,
+  onReorder,
   ...readingEdit
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -569,6 +581,8 @@ export function DocsView({
           onSearch={() => setSearchOpen(true)}
           loading={loading}
           emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
+          canReorder={canReorder}
+          onReorder={onReorder}
         />
         <DocsReading
           doc={visible}

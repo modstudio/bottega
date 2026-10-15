@@ -44,6 +44,7 @@ import {
   storedDocWarnings,
   validateDocAddressFilter,
 } from './docs.ts'
+import { reorderLocalDocs } from './local-doc-order.ts'
 
 const DOC_KEYWORD_LIST_LIMIT = 50
 
@@ -607,6 +608,23 @@ export async function docCommand(
     return
   if (await handleSetDocCommand(sub, argv, flags, presentation, { scope, subject, owner }, ports))
     return
+  if (sub === 'reorder') {
+    if (!scope)
+      throw new Error(
+        `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+      )
+    const orderedIds = flags.values?.('id') ?? []
+    const result = reorderLocalDocs({
+      scope,
+      subject,
+      parentId: flag('parent-id') ?? null,
+      orderedIds,
+    })
+    presentation.log(
+      has('json') ? JSON.stringify(result) : `reordered ${orderedIds.length} documents`,
+    )
+    return
+  }
   if (sub === 'consume') {
     const slug = argv[2]
     if (!slug || !scope) throw new Error(docConsumeUsage())
@@ -767,6 +785,6 @@ export async function docCommand(
     return
   }
   throw new Error(
-    `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
+    `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
   )
 }
