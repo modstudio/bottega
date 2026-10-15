@@ -45,6 +45,7 @@ documents, canon, code search, and ports
 - [bottega doc port skip add](#bottega-doc-port-skip-add)
 - [bottega doc port skip list](#bottega-doc-port-skip-list)
 - [bottega doc reference publish](#bottega-doc-reference-publish)
+- [bottega doc reorder](#bottega-doc-reorder)
 - [bottega doc restore](#bottega-doc-restore)
 - [bottega doc resumes](#bottega-doc-resumes)
 - [bottega doc revision](#bottega-doc-revision)
@@ -83,6 +84,7 @@ documents, canon, code search, and ports
 - [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
 - [bottega doc reference publish](./doc.md#bottega-doc-reference-publish)
+- [bottega doc reorder](./doc.md#bottega-doc-reorder)
 - [bottega doc restore](./doc.md#bottega-doc-restore)
 - [bottega doc resumes](./doc.md#bottega-doc-resumes)
 - [bottega doc revision](./doc.md#bottega-doc-revision)
@@ -719,6 +721,25 @@ list skipped candidates
 **Synopsis:** `bottega doc reference publish`
 
 publish the generated command reference
+
+### Related
+
+- [bottega doc](./doc.md#bottega-doc)
+
+## bottega doc reorder
+
+**Synopsis:** `bottega doc reorder [--scope <value>] [--subject <value>] [--user] [--parent-id <value>] [--id <value>] [--json]`
+
+replace one document sibling order
+
+### Options
+
+- `--scope <value>`: select the document scope
+- `--subject <value>`: select the document subject
+- `--user`: address the signed-in user document
+- `--parent-id <value>`: select the parent document id
+- `--id <value>`: add a document id to the sibling order
+- `--json`: print JSON output
 
 ### Related
 
