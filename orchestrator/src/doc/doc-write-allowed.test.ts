@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import {
   articleFieldRefusal,
   canonRemovalRefusal,
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
-  REFERENCE_GENERATOR,
   referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,

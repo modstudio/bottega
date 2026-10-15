@@ -52,6 +52,10 @@ export const DOC_KINDS = ['working', 'article'] as const
 export type DocKind = (typeof DOC_KINDS)[number]
 export const DOC_FORMS = ['feature', 'how-to', 'rule', 'model', 'overview', 'reference'] as const
 export type DocForm = (typeof DOC_FORMS)[number]
+
+/** Marks a write as coming from the reference publisher; reference documents accept no other. */
+export const REFERENCE_GENERATOR = 'reference-publish' as const
+export type DocGenerator = typeof REFERENCE_GENERATOR
 export type DocArticleSubject = { id: string; name: string }
 
 /** Validate one repository-relative source path at an input boundary. */

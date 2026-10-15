@@ -6,12 +6,19 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
-import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import {
+  DOC_AUDIENCES,
+  DOC_KINDS,
+  DOC_STATUSES,
+  type DocAudience,
+  type DocGenerator,
+} from '../../../shared/docs.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import {
+  docGeneratorSchema,
   recordCanonImportSchema,
   recordDocImportSchema,
   recordDocUpsertSchema,
@@ -92,7 +99,7 @@ type RecordDocMutationInput = {
   reason: string
   author: string
   expectedRevision?: string
-  generator?: 'reference-publish'
+  generator?: DocGenerator
 }
 type Deps = RecordSubjectRouteDeps & RecordReleaseRouteDeps & RecordSyncRouteDeps & RecordApiDeps
 type RecordApiDeps = RecordInvitationRouteDeps & {
@@ -150,7 +157,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       id?: string
       revisionId?: string
       expectedRevision?: string
-      generator?: 'reference-publish'
+      generator?: DocGenerator
     },
   ): Promise<{ id: string; revisionId: string }>
   reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
@@ -278,7 +285,7 @@ const docWriteContextSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
   expectedRevision: z.string().uuid().optional(),
-  generator: z.literal('reference-publish').optional(),
+  generator: docGeneratorSchema,
 })
 const activeSpaceRemedy = `run \`${PLATFORM_SLUG} record space switch <slug>\` to select an active space`
 

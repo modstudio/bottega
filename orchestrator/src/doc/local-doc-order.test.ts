@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocAudience } from '../../../shared/docs.ts'
+import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { hostedDocOrder } from './doc-order.ts'
-import { REFERENCE_GENERATOR } from './doc-write-allowed.ts'
 import { reorderDocs } from './docs.ts'
 
 test('reorder refuses an id list that is not the complete current sibling set', async () => {

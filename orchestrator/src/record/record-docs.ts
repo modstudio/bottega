@@ -1,8 +1,15 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
+
 import { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
-import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import type {
+  DocAudiences,
+  DocForm,
+  DocGenerator,
+  DocKind,
+  DocStatus,
+} from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -13,7 +20,6 @@ import {
   canonFindingsRefusal,
   consumeDocBody,
   type DocDelivery,
-  type DocGenerator,
   type DocRevisionOp,
   docWriteProjectName,
   recordDocLintRefusal,

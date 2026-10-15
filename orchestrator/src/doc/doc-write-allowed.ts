@@ -1,11 +1,14 @@
 // concern: doc-write-allowed
 /** Pure document write decisions. Must not know stores, filesystems, HTTP, or CLI. */
+
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DOC_SCOPE_ALLOWS_OWNER,
+  type DocGenerator,
   type DocKind,
   type DocScope,
   docScopeHasProjectSubject,
+  REFERENCE_GENERATOR,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
@@ -19,8 +22,6 @@ export { refuseSettingsBody }
 export const RECORD_WRITE_REMEDY = `cleared by: ${PLATFORM_SLUG} record doctor`
 export const MISSING_HOSTED_REVISION_REMEDY =
   'cleared by: repair the document revision state, then retry the write'
-export const REFERENCE_GENERATOR = 'reference-publish' as const
-export type DocGenerator = typeof REFERENCE_GENERATOR
 
 export function isReferenceGeneratorWrite(input: {
   storedForm?: string | null
@@ -409,7 +410,7 @@ export function consumeDocBody(
   if (!status) throw new Error('document has no status field in its YAML frontmatter')
   if (status.value === 'consumed') return { body, alreadyConsumed: true }
 
-  yaml = yaml.slice(0, status.valueStart) + 'consumed' + yaml.slice(status.valueEnd)
+  yaml = `${yaml.slice(0, status.valueStart)}consumed${yaml.slice(status.valueEnd)}`
   const stamps = [
     ['consumed', consumedAt],
     ['consumed_by', consumedBy],

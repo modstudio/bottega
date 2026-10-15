@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { REFERENCE_GENERATOR } from './doc-write-allowed.ts'
 import { consumeDoc, getDoc, importDoc, listDocRevisions, restoreDoc, setDoc } from './docs.ts'
 import { publishReferenceDocs } from './reference-publish.ts'
 
@@ -128,3 +128,41 @@ test('reference publishing is the only write path and is idempotent and removing
     rmSync(root, { recursive: true, force: true })
   }
 }, 15_000)
+
+test('an ordinary article already at a generated slug is converted, not reported unchanged', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reference-publish-collision-'))
+  try {
+    mkdirSync(join(root, 'docs/reference'), { recursive: true })
+    const indexFile = 'docs/reference/index.md'
+    const taskFile = 'docs/reference/task.md'
+    writeFileSync(join(root, indexFile), '# Command reference\n\n- [task](./task.md)\n')
+    writeFileSync(join(root, taskFile), '# task\n\nTasks.\n')
+    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: {} })
+    const article = {
+      scope: 'project' as const,
+      subject: PLATFORM_SLUG,
+      delivery: 'demand' as const,
+      audiences: ['technical'] as ['technical'],
+      kind: 'article' as const,
+      form: 'overview' as const,
+      reason: 'fixture',
+    }
+    await setDoc({ ...article, slug: 'cli', title: 'CLI', body: '# CLI\n\nOld.\n' })
+    await setDoc({
+      ...article,
+      slug: 'cli-task',
+      title: 'task',
+      body: '# task\n\nTasks.\n',
+      parentSlug: 'cli',
+      position: 0,
+    })
+
+    expect(await publishReferenceDocs(root, [indexFile, taskFile])).toContainEqual({
+      slug: 'cli-task',
+      disposition: 'updated',
+    })
+    expect(getDoc('project', PLATFORM_SLUG, 'cli-task')?.form).toBe('reference')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

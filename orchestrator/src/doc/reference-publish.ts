@@ -1,10 +1,11 @@
 // concern: reference-publish
 /** Publishes tracked generated command-reference pages through the document service. */
+
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { REFERENCE_GENERATOR } from '../../../shared/docs.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
-import { REFERENCE_GENERATOR } from './doc-write-allowed.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
 
 export type ReferencePublishResult = {
@@ -72,6 +73,8 @@ export async function publishReferenceDocs(
     const existing = getDoc('project', PLATFORM_SLUG, slug)
     if (
       existing &&
+      existing.form === 'reference' &&
+      existing.kind === 'article' &&
       existing.body === body &&
       existing.title === title(body, file) &&
       existing.parent_slug === parentSlug &&
