@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { SQL } from 'bun'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tasks.ts'
 
 export type HostedSend = {
@@ -560,9 +561,10 @@ export async function createHostedReportSubscription(
     })
     const id = newRecordId()
     await tx`INSERT INTO hub_report_subscription
-      (id,space_id,scope_kind,project_name,cadence,hour,weekday,zone,
+      (id,space_id,scope_kind,project_name,project_id,cadence,hour,weekday,zone,
        enabled,created_at,updated_at)
       VALUES (${id}::uuid,${identity.spaceId}::uuid,${planned.scope_kind},${planned.project_name},
+      ${await storedHubProjectId(tx, identity.spaceId, { projectName: planned.project_name })}::uuid,
       ${planned.cadence},${planned.hour},${planned.weekday},${planned.zone},
       ${planned.enabled ? 1 : 0},now(),now())`
     for (const userId of planned.member_user_ids)
@@ -633,7 +635,9 @@ export async function updateHostedReportSubscription(
     assertReportSubscriptionFound(
       rows<{ id: string }>(
         await tx`UPDATE hub_report_subscription SET scope_kind=${planned.scope_kind},
-        project_name=${planned.project_name},cadence=${planned.cadence},hour=${planned.hour},
+        project_name=${planned.project_name},
+        project_id=${await storedHubProjectId(tx, identity.spaceId, { projectName: planned.project_name })}::uuid,
+        cadence=${planned.cadence},hour=${planned.hour},
         weekday=${planned.weekday},zone=${planned.zone},enabled=${planned.enabled ? 1 : 0},
         updated_at=now()
         WHERE space_id=${identity.spaceId}::uuid AND id=${id}::uuid AND deleted_at IS NULL

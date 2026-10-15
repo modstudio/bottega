@@ -6,6 +6,7 @@ import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit
 import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 
@@ -57,10 +58,11 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       : incoming
   conn
     .query(`INSERT INTO task
-      (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
+      (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,
        closed_at,updated_at,source,first_seen,last_seen,next_document_number)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
-      key=excluded.key,project=excluded.project,title=excluded.title,
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
+      key=excluded.key,project=excluded.project,
+      project_record_id=COALESCE(excluded.project_record_id,task.project_record_id),title=excluded.title,
       status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,
       parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,
@@ -71,6 +73,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       row.id,
       row.key,
       row.project,
+      row.projectId ?? projectRecordIdFor(row.project),
       row.title,
       row.status,
       row.status_category,

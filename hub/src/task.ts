@@ -26,6 +26,7 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
@@ -39,6 +40,7 @@ export type TaskRow = {
   external_id: string | null
   key: string
   project: string
+  project_record_id: string | null
   title: string | null
   status: string | null
   status_category: StatusCategory | null
@@ -244,14 +246,15 @@ export function createLocalTaskInTransaction(
   conn
     .query(
       `INSERT INTO task
-      (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,
+      (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,
        opened_at,closed_at,updated_at,source,first_seen,last_seen)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'local',?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'local',?,?)`,
     )
     .run(
       recordId,
       key,
       input.project,
+      projectRecordIdFor(input.project),
       input.title,
       category,
       category,
@@ -282,10 +285,11 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
   conn
     .query(`INSERT INTO task
-    (record_id,key,project,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
+    (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
      updated_at,source,first_seen,last_seen,next_document_number)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
+      project_record_id=COALESCE(excluded.project_record_id,task.project_record_id),
       title=excluded.title,status=excluded.status,status_category=excluded.status_category,
       parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
       body=excluded.body,assignee=excluded.assignee,
@@ -296,6 +300,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       row.id,
       row.key,
       row.project,
+      row.projectId ?? projectRecordIdFor(row.project),
       row.title,
       row.status,
       row.status_category,

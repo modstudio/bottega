@@ -16,6 +16,7 @@ export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedT
     key: row.key,
     project: row.project,
     project_name: row.project,
+    projectId: row.project_record_id,
     title: row.title,
     status: row.status,
     status_category: row.status_category,

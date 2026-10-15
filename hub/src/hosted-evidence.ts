@@ -1,5 +1,6 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import type { PushedDay, PushedInterval } from './push-contract.ts'
 export type EvidenceIdentity = { userId: string; spaceId: string }
 export type IntervalEvidence = PushedInterval
@@ -29,10 +30,11 @@ export function hostedDayWrite(
   return 'insert'
 }
 
-function intervalValues(row: IntervalEvidence) {
+function intervalValues(row: IntervalEvidence, projectId: string | null) {
   return {
     task_key: row.task_key,
     project_name: row.project_name,
+    project_id: projectId,
     source: row.source,
     agent: row.agent,
     job: row.job,
@@ -55,13 +57,19 @@ async function insertHostedInterval(
   id: string,
   row: IntervalEvidence,
 ) {
-  const value = intervalValues(row)
+  const value = intervalValues(
+    row,
+    await storedHubProjectId(tx, identity.spaceId, {
+      projectId: row.projectId,
+      projectName: row.project_name,
+    }),
+  )
   await tx`
     INSERT INTO hub_interval
-      (id, space_id, task_key, project_name, source, agent, job, start_at, end_at,
+      (id, space_id, task_key, project_name, project_id, source, agent, job, start_at, end_at,
        claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
     VALUES
-      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name},
+      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name}, ${value.project_id}::uuid,
        ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
        ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
        ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
@@ -75,10 +83,16 @@ async function updateHostedInterval(
   id: string,
   row: IntervalEvidence,
 ) {
-  const value = intervalValues(row)
+  const value = intervalValues(
+    row,
+    await storedHubProjectId(tx, identity.spaceId, {
+      projectId: row.projectId,
+      projectName: row.project_name,
+    }),
+  )
   await tx`
     UPDATE hub_interval SET
-      task_key=${value.task_key}, project_name=${value.project_name}, source=${value.source},
+      task_key=${value.task_key}, project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
       agent=${value.agent}, job=${value.job},
       start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
       claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},

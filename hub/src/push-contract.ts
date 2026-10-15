@@ -24,6 +24,7 @@ export type PushedStatusEvent = {
   task_key: string
   task_id?: string | null
   project_name: string
+  projectId?: string | null
   at: string
   from_status: string | null
   to_status: string
@@ -36,6 +37,7 @@ export type PushedInterval = {
   id: string
   task_key: string | null
   project_name: string | null
+  projectId?: string | null
   source: string
   agent: string | null
   job: string | null
@@ -76,6 +78,7 @@ export type PushedNote = {
   number: number
   project: string
   project_name: string
+  projectId?: string | null
   text: string
   area: string | null
   anchors: string
@@ -93,6 +96,7 @@ export type PushedNote = {
 export type PushedNoteAcknowledgement = {
   id: string
   project_name: string
+  projectId?: string | null
   note_id: string
   session_id: string
   acknowledged_at: string
@@ -112,6 +116,7 @@ export type PushedTask = {
   key: string
   project: string
   project_name: string
+  projectId?: string | null
   title: string | null
   status: string | null
   status_category: TaskStatusCategory | null
@@ -135,6 +140,7 @@ export type PushedComment = {
   task_key: string
   task_id?: string | null
   project_name: string
+  projectId?: string | null
   body: string
   created_at: string
   updated_at: string
@@ -146,6 +152,7 @@ export type PushedDocument = {
   task_key: string
   task_id?: string | null
   project_name: string
+  projectId?: string | null
   role: string | null
   title: string
   body: string

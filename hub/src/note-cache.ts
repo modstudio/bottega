@@ -5,6 +5,7 @@ import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { hostedGetNote, hostedNoteChanges, type NoteClientOptions } from './note-client.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { taskRecordIdFor } from './task-identity.ts'
 export function applyHostedNote(conn: Database, row: HostedNote) {
   persistInstallBinding(conn)
@@ -25,9 +26,10 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     ? taskRecordIdFor(conn, row.promoted_task, row.project)
     : null
   conn
-    .query(`INSERT INTO note(record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
-    number=excluded.number,project=excluded.project,text=excluded.text,area=excluded.area,anchors=excluded.anchors,
+    .query(`INSERT INTO note(record_id,number,project,project_record_id,text,area,anchors,sightings,created_at,last_seen_at,stale_at,stale_reason,promoted_task,promoted_task_record_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET
+    number=excluded.number,project=excluded.project,
+    project_record_id=COALESCE(excluded.project_record_id,note.project_record_id),text=excluded.text,area=excluded.area,anchors=excluded.anchors,
     sightings=excluded.sightings,created_at=excluded.created_at,last_seen_at=excluded.last_seen_at,
     stale_at=excluded.stale_at,stale_reason=excluded.stale_reason,promoted_task=excluded.promoted_task,
     promoted_task_record_id=excluded.promoted_task_record_id`)
@@ -35,6 +37,7 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
       row.id,
       row.number,
       row.project,
+      row.projectId ?? projectRecordIdFor(row.project),
       row.text,
       row.area,
       row.anchors,
@@ -47,9 +50,10 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
       promotedTaskRecordId,
     )
   conn
-    .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
-      ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
-    .run(row.project, row.number + 1)
+    .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES (?,?,?)
+      ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next),
+      project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`)
+    .run(row.project, row.projectId ?? projectRecordIdFor(row.project), row.number + 1)
 }
 export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledgement) {
   if (row.deleted_at) {
@@ -103,9 +107,10 @@ export function applyHostedNoteRows(
   })
   changes.projectCounters.forEach((counter) => {
     conn
-      .query(`INSERT INTO note_counter(project,next) VALUES (?,?)
-        ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next)`)
-      .run(counter.project, counter.next)
+      .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES (?,?,?)
+        ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next),
+        project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`)
+      .run(counter.project, projectRecordIdFor(counter.project), counter.next)
   })
 }
 

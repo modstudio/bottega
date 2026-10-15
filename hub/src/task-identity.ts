@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { taskAdoptionCollisionCount } from './task-adoption.ts'
 
 export type TaskScope = { project?: string; recordId?: string }
@@ -164,11 +165,19 @@ export function claimTaskIdentity(
 ) {
   conn
     .query(
-      `INSERT INTO task_identity_claim(project,external_id,key,first_seen,last_seen)
-       VALUES (?,?,?,?,?) ON CONFLICT(project,external_id) DO UPDATE SET
-       key=excluded.key,last_seen=excluded.last_seen`,
+      `INSERT INTO task_identity_claim(project,project_record_id,external_id,key,first_seen,last_seen)
+       VALUES (?,?,?,?,?,?) ON CONFLICT(project,external_id) DO UPDATE SET
+       key=excluded.key,last_seen=excluded.last_seen,
+       project_record_id=COALESCE(excluded.project_record_id,task_identity_claim.project_record_id)`,
     )
-    .run(claim.project, claim.externalId, claim.key, claim.at, claim.at)
+    .run(
+      claim.project,
+      projectRecordIdFor(claim.project),
+      claim.externalId,
+      claim.key,
+      claim.at,
+      claim.at,
+    )
 }
 
 export type TaskIdentityDoctor = {

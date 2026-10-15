@@ -11,6 +11,7 @@ import {
 import { db, nowIso, type Project, writeTransaction } from '../db.ts'
 import { credentials, Mcp } from '../mcp.ts'
 import { queueHostedChange } from '../outbox.ts'
+import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
@@ -301,15 +302,16 @@ function updateTrackerTask(
 function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObservationTimes) {
   conn
     .query(
-      `INSERT INTO task (record_id, external_id, key, project, title, status, status_category,
+      `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
         opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
     )
     .run(
       newRecordId(),
       t.externalId,
       t.key,
       t.project,
+      projectRecordIdFor(t.project),
       t.title,
       t.status,
       t.category,

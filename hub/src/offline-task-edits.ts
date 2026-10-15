@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import { drainHostedOutbox, type OutboxEntry, queueHostedChange } from './outbox.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { HOSTED_DOCUMENT_TABLE } from './push-contract.ts'
 import { hostedPushChanges, hostedTaskIdentity } from './task-client.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
@@ -74,6 +75,8 @@ export function queueHostedDocumentUpsert(
 export function queueHostedDocumentDelete(conn: Database, id: string, project: string, at: string) {
   queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete', at)
   conn
-    .query(`UPDATE hosted_outbox SET routing_project=? WHERE table_name=? AND row_id=?`)
-    .run(project, HOSTED_DOCUMENT_TABLE, id)
+    .query(
+      `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,
+    )
+    .run(project, projectRecordIdFor(project), HOSTED_DOCUMENT_TABLE, id)
 }

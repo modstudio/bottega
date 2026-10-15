@@ -24,6 +24,7 @@ import {
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import {
   hostedCreateNote,
   hostedPromoteNote,
@@ -193,10 +194,11 @@ function mintLocalNoteNumber(conn: Database, project: string): number {
       .get(project)?.next ?? 1
   conn
     .query(
-      `INSERT INTO note_counter (project, next) VALUES (?, ?)
-       ON CONFLICT(project) DO UPDATE SET next = MAX(note_counter.next, excluded.next)`,
+      `INSERT INTO note_counter (project, project_record_id, next) VALUES (?, ?, ?)
+       ON CONFLICT(project) DO UPDATE SET next = MAX(note_counter.next, excluded.next),
+       project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`,
     )
-    .run(project, number + 1)
+    .run(project, projectRecordIdFor(project), number + 1)
   return number
 }
 
@@ -516,8 +518,15 @@ export async function mergeNote(
     conn.query('DELETE FROM note WHERE record_id=?').run(sourceRecordId)
     queueHostedChange(conn, HOSTED_NOTE_TABLE, sourceRecordId, 'delete', queuedAt)
     conn
-      .query(`UPDATE hosted_outbox SET routing_project=? WHERE table_name=? AND row_id=?`)
-      .run(target.project, HOSTED_NOTE_TABLE, sourceRecordId)
+      .query(
+        `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,
+      )
+      .run(
+        target.project,
+        projectRecordIdFor(target.project),
+        HOSTED_NOTE_TABLE,
+        sourceRecordId,
+      )
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
   return getNote(targetRecordId)
@@ -586,13 +595,14 @@ export async function createNote(
       const recordId = newRecordId()
       conn
         .query(
-          `INSERT INTO note (record_id,number,project,text,area,anchors,sightings,created_at,last_seen_at)
-       VALUES (?,?,?,?,?,?,1,?,?)`,
+          `INSERT INTO note (record_id,number,project,project_record_id,text,area,anchors,sightings,created_at,last_seen_at)
+       VALUES (?,?,?,?,?,?,?,1,?,?)`,
         )
         .run(
           recordId,
           number,
           targetProject,
+          projectRecordIdFor(targetProject),
           text,
           input.area?.trim() || null,
           JSON.stringify([anchor]),

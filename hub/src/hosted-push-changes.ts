@@ -1,6 +1,7 @@
 import { SQL } from 'bun'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import {
   decideDocumentUpsert,
@@ -288,8 +289,10 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       const adoptedId = old?.id ?? input.id
       const values = decision.kind === 'patch' ? decision.values : row
       await tx`INSERT INTO hub_note_acknowledgement
-        (id,space_id,project_name,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
-        VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.note_id}::uuid,
+        (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
+        VALUES (${adoptedId}::uuid,${identity.spaceId}::uuid,${row.project_name},
+        ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
+        ${row.note_id}::uuid,
         ${row.session_id},${values.acknowledged_at!}::timestamptz,${values.sightings!},
         ${row.created_at}::timestamptz,${values.updated_at ?? row.updated_at}::timestamptz,NULL)
         ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET

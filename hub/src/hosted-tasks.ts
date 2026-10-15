@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../shared/record/tenant.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 import {
   hostedTaskJoin,
   hostedTaskRelationship,
@@ -193,9 +194,9 @@ export async function createHostedTaskInTransaction(
   const inserted = rows<HostedTask>(
     await tx`
       INSERT INTO hub_task
-        (id,space_id,project_name,key,project,title,status,status_category,parent_key,parent_id,body,
+        (id,space_id,project_name,project_id,key,project,title,status,status_category,parent_key,parent_id,body,
          opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at)
-      VALUES (${id}::uuid,${identity.spaceId}::uuid,${input.project},${key},${input.project},
+      VALUES (${id}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${key},${input.project},
         ${input.title},${category},${category},${input.parent ?? null},${parentId}::uuid,${input.body ?? null},${openedAt}::timestamptz,
         ${closedAt}::timestamptz,'local',${openedAt}::timestamptz,${updatedAt}::timestamptz,now(),${updatedAt}::timestamptz) RETURNING *`,
   )
@@ -216,8 +217,10 @@ export async function createHostedDocument(
     if (!project) return null
     const document = rows<HostedDocument>(
       await tx`INSERT INTO hub_task_document
-      (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at)
-      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.project_name},${key},${project.id}::uuid,
+      (id,space_id,project_name,project_id,task_key,task_id,number,role,title,body,version,created_at,updated_at)
+      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.project_name},
+       ${await storedHubProjectId(tx, identity.spaceId, { projectName: project.project_name })}::uuid,
+       ${key},${project.id}::uuid,
        ${project.next_document_number},${input.role ?? null},${input.title},${input.body ?? ''},${input.version},now(),now()) RETURNING *`,
     )[0]!
     await tx`UPDATE hub_task SET next_document_number=${project.next_document_number + 1}
@@ -417,12 +420,16 @@ export async function mirrorTaskRow(
   applyMirrorDecision(decision)
   assertTaskSourcePrecedence(existing, row)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
   if (decision.action === 'adopt' || decision.action === 'update-same-row') {
     const targetId = decision.action === 'adopt' ? decision.id : row.id
     const previousKey = decision.action === 'adopt' ? keyHolder!.key : existing!.key
     const changed = rows<{ id: string }>(
       await tx`UPDATE hub_task SET
-      project_name=${row.project_name},key=${row.key},project=${row.project},title=${row.title},
+      project_name=${row.project_name},project_id=${projectId}::uuid,key=${row.key},project=${row.project},title=${row.title},
       status=${row.status},status_category=${row.status_category},parent_key=${row.parent_key},parent_id=${parentId}::uuid,
       body=${row.body},assignee=${row.assignee},opened_at=${row.opened_at}::timestamptz,
       closed_at=${row.closed_at}::timestamptz,source=${row.source},
@@ -452,10 +459,10 @@ export async function mirrorTaskRow(
   }
   const changed = rows<{ id: string }>(
     await tx`INSERT INTO hub_task
-    (id,space_id,project_name,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
+    (id,space_id,project_name,project_id,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
      opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at,next_document_number)
-    VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
-    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
+    VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
+    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
       (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))) AND
       (ROW(hub_task.project_name,hub_task.project,hub_task.title,hub_task.status,
@@ -505,16 +512,20 @@ export async function mirrorCommentRow(
     { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_comment SET
-      task_key=${row.task_key},task_id=${taskId}::uuid,body=${row.body},
+      project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,body=${row.body},
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
       WHERE id=${row.id}::uuid`
     return
   }
   await tx`INSERT INTO hub_task_comment
-    (id,space_id,project_name,task_key,task_id,body,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,body,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.body},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
 }
 
 export async function mirrorDocumentRow(
@@ -548,9 +559,13 @@ export async function mirrorDocumentRow(
     { sameRow: 'update' },
   )
   applyMirrorDecision(decision)
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
   if (decision.action === 'update-same-row') {
     await tx`UPDATE hub_task_document SET
-      task_key=${row.task_key},task_id=${taskId}::uuid,number=${number},role=${row.role},
+      project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid,number=${number},role=${row.role},
       title=${row.title},body=${row.body},version=${row.version},
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
       WHERE id=${row.id}::uuid`
@@ -560,8 +575,8 @@ export async function mirrorDocumentRow(
     return
   }
   await tx`INSERT INTO hub_task_document
-    (id,space_id,project_name,task_key,task_id,number,role,title,body,version,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${number},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,number,role,title,body,version,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${number},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
   if (!row.deleted_at)
     await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1})
       WHERE id=${taskId}::uuid`
@@ -595,14 +610,18 @@ export async function mirrorStatusEventRow(
     },
   )
   applyMirrorDecision(decision)
+  const projectId = await storedHubProjectId(tx, identity.spaceId, {
+    projectId: row.projectId,
+    projectName: row.project_name,
+  })
   if (decision.action === 'adopt') return { id: decision.id }
   if (decision.action === 'idempotent-duplicate') {
-    await tx`UPDATE hub_task_status_event SET task_key=${row.task_key},task_id=${taskId}::uuid
+    await tx`UPDATE hub_task_status_event SET project_id=${projectId}::uuid,task_key=${row.task_key},task_id=${taskId}::uuid
       WHERE id=${row.id}::uuid`
     return null
   }
   await tx`INSERT INTO hub_task_status_event
-    (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
-    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
+    (id,space_id,project_name,project_id,task_key,task_id,at,from_status,to_status,created_at,updated_at,deleted_at)
+    VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${row.at}::timestamptz,${row.from_status},${row.to_status},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
   return null
 }
