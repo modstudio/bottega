@@ -88,11 +88,8 @@ test('collect backfill fills a matching name and leaves an unmatched name null',
       )
       .run()
   })
-  await collectOnce('2026-10-01T00:00:00.000Z', undefined, undefined, {
+  await collectOnce('2026-10-01T00:00:00.000Z', 'git', undefined, {
     git: async () => ({ days: 0, tasks: 0 }),
-    runs: async () => ({ rows: 0, skipped: 0 }),
-    transcripts: async () => ({ files: 0, rows: 0, source: 'disabled' }),
-    trackers: async () => [],
   })
   expect(
     db()

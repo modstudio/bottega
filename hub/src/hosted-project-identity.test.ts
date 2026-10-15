@@ -223,16 +223,22 @@ test('a later write stores projectId on an otherwise identical null-identity row
       },
     ]),
   ).toEqual([{ id: ackId, status: 'applied' }])
-  const stored = await tx<{ table: string; project_id: string }[]>`
-    SELECT 'task' AS table, project_id::text AS project_id FROM hub_task WHERE id=${taskId}::uuid
-    UNION ALL
-    SELECT 'interval', project_id::text FROM hub_interval WHERE id=${intervalId}::uuid
-    UNION ALL
-    SELECT 'ack', project_id::text FROM hub_note_acknowledgement WHERE id=${ackId}::uuid
-    ORDER BY 1`
-  expect(stored).toEqual([
-    { table: 'ack', project_id: projectId },
-    { table: 'interval', project_id: projectId },
-    { table: 'task', project_id: projectId },
-  ])
+  expect(
+    (
+      await tx<{ project_id: string }[]>`
+        SELECT project_id::text AS project_id FROM hub_task WHERE id=${taskId}::uuid`
+    )[0]?.project_id,
+  ).toBe(projectId)
+  expect(
+    (
+      await tx<{ project_id: string }[]>`
+        SELECT project_id::text AS project_id FROM hub_interval WHERE id=${intervalId}::uuid`
+    )[0]?.project_id,
+  ).toBe(projectId)
+  expect(
+    (
+      await tx<{ project_id: string }[]>`
+        SELECT project_id::text AS project_id FROM hub_note_acknowledgement WHERE id=${ackId}::uuid`
+    )[0]?.project_id,
+  ).toBe(projectId)
 })

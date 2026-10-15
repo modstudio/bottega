@@ -94,6 +94,10 @@ const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
+  await database.exec(`
+    INSERT INTO project (id, space_id, name, created_at)
+    VALUES ('01990000-0000-7000-8000-000000000075', '${spaceId}', 'workshop', now());
+  `)
   await apply([
     {
       table: 'hub_task',
