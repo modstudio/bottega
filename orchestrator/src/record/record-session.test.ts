@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import {
@@ -6,6 +7,7 @@ import {
   parseCachedRecordUser,
   recordUserSessionFromMemberships,
   storedRecordToken,
+  storedRecordTokenAsync,
 } from './record-session.ts'
 
 test('cached record users require trimmed ids and emails and normalize names', () => {
@@ -99,5 +101,47 @@ describe('legacy record session migration', () => {
         .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
         .get(RECORD_SESSION_KEY)?.value,
     ).toBe('legacy-fixture-token')
+  })
+})
+
+describe('cancellable record session read', () => {
+  test('returns a legacy token without migrating it, leaving the keychain and row untouched', async () => {
+    db()
+      .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+      .run(RECORD_SESSION_KEY, 'legacy-fixture-token')
+    const operations: string[] = []
+    installRecordSessionRunner((argv) => {
+      operations.push(argv[1]!)
+      return missingKeychain()
+    })
+    try {
+      expect(await storedRecordTokenAsync(db(), new AbortController().signal, true)).toBe(
+        'legacy-fixture-token',
+      )
+    } finally {
+      installRecordSessionRunner(null)
+    }
+    expect(operations).toEqual(['find-generic-password'])
+    expect(
+      db()
+        .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+        .get(RECORD_SESSION_KEY)?.value,
+    ).toBe('legacy-fixture-token')
+  })
+
+  test('a keychain token wins over a legacy row', async () => {
+    db()
+      .query('INSERT INTO schema_meta (key,value) VALUES (?,?)')
+      .run(RECORD_SESSION_KEY, 'legacy-fixture-token')
+    installRecordSessionRunner(() => ({
+      exitCode: 0,
+      stdout: new TextEncoder().encode('keychain-fixture-token\n'),
+      stderr: new Uint8Array(),
+    }))
+    try {
+      expect(await storedRecordTokenAsync(db(), undefined, true)).toBe('keychain-fixture-token')
+    } finally {
+      installRecordSessionRunner(null)
+    }
   })
 })

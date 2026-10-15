@@ -5,6 +5,7 @@ import { SQL } from 'bun'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
+  readRecordSessionTokenAsync,
   type SecurityRunner,
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
@@ -90,6 +91,22 @@ export function storedRecordToken(
     local.query('DELETE FROM schema_meta WHERE key=?').run(RECORD_SESSION_KEY)
   }, local)
   return legacy
+}
+
+/** The cancellable read for budgeted requests. It never migrates a legacy token, because the
+ * keychain write and its transaction cannot be cancelled; storedRecordToken migrates it. */
+export async function storedRecordTokenAsync(
+  local: Database = db(),
+  signal?: AbortSignal,
+  mayReadLegacy = !DATABASE_RESOLUTION.linkedWorktreeBinary,
+): Promise<string | null> {
+  const keychainToken = await readRecordSessionTokenAsync(signal)
+  if (keychainToken || !mayReadLegacy) return keychainToken
+  return (
+    local
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(RECORD_SESSION_KEY)?.value ?? null
+  )
 }
 
 export async function currentRecordUserSession(

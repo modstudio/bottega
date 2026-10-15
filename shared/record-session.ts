@@ -2,6 +2,7 @@ import { PLATFORM_NAME } from './brand.ts'
 import {
   deleteKeychainItem,
   readKeychainItem,
+  readKeychainItemAsync,
   type SecurityRunner,
   writeKeychainItem,
 } from './keychain.ts'
@@ -12,6 +13,10 @@ const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
 export function readRecordSessionToken(runner?: SecurityRunner): string | null {
   return readKeychainItem(SERVICE, ACCOUNT, runner)
+}
+
+export function readRecordSessionTokenAsync(signal?: AbortSignal): Promise<string | null> {
+  return readKeychainItemAsync(SERVICE, ACCOUNT, signal)
 }
 
 export function writeRecordSessionToken(token: string, runner?: SecurityRunner): void {

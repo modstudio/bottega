@@ -43,7 +43,7 @@ import type {
   PublicRecordDocTreeItem,
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
-import { storedRecordToken } from './record-session.ts'
+import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type {
   RecordSettingsPermissionInput,
   RecordSettingsPermissionResult,
@@ -341,7 +341,7 @@ export type RecordApiClient = {
   failBoardFilingLease(id: string, input: HostedBoardFilingFailInput): Promise<HostedBoardMessage>
   getBoardThread(id: string): Promise<HostedBoardThread>
   getBoardStatus(id: string): Promise<HostedBoardStatus>
-  putBoardReceipt(input: HostedBoardReceiptInput): Promise<HostedBoardReceipt>
+  putBoardReceipt(input: HostedBoardReceiptInput, signal?: AbortSignal): Promise<HostedBoardReceipt>
   listBoardChanges(query: {
     after?: string
     limit?: number
@@ -542,7 +542,9 @@ async function recordApiRequest<T>(
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
 ): Promise<T> {
   const baseUrl = recordApiBaseUrl()
-  const token = storedRecordToken()
+  const token = init.signal
+    ? await storedRecordTokenAsync(undefined, init.signal)
+    : storedRecordToken()
   if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
   const headers = new Headers(init.headers)
   for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
@@ -861,8 +863,8 @@ export function recordApiClient(): RecordApiClient {
       }),
     getBoardThread: (id) => request(`/v1/board/threads/${id}`),
     getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
-    putBoardReceipt: (input) =>
-      request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input) }),
+    putBoardReceipt: (input, signal) =>
+      request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
     listBoardChanges: listBoardChangesRequest,
     takeBoardClaim: (input) =>
       request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
