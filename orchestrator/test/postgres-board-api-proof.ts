@@ -18,6 +18,7 @@ import { registerBoardPostingProjectProof } from './postgres-board-posting-proje
 import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
+import { registerHostedProjectIdentityProof } from './postgres-sync-authorization-proof.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -377,6 +378,14 @@ export function registerBoardApiProofs(input: {
     originProject: ORIGIN_PROJECT,
     projectId: IDS.project,
     originProjectId: IDS.originProject,
+  })
+
+  registerHostedProjectIdentityProof({
+    origin: () => origin,
+    token: () => tokenA,
+    spaceId: () => spaceA,
+    admin: (statement) => input.succeeds('postgres', 'postgres', statement),
+    caseSession,
   })
 
   test('a machine audience and a suggestion are refused', async () => {

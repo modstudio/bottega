@@ -10,6 +10,7 @@ import {
   subjectState,
 } from '../../../shared/subjects.ts'
 import { type RecordCursor, type RecordCursorRow, recordCursorAt } from './record-cursor.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 
 export type RecordSubject = SubjectOutput & RecordCursorRow
 
@@ -63,23 +64,18 @@ async function projectId(
   project: string,
   requestedId?: string | null,
 ): Promise<string> {
-  const rows = requestedId
-    ? await tx`SELECT id,name,space_id FROM project WHERE id=${requestedId}::uuid`
-    : await tx`SELECT id,name,space_id FROM project WHERE space_id=${spaceId}::uuid AND name=${project}`
-  if (!rows.length) {
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName: project,
+    spaceId,
+  })
+  if (resolved.status !== 'found') {
     throw new RecordSubjectError(
       `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
       404,
     )
   }
-  if (String(rows[0]!.space_id) !== spaceId) {
-    throw new RecordSubjectError(`project "${project}" is not present in this record space`, 404)
-  }
-  if (requestedId && String(rows[0]!.name) !== project)
-    console.warn(
-      `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(project)}`,
-    )
-  return String(rows[0]!.id)
+  return resolved.project.id
 }
 
 async function assertParent(

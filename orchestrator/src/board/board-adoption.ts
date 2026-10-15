@@ -11,6 +11,7 @@ import {
   recordApiClient,
 } from '../record/record-api-client.ts'
 import { runRecordIdOrNull } from '../run/run-identifier.ts'
+import { projectRowByName } from '../project/projects.ts'
 import {
   type AdoptionCandidate as Candidate,
   type AdoptionCandidateFact as CandidateFact,
@@ -282,6 +283,8 @@ async function uploadMessage(
     const rootId = row.thread_root_id!
     const hostedRoot = hostedRoots.get(rootId)
     if (!hostedRoot) throw new Error(`local reply ${row.id} has no uploaded root ${rootId}`)
+    const project = row.author_project ?? undefined
+    const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
     const uploaded = await client.replyBoardMessage(hostedRoot, {
       id: hostedId,
       body: row.body,
@@ -289,19 +292,15 @@ async function uploadMessage(
       authorHarness: row.author_harness,
       authorMachineId: machineId(),
       authorRunId,
+      project,
+      projectId,
     })
     return uploaded.id
   }
   if (candidate.kind === 'claim') throw new Error(`claim ${candidate.id} is not a board message`)
   const tags = messageTags(row.id, database).filter((tag) => tag.origin === 'sender')
   const project = originalProject(row, roots.get(row.thread_root_id ?? -1))
-  const projectId = project
-    ? ((
-        database.query('SELECT record_id FROM project WHERE name=?').get(project) as {
-          record_id: string | null
-        } | null
-      )?.record_id ?? null)
-    : null
+  const projectId = project ? (projectRowByName(project, database)?.recordId ?? null) : null
   const uploaded = await client.postBoardMessage({
     id: hostedId,
     kind: candidate.kind,
@@ -440,12 +439,7 @@ async function uploadClaim(
   const uploaded = await client.takeBoardClaim({
     id: hostedId,
     project: row.project,
-    projectId:
-      (
-        database.query('SELECT record_id FROM project WHERE name=?').get(row.project) as {
-          record_id: string | null
-        } | null
-      )?.record_id ?? null,
+    projectId: projectRowByName(row.project, database)?.recordId ?? null,
     subject: `${row.subject_kind}:${row.subject_value}`,
     durationMs: remaining,
     runId: runRecordId(row.run_id, database),

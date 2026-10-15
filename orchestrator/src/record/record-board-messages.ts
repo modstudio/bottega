@@ -55,6 +55,7 @@ import {
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
@@ -208,34 +209,19 @@ async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoard
   return hostedBoardMessageView(loaded.row, loaded.tags, clock)
 }
 
-async function visibleProjectIds(tx: SQL, name: string): Promise<string[]> {
-  const rows = await tx`SELECT id FROM project WHERE name=${name} AND retired_at IS NULL`
-  return (rows as Array<{ id: unknown }>).map((row) => String(row.id))
-}
-
-/** A project name stands for a project only when exactly one readable row carries it. */
-export function uniqueProjectId(ids: string[]): string | null {
-  return ids.length === 1 ? ids[0]! : null
-}
-
 export async function resolveVisibleProjectId(
   tx: SQL,
   name: string,
   requestedId?: string | null,
 ): Promise<string> {
-  if (requestedId) {
-    const rows = await tx`SELECT id,name,retired_at FROM project WHERE id=${requestedId}::uuid`
-    if (rows.length !== 1 || rows[0]!.retired_at != null)
-      throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-    if (String(rows[0]!.name) !== name)
-      console.warn(
-        `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(name)}`,
-      )
-    return String(rows[0]!.id)
-  }
-  const id = uniqueProjectId(await visibleProjectIds(tx, name))
-  if (id === null) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-  return id
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName: name,
+    liveNameOnly: true,
+  })
+  if (resolved.status !== 'found' || resolved.project.retired)
+    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+  return resolved.project.id
 }
 
 async function resolvePostingProjectId(
@@ -243,18 +229,16 @@ async function resolvePostingProjectId(
   name: string,
   requestedId?: string | null,
 ): Promise<string | null> {
-  if (requestedId) {
-    const rows = await tx`SELECT id,name,retired_at FROM project WHERE id=${requestedId}::uuid`
-    if (rows.length !== 1)
-      throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-    if (rows[0]!.retired_at != null) return null
-    if (String(rows[0]!.name) !== name)
-      console.warn(
-        `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(name)}`,
-      )
-    return String(rows[0]!.id)
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName: name,
+    liveNameOnly: true,
+  })
+  if (resolved.status !== 'found') {
+    if (requestedId) throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+    return null
   }
-  return uniqueProjectId(await visibleProjectIds(tx, name))
+  return resolved.project.retired ? null : resolved.project.id
 }
 
 function sessionOrNull(value: string | null | undefined): string | null {
@@ -674,6 +658,7 @@ async function insertReplyCopyingRoot(
   rootId: string,
   createdAt: string,
   clock: number,
+  authorProjectId: string | null,
 ): Promise<HostedBoardMessage> {
   await requireOwnedHostedRunAndMachine(tx, input.userId, {
     runId: input.authorRunId,
@@ -690,7 +675,7 @@ async function insertReplyCopyingRoot(
     SELECT
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
-      ${input.project ? await resolvePostingProjectId(tx, input.project) : null}::uuid,
+      ${authorProjectId}::uuid,
       'reply', NULL, root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
@@ -734,9 +719,10 @@ export async function replyHostedBoardMessage(
     requested.threadRootId = String(rootRow.row.id)
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
     requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
-    requested.authorProjectId = input.project
-      ? await resolvePostingProjectId(tx, input.project)
+    const authorProjectId = input.project
+      ? await resolvePostingProjectId(tx, input.project, input.projectId)
       : null
+    requested.authorProjectId = authorProjectId
     const sameId = await existingOrConflict(tx, input.id, requested)
     if (sameId) return sameId
     const audienceKind = rootRow.row.audience
@@ -776,6 +762,7 @@ export async function replyHostedBoardMessage(
       String(rootRow.row.id),
       new Date(clock).toISOString(),
       clock,
+      authorProjectId,
     )
   })
 }

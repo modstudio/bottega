@@ -47,6 +47,7 @@ import {
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -565,7 +566,7 @@ function testFlakeValues(row: Payload) {
   }
 }
 
-export async function projectRecordId(
+async function projectRecordId(
   tx: SQL,
   row: Payload,
   principal: RecordPrincipal,
@@ -573,11 +574,12 @@ export async function projectRecordId(
   const requestedId = nullableString(row.projectId)
   const projectName = nullableString(row.projectName)
   if (requestedId === null && projectName === null) return null
-  const projects = requestedId
-    ? await tx`SELECT id,name,space_id FROM project WHERE id=${requestedId}::uuid`
-    : await tx`SELECT id,name,space_id FROM project
-        WHERE space_id=${principal.spaceId}::uuid AND name=${projectName}`
-  if (projects.length !== 1) {
+  const resolved = await resolveRecordProjectIdentity(tx, {
+    projectId: requestedId,
+    projectName,
+    spaceId: principal.spaceId,
+  })
+  if (resolved.status !== 'found') {
     throw new OutboxRowError(
       requestedId
         ? `record project ${requestedId} is absent from request space ${principal.spaceId}`
@@ -585,19 +587,7 @@ export async function projectRecordId(
       'row-validation',
     )
   }
-  const project = projects[0]!
-  if (String(project.space_id) !== principal.spaceId) {
-    throw new OutboxRowError(
-      `record project ${requestedId} is absent from request space ${principal.spaceId}`,
-      'row-validation',
-    )
-  }
-  if (requestedId && projectName !== null && String(project.name) !== projectName) {
-    console.warn(
-      `record project identity mismatch: id ${requestedId} is ${JSON.stringify(String(project.name))}, payload named ${JSON.stringify(projectName)}; using id`,
-    )
-  }
-  return String(project.id)
+  return resolved.project.id
 }
 
 const recordKinds = {
