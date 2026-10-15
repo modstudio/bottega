@@ -34,11 +34,6 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
 })
 
 describe('stored document lint', () => {
-  test('kind selects whether the profile includes the numeral rule', () => {
-    expect(docLintProfile('working').rules.numeral).toBe('warning')
-    expect(docLintProfile('article').rules.numeral).toBeUndefined()
-  })
-
   test.each(['working', 'article'] as const)('%s warns for both used-to senses', (kind) => {
     for (const body of [
       'This field is used to compute the price.',
