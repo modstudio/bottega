@@ -223,6 +223,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../board/board-tags.ts',
       '../board/board-thread-policy.ts',
       './record-board-contract.ts',
+      './record-project-identity.ts',
       './record-board-scope.ts',
       './record-board-tx.ts',
     ],

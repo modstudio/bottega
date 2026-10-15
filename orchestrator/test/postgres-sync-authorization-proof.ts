@@ -683,11 +683,14 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
 export function registerHostedProjectIdentityProof(input: {
   origin(): string
   token(): string
-  spaceId(): string
+  existingProjectId: string
   admin(statement: string): string
   caseSession(label: string): string
 }): void {
   test('hosted routes prefer a project UUID across stale names and preserve retired route policy', async () => {
+    const spaceId = input.admin(
+      `SELECT space_id FROM project WHERE id='${input.existingProjectId}';`,
+    )
     const projectId = newRecordId()
     const staleProjectId = newRecordId()
     const currentName = `identity-current-${projectId.slice(-8)}`
@@ -700,10 +703,10 @@ export function registerHostedProjectIdentityProof(input: {
     const retiredPostId = newRecordId()
     input.admin(
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at) VALUES
-       ('${projectId}','${input.spaceId()}','${currentName}',ARRAY['IDENTITY'],now()),
-       ('${staleProjectId}','${input.spaceId()}','${staleName}',ARRAY['STALE'],now());`,
+       ('${projectId}','${spaceId}','${currentName}',ARRAY['IDENTITY'],now()),
+       ('${staleProjectId}','${spaceId}','${staleName}',ARRAY['STALE'],now());`,
     )
-    const requestHeaders = { ...headers(input.token()), 'x-record-space': input.spaceId() }
+    const requestHeaders = { ...headers(input.token()), 'x-record-space': spaceId }
     const doc = await fetch(`${input.origin()}/v1/docs`, {
       method: 'PUT',
       headers: requestHeaders,
