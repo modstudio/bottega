@@ -413,9 +413,11 @@ async function proofManagedCanonProjects(transaction: Transaction): Promise<void
 
 async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
   await transaction.exec(`
-    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+    SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
+    SELECT set_config('app.user_id', '${platformOperatorId}', true);
     INSERT INTO project (id, space_id, name, created_at) VALUES
       ('${hubProjectMatchId}', '${PLATFORM_SPACE_ID}', 'hub-project-id-match', now());
+    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
     INSERT INTO hub_task
       (id, space_id, project_name, key, project, source, first_seen, last_seen, created_at, updated_at)
     VALUES
@@ -424,6 +426,8 @@ async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise
       ('${hubProjectUnmatchedTaskId}', '${PLATFORM_SPACE_ID}', 'hub-project-id-unmatched', 'HUB-2',
        'hub-project-id-unmatched', 'git', now(), now(), now(), now());
     ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+    SELECT set_config('app.space_id', '', true);
+    SELECT set_config('app.user_id', '', true);
   `)
 }
 
@@ -478,7 +482,8 @@ async function applyAndProveMigration(
     for (const chunk of migration.sql) await transaction.exec(chunk)
     await proofDocJsonbArrayRepair(transaction)
   }
-  if (migration.name === hubProjectIdentityMigration) await proofHubProjectIdentityBackfill(transaction)
+  if (migration.name === hubProjectIdentityMigration)
+    await proofHubProjectIdentityBackfill(transaction)
 }
 
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {

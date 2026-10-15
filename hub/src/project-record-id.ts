@@ -34,7 +34,7 @@ export function backfillProjectRecordIds(
   if (!named.length) return
   for (const { table, column } of PROJECT_RECORD_ID_TABLES) {
     const update = conn.query(
-      `UPDATE ${table} SET project_record_id=? WHERE ${column}=? AND project_record_id IS NULL`,
+      `UPDATE "${table}" SET project_record_id=? WHERE "${column}"=? AND project_record_id IS NULL`,
     )
     for (const project of named) update.run(project.record_id, project.name)
   }

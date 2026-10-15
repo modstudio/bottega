@@ -22,46 +22,47 @@ ALTER TABLE "hub_task" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_task_comment" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_task_document" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_task_status_event" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-UPDATE hub_task AS row SET project_id = match.id
+ALTER TABLE "project" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+UPDATE hub_task AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_task_comment AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_task_comment AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_task_document AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_task_document AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_task_status_event AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_task_status_event AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_note AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_note AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_note_acknowledgement AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_note_acknowledgement AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_interval AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_interval AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
-UPDATE hub_report_subscription AS row SET project_id = match.id
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
+UPDATE hub_report_subscription AS hub_row SET project_id = match.id
 FROM (
   SELECT space_id, name, (array_agg(id ORDER BY id))[1] AS id FROM project GROUP BY space_id, name HAVING count(*) = 1
 ) AS match
-WHERE row.project_id IS NULL AND row.space_id = match.space_id AND row.project_name = match.name;
+WHERE hub_row.project_id IS NULL AND hub_row.space_id = match.space_id AND hub_row.project_name = match.name;
 DO $$
 DECLARE
   unmatched_task bigint;
@@ -86,6 +87,7 @@ BEGIN
     unmatched_note, unmatched_acknowledgement, unmatched_interval, unmatched_subscription;
 END $$;
 --> statement-breakpoint
+ALTER TABLE "project" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_interval" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_note" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "hub_note_acknowledgement" FORCE ROW LEVEL SECURITY;--> statement-breakpoint

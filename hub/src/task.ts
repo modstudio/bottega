@@ -8,6 +8,7 @@ import { persistInstallBinding } from './install-binding.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import {
   HOSTED_COMMENT_TABLE,
@@ -26,7 +27,6 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
-import { projectRecordIdFor } from './project-record-id.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,

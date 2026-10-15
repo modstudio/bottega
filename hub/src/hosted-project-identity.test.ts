@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import { storedHubProjectId } from './hosted-project-identity.ts'
 import { applyIntervalChangeInTransaction } from './hosted-evidence.ts'
+import { storedHubProjectId } from './hosted-project-identity.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const userId = '01990000-0000-7000-8000-000000001249'
@@ -29,7 +29,9 @@ test('hosted write stores a sent projectId and resolves an absent one by name', 
   await expect(storedHubProjectId(tx, spaceId, { projectId, projectName: 'stale' })).resolves.toBe(
     projectId,
   )
-  await expect(storedHubProjectId(tx, spaceId, { projectName: 'workshop' })).resolves.toBe(projectId)
+  await expect(storedHubProjectId(tx, spaceId, { projectName: 'workshop' })).resolves.toBe(
+    projectId,
+  )
   await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).resolves.toBeNull()
   const sentId = '01990000-0000-7000-8000-000000001261'
   await applyIntervalChangeInTransaction(tx, identity, {

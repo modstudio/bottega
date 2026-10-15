@@ -24,7 +24,6 @@ import {
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
-import { projectRecordIdFor } from './project-record-id.ts'
 import {
   hostedCreateNote,
   hostedPromoteNote,
@@ -36,6 +35,7 @@ import { noteDestinationOptions } from './note-project-space.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
+import { projectRecordIdFor } from './project-record-id.ts'
 import { projects } from './projects.ts'
 import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import { createLocalTaskInTransaction, duplicateCandidates, type TaskRow } from './task.ts'
@@ -521,12 +521,7 @@ export async function mergeNote(
       .query(
         `UPDATE hosted_outbox SET routing_project=?, routing_project_record_id=? WHERE table_name=? AND row_id=?`,
       )
-      .run(
-        target.project,
-        projectRecordIdFor(target.project),
-        HOSTED_NOTE_TABLE,
-        sourceRecordId,
-      )
+      .run(target.project, projectRecordIdFor(target.project), HOSTED_NOTE_TABLE, sourceRecordId)
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
   return getNote(targetRecordId)
