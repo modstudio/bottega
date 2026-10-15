@@ -36,7 +36,7 @@ export function docLintProfile(kind: DocKind): DocLintProfile {
     rules: {
       history: 'error',
       issue: 'error',
-      ...(kind === 'working' ? { numeral: 'error' as const } : {}),
+      ...(kind === 'working' ? { numeral: 'warning' as const } : {}),
       date: 'error',
     },
     ambiguousHistory: 'warning',

@@ -4,7 +4,14 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject, retireSubject } from '../subject/subjects.ts'
-import { getDocRevision, listDocRevisions, listDocs, restoreDoc, setDoc } from './docs.ts'
+import {
+  getDocRevision,
+  listDocRevisions,
+  listDocs,
+  restoreDoc,
+  setDoc,
+  storedDocWarnings,
+} from './docs.ts'
 import { commitDocRestore, commitDocSet } from './local-doc-write.ts'
 
 test('kind selects lint and an omitted kind keeps the current value', async () => {
@@ -30,17 +37,19 @@ test('kind selects lint and an omitted kind keeps the current value', async () =
     expectedRevision: article.revision!,
   })
   expect(updated.kind).toBe('article')
-  await expect(
-    setDoc({
-      scope: 'global',
-      subject: null,
-      slug: 'working-profile',
-      title: 'Working profile',
-      body: 'There are 2 prices.',
-      delivery: 'demand',
-      reason: 'prove working profile refusal',
-    }),
-  ).rejects.toThrow(/working profile[\s\S]*doc\/numeral[\s\S]*--kind article/)
+  const working = await setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'working-profile',
+    title: 'Working profile',
+    body: 'Hebrew numbering writes 15 and 16 as טו and טז.',
+    delivery: 'demand',
+    reason: 'prove working profile warning',
+  })
+  expect(working.body).toBe('Hebrew numbering writes 15 and 16 as טו and טז.')
+  expect(storedDocWarnings(working)).toEqual([
+    expect.objectContaining({ rule: 'doc/numeral', level: 'warning' }),
+  ])
 })
 
 test('used-to warnings store for both document kinds', async () => {
