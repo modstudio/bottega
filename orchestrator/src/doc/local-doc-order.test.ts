@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { DocAudience } from '../../../shared/docs.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -161,7 +162,7 @@ test('reorder refuses the children of a generated reference page', async () => {
   const page = {
     kind: 'article' as const,
     delivery: 'demand' as const,
-    audiences: ['technical'],
+    audiences: ['technical'] as [DocAudience],
     form: 'reference' as const,
     generator: REFERENCE_GENERATOR,
   }
