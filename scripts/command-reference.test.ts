@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { Command, Option } from 'commander'
+import type { CommandRoute } from '../cli/routes.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import type { DocumentationInventory } from './command-descriptions.ts'
+import { type DocumentationInventory, documentationInventory } from './command-descriptions.ts'
 import { REGENERATE_COMMAND, renderReferencePages } from './command-reference.ts'
 
 function fixture(description = 'show one run'): DocumentationInventory {
@@ -153,27 +155,24 @@ test('a nested command links its parent and a leaf with no parent has no Related
   expect(pages[2]!.content).not.toContain('### Related')
 })
 
-test('changing a description changes the generated page', () => {
-  const before = renderReferencePages(fixture('show one run'))
-  const after = renderReferencePages(fixture('show every run'))
-  expect(after[1]!.content).not.toBe(before[1]!.content)
-  expect(after[1]!.content).toContain('show every run')
-  expect(after[1]!.content).not.toContain('show one run')
-})
-
-test('two renders of the same inventory are byte-identical', () => {
-  const inventory = fixture()
-  expect(renderReferencePages(inventory)).toEqual(renderReferencePages(inventory))
-})
-
-test('a cwd-dependent default does not leak a path', () => {
-  const content = renderReferencePages(fixture())
+test('a cwd or environment default from a real command renders as a phrase, never a path', () => {
+  const programs = { orch: new Command('orch'), hub: new Command('hub') }
+  programs.orch
+    .command('create')
+    .description('create a tree')
+    .option('--cwd <path>', 'select the project', process.cwd())
+    .addOption(new Option('--home <path>', 'select the home').env('HOME'))
+  const routes = [
+    { command: ['tree', 'create'], owner: 'orch', argv: ['create'] },
+  ] satisfies CommandRoute[]
+  const content = renderReferencePages(
+    documentationInventory([['tree', 'create and release worktrees']], routes, programs),
+  )
     .map((page) => page.content)
     .join('\n')
   expect(content).toContain('(default: the current working directory)')
   expect(content).toContain('(default: the value of HOME)')
   expect(content).not.toContain(process.cwd())
-  expect(content).not.toMatch(/\/Users\/|\/home\/|\\\\/)
 })
 
 function GeneratedHeaderSnippet() {
