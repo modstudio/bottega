@@ -109,6 +109,11 @@ test('converted command families preserve trunk output and exit status without o
       `${PLATFORM_SLUG} doc status <slug> --scope S [--subject X] --status STATUS [--replacement SLUG] --reason TEXT [--expect REVISION]`,
     ],
     [
+      ['doc', 'reorder'],
+      1,
+      `${PLATFORM_SLUG} doc reorder --scope S [--subject X] [--parent-id ID] --id ID...`,
+    ],
+    [
       ['doc', 'consume'],
       1,
       `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
@@ -270,7 +275,7 @@ test('converted command families preserve trunk output and exit status without o
     }
     expect(await runRegisteredCommand(['doc', 'bogus'])).toEqual({
       code: 1,
-      firstLine: `unknown: ${PLATFORM_SLUG} doc bogus. Try list | get | show | search | set | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
+      firstLine: `unknown: ${PLATFORM_SLUG} doc bogus. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,
     })
     expect(await runRegisteredCommand(['canon', 'bogus'])).toEqual({
       code: 1,

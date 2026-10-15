@@ -519,6 +519,13 @@ type RecordPutDocInput = {
   expectedRevision?: string
 }
 
+type RecordDocOrderInput = {
+  scope: string
+  subject: string | null
+  parentId: string | null
+  orderedIds: string[]
+}
+
 function recordDocSearch(options: RecordClientOptions, input: RecordDocSearchInput) {
   return request(
     options,
@@ -533,6 +540,33 @@ function recordDocSearch(options: RecordClientOptions, input: RecordDocSearchInp
     }),
     hostedDocSearchSchema,
   )
+}
+
+function reorderRecordDocs(
+  options: RecordClientOptions,
+  input: RecordDocOrderInput,
+  destinationSpaceId: string,
+) {
+  return request(options, '/v1/docs/order', docOrderResultSchema, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-record-space': destinationSpaceId },
+    body: JSON.stringify(input),
+  })
+}
+
+function putRecordDoc(
+  options: RecordClientOptions,
+  input: RecordPutDocInput,
+  destinationSpaceId?: string,
+) {
+  return request(options, '/v1/docs', docWriteResultSchema, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
+    },
+    body: JSON.stringify(input),
+  })
 }
 
 async function recordSubjects(
@@ -705,31 +739,9 @@ export function createRecordClient(options: RecordClientOptions) {
     subjects: (input: { project: string; includeRetired?: boolean }, destinationSpaceId: string) =>
       recordSubjects(options, input, destinationSpaceId),
     putDoc: (input: RecordPutDocInput, destinationSpaceId?: string) =>
-      request(options, '/v1/docs', docWriteResultSchema, {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          ...(destinationSpaceId ? { 'x-record-space': destinationSpaceId } : {}),
-        },
-        body: JSON.stringify(input),
-      }),
-    reorderDocs: (
-      input: {
-        scope: string
-        subject: string | null
-        parentId: string | null
-        orderedIds: string[]
-      },
-      destinationSpaceId: string,
-    ) =>
-      request(options, '/v1/docs/order', docOrderResultSchema, {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          'x-record-space': destinationSpaceId,
-        },
-        body: JSON.stringify(input),
-      }),
+      putRecordDoc(options, input, destinationSpaceId),
+    reorderDocs: (input: RecordDocOrderInput, destinationSpaceId: string) =>
+      reorderRecordDocs(options, input, destinationSpaceId),
     deleteDoc: (
       id: string,
       input: { reason: string; author: string; expectedRevision?: string },

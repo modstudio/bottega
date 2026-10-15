@@ -1,13 +1,11 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useLocation, useMatch, useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hostedOrigin, isHostedMode } from '@/lib/hub-mode'
 import { recordSpaces } from '@/lib/record-spaces'
-import { queryClient, trpc } from '@/trpc/client'
+import { trpc } from '@/trpc/client'
 import { Button } from '@/ui/button/button'
-import { toast } from '@/ui/toast/toast.tsx'
-import type { DocScope } from '../../../../shared/docs.ts'
 import { editorChrome, useArticleEditor } from './article-editor.tsx'
 import { CreateDocDialog } from './create-dialog.tsx'
 import { canEditDoc } from './edit-permission.ts'
@@ -23,10 +21,10 @@ import { DocsHome } from './home.tsx'
 import { docsLocation } from './location.ts'
 import { docsSearchIncludesWorking, docsVisibleByStatus, resolveDocsReplacement } from './model.ts'
 import { type RevisionMode, RevisionViewer, useRevisionView } from './revision-viewer.tsx'
-import { orderedIdsAfterDrag } from './tree.ts'
 import type { DocsTreeItem } from './types.ts'
 import { docsSource, docsSourceLabel } from './types.ts'
-import { useDocsDocument, useDocsSearch, useDocsTree } from './use-docs.ts'
+import { useReorderableDocsTree } from './use-doc-reorder.ts'
+import { useDocsDocument, useDocsSearch } from './use-docs.ts'
 import { DocsView } from './view.tsx'
 
 function enterDocEdit(
@@ -74,6 +72,11 @@ function docsSourceName(
   )
 }
 
+const selectedRevision = (
+  source: ReturnType<typeof docsSource>,
+  revision: string | number | undefined,
+) => (source !== 'public' && revision !== undefined ? String(revision) : undefined)
+
 export function DocsPage() {
   const hosted = isHostedMode()
   const origin = hostedOrigin()
@@ -99,26 +102,11 @@ export function DocsPage() {
   const [showDrafts, setShowDrafts] = useState(false)
   const [showWorking, setShowWorking] = useState(false)
   const [revisionMode, setRevisionMode] = useState<RevisionMode>('version')
-  const [optimisticOrders, setOptimisticOrders] = useState<ReadonlyMap<string, readonly string[]>>(
-    new Map(),
-  )
-  const catalog = useDocsTree(source)
-  const orderKey = useCallback(
-    (item: DocsTreeItem) =>
-      JSON.stringify([item.spaceId ?? null, item.scope, item.subject, item.parentId]),
-    [],
-  )
-  const orderedCatalogItems = useMemo(() => {
-    if (!optimisticOrders.size) return catalog.items
-    return catalog.items.map((item) => {
-      const position = optimisticOrders.get(orderKey(item))?.indexOf(item.id) ?? -1
-      return position < 0 ? item : { ...item, position }
-    })
-  }, [catalog.items, optimisticOrders, orderKey])
+  const catalog = useReorderableDocsTree(source, whoami.data?.memberships)
   const includeDrafts = source !== 'public' && showDrafts
   const navigationItems = useMemo(
-    () => docsVisibleByStatus(orderedCatalogItems, includeDrafts),
-    [orderedCatalogItems, includeDrafts],
+    () => docsVisibleByStatus(catalog.items, includeDrafts),
+    [catalog.items, includeDrafts],
   )
   const includeWorking = docsSearchIncludesWorking(navigationItems, project, showWorking)
   const subjects = useMemo(() => projectSubjects(navigationItems), [navigationItems])
@@ -126,14 +114,14 @@ export function DocsPage() {
     if (!params) return null
     const subject = params.subject === '_' ? null : params.subject
     return (
-      orderedCatalogItems.find((item) => (search?.id ? item.id === search.id : false)) ??
-      orderedCatalogItems.find(
+      catalog.items.find((item) => (search?.id ? item.id === search.id : false)) ??
+      catalog.items.find(
         (item) =>
           item.scope === params.scope && item.subject === subject && item.slug === params.slug,
       ) ??
       null
     )
-  }, [orderedCatalogItems, params, search?.id])
+  }, [catalog.items, params, search?.id])
   const selectedId = selected?.id
   useEffect(() => {
     if (!selectedId) return
@@ -146,15 +134,14 @@ export function DocsPage() {
     setEmptyChooserSet(true)
   }, [selectedId, emptyChooserSet, catalog.isPending, subjects])
   const reading = useDocsDocument(source, selected, selectedAudience(filters))
-  const revisionId =
-    source !== 'public' && search?.revision !== undefined ? String(search.revision) : undefined
+  const revisionId = selectedRevision(source, search?.revision)
   useEffect(() => {
     if (!revisionId) setRevisionMode('version')
   }, [revisionId])
   const revision = useRevisionView(source, reading.document, revisionId, selectedAudience(filters))
   const replacement = useMemo(
-    () => resolveDocsReplacement(reading.document, orderedCatalogItems),
-    [reading.document, orderedCatalogItems],
+    () => resolveDocsReplacement(reading.document, catalog.items),
+    [reading.document, catalog.items],
   )
   const results = useDocsSearch(
     source,
@@ -189,50 +176,6 @@ export function DocsPage() {
     void navigate({ ...docsLocation(selected, source), replace: true })
   }, [navigate, selected, source])
   const mayEdit = canEditSelected(selected, source, whoami.data?.memberships)
-  const localReorder = useMutation(trpc.doc.reorder.mutationOptions())
-  const hostedReorder = useMutation(trpc.record.reorderDocs.mutationOptions())
-  const canReorder = useCallback(
-    (item: DocsTreeItem) =>
-      !localReorder.isPending &&
-      !hostedReorder.isPending &&
-      item.kind === 'article' &&
-      canEditDoc(source, whoami.data?.memberships, item.spaceId),
-    [localReorder.isPending, hostedReorder.isPending, source, whoami.data?.memberships],
-  )
-  const reorderDocs = useCallback(
-    async (activeId: string, overId: string) => {
-      const active = orderedCatalogItems.find((item) => item.id === activeId)
-      const over = orderedCatalogItems.find((item) => item.id === overId)
-      if (!active || !over || !canReorder(active) || orderKey(active) !== orderKey(over)) return
-      const siblings = orderedCatalogItems.filter((item) => orderKey(item) === orderKey(active))
-      const orderedIds = orderedIdsAfterDrag(siblings, activeId, overId)
-      const key = orderKey(active)
-      setOptimisticOrders((current) => new Map(current).set(key, orderedIds))
-      try {
-        const order = {
-          scope: active.scope as DocScope,
-          subject: active.subject,
-          parentId: active.parentId,
-          orderedIds,
-        }
-        if (source === 'hosted' && active.spaceId) {
-          await hostedReorder.mutateAsync({ ...order, spaceId: active.spaceId })
-        } else {
-          await localReorder.mutateAsync(order)
-        }
-        await queryClient.invalidateQueries()
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Could not save the document order')
-      } finally {
-        setOptimisticOrders((current) => {
-          const next = new Map(current)
-          next.delete(key)
-          return next
-        })
-      }
-    },
-    [orderedCatalogItems, canReorder, orderKey, hostedReorder, localReorder, source],
-  )
   const editing = isEditingArticle(search?.edit, mayEdit, Boolean(reading.document))
   const editor = useArticleEditor({
     doc: reading.document,
@@ -249,7 +192,7 @@ export function DocsPage() {
     return (
       <DocsHome
         sourceLabel={sourceLabel}
-        items={orderedCatalogItems}
+        items={catalog.items}
         results={results.items}
         query={searchQuery}
         onQuery={setSearchQuery}
@@ -283,8 +226,7 @@ export function DocsPage() {
         locationFor={locationFor}
         onSelect={open}
         onOpenFirst={openFirst}
-        canReorder={canReorder}
-        onReorder={reorderDocs}
+        treeReorder={catalog.treeReorder}
         ready={docsWorkspaceReady(
           catalog.isPending,
           emptyChooserSet,

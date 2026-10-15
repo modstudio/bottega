@@ -63,8 +63,10 @@ export type DocsViewProps = {
   /** Where the article's fields are saved, when this reader may edit them in place. */
   fieldSource?: Docs.DocsSource
   canManage?: boolean
-  canReorder?: (item: Docs.DocsTreeItem) => boolean
-  onReorder?: (activeId: string, overId: string) => void
+  treeReorder?: {
+    canReorder: (item: Docs.DocsTreeItem) => boolean
+    onReorder: (activeId: string, overId: string) => void
+  }
 }
 
 type DocsControlsProps = {
@@ -176,8 +178,7 @@ function DocsRail({
   onSearch,
   loading,
   emptyMessage,
-  canReorder,
-  onReorder,
+  treeReorder,
 }: {
   tree: readonly Docs.TreeNode[]
   groups: readonly Docs.DocsTreeGroup[] | null
@@ -188,8 +189,7 @@ function DocsRail({
   onSearch: () => void
   loading?: boolean
   emptyMessage: string
-  canReorder?: (item: Docs.DocsTreeItem) => boolean
-  onReorder?: (activeId: string, overId: string) => void
+  treeReorder?: DocsViewProps['treeReorder']
 }) {
   const hasTree = groups ? groups.length > 0 : tree.length > 0
   const panel = useRef<HTMLElement>(null)
@@ -218,8 +218,7 @@ function DocsRail({
               collapsed={collapsed}
               onToggle={onToggle}
               onSelect={onSelect}
-              canReorder={canReorder}
-              onReorder={onReorder}
+              {...treeReorder}
             />
           ) : (
             <TreeList
@@ -228,8 +227,7 @@ function DocsRail({
               collapsed={collapsed}
               onToggle={onToggle}
               onSelect={onSelect}
-              canReorder={canReorder}
-              onReorder={onReorder}
+              {...treeReorder}
             />
           )
         ) : loading ? null : (
@@ -475,8 +473,6 @@ export function DocsView({
   bodyView,
   viewedRevision,
   canManage,
-  canReorder,
-  onReorder,
   ...readingEdit
 }: DocsViewProps) {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -512,7 +508,6 @@ export function DocsView({
     !model.tree.some(function contains(item): boolean {
       return item.id === selectedItem.id || item.children.some(contains)
     })
-  const visible = doc
   const readingCrumbs = detached ? breadcrumb(selectedItem, []) : model.crumbs
   const readingAround = detached ? { previous: null, next: null } : model.around
   const firstId = model.first?.id ?? null
@@ -581,14 +576,13 @@ export function DocsView({
           onSearch={() => setSearchOpen(true)}
           loading={loading}
           emptyMessage={signedIn ? 'No docs here yet.' : 'No user docs here yet.'}
-          canReorder={canReorder}
-          onReorder={onReorder}
+          treeReorder={readingEdit.treeReorder}
         />
         <DocsReading
-          doc={visible}
+          doc={doc}
           signedIn={signedIn}
           audience={selectedAudience(model.stale)}
-          pending={!visible && (Boolean(model.selected) || detached || !ready)}
+          pending={!doc && (Boolean(model.selected) || detached || !ready)}
           wide={wide}
           onWide={setWide}
           crumbs={readingCrumbs}
@@ -604,8 +598,8 @@ export function DocsView({
         />
         {wide ? null : (
           <DocsFacts
-            doc={visible}
-            headings={visible ? model.headings : []}
+            doc={doc}
+            headings={doc ? model.headings : []}
             signedIn={signedIn}
             source={source}
             audience={selectedAudience(model.stale)}

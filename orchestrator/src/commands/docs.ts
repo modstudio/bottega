@@ -36,6 +36,8 @@ const descriptions: Record<string, string> = {
   match: 'match document titles or slugs',
   'body-match': 'match document body text',
   parent: 'set the parent article slug',
+  'parent-id': 'select the parent document id',
+  id: 'add a document id to the sibling order',
   'no-parent': 'clear the parent article slug',
   form: 'set the article form',
   'no-form': 'clear the article form',

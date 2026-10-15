@@ -285,6 +285,21 @@ function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
   registerRecordSyncRoute(app, deps)
 }
 
+function registerRecordWriteRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: Deps,
+  ports: {
+    scope(context: Context<ApiEnvironment>): Tenant | null
+    noSpace(context: Context<ApiEnvironment>): Response
+    writeError(context: Context<ApiEnvironment>, error: unknown): Response
+  },
+): void {
+  registerRecordProjectRoutes(app, deps, ports)
+  registerRecordSettingsRoutes(app, deps, ports)
+  registerRecordBoardRoutes(app, deps, ports)
+  registerRecordDocOrderRoute(app, deps, ports)
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   registerRecordCors(app, deps.allowedOrigins)
@@ -441,10 +456,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
     throw error
   }
-  registerRecordProjectRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordSettingsRoutes(app, deps, { scope, noSpace, writeError })
-  registerRecordBoardRoutes(app, deps, { noSpace, writeError })
-  registerRecordDocOrderRoute(app, deps, { scope, noSpace, writeError })
+  registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
   const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
   const jsonWrap = (wrap: ConfigWrapInput) => ({

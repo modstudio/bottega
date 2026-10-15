@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
@@ -94,7 +95,7 @@ describe('record API doc write refusals', () => {
         return { orderedIds: input.orderedIds as string[] }
       },
     })
-    const body = { scope: 'project', subject: 'bottega', parentId: null, orderedIds: [id] }
+    const body = { scope: 'project', subject: PLATFORM_NAME, parentId: null, orderedIds: [id] }
     const response = await app.request('/v1/docs/order', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
