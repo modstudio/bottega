@@ -15,6 +15,7 @@ import {
   type DocArticleSubject,
   type DocForm,
 } from '../../../../shared/docs.ts'
+import { CodeSection } from './code-section.tsx'
 import {
   audiencesFrom,
   type DocFieldChange,
@@ -550,8 +551,7 @@ export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: Doc
   const files = doc.sourceFiles ?? []
   const disabled = !field.canAddress || field.disabled('sourceFiles')
   return (
-    <section className="markdown mt-8">
-      <h2>In the code</h2>
+    <CodeSection count={files.length} defaultOpen={files.length === 0}>
       {files.length ? (
         <ul>
           {files.map((file) => (
@@ -603,6 +603,6 @@ export function EditableSourceFiles({ doc, source }: { doc: DocsDoc; source: Doc
         </Button>
       </form>
       <FieldError message={field.error('sourceFiles')} />
-    </section>
+    </CodeSection>
   )
 }
