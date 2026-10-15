@@ -99,10 +99,31 @@ function ownerRouteUnits(route: CommandRoute, programs: CommandPrograms): Docume
   if (!command) return []
   const spelling = `${PLATFORM_SLUG} ${route.command.join(' ')}`
   const group = route.command[0]!
-  const options = optionUnits(spelling, group, command, ownerSource(route.owner))
-  return route.command.length > 1
-    ? [routeCommandUnit(route, command.description(), ownerSource(route.owner)), ...options]
-    : options
+  const source = ownerSource(route.owner)
+  const units = optionUnits(spelling, group, command, source)
+  if (route.command.length > 1) {
+    units.unshift(routeCommandUnit(route, command.description(), source))
+  }
+
+  function appendSubcommands(parent: Command, parentSpelling: string) {
+    for (const subcommand of parent.createHelp().visibleCommands(parent)) {
+      const subcommandSpelling = `${parentSpelling} ${subcommand.name()}`
+      units.push(
+        {
+          kind: 'command',
+          spelling: subcommandSpelling,
+          group,
+          description: subcommand.description(),
+          source,
+        },
+        ...optionUnits(subcommandSpelling, group, subcommand, source),
+      )
+      appendSubcommands(subcommand, subcommandSpelling)
+    }
+  }
+
+  appendSubcommands(command, spelling)
+  return units
 }
 
 function routeUnits(route: CommandRoute, programs: CommandPrograms): DocumentationUnit[] {

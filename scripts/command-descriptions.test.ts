@@ -37,6 +37,27 @@ test('a missing owner description is named with its front-door spelling', () => 
   })
 })
 
+test('nested visible subcommands and their descriptions use the front-door spelling', () => {
+  const { programs, routes } = fixture()
+  programs.orch.commands[0]!.command('details').description('show run details')
+  programs.orch.commands[0]!.command('events')
+  programs.orch.commands[0]!.command('internal', { hidden: true })
+
+  const findings = descriptionFindings(documentationUnits(groups, routes, programs))
+  expect(findings).not.toContainEqual(
+    expect.objectContaining({ spelling: `${PLATFORM_SLUG} run show details` }),
+  )
+  expect(findings).toContainEqual({
+    kind: 'command',
+    spelling: `${PLATFORM_SLUG} run show events`,
+    group: 'run',
+    source: 'orchestrator/src/cli/program.ts',
+  })
+  expect(findings).not.toContainEqual(
+    expect.objectContaining({ spelling: `${PLATFORM_SLUG} run show internal` }),
+  )
+})
+
 test('hidden routes and hidden owner commands are exempt', () => {
   const programs = {
     orch: commanderFactory.createCommand('orch'),
