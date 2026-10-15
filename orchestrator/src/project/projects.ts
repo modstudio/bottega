@@ -374,28 +374,7 @@ export function assertProjectRename(currentName: string, nextName: string): { id
   return { id: current.id }
 }
 
-/** Rename the local referent and every deprecated one-release name mirror. */
-export function applyLocalProjectRename(
-  current: { id: number },
-  currentName: string,
-  nextName: string,
-): void {
-  const d = db()
-  d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
-  for (const [table, column] of [
-    ['run', 'repo'],
-    ['canon_pack', 'project'],
-    ['landing', 'project'],
-    ['landing_override', 'project'],
-    ['landing_review_carry', 'project'],
-    ['landing_triage_snapshot', 'project'],
-    ['review_read', 'project'],
-  ])
-    d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName, current.id)
-  d.query('UPDATE doc SET subject=? WHERE subject=?').run(nextName, currentName)
-  d.query('UPDATE doc_revision SET subject=? WHERE subject=?').run(nextName, currentName)
-  d.query('UPDATE release_ledger SET project=? WHERE project=?').run(nextName, currentName)
-}
+
 
 export type ProjectReferenceCounts = {
   run: number

@@ -80,6 +80,39 @@ async function renameHostedDocSubjects(
   `
 }
 
+const HUB_PROJECT_NAME_TABLES = [
+  'hub_task',
+  'hub_task_comment',
+  'hub_task_document',
+  'hub_task_status_event',
+  'hub_note',
+  'hub_note_acknowledgement',
+  'hub_report_subscription',
+  'hub_report_subscription_project',
+  'hub_interval',
+] as const
+
+async function renameHostedHubProjectNames(
+  tx: SQL,
+  input: { spaceId: string; projectId: string; from: string; to: string },
+): Promise<void> {
+  for (const table of HUB_PROJECT_NAME_TABLES) {
+    await tx`UPDATE ${tx.unsafe(table)} SET project_name=${input.to}
+      WHERE project_id=${input.projectId}::uuid
+         OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project_name=${input.from})`
+  }
+  await tx`
+    UPDATE hub_task SET project=${input.to}
+    WHERE project_id=${input.projectId}::uuid
+       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
+  `
+  await tx`
+    UPDATE hub_note SET project=${input.to}
+    WHERE project_id=${input.projectId}::uuid
+       OR (project_id IS NULL AND space_id=${input.spaceId}::uuid AND project=${input.from})
+  `
+}
+
 function postgresTextArray(sql: Pick<SQL, 'array'>, value: string[] | null) {
   if (value === null) return null
   return sql.array(value, 'text')
@@ -220,6 +253,12 @@ export async function upsertRecordProject(
     }
     if (plan.kind === 'rename') {
       await tx`UPDATE project SET name=${plan.to} WHERE id=${plan.id}::uuid`
+      await renameHostedHubProjectNames(tx, {
+        spaceId: input.spaceId,
+        projectId: plan.id,
+        from: plan.from,
+        to: plan.to,
+      })
     }
     if (currentName !== nextName) {
       await renameHostedDocSubjects(tx, input.spaceId, currentName, nextName)

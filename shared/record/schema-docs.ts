@@ -134,7 +134,7 @@ export const doc = pgTable.withRLS(
       columns: [table.spaceId, table.projectId, table.articleSubjectId],
       foreignColumns: [articleSubject.spaceId, articleSubject.projectId, articleSubject.id],
       name: 'doc_article_subject_same_project_fk',
-    }),
+    }).onUpdate('cascade'),
     check(
       'doc_replacement_check',
       sql`(${table.status} = 'superseded' AND ${table.replacementSlug} IS NOT NULL) OR (${table.status} <> 'superseded' AND ${table.replacementSlug} IS NULL)`,
@@ -192,7 +192,7 @@ export const publicDocSpace = pgTable(
       columns: [table.spaceId, table.projectId],
       foreignColumns: [project.spaceId, project.id],
       name: 'public_doc_space_space_id_project_id_project_space_id_id_fk',
-    }),
+    }).onUpdate('cascade'),
   ],
 )
 

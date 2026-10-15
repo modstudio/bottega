@@ -71,6 +71,27 @@ test('the outbox payload carries projectId beside project_name', () => {
   })
 })
 
+test('collect rewrites a name snapshot keyed by project_record_id', async () => {
+  resetFixtureStore()
+  refreshProjects()
+  writeTransaction((conn) => {
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,project_record_id,source,first_seen,last_seen)
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3','DEV-3','stale','01990000-0000-7000-8000-000000000075','git','t','t')`,
+      )
+      .run()
+  })
+  await collectOnce('2026-10-01T00:00:00.000Z', 'git', undefined, {
+    git: async () => ({ days: 0, tasks: 0 }),
+  })
+  expect(
+    db()
+      .query<{ project: string }, [string]>('SELECT project FROM task WHERE key=?')
+      .get('DEV-3')?.project,
+  ).toBe('workshop')
+})
+
 test('collect backfill fills a matching name and leaves an unmatched name null', async () => {
   resetFixtureStore()
   refreshProjects()

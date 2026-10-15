@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { upsertRecordProject } from '../src/record/record-projects.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
 import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
@@ -296,5 +297,139 @@ export function registerProjectSpaceProofs(input: {
       `SELECT count(*) FROM project WHERE id='${project}'; SELECT count(*) FROM run WHERE id='${run}';`,
     )
     expect(destinationFacts.stdout.split('\n')).toEqual(['0', '0'])
+  })
+
+  test('a hosted rename leaves no hub row naming the old project', async () => {
+    input.setToken(input.token())
+    const space = (await recordMemberships()).activeSpaceId
+    if (!space) throw new Error('rename proof has no active space')
+    const project = newRecordId()
+    const other = newRecordId()
+    const note = newRecordId()
+    const subscription = newRecordId()
+    const task = `REN-${newRecordId().slice(-6)}`
+    const inserted = input.asSpace(
+      input.actorRole,
+      'actor-password',
+      space,
+      `INSERT INTO project (id,space_id,name,created_at) VALUES
+         ('${project}','${space}','rename-proof',now()),
+         ('${other}','${space}','rename-stay',now());
+       INSERT INTO hub_task
+         (id,space_id,project_name,project_id,key,project,source,first_seen,last_seen,created_at,updated_at)
+         VALUES
+         ('${newRecordId()}','${space}','rename-proof','${project}','${task}','rename-proof','local',now(),now(),now(),now()),
+         ('${newRecordId()}','${space}','rename-proof',NULL,'${task}-null','rename-proof','local',now(),now(),now(),now()),
+         ('${newRecordId()}','${space}','rename-stay','${other}','${task}-stay','rename-stay','local',now(),now(),now(),now());
+       INSERT INTO hub_task_comment
+         (id,space_id,project_name,project_id,task_key,body,created_at,updated_at)
+         VALUES ('${newRecordId()}','${space}','rename-proof','${project}','${task}','c',now(),now());
+       INSERT INTO hub_task_document
+         (id,space_id,project_name,project_id,task_key,title,body,version,created_at,updated_at)
+         VALUES ('${newRecordId()}','${space}','rename-proof','${project}','${task}','t','b','1',now(),now());
+       INSERT INTO hub_task_status_event
+         (id,space_id,project_name,project_id,task_key,at,to_status,created_at,updated_at)
+         VALUES ('${newRecordId()}','${space}','rename-proof','${project}','${task}',now(),'active',now(),now());
+       INSERT INTO hub_note
+         (id,space_id,project_name,project_id,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
+         VALUES ('${note}','${space}','rename-proof','${project}',1,'rename-proof','n','[]',1,now(),now(),now());
+       INSERT INTO hub_note_acknowledgement
+         (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at)
+         VALUES ('${newRecordId()}','${space}','rename-proof','${project}','${note}','sess',now(),1,now(),now());
+       INSERT INTO hub_interval
+         (id,space_id,project_name,project_id,source,start_at,end_at,ref,updated_at)
+         VALUES ('${newRecordId()}','${space}','rename-proof','${project}','transcript',now(),now(),'r',now());
+       INSERT INTO hub_report_subscription
+         (id,space_id,scope_kind,project_name,project_id,cadence,hour,zone,enabled,created_at,updated_at)
+         VALUES ('${subscription}','${space}','project','rename-proof','${project}','daily',9,'UTC',1,now(),now());
+       INSERT INTO hub_report_subscription_project
+         (id,space_id,subscription_id,project_id,project_space_id,project_name,created_at)
+         VALUES ('${newRecordId()}','${space}','${subscription}','${project}','${space}','rename-proof',now());`,
+    )
+    expect(inserted.code, inserted.stderr).toBe(0)
+    await upsertRecordProject({
+      url: input.actorUrl,
+      userId: input.userId(),
+      spaceId: space,
+      previousName: 'rename-proof',
+      name: 'renamed-proof',
+      path: '/w/renamed-proof',
+      stack: null,
+      canon: false,
+      settings: {},
+      retiredAt: null,
+    })
+    const leftover = input.admin(`
+      SELECT sum(n) FROM (
+        SELECT count(*) n FROM hub_task WHERE project_name='rename-proof' OR project='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_task_comment WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_task_document WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_task_status_event WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_note WHERE project_name='rename-proof' OR project='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_note_acknowledgement WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_interval WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_report_subscription WHERE project_name='rename-proof'
+        UNION ALL SELECT count(*) FROM hub_report_subscription_project WHERE project_name='rename-proof'
+      ) leftover;
+      SELECT count(*) FROM hub_task WHERE project_name='rename-stay';
+      SELECT name FROM project WHERE id='${project}';`)
+    expect(leftover.trim().split('\n')).toEqual(['0', '1', 'renamed-proof'])
+  })
+
+  test('a move with a public doc space and an article doc leaves nothing in the source space', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('article move proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1214 Move',
+      `dev-1214-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId()
+    const subject = newRecordId()
+    const article = newRecordId()
+    const inserted = input.asSpace(
+      input.actorRole,
+      'actor-password',
+      source,
+      `INSERT INTO project (id,space_id,name,created_at) VALUES
+         ('${project}','${source}','article-move',now());
+       INSERT INTO subject (id,space_id,project_id,name,definition,position,created_at,updated_at)
+         VALUES ('${subject}','${source}','${project}','Article','An article subject',0,now(),now());
+       INSERT INTO doc
+         (id,space_id,scope,subject,slug,title,body,delivery,audiences,featured,project_id,kind,
+          article_subject_id,created_at,updated_at)
+         VALUES ('${article}','${source}','project','article-move','article-move-doc','Article',
+          'body','demand',ARRAY['technical'],false,'${project}','article','${subject}',now(),now());`,
+    )
+    expect(inserted.code, inserted.stderr).toBe(0)
+    input.admin(
+      `INSERT INTO public_doc_space (space_id, project_id) VALUES ('${source}','${project}');`,
+    )
+    const dry = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'article-move',
+      source,
+      destination: destination.slug,
+    })
+    const moved = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'article-move',
+      source,
+      destination: destination.slug,
+      confirm: dry.total,
+    })
+    expect(moved.rows.filter((row) => row.moved).map((row) => row.tableName)).toEqual(
+      expect.arrayContaining(['project', 'doc', 'subject']),
+    )
+    const leftover = input.admin(`
+      SELECT count(*) FROM project WHERE id='${project}' AND space_id='${source}';
+      SELECT count(*) FROM subject WHERE id='${subject}' AND space_id='${source}';
+      SELECT count(*) FROM doc WHERE id='${article}' AND space_id='${source}';
+      SELECT count(*) FROM public_doc_space WHERE project_id='${project}' AND space_id='${source}';
+      SELECT count(*) FROM project WHERE id='${project}' AND space_id='${destination.id}';
+      SELECT count(*) FROM subject WHERE id='${subject}' AND space_id='${destination.id}';
+      SELECT count(*) FROM doc WHERE id='${article}' AND space_id='${destination.id}';
+      SELECT count(*) FROM public_doc_space WHERE project_id='${project}' AND space_id='${destination.id}';`)
+    expect(leftover.trim().split('\n')).toEqual(['0', '0', '0', '0', '1', '1', '1', '1'])
   })
 }
