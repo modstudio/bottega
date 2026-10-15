@@ -6,17 +6,23 @@ import { optionFlags } from './support.ts'
 
 const flags = (...names: string[]) => ({ has: (name: string) => names.includes(name) })
 
-function parseDocOptions(argv: string[]) {
-  const program = new Command().exitOverride()
+async function parseDocOptions(argv: string[]) {
+  const program = new Command().enablePositionalOptions().exitOverride()
   register(program)
-  const command = program.commands.find((candidate) => candidate.name() === 'doc')!
-  const parsed = command.parseOptions(argv)
-  return { parsed, options: command.opts() }
+  const family = program.commands.find((candidate) => candidate.name() === 'doc')!
+  const command = family.commands.find((candidate) => candidate.name() === argv[0])!
+  command.action(() => undefined)
+  await program.parseAsync(['node', 'orch', 'doc', ...argv])
+  const parsed = command.parseOptions(argv.slice(1))
+  return {
+    parsed: { ...parsed, operands: [argv[0], ...parsed.operands] },
+    options: command.opts(),
+  }
 }
 
-test('the registered doc command parses status, set, and filtered list lifecycle flags', () => {
+test('the registered doc command parses status, set, and filtered list lifecycle flags', async () => {
   expect(
-    parseDocOptions([
+    await parseDocOptions([
       'status',
       'guide',
       '--scope',
@@ -30,27 +36,27 @@ test('the registered doc command parses status, set, and filtered list lifecycle
     parsed: { operands: ['status', 'guide'], unknown: [] },
     options: { scope: 'global', status: 'superseded', replacement: 'new-guide' },
   })
-  expect(parseDocOptions(['set', 'guide', '--scope', 'global', '--status', 'draft'])).toMatchObject(
-    {
-      parsed: { operands: ['set', 'guide'], unknown: [] },
-      options: { scope: 'global', status: 'draft' },
-    },
-  )
-  expect(parseDocOptions(['list', '--status', 'archived'])).toMatchObject({
+  expect(
+    await parseDocOptions(['set', 'guide', '--scope', 'global', '--status', 'draft']),
+  ).toMatchObject({
+    parsed: { operands: ['set', 'guide'], unknown: [] },
+    options: { scope: 'global', status: 'draft' },
+  })
+  expect(await parseDocOptions(['list', '--status', 'archived'])).toMatchObject({
     parsed: { operands: ['list'], unknown: [] },
     options: { status: 'archived' },
   })
-  expect(parseDocOptions(['set', 'guide', '--kind', 'article'])).toMatchObject({
+  expect(await parseDocOptions(['set', 'guide', '--kind', 'article'])).toMatchObject({
     parsed: { operands: ['set', 'guide'], unknown: [] },
     options: { kind: 'article' },
   })
-  expect(parseDocOptions(['list', '--kind', 'working'])).toMatchObject({
+  expect(await parseDocOptions(['list', '--kind', 'working'])).toMatchObject({
     parsed: { operands: ['list'], unknown: [] },
     options: { kind: 'working' },
   })
 })
 
-test('the registered doc clear options are presence flags', () => {
+test('the registered doc clear options are presence flags', async () => {
   const clearFlags = [
     'no-parent',
     'no-form',
@@ -60,26 +66,26 @@ test('the registered doc clear options are presence flags', () => {
     'no-checked-at',
   ]
 
-  const absent = optionFlags(parseDocOptions(['set', 'guide']).options)
+  const absent = optionFlags((await parseDocOptions(['set', 'guide'])).options)
   for (const flag of clearFlags) expect(absent.has(flag)).toBeFalse()
 
   for (const flag of clearFlags) {
-    const given = optionFlags(parseDocOptions(['set', 'guide', `--${flag}`]).options)
+    const given = optionFlags((await parseDocOptions(['set', 'guide', `--${flag}`])).options)
     expect(given.has(flag)).toBeTrue()
   }
 
   const relatedSubject = optionFlags(
-    parseDocOptions(['set', 'guide', '--related-subject', 'subject']).options,
+    (await parseDocOptions(['set', 'guide', '--related-subject', 'subject'])).options,
   )
   expect(relatedSubject.has('no-related-subjects')).toBeFalse()
 
   const sourceFile = optionFlags(
-    parseDocOptions(['set', 'guide', '--source-file', 'docs/guide.md']).options,
+    (await parseDocOptions(['set', 'guide', '--source-file', 'docs/guide.md'])).options,
   )
   expect(sourceFile.has('no-source-files')).toBeFalse()
 
   const checkedAt = optionFlags(
-    parseDocOptions(['set', 'guide', '--checked-at', '1'.repeat(40)]).options,
+    (await parseDocOptions(['set', 'guide', '--checked-at', '1'.repeat(40)])).options,
   )
   expect(checkedAt.has('no-checked-at')).toBeFalse()
 })
