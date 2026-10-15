@@ -238,7 +238,22 @@ export async function resolveVisibleProjectId(
   return id
 }
 
-async function resolvePostingProjectId(tx: SQL, name: string): Promise<string | null> {
+async function resolvePostingProjectId(
+  tx: SQL,
+  name: string,
+  requestedId?: string | null,
+): Promise<string | null> {
+  if (requestedId) {
+    const rows = await tx`SELECT id,name,retired_at FROM project WHERE id=${requestedId}::uuid`
+    if (rows.length !== 1)
+      throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
+    if (rows[0]!.retired_at != null) return null
+    if (String(rows[0]!.name) !== name)
+      console.warn(
+        `record project identity mismatch: using id ${requestedId} instead of name ${JSON.stringify(name)}`,
+      )
+    return String(rows[0]!.id)
+  }
   return uniqueProjectId(await visibleProjectIds(tx, name))
 }
 
@@ -572,9 +587,7 @@ async function resolvePostProjects(
     : null
   if (!postingProject) return { projectId, authorProjectId: null }
   if (projectName === postingProject) return { projectId, authorProjectId: projectId }
-  const authorProjectId = postingProjectId
-    ? await resolveVisibleProjectId(tx, postingProject, postingProjectId)
-    : await resolvePostingProjectId(tx, postingProject)
+  const authorProjectId = await resolvePostingProjectId(tx, postingProject, postingProjectId)
   return { projectId, authorProjectId }
 }
 
