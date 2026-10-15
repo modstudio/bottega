@@ -109,7 +109,7 @@ export function storedDocWarnings(
           rule: 'doc/article-summary',
           level: 'warning',
           message: 'article has no written summary',
-          remedy: `set one with ${PLATFORM_SLUG} doc set ${doc.slug} --summary`,
+          remedy: `set one with ${PLATFORM_SLUG} doc set <slug> --summary`,
         },
       ]
     : findings
