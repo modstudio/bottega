@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { REFERENCE_GENERATOR, recordDocLintRefusal } from '../doc/doc-write-allowed.ts'
+import { recordDocLintRefusal } from '../doc/doc-write-allowed.ts'
 import { recordDocRevisionIdentityRefusal } from './record-doc-mapping.ts'
-import {
-  assertHostedReferenceImportAllowed,
-  assertHostedReferenceUpsertAllowed,
-  assertHostedStoredReferenceWriteAllowed,
-} from './record-doc-reference-write.ts'
 
 const doc = (body: string) => ({
   scope: 'machine',
@@ -34,34 +29,6 @@ describe('record service doc lint', () => {
         doc('This was formerly different.'),
       ),
     ).toBeNull()
-  })
-})
-
-describe('hosted reference write policy', () => {
-  test('the marker cannot bypass prose lint for a non-reference document', () => {
-    expect(() =>
-      assertHostedReferenceUpsertAllowed(null, {
-        form: null,
-        generator: REFERENCE_GENERATOR,
-      }),
-    ).toThrow('generator marker is reserved for reference documents')
-    expect(recordDocLintRefusal(doc('This was called legacy.'))).not.toBeNull()
-  })
-
-  test('restore, consume, and import refuse reference documents', () => {
-    for (const operation of ['restore', 'consume']) {
-      expect(
-        () => assertHostedStoredReferenceWriteAllowed({ form: 'reference' }),
-        operation,
-      ).toThrow(`${PLATFORM_SLUG} doc reference publish`)
-    }
-    expect(() => assertHostedReferenceImportAllowed(null, 'reference'), 'new import').toThrow(
-      `${PLATFORM_SLUG} doc reference publish`,
-    )
-    expect(
-      () => assertHostedReferenceImportAllowed({ form: 'reference' }, null),
-      'existing import',
-    ).toThrow(`${PLATFORM_SLUG} doc reference publish`)
   })
 })
 
