@@ -26,7 +26,7 @@ const PROJECT_RECORD_ID_TABLES = [
 ] as const
 
 /** Fill NULL project_record_id values from the register by name. Unmatched names stay null. */
-export function backfillProjectRecordIds(
+function backfillProjectRecordIds(
   conn: Database,
   registered: readonly ProjectRecordIdSource[] = projects(),
 ): void {
@@ -46,7 +46,7 @@ export function backfillProjectRecordIds(
 }
 
 /** Rewrite name snapshots that already carry the project's hosted id. */
-export function syncProjectNamesFromRegister(
+function syncProjectNamesFromRegister(
   conn: Database,
   registered: readonly ProjectRecordIdSource[] = projects(),
 ): void {
