@@ -375,6 +375,15 @@ function syncPulledDocRelatedSubjects(
       .run(newRecordId(), newRecordId(), recordId, id)
 }
 
+function pulledDocParentId(local: Database, parentRecordId: string | null): number | null {
+  if (parentRecordId == null) return null
+  return (
+    local
+      .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
+      .get(parentRecordId)?.id ?? null
+  )
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
@@ -403,12 +412,7 @@ function applyDoc(
   const { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit, summary } =
     pulledDocArticleFields(local, item, recordId)
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
-  const parentId: number | null =
-    parentRecordId == null
-      ? null
-      : (local
-          .query<{ id: number }, [string]>('SELECT id FROM doc WHERE record_id=?')
-          .get(parentRecordId)?.id ?? null)
+  const parentId = pulledDocParentId(local, parentRecordId)
   if (parentRecordId && parentId == null) unresolvedParents.set(recordId, parentRecordId)
   else unresolvedParents.delete(recordId)
   const updatedAt = String(item.updatedAt ?? nowIso())

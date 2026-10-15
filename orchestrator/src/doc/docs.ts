@@ -379,8 +379,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
-  const { form, articleSubject, relatedSubjects, sourceFiles, checkedAgainstCommit, summary } =
-    resolveLocalDocArticleFields(input, prior, kind, projectName)
+  const articleFields = resolveLocalDocArticleFields(input, prior, kind, projectName)
   const tree = localDocTreeFields(input, prior)
   assertDocSections(input.body, tree.audiences)
   const lifecycle = localDocumentLifecycle(input, prior)
@@ -398,12 +397,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
-        form,
-        articleSubject,
-        relatedSubjects,
-        sourceFiles,
-        checkedAgainstCommit,
-        summary,
+        ...articleFields,
         requestedOp,
         identity,
       }),
@@ -428,14 +422,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
-        ...hostedDocWriteFields(input, {
-          form,
-          articleSubject,
-          relatedSubjects,
-          sourceFiles,
-          checkedAgainstCommit,
-          summary,
-        }),
+        ...hostedDocWriteFields(input, articleFields),
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
@@ -456,12 +443,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         delivery,
         ...tree,
         ...lifecycle,
-        form,
-        articleSubject,
-        relatedSubjects,
-        sourceFiles,
-        checkedAgainstCommit,
-        summary,
+        ...articleFields,
         requestedOp,
         identity,
         recordId: hosted.id,

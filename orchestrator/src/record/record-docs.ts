@@ -169,6 +169,17 @@ function resolvedDocProjectId(
   return hostedArticleProjectId(tx, spaceId, name, doc.projectId)
 }
 
+function revisionArticleFields(fields: Awaited<ReturnType<typeof resolveHostedArticleFields>>) {
+  return {
+    form: fields.form,
+    articleSubjectId: fields.articleSubjectId,
+    relatedSubjectIds: fields.relatedSubjectIds,
+    sourceFiles: fields.sourceFiles,
+    checkedAgainstCommit: fields.checkedAgainstCommit,
+    summary: fields.summary,
+  }
+}
+
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
@@ -293,12 +304,7 @@ export async function upsertRecordDoc(
       featured,
       status,
       kind,
-      form: articleFields.form,
-      articleSubjectId: articleFields.articleSubjectId,
-      relatedSubjectIds: articleFields.relatedSubjectIds,
-      sourceFiles: articleFields.sourceFiles,
-      checkedAgainstCommit: articleFields.checkedAgainstCommit,
-      summary: articleFields.summary,
+      ...revisionArticleFields(articleFields),
       replacementSlug,
       author: input.author,
       reason: input.reason,
@@ -758,14 +764,7 @@ export async function restoreRecordDoc(
     const featured = revision.featured == null ? false : Boolean(revision.featured)
     const status = (revision.status == null ? 'current' : String(revision.status)) as DocStatus
     const kind = (revision.kind == null ? 'working' : String(revision.kind)) as DocKind
-    const {
-      form,
-      articleSubjectId,
-      relatedSubjectIds,
-      sourceFiles,
-      checkedAgainstCommit,
-      summary,
-    } = restoredArticleFields(revision)
+    const articleFields = restoredArticleFields(revision)
     const replacementSlug =
       revision.replacement_slug == null ? null : String(revision.replacement_slug)
     assertWrite(
@@ -798,12 +797,12 @@ export async function restoreRecordDoc(
     await tx`
       UPDATE doc
       SET title=${String(revision.title)}, body=${body}, delivery=${delivery},
-          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${form}, article_subject_id=${articleSubjectId}::uuid, source_files=${bindJsonb(tx, sourceFiles)}, checked_against_commit=${checkedAgainstCommit}, summary=${summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
+          audiences=${bindRecordDocAudiences(tx, audiences)}, featured=${featured}, status=${status}, kind=${kind}, form=${articleFields.form}, article_subject_id=${articleFields.articleSubjectId}::uuid, source_files=${bindJsonb(tx, articleFields.sourceFiles)}, checked_against_commit=${articleFields.checkedAgainstCommit}, summary=${articleFields.summary}, replacement_slug=${replacementSlug}, parent_id=${parentId}::uuid, position=${position},
           project_id=COALESCE(${resolvedProjectId}::uuid, project_id),
           deleted_at=NULL, updated_at=${now}::timestamptz
       WHERE id=${input.id}::uuid AND space_id=${input.spaceId}::uuid
     `
-    await replaceHostedRelatedSubjects(tx, input.spaceId, input.id, relatedSubjectIds)
+    await replaceHostedRelatedSubjects(tx, input.spaceId, input.id, articleFields.relatedSubjectIds)
     const revisionId = await insertRecordDocRevision(tx, {
       spaceId: input.spaceId,
       docId: input.id,
@@ -822,12 +821,7 @@ export async function restoreRecordDoc(
       featured,
       status,
       kind,
-      form,
-      articleSubjectId,
-      relatedSubjectIds,
-      sourceFiles,
-      checkedAgainstCommit,
-      summary,
+      ...articleFields,
       replacementSlug,
       author: input.author,
       reason: input.reason,

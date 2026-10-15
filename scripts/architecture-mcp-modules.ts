@@ -115,6 +115,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-search-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
     'zod',
+    '../../../shared/docs.ts',
     '../code/code-search.ts',
     '../doc/doc-search.ts',
     '../doc/docs.ts',

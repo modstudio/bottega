@@ -64,6 +64,26 @@ type ArticleFieldInput = {
   summary?: string | null
 }
 
+function resolveArticleAttachment(
+  projectName: string | null,
+  existingIds: Set<string>,
+  reference: string,
+) {
+  if (!projectName) throw new Error('article fields may be set only on project documents')
+  const row = resolveSubject(projectName, reference)
+  if (row.retiredAt && !existingIds.has(row.id)) {
+    throw new Error(
+      `subject "${reference}" is retired; cleared by: ${PLATFORM_SLUG} doc subject list ${projectName}`,
+    )
+  }
+  return { id: row.id, name: row.name }
+}
+
+function resolveSummary(input: ArticleFieldInput, prior: Doc | null): string | null {
+  if (input.summary === undefined) return prior?.summary ?? null
+  return input.summary === null ? null : normalizeDocSummary(input.summary)
+}
+
 export function resolveLocalDocArticleFields(
   input: ArticleFieldInput & { scope: string },
   prior: Doc | null,
@@ -74,16 +94,8 @@ export function resolveLocalDocArticleFields(
     ...(prior?.articleSubject ? [prior.articleSubject.id] : []),
     ...(prior?.relatedSubjects.map(({ id }) => id) ?? []),
   ])
-  const resolveAttachment = (reference: string) => {
-    if (!projectName) throw new Error('article fields may be set only on project documents')
-    const row = resolveSubject(projectName, reference)
-    if (row.retiredAt && !existingIds.has(row.id)) {
-      throw new Error(
-        `subject "${reference}" is retired; cleared by: ${PLATFORM_SLUG} doc subject list ${projectName}`,
-      )
-    }
-    return { id: row.id, name: row.name }
-  }
+  const resolveAttachment = (reference: string) =>
+    resolveArticleAttachment(projectName, existingIds, reference)
   const articleSubject =
     input.articleSubject === undefined
       ? (prior?.articleSubject ?? null)
@@ -105,12 +117,7 @@ export function resolveLocalDocArticleFields(
       : input.checkedAgainstCommit === null
         ? null
         : normalizeDocCheckedAgainstCommit(input.checkedAgainstCommit)
-  const summary =
-    input.summary === undefined
-      ? (prior?.summary ?? null)
-      : input.summary === null
-        ? null
-        : normalizeDocSummary(input.summary)
+  const summary = resolveSummary(input, prior)
   const refusal = articleFieldRefusal({
     scope: input.scope,
     kind,

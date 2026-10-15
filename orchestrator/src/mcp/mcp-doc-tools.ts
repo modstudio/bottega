@@ -112,6 +112,15 @@ function setDocToolPayload(
   }
 }
 
+function docWithoutBodyWithSummary({ body, ...doc }: ReturnType<typeof listDocs>[number]) {
+  return { ...doc, ...effectiveDocSummary(doc.summary, body) }
+}
+
+async function docToolOwner(user: boolean | undefined, subject: string | null | undefined) {
+  if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+  return user ? await signedInDocOwner() : null
+}
+
 export function registerDocTools(
   server: McpServer,
   ports: {
@@ -159,8 +168,7 @@ export function registerDocTools(
       kind,
       article_subject,
     }) => {
-      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
-      const owner = user ? await signedInDocOwner() : null
+      const owner = await docToolOwner(user, subject)
       return text(
         listDocs({
           scope: user ? 'canon' : scope,
@@ -174,7 +182,7 @@ export function registerDocTools(
           status,
           kind,
           articleSubject: article_subject,
-        }).map(({ body, ...doc }) => ({ ...doc, ...effectiveDocSummary(doc.summary, body) })),
+        }).map(docWithoutBodyWithSummary),
       )
     },
   )
@@ -191,10 +199,9 @@ export function registerDocTools(
       }),
     },
     async ({ scope, subject, slug, user, audience }) => {
-      if (user && subject !== undefined) throw new Error('user cannot be used with subject')
+      const owner = await docToolOwner(user, subject)
       if (!user && !scope) throw new Error('scope is required unless user is true')
       const resolvedScope = user ? 'canon' : scope!
-      const owner = user ? await signedInDocOwner() : null
       const doc = audience
         ? getDocForAudience(resolvedScope, user ? null : (subject ?? null), slug, audience, owner)
         : getDoc(resolvedScope, user ? null : (subject ?? null), slug, owner)
