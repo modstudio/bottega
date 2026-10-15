@@ -15,6 +15,7 @@ import {
 } from '../branch/task-branch.ts'
 import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
+import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts } from '../contract/contract.ts'
 import { nowIso, sessionId } from '../database/db.ts'
@@ -314,28 +315,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
   const has = (name: string) =>
     argv.includes(`--${name}`) || argv.some((arg) => arg.startsWith(`--${name}=`))
   const values = (name: string) => flagValues(argv, name)
-  const positional = argv.slice(2).filter((value, index, rest) => {
-    const consuming = new Set([
-      '--agent',
-      '--file',
-      '--schema',
-      '--model',
-      '--transport',
-      '--seed',
-      '--key',
-      '--repo',
-      '--base',
-      '--review',
-      '--avoid',
-      '--distinct-from',
-      '--label',
-      '--lens',
-      '--deliverable',
-      '--timeout',
-      '--cwd',
-    ])
-    return !consuming.has(rest[index - 1] ?? '') && !value.startsWith('--')
-  })
+  const positional = doPositionals(argv)
   const prompt = async () =>
     (await readMessageText({
       missing: 'no prompt: pass it as an argument, via --file, or on stdin',
