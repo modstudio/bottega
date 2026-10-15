@@ -49,11 +49,7 @@ async function dispatchOutbox(rest: string[], entries: BinaryEntries): Promise<n
   }
   const owner = match[1] as OutboxOwner
   const id = match[2]!
-  const ownerVerbs = owner === 'orch' ? ['retry', 'retire'] : ['retry', 'show', 'discard']
-  if (!ownerVerbs.includes(verb!)) {
-    console.error(`the ${owner} outbox has no ${String(verb)} verb`)
-    return 2
-  }
+  // Each owner's own command validates the verb, so its verb list has one definition.
   const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
   return entries[owner]([...prefix, verb!, id, ...extraArguments])
 }

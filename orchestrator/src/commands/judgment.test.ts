@@ -78,4 +78,8 @@ test('voiding a findings run takes the score path, and the score path refuses di
   expect(() => scorePathForJob('review-lens', given('void', 'discard'))).toThrow(
     '--discard applies only',
   )
+  expect(scorePathForJob('review-lens', given('finding'))).toBe('judge')
+  expect(() => scorePathForJob('review-lens', given('scorer', 'finding'))).toThrow(
+    '--finding applies only',
+  )
 })

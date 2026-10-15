@@ -52,8 +52,9 @@ test('record outbox combines owner-qualified rows and routes qualified actions',
   expect(calls).toEqual(['hub outbox retry change-1'])
 })
 
-test('record outbox refuses bare ids and owner verbs that do not exist', async () => {
+test('record outbox refuses bare ids and hands every verb to the owning command', async () => {
   const errors: string[] = []
+  const calls: string[] = []
   const originalError = console.error
   console.error = (value) => errors.push(String(value))
   try {
@@ -61,23 +62,21 @@ test('record outbox refuses bare ids and owner verbs that do not exist', async (
       await dispatchBinary(
         ['record', 'outbox', 'retry', '17'],
         PLATFORM_SLUG,
-        entries([]),
+        entries(calls),
         () => '',
       ),
     ).toBe(2)
-    expect(
-      await dispatchBinary(
-        ['record', 'outbox', 'discard', 'orch:17'],
-        PLATFORM_SLUG,
-        entries([]),
-        () => '',
-      ),
-    ).toBe(2)
+    await dispatchBinary(
+      ['record', 'outbox', 'discard', 'orch:17'],
+      PLATFORM_SLUG,
+      entries(calls),
+      () => '',
+    )
   } finally {
     console.error = originalError
   }
   expect(errors[0]).toContain(`${PLATFORM_SLUG} record outbox`)
-  expect(errors[1]).toBe('the orch outbox has no discard verb')
+  expect(calls).toEqual(['orch record outbox discard 17'])
 })
 
 test('routes public and composite commands with unchanged remaining arguments', async () => {
