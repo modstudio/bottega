@@ -136,6 +136,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-policy.ts', [
     '../../../shared/board-purpose.ts',
+    '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',
   ]),

@@ -396,6 +396,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
     audience,
     authorKind: actor.kind,
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
+    topics: input.topics,
   })
   if (refusal) throw new Error(refusal)
   const standingRefusal = standingPostingRefusal({
@@ -403,6 +404,8 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
     audience,
     authorKind: actor.kind,
     authorProject: actor.kind === 'architect' ? (projectAt(c.cwd)?.name ?? null) : null,
+    ackRequired: Boolean(input.ackRequired),
+    topics: input.topics,
   })
   if (standingRefusal) throw new Error(standingRefusal)
   if (boardMode(locality(input.audience), c.env) === 'local') {

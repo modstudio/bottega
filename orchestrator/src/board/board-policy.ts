@@ -1,4 +1,5 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
 
@@ -70,18 +71,39 @@ export function parseAudience(expression: string): Audience {
   }
 }
 
+/** The controlled topic that marks a notice about the platform every project depends on. */
+const PLATFORM_NOTICE_TOPIC = 'platform'
+
+/** A platform-project architect's request or standing notice to every architect, tagged platform. */
+function platformNoticeToAllArchitects(input: {
+  purpose?: BoardPurpose
+  audience: Audience
+  authorProject: string | null
+  topics?: readonly string[]
+}): boolean {
+  return (
+    input.authorProject === PLATFORM_SLUG &&
+    input.audience.kind === 'architects' &&
+    Boolean(input.audience.all) &&
+    Boolean(input.topics?.includes(PLATFORM_NOTICE_TOPIC)) &&
+    (input.purpose === 'request' || input.purpose === 'standing')
+  )
+}
+
 export function acknowledgementRefusal(input: {
   ackRequired: boolean
   purpose?: BoardPurpose
   audience: Audience
   authorKind: 'operator' | 'architect'
   authorProject: string | null
+  topics?: readonly string[]
 }): string | null {
   if (input.ackRequired && input.purpose === 'information')
     return 'an information message cannot require acknowledgement; use purpose request or standing, or post without acknowledgement'
   if (!input.ackRequired || input.authorKind === 'operator') return null
   if (input.audience.kind === 'project' && input.audience.value === input.authorProject) return null
-  return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, or post without acknowledgement'
+  if (platformNoticeToAllArchitects(input)) return null
+  return 'an architect may require acknowledgement only for project:<your project>; address project:<your project>, post as the operator, or post as the platform project to architects:all with topic platform and purpose request or standing'
 }
 
 export function standingPostingRefusal(input: {
@@ -89,9 +111,12 @@ export function standingPostingRefusal(input: {
   audience: Audience
   authorKind: 'operator' | 'architect'
   authorProject: string | null
+  ackRequired?: boolean
+  topics?: readonly string[]
 }): string | null {
   if (input.purpose !== 'standing' || input.authorKind === 'operator') return null
   const ownProject = input.authorProject
+  if (input.ackRequired && platformNoticeToAllArchitects(input)) return null
   if (input.audience.kind === 'architects' && !input.audience.all && !input.audience.value)
     return null
   if (
