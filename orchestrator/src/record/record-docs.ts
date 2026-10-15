@@ -706,20 +706,19 @@ export async function restoreRecordDoc(
       WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
       FOR UPDATE
     `
-    if (!existing[0]) throw new RecordDocError('doc not found', 404)
-    assertHostedStoredReferenceWriteAllowed(existing[0])
+    const live = storedReferenceWriteRow(existing[0])
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
-      current: existing[0].latest_revision_id,
+      current: live.latest_revision_id,
       isCreate: false,
-      scope: String(existing[0].scope),
+      scope: String(live.scope),
     })
     const revisionRows = await tx`
       SELECT * FROM doc_revision
       WHERE space_id=${input.spaceId}::uuid AND id=${input.revisionId}::uuid AND doc_id=${input.id}::uuid
     `
     if (!revisionRows[0]) throw new RecordDocError('revision not found', 404)
-    const [revision, live] = [revisionRows[0], existing[0]] as [StoredDocRow, StoredDocRow]
+    const revision = revisionRows[0] as StoredDocRow
     const scope = String(live.scope)
     const subject = live.subject == null ? null : String(live.subject)
     const owner = live.owner_user_id == null ? null : String(live.owner_user_id)
@@ -886,6 +885,22 @@ function assertImportedRevisions(
   assertDocSections(doc.body, recordDocAudiences(doc.audiences))
 }
 
+function storedReferenceWriteRow(row: Record<string, unknown> | undefined): StoredDocRow {
+  if (!row) throw new RecordDocError('doc not found', 404)
+  assertHostedStoredReferenceWriteAllowed(row)
+  return row as StoredDocRow
+}
+
+async function referenceImportExisting(
+  tx: SQL,
+  spaceId: string,
+  doc: ReturnType<typeof normalizeRecordDocImport>['doc'],
+): Promise<Record<string, unknown> | undefined> {
+  const existing = await existingDocAtAddress(tx, spaceId, doc)
+  assertHostedReferenceImportAllowed(existing, doc.form)
+  return existing
+}
+
 export async function importRecordDoc(
   input: Tenant & RecordDocImportInput,
 ): Promise<{ id: string; revisionIds: string[] } & HostedArticleResponse> {
@@ -899,8 +914,7 @@ export async function importRecordDoc(
   )
   assertImportedRevisions(importedDoc, revisions)
   return tenant(input, async (tx) => {
-    const existing = await existingDocAtAddress(tx, input.spaceId, importedDoc)
-    assertHostedReferenceImportAllowed(existing, importedDoc.form)
+    const existing = await referenceImportExisting(tx, input.spaceId, importedDoc)
     assertRevisionWrite({
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,

@@ -334,6 +334,7 @@ export {
 } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
+  assertReferenceDocWrite(input, prior)
   // Generated reference pages are checked by the reference drift check, not prose lint.
   if (
     isReferenceGeneratorWrite({
@@ -364,6 +365,26 @@ function assertReferenceRestoreAllowed(current: Doc | null, revision: DocRevisio
   if (refusal) throw new Error(refusal)
 }
 
+function referenceRestoreState(
+  scope: string,
+  subject: string | null,
+  slug: string,
+  owner: string | null,
+  revision: DocRevision,
+): [string | null, Doc | null] {
+  const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
+  const current = getDoc(scope, subject, slug, owner)
+  assertReferenceRestoreAllowed(current, revision)
+  return [expectedCurrent, current]
+}
+
+function hostedDocWriteFields(
+  input: DocWriteInput,
+  fields: ReturnType<typeof resolveLocalDocArticleFields>,
+) {
+  return { ...hostedArticleWriteFields(input, fields), generator: input.generator }
+}
+
 async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promise<Doc> {
   writableDb()
   const ownedAddress =
@@ -374,7 +395,6 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
   const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
-  assertReferenceDocWrite(input, prior)
   assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
@@ -427,7 +447,7 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         position: tree.position,
         featured: tree.featured,
         kind,
-        ...hostedArticleWriteFields(input, {
+        ...hostedDocWriteFields(input, {
           form,
           articleSubject,
           relatedSubjects,
@@ -443,7 +463,6 @@ async function setDocWithOp(input: DocWriteInput, requestedOp?: 'import'): Promi
         op: requestedOp ?? (prior ? 'set' : 'create'),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
-        generator: input.generator,
       }
       const hosted = await client.upsertDoc(hostedInput)
       const compatibilityRefusal = recordDocArticleCompatibilityRefusal([hostedInput], hosted)
@@ -887,9 +906,7 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
-  const current = getDoc(scope, subject, slug, owner)
-  assertReferenceRestoreAllowed(current, revision)
+  const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
     expectedCurrent,
