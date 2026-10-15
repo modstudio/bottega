@@ -98,6 +98,9 @@ describe('job contracts are visible before submission', () => {
   })
   test('writers run the registered gate while readers inspect its recorded result', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_tests` tool is available')
+    expect(WORKER_PREAMBLE).toContain(
+      'If it says focused tests are still running, call `run_tests` again',
+    )
     expect(WORKER_PREAMBLE).toContain('project-relative paths')
     expect(WORKER_PREAMBLE).toContain('tests you add or change')
     expect(WORKER_PREAMBLE).toContain('never the completion gate')

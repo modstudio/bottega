@@ -2,7 +2,7 @@
 /** Host-side execution of focused test requests from a sandboxed writing worker. */
 
 import { spawn } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, rmSync, writeSync } from 'node:fs'
+import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
@@ -21,7 +21,10 @@ import {
 } from './focused-test-decision.ts'
 import {
   createFocusedTestFile,
+  ensureFocusedTestDirectory,
+  focusedTestFileExists,
   readFocusedTestRegularFile,
+  removeFocusedTestFile,
   writeFocusedTestFileAtomic,
   writeFocusedTestFileExclusive,
 } from './focused-test-files.ts'
@@ -102,7 +105,7 @@ function writeResult(scratchDir: string, requestId: string, result: FocusedTestR
 
 function claimRequest(scratchDir: string): FocusedTestRequest | null {
   const requestPath = join(scratchDir, FOCUSED_TEST_REQUEST_FILE)
-  if (!existsSync(requestPath)) return null
+  if (!focusedTestFileExists(requestPath)) return null
   const activePath = join(scratchDir, FOCUSED_TEST_ACTIVE_FILE)
   let contents: string
   try {
@@ -112,7 +115,7 @@ function claimRequest(scratchDir: string): FocusedTestRequest | null {
     throw error
   }
   writeFocusedTestFileExclusive(activePath, contents)
-  rmSync(requestPath)
+  removeFocusedTestFile(requestPath)
   return parseFocusedTestRequest(JSON.parse(contents))
 }
 
@@ -200,12 +203,7 @@ function startFocusedTest(input: {
       elapsedMs,
       logName,
     })
-  })()
-    .finally(() => {
-      rmSync(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE), { force: true })
-      rmSync(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE), { force: true })
-    })
-    .finally(unregister)
+  })().finally(unregister)
   return { completion, cancel: stop }
 }
 
@@ -215,7 +213,7 @@ export function startFocusedTestBroker(input: {
   environment: Record<string, string>
   registerActive?: (terminate: () => Promise<void>) => () => void
 }): FocusedTestBroker {
-  mkdirSync(input.scratchDir, { recursive: true })
+  ensureFocusedTestDirectory(input.scratchDir)
   let closed = false
   let active: ActiveFocusedTest | null = null
   const poll = () => {
@@ -236,8 +234,8 @@ export function startFocusedTestBroker(input: {
         join(input.scratchDir, 'focused-test-invalid-request.log'),
         outputTail,
       )
-      rmSync(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE), { force: true })
-      rmSync(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE), { force: true })
+      removeFocusedTestFile(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE))
+      removeFocusedTestFile(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE))
       return
     }
     if (!request) return
@@ -264,9 +262,9 @@ export function startFocusedTestBroker(input: {
         await active.cancel()
         await active.completion
       }
-      rmSync(join(input.scratchDir, FOCUSED_TEST_REQUEST_FILE), { force: true })
-      rmSync(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE), { force: true })
-      rmSync(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE), { force: true })
+      removeFocusedTestFile(join(input.scratchDir, FOCUSED_TEST_REQUEST_FILE))
+      removeFocusedTestFile(join(input.scratchDir, FOCUSED_TEST_ACTIVE_FILE))
+      removeFocusedTestFile(join(input.scratchDir, FOCUSED_TEST_LOCK_FILE))
     },
   }
 }

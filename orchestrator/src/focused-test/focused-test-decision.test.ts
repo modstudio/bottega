@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideFocusedTestPathFacts,
+  decideFocusedTestRequest,
+  decideFocusedTestWait,
   FOCUSED_TEST_MAX_PATHS,
   focusedTestInvocation,
   normalizeFocusedTestPaths,
@@ -9,6 +11,37 @@ import {
 } from './focused-test-decision.ts'
 
 describe('focused test decisions', () => {
+  test('starts, joins, returns, and caps waits without filesystem state', () => {
+    const execution = { id: 'request-1', paths: ['tests/one.test.ts'] }
+    expect(
+      decideFocusedTestRequest({ execution: null, finished: false, resultPending: false }),
+    ).toEqual({ action: 'start' })
+    expect(decideFocusedTestRequest({ execution, finished: false, resultPending: true })).toEqual({
+      action: 'join',
+      execution,
+    })
+    expect(decideFocusedTestRequest({ execution, finished: true, resultPending: true })).toEqual({
+      action: 'return',
+      execution,
+    })
+    expect(decideFocusedTestRequest({ execution, finished: true, resultPending: false })).toEqual({
+      action: 'start',
+    })
+    expect(
+      decideFocusedTestWait({
+        finished: false,
+        waitElapsedMs: 10,
+        paths: execution.paths,
+        waitMs: 10,
+      }),
+    ).toEqual({
+      wait: false,
+      message:
+        'Focused tests for "tests/one.test.ts" are still running. ' +
+        'Call run_tests again to wait for and collect this same execution.',
+    })
+  })
+
   test('requires bounded project-relative non-option paths', () => {
     expect(normalizeFocusedTestPaths(['tests/one.test.ts', 'tests'])).toEqual([
       'tests/one.test.ts',

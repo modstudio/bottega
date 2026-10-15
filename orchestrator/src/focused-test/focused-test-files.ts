@@ -6,6 +6,7 @@ import {
   constants,
   fstatSync,
   lstatSync,
+  mkdirSync,
   openSync,
   readFileSync,
   renameSync,
@@ -18,6 +19,26 @@ const CREATE_FLAGS =
 
 export function createFocusedTestFile(path: string): number {
   return openSync(path, CREATE_FLAGS, 0o600)
+}
+
+export function ensureFocusedTestDirectory(path: string): void {
+  mkdirSync(path, { recursive: true })
+}
+
+export function focusedTestFileExists(path: string): boolean {
+  try {
+    if (!lstatSync(path).isFile()) {
+      throw new Error(`focused test transport file is not regular: ${path}`)
+    }
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
+export function removeFocusedTestFile(path: string): void {
+  rmSync(path, { force: true })
 }
 
 export function writeFocusedTestFileExclusive(path: string, value: string): void {

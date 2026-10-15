@@ -42,8 +42,60 @@ export function decideFocusedTestEligibility(input: {
   return { eligible: true }
 }
 
-export function decideFocusedTestRequest(busy: boolean): string | null {
-  return busy ? 'A focused test run is already in flight for this run.' : null
+export type FocusedTestRequestDecision =
+  | { action: 'start' }
+  | { action: 'join'; execution: FocusedTestRequest }
+  | { action: 'return'; execution: FocusedTestRequest }
+
+/** Decide whether one worker call starts, joins, or collects a focused-test execution. */
+export function decideFocusedTestRequest(input: {
+  execution: FocusedTestRequest | null
+  finished: boolean
+  resultPending: boolean
+}): FocusedTestRequestDecision {
+  if (!input.execution) return { action: 'start' }
+  if (!input.finished) return { action: 'join', execution: input.execution }
+  if (input.resultPending) return { action: 'return', execution: input.execution }
+  return { action: 'start' }
+}
+
+function formatFocusedTestPaths(paths: readonly string[]): string {
+  return paths.map((path) => JSON.stringify(path)).join(', ')
+}
+
+export function formatFocusedTestRequestDecision(
+  decision: FocusedTestRequestDecision,
+  requestedPaths: readonly string[],
+): string | null {
+  if (decision.action === 'join') {
+    return (
+      `Focused tests for ${formatFocusedTestPaths(decision.execution.paths)} were already running; ` +
+      `this call ignored its requested paths (${formatFocusedTestPaths(requestedPaths)}) and waited for the same execution.`
+    )
+  }
+  if (decision.action === 'return') {
+    return (
+      `Focused tests for ${formatFocusedTestPaths(decision.execution.paths)} finished after an earlier ` +
+      'run_tests call stopped waiting; returning that result.'
+    )
+  }
+  return null
+}
+
+export function decideFocusedTestWait(input: {
+  finished: boolean
+  waitElapsedMs: number
+  paths: readonly string[]
+  waitMs: number
+}): { wait: true } | { wait: false; message?: string } {
+  if (input.finished) return { wait: false }
+  if (input.waitElapsedMs < input.waitMs) return { wait: true }
+  return {
+    wait: false,
+    message:
+      `Focused tests for ${formatFocusedTestPaths(input.paths)} are still running. ` +
+      'Call run_tests again to wait for and collect this same execution.',
+  }
 }
 
 function parseStringArray(value: unknown, location: string): string[] {
