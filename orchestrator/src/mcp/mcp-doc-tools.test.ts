@@ -109,6 +109,11 @@ test('set_doc returns standing document warnings', async () => {
         level: 'warning',
         message: 'contains a task key',
       }),
+      expect.objectContaining({
+        rule: 'doc/article-summary',
+        level: 'warning',
+        message: 'article has no written summary',
+      }),
     ])
   })
 })
