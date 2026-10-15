@@ -1,8 +1,8 @@
 // concern: run-outbox
 /** Knows how a terminal local run becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'

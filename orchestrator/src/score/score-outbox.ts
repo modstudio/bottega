@@ -1,8 +1,8 @@
 // concern: score-outbox
 /** Knows how a local verdict becomes an ordered hosted-record mutation. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'

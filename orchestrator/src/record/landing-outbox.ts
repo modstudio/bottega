@@ -1,8 +1,8 @@
 // concern: landing-outbox
 /** Knows how local landing history and operational evidence become hosted-record mutations. Must not know Postgres. */
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from './machine-identity.ts'
 
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
