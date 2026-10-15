@@ -55,6 +55,7 @@ CREATE INDEX doc_project_id ON doc(project_id);
 CREATE INDEX doc_scope_subject ON doc(scope, subject);
 --> statement-breakpoint
 INSERT INTO doc_related_subject SELECT * FROM doc_related_subject_before_form_reference;
+DROP TABLE doc_related_subject_before_form_reference;
 --> statement-breakpoint
 CREATE TABLE doc_revision_form_reference (
   id INTEGER PRIMARY KEY,
