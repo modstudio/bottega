@@ -17,11 +17,12 @@ export type LocalDocSearchInput = {
 
 export function docSnippet(body: string, query: string) {
   const normalized = query.trim().toLocaleLowerCase()
+  const plainBody = docPlainSnippet(body).snippet
   let foldedBody = ''
   const originalOffsets: number[] = []
   const originalEnds: number[] = []
   let originalOffset = 0
-  for (const point of body) {
+  for (const point of plainBody) {
     const foldedPoint = point.toLocaleLowerCase()
     foldedBody += foldedPoint
     for (let offset = 0; offset < foldedPoint.length; offset++) {
@@ -31,15 +32,15 @@ export function docSnippet(body: string, query: string) {
     originalOffset += point.length
   }
   const foldedMatch = normalized ? foldedBody.indexOf(normalized) : -1
-  const points = Array.from(body)
+  const points = Array.from(plainBody)
   if (foldedMatch < 0) {
     return docPlainSnippet(points.slice(0, SNIPPET_CONTEXT_CODE_POINTS * 2).join(''))
   }
   const bodyMatch = originalOffsets[foldedMatch]!
   const foldedEnd = foldedMatch + normalized.length
   const originalEnd = originalEnds[foldedEnd - 1]!
-  const codePointIndex = Array.from(body.slice(0, bodyMatch)).length
-  const queryCodePoints = Array.from(body.slice(bodyMatch, originalEnd)).length
+  const codePointIndex = Array.from(plainBody.slice(0, bodyMatch)).length
+  const queryCodePoints = Array.from(plainBody.slice(bodyMatch, originalEnd)).length
   const start = Math.max(0, codePointIndex - SNIPPET_CONTEXT_CODE_POINTS)
   const end = Math.min(
     points.length,

@@ -40,6 +40,20 @@ describe('docSnippet', () => {
     expect(result).toEqual({ snippet: 'İfoo', highlights: [{ start: 1, length: 3 }] })
     expect(result.snippet.slice(result.highlights[0]!.start)).toBe('foo')
   })
+
+  test('finds a match in plain text after stripping an HTML tag', () => {
+    expect(docSnippet('Kept stock<br>for brands', 'br')).toEqual({
+      snippet: 'Kept stock for brands',
+      highlights: [{ start: 15, length: 2 }],
+    })
+  })
+
+  test('does not highlight a match that exists only in link syntax', () => {
+    expect(docSnippet('see [guide](https://example.com)', 'https')).toEqual({
+      snippet: 'see guide',
+      highlights: [],
+    })
+  })
 })
 
 test('local search short-circuits an empty query without calling orch', async () => {
