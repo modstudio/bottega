@@ -93,6 +93,7 @@ function localPendingAcknowledgements(
         body: row.body,
         deadline: row.ack_deadline ?? '',
         deliveredAt: receiptAt(database, 'board_receipt', row.id, session).delivered_at,
+        purpose: row.purpose ?? 'information',
       }),
     }))
   return selectPushNotices(beganAt, candidates).notices
@@ -134,6 +135,7 @@ function hostedPendingAcknowledgements(
         deadline: message.ackDeadline ?? '',
         deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
           .delivered_at,
+        purpose: message.purpose ?? 'information',
       }),
     }))
   return selectPushNotices(beganAt, candidates).notices

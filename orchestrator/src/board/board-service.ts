@@ -193,6 +193,7 @@ function render(message: MessageRow, worker = false, database = db()) {
     text: renderBoardNotice({
       id: message.id,
       kind: message.kind,
+      purpose: message.purpose ?? 'information',
       authorKind: message.author_kind,
       authorSession: message.author_session,
       authorHarness: message.author_harness,
