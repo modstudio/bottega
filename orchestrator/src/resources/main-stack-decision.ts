@@ -30,6 +30,7 @@ export function decideWorktreeResourceTeardown(
 export type MainStackIdleFacts = {
   recordsAvailable: boolean
   running: boolean
+  execInProgress: boolean | 'unknown'
   liveRun: boolean
   liveSession: boolean
   lastWorktreeCreatedAtMs: number | null
@@ -41,7 +42,10 @@ export type MainStackIdleFacts = {
 
 export function decideMainStackIdleStop(facts: MainStackIdleFacts): 'stop' | 'keep' | 'report' {
   if (!facts.recordsAvailable) return 'report'
-  if (!facts.running || facts.liveRun || facts.liveSession) return 'keep'
+  if (!facts.running) return 'keep'
+  if (facts.execInProgress === true) return 'keep'
+  if (facts.execInProgress === 'unknown') return 'report'
+  if (facts.liveRun || facts.liveSession) return 'keep'
   const cutoff = facts.nowMs - facts.idleStopAfterMs
   if (facts.lastWorktreeCreatedAtMs !== null && facts.lastWorktreeCreatedAtMs > cutoff)
     return 'keep'
