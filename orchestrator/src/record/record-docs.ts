@@ -106,7 +106,7 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
 export async function reorderRecordDocs(
   input: Tenant & RecordDocOrderInput,
 ): Promise<{ orderedIds: string[] }> {
-  return tenant(input, (tx) => reorderRecordDocRows(tx, input))
+  return reorderRecordDocRows(input)
 }
 
 type RecordDocWriteInput = Tenant & {

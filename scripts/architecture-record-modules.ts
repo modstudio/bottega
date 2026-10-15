@@ -302,6 +302,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-doc-order.ts', [
     'bun',
+    '../../../shared/record/tenant.ts',
     '../doc/doc-order.ts',
     './record-doc-errors.ts',
   ]),

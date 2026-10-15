@@ -276,6 +276,45 @@ describe('record API client test safety', () => {
     }
   })
 
+  test('reorderDocs puts the order at the hosted document order route', async () => {
+    const session = memoryRecordSession()
+    session.setToken('order-token')
+    installRecordSessionRunner(session.runner)
+    installRecordApiClient(null)
+    const previousEnv = process.env.NODE_ENV
+    const previousUrl = process.env.ORCH_RECORD_API_URL
+    process.env.NODE_ENV = 'development'
+    process.env.ORCH_RECORD_API_URL = 'https://api.example.test'
+    const calls: Array<{ url: string; method: string; body: unknown }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      return Response.json({ orderedIds: [] })
+    }) as typeof fetch
+    try {
+      const order = { scope: 'project', subject: 'Product', parentId: null, orderedIds: [] }
+      await recordApiClient().reorderDocs(order)
+      expect(calls).toEqual([
+        {
+          url: 'https://api.example.test/v1/docs/order',
+          method: 'PUT',
+          body: order,
+        },
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+      process.env.NODE_ENV = previousEnv
+      if (previousUrl === undefined) delete process.env.ORCH_RECORD_API_URL
+      else process.env.ORCH_RECORD_API_URL = previousUrl
+      installRecordSessionRunner(null)
+      installRecordApiClient(createMemoryRecordApiClient())
+    }
+  })
+
   test('board methods use the ruled paths and map a non-success body', async () => {
     const session = memoryRecordSession()
     session.setToken('board-token')

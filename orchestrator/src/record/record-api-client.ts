@@ -697,8 +697,8 @@ async function listDocRevisionsRequest(
 }
 
 const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) =>
-  request('/v1/docs/reorder', {
-    method: 'POST',
+  request('/v1/docs/order', {
+    method: 'PUT',
     body: JSON.stringify(input),
     ...destination,
   })
