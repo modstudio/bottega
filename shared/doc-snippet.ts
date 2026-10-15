@@ -6,7 +6,7 @@ export const DOC_SNIPPET_STOP = '\uE001'
 
 export type DocSnippetHighlight = { start: number; length: number }
 
-export type DocPlainSnippet = {
+type DocPlainSnippet = {
   snippet: string
   highlights: DocSnippetHighlight[]
 }
@@ -39,7 +39,9 @@ function isTableSeparator(line: string): boolean {
     .trim()
     .replace(/^\||\|$/g, '')
     .split('|')
-  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()) && cell.includes('-'))
+  return (
+    cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()) && cell.includes('-'))
+  )
 }
 
 function formatTableRow(line: string): string {

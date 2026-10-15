@@ -41,7 +41,10 @@ export function docSnippet(body: string, query: string) {
   const codePointIndex = Array.from(body.slice(0, bodyMatch)).length
   const queryCodePoints = Array.from(body.slice(bodyMatch, originalEnd)).length
   const start = Math.max(0, codePointIndex - SNIPPET_CONTEXT_CODE_POINTS)
-  const end = Math.min(points.length, codePointIndex + queryCodePoints + SNIPPET_CONTEXT_CODE_POINTS)
+  const end = Math.min(
+    points.length,
+    codePointIndex + queryCodePoints + SNIPPET_CONTEXT_CODE_POINTS,
+  )
   const prefix = points.slice(start, codePointIndex).join('')
   const match = points.slice(codePointIndex, codePointIndex + queryCodePoints).join('')
   const suffix = points.slice(codePointIndex + queryCodePoints, end).join('')
