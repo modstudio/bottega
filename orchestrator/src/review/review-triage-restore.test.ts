@@ -30,7 +30,7 @@ function seedFinding(name: string, completed = true): FindingSeed {
     )
     .get(finding.id)!
   const remintedRecordId = `reminted-${name}-${finding.id}`
-  db().query('UPDATE review_finding SET row_id=? WHERE id=?').run(remintedRecordId, finding.id)
+  db().query('UPDATE review_finding SET record_id=? WHERE id=?').run(remintedRecordId, finding.id)
   if (completed) {
     db()
       .query('UPDATE review SET completed_at=? WHERE id=?')
@@ -83,7 +83,9 @@ function seedReview(name: string, findings: number): FindingSeed[] {
         )
         .get(finding.id)!
       const remintedRecordId = `reminted-${name}-${finding.id}`
-      db().query('UPDATE review_finding SET row_id=? WHERE id=?').run(remintedRecordId, finding.id)
+      db()
+        .query('UPDATE review_finding SET record_id=? WHERE id=?')
+        .run(remintedRecordId, finding.id)
       return {
         findingId: finding.id,
         reviewId,
