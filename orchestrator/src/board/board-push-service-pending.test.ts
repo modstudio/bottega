@@ -225,6 +225,14 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
       acknowledgedAt: new Date(clock + 1).toISOString(),
     }),
   }
+  // The session already holds a delivered, unacknowledged receipt, as in the reported incident.
+  db()
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,1,?,NULL,0)`,
+    )
+    .run(message.id, session, new Date(clock - 500).toISOString())
 
   await boardAcknowledge(message.id, {
     env: { CLAUDE_CODE_SESSION_ID: session, ORCH_RECORD_API_URL: 'https://record.test' },
