@@ -79,6 +79,26 @@ function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
   })
 }
 
+function ensureFocusedTestMainStack(
+  plan: ReturnType<typeof focusedTestPlan>,
+  environment: Record<string, string>,
+): void {
+  const mainCheckout = environment.ORCH_MAIN_CHECKOUT
+  if (!mainCheckout) throw new Error('focused test run has no recorded main checkout')
+  ensureMainStackStarted({
+    projectId: plan.projectId,
+    projectName: plan.projectName,
+    projectPath: mainCheckout,
+    declaration: plan.mainStackConsumers
+      ? {
+          consumers: plan.mainStackConsumers,
+          requiredServices: plan.mainStackRequiredServices,
+        }
+      : undefined,
+    consumer: 'gate',
+  })
+}
+
 function writeResult(scratchDir: string, requestId: string, result: FocusedTestResult): void {
   const path = join(scratchDir, focusedTestResultFile(requestId))
   const temporary = `${path}.tmp`
@@ -139,20 +159,7 @@ function startFocusedTest(input: {
     try {
       const plan = focusedTestPlan(input.runId)
       const paths = validateFocusedTestPaths(input.request.paths, plan.worktree)
-      const mainCheckout = input.environment.ORCH_MAIN_CHECKOUT
-      if (!mainCheckout) throw new Error(`run ${input.runId} has no recorded main checkout`)
-      ensureMainStackStarted({
-        projectId: plan.projectId,
-        projectName: plan.projectName,
-        projectPath: mainCheckout,
-        declaration: plan.mainStackConsumers
-          ? {
-              consumers: plan.mainStackConsumers,
-              requiredServices: plan.mainStackRequiredServices,
-            }
-          : undefined,
-        consumer: 'gate',
-      })
+      ensureFocusedTestMainStack(plan, input.environment)
       const invocation = focusedTestInvocation(plan.runner, paths, plan.worktree)
       child = spawn(invocation.command, invocation.argv, {
         cwd: plan.worktree,

@@ -5,7 +5,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 export const FOCUSED_TEST_MAX_PATHS = 64
-export const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
+const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 
 export type FocusedTestRunner = { command: string; args: string[] }
 export type FocusedTestRequest = { id: string; paths: string[] }

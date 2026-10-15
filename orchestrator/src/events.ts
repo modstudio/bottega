@@ -620,6 +620,13 @@ export function peekRun(
   }
 }
 
+function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'focused_test' }>) {
+  return (
+    `  focused test exit ${event.exitCode}${event.timedOut ? ' timed out' : ''} ` +
+    `${event.elapsedMs}ms ${event.paths.join(',')} (${event.logName})`
+  )
+}
+
 function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'text') return `  text ${event.text}`
   if (event.type === 'note') {
@@ -637,12 +644,7 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
-  if (event.type === 'focused_test') {
-    return (
-      `  focused test exit ${event.exitCode}${event.timedOut ? ' timed out' : ''} ` +
-      `${event.elapsedMs}ms ${event.paths.join(',')} (${event.logName})`
-    )
-  }
+  if (event.type === 'focused_test') return formatFocusedTestPeekEvent(event)
   return '  ask initialized'
 }
 
