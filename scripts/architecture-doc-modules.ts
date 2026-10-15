@@ -15,6 +15,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/local-doc-order.ts', [
     '../database/db.ts',
     './doc-order.ts',
+    './doc-write-allowed.ts',
     './doc-write-guard.ts',
   ]),
   module('orchestrator/src/doc/reference-publish.ts', [

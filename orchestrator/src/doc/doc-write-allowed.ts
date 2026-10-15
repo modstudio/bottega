@@ -33,6 +33,12 @@ export function isReferenceGeneratorWrite(input: {
   )
 }
 
+/** The children of a reference document are ordered by the publisher, never by hand. */
+export function referenceOrderRefusal(parentForm: string | null | undefined): string | null {
+  if (parentForm !== 'reference') return null
+  return `refusing reorder of generated reference pages\ncleared by: ${PLATFORM_SLUG} doc reference publish`
+}
+
 export function referenceWriteRefusal(input: {
   storedForm?: string | null
   requestedForm?: string | null

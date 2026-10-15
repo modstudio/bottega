@@ -309,6 +309,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record/tenant.ts',
     '../doc/doc-order.ts',
+    '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
   ]),
   module('orchestrator/src/record/record-api-doc-order.ts', [
