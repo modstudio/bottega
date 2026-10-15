@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
+import { projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -11,7 +12,6 @@ import {
   recordApiClient,
 } from '../record/record-api-client.ts'
 import { runRecordIdOrNull } from '../run/run-identifier.ts'
-import { projectRowByName } from '../project/projects.ts'
 import {
   type AdoptionCandidate as Candidate,
   type AdoptionCandidateFact as CandidateFact,

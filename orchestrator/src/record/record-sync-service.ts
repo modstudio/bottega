@@ -29,6 +29,7 @@ import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './o
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
+import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -47,7 +48,6 @@ import {
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {

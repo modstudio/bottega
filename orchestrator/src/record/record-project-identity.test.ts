@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
-  recordProjectIdentityDecision,
   type RecordProjectFacts,
+  recordProjectIdentityDecision,
 } from './record-project-identity.ts'
 
 const project: RecordProjectFacts = {
