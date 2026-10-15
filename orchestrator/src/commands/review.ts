@@ -88,13 +88,17 @@ function dryRunRefusalOption(command: Command): Command {
     .option('--dry-run', 'refuse this verb because dry-run is valid only for review restore-triage')
 }
 
+type ReviewPresentation = typeof reviewPresentation
+type ReviewHandler = (
+  argv: string[],
+  flags: CliFlags,
+  presentation: ReviewPresentation,
+) => void | Promise<void>
+type ReviewRunner = (command: Command, handler: ReviewHandler) => void | Promise<void>
+
 function runReviewCommand(
   command: Command,
-  handler: (
-    argv: string[],
-    flags: CliFlags,
-    presentation: typeof reviewPresentation,
-  ) => void | Promise<void>,
+  handler: ReviewHandler,
   presentation = reviewPresentation,
 ): void | Promise<void> {
   const flags = reviewFlags(command)
@@ -102,26 +106,7 @@ function runReviewCommand(
   return handler(reviewArgv(command), flags, presentation)
 }
 
-export function register(program: Command, presentation = reviewPresentation): void {
-  const run = (
-    command: Command,
-    handler: (
-      argv: string[],
-      flags: CliFlags,
-      output: typeof reviewPresentation,
-    ) => void | Promise<void>,
-  ) => runReviewCommand(command, handler, presentation)
-  const review = program
-    .command('review')
-    .description('inspect, record, triage, and maintain review evidence')
-    .allowExcessArguments(true)
-    .action(() => {
-      const sub = review.args[0]
-      throw new Error(
-        `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
-      )
-    })
-
+function registerReviewQueries(review: Command, run: ReviewRunner): void {
   dryRunRefusalOption(
     review
       .command('list')
@@ -175,7 +160,9 @@ export function register(program: Command, presentation = reviewPresentation): v
   ).action((_options, command) =>
     run(command, (_argv, flags, output) => coverageAuditReviewCommand(flags, output)),
   )
+}
 
+function registerReviewEvidence(review: Command, run: ReviewRunner): void {
   dryRunRefusalOption(
     review
       .command('record')
@@ -221,7 +208,9 @@ export function register(program: Command, presentation = reviewPresentation): v
       .argument('[model]', 'model name for one calibration cell')
       .option('--json', 'write calibration evidence as JSON'),
   ).action((_lens, _agent, _model, _options, command) => run(command, calibrationReviewCommand))
+}
 
+function registerReviewOperations(review: Command, run: ReviewRunner): void {
   dryRunRefusalOption(
     review
       .command('read')
@@ -274,7 +263,13 @@ export function register(program: Command, presentation = reviewPresentation): v
   ).action((_reviewId, _finding, _disposition, _options, command) =>
     run(command, (argv, flags, output) => amendReviewFindingCommand(argv, flags, output)),
   )
+}
 
+function registerReviewRestore(
+  review: Command,
+  run: ReviewRunner,
+  presentation: ReviewPresentation,
+): void {
   dryRunRefusalOption(
     review
       .command('restore-findings')
@@ -307,7 +302,9 @@ export function register(program: Command, presentation = reviewPresentation): v
         throw new Error(`${PLATFORM_SLUG} review restore-triage [--dry-run] [--json]`)
       restoreReviewTriageCommand(reviewFlags(command), presentation)
     })
+}
 
+function registerConfinement(program: Command): void {
   const confinement = program
     .command('confinement')
     .description('inspect or clear review-run confinement findings')
@@ -344,4 +341,24 @@ export function register(program: Command, presentation = reviewPresentation): v
     .action((options) => {
       confinementReportCommand(optionFlags(options))
     })
+}
+
+export function register(program: Command, presentation = reviewPresentation): void {
+  const run: ReviewRunner = (command, handler) => runReviewCommand(command, handler, presentation)
+  const review = program
+    .command('review')
+    .description('inspect, record, triage, and maintain review evidence')
+    .allowExcessArguments(true)
+    .action(() => {
+      const sub = review.args[0]
+      throw new Error(
+        `unknown: ${PLATFORM_SLUG} review${sub ? ` ${sub}` : ''}. Try tier | record | project-record | triage | complete | calibration | restore-findings | restore-triage`,
+      )
+    })
+
+  registerReviewQueries(review, run)
+  registerReviewEvidence(review, run)
+  registerReviewOperations(review, run)
+  registerReviewRestore(review, run, presentation)
+  registerConfinement(program)
 }
