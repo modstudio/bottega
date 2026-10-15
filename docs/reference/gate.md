@@ -2,19 +2,27 @@
 
 # gate
 
+gates and mechanical checks
+
+- [bottega gate](#bottega-gate)
+- [bottega gate check](#bottega-gate-check)
+- [bottega gate enforcement](#bottega-gate-enforcement)
+- [bottega gate help](#bottega-gate-help)
+- [bottega gate passed](#bottega-gate-passed)
+- [bottega gate ratchet](#bottega-gate-ratchet)
+- [bottega gate run](#bottega-gate-run)
+- [bottega gate test-substance](#bottega-gate-test-substance)
+- [bottega gate test-substance help](#bottega-gate-test-substance-help)
+- [bottega gate test-substance judge](#bottega-gate-test-substance-judge)
+
 ## bottega gate
 
-**Synopsis:** `bottega gate [--help]`
+**Synopsis:** `bottega gate`
 
 gates and mechanical checks
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate check](./gate.md#bottega-gate-check)
 - [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
 - [bottega gate help](./gate.md#bottega-gate-help)
@@ -22,12 +30,10 @@ gates and mechanical checks
 - [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
 - [bottega gate run](./gate.md#bottega-gate-run)
 - [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate check
 
-**Synopsis:** `bottega gate check [kind] [--enabled] [--project <value>] [--fix] [--message <file>] [--range [rev-range]] [--pr <number-or-url>] [--report] [--help]`
+**Synopsis:** `bottega gate check [kind] [--enabled] [--project <value>] [--fix] [--message <file>] [--range [rev-range]] [--pr <number-or-url>] [--report]`
 
 run a project spelling, attribution, or comment check
 
@@ -40,24 +46,14 @@ run a project spelling, attribution, or comment check
 - `--range [rev-range]`: Git revision range whose commits are checked
 - `--pr <number-or-url>`: pull request number or URL to check
 - `--report`: report comment findings without refusing them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate enforcement
 
-**Synopsis:** `bottega gate enforcement [--project <name>] [--all] [--json] [--help]`
+**Synopsis:** `bottega gate enforcement [--project <name>] [--all] [--json]`
 
 show the mechanical checks resolved for registered projects
 
@@ -66,20 +62,10 @@ show the mechanical checks resolved for registered projects
 - `--project <name>`: registered project to inspect
 - `--all`: inspect every registered project
 - `--json`: write the enforcement report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate help
 
@@ -89,39 +75,17 @@ display help for command
 
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate passed
 
-**Synopsis:** `bottega gate passed <commit> [--help]`
+**Synopsis:** `bottega gate passed <commit>`
 
 exit zero when this project has a passing gate recorded for the exact commit
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate ratchet
 
@@ -135,60 +99,27 @@ Options are documented by `--help`.
 
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate run](./gate.md#bottega-gate-run)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate run
 
-**Synopsis:** `bottega gate run [--help]`
+**Synopsis:** `bottega gate run`
 
 run the registered project gate in this checkout and record a gate_execution row
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate test-substance
 
-**Synopsis:** `bottega gate test-substance [--help]`
+**Synopsis:** `bottega gate test-substance`
 
 judge whether a proposed test edit has substance
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [gate](./gate.md)
 - [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
 - [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)
 - [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
@@ -200,37 +131,18 @@ display help for command
 
 ### Related
 
-- [gate](./gate.md)
-- [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
 - [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance judge](./gate.md#bottega-gate-test-substance-judge)
 
 ## bottega gate test-substance judge
 
-**Synopsis:** `bottega gate test-substance judge [--tool-input] [--help]`
+**Synopsis:** `bottega gate test-substance judge [--tool-input]`
 
 read and judge one proposed test edit from standard input
 
 ### Options
 
 - `--tool-input`: read an editor tool payload instead of a direct test edit
-- `-h, --help`: display help for command
 
 ### Related
 
-- [gate](./gate.md)
-- [bottega gate](./gate.md#bottega-gate)
-- [bottega gate check](./gate.md#bottega-gate-check)
-- [bottega gate enforcement](./gate.md#bottega-gate-enforcement)
-- [bottega gate help](./gate.md#bottega-gate-help)
-- [bottega gate passed](./gate.md#bottega-gate-passed)
-- [bottega gate ratchet](./gate.md#bottega-gate-ratchet)
-- [bottega gate run](./gate.md#bottega-gate-run)
 - [bottega gate test-substance](./gate.md#bottega-gate-test-substance)
-- [bottega gate test-substance help](./gate.md#bottega-gate-test-substance-help)

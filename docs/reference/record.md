@@ -2,35 +2,58 @@
 
 # record
 
+the hosted record and outbox
+
+- [bottega record](#bottega-record)
+- [bottega record audit-secrets](#bottega-record-audit-secrets)
+- [bottega record doctor](#bottega-record-doctor)
+- [bottega record help](#bottega-record-help)
+- [bottega record migrate](#bottega-record-migrate)
+- [bottega record outbox](#bottega-record-outbox)
+- [bottega record outbox discard](#bottega-record-outbox-discard)
+- [bottega record outbox help](#bottega-record-outbox-help)
+- [bottega record outbox retire](#bottega-record-outbox-retire)
+- [bottega record outbox retry](#bottega-record-outbox-retry)
+- [bottega record outbox show](#bottega-record-outbox-show)
+- [bottega record outbox trace](#bottega-record-outbox-trace)
+- [bottega record public-doc](#bottega-record-public-doc)
+- [bottega record public-doc clear](#bottega-record-public-doc-clear)
+- [bottega record public-doc designate](#bottega-record-public-doc-designate)
+- [bottega record public-doc help](#bottega-record-public-doc-help)
+- [bottega record public-doc list](#bottega-record-public-doc-list)
+- [bottega record publish](#bottega-record-publish)
+- [bottega record pull](#bottega-record-pull)
+- [bottega record push](#bottega-record-push)
+- [bottega record push-docs](#bottega-record-push-docs)
+- [bottega record redact-synced](#bottega-record-redact-synced)
+- [bottega record sign-in](#bottega-record-sign-in)
+- [bottega record sign-up](#bottega-record-sign-up)
+- [bottega record space](#bottega-record-space)
+- [bottega record space accept](#bottega-record-space-accept)
+- [bottega record space create](#bottega-record-space-create)
+- [bottega record space help](#bottega-record-space-help)
+- [bottega record space invitations](#bottega-record-space-invitations)
+- [bottega record space invite](#bottega-record-space-invite)
+- [bottega record space list](#bottega-record-space-list)
+- [bottega record space move-project](#bottega-record-space-move-project)
+- [bottega record space switch](#bottega-record-space-switch)
+- [bottega record sync](#bottega-record-sync)
+- [bottega record whoami](#bottega-record-whoami)
+
 ## bottega record
 
-**Synopsis:** `bottega record [--help]`
+**Synopsis:** `bottega record`
 
 the hosted record and outbox
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
 - [bottega record doctor](./record.md#bottega-record-doctor)
 - [bottega record help](./record.md#bottega-record-help)
 - [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
 - [bottega record publish](./record.md#bottega-record-publish)
 - [bottega record pull](./record.md#bottega-record-pull)
 - [bottega record push](./record.md#bottega-record-push)
@@ -39,20 +62,12 @@ the hosted record and outbox
 - [bottega record sign-in](./record.md#bottega-record-sign-in)
 - [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
 - [bottega record sync](./record.md#bottega-record-sync)
 - [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record audit-secrets
 
-**Synopsis:** `bottega record audit-secrets [--json] [--ids] [--help]`
+**Synopsis:** `bottega record audit-secrets [--json] [--ids]`
 
 scan local outbox payloads for secret material
 
@@ -60,93 +75,20 @@ scan local outbox payloads for secret material
 
 - `--json`: write the audit findings as JSON
 - `--ids`: include row identifiers in text output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record doctor
 
-**Synopsis:** `bottega record doctor [--help]`
+**Synopsis:** `bottega record doctor`
 
 check hosted record configuration and access
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record help
 
@@ -156,89 +98,17 @@ display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record migrate
 
-**Synopsis:** `bottega record migrate [--help]`
+**Synopsis:** `bottega record migrate`
 
 apply pending hosted record migrations
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox
 
@@ -252,89 +122,23 @@ inspect and retry pending record writes
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
 - [bottega record outbox help](./record.md#bottega-record-outbox-help)
 - [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
 - [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
 - [bottega record outbox show](./record.md#bottega-record-outbox-show)
 - [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox discard
 
-**Synopsis:** `bottega record outbox discard <id> [--help]`
+**Synopsis:** `bottega record outbox discard <id>`
 
 discard a quarantined entry
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox help
 
@@ -344,190 +148,45 @@ display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox retire
 
-**Synopsis:** `bottega record outbox retire <row-id> [--reason <text>] [--help]`
+**Synopsis:** `bottega record outbox retire <row-id> [--reason <text>]`
 
 retire an outbox row after proving its dependencies
 
 ### Options
 
 - `--reason <text>`: reason the outbox row is retired
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox retry
 
-**Synopsis:** `bottega record outbox retry <row-id> [--help]`
+**Synopsis:** `bottega record outbox retry <row-id>`
 
 queue an outbox row for another delivery attempt
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox show
 
-**Synopsis:** `bottega record outbox show <id> [--help]`
+**Synopsis:** `bottega record outbox show <id>`
 
 show an entry and any values kept after a hosted delete
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record outbox trace
 
-**Synopsis:** `bottega record outbox trace [--row <id>] [--json] [--help]`
+**Synopsis:** `bottega record outbox trace [--row <id>] [--json]`
 
 list non-trivial delivery outcomes, newest first
 
@@ -535,189 +194,44 @@ list non-trivial delivery outcomes, newest first
 
 - `--row <id>`: outbox row whose delivery outcomes are listed
 - `--json`: write the delivery outcomes as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record public-doc
 
-**Synopsis:** `bottega record public-doc [--help]`
+**Synopsis:** `bottega record public-doc`
 
 manage public document projects
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
 - [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
 - [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
 - [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record public-doc clear
 
-**Synopsis:** `bottega record public-doc clear <space-slug> <project-name> [--help]`
+**Synopsis:** `bottega record public-doc clear <space-slug> <project-name>`
 
 clear a public document project designation
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record public-doc designate
 
-**Synopsis:** `bottega record public-doc designate <space-slug> <project-name> [--help]`
+**Synopsis:** `bottega record public-doc designate <space-slug> <project-name>`
 
 designate a project as the public document source
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record public-doc help
 
@@ -727,142 +241,35 @@ display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record public-doc list
 
-**Synopsis:** `bottega record public-doc list [--json] [--help]`
+**Synopsis:** `bottega record public-doc list [--json]`
 
 list public document project designations
 
 ### Options
 
 - `--json`: write the designations as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record publish
 
-**Synopsis:** `bottega record publish [--help]`
+**Synopsis:** `bottega record publish`
 
 publish hosted record snapshots
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record pull
 
-**Synopsis:** `bottega record pull [--since <ISO>] [--only <runs|transcripts|git|tasks>] [--watch] [--help]`
+**Synopsis:** `bottega record pull [--since <ISO>] [--only <runs|transcripts|git|tasks>] [--watch]`
 
 ingest every source into the local record
 
@@ -871,147 +278,42 @@ ingest every source into the local record
 - `--since <ISO>`: earliest source timestamp to ingest
 - `--only <runs|transcripts|git|tasks>`: source to ingest
 - `--watch`: keep collecting on a clock; what launchd runs
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record push
 
-**Synopsis:** `bottega record push [--backfill] [--help]`
+**Synopsis:** `bottega record push [--backfill]`
 
 push this machine's orchestrator record
 
 ### Options
 
 - `--backfill`: enqueue older records before pushing
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record push-docs
 
-**Synopsis:** `bottega record push-docs [--dry-run] [--help]`
+**Synopsis:** `bottega record push-docs [--dry-run]`
 
 push local documents to the hosted record
 
 ### Options
 
 - `--dry-run`: report document changes without pushing them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record redact-synced
 
-**Synopsis:** `bottega record redact-synced [--rules <comma-list>] [--dry-run] [--help]`
+**Synopsis:** `bottega record redact-synced [--rules <comma-list>] [--dry-run]`
 
 redact secret material from synchronized record payloads
 
@@ -1019,98 +321,28 @@ redact secret material from synchronized record payloads
 
 - `--rules <comma-list>`: comma-separated redaction rules to apply
 - `--dry-run`: report redactions without writing them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record sign-in
 
-**Synopsis:** `bottega record sign-in [--email <email>] [--help]`
+**Synopsis:** `bottega record sign-in [--email <email>]`
 
 sign in to the hosted record
 
 ### Options
 
 - `--email <email>`: email address of the account
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record sign-up
 
-**Synopsis:** `bottega record sign-up [--email <email>] [--name <name>] [--help]`
+**Synopsis:** `bottega record sign-up [--email <email>] [--name <name>]`
 
 create a hosted record account and sign in
 
@@ -1118,83 +350,20 @@ create a hosted record account and sign in
 
 - `--email <email>`: email address for the new account
 - `--name <name>`: display name for the new account
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space
 
-**Synopsis:** `bottega record space [--help]`
+**Synopsis:** `bottega record space`
 
 manage hosted record spaces
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space accept](./record.md#bottega-record-space-accept)
 - [bottega record space create](./record.md#bottega-record-space-create)
 - [bottega record space help](./record.md#bottega-record-space-help)
@@ -1203,60 +372,20 @@ manage hosted record spaces
 - [bottega record space list](./record.md#bottega-record-space-list)
 - [bottega record space move-project](./record.md#bottega-record-space-move-project)
 - [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space accept
 
-**Synopsis:** `bottega record space accept <invitation-id> [--help]`
+**Synopsis:** `bottega record space accept <invitation-id>`
 
 accept an invitation to a hosted record space
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space create
 
-**Synopsis:** `bottega record space create [--name <name>] [--slug <slug>] [--help]`
+**Synopsis:** `bottega record space create [--name <name>] [--slug <slug>]`
 
 create a hosted record space
 
@@ -1264,45 +393,10 @@ create a hosted record space
 
 - `--name <name>`: display name for the new space
 - `--slug <slug>`: URL slug for the new space
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space help
 
@@ -1312,93 +406,21 @@ display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space invitations
 
-**Synopsis:** `bottega record space invitations [--help]`
+**Synopsis:** `bottega record space invitations`
 
 list invitations available to the signed-in account
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space invite
 
-**Synopsis:** `bottega record space invite [--email <email>] [--role <role>] [--help]`
+**Synopsis:** `bottega record space invite [--email <email>] [--role <role>]`
 
 invite an email address to the active space
 
@@ -1406,97 +428,24 @@ invite an email address to the active space
 
 - `--email <email>`: email address to invite
 - `--role <role>`: member, admin, or owner (default: member)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space list
 
-**Synopsis:** `bottega record space list [--help]`
+**Synopsis:** `bottega record space list`
 
 list spaces available to the signed-in account
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space move-project
 
-**Synopsis:** `bottega record space move-project <project> [--to <slug-or-id>] [--dry-run] [--confirm <count>] [--help]`
+**Synopsis:** `bottega record space move-project <project> [--to <slug-or-id>] [--dry-run] [--confirm <count>]`
 
 move a registered project to another space
 
@@ -1505,93 +454,20 @@ move a registered project to another space
 - `--to <slug-or-id>`: destination space slug or identifier
 - `--dry-run`: report the project records that would move
 - `--confirm <count>`: expected number of project records to move
-- `-h, --help`: display help for command
 
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record space switch
 
-**Synopsis:** `bottega record space switch <slug-or-id> [--help]`
+**Synopsis:** `bottega record space switch <slug-or-id>`
 
 select the active hosted record space
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
-- [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
 - [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record sync](./record.md#bottega-record-sync)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record sync
 
@@ -1607,86 +483,14 @@ synchronize the orchestrator and hub records
 
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record whoami
 
-**Synopsis:** `bottega record whoami [--help]`
+**Synopsis:** `bottega record whoami`
 
 show the signed-in hosted record identity
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [record](./record.md)
 - [bottega record](./record.md#bottega-record)
-- [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
-- [bottega record doctor](./record.md#bottega-record-doctor)
-- [bottega record help](./record.md#bottega-record-help)
-- [bottega record migrate](./record.md#bottega-record-migrate)
-- [bottega record outbox](./record.md#bottega-record-outbox)
-- [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
-- [bottega record outbox help](./record.md#bottega-record-outbox-help)
-- [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
-- [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
-- [bottega record outbox show](./record.md#bottega-record-outbox-show)
-- [bottega record outbox trace](./record.md#bottega-record-outbox-trace)
-- [bottega record public-doc](./record.md#bottega-record-public-doc)
-- [bottega record public-doc clear](./record.md#bottega-record-public-doc-clear)
-- [bottega record public-doc designate](./record.md#bottega-record-public-doc-designate)
-- [bottega record public-doc help](./record.md#bottega-record-public-doc-help)
-- [bottega record public-doc list](./record.md#bottega-record-public-doc-list)
-- [bottega record publish](./record.md#bottega-record-publish)
-- [bottega record pull](./record.md#bottega-record-pull)
-- [bottega record push](./record.md#bottega-record-push)
-- [bottega record push-docs](./record.md#bottega-record-push-docs)
-- [bottega record redact-synced](./record.md#bottega-record-redact-synced)
-- [bottega record sign-in](./record.md#bottega-record-sign-in)
-- [bottega record sign-up](./record.md#bottega-record-sign-up)
-- [bottega record space](./record.md#bottega-record-space)
-- [bottega record space accept](./record.md#bottega-record-space-accept)
-- [bottega record space create](./record.md#bottega-record-space-create)
-- [bottega record space help](./record.md#bottega-record-space-help)
-- [bottega record space invitations](./record.md#bottega-record-space-invitations)
-- [bottega record space invite](./record.md#bottega-record-space-invite)
-- [bottega record space list](./record.md#bottega-record-space-list)
-- [bottega record space move-project](./record.md#bottega-record-space-move-project)
-- [bottega record space switch](./record.md#bottega-record-space-switch)
-- [bottega record sync](./record.md#bottega-record-sync)

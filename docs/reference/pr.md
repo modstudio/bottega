@@ -2,19 +2,23 @@
 
 # pr
 
+pull requests
+
+- [bottega pr](#bottega-pr)
+- [bottega pr check](#bottega-pr-check)
+- [bottega pr create](#bottega-pr-create)
+- [bottega pr help](#bottega-pr-help)
+- [bottega pr merge](#bottega-pr-merge)
+- [bottega pr override](#bottega-pr-override)
+
 ## bottega pr
 
-**Synopsis:** `bottega pr [--help]`
+**Synopsis:** `bottega pr`
 
 pull requests
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr check](./pr.md#bottega-pr-check)
 - [bottega pr create](./pr.md#bottega-pr-create)
 - [bottega pr help](./pr.md#bottega-pr-help)
@@ -23,7 +27,7 @@ pull requests
 
 ## bottega pr check
 
-**Synopsis:** `bottega pr check [--local-ref <ref>] [--sha <sha>] [--remote-ref <ref>] [--help]`
+**Synopsis:** `bottega pr check [--local-ref <ref>] [--sha <sha>] [--remote-ref <ref>]`
 
 read-only pre-push triage check
 
@@ -32,16 +36,10 @@ read-only pre-push triage check
 - `--local-ref <ref>`: name the local ref being pushed
 - `--sha <sha>`: name the commit being pushed
 - `--remote-ref <ref>`: name the destination ref
-- `-h, --help`: display help for command
 
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr](./pr.md#bottega-pr)
-- [bottega pr create](./pr.md#bottega-pr-create)
-- [bottega pr help](./pr.md#bottega-pr-help)
-- [bottega pr merge](./pr.md#bottega-pr-merge)
-- [bottega pr override](./pr.md#bottega-pr-override)
 
 ## bottega pr create
 
@@ -55,12 +53,7 @@ Options are documented by `--help`.
 
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr](./pr.md#bottega-pr)
-- [bottega pr check](./pr.md#bottega-pr-check)
-- [bottega pr help](./pr.md#bottega-pr-help)
-- [bottega pr merge](./pr.md#bottega-pr-merge)
-- [bottega pr override](./pr.md#bottega-pr-override)
 
 ## bottega pr help
 
@@ -70,36 +63,25 @@ display help for command
 
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr](./pr.md#bottega-pr)
-- [bottega pr check](./pr.md#bottega-pr-check)
-- [bottega pr create](./pr.md#bottega-pr-create)
-- [bottega pr merge](./pr.md#bottega-pr-merge)
-- [bottega pr override](./pr.md#bottega-pr-override)
 
 ## bottega pr merge
 
-**Synopsis:** `bottega pr merge <number-or-url> [--cwd <tree>] [--help]`
+**Synopsis:** `bottega pr merge <number-or-url> [--cwd <tree>]`
 
 merge a pull request only when its head commit is proven
 
 ### Options
 
 - `--cwd <tree>`: verify and merge from this worktree
-- `-h, --help`: display help for command
 
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr](./pr.md#bottega-pr)
-- [bottega pr check](./pr.md#bottega-pr-check)
-- [bottega pr create](./pr.md#bottega-pr-create)
-- [bottega pr help](./pr.md#bottega-pr-help)
-- [bottega pr override](./pr.md#bottega-pr-override)
 
 ## bottega pr override
 
-**Synopsis:** `bottega pr override [--reason <reason>] [--from-operator] [--help]`
+**Synopsis:** `bottega pr override [--reason <reason>] [--from-operator]`
 
 record an operator override for the checked-out tip
 
@@ -107,13 +89,7 @@ record an operator override for the checked-out tip
 
 - `--reason <reason>`: record why the operator admits incomplete triage
 - `--from-operator`: confirm the override came directly from the operator
-- `-h, --help`: display help for command
 
 ### Related
 
-- [pr](./pr.md)
 - [bottega pr](./pr.md#bottega-pr)
-- [bottega pr check](./pr.md#bottega-pr-check)
-- [bottega pr create](./pr.md#bottega-pr-create)
-- [bottega pr help](./pr.md#bottega-pr-help)
-- [bottega pr merge](./pr.md#bottega-pr-merge)

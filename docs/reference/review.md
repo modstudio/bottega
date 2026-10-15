@@ -2,35 +2,52 @@
 
 # review
 
+review runs, lenses, tiers, and confinement
+
+- [bottega review](#bottega-review)
+- [bottega review amend](#bottega-review-amend)
+- [bottega review budget](#bottega-review-budget)
+- [bottega review calibration](#bottega-review-calibration)
+- [bottega review complete](#bottega-review-complete)
+- [bottega review confinement](#bottega-review-confinement)
+- [bottega review confinement clear](#bottega-review-confinement-clear)
+- [bottega review confinement report](#bottega-review-confinement-report)
+- [bottega review coverage-audit](#bottega-review-coverage-audit)
+- [bottega review lens](#bottega-review-lens)
+- [bottega review lens list](#bottega-review-lens-list)
+- [bottega review lens profile](#bottega-review-lens-profile)
+- [bottega review lens profile list](#bottega-review-lens-profile-list)
+- [bottega review lens profile set](#bottega-review-lens-profile-set)
+- [bottega review lens profile show](#bottega-review-lens-profile-show)
+- [bottega review lens set](#bottega-review-lens-set)
+- [bottega review lens show](#bottega-review-lens-show)
+- [bottega review list](#bottega-review-list)
+- [bottega review pins](#bottega-review-pins)
+- [bottega review project-record](#bottega-review-project-record)
+- [bottega review read](#bottega-review-read)
+- [bottega review record](#bottega-review-record)
+- [bottega review restore-findings](#bottega-review-restore-findings)
+- [bottega review restore-triage](#bottega-review-restore-triage)
+- [bottega review show](#bottega-review-show)
+- [bottega review tier](#bottega-review-tier)
+- [bottega review triage](#bottega-review-triage)
+- [bottega review yield](#bottega-review-yield)
+
 ## bottega review
 
-**Synopsis:** `bottega review [--help]`
+**Synopsis:** `bottega review`
 
 review runs, lenses, tiers, and confinement
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [review](./review.md)
 - [bottega review amend](./review.md#bottega-review-amend)
 - [bottega review budget](./review.md#bottega-review-budget)
 - [bottega review calibration](./review.md#bottega-review-calibration)
 - [bottega review complete](./review.md#bottega-review-complete)
 - [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
 - [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
 - [bottega review list](./review.md#bottega-review-list)
 - [bottega review pins](./review.md#bottega-review-pins)
 - [bottega review project-record](./review.md#bottega-review-project-record)
@@ -45,7 +62,7 @@ review runs, lenses, tiers, and confinement
 
 ## bottega review amend
 
-**Synopsis:** `bottega review amend [review-id] [finding] [disposition] [--category <value>] [--severity <value>] [--reason <value>] [--help]`
+**Synopsis:** `bottega review amend [review-id] [finding] [disposition] [--category <value>] [--severity <value>] [--reason <value>]`
 
 amend the disposition of a finding on a completed review
 
@@ -54,42 +71,14 @@ amend the disposition of a finding on a completed review
 - `--category <value>`: record the amended rejection category
 - `--severity <value>`: record the amended triaged severity
 - `--reason <value>`: explain why the completed finding is amended
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review budget
 
-**Synopsis:** `bottega review budget [--since <value>] [--json] [--help]`
+**Synopsis:** `bottega review budget [--since <value>] [--json]`
 
 report branches whose eligible review rounds exceed their tier ceiling
 
@@ -97,166 +86,50 @@ report branches whose eligible review rounds exceed their tier ceiling
 
 - `--since <value>`: include reviews at or after this ISO date
 - `--json`: write the budget report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review calibration
 
-**Synopsis:** `bottega review calibration [lens] [agent] [model] [--json] [--help]`
+**Synopsis:** `bottega review calibration [lens] [agent] [model] [--json]`
 
 show reviewer precision and grading distributions
 
 ### Options
 
 - `--json`: write calibration evidence as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review complete
 
-**Synopsis:** `bottega review complete [review-id] [--help]`
+**Synopsis:** `bottega review complete [review-id]`
 
 mark a fully triaged review complete
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review confinement
 
-**Synopsis:** `bottega review confinement [--help]`
+**Synopsis:** `bottega review confinement`
 
 inspect or clear review-run confinement findings
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
 - [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
 - [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review confinement clear
 
-**Synopsis:** `bottega review confinement clear [run-id] [--writer <value>] [--note <value>] [--tip <value>] [--help]`
+**Synopsis:** `bottega review confinement clear [run-id] [--writer <value>] [--note <value>] [--tip <value>]`
 
 clear one confinement finding with an architect ruling
 
@@ -265,42 +138,14 @@ clear one confinement finding with an architect ruling
 - `--writer <value>`: name the writer whose change was inspected
 - `--note <value>`: record the confinement ruling
 - `--tip <value>`: record the current branch tip
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
 - [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review confinement report
 
-**Synopsis:** `bottega review confinement report [--agent <value>] [--job <value>] [--mcp [value]] [--json] [--help]`
+**Synopsis:** `bottega review confinement report [--agent <value>] [--job <value>] [--mcp [value]] [--json]`
 
 report the sandbox inputs for eligible review agents
 
@@ -310,250 +155,83 @@ report the sandbox inputs for eligible review agents
 - `--job <value>`: report a reading, writing, or named job
 - `--mcp [value]`: filter by whether MCP access is enabled
 - `--json`: write the report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
 - [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review coverage-audit
 
-**Synopsis:** `bottega review coverage-audit [--json] [--help]`
+**Synopsis:** `bottega review coverage-audit [--json]`
 
 audit completed reviews whose evidence covered trunk
 
 ### Options
 
 - `--json`: write the audit as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens
 
-**Synopsis:** `bottega review lens [--help]`
+**Synopsis:** `bottega review lens`
 
 inspect and change review lenses and profiles
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens list](./review.md#bottega-review-lens-list)
 - [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
 - [bottega review lens set](./review.md#bottega-review-lens-set)
 - [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens list
 
-**Synopsis:** `bottega review lens list [--json] [--help]`
+**Synopsis:** `bottega review lens list [--json]`
 
 list review lenses
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens profile
 
-**Synopsis:** `bottega review lens profile [--help]`
+**Synopsis:** `bottega review lens profile`
 
 inspect and change review lens profiles
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
 - [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
 - [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
 - [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens profile list
 
-**Synopsis:** `bottega review lens profile list [lens] [--json] [--help]`
+**Synopsis:** `bottega review lens profile list [lens] [--json]`
 
 list review lens profiles
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
 - [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens profile set
 
-**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--reason <value>] [--json] [--help]`
+**Synopsis:** `bottega review lens profile set <lens> [--axis <value>] [--name <value>] [--body <value>] [--body-file <value>] [--enabled <value>] [--reason <value>] [--json]`
 
 create a review lens profile version
 
@@ -566,42 +244,14 @@ create a review lens profile version
 - `--enabled <value>`: enable or disable the profile
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
 - [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens profile show
 
-**Synopsis:** `bottega review lens profile show <lens> [--axis <value>] [--name <value>] [--json] [--help]`
+**Synopsis:** `bottega review lens profile show <lens> [--axis <value>] [--name <value>] [--json]`
 
 show a review lens profile
 
@@ -610,42 +260,14 @@ show a review lens profile
 - `--axis <value>`: select the profile axis
 - `--name <value>`: select the profile name
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
 - [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens set
 
-**Synopsis:** `bottega review lens set <lens> [--title <value>] [--question <value>] [--excludes <value>] [--slots <value>] [--slots-file <value>] [--enabled <value>] [--requires-execution <value>] [--reason <value>] [--json] [--help]`
+**Synopsis:** `bottega review lens set <lens> [--title <value>] [--question <value>] [--excludes <value>] [--slots <value>] [--slots-file <value>] [--enabled <value>] [--requires-execution <value>] [--reason <value>] [--json]`
 
 create a review lens version
 
@@ -660,84 +282,28 @@ create a review lens version
 - `--requires-execution <value>`: declare whether the lens must execute code
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review lens show
 
-**Synopsis:** `bottega review lens show <lens> [--json] [--help]`
+**Synopsis:** `bottega review lens show <lens> [--json]`
 
 show a review lens
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
-- [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
 - [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review list
 
-**Synopsis:** `bottega review list [--project <value>] [--since <value>] [--open] [--complete] [--json] [--help]`
+**Synopsis:** `bottega review list [--project <value>] [--since <value>] [--open] [--complete] [--json]`
 
 list recorded reviews and their triage state
 
@@ -748,84 +314,28 @@ list recorded reviews and their triage state
 - `--open`: include only incomplete reviews
 - `--complete`: include only completed reviews
 - `--json`: write the review rows as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review pins
 
-**Synopsis:** `bottega review pins [--prune] [--help]`
+**Synopsis:** `bottega review pins [--prune]`
 
 list or prune the refs that pin reviewed commits
 
 ### Options
 
 - `--prune`: delete pins whose reviews are landed or superseded
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review project-record
 
-**Synopsis:** `bottega review project-record [branch] [--cwd <value>] [--reason <value>] [--help]`
+**Synopsis:** `bottega review project-record [branch] [--cwd <value>] [--reason <value>]`
 
 run the project's declared review-record command
 
@@ -833,42 +343,14 @@ run the project's declared review-record command
 
 - `--cwd <value>`: project worktree in which to run the record command
 - `--reason <value>`: one-line reason for the review record
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review read
 
-**Synopsis:** `bottega review read [--cwd <value>] [--sha <value>] [--note <value>] [--help]`
+**Synopsis:** `bottega review read [--cwd <value>] [--sha <value>] [--note <value>]`
 
 record the branch owner's architectural read of the current change
 
@@ -877,38 +359,10 @@ record the branch owner's architectural read of the current change
 - `--cwd <value>`: measure the change in this checkout
 - `--sha <value>`: record this branch tip instead of HEAD
 - `--note <value>`: one-line account of the architectural read
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review record
 
@@ -922,38 +376,11 @@ Options are documented by `--help`.
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review restore-findings
 
-**Synopsis:** `bottega review restore-findings [--json] [--write] [--confirm-restore] [--confirm-live-store <path>] [--help]`
+**Synopsis:** `bottega review restore-findings [--json] [--write] [--confirm-restore] [--confirm-live-store <path>]`
 
 report or restore missing review findings from structured outbox rows
 
@@ -963,42 +390,14 @@ report or restore missing review findings from structured outbox rows
 - `--write`: apply the reported finding restores
 - `--confirm-restore`: confirm that finding rows may be restored
 - `--confirm-live-store <path>`: confirm the exact live store path to restore
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review restore-triage
 
-**Synopsis:** `bottega review restore-triage [--dry-run] [--json] [--help]`
+**Synopsis:** `bottega review restore-triage [--dry-run] [--json]`
 
 restore missing triage on completed-review findings from outbox rows
 
@@ -1006,84 +405,28 @@ restore missing triage on completed-review findings from outbox rows
 
 - `--dry-run`: report triage that would be restored without writing
 - `--json`: write the restore report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review show
 
-**Synopsis:** `bottega review show [id] [--json] [--help]`
+**Synopsis:** `bottega review show [id] [--json]`
 
 show one review with its lenses, grading, and findings
 
 ### Options
 
 - `--json`: write the review as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review tier
 
-**Synopsis:** `bottega review tier [target] [--cwd <value>] [--json] [--help]`
+**Synopsis:** `bottega review tier [target] [--cwd <value>] [--json]`
 
 classify review tier and round budget for a branch, run, or range
 
@@ -1091,42 +434,14 @@ classify review tier and round budget for a branch, run, or range
 
 - `--cwd <value>`: resolve the target from this project checkout
 - `--json`: write the classification as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review triage](./review.md#bottega-review-triage)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review triage
 
-**Synopsis:** `bottega review triage [review-id] [finding] [disposition] [--category <value>] [--severity <value>] [--help]`
+**Synopsis:** `bottega review triage [review-id] [finding] [disposition] [--category <value>] [--severity <value>]`
 
 set the disposition of one finding on an incomplete review
 
@@ -1134,42 +449,14 @@ set the disposition of one finding on an incomplete review
 
 - `--category <value>`: record the rejection category
 - `--severity <value>`: record the triaged severity
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review yield](./review.md#bottega-review-yield)
 
 ## bottega review yield
 
-**Synopsis:** `bottega review yield [--project <value>] [--since <value>] [--task <value>] [--key <value>] [--lens <value>] [--agent <value>] [--json] [--help]`
+**Synopsis:** `bottega review yield [--project <value>] [--since <value>] [--task <value>] [--key <value>] [--lens <value>] [--agent <value>] [--json]`
 
 report the measured yield of completed review evidence
 
@@ -1182,35 +469,7 @@ report the measured yield of completed review evidence
 - `--lens <value>`: include only evidence from this lens
 - `--agent <value>`: include only evidence from this agent
 - `--json`: write the yield report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [review](./review.md)
 - [bottega review](./review.md#bottega-review)
-- [bottega review amend](./review.md#bottega-review-amend)
-- [bottega review budget](./review.md#bottega-review-budget)
-- [bottega review calibration](./review.md#bottega-review-calibration)
-- [bottega review complete](./review.md#bottega-review-complete)
-- [bottega review confinement](./review.md#bottega-review-confinement)
-- [bottega review confinement clear](./review.md#bottega-review-confinement-clear)
-- [bottega review confinement report](./review.md#bottega-review-confinement-report)
-- [bottega review coverage-audit](./review.md#bottega-review-coverage-audit)
-- [bottega review lens](./review.md#bottega-review-lens)
-- [bottega review lens list](./review.md#bottega-review-lens-list)
-- [bottega review lens profile](./review.md#bottega-review-lens-profile)
-- [bottega review lens profile list](./review.md#bottega-review-lens-profile-list)
-- [bottega review lens profile set](./review.md#bottega-review-lens-profile-set)
-- [bottega review lens profile show](./review.md#bottega-review-lens-profile-show)
-- [bottega review lens set](./review.md#bottega-review-lens-set)
-- [bottega review lens show](./review.md#bottega-review-lens-show)
-- [bottega review list](./review.md#bottega-review-list)
-- [bottega review pins](./review.md#bottega-review-pins)
-- [bottega review project-record](./review.md#bottega-review-project-record)
-- [bottega review read](./review.md#bottega-review-read)
-- [bottega review record](./review.md#bottega-review-record)
-- [bottega review restore-findings](./review.md#bottega-review-restore-findings)
-- [bottega review restore-triage](./review.md#bottega-review-restore-triage)
-- [bottega review show](./review.md#bottega-review-show)
-- [bottega review tier](./review.md#bottega-review-tier)
-- [bottega review triage](./review.md#bottega-review-triage)

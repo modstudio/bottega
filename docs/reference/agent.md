@@ -2,6 +2,21 @@
 
 # agent
 
+agents, jobs, and routing
+
+- [bottega agent](#bottega-agent)
+- [bottega agent context](#bottega-agent-context)
+- [bottega agent contract](#bottega-agent-contract)
+- [bottega agent guide](#bottega-agent-guide)
+- [bottega agent jobs](#bottega-agent-jobs)
+- [bottega agent list](#bottega-agent-list)
+- [bottega agent metric](#bottega-agent-metric)
+- [bottega agent pick](#bottega-agent-pick)
+- [bottega agent probe](#bottega-agent-probe)
+- [bottega agent routing-backtest](#bottega-agent-routing-backtest)
+- [bottega agent show](#bottega-agent-show)
+- [bottega agent stats](#bottega-agent-stats)
+
 ## bottega agent
 
 **Synopsis:** `bottega agent`
@@ -10,7 +25,6 @@ agents, jobs, and routing
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent context](./agent.md#bottega-agent-context)
 - [bottega agent contract](./agent.md#bottega-agent-contract)
 - [bottega agent guide](./agent.md#bottega-agent-guide)
@@ -25,7 +39,7 @@ agents, jobs, and routing
 
 ## bottega agent context
 
-**Synopsis:** `bottega agent context [--cwd <path>] [--json] [--help]`
+**Synopsis:** `bottega agent context [--cwd <path>] [--json]`
 
 show the resolved architect context for a checkout
 
@@ -33,51 +47,24 @@ show the resolved architect context for a checkout
 
 - `--cwd <path>`: resolve context for this checkout path
 - `--json`: write the resolved context as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent contract
 
-**Synopsis:** `bottega agent contract <job> [--help]`
+**Synopsis:** `bottega agent contract <job>`
 
 print the worker reply contract for a job
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent guide
 
-**Synopsis:** `bottega agent guide [--job <value>] [--prompt-bytes <value>] [--lens <value>] [--help]`
+**Synopsis:** `bottega agent guide [--job <value>] [--prompt-bytes <value>] [--lens <value>]`
 
 show routing quality and turnaround guidance
 
@@ -86,78 +73,42 @@ show routing quality and turnaround guidance
 - `--job <value>`: show guidance for this job
 - `--prompt-bytes <value>`: use this prompt size for routing guidance
 - `--lens <value>`: show guidance for this review lens
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent jobs
 
-**Synopsis:** `bottega agent jobs [--json] [--help]`
+**Synopsis:** `bottega agent jobs [--json]`
 
 list jobs and their capability requirements
 
 ### Options
 
 - `--json`: write the job catalogue as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent list
 
-**Synopsis:** `bottega agent list [--json] [--help]`
+**Synopsis:** `bottega agent list [--json]`
 
 list agents and their readiness
 
 ### Options
 
 - `--json`: write agent capabilities as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent metric
 
-**Synopsis:** `bottega agent metric [action] [--days <value>] [--window <value>] [--help]`
+**Synopsis:** `bottega agent metric [action] [--days <value>] [--window <value>]`
 
 collect or report orchestration efficiency metrics
 
@@ -165,26 +116,14 @@ collect or report orchestration efficiency metrics
 
 - `--days <value>`: collect this many days of metric inputs
 - `--window <value>`: report metrics over this many days
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent pick
 
-**Synopsis:** `bottega agent pick <job> [--agent <value>] [--avoid <value>] [--distinct-from <value>] [--stack <value>] [--lens <value>] [--help]`
+**Synopsis:** `bottega agent pick <job> [--agent <value>] [--avoid <value>] [--distinct-from <value>] [--stack <value>] [--lens <value>]`
 
 preview the agent selected for a job
 
@@ -195,51 +134,24 @@ preview the agent selected for a job
 - `--distinct-from <value>`: exclude the model used by this run
 - `--stack <value>`: evaluate routing for this project stack
 - `--lens <value>`: evaluate routing for this review lens
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent probe
 
-**Synopsis:** `bottega agent probe <agent> [--help]`
+**Synopsis:** `bottega agent probe <agent>`
 
 clear a vendor-quota exclusion once the agent answers
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent routing-backtest
 
-**Synopsis:** `bottega agent routing-backtest [--job <value>] [--seed <value>] [--json] [--help]`
+**Synopsis:** `bottega agent routing-backtest [--job <value>] [--seed <value>] [--json]`
 
 replay historical routing decisions
 
@@ -248,22 +160,10 @@ replay historical routing decisions
 - `--job <value>`: replay decisions for this job
 - `--seed <value>`: reproduce the replay with this random seed
 - `--json`: write the replay as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent show](./agent.md#bottega-agent-show)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent show
 
@@ -277,41 +177,18 @@ Options are documented by `--help`.
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent stats](./agent.md#bottega-agent-stats)
 
 ## bottega agent stats
 
-**Synopsis:** `bottega agent stats [--job <value>] [--help]`
+**Synopsis:** `bottega agent stats [--job <value>]`
 
 show routing scores, latency, cost, and agent duels
 
 ### Options
 
 - `--job <value>`: show statistics for this job
-- `-h, --help`: display help for command
 
 ### Related
 
-- [agent](./agent.md)
 - [bottega agent](./agent.md#bottega-agent)
-- [bottega agent context](./agent.md#bottega-agent-context)
-- [bottega agent contract](./agent.md#bottega-agent-contract)
-- [bottega agent guide](./agent.md#bottega-agent-guide)
-- [bottega agent jobs](./agent.md#bottega-agent-jobs)
-- [bottega agent list](./agent.md#bottega-agent-list)
-- [bottega agent metric](./agent.md#bottega-agent-metric)
-- [bottega agent pick](./agent.md#bottega-agent-pick)
-- [bottega agent probe](./agent.md#bottega-agent-probe)
-- [bottega agent routing-backtest](./agent.md#bottega-agent-routing-backtest)
-- [bottega agent show](./agent.md#bottega-agent-show)

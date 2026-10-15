@@ -2,6 +2,15 @@
 
 # release
 
+releases and rungs
+
+- [bottega release](#bottega-release)
+- [bottega release check](#bottega-release-check)
+- [bottega release log](#bottega-release-log)
+- [bottega release run](#bottega-release-run)
+- [bottega release run check](#bottega-release-run-check)
+- [bottega release run log](#bottega-release-run-log)
+
 ## bottega release
 
 **Synopsis:** `bottega release`
@@ -10,35 +19,23 @@ releases and rungs
 
 ### Related
 
-- [release](./release.md)
 - [bottega release check](./release.md#bottega-release-check)
 - [bottega release log](./release.md#bottega-release-log)
 - [bottega release run](./release.md#bottega-release-run)
-- [bottega release run check](./release.md#bottega-release-run-check)
-- [bottega release run log](./release.md#bottega-release-run-log)
 
 ## bottega release check
 
-**Synopsis:** `bottega release check <tag> [--help]`
+**Synopsis:** `bottega release check <tag>`
 
 validate the reported version before tagging a release
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [release](./release.md)
 - [bottega release](./release.md#bottega-release)
-- [bottega release log](./release.md#bottega-release-log)
-- [bottega release run](./release.md#bottega-release-run)
-- [bottega release run check](./release.md#bottega-release-run-check)
-- [bottega release run log](./release.md#bottega-release-run-log)
 
 ## bottega release log
 
-**Synopsis:** `bottega release log <project> [--rung <name>] [--json] [--help]`
+**Synopsis:** `bottega release log <project> [--rung <name>] [--json]`
 
 list recorded releases for a project
 
@@ -46,20 +43,14 @@ list recorded releases for a project
 
 - `--rung <name>`: release rung to include
 - `--json`: write the release entries as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [release](./release.md)
 - [bottega release](./release.md#bottega-release)
-- [bottega release check](./release.md#bottega-release-check)
-- [bottega release run](./release.md#bottega-release-run)
-- [bottega release run check](./release.md#bottega-release-run-check)
-- [bottega release run log](./release.md#bottega-release-run-log)
 
 ## bottega release run
 
-**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--json] [--help]`
+**Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--json]`
 
 run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH_RELEASE_COMMIT set
 
@@ -68,39 +59,26 @@ run the registered deploy with ORCH_RELEASE_PROJECT, ORCH_RELEASE_RUNG, and ORCH
 - `--rung <name>`: release rung to run
 - `--rollback <reason>`: reason for deploying the prior live commit
 - `--json`: write the release result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [release](./release.md)
 - [bottega release](./release.md#bottega-release)
-- [bottega release check](./release.md#bottega-release-check)
-- [bottega release log](./release.md#bottega-release-log)
 - [bottega release run check](./release.md#bottega-release-run-check)
 - [bottega release run log](./release.md#bottega-release-run-log)
 
 ## bottega release run check
 
-**Synopsis:** `bottega release run check <tag> [--help]`
+**Synopsis:** `bottega release run check <tag>`
 
 validate the reported version before tagging a release
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [release](./release.md)
-- [bottega release](./release.md#bottega-release)
-- [bottega release check](./release.md#bottega-release-check)
-- [bottega release log](./release.md#bottega-release-log)
 - [bottega release run](./release.md#bottega-release-run)
-- [bottega release run log](./release.md#bottega-release-run-log)
 
 ## bottega release run log
 
-**Synopsis:** `bottega release run log <project> [--rung <name>] [--json] [--help]`
+**Synopsis:** `bottega release run log <project> [--rung <name>] [--json]`
 
 list recorded releases for a project
 
@@ -108,13 +86,7 @@ list recorded releases for a project
 
 - `--rung <name>`: release rung to include
 - `--json`: write the release entries as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [release](./release.md)
-- [bottega release](./release.md#bottega-release)
-- [bottega release check](./release.md#bottega-release-check)
-- [bottega release log](./release.md#bottega-release-log)
 - [bottega release run](./release.md#bottega-release-run)
-- [bottega release run check](./release.md#bottega-release-run-check)

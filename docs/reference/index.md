@@ -2,6 +2,8 @@
 
 # Command reference
 
+Every command accepts `--help`.
+
 - [run](./run.md) — dispatch and inspect runs
 - [question](./question.md) — open worker questions and rulings
 - [score](./score.md) — verdicts on runs

@@ -2,19 +2,27 @@
 
 # project
 
+the project register
+
+- [bottega project](#bottega-project)
+- [bottega project add](#bottega-project-add)
+- [bottega project fill-record-ids](#bottega-project-fill-record-ids)
+- [bottega project list](#bottega-project-list)
+- [bottega project migrate-create](#bottega-project-migrate-create)
+- [bottega project push](#bottega-project-push)
+- [bottega project remove](#bottega-project-remove)
+- [bottega project retire](#bottega-project-retire)
+- [bottega project select-profile](#bottega-project-select-profile)
+- [bottega project set](#bottega-project-set)
+
 ## bottega project
 
-**Synopsis:** `bottega project [--help]`
+**Synopsis:** `bottega project`
 
 the project register
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [project](./project.md)
 - [bottega project add](./project.md#bottega-project-add)
 - [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
 - [bottega project list](./project.md#bottega-project-list)
@@ -27,7 +35,7 @@ the project register
 
 ## bottega project add
 
-**Synopsis:** `bottega project add [path] [--name <value>] [--stack <value>] [--settings <value>] [--no-canon] [--allow-incomplete] [--json] [--help]`
+**Synopsis:** `bottega project add [path] [--name <value>] [--stack <value>] [--settings <value>] [--no-canon] [--allow-incomplete] [--json]`
 
 register a project
 
@@ -39,48 +47,28 @@ register a project
 - `--no-canon`: disable canon for the project
 - `--allow-incomplete`: allow incomplete worktree settings
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project fill-record-ids
 
-**Synopsis:** `bottega project fill-record-ids [--json] [--help]`
+**Synopsis:** `bottega project fill-record-ids [--json]`
 
 fill missing hosted project identities
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project list
 
-**Synopsis:** `bottega project list [--retired] [--json] [--help]`
+**Synopsis:** `bottega project list [--retired] [--json]`
 
 list registered projects
 
@@ -88,119 +76,66 @@ list registered projects
 
 - `--retired`: include retired projects
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project migrate-create
 
-**Synopsis:** `bottega project migrate-create [name] [--apply] [--help]`
+**Synopsis:** `bottega project migrate-create [name] [--apply]`
 
 migrate a legacy create command
 
 ### Options
 
 - `--apply`: apply the proposed migration
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project push
 
-**Synopsis:** `bottega project push [--json] [--help]`
+**Synopsis:** `bottega project push [--json]`
 
 push projects to the hosted record
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project remove
 
-**Synopsis:** `bottega project remove [name] [--help]`
+**Synopsis:** `bottega project remove [name]`
 
 remove a project from the register
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project retire
 
-**Synopsis:** `bottega project retire [name] [--undo] [--help]`
+**Synopsis:** `bottega project retire [name] [--undo]`
 
 retire or un-retire a project
 
 ### Options
 
 - `--undo`: reverse project retirement
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project select-profile
 
-**Synopsis:** `bottega project select-profile [project] [--axis <value>] [--name <value>] [--lens <value>] [--version <value>] [--reason <value>] [--json] [--help]`
+**Synopsis:** `bottega project select-profile [project] [--axis <value>] [--name <value>] [--lens <value>] [--version <value>] [--reason <value>] [--json]`
 
 select a project routing profile
 
@@ -212,24 +147,14 @@ select a project routing profile
 - `--version <value>`: select a profile version
 - `--reason <value>`: record the reason for the change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project set](./project.md#bottega-project-set)
 
 ## bottega project set
 
-**Synopsis:** `bottega project set [name] [--name <value>] [--stack <value>] [--settings <value>] [--path <value>] [--canon] [--no-canon] [--allow-incomplete] [--json] [--help]`
+**Synopsis:** `bottega project set [name] [--name <value>] [--stack <value>] [--settings <value>] [--path <value>] [--canon] [--no-canon] [--allow-incomplete] [--json]`
 
 update a registered project
 
@@ -243,17 +168,7 @@ update a registered project
 - `--no-canon`: disable canon for the project
 - `--allow-incomplete`: allow incomplete worktree settings
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [project](./project.md)
 - [bottega project](./project.md#bottega-project)
-- [bottega project add](./project.md#bottega-project-add)
-- [bottega project fill-record-ids](./project.md#bottega-project-fill-record-ids)
-- [bottega project list](./project.md#bottega-project-list)
-- [bottega project migrate-create](./project.md#bottega-project-migrate-create)
-- [bottega project push](./project.md#bottega-project-push)
-- [bottega project remove](./project.md#bottega-project-remove)
-- [bottega project retire](./project.md#bottega-project-retire)
-- [bottega project select-profile](./project.md#bottega-project-select-profile)

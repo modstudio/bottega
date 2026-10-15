@@ -2,30 +2,52 @@
 
 # board
 
+the architects' board
+
+- [bottega board](#bottega-board)
+- [bottega board accept](#bottega-board-accept)
+- [bottega board ack](#bottega-board-ack)
+- [bottega board adopt](#bottega-board-adopt)
+- [bottega board ask](#bottega-board-ask)
+- [bottega board claim](#bottega-board-claim)
+- [bottega board claim help](#bottega-board-claim-help)
+- [bottega board claim list](#bottega-board-claim-list)
+- [bottega board claim release](#bottega-board-claim-release)
+- [bottega board claim release-task](#bottega-board-claim-release-task)
+- [bottega board claim renew](#bottega-board-claim-renew)
+- [bottega board claim take](#bottega-board-claim-take)
+- [bottega board delivered](#bottega-board-delivered)
+- [bottega board file-note](#bottega-board-file-note)
+- [bottega board help](#bottega-board-help)
+- [bottega board list](#bottega-board-list)
+- [bottega board pending](#bottega-board-pending)
+- [bottega board post](#bottega-board-post)
+- [bottega board presence](#bottega-board-presence)
+- [bottega board reach](#bottega-board-reach)
+- [bottega board read](#bottega-board-read)
+- [bottega board reply](#bottega-board-reply)
+- [bottega board status](#bottega-board-status)
+- [bottega board suggestion](#bottega-board-suggestion)
+- [bottega board suggestion decline](#bottega-board-suggestion-decline)
+- [bottega board suggestion help](#bottega-board-suggestion-help)
+- [bottega board suggestion post](#bottega-board-suggestion-post)
+- [bottega board thread](#bottega-board-thread)
+- [bottega board watch](#bottega-board-watch)
+- [bottega board withdraw](#bottega-board-withdraw)
+
 ## bottega board
 
-**Synopsis:** `bottega board [--help]`
+**Synopsis:** `bottega board`
 
 the architects' board
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board accept](./board.md#bottega-board-accept)
 - [bottega board ack](./board.md#bottega-board-ack)
 - [bottega board adopt](./board.md#bottega-board-adopt)
 - [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
 - [bottega board delivered](./board.md#bottega-board-delivered)
 - [bottega board file-note](./board.md#bottega-board-file-note)
 - [bottega board help](./board.md#bottega-board-help)
@@ -38,102 +60,33 @@ the architects' board
 - [bottega board reply](./board.md#bottega-board-reply)
 - [bottega board status](./board.md#bottega-board-status)
 - [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
 - [bottega board thread](./board.md#bottega-board-thread)
 - [bottega board watch](./board.md#bottega-board-watch)
 - [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board accept
 
-**Synopsis:** `bottega board accept <question-id> <reply-id> [--help]`
+**Synopsis:** `bottega board accept <question-id> <reply-id>`
 
 accept a reply as the answer to a question
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board ack
 
-**Synopsis:** `bottega board ack <id> [--help]`
+**Synopsis:** `bottega board ack <id>`
 
 acknowledge a board notice
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board adopt
 
-**Synopsis:** `bottega board adopt [--confirm <total>] [--json] [--help]`
+**Synopsis:** `bottega board adopt [--confirm <total>] [--json]`
 
 move eligible machine-local board records to the hosted board
 
@@ -141,44 +94,14 @@ move eligible machine-local board records to the hosted board
 
 - `--confirm <total>`: confirm the current candidate count
 - `--json`: write the adoption result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board ask
 
-**Synopsis:** `bottega board ask [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>] [--expires <duration>] [--help]`
+**Synopsis:** `bottega board ask [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>] [--expires <duration>]`
 
 ask a question on the architects board
 
@@ -191,83 +114,26 @@ ask a question on the architects board
 - `--path <glob>`: add a repository-relative path glob (default: )
 - `--topic <name>`: add a controlled board topic (default: )
 - `--expires <duration>`: set how long the question remains live
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim
 
-**Synopsis:** `bottega board claim [--help]`
+**Synopsis:** `bottega board claim`
 
 manage claims on shared work
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim help](./board.md#bottega-board-claim-help)
 - [bottega board claim list](./board.md#bottega-board-claim-list)
 - [bottega board claim release](./board.md#bottega-board-claim-release)
 - [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
 - [bottega board claim renew](./board.md#bottega-board-claim-renew)
 - [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim help
 
@@ -277,40 +143,11 @@ display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim list
 
-**Synopsis:** `bottega board claim list [--project <name>] [--all] [--help]`
+**Synopsis:** `bottega board claim list [--project <name>] [--all]`
 
 list board claims
 
@@ -318,87 +155,24 @@ list board claims
 
 - `--project <name>`: limit claims to this project
 - `--all`: include claims that are not live
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim release
 
-**Synopsis:** `bottega board claim release <id> [--help]`
+**Synopsis:** `bottega board claim release <id>`
 
 release a claim
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim release-task
 
-**Synopsis:** `bottega board claim release-task <key> [--project <name>] [--json] [--help]`
+**Synopsis:** `bottega board claim release-task <key> [--project <name>] [--json]`
 
 release every live claim for a task
 
@@ -406,87 +180,24 @@ release every live claim for a task
 
 - `--project <name>`: name the task project
 - `--json`: write the released claims as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim renew
 
-**Synopsis:** `bottega board claim renew <id> [--help]`
+**Synopsis:** `bottega board claim renew <id>`
 
 extend a live claim
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board claim take
 
-**Synopsis:** `bottega board claim take <subject> [--for <duration>] [--run <id>] [--note <text>] [--project <name>] [--force] [--help]`
+**Synopsis:** `bottega board claim take <subject> [--for <duration>] [--run <id>] [--note <text>] [--project <name>] [--force]`
 
 claim a task, path, or resource
 
@@ -497,44 +208,14 @@ claim a task, path, or resource
 - `--note <text>`: record context for the claim
 - `--project <name>`: claim the subject in this project
 - `--force`: supersede a conflicting live claim
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
 - [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board delivered
 
-**Synopsis:** `bottega board delivered <ids> [--session <id>] [--point <point>] [--emission <id>] [--blocked-stop] [--help]`
+**Synopsis:** `bottega board delivered <ids> [--session <id>] [--point <point>] [--emission <id>] [--blocked-stop]`
 
 record board messages emitted by a delivery hook
 
@@ -544,83 +225,20 @@ record board messages emitted by a delivery hook
 - `--point <point>`: hook delivery point
 - `--emission <id>`: identity of this hook emission
 - `--blocked-stop`: the emitted delivery blocked Stop
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board file-note
 
-**Synopsis:** `bottega board file-note <question-id> [--help]`
+**Synopsis:** `bottega board file-note <question-id>`
 
 file the accepted answer as a note
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board help
 
@@ -630,40 +248,11 @@ display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board list
 
-**Synopsis:** `bottega board list [--kind <kind>] [--open] [--include-ended] [--help]`
+**Synopsis:** `bottega board list [--kind <kind>] [--open] [--include-ended]`
 
 list board notices and questions
 
@@ -672,44 +261,14 @@ list board notices and questions
 - `--kind <kind>`: limit to notice or question
 - `--open`: list unanswered questions only
 - `--include-ended`: include withdrawn and expired roots
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board pending
 
-**Synopsis:** `bottega board pending [--session <id>] [--recently-injected <ids>] [--exclude-acknowledgement-required] [--json] [--help]`
+**Synopsis:** `bottega board pending [--session <id>] [--recently-injected <ids>] [--exclude-acknowledgement-required] [--json]`
 
 list messages due for delivery to a session
 
@@ -719,44 +278,14 @@ list messages due for delivery to a session
 - `--recently-injected <ids>`: comma-separated message ids not yet due for reminder
 - `--exclude-acknowledgement-required`: omit messages requiring acknowledgement
 - `--json`: write the pending delivery as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board post
 
-**Synopsis:** `bottega board post [--audience <expr>] [--title <text>] [--body <text>] [--purpose <purpose>] [--task <key>] [--path <glob>] [--topic <name>] [--ack-required] [--deadline <duration>] [--expires <duration>] [--help]`
+**Synopsis:** `bottega board post [--audience <expr>] [--title <text>] [--body <text>] [--purpose <purpose>] [--task <key>] [--path <glob>] [--topic <name>] [--ack-required] [--deadline <duration>] [--expires <duration>]`
 
 post a notice to the architects board
 
@@ -772,88 +301,28 @@ post a notice to the architects board
 - `--ack-required`: require acknowledgement for an operator post, an architect post to its own project, or a platform-topic request or standing post from the platform project to architects:all
 - `--deadline <duration>`: set the acknowledgement deadline
 - `--expires <duration>`: set how long the notice remains live
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board presence
 
-**Synopsis:** `bottega board presence [--started-at <instant>] [--help]`
+**Synopsis:** `bottega board presence [--started-at <instant>]`
 
 record this architect session as present
 
 ### Options
 
 - `--started-at <instant>`: session-start instant
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board reach
 
-**Synopsis:** `bottega board reach [--hours <hours>] [--json] [--help]`
+**Synopsis:** `bottega board reach [--hours <hours>] [--json]`
 
 measure board-message reach and acknowledgement
 
@@ -861,44 +330,14 @@ measure board-message reach and acknowledgement
 
 - `--hours <hours>`: measurement window in hours (default: 24)
 - `--json`: write the reach report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board read
 
-**Synopsis:** `bottega board read [--all] [--claim] [--help]`
+**Synopsis:** `bottega board read [--all] [--claim]`
 
 read board notices addressed to this session
 
@@ -906,213 +345,57 @@ read board notices addressed to this session
 
 - `--all`: include notices already delivered to this session
 - `--claim`: read without stamping delivery (for the session-start hook)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board reply
 
-**Synopsis:** `bottega board reply <root-id> [--body <text>] [--help]`
+**Synopsis:** `bottega board reply <root-id> [--body <text>]`
 
 reply to a board notice or question
 
 ### Options
 
 - `--body <text>`: set the reply body
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board status
 
-**Synopsis:** `bottega board status <id> [--help]`
+**Synopsis:** `bottega board status <id>`
 
 show a board message and its delivery status
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board suggestion
 
-**Synopsis:** `bottega board suggestion [--help]`
+**Synopsis:** `bottega board suggestion`
 
 dispose of worker board suggestions
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
 - [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
 - [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
 - [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board suggestion decline
 
-**Synopsis:** `bottega board suggestion decline <id> [--help]`
+**Synopsis:** `bottega board suggestion decline <id>`
 
 decline and withdraw a worker suggestion
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
 - [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board suggestion help
 
@@ -1122,40 +405,11 @@ display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
 - [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board suggestion post
 
-**Synopsis:** `bottega board suggestion post <id> [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>] [--help]`
+**Synopsis:** `bottega board suggestion post <id> [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>]`
 
 post a worker suggestion to the board
 
@@ -1167,166 +421,37 @@ post a worker suggestion to the board
 - `--task <key>`: replace the suggested task tag
 - `--path <glob>`: replace repository-relative path globs
 - `--topic <name>`: replace controlled board topics
-- `-h, --help`: display help for command
 
 ### Related
 
-- [board](./board.md)
-- [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
 - [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board thread
 
-**Synopsis:** `bottega board thread <id> [--help]`
+**Synopsis:** `bottega board thread <id>`
 
 show a board thread and its replies
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board watch](./board.md#bottega-board-watch)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board watch
 
-**Synopsis:** `bottega board watch [--help]`
+**Synopsis:** `bottega board watch`
 
 hold the hosted board stream and refresh the local cache
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board withdraw](./board.md#bottega-board-withdraw)
 
 ## bottega board withdraw
 
-**Synopsis:** `bottega board withdraw <id> [--help]`
+**Synopsis:** `bottega board withdraw <id>`
 
 withdraw a live board notice or question
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [board](./board.md)
 - [bottega board](./board.md#bottega-board)
-- [bottega board accept](./board.md#bottega-board-accept)
-- [bottega board ack](./board.md#bottega-board-ack)
-- [bottega board adopt](./board.md#bottega-board-adopt)
-- [bottega board ask](./board.md#bottega-board-ask)
-- [bottega board claim](./board.md#bottega-board-claim)
-- [bottega board claim help](./board.md#bottega-board-claim-help)
-- [bottega board claim list](./board.md#bottega-board-claim-list)
-- [bottega board claim release](./board.md#bottega-board-claim-release)
-- [bottega board claim release-task](./board.md#bottega-board-claim-release-task)
-- [bottega board claim renew](./board.md#bottega-board-claim-renew)
-- [bottega board claim take](./board.md#bottega-board-claim-take)
-- [bottega board delivered](./board.md#bottega-board-delivered)
-- [bottega board file-note](./board.md#bottega-board-file-note)
-- [bottega board help](./board.md#bottega-board-help)
-- [bottega board list](./board.md#bottega-board-list)
-- [bottega board pending](./board.md#bottega-board-pending)
-- [bottega board post](./board.md#bottega-board-post)
-- [bottega board presence](./board.md#bottega-board-presence)
-- [bottega board reach](./board.md#bottega-board-reach)
-- [bottega board read](./board.md#bottega-board-read)
-- [bottega board reply](./board.md#bottega-board-reply)
-- [bottega board status](./board.md#bottega-board-status)
-- [bottega board suggestion](./board.md#bottega-board-suggestion)
-- [bottega board suggestion decline](./board.md#bottega-board-suggestion-decline)
-- [bottega board suggestion help](./board.md#bottega-board-suggestion-help)
-- [bottega board suggestion post](./board.md#bottega-board-suggestion-post)
-- [bottega board thread](./board.md#bottega-board-thread)
-- [bottega board watch](./board.md#bottega-board-watch)

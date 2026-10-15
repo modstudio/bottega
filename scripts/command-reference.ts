@@ -27,11 +27,19 @@ function optionToken(option: DocumentationOptionDetail): string {
   return `[${body}]`
 }
 
+function isHelpOption(option: DocumentationOptionDetail): boolean {
+  return option.flags.split(/[ ,|]+/).includes('--help')
+}
+
+function documentedOptions(command: DocumentationCommand): DocumentationOptionDetail[] {
+  return command.options.filter((option) => !isHelpOption(option))
+}
+
 function synopsis(command: DocumentationCommand): string {
   const parts = [command.spelling]
   for (const argument of command.arguments) parts.push(argumentToken(argument))
   if (!command.optionsByHelp) {
-    for (const option of command.options) parts.push(optionToken(option))
+    for (const option of documentedOptions(command)) parts.push(optionToken(option))
   }
   return parts.join(' ')
 }
@@ -56,22 +64,46 @@ function commandAnchor(spelling: string): string {
   return spelling.replaceAll(' ', '-')
 }
 
+function parentCommand(
+  command: DocumentationCommand,
+  members: readonly DocumentationCommand[],
+): DocumentationCommand | null {
+  let parent: DocumentationCommand | null = null
+  for (const candidate of members) {
+    if (!command.spelling.startsWith(`${candidate.spelling} `)) continue
+    if (!parent || candidate.spelling.length > parent.spelling.length) parent = candidate
+  }
+  return parent
+}
+
+function relatedLink(command: DocumentationCommand): string {
+  return `- [${command.spelling}](./${command.group}.md#${commandAnchor(command.spelling)})`
+}
+
 function relatedLines(
   command: DocumentationCommand,
-  siblings: readonly DocumentationCommand[],
+  members: readonly DocumentationCommand[],
 ): string[] {
-  const file = `${command.group}.md`
-  const links = [`- [${command.group}](./${file})`]
-  for (const sibling of siblings) {
-    if (sibling.spelling === command.spelling) continue
-    links.push(`- [${sibling.spelling}](./${file}#${commandAnchor(sibling.spelling)})`)
-  }
+  const parent = parentCommand(command, members)
+  const children = members.filter((candidate) => parentCommand(candidate, members) === command)
+  const links: string[] = []
+  if (parent) links.push(relatedLink(parent))
+  for (const child of children) links.push(relatedLink(child))
   return links
+}
+
+function optionSection(command: DocumentationCommand): string[] {
+  if (command.optionsByHelp) {
+    return ['', '### Options', '', 'Options are documented by `--help`.']
+  }
+  const options = documentedOptions(command)
+  if (options.length === 0) return []
+  return ['', '### Options', '', ...options.map(optionLine)]
 }
 
 function renderCommand(
   command: DocumentationCommand,
-  siblings: readonly DocumentationCommand[],
+  members: readonly DocumentationCommand[],
 ): string {
   const sections = [
     `## ${command.spelling}`,
@@ -79,16 +111,14 @@ function renderCommand(
     `**Synopsis:** \`${synopsis(command)}\``,
     '',
     command.description,
+    ...optionSection(command),
   ]
-  if (command.optionsByHelp) {
-    sections.push('', '### Options', '', 'Options are documented by `--help`.')
-  } else if (command.options.length > 0) {
-    sections.push('', '### Options', '', ...command.options.map(optionLine))
-  }
   if (command.examples.length > 0) {
     sections.push('', '### Examples', '', ...command.examples.map((example) => `- \`${example}\``))
   }
-  sections.push('', '### Related', '', ...relatedLines(command, siblings), '')
+  const related = relatedLines(command, members)
+  if (related.length > 0) sections.push('', '### Related', '', ...related)
+  sections.push('')
   return sections.join('\n')
 }
 
@@ -101,20 +131,24 @@ function groupCommands(
     .sort((left, right) => left.spelling.localeCompare(right.spelling))
 }
 
+function contentsLines(members: readonly DocumentationCommand[]): string[] {
+  return members.map((command) => `- [${command.spelling}](#${commandAnchor(command.spelling)})`)
+}
+
 function renderGroupPage(
   group: DocumentationGroup,
   commands: readonly DocumentationCommand[],
 ): string {
   const members = groupCommands(commands, group.name)
   const body = members.map((command) => renderCommand(command, members)).join('\n')
-  return `${GENERATED_HEADER}\n\n# ${group.name}\n\n${body}`
+  return `${GENERATED_HEADER}\n\n# ${group.name}\n\n${group.description}\n\n${contentsLines(members).join('\n')}\n\n${body}`
 }
 
 function renderIndex(groups: readonly DocumentationGroup[]): string {
   const lines = groups.map(
     (group) => `- [${group.name}](./${group.name}.md) — ${group.description}`,
   )
-  return `${GENERATED_HEADER}\n\n# Command reference\n\n${lines.join('\n')}\n`
+  return `${GENERATED_HEADER}\n\n# Command reference\n\nEvery command accepts \`--help\`.\n\n${lines.join('\n')}\n`
 }
 
 /** Render one Markdown page per group plus the parent index. Group order follows the inventory groups list (route order). Commands on a group page are sorted by spelling. */

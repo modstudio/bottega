@@ -2,6 +2,12 @@
 
 # score
 
+verdicts on runs
+
+- [bottega score](#bottega-score)
+- [bottega score pending](#bottega-score-pending)
+- [bottega score recalibrate](#bottega-score-recalibrate)
+
 ## bottega score
 
 **Synopsis:** `bottega score <run-id> [words...]`
@@ -14,29 +20,22 @@ Options are documented by `--help`.
 
 ### Related
 
-- [score](./score.md)
 - [bottega score pending](./score.md#bottega-score-pending)
 - [bottega score recalibrate](./score.md#bottega-score-recalibrate)
 
 ## bottega score pending
 
-**Synopsis:** `bottega score pending [--help]`
+**Synopsis:** `bottega score pending`
 
 list your runs awaiting verdicts or comparisons
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [score](./score.md)
 - [bottega score](./score.md#bottega-score)
-- [bottega score recalibrate](./score.md#bottega-score-recalibrate)
 
 ## bottega score recalibrate
 
-**Synopsis:** `bottega score recalibrate [--n <value>] [--scorer <value>] [--force] [--help]`
+**Synopsis:** `bottega score recalibrate [--n <value>] [--scorer <value>] [--force]`
 
 blindly rescore saved outputs and measure agreement
 
@@ -45,10 +44,7 @@ blindly rescore saved outputs and measure agreement
 - `--n <value>`: rescore this many saved outputs
 - `--scorer <value>`: sample verdicts recorded by this scorer
 - `--force`: sample verdicts from every scorer
-- `-h, --help`: display help for command
 
 ### Related
 
-- [score](./score.md)
 - [bottega score](./score.md#bottega-score)
-- [bottega score pending](./score.md#bottega-score-pending)

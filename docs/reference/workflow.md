@@ -2,29 +2,51 @@
 
 # workflow
 
+workflows and their cursors
+
+- [bottega workflow](#bottega-workflow)
+- [bottega workflow abandon](#bottega-workflow-abandon)
+- [bottega workflow attach](#bottega-workflow-attach)
+- [bottega workflow await](#bottega-workflow-await)
+- [bottega workflow catalogue](#bottega-workflow-catalogue)
+- [bottega workflow catalogue fork](#bottega-workflow-catalogue-fork)
+- [bottega workflow catalogue promote](#bottega-workflow-catalogue-promote)
+- [bottega workflow catalogue retire](#bottega-workflow-catalogue-retire)
+- [bottega workflow catalogue set](#bottega-workflow-catalogue-set)
+- [bottega workflow catalogue show](#bottega-workflow-catalogue-show)
+- [bottega workflow catalogue versions](#bottega-workflow-catalogue-versions)
+- [bottega workflow compose](#bottega-workflow-compose)
+- [bottega workflow cursors](#bottega-workflow-cursors)
+- [bottega workflow epic](#bottega-workflow-epic)
+- [bottega workflow exec](#bottega-workflow-exec)
+- [bottega workflow fix-defect](#bottega-workflow-fix-defect)
+- [bottega workflow fork](#bottega-workflow-fork)
+- [bottega workflow hydrate](#bottega-workflow-hydrate)
+- [bottega workflow import](#bottega-workflow-import)
+- [bottega workflow list](#bottega-workflow-list)
+- [bottega workflow next](#bottega-workflow-next)
+- [bottega workflow probe](#bottega-workflow-probe)
+- [bottega workflow promote](#bottega-workflow-promote)
+- [bottega workflow render-check](#bottega-workflow-render-check)
+- [bottega workflow retire](#bottega-workflow-retire)
+- [bottega workflow rule](#bottega-workflow-rule)
+- [bottega workflow set](#bottega-workflow-set)
+- [bottega workflow show](#bottega-workflow-show)
+- [bottega workflow step](#bottega-workflow-step)
+- [bottega workflow versions](#bottega-workflow-versions)
+
 ## bottega workflow
 
-**Synopsis:** `bottega workflow [--help]`
+**Synopsis:** `bottega workflow`
 
 workflows and their cursors
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
 - [bottega workflow attach](./workflow.md#bottega-workflow-attach)
 - [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
 - [bottega workflow compose](./workflow.md#bottega-workflow-compose)
 - [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
 - [bottega workflow epic](./workflow.md#bottega-workflow-epic)
@@ -47,7 +69,7 @@ workflows and their cursors
 
 ## bottega workflow abandon
 
-**Synopsis:** `bottega workflow abandon [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--reason <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow abandon [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--reason <value>] [--json]`
 
 abandon an open workflow cursor
 
@@ -59,44 +81,14 @@ abandon an open workflow cursor
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow attach
 
-**Synopsis:** `bottega workflow attach [workflow] [--cursor <value>] [--file <value>] [--mode <value>] [--project <value>] [--arg <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow attach [workflow] [--cursor <value>] [--file <value>] [--mode <value>] [--project <value>] [--arg <value>] [--json]`
 
 attach text to the current workflow step
 
@@ -108,44 +100,14 @@ attach text to the current workflow step
 - `--project <value>`: select this registered project
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow await
 
-**Synopsis:** `bottega workflow await [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--question <value>] [--arg <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow await [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--question <value>] [--arg <value>] [--json]`
 
 pause a workflow cursor for an external ruling
 
@@ -157,87 +119,30 @@ pause a workflow cursor for an external ruling
 - `--question <value>`: state the question that needs a ruling
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue
 
-**Synopsis:** `bottega workflow catalogue [--help]`
+**Synopsis:** `bottega workflow catalogue`
 
 inspect and change the workflow step catalogue
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
 - [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
 - [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
 - [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
 - [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
 - [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue fork
 
-**Synopsis:** `bottega workflow catalogue fork [--from <value>] [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue fork [--from <value>] [--reason <value>] [--author <value>] [--json]`
 
 fork the step catalogue into a new draft version
 
@@ -247,44 +152,14 @@ fork the step catalogue into a new draft version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue promote
 
-**Synopsis:** `bottega workflow catalogue promote <version> [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue promote <version> [--reason <value>] [--author <value>] [--json]`
 
 promote a draft step catalogue version to production
 
@@ -293,44 +168,14 @@ promote a draft step catalogue version to production
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue retire
 
-**Synopsis:** `bottega workflow catalogue retire <version> [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue retire <version> [--reason <value>] [--author <value>] [--json]`
 
 retire a step catalogue version
 
@@ -339,44 +184,14 @@ retire a step catalogue version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue set
 
-**Synopsis:** `bottega workflow catalogue set [--file <value>] [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue set [--file <value>] [--reason <value>] [--author <value>] [--json]`
 
 create a draft step catalogue from a JSON file
 
@@ -386,44 +201,14 @@ create a draft step catalogue from a JSON file
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue show
 
-**Synopsis:** `bottega workflow catalogue show [--version <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue show [--version <value>] [--json]`
 
 show the workflow step catalogue
 
@@ -431,88 +216,28 @@ show the workflow step catalogue
 
 - `--version <value>`: show this catalogue version
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow catalogue versions
 
-**Synopsis:** `bottega workflow catalogue versions [--json] [--help]`
+**Synopsis:** `bottega workflow catalogue versions [--json]`
 
 list step catalogue versions
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
-- [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
 - [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow compose
 
-**Synopsis:** `bottega workflow compose <workflow> [--version <value>] [--catalogue-version <value>] [--mode <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow compose <workflow> [--version <value>] [--catalogue-version <value>] [--mode <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json]`
 
 compose a workflow for a project and create its cursor when ready
 
@@ -525,44 +250,14 @@ compose a workflow for a project and create its cursor when ready
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--autonomy <value>`: override an autonomy scope (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow cursors
 
-**Synopsis:** `bottega workflow cursors [--session <value>] [--project <value>] [--all] [--json] [--help]`
+**Synopsis:** `bottega workflow cursors [--session <value>] [--project <value>] [--all] [--json]`
 
 list workflow cursors
 
@@ -572,84 +267,24 @@ list workflow cursors
 - `--project <value>`: limit cursors to this registered project
 - `--all`: include closed cursors
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow epic
 
-**Synopsis:** `bottega workflow epic <key> [--json] [--help]`
+**Synopsis:** `bottega workflow epic <key> [--json]`
 
 show the scoreboard for an epic and its child tasks
 
 ### Options
 
 - `--json`: write the scoreboard as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow exec
 
@@ -663,40 +298,11 @@ Options are documented by `--help`.
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow fix-defect
 
-**Synopsis:** `bottega workflow fix-defect [key] [--waiting] [--cwd <path>] [--json] [--help]`
+**Synopsis:** `bottega workflow fix-defect [key] [--waiting] [--cwd <path>] [--json]`
 
 dispatch filed defect issues or list those waiting
 
@@ -705,44 +311,14 @@ dispatch filed defect issues or list those waiting
 - `--waiting`: list filed defect issues waiting in the queue
 - `--cwd <path>`: resolve the waiting queue from this project checkout
 - `--json`: write the waiting queue as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow fork
 
-**Synopsis:** `bottega workflow fork <workflow> [--from <value>] [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow fork <workflow> [--from <value>] [--reason <value>] [--author <value>] [--json]`
 
 fork a workflow into a new draft version
 
@@ -752,44 +328,14 @@ fork a workflow into a new draft version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow hydrate
 
-**Synopsis:** `bottega workflow hydrate [--cwd <value>] [--check] [--help]`
+**Synopsis:** `bottega workflow hydrate [--cwd <value>] [--check]`
 
 write the production workflow tree into a project worktree
 
@@ -797,44 +343,14 @@ write the production workflow tree into a project worktree
 
 - `--cwd <value>`: select the project worktree to hydrate
 - `--check`: report drift without writing files
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow import
 
-**Synopsis:** `bottega workflow import [--cwd <value>] [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow import [--cwd <value>] [--reason <value>] [--author <value>] [--json]`
 
 import a project workflow tree as draft definitions
 
@@ -844,88 +360,28 @@ import a project workflow tree as draft definitions
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow list
 
-**Synopsis:** `bottega workflow list [--json] [--help]`
+**Synopsis:** `bottega workflow list [--json]`
 
 list workflow definitions
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow next
 
-**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow next [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--note <value>] [--question <value>] [--self-ruling <value>] [--basis <value>] [--ruling <value>] [--review <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--defer <value>] [--satisfies <value>] [--arg <value>] [--json]`
 
 close the current step and advance a workflow cursor
 
@@ -948,40 +404,10 @@ close the current step and advance a workflow cursor
 - `--satisfies <value>`: cite the floor this evidence satisfies
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow probe
 
@@ -995,40 +421,11 @@ Options are documented by `--help`.
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow promote
 
-**Synopsis:** `bottega workflow promote <workflow> <version> [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow promote <workflow> <version> [--reason <value>] [--author <value>] [--json]`
 
 promote a draft workflow version to production
 
@@ -1037,88 +434,28 @@ promote a draft workflow version to production
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow render-check
 
-**Synopsis:** `bottega workflow render-check [--json] [--help]`
+**Synopsis:** `bottega workflow render-check [--json]`
 
 check every production workflow can render
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow retire
 
-**Synopsis:** `bottega workflow retire <workflow> <version> [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow retire <workflow> <version> [--reason <value>] [--author <value>] [--json]`
 
 retire a workflow version
 
@@ -1127,44 +464,14 @@ retire a workflow version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow rule
 
-**Synopsis:** `bottega workflow rule [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--ruling <value>] [--from-operator] [--arg <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow rule [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--ruling <value>] [--from-operator] [--arg <value>] [--json]`
 
 apply a ruling to a waiting workflow cursor
 
@@ -1177,44 +484,14 @@ apply a ruling to a waiting workflow cursor
 - `--from-operator`: mark the ruling as supplied by the operator
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow set
 
-**Synopsis:** `bottega workflow set <workflow> [--file <value>] [--reason <value>] [--author <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow set <workflow> [--file <value>] [--reason <value>] [--author <value>] [--json]`
 
 create a draft workflow version from a JSON file
 
@@ -1224,44 +501,14 @@ create a draft workflow version from a JSON file
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow show
 
-**Synopsis:** `bottega workflow show <workflow> [--version <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow show <workflow> [--version <value>] [--json]`
 
 show a workflow definition
 
@@ -1269,44 +516,14 @@ show a workflow definition
 
 - `--version <value>`: show this workflow version
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow step
 
-**Synopsis:** `bottega workflow step [workflow] [step] [--version <value>] [--catalogue-version <value>] [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json] [--help]`
+**Synopsis:** `bottega workflow step [workflow] [step] [--version <value>] [--catalogue-version <value>] [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json]`
 
 render one workflow step by slug or position
 
@@ -1320,81 +537,21 @@ render one workflow step by slug or position
 - `--arg <value>`: supply a workflow argument as name=value (default: )
 - `--autonomy <value>`: override an autonomy scope (default: )
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow versions
 
-**Synopsis:** `bottega workflow versions <workflow> [--json] [--help]`
+**Synopsis:** `bottega workflow versions <workflow> [--json]`
 
 list versions of a workflow
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [workflow](./workflow.md)
 - [bottega workflow](./workflow.md#bottega-workflow)
-- [bottega workflow abandon](./workflow.md#bottega-workflow-abandon)
-- [bottega workflow attach](./workflow.md#bottega-workflow-attach)
-- [bottega workflow await](./workflow.md#bottega-workflow-await)
-- [bottega workflow catalogue](./workflow.md#bottega-workflow-catalogue)
-- [bottega workflow catalogue fork](./workflow.md#bottega-workflow-catalogue-fork)
-- [bottega workflow catalogue promote](./workflow.md#bottega-workflow-catalogue-promote)
-- [bottega workflow catalogue retire](./workflow.md#bottega-workflow-catalogue-retire)
-- [bottega workflow catalogue set](./workflow.md#bottega-workflow-catalogue-set)
-- [bottega workflow catalogue show](./workflow.md#bottega-workflow-catalogue-show)
-- [bottega workflow catalogue versions](./workflow.md#bottega-workflow-catalogue-versions)
-- [bottega workflow compose](./workflow.md#bottega-workflow-compose)
-- [bottega workflow cursors](./workflow.md#bottega-workflow-cursors)
-- [bottega workflow epic](./workflow.md#bottega-workflow-epic)
-- [bottega workflow exec](./workflow.md#bottega-workflow-exec)
-- [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
-- [bottega workflow fork](./workflow.md#bottega-workflow-fork)
-- [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
-- [bottega workflow import](./workflow.md#bottega-workflow-import)
-- [bottega workflow list](./workflow.md#bottega-workflow-list)
-- [bottega workflow next](./workflow.md#bottega-workflow-next)
-- [bottega workflow probe](./workflow.md#bottega-workflow-probe)
-- [bottega workflow promote](./workflow.md#bottega-workflow-promote)
-- [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
-- [bottega workflow retire](./workflow.md#bottega-workflow-retire)
-- [bottega workflow rule](./workflow.md#bottega-workflow-rule)
-- [bottega workflow set](./workflow.md#bottega-workflow-set)
-- [bottega workflow show](./workflow.md#bottega-workflow-show)
-- [bottega workflow step](./workflow.md#bottega-workflow-step)

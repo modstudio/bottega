@@ -2,22 +2,28 @@
 
 # tree
 
+worktrees and branches
+
+- [bottega tree](#bottega-tree)
+- [bottega tree branch](#bottega-tree-branch)
+- [bottega tree branch landed](#bottega-tree-branch-landed)
+- [bottega tree branch prune](#bottega-tree-branch-prune)
+- [bottega tree create](#bottega-tree-create)
+- [bottega tree help](#bottega-tree-help)
+- [bottega tree open](#bottega-tree-open)
+- [bottega tree refresh](#bottega-tree-refresh)
+- [bottega tree remove](#bottega-tree-remove)
+- [bottega tree reseed](#bottega-tree-reseed)
+
 ## bottega tree
 
-**Synopsis:** `bottega tree [--help]`
+**Synopsis:** `bottega tree`
 
 worktrees and branches
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
 - [bottega tree create](./tree.md#bottega-tree-create)
 - [bottega tree help](./tree.md#bottega-tree-help)
 - [bottega tree open](./tree.md#bottega-tree-open)
@@ -27,7 +33,7 @@ worktrees and branches
 
 ## bottega tree branch
 
-**Synopsis:** `bottega tree branch [--project <name>] [--key <KEY>] [--all-local] [--json] [--help]`
+**Synopsis:** `bottega tree branch [--project <name>] [--key <KEY>] [--all-local] [--json]`
 
 report run-minted branches and their landing state
 
@@ -37,24 +43,16 @@ report run-minted branches and their landing state
 - `--key <KEY>`: limit the report to this task key
 - `--all-local`: include local branches not minted by runs
 - `--json`: write the branch report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
 - [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
 - [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree branch landed
 
-**Synopsis:** `bottega tree branch landed <branch> [--pr <number>] [--json] [--help]`
+**Synopsis:** `bottega tree branch landed <branch> [--pr <number>] [--json]`
 
 record the pull request that landed a branch
 
@@ -62,24 +60,14 @@ record the pull request that landed a branch
 
 - `--pr <number>`: name the merged pull request
 - `--json`: write the landing record as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
-- [bottega tree](./tree.md#bottega-tree)
 - [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree branch prune
 
-**Synopsis:** `bottega tree branch prune [--project <name>] [--key <KEY>] [--all-local] [--dry-run] [--json] [--help]`
+**Synopsis:** `bottega tree branch prune [--project <name>] [--key <KEY>] [--all-local] [--dry-run] [--json]`
 
 delete branches proven safe to reclaim
 
@@ -90,24 +78,14 @@ delete branches proven safe to reclaim
 - `--all-local`: prune local branches not minted by runs
 - `--dry-run`: report branches without deleting them
 - `--json`: write the prune report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
-- [bottega tree](./tree.md#bottega-tree)
 - [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree create
 
-**Synopsis:** `bottega tree create [--name <text>] [--key <KEY>] [--base <ref>] [--seed <value>] [--cwd <path>] [--help]`
+**Synopsis:** `bottega tree create [--name <text>] [--key <KEY>] [--base <ref>] [--seed <value>] [--cwd <path>]`
 
 create a project worktree and print its path
 
@@ -118,20 +96,10 @@ create a project worktree and print its path
 - `--base <ref>`: create the worktree from this revision
 - `--seed <value>`: provision the worktree from this project seed
 - `--cwd <path>`: select the project from this working directory (default: the current working directory)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree help
 
@@ -141,107 +109,52 @@ display help for command
 
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree open
 
-**Synopsis:** `bottega tree open <run> [--seed <value>] [--help]`
+**Synopsis:** `bottega tree open <run> [--seed <value>]`
 
 open an architect-owned worktree on a finished run branch
 
 ### Options
 
 - `--seed <value>`: provision the worktree from this project seed
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree refresh
 
-**Synopsis:** `bottega tree refresh <path> [--help]`
+**Synopsis:** `bottega tree refresh <path>`
 
 fast-forward a clean worktree and refresh its provisions
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree remove](./tree.md#bottega-tree-remove)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree remove
 
-**Synopsis:** `bottega tree remove <path> [--help]`
+**Synopsis:** `bottega tree remove <path>`
 
 release an architect-owned worktree
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree reseed](./tree.md#bottega-tree-reseed)
 
 ## bottega tree reseed
 
-**Synopsis:** `bottega tree reseed [seed] [--path <tree>] [--help]`
+**Synopsis:** `bottega tree reseed [seed] [--path <tree>]`
 
 replace a worktree seed and its provisions
 
 ### Options
 
 - `--path <tree>`: select the worktree to reseed (default: the current working directory)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [tree](./tree.md)
 - [bottega tree](./tree.md#bottega-tree)
-- [bottega tree branch](./tree.md#bottega-tree-branch)
-- [bottega tree branch landed](./tree.md#bottega-tree-branch-landed)
-- [bottega tree branch prune](./tree.md#bottega-tree-branch-prune)
-- [bottega tree create](./tree.md#bottega-tree-create)
-- [bottega tree help](./tree.md#bottega-tree-help)
-- [bottega tree open](./tree.md#bottega-tree-open)
-- [bottega tree refresh](./tree.md#bottega-tree-refresh)
-- [bottega tree remove](./tree.md#bottega-tree-remove)

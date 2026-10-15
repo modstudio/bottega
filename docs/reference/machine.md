@@ -2,6 +2,61 @@
 
 # machine
 
+upkeep of this machine
+
+- [bottega machine](#bottega-machine)
+- [bottega machine blockers](#bottega-machine-blockers)
+- [bottega machine config](#bottega-machine-config)
+- [bottega machine config delete](#bottega-machine-config-delete)
+- [bottega machine config get](#bottega-machine-config-get)
+- [bottega machine config help](#bottega-machine-config-help)
+- [bottega machine config list](#bottega-machine-config-list)
+- [bottega machine config machine](#bottega-machine-config-machine)
+- [bottega machine config machine help](#bottega-machine-config-machine-help)
+- [bottega machine config machine init](#bottega-machine-config-machine-init)
+- [bottega machine config machine revoke](#bottega-machine-config-machine-revoke)
+- [bottega machine config machine show](#bottega-machine-config-machine-show)
+- [bottega machine config machine trust](#bottega-machine-config-machine-trust)
+- [bottega machine config secret](#bottega-machine-config-secret)
+- [bottega machine config secret delete](#bottega-machine-config-secret-delete)
+- [bottega machine config secret help](#bottega-machine-config-secret-help)
+- [bottega machine config secret list](#bottega-machine-config-secret-list)
+- [bottega machine config secret run](#bottega-machine-config-secret-run)
+- [bottega machine config secret set](#bottega-machine-config-secret-set)
+- [bottega machine config set](#bottega-machine-config-set)
+- [bottega machine doctor](#bottega-machine-doctor)
+- [bottega machine health](#bottega-machine-health)
+- [bottega machine legacy-calls](#bottega-machine-legacy-calls)
+- [bottega machine migrate](#bottega-machine-migrate)
+- [bottega machine monitor](#bottega-machine-monitor)
+- [bottega machine reclaim](#bottega-machine-reclaim)
+- [bottega machine reclaim-fixture-questions](#bottega-machine-reclaim-fixture-questions)
+- [bottega machine reclassify-failures](#bottega-machine-reclassify-failures)
+- [bottega machine reconcile](#bottega-machine-reconcile)
+- [bottega machine settings](#bottega-machine-settings)
+- [bottega machine settings adopt](#bottega-machine-settings-adopt)
+- [bottega machine settings apply](#bottega-machine-settings-apply)
+- [bottega machine settings env](#bottega-machine-settings-env)
+- [bottega machine settings env help](#bottega-machine-settings-env-help)
+- [bottega machine settings env import](#bottega-machine-settings-env-import)
+- [bottega machine settings help](#bottega-machine-settings-help)
+- [bottega machine settings import](#bottega-machine-settings-import)
+- [bottega machine settings permission](#bottega-machine-settings-permission)
+- [bottega machine settings permission add](#bottega-machine-settings-permission-add)
+- [bottega machine settings permission drop](#bottega-machine-settings-permission-drop)
+- [bottega machine settings permission help](#bottega-machine-settings-permission-help)
+- [bottega machine settings permission list](#bottega-machine-settings-permission-list)
+- [bottega machine settings permission remove](#bottega-machine-settings-permission-remove)
+- [bottega machine settings permission undrop](#bottega-machine-settings-permission-undrop)
+- [bottega machine settings render](#bottega-machine-settings-render)
+- [bottega machine settings restore](#bottega-machine-settings-restore)
+- [bottega machine setup](#bottega-machine-setup)
+- [bottega machine setup apply](#bottega-machine-setup-apply)
+- [bottega machine setup facts](#bottega-machine-setup-facts)
+- [bottega machine setup plan](#bottega-machine-setup-plan)
+- [bottega machine setup-ask](#bottega-machine-setup-ask)
+- [bottega machine sweep](#bottega-machine-sweep)
+
 ## bottega machine
 
 **Synopsis:** `bottega machine`
@@ -10,26 +65,8 @@ upkeep of this machine
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
 - [bottega machine doctor](./machine.md#bottega-machine-doctor)
 - [bottega machine health](./machine.md#bottega-machine-health)
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
@@ -40,32 +77,13 @@ upkeep of this machine
 - [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
 - [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
 - [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
 - [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine blockers
 
-**Synopsis:** `bottega machine blockers [--days <value>] [--json] [--help]`
+**Synopsis:** `bottega machine blockers [--days <value>] [--json]`
 
 rank reported environment blockers by recurrence
 
@@ -73,131 +91,31 @@ rank reported environment blockers by recurrence
 
 - `--days <value>`: number of recent days to include
 - `--json`: write the blocker report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config
 
-**Synopsis:** `bottega machine config [--help]`
+**Synopsis:** `bottega machine config`
 
 manage scoped configuration values
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config delete](./machine.md#bottega-machine-config-delete)
 - [bottega machine config get](./machine.md#bottega-machine-config-get)
 - [bottega machine config help](./machine.md#bottega-machine-config-help)
 - [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
 - [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config delete
 
-**Synopsis:** `bottega machine config delete <key> [--space] [--machine] [--expect <rowVersion>] [--help]`
+**Synopsis:** `bottega machine config delete <key> [--space] [--machine] [--expect <rowVersion>]`
 
 delete one configuration value
 
@@ -206,66 +124,14 @@ delete one configuration value
 - `--space`: delete the value from the active space scope
 - `--machine`: delete the value from machine configuration
 - `--expect <rowVersion>`: row version required before deleting
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config get
 
-**Synopsis:** `bottega machine config get <key> [--space] [--json] [--help]`
+**Synopsis:** `bottega machine config get <key> [--space] [--json]`
 
 show one configuration value
 
@@ -273,62 +139,10 @@ show one configuration value
 
 - `--space`: read the value from the active space scope
 - `--json`: write the configuration row as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config help
 
@@ -338,62 +152,11 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config list
 
-**Synopsis:** `bottega machine config list [--machine] [--json] [--help]`
+**Synopsis:** `bottega machine config list [--machine] [--json]`
 
 list configuration values
 
@@ -401,127 +164,25 @@ list configuration values
 
 - `--machine`: list machine configuration values
 - `--json`: write the configuration rows as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine
 
-**Synopsis:** `bottega machine config machine [--help]`
+**Synopsis:** `bottega machine config machine`
 
 manage machine encryption identity
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
 - [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
 - [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
 - [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine help
 
@@ -531,258 +192,45 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine init
 
-**Synopsis:** `bottega machine config machine init [--label <label>] [--help]`
+**Synopsis:** `bottega machine config machine init [--label <label>]`
 
 create this machine encryption identity
 
 ### Options
 
 - `--label <label>`: label stored for this machine identity
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine revoke
 
-**Synopsis:** `bottega machine config machine revoke <keyId> [--help]`
+**Synopsis:** `bottega machine config machine revoke <keyId>`
 
 revoke a trusted machine and reseal configuration
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine show
 
-**Synopsis:** `bottega machine config machine show [--help]`
+**Synopsis:** `bottega machine config machine show`
 
 show this machine public encryption identity
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config machine trust
 
-**Synopsis:** `bottega machine config machine trust <keyId> <publicKey> [--label <label>] [--yes] [--help]`
+**Synopsis:** `bottega machine config machine trust <keyId> <publicKey> [--label <label>] [--yes]`
 
 trust a machine public key for sealed configuration
 
@@ -790,193 +238,39 @@ trust a machine public key for sealed configuration
 
 - `--label <label>`: label stored for the trusted machine
 - `--yes`: trust the machine without interactive confirmation
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret
 
-**Synopsis:** `bottega machine config secret [--help]`
+**Synopsis:** `bottega machine config secret`
 
 manage sealed configuration values
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
 - [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
 - [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
 - [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
 - [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret delete
 
-**Synopsis:** `bottega machine config secret delete <key> [--space] [--help]`
+**Synopsis:** `bottega machine config secret delete <key> [--space]`
 
 delete one sealed configuration value
 
 ### Options
 
 - `--space`: delete the value from the active space scope
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret help
 
@@ -986,123 +280,17 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret list
 
-**Synopsis:** `bottega machine config secret list [--help]`
+**Synopsis:** `bottega machine config secret list`
 
 list sealed configuration keys
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret run
 
@@ -1112,128 +300,25 @@ run a command with named secrets resolved
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config secret set
 
-**Synopsis:** `bottega machine config secret set <key> [--space] [--help]`
+**Synopsis:** `bottega machine config secret set <key> [--space]`
 
 set a sealed value from standard input
 
 ### Options
 
 - `--space`: write the value in the active space scope
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
 - [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine config set
 
-**Synopsis:** `bottega machine config set <key> <value> [--space] [--machine] [--expect <rowVersion>] [--json] [--help]`
+**Synopsis:** `bottega machine config set <key> <value> [--space] [--machine] [--expect <rowVersion>] [--json]`
 
 set one configuration value
 
@@ -1243,132 +328,28 @@ set one configuration value
 - `--machine`: write the value in machine configuration
 - `--expect <rowVersion>`: row version required before writing
 - `--json`: write the resulting configuration row as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
 - [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine doctor
 
-**Synopsis:** `bottega machine doctor [--wake] [--help]`
+**Synopsis:** `bottega machine doctor [--wake]`
 
 inspect orchestrator and hub health
 
 ### Options
 
 - `--wake`: wake configured local model services during diagnosis
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine health
 
-**Synopsis:** `bottega machine health [--days <value>] [--json] [--help]`
+**Synopsis:** `bottega machine health [--days <value>] [--json]`
 
 report harness failures, costs, and false verdicts
 
@@ -1376,62 +357,10 @@ report harness failures, costs, and false verdicts
 
 - `--days <value>`: number of recent days to include
 - `--json`: write the health report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine legacy-calls
 
@@ -1446,128 +375,25 @@ report legacy orch and hub invocations
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine migrate
 
-**Synopsis:** `bottega machine migrate [--backfill-spec-sha] [--help]`
+**Synopsis:** `bottega machine migrate [--backfill-spec-sha]`
 
 migrate the orchestrator and hub stores
 
 ### Options
 
 - `--backfill-spec-sha`: backfill missing run specification hashes
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine monitor
 
-**Synopsis:** `bottega machine monitor [--limit <value>] [--ack-notices <value>] [--backstop] [--history] [--lock-holder] [--notices] [--skip-board-refresh] [--json] [--help]`
+**Synopsis:** `bottega machine monitor [--limit <value>] [--ack-notices <value>] [--backstop] [--history] [--lock-holder] [--notices] [--skip-board-refresh] [--json]`
 
 inspect machine conditions that need attention
 
@@ -1581,132 +407,28 @@ inspect machine conditions that need attention
 - `--notices`: claim undelivered monitor notices for this session
 - `--skip-board-refresh`: claim notices without refreshing the board
 - `--json`: write the monitor result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine reclaim
 
-**Synopsis:** `bottega machine reclaim <kind> [subject] [--dry-run] [--help]`
+**Synopsis:** `bottega machine reclaim <kind> [subject] [--dry-run]`
 
 reclaim one classified stale resource
 
 ### Options
 
 - `--dry-run`: report the reclamation without applying it
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine reclaim-fixture-questions
 
-**Synopsis:** `bottega machine reclaim-fixture-questions [--dry-run] [--json] [--help]`
+**Synopsis:** `bottega machine reclaim-fixture-questions [--dry-run] [--json]`
 
 remove question, interval and task rows left by the documented gate fixtures
 
@@ -1714,259 +436,56 @@ remove question, interval and task rows left by the documented gate fixtures
 
 - `--dry-run`: report fixture rows without removing them
 - `--json`: write the reclaimed fixture rows as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine reclassify-failures
 
-**Synopsis:** `bottega machine reclassify-failures [--dry-run] [--help]`
+**Synopsis:** `bottega machine reclassify-failures [--dry-run]`
 
 classify stored quota and authentication failures from vendor errors
 
 ### Options
 
 - `--dry-run`: report reclassifications without writing them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine reconcile
 
-**Synopsis:** `bottega machine reconcile [--dry-run] [--help]`
+**Synopsis:** `bottega machine reconcile [--dry-run]`
 
 close open intervals whose orch runs are terminal using exact run ids
 
 ### Options
 
 - `--dry-run`: report interval closures without writing them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings
 
-**Synopsis:** `bottega machine settings [--help]`
+**Synopsis:** `bottega machine settings`
 
 manage canonical Claude settings
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
 - [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
 - [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
 - [bottega machine settings help](./machine.md#bottega-machine-settings-help)
 - [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
 - [bottega machine settings render](./machine.md#bottega-machine-settings-render)
 - [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings adopt
 
@@ -1980,189 +499,33 @@ Options are documented by `--help`.
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings apply
 
-**Synopsis:** `bottega machine settings apply [--check] [--help]`
+**Synopsis:** `bottega machine settings apply [--check]`
 
 apply managed settings and canon to installed harnesses
 
 ### Options
 
 - `--check`: report machine settings drift without writing files
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings env
 
-**Synopsis:** `bottega machine settings env [--help]`
+**Synopsis:** `bottega machine settings env`
 
 manage settings environment values
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
 - [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
 - [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings env help
 
@@ -2172,62 +535,11 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
 - [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings env import
 
-**Synopsis:** `bottega machine settings env import [--user] [--project <name>] [--dry-run] [--help]`
+**Synopsis:** `bottega machine settings env import [--user] [--project <name>] [--dry-run]`
 
 move user settings environment values into the secrets file
 
@@ -2236,62 +548,10 @@ move user settings environment values into the secrets file
 - `--user`: target the user settings file
 - `--project <name>`: project target, which environment import refuses
 - `--dry-run`: report the import without writing files or settings
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
 - [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings help
 
@@ -2301,62 +561,11 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings import
 
-**Synopsis:** `bottega machine settings import [--user] [--project <name>] [--dry-run] [--help]`
+**Synopsis:** `bottega machine settings import [--user] [--project <name>] [--dry-run]`
 
 import a settings file into the document store
 
@@ -2365,131 +574,30 @@ import a settings file into the document store
 - `--user`: target the signed-in user settings
 - `--project <name>`: registered project whose settings are imported
 - `--dry-run`: report the import without writing a document
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission
 
-**Synopsis:** `bottega machine settings permission [--help]`
+**Synopsis:** `bottega machine settings permission`
 
 manage canonical permission rules
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
 - [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
 - [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
 - [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
 - [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
 - [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission add
 
-**Synopsis:** `bottega machine settings permission add [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json] [--help]`
+**Synopsis:** `bottega machine settings permission add [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
 
 add a canonical or machine permission rule
 
@@ -2503,66 +611,14 @@ add a canonical or machine permission rule
 - `--expect <revision>`: document revision required before editing
 - `--reason <text>`: reason recorded for the settings revision
 - `--json`: write the permission result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission drop
 
-**Synopsis:** `bottega machine settings permission drop [--list <name>] [--rule <rule>] [--json] [--help]`
+**Synopsis:** `bottega machine settings permission drop [--list <name>] [--rule <rule>] [--json]`
 
 suppress a machine permission rule
 
@@ -2571,62 +627,10 @@ suppress a machine permission rule
 - `--list <name>`: permission list containing the rule
 - `--rule <rule>`: permission rule to edit
 - `--json`: write the permission result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission help
 
@@ -2636,62 +640,11 @@ display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission list
 
-**Synopsis:** `bottega machine settings permission list [--machine] [--json] [--help]`
+**Synopsis:** `bottega machine settings permission list [--machine] [--json]`
 
 list machine permission overlays
 
@@ -2699,66 +652,14 @@ list machine permission overlays
 
 - `--machine`: list the machine permission overlay
 - `--json`: write the permission overlay as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission remove
 
-**Synopsis:** `bottega machine settings permission remove [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json] [--help]`
+**Synopsis:** `bottega machine settings permission remove [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
 
 remove a canonical or machine permission rule
 
@@ -2772,66 +673,14 @@ remove a canonical or machine permission rule
 - `--expect <revision>`: document revision required before editing
 - `--reason <text>`: reason recorded for the settings revision
 - `--json`: write the permission result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings permission undrop
 
-**Synopsis:** `bottega machine settings permission undrop [--list <name>] [--rule <rule>] [--json] [--help]`
+**Synopsis:** `bottega machine settings permission undrop [--list <name>] [--rule <rule>] [--json]`
 
 stop suppressing a machine permission rule
 
@@ -2840,66 +689,14 @@ stop suppressing a machine permission rule
 - `--list <name>`: permission list containing the rule
 - `--rule <rule>`: permission rule to edit
 - `--json`: write the permission result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
 - [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings render
 
-**Synopsis:** `bottega machine settings render [--check] [--write] [--yes] [--user] [--project <name>] [--json] [--drop-env <key>] [--help]`
+**Synopsis:** `bottega machine settings render [--check] [--write] [--yes] [--user] [--project <name>] [--json] [--drop-env <key>]`
 
 compare or write canonical settings to a settings file
 
@@ -2912,66 +709,14 @@ compare or write canonical settings to a settings file
 - `--project <name>`: registered project whose settings are rendered
 - `--json`: write the settings drift report as JSON
 - `--drop-env <key>`: environment key deliberately removed during rendering (default: )
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine settings restore
 
-**Synopsis:** `bottega machine settings restore <backup> [--user] [--project <name>] [--force] [--help]`
+**Synopsis:** `bottega machine settings restore <backup> [--user] [--project <name>] [--force]`
 
 restore user settings from a rendered backup
 
@@ -2980,132 +725,31 @@ restore user settings from a rendered backup
 - `--user`: target the user settings file
 - `--project <name>`: project target, which restore refuses
 - `--force`: restore despite later settings writes
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine setup
 
-**Synopsis:** `bottega machine setup [--in <folder>] [--help]`
+**Synopsis:** `bottega machine setup [--in <folder>]`
 
 inspect and configure this machine interactively
 
 ### Options
 
 - `--in <folder>`: folder to inspect (default: )
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
 - [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
 - [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
 - [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine setup apply
 
-**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json] [--help]`
+**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json]`
 
 apply a machine setup plan without prompts
 
@@ -3115,132 +759,28 @@ apply a machine setup plan without prompts
 - `--yes`: apply every recommended setup answer
 - `--answers <file>`: JSON file containing explicit setup answers
 - `--json`: write the setup result as compact JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine setup facts
 
-**Synopsis:** `bottega machine setup facts [--json] [--help]`
+**Synopsis:** `bottega machine setup facts [--json]`
 
 inspect machine setup facts
 
 ### Options
 
 - `--json`: write the setup facts as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine setup plan
 
-**Synopsis:** `bottega machine setup plan [--in <folder>] [--json] [--help]`
+**Synopsis:** `bottega machine setup plan [--in <folder>] [--json]`
 
 plan recommended machine setup actions
 
@@ -3248,131 +788,24 @@ plan recommended machine setup actions
 
 - `--in <folder>`: folder to inspect (default: )
 - `--json`: write the setup plan as compact JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
-- [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine setup-ask
 
-**Synopsis:** `bottega machine setup-ask [--help]`
+**Synopsis:** `bottega machine setup-ask`
 
 install the live worker question channel
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine sweep](./machine.md#bottega-machine-sweep)
 
 ## bottega machine sweep
 
-**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run] [--help]`
+**Synopsis:** `bottega machine sweep [--project <value>] [--force] [--dry-run]`
 
 release terminal runs and reclaim safe stale resources
 
@@ -3381,59 +814,7 @@ release terminal runs and reclaim safe stale resources
 - `--project <value>`: registered project whose resources are swept
 - `--force`: continue despite a project sweep failure
 - `--dry-run`: report releases without applying them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [machine](./machine.md)
 - [bottega machine](./machine.md#bottega-machine)
-- [bottega machine blockers](./machine.md#bottega-machine-blockers)
-- [bottega machine config](./machine.md#bottega-machine-config)
-- [bottega machine config delete](./machine.md#bottega-machine-config-delete)
-- [bottega machine config get](./machine.md#bottega-machine-config-get)
-- [bottega machine config help](./machine.md#bottega-machine-config-help)
-- [bottega machine config list](./machine.md#bottega-machine-config-list)
-- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
-- [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
-- [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
-- [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
-- [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
-- [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
-- [bottega machine config secret](./machine.md#bottega-machine-config-secret)
-- [bottega machine config secret delete](./machine.md#bottega-machine-config-secret-delete)
-- [bottega machine config secret help](./machine.md#bottega-machine-config-secret-help)
-- [bottega machine config secret list](./machine.md#bottega-machine-config-secret-list)
-- [bottega machine config secret run](./machine.md#bottega-machine-config-secret-run)
-- [bottega machine config secret set](./machine.md#bottega-machine-config-secret-set)
-- [bottega machine config set](./machine.md#bottega-machine-config-set)
-- [bottega machine doctor](./machine.md#bottega-machine-doctor)
-- [bottega machine health](./machine.md#bottega-machine-health)
-- [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
-- [bottega machine migrate](./machine.md#bottega-machine-migrate)
-- [bottega machine monitor](./machine.md#bottega-machine-monitor)
-- [bottega machine reclaim](./machine.md#bottega-machine-reclaim)
-- [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
-- [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
-- [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
-- [bottega machine settings](./machine.md#bottega-machine-settings)
-- [bottega machine settings adopt](./machine.md#bottega-machine-settings-adopt)
-- [bottega machine settings apply](./machine.md#bottega-machine-settings-apply)
-- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
-- [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
-- [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
-- [bottega machine settings help](./machine.md#bottega-machine-settings-help)
-- [bottega machine settings import](./machine.md#bottega-machine-settings-import)
-- [bottega machine settings permission](./machine.md#bottega-machine-settings-permission)
-- [bottega machine settings permission add](./machine.md#bottega-machine-settings-permission-add)
-- [bottega machine settings permission drop](./machine.md#bottega-machine-settings-permission-drop)
-- [bottega machine settings permission help](./machine.md#bottega-machine-settings-permission-help)
-- [bottega machine settings permission list](./machine.md#bottega-machine-settings-permission-list)
-- [bottega machine settings permission remove](./machine.md#bottega-machine-settings-permission-remove)
-- [bottega machine settings permission undrop](./machine.md#bottega-machine-settings-permission-undrop)
-- [bottega machine settings render](./machine.md#bottega-machine-settings-render)
-- [bottega machine settings restore](./machine.md#bottega-machine-settings-restore)
-- [bottega machine setup](./machine.md#bottega-machine-setup)
-- [bottega machine setup apply](./machine.md#bottega-machine-setup-apply)
-- [bottega machine setup facts](./machine.md#bottega-machine-setup-facts)
-- [bottega machine setup plan](./machine.md#bottega-machine-setup-plan)
-- [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)

@@ -2,6 +2,19 @@
 
 # question
 
+open worker questions and rulings
+
+- [bottega question](#bottega-question)
+- [bottega question answer](#bottega-question-answer)
+- [bottega question close](#bottega-question-close)
+- [bottega question inbox](#bottega-question-inbox)
+- [bottega question ruling](#bottega-question-ruling)
+- [bottega question ruling file](#bottega-question-ruling-file)
+- [bottega question ruling help](#bottega-question-ruling-help)
+- [bottega question ruling list](#bottega-question-ruling-list)
+- [bottega question ruling overturn](#bottega-question-ruling-overturn)
+- [bottega question stats](#bottega-question-stats)
+
 ## bottega question
 
 **Synopsis:** `bottega question`
@@ -10,15 +23,10 @@ open worker questions and rulings
 
 ### Related
 
-- [question](./question.md)
 - [bottega question answer](./question.md#bottega-question-answer)
 - [bottega question close](./question.md#bottega-question-close)
 - [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
 - [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question answer
@@ -33,44 +41,25 @@ Options are documented by `--help`.
 
 ### Related
 
-- [question](./question.md)
 - [bottega question](./question.md#bottega-question)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
-- [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question close
 
-**Synopsis:** `bottega question close <id> [--reason <text>] [--help]`
+**Synopsis:** `bottega question close <id> [--reason <text>]`
 
 close a question without recording a ruling
 
 ### Options
 
 - `--reason <text>`: record why the question is closed
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
 - [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question inbox](./question.md#bottega-question-inbox)
-- [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question inbox
 
-**Synopsis:** `bottega question inbox [--all] [--active] [--cwd <path>] [--json] [--help]`
+**Synopsis:** `bottega question inbox [--all] [--active] [--cwd <path>] [--json]`
 
 list worker and workflow questions needing rulings
 
@@ -80,47 +69,28 @@ list worker and workflow questions needing rulings
 - `--active`: include only unanswered questions on live work
 - `--cwd <path>`: scope questions to the project at this path
 - `--json`: write the question inbox as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
 - [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question ruling
 
-**Synopsis:** `bottega question ruling [--help]`
+**Synopsis:** `bottega question ruling`
 
 inspect and preserve recorded rulings
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [question](./question.md)
 - [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling file](./question.md#bottega-question-ruling-file)
 - [bottega question ruling help](./question.md#bottega-question-ruling-help)
 - [bottega question ruling list](./question.md#bottega-question-ruling-list)
 - [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question ruling file
 
-**Synopsis:** `bottega question ruling file <question-id> [--as <kind>] [--scope <doc-scope>] [--subject <subject>] [--title <title>] [--from-operator] [--channel <channel>] [--json] [--help]`
+**Synopsis:** `bottega question ruling file <question-id> [--as <kind>] [--scope <doc-scope>] [--subject <subject>] [--title <title>] [--from-operator] [--channel <channel>] [--json]`
 
 file a recorded ruling as a document or canon proposal
 
@@ -133,20 +103,10 @@ file a recorded ruling as a document or canon proposal
 - `--from-operator`: attribute the filing to the operator
 - `--channel <channel>`: record the channel that requested the filing
 - `--json`: write the filing result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
-- [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question ruling help
 
@@ -156,20 +116,11 @@ display help for command
 
 ### Related
 
-- [question](./question.md)
-- [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question ruling list
 
-**Synopsis:** `bottega question ruling list [--since <ISO>] [--kind <kind>] [--json] [--help]`
+**Synopsis:** `bottega question ruling list [--since <ISO>] [--kind <kind>] [--json]`
 
 list recorded run and workflow rulings
 
@@ -178,24 +129,14 @@ list recorded run and workflow rulings
 - `--since <ISO>`: include ruling activity since this instant
 - `--kind <kind>`: workflow, run, or all (default: all)
 - `--json`: write the rulings as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
-- [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question ruling overturn
 
-**Synopsis:** `bottega question ruling overturn <question-id> [--because <reason>] [--replacement <ruling>] [--replacement-file <path>] [--from-operator] [--help]`
+**Synopsis:** `bottega question ruling overturn <question-id> [--because <reason>] [--replacement <ruling>] [--replacement-file <path>] [--from-operator]`
 
 overturn a recorded ruling
 
@@ -205,24 +146,14 @@ overturn a recorded ruling
 - `--replacement <ruling>`: record this replacement ruling
 - `--replacement-file <path>`: read the replacement ruling from this file
 - `--from-operator`: attribute the overturn to the operator
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
-- [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
 - [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question stats](./question.md#bottega-question-stats)
 
 ## bottega question stats
 
-**Synopsis:** `bottega question stats [--json] [--stats] [--days <N>] [--help]`
+**Synopsis:** `bottega question stats [--json] [--stats] [--days <N>]`
 
 open questions ingested from orch, with age
 
@@ -231,17 +162,7 @@ open questions ingested from orch, with age
 - `--json`: one JSON document: {stale_after, questions}
 - `--stats`: report ruling-loop measurements instead of open questions
 - `--days <N>`: measure rulings over this many days (default: 14)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [question](./question.md)
 - [bottega question](./question.md#bottega-question)
-- [bottega question answer](./question.md#bottega-question-answer)
-- [bottega question close](./question.md#bottega-question-close)
-- [bottega question inbox](./question.md#bottega-question-inbox)
-- [bottega question ruling](./question.md#bottega-question-ruling)
-- [bottega question ruling file](./question.md#bottega-question-ruling-file)
-- [bottega question ruling help](./question.md#bottega-question-ruling-help)
-- [bottega question ruling list](./question.md#bottega-question-ruling-list)
-- [bottega question ruling overturn](./question.md#bottega-question-ruling-overturn)

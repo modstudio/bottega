@@ -2,31 +2,75 @@
 
 # doc
 
+documents, canon, code search, and ports
+
+- [bottega doc](#bottega-doc)
+- [bottega doc canon](#bottega-doc-canon)
+- [bottega doc canon audit](#bottega-doc-canon-audit)
+- [bottega doc canon check](#bottega-doc-canon-check)
+- [bottega doc canon diff](#bottega-doc-canon-diff)
+- [bottega doc canon eval](#bottega-doc-canon-eval)
+- [bottega doc canon evals](#bottega-doc-canon-evals)
+- [bottega doc canon hydrate](#bottega-doc-canon-hydrate)
+- [bottega doc canon import](#bottega-doc-canon-import)
+- [bottega doc canon lint](#bottega-doc-canon-lint)
+- [bottega doc canon list](#bottega-doc-canon-list)
+- [bottega doc canon load](#bottega-doc-canon-load)
+- [bottega doc canon mirror](#bottega-doc-canon-mirror)
+- [bottega doc code](#bottega-doc-code)
+- [bottega doc consume](#bottega-doc-consume)
+- [bottega doc diff](#bottega-doc-diff)
+- [bottega doc export](#bottega-doc-export)
+- [bottega doc get](#bottega-doc-get)
+- [bottega doc history](#bottega-doc-history)
+- [bottega doc import](#bottega-doc-import)
+- [bottega doc lint](#bottega-doc-lint)
+- [bottega doc list](#bottega-doc-list)
+- [bottega doc port](#bottega-doc-port)
+- [bottega doc port baseline](#bottega-doc-port-baseline)
+- [bottega doc port baseline set](#bottega-doc-port-baseline-set)
+- [bottega doc port baseline show](#bottega-doc-port-baseline-show)
+- [bottega doc port doctrine](#bottega-doc-port-doctrine)
+- [bottega doc port doctrine add](#bottega-doc-port-doctrine-add)
+- [bottega doc port doctrine list](#bottega-doc-port-doctrine-list)
+- [bottega doc port doctrine retire](#bottega-doc-port-doctrine-retire)
+- [bottega doc port import](#bottega-doc-port-import)
+- [bottega doc port ref](#bottega-doc-port-ref)
+- [bottega doc port ref delete-error](#bottega-doc-port-ref-delete-error)
+- [bottega doc port ref list](#bottega-doc-port-ref-list)
+- [bottega doc port ref resolve](#bottega-doc-port-ref-resolve)
+- [bottega doc port ref set](#bottega-doc-port-ref-set)
+- [bottega doc port ref show](#bottega-doc-port-ref-show)
+- [bottega doc port skip](#bottega-doc-port-skip)
+- [bottega doc port skip add](#bottega-doc-port-skip-add)
+- [bottega doc port skip list](#bottega-doc-port-skip-list)
+- [bottega doc restore](#bottega-doc-restore)
+- [bottega doc resumes](#bottega-doc-resumes)
+- [bottega doc revision](#bottega-doc-revision)
+- [bottega doc rm](#bottega-doc-rm)
+- [bottega doc search](#bottega-doc-search)
+- [bottega doc set](#bottega-doc-set)
+- [bottega doc show](#bottega-doc-show)
+- [bottega doc status](#bottega-doc-status)
+- [bottega doc subject](#bottega-doc-subject)
+- [bottega doc subject add](#bottega-doc-subject-add)
+- [bottega doc subject define](#bottega-doc-subject-define)
+- [bottega doc subject list](#bottega-doc-subject-list)
+- [bottega doc subject rename](#bottega-doc-subject-rename)
+- [bottega doc subject reorder](#bottega-doc-subject-reorder)
+- [bottega doc subject retire](#bottega-doc-subject-retire)
+- [bottega doc subjects](#bottega-doc-subjects)
+- [bottega doc warnings](#bottega-doc-warnings)
+
 ## bottega doc
 
-**Synopsis:** `bottega doc [--help]`
+**Synopsis:** `bottega doc`
 
 documents, canon, code search, and ports
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
 - [bottega doc code](./doc.md#bottega-doc-code)
 - [bottega doc consume](./doc.md#bottega-doc-consume)
 - [bottega doc diff](./doc.md#bottega-doc-diff)
@@ -37,23 +81,6 @@ documents, canon, code search, and ports
 - [bottega doc lint](./doc.md#bottega-doc-lint)
 - [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
 - [bottega doc restore](./doc.md#bottega-doc-restore)
 - [bottega doc resumes](./doc.md#bottega-doc-resumes)
 - [bottega doc revision](./doc.md#bottega-doc-revision)
@@ -63,28 +90,17 @@ documents, canon, code search, and ports
 - [bottega doc show](./doc.md#bottega-doc-show)
 - [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
 - [bottega doc subjects](./doc.md#bottega-doc-subjects)
 - [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon
 
-**Synopsis:** `bottega doc canon [--help]`
+**Synopsis:** `bottega doc canon`
 
 inspect, validate, and hydrate canon
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
 - [bottega doc canon check](./doc.md#bottega-doc-canon-check)
@@ -97,54 +113,10 @@ inspect, validate, and hydrate canon
 - [bottega doc canon list](./doc.md#bottega-doc-canon-list)
 - [bottega doc canon load](./doc.md#bottega-doc-canon-load)
 - [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon audit
 
-**Synopsis:** `bottega doc canon audit [--dry-run] [--json] [--help]`
+**Synopsis:** `bottega doc canon audit [--dry-run] [--json]`
 
 audit repository canon and observations
 
@@ -152,71 +124,14 @@ audit repository canon and observations
 
 - `--dry-run`: show changes without applying them
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon check
 
-**Synopsis:** `bottega doc canon check [--cwd <value>] [--job <value>] [--all] [--json] [--help]`
+**Synopsis:** `bottega doc canon check [--cwd <value>] [--job <value>] [--all] [--json]`
 
 check the compiled canon pack
 
@@ -226,71 +141,14 @@ check the compiled canon pack
 - `--job <value>`: compile canon for this job
 - `--all`: include all rows
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon diff
 
-**Synopsis:** `bottega doc canon diff [--cwd <value>] [--job <value>] [--accept] [--json] [--help]`
+**Synopsis:** `bottega doc canon diff [--cwd <value>] [--job <value>] [--accept] [--json]`
 
 show or accept a canon pack difference
 
@@ -300,71 +158,14 @@ show or accept a canon pack difference
 - `--job <value>`: compile canon for this job
 - `--accept`: accept the current pack difference
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon eval
 
-**Synopsis:** `bottega doc canon eval [--cwd <value>] [--slug <value>] [--agent <value>] [--project <value>] [--force] [--json] [--help]`
+**Synopsis:** `bottega doc canon eval [--cwd <value>] [--slug <value>] [--agent <value>] [--project <value>] [--force] [--json]`
 
 run canon evaluations
 
@@ -376,142 +177,28 @@ run canon evaluations
 - `--project <value>`: select a project
 - `--force`: rerun completed evaluations
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon evals
 
-**Synopsis:** `bottega doc canon evals [--json] [--help]`
+**Synopsis:** `bottega doc canon evals [--json]`
 
 show canon evaluation results
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon hydrate
 
-**Synopsis:** `bottega doc canon hydrate [--project <value>] [--cwd <value>] [--user] [--check] [--dry-run] [--adopt] [--help]`
+**Synopsis:** `bottega doc canon hydrate [--project <value>] [--cwd <value>] [--user] [--check] [--dry-run] [--adopt]`
 
 hydrate stored canon into a working tree
 
@@ -523,71 +210,14 @@ hydrate stored canon into a working tree
 - `--check`: check without applying changes
 - `--dry-run`: show changes without applying them
 - `--adopt`: adopt hydrated user canon
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon import
 
-**Synopsis:** `bottega doc canon import [--project <value>] [--cwd <value>] [--reason <value>] [--user] [--dry-run] [--help]`
+**Synopsis:** `bottega doc canon import [--project <value>] [--cwd <value>] [--reason <value>] [--user] [--dry-run]`
 
 import rendered canon into the store
 
@@ -598,71 +228,14 @@ import rendered canon into the store
 - `--reason <value>`: record the reason for the change
 - `--user`: address the signed-in user document
 - `--dry-run`: show changes without applying them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon lint
 
-**Synopsis:** `bottega doc canon lint [--cwd <value>] [--project <value>] [--baseline <value>] [--strict] [--write-baseline] [--json] [--help]`
+**Synopsis:** `bottega doc canon lint [--cwd <value>] [--project <value>] [--baseline <value>] [--strict] [--write-baseline] [--json]`
 
 lint canon files and budgets
 
@@ -674,71 +247,14 @@ lint canon files and budgets
 - `--strict`: fail when canon lint findings remain
 - `--write-baseline`: write the canon lint baseline
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon list
 
-**Synopsis:** `bottega doc canon list [--project <value>] [--user] [--json] [--help]`
+**Synopsis:** `bottega doc canon list [--project <value>] [--user] [--json]`
 
 list stored repository canon
 
@@ -747,71 +263,14 @@ list stored repository canon
 - `--project <value>`: select a project
 - `--user`: address the signed-in user document
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon load
 
-**Synopsis:** `bottega doc canon load [--cwd <value>] [--harness <value>] [--role <value>] [--agent <value>] [--json] [--help]`
+**Synopsis:** `bottega doc canon load [--cwd <value>] [--harness <value>] [--role <value>] [--agent <value>] [--json]`
 
 show canon loaded by each harness
 
@@ -822,71 +281,14 @@ show canon loaded by each harness
 - `--role <value>`: select architect or worker loading
 - `--agent <value>`: select an agent
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc canon mirror
 
-**Synopsis:** `bottega doc canon mirror [--project <value>] [--dry-run] [--help]`
+**Synopsis:** `bottega doc canon mirror [--project <value>] [--dry-run]`
 
 mirror repository canon into projects
 
@@ -894,71 +296,14 @@ mirror repository canon into projects
 
 - `--project <value>`: select a project
 - `--dry-run`: show changes without applying them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
 - [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc code
 
-**Synopsis:** `bottega doc code <subcommand> [query] [--project <value>] [--k <value>] [--json] [--help]`
+**Synopsis:** `bottega doc code <subcommand> [query] [--project <value>] [--k <value>] [--json]`
 
 search a project's code for a query
 
@@ -967,71 +312,14 @@ search a project's code for a query
 - `--project <value>`: select a project
 - `--k <value>`: return this many matching snippets
 - `--json`: write the search results as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc consume
 
-**Synopsis:** `bottega doc consume [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json] [--help]`
+**Synopsis:** `bottega doc consume [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
 mark a resume document consumed
 
@@ -1044,212 +332,38 @@ mark a resume document consumed
 - `--author <value>`: record the revision author
 - `--expect <revision>`: require the current revision
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc diff
 
-**Synopsis:** `bottega doc diff [scope] [subject] [slug] [from] [to] [--user] [--help]`
+**Synopsis:** `bottega doc diff [scope] [subject] [slug] [from] [to] [--user]`
 
 diff two document revisions
 
 ### Options
 
 - `--user`: address the signed-in user document
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc export
 
-**Synopsis:** `bottega doc export [dir] [--help]`
+**Synopsis:** `bottega doc export [dir]`
 
 export documents to a directory
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc get
 
-**Synopsis:** `bottega doc get [slug] [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--json] [--help]`
+**Synopsis:** `bottega doc get [slug] [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--json]`
 
 get a document with its metadata
 
@@ -1260,71 +374,14 @@ get a document with its metadata
 - `--user`: address the signed-in user document
 - `--audience <value>`: filter or set document audiences
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc history
 
-**Synopsis:** `bottega doc history [scope] [subject] [slug] [--user] [--json] [--help]`
+**Synopsis:** `bottega doc history [scope] [subject] [slug] [--user] [--json]`
 
 list document revision history
 
@@ -1332,71 +389,14 @@ list document revision history
 
 - `--user`: address the signed-in user document
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc import
 
-**Synopsis:** `bottega doc import [dir] [--reason <value>] [--author <value>] [--help]`
+**Synopsis:** `bottega doc import [dir] [--reason <value>] [--author <value>]`
 
 import documents from a directory
 
@@ -1404,71 +404,14 @@ import documents from a directory
 
 - `--reason <value>`: record the reason for the change
 - `--author <value>`: record the revision author
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc lint
 
-**Synopsis:** `bottega doc lint [--scope <value>] [--subject <value>] [--user] [--json] [--help]`
+**Synopsis:** `bottega doc lint [--scope <value>] [--subject <value>] [--user] [--json]`
 
 lint stored documents
 
@@ -1478,71 +421,14 @@ lint stored documents
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc list
 
-**Synopsis:** `bottega doc list [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--status <value>] [--kind <value>] [--article-subject <value>] [--match <value>] [--body-match <value>] [--json] [--help]`
+**Synopsis:** `bottega doc list [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--status <value>] [--kind <value>] [--article-subject <value>] [--match <value>] [--body-match <value>] [--json]`
 
 list document metadata and bodies
 
@@ -1558,211 +444,41 @@ list document metadata and bodies
 - `--match <value>`: match document titles or slugs
 - `--body-match <value>`: match document body text
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port
 
-**Synopsis:** `bottega doc port [--help]`
+**Synopsis:** `bottega doc port`
 
 manage porting provenance and doctrine
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
 - [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
 - [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
 - [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port baseline
 
-**Synopsis:** `bottega doc port baseline [--help]`
+**Synopsis:** `bottega doc port baseline`
 
 manage port baseline records
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
 - [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
 - [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port baseline set
 
-**Synopsis:** `bottega doc port baseline set [source] [target] [commit] [--clear] [--json] [--help]`
+**Synopsis:** `bottega doc port baseline set [source] [target] [commit] [--clear] [--json]`
 
 set or clear a project-pair baseline
 
@@ -1770,212 +486,41 @@ set or clear a project-pair baseline
 
 - `--clear`: clear the stored value
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
 - [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port baseline show
 
-**Synopsis:** `bottega doc port baseline show [source] [target] [--json] [--help]`
+**Synopsis:** `bottega doc port baseline show [source] [target] [--json]`
 
 show a project-pair baseline
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
 - [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port doctrine
 
-**Synopsis:** `bottega doc port doctrine [--help]`
+**Synopsis:** `bottega doc port doctrine`
 
 manage port doctrine records
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
 - [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
 - [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
 - [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port doctrine add
 
-**Synopsis:** `bottega doc port doctrine add [number] [--title <value>] [--file <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port doctrine add [number] [--title <value>] [--file <value>] [--json]`
 
 add a porting doctrine rule
 
@@ -1984,71 +529,14 @@ add a porting doctrine rule
 - `--title <value>`: set the title
 - `--file <value>`: read the body from a file
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
 - [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port doctrine list
 
-**Synopsis:** `bottega doc port doctrine list [--all] [--json] [--help]`
+**Synopsis:** `bottega doc port doctrine list [--all] [--json]`
 
 list porting doctrine
 
@@ -2056,142 +544,28 @@ list porting doctrine
 
 - `--all`: include all rows
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
 - [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port doctrine retire
 
-**Synopsis:** `bottega doc port doctrine retire [number] [--json] [--help]`
+**Synopsis:** `bottega doc port doctrine retire [number] [--json]`
 
 retire a porting doctrine rule
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
 - [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port import
 
-**Synopsis:** `bottega doc port import [dir] [--dry-run] [--replace] [--json] [--help]`
+**Synopsis:** `bottega doc port import [dir] [--dry-run] [--replace] [--json]`
 
 import a port ledger directory
 
@@ -2200,141 +574,29 @@ import a port ledger directory
 - `--dry-run`: show changes without applying them
 - `--replace`: replace conflicting imported values
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref
 
-**Synopsis:** `bottega doc port ref [--help]`
+**Synopsis:** `bottega doc port ref`
 
 manage port ref records
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
 - [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
 - [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
 - [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
 - [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref delete-error
 
-**Synopsis:** `bottega doc port ref delete-error [task-key] [--project <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port ref delete-error [task-key] [--project <value>] [--json]`
 
 delete an erroneous port reference
 
@@ -2342,71 +604,14 @@ delete an erroneous port reference
 
 - `--project <value>`: select a project
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref list
 
-**Synopsis:** `bottega doc port ref list [--all] [--json] [--help]`
+**Synopsis:** `bottega doc port ref list [--all] [--json]`
 
 list port ledger references
 
@@ -2414,71 +619,14 @@ list port ledger references
 
 - `--all`: include all rows
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref resolve
 
-**Synopsis:** `bottega doc port ref resolve [task-key] [--project <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port ref resolve [task-key] [--project <value>] [--json]`
 
 mark a port reference resolved
 
@@ -2486,71 +634,14 @@ mark a port reference resolved
 
 - `--project <value>`: select a project
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref set
 
-**Synopsis:** `bottega doc port ref set [task-key] [--project <value>] [--sources <value>] [--note <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port ref set [task-key] [--project <value>] [--sources <value>] [--note <value>] [--json]`
 
 record task port provenance
 
@@ -2560,71 +651,14 @@ record task port provenance
 - `--sources <value>`: provide source provenance as JSON
 - `--note <value>`: record the provenance note
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port ref show
 
-**Synopsis:** `bottega doc port ref show [task-key] [--project <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port ref show [task-key] [--project <value>] [--json]`
 
 show a port ledger reference
 
@@ -2632,141 +666,26 @@ show a port ledger reference
 
 - `--project <value>`: select a project
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
 - [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port skip
 
-**Synopsis:** `bottega doc port skip [--help]`
+**Synopsis:** `bottega doc port skip`
 
 manage port skip records
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
 - [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
 - [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
 - [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port skip add
 
-**Synopsis:** `bottega doc port skip add [source] [target] [candidate] [--reason <value>] [--json] [--help]`
+**Synopsis:** `bottega doc port skip add [source] [target] [candidate] [--reason <value>] [--json]`
 
 record a skipped candidate
 
@@ -2774,142 +693,28 @@ record a skipped candidate
 
 - `--reason <value>`: record the reason for the change
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
 - [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc port skip list
 
-**Synopsis:** `bottega doc port skip list [source] [target] [--json] [--help]`
+**Synopsis:** `bottega doc port skip list [source] [target] [--json]`
 
 list skipped candidates
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
 - [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc restore
 
-**Synopsis:** `bottega doc restore [scope] [subject] [slug] [revision] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json] [--help]`
+**Synopsis:** `bottega doc restore [scope] [subject] [slug] [revision] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
 restore a document revision
 
@@ -2920,71 +725,14 @@ restore a document revision
 - `--author <value>`: record the revision author
 - `--expect <revision>`: require the current revision
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc resumes
 
-**Synopsis:** `bottega doc resumes [--cwd <value>] [--json] [--help]`
+**Synopsis:** `bottega doc resumes [--cwd <value>] [--json]`
 
 list open resume briefs
 
@@ -2992,71 +740,14 @@ list open resume briefs
 
 - `--cwd <value>`: use this working directory
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc revision
 
-**Synopsis:** `bottega doc revision [scope] [subject] [slug] [revision] [--user] [--audience <value>] [--json] [--help]`
+**Synopsis:** `bottega doc revision [scope] [subject] [slug] [revision] [--user] [--audience <value>] [--json]`
 
 show one document revision
 
@@ -3065,71 +756,14 @@ show one document revision
 - `--user`: address the signed-in user document
 - `--audience <value>`: filter or set document audiences
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc rm
 
-**Synopsis:** `bottega doc rm [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--json] [--help]`
+**Synopsis:** `bottega doc rm [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--json]`
 
 remove a document
 
@@ -3143,71 +777,14 @@ remove a document
 - `--author <value>`: record the revision author
 - `--expect <revision>`: require the current revision
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc search
 
-**Synopsis:** `bottega doc search [query] [--scope <value>] [--subject <value>] [--user] [--include-drafts] [--k <value>] [--json] [--help]`
+**Synopsis:** `bottega doc search [query] [--scope <value>] [--subject <value>] [--user] [--include-drafts] [--k <value>] [--json]`
 
 search documents semantically
 
@@ -3219,71 +796,14 @@ search documents semantically
 - `--include-drafts`: include draft documents
 - `--k <value>`: limit semantic search results
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc set
 
-**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--force-inject <value>] [--json] [--help]`
+**Synopsis:** `bottega doc set [slug] [--scope <value>] [--subject <value>] [--user] [--cwd <value>] [--title <value>] [--file <value>] [--reason <value>] [--author <value>] [--expect <revision>] [--delivery <value>] [--audience <value>] [--parent <slug>] [--no-parent] [--position <value>] [--featured] [--no-featured] [--status <value>] [--kind <value>] [--replacement <slug>] [--form <value>] [--no-form] [--article-subject <value>] [--no-article-subject] [--related-subject <value>] [--no-related-subjects] [--source-file <value>] [--no-source-files] [--checked-at <commit>] [--no-checked-at] [--force-inject <value>] [--json]`
 
 create or revise a document
 
@@ -3320,71 +840,14 @@ create or revise a document
 - `--no-checked-at`: clear the checked commit
 - `--force-inject <value>`: give the reason for overriding inject policy
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc show
 
-**Synopsis:** `bottega doc show [slug] [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--json] [--help]`
+**Synopsis:** `bottega doc show [slug] [--scope <value>] [--subject <value>] [--user] [--audience <value>] [--json]`
 
 show a document with its metadata
 
@@ -3395,71 +858,14 @@ show a document with its metadata
 - `--user`: address the signed-in user document
 - `--audience <value>`: filter or set document audiences
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc status
 
-**Synopsis:** `bottega doc status [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--status <value>] [--replacement <slug>] [--json] [--help]`
+**Synopsis:** `bottega doc status [slug] [--scope <value>] [--subject <value>] [--user] [--reason <value>] [--author <value>] [--expect <revision>] [--status <value>] [--replacement <slug>] [--json]`
 
 change a document status
 
@@ -3474,141 +880,30 @@ change a document status
 - `--status <value>`: filter or set document status
 - `--replacement <slug>`: name the replacement document
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject
 
-**Synopsis:** `bottega doc subject [--help]`
+**Synopsis:** `bottega doc subject`
 
 manage the subject vocabulary for projects
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject add](./doc.md#bottega-doc-subject-add)
 - [bottega doc subject define](./doc.md#bottega-doc-subject-define)
 - [bottega doc subject list](./doc.md#bottega-doc-subject-list)
 - [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
 - [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
 - [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject add
 
-**Synopsis:** `bottega doc subject add [project] [name] [--definition <value>] [--json] [--help]`
+**Synopsis:** `bottega doc subject add [project] [name] [--definition <value>] [--json]`
 
 add a project subject
 
@@ -3616,71 +911,14 @@ add a project subject
 
 - `--definition <value>`: set the subject definition
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject define
 
-**Synopsis:** `bottega doc subject define [project] [subject] [--definition <value>] [--json] [--help]`
+**Synopsis:** `bottega doc subject define [project] [subject] [--definition <value>] [--json]`
 
 change a project subject definition
 
@@ -3688,71 +926,14 @@ change a project subject definition
 
 - `--definition <value>`: set the subject definition
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject list
 
-**Synopsis:** `bottega doc subject list [project] [--retired] [--json] [--help]`
+**Synopsis:** `bottega doc subject list [project] [--retired] [--json]`
 
 list project subjects
 
@@ -3760,138 +941,24 @@ list project subjects
 
 - `--retired`: include retired subjects
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject rename
 
-**Synopsis:** `bottega doc subject rename [project] [subject] [name] [--json] [--help]`
+**Synopsis:** `bottega doc subject rename [project] [subject] [name] [--json]`
 
 rename a project subject
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject reorder
 
@@ -3905,209 +972,39 @@ Options are documented by `--help`.
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subject retire
 
-**Synopsis:** `bottega doc subject retire [project] [subject] [--json] [--help]`
+**Synopsis:** `bottega doc subject retire [project] [subject] [--json]`
 
 retire a project subject
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
-- [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
 - [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc subjects
 
-**Synopsis:** `bottega doc subjects [--json] [--help]`
+**Synopsis:** `bottega doc subjects [--json]`
 
 list document subjects
 
 ### Options
 
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc warnings](./doc.md#bottega-doc-warnings)
 
 ## bottega doc warnings
 
-**Synopsis:** `bottega doc warnings [--scope <value>] [--subject <value>] [--user] [--json] [--help]`
+**Synopsis:** `bottega doc warnings [--scope <value>] [--subject <value>] [--user] [--json]`
 
 show stored document warnings
 
@@ -4117,64 +1014,7 @@ show stored document warnings
 - `--subject <value>`: select the document subject
 - `--user`: address the signed-in user document
 - `--json`: print JSON output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [doc](./doc.md)
 - [bottega doc](./doc.md#bottega-doc)
-- [bottega doc canon](./doc.md#bottega-doc-canon)
-- [bottega doc canon audit](./doc.md#bottega-doc-canon-audit)
-- [bottega doc canon check](./doc.md#bottega-doc-canon-check)
-- [bottega doc canon diff](./doc.md#bottega-doc-canon-diff)
-- [bottega doc canon eval](./doc.md#bottega-doc-canon-eval)
-- [bottega doc canon evals](./doc.md#bottega-doc-canon-evals)
-- [bottega doc canon hydrate](./doc.md#bottega-doc-canon-hydrate)
-- [bottega doc canon import](./doc.md#bottega-doc-canon-import)
-- [bottega doc canon lint](./doc.md#bottega-doc-canon-lint)
-- [bottega doc canon list](./doc.md#bottega-doc-canon-list)
-- [bottega doc canon load](./doc.md#bottega-doc-canon-load)
-- [bottega doc canon mirror](./doc.md#bottega-doc-canon-mirror)
-- [bottega doc code](./doc.md#bottega-doc-code)
-- [bottega doc consume](./doc.md#bottega-doc-consume)
-- [bottega doc diff](./doc.md#bottega-doc-diff)
-- [bottega doc export](./doc.md#bottega-doc-export)
-- [bottega doc get](./doc.md#bottega-doc-get)
-- [bottega doc history](./doc.md#bottega-doc-history)
-- [bottega doc import](./doc.md#bottega-doc-import)
-- [bottega doc lint](./doc.md#bottega-doc-lint)
-- [bottega doc list](./doc.md#bottega-doc-list)
-- [bottega doc port](./doc.md#bottega-doc-port)
-- [bottega doc port baseline](./doc.md#bottega-doc-port-baseline)
-- [bottega doc port baseline set](./doc.md#bottega-doc-port-baseline-set)
-- [bottega doc port baseline show](./doc.md#bottega-doc-port-baseline-show)
-- [bottega doc port doctrine](./doc.md#bottega-doc-port-doctrine)
-- [bottega doc port doctrine add](./doc.md#bottega-doc-port-doctrine-add)
-- [bottega doc port doctrine list](./doc.md#bottega-doc-port-doctrine-list)
-- [bottega doc port doctrine retire](./doc.md#bottega-doc-port-doctrine-retire)
-- [bottega doc port import](./doc.md#bottega-doc-port-import)
-- [bottega doc port ref](./doc.md#bottega-doc-port-ref)
-- [bottega doc port ref delete-error](./doc.md#bottega-doc-port-ref-delete-error)
-- [bottega doc port ref list](./doc.md#bottega-doc-port-ref-list)
-- [bottega doc port ref resolve](./doc.md#bottega-doc-port-ref-resolve)
-- [bottega doc port ref set](./doc.md#bottega-doc-port-ref-set)
-- [bottega doc port ref show](./doc.md#bottega-doc-port-ref-show)
-- [bottega doc port skip](./doc.md#bottega-doc-port-skip)
-- [bottega doc port skip add](./doc.md#bottega-doc-port-skip-add)
-- [bottega doc port skip list](./doc.md#bottega-doc-port-skip-list)
-- [bottega doc restore](./doc.md#bottega-doc-restore)
-- [bottega doc resumes](./doc.md#bottega-doc-resumes)
-- [bottega doc revision](./doc.md#bottega-doc-revision)
-- [bottega doc rm](./doc.md#bottega-doc-rm)
-- [bottega doc search](./doc.md#bottega-doc-search)
-- [bottega doc set](./doc.md#bottega-doc-set)
-- [bottega doc show](./doc.md#bottega-doc-show)
-- [bottega doc status](./doc.md#bottega-doc-status)
-- [bottega doc subject](./doc.md#bottega-doc-subject)
-- [bottega doc subject add](./doc.md#bottega-doc-subject-add)
-- [bottega doc subject define](./doc.md#bottega-doc-subject-define)
-- [bottega doc subject list](./doc.md#bottega-doc-subject-list)
-- [bottega doc subject rename](./doc.md#bottega-doc-subject-rename)
-- [bottega doc subject reorder](./doc.md#bottega-doc-subject-reorder)
-- [bottega doc subject retire](./doc.md#bottega-doc-subject-retire)
-- [bottega doc subjects](./doc.md#bottega-doc-subjects)

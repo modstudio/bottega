@@ -2,19 +2,23 @@
 
 # report
 
+reports
+
+- [bottega report](#bottega-report)
+- [bottega report push](#bottega-report-push)
+- [bottega report send](#bottega-report-send)
+- [bottega report subscribe](#bottega-report-subscribe)
+- [bottega report subscriptions](#bottega-report-subscriptions)
+- [bottega report unsubscribe](#bottega-report-unsubscribe)
+
 ## bottega report
 
-**Synopsis:** `bottega report [--help]`
+**Synopsis:** `bottega report`
 
 reports
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [report](./report.md)
 - [bottega report push](./report.md#bottega-report-push)
 - [bottega report send](./report.md#bottega-report-send)
 - [bottega report subscribe](./report.md#bottega-report-subscribe)
@@ -23,47 +27,35 @@ reports
 
 ## bottega report push
 
-**Synopsis:** `bottega report push [--dry-run] [--help]`
+**Synopsis:** `bottega report push [--dry-run]`
 
 migrate and verify send history
 
 ### Options
 
 - `--dry-run`: compare send history without writing it
-- `-h, --help`: display help for command
 
 ### Related
 
-- [report](./report.md)
 - [bottega report](./report.md#bottega-report)
-- [bottega report send](./report.md#bottega-report-send)
-- [bottega report subscribe](./report.md#bottega-report-subscribe)
-- [bottega report subscriptions](./report.md#bottega-report-subscriptions)
-- [bottega report unsubscribe](./report.md#bottega-report-unsubscribe)
 
 ## bottega report send
 
-**Synopsis:** `bottega report send [--dry-run] [--help]`
+**Synopsis:** `bottega report send [--dry-run]`
 
 render and send every subscription whose period is due
 
 ### Options
 
 - `--dry-run`: render due reports without sending them
-- `-h, --help`: display help for command
 
 ### Related
 
-- [report](./report.md)
 - [bottega report](./report.md#bottega-report)
-- [bottega report push](./report.md#bottega-report-push)
-- [bottega report subscribe](./report.md#bottega-report-subscribe)
-- [bottega report subscriptions](./report.md#bottega-report-subscriptions)
-- [bottega report unsubscribe](./report.md#bottega-report-unsubscribe)
 
 ## bottega report subscribe
 
-**Synopsis:** `bottega report subscribe [--scope <space|project|person>] [--project <name>] [--member <user-id>] [--cadence <daily|weekly>] [--hour <N>] [--day <monday>] [--zone <area/city>] [--recipient <user-id>] [--help]`
+**Synopsis:** `bottega report subscribe [--scope <space|project|person>] [--project <name>] [--member <user-id>] [--cadence <daily|weekly>] [--hour <N>] [--day <monday>] [--zone <area/city>] [--recipient <user-id>]`
 
 create a scheduled report subscription
 
@@ -77,52 +69,31 @@ create a scheduled report subscription
 - `--day <monday>`: weekday when a weekly report is due
 - `--zone <area/city>`: time zone used to schedule delivery
 - `--recipient <user-id>`: member who receives the report
-- `-h, --help`: display help for command
 
 ### Related
 
-- [report](./report.md)
 - [bottega report](./report.md#bottega-report)
-- [bottega report push](./report.md#bottega-report-push)
-- [bottega report send](./report.md#bottega-report-send)
-- [bottega report subscriptions](./report.md#bottega-report-subscriptions)
-- [bottega report unsubscribe](./report.md#bottega-report-unsubscribe)
 
 ## bottega report subscriptions
 
-**Synopsis:** `bottega report subscriptions [--json] [--help]`
+**Synopsis:** `bottega report subscriptions [--json]`
 
 list report subscriptions
 
 ### Options
 
 - `--json`: write the subscriptions as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [report](./report.md)
 - [bottega report](./report.md#bottega-report)
-- [bottega report push](./report.md#bottega-report-push)
-- [bottega report send](./report.md#bottega-report-send)
-- [bottega report subscribe](./report.md#bottega-report-subscribe)
-- [bottega report unsubscribe](./report.md#bottega-report-unsubscribe)
 
 ## bottega report unsubscribe
 
-**Synopsis:** `bottega report unsubscribe <id> [--help]`
+**Synopsis:** `bottega report unsubscribe <id>`
 
 remove a report subscription
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [report](./report.md)
 - [bottega report](./report.md#bottega-report)
-- [bottega report push](./report.md#bottega-report-push)
-- [bottega report send](./report.md#bottega-report-send)
-- [bottega report subscribe](./report.md#bottega-report-subscribe)
-- [bottega report subscriptions](./report.md#bottega-report-subscriptions)

@@ -2,6 +2,30 @@
 
 # run
 
+dispatch and inspect runs
+
+- [bottega run](#bottega-run)
+- [bottega run abandon](#bottega-run-abandon)
+- [bottega run close-out](#bottega-run-close-out)
+- [bottega run continue](#bottega-run-continue)
+- [bottega run diff](#bottega-run-diff)
+- [bottega run discard](#bottega-run-discard)
+- [bottega run list](#bottega-run-list)
+- [bottega run peek](#bottega-run-peek)
+- [bottega run reconcile](#bottega-run-reconcile)
+- [bottega run relay](#bottega-run-relay)
+- [bottega run result](#bottega-run-result)
+- [bottega run retry](#bottega-run-retry)
+- [bottega run search](#bottega-run-search)
+- [bottega run show](#bottega-run-show)
+- [bottega run spawns](#bottega-run-spawns)
+- [bottega run start](#bottega-run-start)
+- [bottega run state](#bottega-run-state)
+- [bottega run stop](#bottega-run-stop)
+- [bottega run tell](#bottega-run-tell)
+- [bottega run wait](#bottega-run-wait)
+- [bottega run waiting](#bottega-run-waiting)
+
 ## bottega run
 
 **Synopsis:** `bottega run`
@@ -10,7 +34,6 @@ dispatch and inspect runs
 
 ### Related
 
-- [run](./run.md)
 - [bottega run abandon](./run.md#bottega-run-abandon)
 - [bottega run close-out](./run.md#bottega-run-close-out)
 - [bottega run continue](./run.md#bottega-run-continue)
@@ -34,7 +57,7 @@ dispatch and inspect runs
 
 ## bottega run abandon
 
-**Synopsis:** `bottega run abandon <id> [--note <value>] [--force] [--help]`
+**Synopsis:** `bottega run abandon <id> [--note <value>] [--force]`
 
 stop a run and abandon its worktree
 
@@ -42,66 +65,24 @@ stop a run and abandon its worktree
 
 - `--note <value>`: record why the run is abandoned
 - `--force`: abandon a branch with unique commits
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run close-out
 
-**Synopsis:** `bottega run close-out <id> [--non-blocking] [--help]`
+**Synopsis:** `bottega run close-out <id> [--non-blocking]`
 
 release a terminal run worktree and its claims
 
 ### Options
 
 - `--non-blocking`: refuse instead of waiting for the cleanup lock
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run continue
 
@@ -115,31 +96,11 @@ Options are documented by `--help`.
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run diff
 
-**Synopsis:** `bottega run diff <id> [--quiet] [--since-base] [--since-read] [--help]`
+**Synopsis:** `bottega run diff <id> [--quiet] [--since-base] [--since-read]`
 
 show the repository changes produced by a run
 
@@ -148,70 +109,28 @@ show the repository changes produced by a run
 - `--quiet`: suppress the diff header
 - `--since-base`: compare the worktree with the run base
 - `--since-read`: show changes since the latest architect read
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run discard
 
-**Synopsis:** `bottega run discard <id> [--force] [--help]`
+**Synopsis:** `bottega run discard <id> [--force]`
 
 remove a run worktree and discard its branch
 
 ### Options
 
 - `--force`: discard a branch with unique commits
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run list
 
-**Synopsis:** `bottega run list [--id <value>] [--job <value>] [--agent <value>] [--limit <value>] [--since <value>] [--json [version]] [--unscored] [--help]`
+**Synopsis:** `bottega run list [--id <value>] [--job <value>] [--agent <value>] [--limit <value>] [--since <value>] [--json [version]] [--unscored]`
 
 list recorded run conversations
 
@@ -224,35 +143,14 @@ list recorded run conversations
 - `--since <value>`: include activity since this ISO instant
 - `--json [version]`: write runs as JSON in the selected version
 - `--unscored`: list only runs awaiting a verdict
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run peek
 
-**Synopsis:** `bottega run peek <id> [--events <value>] [--json] [--help]`
+**Synopsis:** `bottega run peek <id> [--events <value>] [--json]`
 
 show a run summary and its recent events
 
@@ -260,104 +158,38 @@ show a run summary and its recent events
 
 - `--events <value>`: include this many recent events
 - `--json`: write the run summary as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run reconcile
 
-**Synopsis:** `bottega run reconcile <id> [--help]`
+**Synopsis:** `bottega run reconcile <id>`
 
 reconcile a completed run with its saved artifacts
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run relay
 
-**Synopsis:** `bottega run relay <id> [--note <why>] [--help]`
+**Synopsis:** `bottega run relay <id> [--note <why>]`
 
 relay a worker question to the operator
 
 ### Options
 
 - `--note <why>`: record why the question needs the operator
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run result
 
-**Synopsis:** `bottega run result <id> [--quiet] [--artifacts] [--help]`
+**Synopsis:** `bottega run result <id> [--quiet] [--artifacts]`
 
 collect a finished run result
 
@@ -365,35 +197,14 @@ collect a finished run result
 
 - `--quiet`: suppress status guidance
 - `--artifacts`: print the run artifact manifest
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run retry
 
-**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet] [--help]`
+**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet]`
 
 retry a failed run with its saved prompt
 
@@ -404,35 +215,14 @@ retry a failed run with its saved prompt
 - `--follow`: wait for the retry and print its result
 - `--detach`: return after starting the retry
 - `--quiet`: suppress collection guidance and followed output
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run search
 
-**Synopsis:** `bottega run search <query> [--limit <value>] [--full] [--json] [--help]`
+**Synopsis:** `bottega run search <query> [--limit <value>] [--full] [--json]`
 
 search saved run prompts, replies, and notes
 
@@ -441,101 +231,38 @@ search saved run prompts, replies, and notes
 - `--limit <value>`: limit the number of matches
 - `--full`: print complete matching content
 - `--json`: write the search results as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run show
 
-**Synopsis:** `bottega run show <run-id> [--receipt] [--help]`
+**Synopsis:** `bottega run show <run-id> [--receipt]`
 
 show the complete record for a run
 
 ### Options
 
 - `--receipt`: include the run receipt
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run spawns
 
-**Synopsis:** `bottega run spawns [--limit <value>] [--help]`
+**Synopsis:** `bottega run spawns [--limit <value>]`
 
 report subagent spawn-gate decisions
 
 ### Options
 
 - `--limit <value>`: show this many recent spawn decisions
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run start
 
@@ -549,96 +276,31 @@ Options are documented by `--help`.
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run state
 
-**Synopsis:** `bottega run state [--days <value>] [--help]`
+**Synopsis:** `bottega run state [--days <value>]`
 
 print the orchestrator state as JSON
 
 ### Options
 
 - `--days <value>`: limit history to this many days
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run stop
 
-**Synopsis:** `bottega run stop <id> [--help]`
+**Synopsis:** `bottega run stop <id>`
 
 stop a live run and its processes
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run tell
 
@@ -652,27 +314,7 @@ Options are documented by `--help`.
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run wait](./run.md#bottega-run-wait)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run wait
 
@@ -686,31 +328,11 @@ Options are documented by `--help`.
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run waiting](./run.md#bottega-run-waiting)
 
 ## bottega run waiting
 
-**Synopsis:** `bottega run waiting [--json] [--claim-notifications] [--help]`
+**Synopsis:** `bottega run waiting [--json] [--claim-notifications]`
 
 list questions waiting on the operator
 
@@ -718,28 +340,7 @@ list questions waiting on the operator
 
 - `--json`: write the waiting questions as JSON
 - `--claim-notifications`: claim and include pending operator notifications
-- `-h, --help`: display help for command
 
 ### Related
 
-- [run](./run.md)
 - [bottega run](./run.md#bottega-run)
-- [bottega run abandon](./run.md#bottega-run-abandon)
-- [bottega run close-out](./run.md#bottega-run-close-out)
-- [bottega run continue](./run.md#bottega-run-continue)
-- [bottega run diff](./run.md#bottega-run-diff)
-- [bottega run discard](./run.md#bottega-run-discard)
-- [bottega run list](./run.md#bottega-run-list)
-- [bottega run peek](./run.md#bottega-run-peek)
-- [bottega run reconcile](./run.md#bottega-run-reconcile)
-- [bottega run relay](./run.md#bottega-run-relay)
-- [bottega run result](./run.md#bottega-run-result)
-- [bottega run retry](./run.md#bottega-run-retry)
-- [bottega run search](./run.md#bottega-run-search)
-- [bottega run show](./run.md#bottega-run-show)
-- [bottega run spawns](./run.md#bottega-run-spawns)
-- [bottega run start](./run.md#bottega-run-start)
-- [bottega run state](./run.md#bottega-run-state)
-- [bottega run stop](./run.md#bottega-run-stop)
-- [bottega run tell](./run.md#bottega-run-tell)
-- [bottega run wait](./run.md#bottega-run-wait)

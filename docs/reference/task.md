@@ -2,28 +2,41 @@
 
 # task
 
+tasks and task documents
+
+- [bottega task](#bottega-task)
+- [bottega task close](#bottega-task-close)
+- [bottega task comment](#bottega-task-comment)
+- [bottega task doc](#bottega-task-doc)
+- [bottega task doc help](#bottega-task-doc-help)
+- [bottega task doc list](#bottega-task-doc-list)
+- [bottega task doc new](#bottega-task-doc-new)
+- [bottega task doc rm](#bottega-task-doc-rm)
+- [bottega task doc set](#bottega-task-doc-set)
+- [bottega task doc show](#bottega-task-doc-show)
+- [bottega task duplicates](#bottega-task-duplicates)
+- [bottega task help](#bottega-task-help)
+- [bottega task import](#bottega-task-import)
+- [bottega task list](#bottega-task-list)
+- [bottega task new](#bottega-task-new)
+- [bottega task prune-foreign](#bottega-task-prune-foreign)
+- [bottega task push](#bottega-task-push)
+- [bottega task recent](#bottega-task-recent)
+- [bottega task set](#bottega-task-set)
+- [bottega task show](#bottega-task-show)
+- [bottega task tracker-new](#bottega-task-tracker-new)
+
 ## bottega task
 
-**Synopsis:** `bottega task [--help]`
+**Synopsis:** `bottega task`
 
 tasks and task documents
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [task](./task.md)
 - [bottega task close](./task.md#bottega-task-close)
 - [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
 - [bottega task duplicates](./task.md#bottega-task-duplicates)
 - [bottega task help](./task.md#bottega-task-help)
 - [bottega task import](./task.md#bottega-task-import)
@@ -38,7 +51,7 @@ tasks and task documents
 
 ## bottega task close
 
-**Synopsis:** `bottega task close <key> [--project <X>] [--keep-branches] [--abandon <reason>] [--help]`
+**Synopsis:** `bottega task close <key> [--project <X>] [--keep-branches] [--abandon <reason>]`
 
 close a task, release its claims, and prune its branches
 
@@ -47,100 +60,40 @@ close a task, release its claims, and prune its branches
 - `--project <X>`: resolve the task in this project
 - `--keep-branches`: leave the task branches unpruned
 - `--abandon <reason>`: record why unlanded work may be abandoned
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task comment
 
-**Synopsis:** `bottega task comment <key> <text> [--project <X>] [--help]`
+**Synopsis:** `bottega task comment <key> <text> [--project <X>]`
 
 add a comment to a task
 
 ### Options
 
 - `--project <X>`: resolve the task in this project
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc
 
-**Synopsis:** `bottega task doc [--help]`
+**Synopsis:** `bottega task doc`
 
 manage documents attached to tasks
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc help](./task.md#bottega-task-doc-help)
 - [bottega task doc list](./task.md#bottega-task-doc-list)
 - [bottega task doc new](./task.md#bottega-task-doc-new)
 - [bottega task doc rm](./task.md#bottega-task-doc-rm)
 - [bottega task doc set](./task.md#bottega-task-doc-set)
 - [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc help
 
@@ -150,31 +103,11 @@ display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc list
 
-**Synopsis:** `bottega task doc list <key> [--project <X>] [--json] [--help]`
+**Synopsis:** `bottega task doc list <key> [--project <X>] [--json]`
 
 list documents attached to a task
 
@@ -182,35 +115,14 @@ list documents attached to a task
 
 - `--project <X>`: resolve the task in this project
 - `--json`: write the document summaries as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc new
 
-**Synopsis:** `bottega task doc new <key> [--project <X>] [--title <text>] [--role <role>] [--body <text>] [--body-file <path>] [--help]`
+**Synopsis:** `bottega task doc new <key> [--project <X>] [--title <text>] [--role <role>] [--body <text>] [--body-file <path>]`
 
 create a document attached to a task
 
@@ -221,70 +133,28 @@ create a document attached to a task
 - `--role <role>`: assign this document role
 - `--body <text>`: use this text as the task body
 - `--body-file <path>`: read the task body from this file
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc rm
 
-**Synopsis:** `bottega task doc rm <reference> [--project <X>] [--help]`
+**Synopsis:** `bottega task doc rm <reference> [--project <X>]`
 
 remove a task document
 
 ### Options
 
 - `--project <X>`: resolve the document in this project
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc set
 
-**Synopsis:** `bottega task doc set <reference> [--project <X>] [--title <text>] [--role <role>] [--no-role] [--version <token>] [--body <text>] [--body-file <path>] [--help]`
+**Synopsis:** `bottega task doc set <reference> [--project <X>] [--title <text>] [--role <role>] [--no-role] [--version <token>] [--body <text>] [--body-file <path>]`
 
 change fields on a task document
 
@@ -297,35 +167,14 @@ change fields on a task document
 - `--version <token>`: require this current document version
 - `--body <text>`: use this text as the task body
 - `--body-file <path>`: read the task body from this file
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task doc show
 
-**Synopsis:** `bottega task doc show <reference> [--project <X>] [--json] [--help]`
+**Synopsis:** `bottega task doc show <reference> [--project <X>] [--json]`
 
 show a task document
 
@@ -333,35 +182,14 @@ show a task document
 
 - `--project <X>`: resolve the document in this project
 - `--json`: write the document as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
-- [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
 - [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task duplicates
 
-**Synopsis:** `bottega task duplicates [--project <X>] [--title <text>] [--json] [--help]`
+**Synopsis:** `bottega task duplicates [--project <X>] [--title <text>] [--json]`
 
 find possible duplicate tasks for a title
 
@@ -370,31 +198,10 @@ find possible duplicate tasks for a title
 - `--project <X>`: search tasks in this project
 - `--title <text>`: find tasks similar to this title
 - `--json`: write the candidates as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task help
 
@@ -404,65 +211,21 @@ display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task import
 
-**Synopsis:** `bottega task import <file> [--help]`
+**Synopsis:** `bottega task import <file>`
 
 backfill from a clustered commit history
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task list
 
-**Synopsis:** `bottega task list [--project <X>] [--status <Y>] [--parent <key>] [--json] [--help]`
+**Synopsis:** `bottega task list [--project <X>] [--status <Y>] [--parent <key>] [--json]`
 
 list tasks from the local record
 
@@ -472,35 +235,14 @@ list tasks from the local record
 - `--status <Y>`: limit tasks to this status
 - `--parent <key>`: limit tasks to this parent task
 - `--json`: write the task rows as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task new
 
-**Synopsis:** `bottega task new [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--allow-duplicate <reason>] [--body <text>] [--body-file <path>] [--help]`
+**Synopsis:** `bottega task new [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--allow-duplicate <reason>] [--body <text>] [--body-file <path>]`
 
 create a task in its configured destination
 
@@ -513,35 +255,14 @@ create a task in its configured destination
 - `--allow-duplicate <reason>`: allow a possible duplicate for this reason
 - `--body <text>`: use this text as the task body
 - `--body-file <path>`: read the task body from this file
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task prune-foreign
 
-**Synopsis:** `bottega task prune-foreign [--dry-run] [--confirm <N>] [--project <name>] [--only-present-elsewhere] [--json] [--help]`
+**Synopsis:** `bottega task prune-foreign [--dry-run] [--confirm <N>] [--project <name>] [--only-present-elsewhere] [--json]`
 
 soft-delete foreign tasks from the active hosted space
 
@@ -552,35 +273,14 @@ soft-delete foreign tasks from the active hosted space
 - `--project <name>`: limit candidates to this project
 - `--only-present-elsewhere`: limit candidates to tasks found in their target space
 - `--json`: write the result as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task push
 
-**Synopsis:** `bottega task push [--repair] [--json] [--help]`
+**Synopsis:** `bottega task push [--repair] [--json]`
 
 audit hosted identity sets; --repair queues missing machine rows
 
@@ -588,70 +288,28 @@ audit hosted identity sets; --repair queues missing machine rows
 
 - `--repair`: queue machine task rows missing from the hosted record
 - `--json`: write the audit report as JSON
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task recent
 
-**Synopsis:** `bottega task recent [--hours <N>] [--help]`
+**Synopsis:** `bottega task recent [--hours <N>]`
 
 what has been worked on, newest window first
 
 ### Options
 
 - `--hours <N>`: set the recent-work window in hours (default: 48)
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task set
 
-**Synopsis:** `bottega task set <key> [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--no-parent] [--assignee <name>] [--force] [--abandon <reason>] [--body <text>] [--body-file <path>] [--help]`
+**Synopsis:** `bottega task set <key> [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--no-parent] [--assignee <name>] [--force] [--abandon <reason>] [--body <text>] [--body-file <path>]`
 
 change fields on a local task
 
@@ -667,35 +325,14 @@ change fields on a local task
 - `--abandon <reason>`: record why unlanded work may be abandoned
 - `--body <text>`: use this text as the task body
 - `--body-file <path>`: read the task body from this file
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task show](./task.md#bottega-task-show)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task show
 
-**Synopsis:** `bottega task show <key> [--project <X>] [--json] [--fresh] [--help]`
+**Synopsis:** `bottega task show <key> [--project <X>] [--json] [--fresh]`
 
 show a task with its documents and comments
 
@@ -704,35 +341,14 @@ show a task with its documents and comments
 - `--project <X>`: resolve the task in this project
 - `--json`: write the task record as JSON
 - `--fresh`: refresh the task from its tracker before showing it
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task tracker-new](./task.md#bottega-task-tracker-new)
 
 ## bottega task tracker-new
 
-**Synopsis:** `bottega task tracker-new [--project <X>] [--title <text>] [--body <text>] [--help]`
+**Synopsis:** `bottega task tracker-new [--project <X>] [--title <text>] [--body <text>]`
 
 create a task directly in the configured tracker
 
@@ -741,28 +357,7 @@ create a task directly in the configured tracker
 - `--project <X>`: name the tracker project
 - `--title <text>`: set the task title
 - `--body <text>`: set the task body
-- `-h, --help`: display help for command
 
 ### Related
 
-- [task](./task.md)
 - [bottega task](./task.md#bottega-task)
-- [bottega task close](./task.md#bottega-task-close)
-- [bottega task comment](./task.md#bottega-task-comment)
-- [bottega task doc](./task.md#bottega-task-doc)
-- [bottega task doc help](./task.md#bottega-task-doc-help)
-- [bottega task doc list](./task.md#bottega-task-doc-list)
-- [bottega task doc new](./task.md#bottega-task-doc-new)
-- [bottega task doc rm](./task.md#bottega-task-doc-rm)
-- [bottega task doc set](./task.md#bottega-task-doc-set)
-- [bottega task doc show](./task.md#bottega-task-doc-show)
-- [bottega task duplicates](./task.md#bottega-task-duplicates)
-- [bottega task help](./task.md#bottega-task-help)
-- [bottega task import](./task.md#bottega-task-import)
-- [bottega task list](./task.md#bottega-task-list)
-- [bottega task new](./task.md#bottega-task-new)
-- [bottega task prune-foreign](./task.md#bottega-task-prune-foreign)
-- [bottega task push](./task.md#bottega-task-push)
-- [bottega task recent](./task.md#bottega-task-recent)
-- [bottega task set](./task.md#bottega-task-set)
-- [bottega task show](./task.md#bottega-task-show)

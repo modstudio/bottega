@@ -2,6 +2,14 @@
 
 # dashboard
 
+the local dashboard
+
+- [bottega dashboard](#bottega-dashboard)
+- [bottega dashboard check](#bottega-dashboard-check)
+- [bottega dashboard login](#bottega-dashboard-login)
+- [bottega dashboard start](#bottega-dashboard-start)
+- [bottega dashboard stop](#bottega-dashboard-stop)
+
 ## bottega dashboard
 
 **Synopsis:** `bottega dashboard`
@@ -10,7 +18,6 @@ the local dashboard
 
 ### Related
 
-- [dashboard](./dashboard.md)
 - [bottega dashboard check](./dashboard.md#bottega-dashboard-check)
 - [bottega dashboard login](./dashboard.md#bottega-dashboard-login)
 - [bottega dashboard start](./dashboard.md#bottega-dashboard-start)
@@ -18,7 +25,7 @@ the local dashboard
 
 ## bottega dashboard check
 
-**Synopsis:** `bottega dashboard check [--port <N>] [--down] [--help]`
+**Synopsis:** `bottega dashboard check [--port <N>] [--down]`
 
 confirm this checkout dashboard is not serving
 
@@ -26,69 +33,49 @@ confirm this checkout dashboard is not serving
 
 - `--port <N>`: port to inspect for a recorded dashboard
 - `--down`: require the recorded dashboard to be stopped
-- `-h, --help`: display help for command
 
 ### Related
 
-- [dashboard](./dashboard.md)
 - [bottega dashboard](./dashboard.md#bottega-dashboard)
-- [bottega dashboard login](./dashboard.md#bottega-dashboard-login)
-- [bottega dashboard start](./dashboard.md#bottega-dashboard-start)
-- [bottega dashboard stop](./dashboard.md#bottega-dashboard-stop)
 
 ## bottega dashboard login
 
-**Synopsis:** `bottega dashboard login [--port <N>] [--help]`
+**Synopsis:** `bottega dashboard login [--port <N>]`
 
 print a one-time local dashboard login URL
 
 ### Options
 
 - `--port <N>`: dashboard port included in the login URL
-- `-h, --help`: display help for command
 
 ### Related
 
-- [dashboard](./dashboard.md)
 - [bottega dashboard](./dashboard.md#bottega-dashboard)
-- [bottega dashboard check](./dashboard.md#bottega-dashboard-check)
-- [bottega dashboard start](./dashboard.md#bottega-dashboard-start)
-- [bottega dashboard stop](./dashboard.md#bottega-dashboard-stop)
 
 ## bottega dashboard start
 
-**Synopsis:** `bottega dashboard start [--port <N>] [--help]`
+**Synopsis:** `bottega dashboard start [--port <N>]`
 
 start the local dashboard
 
 ### Options
 
 - `--port <N>`: port where the dashboard listens
-- `-h, --help`: display help for command
 
 ### Related
 
-- [dashboard](./dashboard.md)
 - [bottega dashboard](./dashboard.md#bottega-dashboard)
-- [bottega dashboard check](./dashboard.md#bottega-dashboard-check)
-- [bottega dashboard login](./dashboard.md#bottega-dashboard-login)
-- [bottega dashboard stop](./dashboard.md#bottega-dashboard-stop)
 
 ## bottega dashboard stop
 
-**Synopsis:** `bottega dashboard stop [--port <N>] [--help]`
+**Synopsis:** `bottega dashboard stop [--port <N>]`
 
 stop this checkout dashboard
 
 ### Options
 
 - `--port <N>`: port of the recorded dashboard to stop
-- `-h, --help`: display help for command
 
 ### Related
 
-- [dashboard](./dashboard.md)
 - [bottega dashboard](./dashboard.md#bottega-dashboard)
-- [bottega dashboard check](./dashboard.md#bottega-dashboard-check)
-- [bottega dashboard login](./dashboard.md#bottega-dashboard-login)
-- [bottega dashboard start](./dashboard.md#bottega-dashboard-start)

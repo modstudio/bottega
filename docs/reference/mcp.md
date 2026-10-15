@@ -2,6 +2,12 @@
 
 # mcp
 
+model-context-protocol services
+
+- [bottega mcp](#bottega-mcp)
+- [bottega mcp ask-server](#bottega-mcp-ask-server)
+- [bottega mcp serve](#bottega-mcp-serve)
+
 ## bottega mcp
 
 **Synopsis:** `bottega mcp`
@@ -10,29 +16,22 @@ model-context-protocol services
 
 ### Related
 
-- [mcp](./mcp.md)
 - [bottega mcp ask-server](./mcp.md#bottega-mcp-ask-server)
 - [bottega mcp serve](./mcp.md#bottega-mcp-serve)
 
 ## bottega mcp ask-server
 
-**Synopsis:** `bottega mcp ask-server [--help]`
+**Synopsis:** `bottega mcp ask-server`
 
 serve the worker question channel
 
-### Options
-
-- `-h, --help`: display help for command
-
 ### Related
 
-- [mcp](./mcp.md)
 - [bottega mcp](./mcp.md#bottega-mcp)
-- [bottega mcp serve](./mcp.md#bottega-mcp-serve)
 
 ## bottega mcp serve
 
-**Synopsis:** `bottega mcp serve [verb] [--config] [--project <value>] [--help]`
+**Synopsis:** `bottega mcp serve [verb] [--config] [--project <value>]`
 
 serve an orchestrator model-context-protocol endpoint
 
@@ -40,10 +39,7 @@ serve an orchestrator model-context-protocol endpoint
 
 - `--config`: print the server configuration instead of serving
 - `--project <value>`: project exposed by the server
-- `-h, --help`: display help for command
 
 ### Related
 
-- [mcp](./mcp.md)
 - [bottega mcp](./mcp.md#bottega-mcp)
-- [bottega mcp ask-server](./mcp.md#bottega-mcp-ask-server)
