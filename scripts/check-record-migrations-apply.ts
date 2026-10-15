@@ -26,7 +26,8 @@ const boardSharedSpacesMigration = '20261012210147_dev_1217_board_shared_spaces'
 const boardNotifyMigration = '20261013170000_dev_1217_board_notify'
 const boardPurposeBackfillMigration = '20261013225840_dev_1217_board_purpose_backfill'
 const docJsonbArrayRepair = '20261013190000_dev_1303_doc_jsonb_array_repair'
-const hubProjectIdentityMigration = '20261015133608_dev_1214_hub_project_identity'
+const hubProjectIdentityExpand = '20261015133608_dev_1214_hub_project_identity'
+const hubProjectIdentityBackfill = '20261015133609_dev_1214_hub_project_identity_backfill'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -431,7 +432,9 @@ async function seedHubProjectIdentityBackfill(transaction: Transaction): Promise
   `)
 }
 
-async function proofHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
+async function hubProjectIdentityTaskRows(
+  transaction: Transaction,
+): Promise<{ id: string; project_id: string | null }[]> {
   await transaction.exec('ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;')
   const result = await transaction.query<{ id: string; project_id: string | null }>(`
     SELECT id::text AS id, project_id::text AS project_id FROM hub_task
@@ -439,14 +442,28 @@ async function proofHubProjectIdentityBackfill(transaction: Transaction): Promis
     ORDER BY key
   `)
   await transaction.exec('ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;')
+  return result.rows
+}
+
+async function proofHubProjectIdentityExpand(transaction: Transaction): Promise<void> {
+  const expected = [
+    { id: hubProjectMatchTaskId, project_id: null },
+    { id: hubProjectUnmatchedTaskId, project_id: null },
+  ]
+  const rows = await hubProjectIdentityTaskRows(transaction)
+  if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+    throw new CheckFailure(`DEV-1214 hub project_id expand produced ${JSON.stringify(rows)}`)
+  }
+}
+
+async function proofHubProjectIdentityBackfill(transaction: Transaction): Promise<void> {
   const expected = [
     { id: hubProjectMatchTaskId, project_id: hubProjectMatchId },
     { id: hubProjectUnmatchedTaskId, project_id: null },
   ]
-  if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new CheckFailure(
-      `DEV-1214 hub project_id backfill produced ${JSON.stringify(result.rows)}`,
-    )
+  const rows = await hubProjectIdentityTaskRows(transaction)
+  if (JSON.stringify(rows) !== JSON.stringify(expected)) {
+    throw new CheckFailure(`DEV-1214 hub project_id backfill produced ${JSON.stringify(rows)}`)
   }
 }
 
@@ -482,7 +499,8 @@ async function applyAndProveMigration(
     for (const chunk of migration.sql) await transaction.exec(chunk)
     await proofDocJsonbArrayRepair(transaction)
   }
-  if (migration.name === hubProjectIdentityMigration)
+  if (migration.name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
+  if (migration.name === hubProjectIdentityBackfill)
     await proofHubProjectIdentityBackfill(transaction)
 }
 
@@ -491,7 +509,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
   if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
-  if (name === hubProjectIdentityMigration) await seedHubProjectIdentityBackfill(transaction)
+  if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
 }
 
 async function proofBoardNotifications(database: PGlite): Promise<void> {
