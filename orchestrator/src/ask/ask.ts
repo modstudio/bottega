@@ -41,6 +41,7 @@ import {
 } from '../board/board-delivery.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
   decideGateCancellation,
   decideGateEligibility,
@@ -173,16 +174,17 @@ function gateEligibility(runId: number, token: string) {
   })
 }
 
-function gateToolAvailable(runId: number, token: string): boolean {
-  if (!authenticatedWorkerRun(runId, token)) return false
+function authenticatedJobNeeds(runId: number, token: string) {
+  if (!authenticatedWorkerRun(runId, token)) return null
   const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
-  return Boolean(row && JOBS[row.job]?.needs.writesRepo)
+  return row ? JOBS[row.job]?.needs : null
 }
 
+function gateToolAvailable(runId: number, token: string): boolean {
+  return Boolean(authenticatedJobNeeds(runId, token)?.writesRepo)
+}
 function gateResultToolAvailable(runId: number, token: string): boolean {
-  if (!authenticatedWorkerRun(runId, token)) return false
-  const row = db().query('SELECT job FROM run WHERE id=?').get(runId) as { job: string } | null
-  const needs = row ? JOBS[row.job]?.needs : null
+  const needs = authenticatedJobNeeds(runId, token)
   return Boolean(needs?.readsRepo && !needs.writesRepo)
 }
 
@@ -468,6 +470,47 @@ function workerNoteRun(runId: number): WorkerNoteRun {
   }
 }
 
+function registerRunGateTool(input: {
+  registerTool: McpServer['registerTool']
+  runId: number
+  token: string
+  pendingResults: Set<number>
+  dependencies?: GateWaitDependencies
+  text(
+    value: string,
+    isError?: true,
+  ): {
+    content: Array<{ type: 'text'; text: string }>
+    isError?: true
+  }
+}): void {
+  input.registerTool(
+    'run_gate',
+    {
+      description:
+        "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
+        'The command, directory, and environment are fixed by orch and take no worker input.',
+      inputSchema: z.object({}),
+    },
+    async (_arguments, context) => {
+      try {
+        const eligibility = gateEligibility(input.runId, input.token)
+        if (!eligibility.eligible) return input.text(eligibility.message)
+        return input.text(
+          await requestGate(
+            input.runId,
+            input.pendingResults,
+            context.mcpReq.signal,
+            input.dependencies,
+          ),
+        )
+      } catch (error) {
+        return input.text(`The registered gate could not be run (${String(error)}).`, true)
+      }
+    },
+  )
+}
+
 export function createAskMcpServer(
   runId: number,
   token: string,
@@ -567,29 +610,17 @@ export function createAskMcpServer(
     },
   )
 
-  // A no-gate writer sees the tool and receives the explicit no-op message.
-  // Readers and inline jobs do not receive an execution surface at all.
+  // Readers and inline jobs do not receive an execution surface.
   if (gateToolAvailable(runId, token)) {
-    registerTool(
-      'run_gate',
-      {
-        description:
-          "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
-          'The command, directory, and environment are fixed by orch and take no worker input.',
-        inputSchema: z.object({}),
-      },
-      async (_arguments, context) => {
-        try {
-          const eligibility = gateEligibility(runId, token)
-          if (!eligibility.eligible) return text(eligibility.message)
-          return text(
-            await requestGate(runId, pendingGateResults, context.mcpReq.signal, dependencies.gate),
-          )
-        } catch (error) {
-          return text(`The registered gate could not be run (${String(error)}).`, true)
-        }
-      },
-    )
+    registerRunGateTool({
+      registerTool,
+      runId,
+      token,
+      pendingResults: pendingGateResults,
+      dependencies: dependencies.gate,
+      text,
+    })
+    registerFocusedTestTool({ registerTool, runId, token, text })
   }
 
   if (gateResultToolAvailable(runId, token)) {

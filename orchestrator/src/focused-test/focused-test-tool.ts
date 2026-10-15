@@ -1,0 +1,43 @@
+// concern: focused-test-tool
+/** Registers the writer-only run_tests MCP surface. */
+
+import type { McpServer } from '@modelcontextprotocol/server'
+import { z } from 'zod'
+import { runScratchDir } from '../run/run-artifacts.ts'
+import { requestFocusedTests } from './focused-test-request.ts'
+import { focusedTestEligibility } from './focused-test-service.ts'
+
+type TextResult = { content: Array<{ type: 'text'; text: string }>; isError?: true }
+
+export function registerFocusedTestTool(input: {
+  registerTool: McpServer['registerTool']
+  runId: number
+  token: string
+  text(value: string, isError?: true): TextResult
+}): void {
+  input.registerTool(
+    'run_tests',
+    {
+      description:
+        "Run this project's registered focused test runner with project-relative paths. " +
+        'The executable and argv prefix are fixed by orch; paths are appended as distinct argv values.',
+      inputSchema: z.object({ paths: z.array(z.string()) }),
+    },
+    async ({ paths }, context) => {
+      try {
+        const decision = focusedTestEligibility(input.runId, input.token)
+        if (!decision.eligible) return input.text(decision.message)
+        return input.text(
+          await requestFocusedTests({
+            runId: input.runId,
+            scratchDir: runScratchDir(input.runId),
+            paths,
+            signal: context.mcpReq.signal,
+          }),
+        )
+      } catch (error) {
+        return input.text(`The registered focused tests could not be run (${String(error)}).`, true)
+      }
+    },
+  )
+}

@@ -223,6 +223,7 @@ realPostgres('project import against copied live SQLite data', () => {
       docs: 'docs',
       envPrefix: 'env_prefix',
       gate: 'gate',
+      focusedTests: 'focused_tests',
       keyPrefixes: 'key_prefixes',
       managedContext: 'managed_context',
       mcp: 'mcp_probe_tool',

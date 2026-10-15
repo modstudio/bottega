@@ -23,7 +23,6 @@ import {
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
-import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import {
   formatIdleKillError,
@@ -58,7 +57,7 @@ import {
 import { questionOpenSql } from './question-open.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { STALE_AFTER_MS } from './run-liveness.ts'
-import { childEnv, errorTail, live, liveCheckpoints, registerLiveGate } from './run-process.ts'
+import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import {
@@ -69,6 +68,11 @@ import {
   gateExclusionNoteSuffix,
   type RunWallDeadlineFacts,
 } from './run-wall-deadline.ts'
+import {
+  closeWorkerExecutionBrokers,
+  startWorkerExecutionBrokers,
+  type WorkerExecutionBrokers,
+} from './run-worker-brokers.ts'
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
@@ -226,26 +230,6 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
-function startWorkerGateBroker(input: {
-  repoJob: boolean
-  worktree: Worktree | null
-  runId: number
-  scratchDir: string
-  environment: Record<string, string>
-  onExecutionStart: (at: string) => void
-  onExecutionFinish: (at: string) => void
-}): GateBroker | null {
-  if (!input.repoJob || !input.worktree) return null
-  return startGateBroker({
-    runId: input.runId,
-    scratchDir: input.scratchDir,
-    environment: input.environment,
-    registerActive: registerLiveGate,
-    onExecutionStart: ({ at }) => input.onExecutionStart(at),
-    onExecutionFinish: ({ at }) => input.onExecutionFinish(at),
-  })
-}
-
 function applyRunWallDeadline(input: {
   currentTimer: ReturnType<typeof setTimeout> | null
   facts: RunWallDeadlineFacts
@@ -259,10 +243,6 @@ function applyRunWallDeadline(input: {
     return null
   }
   return setTimeout(input.rearm, decision.delayMs)
-}
-
-async function closeWorkerGateBroker(broker: GateBroker | null): Promise<void> {
-  if (broker) await broker.close()
 }
 
 async function closeWorkerNoteBroker(broker: WorkerNoteBroker | null): Promise<void> {
@@ -335,14 +315,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  const artifactsPersisted = true
   const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
   const confinementFailures: FreezeFailure[] = []
   const confinementEvent: ConfinementEvent | null = null
   const frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
-  let gateBroker: GateBroker | null = null
+  let executionBrokers: WorkerExecutionBrokers | null = null
   let noteBroker: WorkerNoteBroker | null = null
   let workerEvents: StreamEvent[] = []
   let wallArmedAtMs: number | null = null
@@ -350,7 +329,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let gateStartedAtMs: number | null = null
   let excludedGateMsAtTimeout = 0
   let rearmWallDeadline = () => {}
-
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
@@ -369,17 +347,18 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     if (sandboxSelection.sandbox === 'srt') {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
-    gateBroker = startWorkerGateBroker({
+    executionBrokers = startWorkerExecutionBrokers({
       repoJob,
+      writesRepo: writesJob,
       worktree,
       runId: claim.id,
       scratchDir,
       environment: { ...(gitConfigEnvironment ?? {}), ...recipeEnvironment },
-      onExecutionStart: (at) => {
+      onGateStart: (at) => {
         gateStartedAtMs = Date.parse(at)
         rearmWallDeadline()
       },
-      onExecutionFinish: (at) => {
+      onGateFinish: (at) => {
         accruedGateMs += excludedGateIntervalMs(wallArmedAtMs, gateStartedAtMs, Date.parse(at))
         gateStartedAtMs = null
         rearmWallDeadline()
@@ -899,7 +878,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   rearmWallDeadline = () => {}
   clearTimeout(timer ?? undefined)
   timer = null
-  await closeWorkerGateBroker(gateBroker)
+  await closeWorkerExecutionBrokers(executionBrokers)
   await closeWorkerNoteBroker(noteBroker)
 
   return {
@@ -927,7 +906,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     status,
     error,
     failureKind,
-    artifactsPersisted,
+    artifactsPersisted: true,
     preConfinement,
     vendorTerminatedStream,
     confinementFailures,

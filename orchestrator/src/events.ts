@@ -53,6 +53,15 @@ export type RunLogEvent =
   | { ts: string; type: 'ask_started'; tools: string[] }
   | { ts: string; type: 'ask_initialized' }
   | { ts: string; type: 'ask_listed'; tools: string[] }
+  | {
+      ts: string
+      type: 'focused_test'
+      paths: string[]
+      exitCode: number
+      timedOut: boolean
+      elapsedMs: number
+      logName: string
+    }
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
@@ -64,6 +73,14 @@ type PeekEventSummary =
   | { type: 'ask_started'; tools: string[] }
   | { type: 'ask_initialized' }
   | { type: 'ask_listed'; tools: string[] }
+  | {
+      type: 'focused_test'
+      paths: string[]
+      exitCode: number
+      timedOut: boolean
+      elapsedMs: number
+      logName: string
+    }
 
 export type PeekSummary = {
   id: number
@@ -512,6 +529,16 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'ask_started') return { type: 'ask_started', tools: event.tools }
   if (event.type === 'ask_listed') return { type: 'ask_listed', tools: event.tools }
+  if (event.type === 'focused_test') {
+    return {
+      type: 'focused_test',
+      paths: event.paths,
+      exitCode: event.exitCode,
+      timedOut: event.timedOut,
+      elapsedMs: event.elapsedMs,
+      logName: event.logName,
+    }
+  }
   return { type: 'ask_initialized' }
 }
 
@@ -593,6 +620,13 @@ export function peekRun(
   }
 }
 
+function formatFocusedTestPeekEvent(event: Extract<PeekEventSummary, { type: 'focused_test' }>) {
+  return (
+    `  focused test exit ${event.exitCode}${event.timedOut ? ' timed out' : ''} ` +
+    `${event.elapsedMs}ms ${event.paths.join(',')} (${event.logName})`
+  )
+}
+
 function formatPeekEvent(event: PeekEventSummary): string {
   if (event.type === 'text') return `  text ${event.text}`
   if (event.type === 'note') {
@@ -610,6 +644,7 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
+  if (event.type === 'focused_test') return formatFocusedTestPeekEvent(event)
   return '  ask initialized'
 }
 
