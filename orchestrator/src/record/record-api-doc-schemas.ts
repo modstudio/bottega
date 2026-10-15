@@ -15,7 +15,7 @@ import { isUserCanonSlug } from '../canon/user-canon-home.ts'
 import { REFERENCE_GENERATOR } from '../doc/doc-generator.ts'
 
 /** The reference publisher marker as the HTTP edge accepts it. */
-export const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()
+const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()
 export const docWriteContextSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
