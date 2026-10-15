@@ -315,7 +315,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  const artifactsPersisted = true
   const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
   const confinementFailures: FreezeFailure[] = []
@@ -907,7 +906,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     status,
     error,
     failureKind,
-    artifactsPersisted,
+    artifactsPersisted: true,
     preConfinement,
     vendorTerminatedStream,
     confinementFailures,
