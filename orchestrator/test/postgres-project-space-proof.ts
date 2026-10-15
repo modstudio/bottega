@@ -307,6 +307,10 @@ export function registerProjectSpaceProofs(input: {
     const other = newRecordId()
     const note = newRecordId()
     const subscription = newRecordId()
+    const projectDoc = newRecordId()
+    const legacyProjectDoc = newRecordId()
+    const stackDoc = newRecordId()
+    const otherProjectDoc = newRecordId()
     const task = `REN-${newRecordId().slice(-6)}`
     const inserted = input.asSpace(
       input.actorRole,
@@ -315,6 +319,20 @@ export function registerProjectSpaceProofs(input: {
       `INSERT INTO project (id,space_id,name,created_at) VALUES
          ('${project}','${space}','rename-proof',now()),
          ('${other}','${space}','rename-stay',now());
+       INSERT INTO doc
+         (id,space_id,scope,subject,slug,title,body,delivery,audiences,featured,project_id,kind,created_at,updated_at)
+         VALUES
+         ('${projectDoc}','${space}','project','rename-proof','rename-project','Project','body','demand',ARRAY['technical'],false,'${project}','working',now(),now()),
+         ('${legacyProjectDoc}','${space}','project','rename-proof','rename-legacy','Legacy','body','demand',ARRAY['technical'],false,NULL,'working',now(),now()),
+         ('${stackDoc}','${space}','stack','rename-proof','rename-stack','Stack','body','demand',ARRAY['technical'],false,NULL,'working',now(),now()),
+         ('${otherProjectDoc}','${space}','project','rename-proof','rename-other-project','Other','body','demand',ARRAY['technical'],false,'${other}','working',now(),now());
+       INSERT INTO doc_revision
+         (id,space_id,doc_id,scope,subject,slug,op,title,body,delivery,author,reason,at,audiences,project_id)
+         VALUES
+         ('${newRecordId()}','${space}','${projectDoc}','project','rename-proof','rename-project','create','Project','body','demand','proof','proof',now(),ARRAY['technical'],'${project}'),
+         ('${newRecordId()}','${space}','${legacyProjectDoc}','project','rename-proof','rename-legacy','create','Legacy','body','demand','proof','proof',now(),ARRAY['technical'],NULL),
+         ('${newRecordId()}','${space}','${stackDoc}','stack','rename-proof','rename-stack','create','Stack','body','demand','proof','proof',now(),ARRAY['technical'],NULL),
+         ('${newRecordId()}','${space}','${otherProjectDoc}','project','rename-proof','rename-other-project','create','Other','body','demand','proof','proof',now(),ARRAY['technical'],'${other}');
        INSERT INTO hub_task
          (id,space_id,project_name,project_id,key,project,source,first_seen,last_seen,created_at,updated_at)
          VALUES
@@ -372,8 +390,24 @@ export function registerProjectSpaceProofs(input: {
         UNION ALL SELECT count(*) FROM hub_report_subscription_project WHERE project_name='rename-proof'
       ) leftover;
       SELECT count(*) FROM hub_task WHERE project_name='rename-stay';
-      SELECT name FROM project WHERE id='${project}';`)
-    expect(leftover.trim().split('\n')).toEqual(['0', '1', 'renamed-proof'])
+      SELECT name FROM project WHERE id='${project}';
+      SELECT subject FROM doc WHERE id='${projectDoc}';
+      SELECT subject FROM doc WHERE id='${legacyProjectDoc}';
+      SELECT subject FROM doc WHERE id='${stackDoc}';
+      SELECT subject FROM doc WHERE id='${otherProjectDoc}';
+      SELECT subject FROM doc_revision WHERE doc_id='${stackDoc}';
+      SELECT subject FROM doc_revision WHERE doc_id='${otherProjectDoc}';`)
+    expect(leftover.trim().split('\n')).toEqual([
+      '0',
+      '1',
+      'renamed-proof',
+      'renamed-proof',
+      'renamed-proof',
+      'rename-proof',
+      'rename-proof',
+      'rename-proof',
+      'rename-proof',
+    ])
   })
 
   test('a move with a public doc space and an article doc leaves nothing in the source space', async () => {

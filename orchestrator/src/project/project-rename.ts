@@ -1,10 +1,11 @@
 // concern: project-rename
 /** Renames every local orchestrator name snapshot of a project in one store write. */
 
-import { db } from '../database/db.ts'
+import { db, writeTransaction } from '../database/db.ts'
+import { type ProjectSettings, upsertProject } from './projects.ts'
 
 /** Name columns on rows that also carry integer project_id. */
-export const PROJECT_ID_NAME_COLUMNS = [
+const PROJECT_ID_NAME_COLUMNS = [
   ['run', 'repo'],
   ['canon_pack', 'project'],
   ['landing', 'project'],
@@ -17,7 +18,7 @@ export const PROJECT_ID_NAME_COLUMNS = [
 ] as const
 
 /** Name columns on rows that identify the project only by text. */
-export const PROJECT_NAME_ONLY_COLUMNS = [
+const PROJECT_NAME_ONLY_COLUMNS = [
   ['board_claim', 'project'],
   ['board_message', 'author_project'],
   ['board_reach_delivery', 'reader_project'],
@@ -29,13 +30,21 @@ export const PROJECT_NAME_ONLY_COLUMNS = [
 ] as const
 
 /** Rename the local referent last, after every name snapshot has moved. */
-export function applyLocalProjectRename(
+function applyLocalProjectRename(
   current: { id: number },
   currentName: string,
   nextName: string,
 ): void {
   const d = db()
   for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
+    if (table === 'doc' || table === 'doc_revision') {
+      d.query(
+        `UPDATE ${table} SET ${column}=?
+         WHERE (project_id=? AND ${column}=?)
+            OR (project_id IS NULL AND ${column}=? AND scope IN ('project','resume','canon','settings'))`,
+      ).run(nextName, current.id, currentName, currentName)
+      continue
+    }
     d.query(
       `UPDATE ${table} SET ${column}=? WHERE project_id=? OR (project_id IS NULL AND ${column}=?)`,
     ).run(nextName, current.id, currentName)
@@ -44,4 +53,24 @@ export function applyLocalProjectRename(
     d.query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`).run(nextName, currentName)
   }
   d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
+}
+
+/** Owns the complete local register mutation so rename and upsert cannot split. */
+export function persistLocalProjectSet(
+  current: { id: number } | null,
+  currentName: string,
+  nextName: string,
+  candidate: {
+    recordId?: string | null
+    name: string
+    path: string
+    stack?: string | null
+    canon?: boolean
+    settings?: ProjectSettings
+  },
+): void {
+  writeTransaction(() => {
+    if (current) applyLocalProjectRename(current, currentName, nextName)
+    upsertProject(candidate)
+  })
 }

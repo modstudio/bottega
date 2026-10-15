@@ -1,6 +1,7 @@
 // concern: record-projects
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 import { SQL } from 'bun'
+import { DOC_SCOPE_SUBJECT_KIND } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -67,16 +68,25 @@ function namedRow(row: Record<string, unknown> | undefined): HostedProjectNameRo
 async function renameHostedDocSubjects(
   tx: SQL,
   spaceId: string,
+  projectId: string,
   from: string,
   to: string,
 ): Promise<void> {
+  const projectScopes = tx.array(
+    Object.entries(DOC_SCOPE_SUBJECT_KIND)
+      .filter(([, kind]) => kind === 'project')
+      .map(([scope]) => scope),
+    'text',
+  )
   await tx`
     UPDATE doc SET subject=${to}, updated_at=now()
     WHERE space_id=${spaceId}::uuid AND subject=${from}
+      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
   `
   await tx`
     UPDATE doc_revision SET subject=${to}
     WHERE space_id=${spaceId}::uuid AND subject=${from}
+      AND (project_id=${projectId}::uuid OR (project_id IS NULL AND scope=ANY(${projectScopes})))
   `
 }
 
@@ -259,9 +269,7 @@ export async function upsertRecordProject(
         from: plan.from,
         to: plan.to,
       })
-    }
-    if (currentName !== nextName) {
-      await renameHostedDocSubjects(tx, input.spaceId, currentName, nextName)
+      await renameHostedDocSubjects(tx, input.spaceId, plan.id, currentName, nextName)
     }
     const id = await upsertHostedProjectRow(tx, {
       spaceId: input.spaceId,

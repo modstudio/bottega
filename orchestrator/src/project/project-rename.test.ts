@@ -1,16 +1,33 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writeTransaction } from '../database/db.ts'
-import {
-  applyLocalProjectRename,
-  PROJECT_ID_NAME_COLUMNS,
-  PROJECT_NAME_ONLY_COLUMNS,
-} from './project-rename.ts'
+import { persistLocalProjectSet } from './project-rename.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
 const OLD = 'rename-from'
 const NEXT = 'rename-to'
 const OTHER = 'rename-other'
+
+const PROJECT_ID_NAME_COLUMNS = [
+  ['run', 'repo'],
+  ['canon_pack', 'project'],
+  ['landing', 'project'],
+  ['landing_override', 'project'],
+  ['landing_review_carry', 'project'],
+  ['landing_triage_snapshot', 'project'],
+  ['review_read', 'project'],
+] as const
+
+const PROJECT_NAME_ONLY_COLUMNS = [
+  ['board_claim', 'project'],
+  ['board_message', 'author_project'],
+  ['board_reach_delivery', 'reader_project'],
+  ['branch_landing_record', 'project'],
+  ['presence', 'project'],
+  ['release_ledger', 'project'],
+  ['worker_note_request', 'project'],
+  ['workflow_cursor', 'project'],
+] as const
 
 function countName(table: string, column: string, value: string): number {
   return (
@@ -98,6 +115,37 @@ function seedNameMirrors(projectId: number, otherId: number): void {
     '["technical"]',
     projectId,
   )
+  for (const [scope, owner, slug] of [
+    ['project', null, 'legacy-project'],
+    ['stack', null, 'protected-stack'],
+    ['project', otherId, 'protected-other'],
+  ] as const) {
+    const recordId = id()
+    d.query(
+      `INSERT INTO doc (record_id,scope,subject,slug,title,body,created_at,updated_at,audiences,project_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).run(recordId, scope, OLD, slug, 'title', 'body', 't', 't', '["technical"]', owner)
+    const inserted = d.query('SELECT id FROM doc WHERE record_id=?').get(recordId) as { id: number }
+    d.query(
+      `INSERT INTO doc_revision
+       (record_id,doc_id,scope,subject,slug,op,title,body,author,reason,at,audiences,project_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      id(),
+      inserted.id,
+      scope,
+      OLD,
+      slug,
+      'create',
+      'title',
+      'body',
+      'a',
+      'r',
+      't',
+      '["technical"]',
+      owner,
+    )
+  }
   d.query(
     `INSERT INTO board_claim
      (record_id,project,subject_kind,subject_value,holder_kind,duration_ms,taken_at,renewed_at,lapses_at)
@@ -161,9 +209,10 @@ test('a local rename leaves no listed table naming the old project', () => {
   const project = projectByName(OLD)
   const other = projectByName(OTHER)
   if (!project || !other) throw new Error('fixture projects were not registered')
-  writeTransaction(() => {
-    seedNameMirrors(project.id, other.id)
-    applyLocalProjectRename({ id: project.id }, OLD, NEXT)
+  writeTransaction(() => seedNameMirrors(project.id, other.id))
+  persistLocalProjectSet({ id: project.id }, OLD, NEXT, {
+    name: NEXT,
+    path: '/w/rename-from',
   })
   expect(projectByName(OLD)).toBeNull()
   expect(projectByName(NEXT)?.id).toBe(project.id)
@@ -172,4 +221,14 @@ test('a local rename leaves no listed table naming the old project', () => {
   }
   expect(countName('run', 'repo', OTHER)).toBe(1)
   expect(countName('landing_override', 'project', OTHER)).toBe(1)
+  for (const table of ['doc', 'doc_revision']) {
+    const renamed = db()
+      .query(
+        `SELECT COUNT(*) AS n FROM ${table}
+         WHERE subject=? AND (project_id=? OR (project_id IS NULL AND scope IN ('project','resume','canon','settings')))`,
+      )
+      .get(OLD, project.id) as { n: number }
+    expect(renamed.n, `${table} kept a project subject`).toBe(0)
+    expect(countName(table, 'subject', OLD), `${table} changed protected subjects`).toBe(2)
+  }
 })

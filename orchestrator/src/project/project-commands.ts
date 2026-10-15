@@ -11,7 +11,7 @@ import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
-import { applyLocalProjectRename } from './project-rename.ts'
+import { persistLocalProjectSet } from './project-rename.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
@@ -430,10 +430,7 @@ async function persistSetProject(
     destinationSpaceId,
   )
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
-  writeTransaction(() => {
-    if (renamed) applyLocalProjectRename(renamed, currentName, nextName)
-    upsertProject({ ...candidate, recordId })
-  })
+  persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, recordId })
   if (previousTrunk === nextTrunk) return
   tryWriteContention({
     resourceKind: 'register',
