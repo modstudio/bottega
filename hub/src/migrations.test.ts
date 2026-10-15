@@ -99,6 +99,7 @@ const LATEST_MIGRATIONS = [
   '0031_change_log_pull_cutover',
   '0032_outbox_delivery_trace',
   '0033_day_machine',
+  '0034_project_record_id',
 ]
 
 const applicationObjects = (d: Database): ApplicationObject[] =>

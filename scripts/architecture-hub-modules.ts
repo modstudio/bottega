@@ -1,5 +1,13 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/project-record-id.ts',
+    allowed: ['bun:sqlite', './projects.ts'],
+  },
+  {
+    file: 'hub/src/hosted-project-identity.ts',
+    allowed: ['bun', '../../shared/record-project-identity.ts'],
+  },
+  {
     file: 'hub/src/hosted-releases.ts',
     allowed: ['./record-client.ts'],
   },

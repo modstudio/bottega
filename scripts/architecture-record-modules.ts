@@ -15,7 +15,10 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
-  module('orchestrator/src/record/record-project-identity.ts', ['bun']),
+  module('orchestrator/src/record/record-project-identity.ts', [
+    'bun',
+    '../../../shared/record-project-identity.ts',
+  ]),
   module('orchestrator/src/record/record-api-sync.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
