@@ -37,7 +37,7 @@ import {
   takeClaim,
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
-import { cachedAudienceAtPosting } from './board-hosted-cache.ts'
+import { cachedAudienceAtPosting, cacheHostedBoardReceipt } from './board-hosted-cache.ts'
 import { boardMode, boardModeForId } from './board-mode.ts'
 import {
   type Audience,
@@ -603,12 +603,13 @@ export async function boardAcknowledge(id: string, inputContext?: Context) {
   else {
     const session = boardActor(c.env).session ?? OPERATOR_READER
     // An acknowledged receipt never escalates; uncached legacy rows safely use true.
-    await hostedClient(c).putBoardReceipt({
+    const receipt = await hostedClient(c).putBoardReceipt({
       messageId: parsed as string,
       readerSession: session,
       audienceAtPosting: cachedAudienceAtPosting(parsed as string, session) ?? true,
       acknowledged: true,
     })
+    cacheHostedBoardReceipt(receipt)
   }
   return { acknowledged: id }
 }

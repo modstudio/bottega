@@ -717,6 +717,13 @@ test('an unadopted install refuses every UUID id before calling either store', a
 test('hosted acknowledgement uses the reserved operator reader without a session', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const id = newRecordId()
+  const message = hostedMessage(id)
+  db()
+    .query(
+      `INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(id, message.kind, message.threadRootId, message.revision, JSON.stringify(message))
   let readerSession: string | undefined
   const client = {
     ...createMemoryRecordApiClient(),
@@ -738,6 +745,21 @@ test('hosted acknowledgement uses the reserved operator reader without a session
     boardAcknowledge(id, { env: { ORCH_RECORD_API_URL: env.ORCH_RECORD_API_URL }, client }),
   ).resolves.toEqual({ acknowledged: id })
   expect(readerSession).toBe('operator')
+  expect(
+    db()
+      .query<
+        { audience_at_posting: number; acknowledged_at: string | null; pending_sync: number },
+        [string, string]
+      >(
+        `SELECT audience_at_posting,acknowledged_at,pending_sync
+         FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?`,
+      )
+      .get(id, 'operator'),
+  ).toEqual({
+    audience_at_posting: 1,
+    acknowledged_at: '2026-10-05T12:00:00.000Z',
+    pending_sync: 0,
+  })
 })
 
 test('hosted acknowledgement refuses when the service is unreachable', async () => {
