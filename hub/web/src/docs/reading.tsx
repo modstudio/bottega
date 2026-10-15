@@ -5,6 +5,7 @@ import { Markdown } from '@/components/markdown/markdown'
 import { Button } from '@/ui/button/button'
 import { classes } from '@/ui/text/classes'
 import { readingBody, viewedPaneTitle } from './body.ts'
+import { CodeSection } from './code-section.tsx'
 import { EditableSourceFiles, EditableStatus } from './doc-field-controls.tsx'
 import { DOC_STATUS_LABELS } from './filters.ts'
 import type { DocsLocation } from './location.ts'
@@ -373,8 +374,7 @@ export function DocsReading({
           {fieldSource && doc.kind === 'article' && showsCode(signedIn, audience) ? (
             <EditableSourceFiles key={doc.id} doc={doc} source={fieldSource} />
           ) : showSourceFiles(signedIn, audience, doc.sourceFiles) ? (
-            <section className="markdown mt-8">
-              <h2>In the code</h2>
+            <CodeSection count={doc.sourceFiles?.length ?? 0}>
               <ul>
                 {doc.sourceFiles?.map((path) => (
                   <li key={path}>
@@ -382,7 +382,7 @@ export function DocsReading({
                   </li>
                 ))}
               </ul>
-            </section>
+            </CodeSection>
           ) : null}
           <ReadingAround around={around} onSelect={onSelect} />
         </>
