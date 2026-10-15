@@ -22,7 +22,6 @@ export const docModules: DocModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
-    '../../../shared/docs.ts',
     '../../../shared/git.ts',
     './docs.ts',
     './doc-generator.ts',
