@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
 const MCP_SERVER_NAMES = ['orch', 'orch-ask'] as const
 export type McpServerName = (typeof MCP_SERVER_NAMES)[number]
@@ -42,11 +43,21 @@ export type SetupCommandRunner = (argv: string[], timeoutMs: number) => SetupCom
 export type McpReadback =
   | { status: 'absent' }
   | { status: 'registered'; command: string; args: string[] }
+  | { status: 'stale'; command: string; args: string[]; detail: string }
   | { status: 'unreadable'; detail: string }
 
 export type HarnessMcpFacts = {
   support: 'automatic' | 'manual'
   registrations: Partial<Record<McpServerName, McpReadback>>
+}
+
+/** The stable entries persisted in harness configuration. */
+export function stableMcpServers(): McpServer[] {
+  const [command, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
+  return [
+    { name: 'orch', command: command!, args: [...prefix, 'mcp', 'serve'] },
+    { name: 'orch-ask', command: command!, args: [...prefix, 'mcp', 'ask-server'] },
+  ]
 }
 
 export function runSetupCommand(
@@ -212,17 +223,42 @@ export function readMcpRegistration(
 export function captureHarnessMcpFacts(
   harness: HarnessName,
   bin: string,
-  names: McpServerName[],
+  servers: McpServer[],
   runner: SetupCommandRunner = runSetupCommand,
+  commandExists: (path: string) => boolean,
 ): HarnessMcpFacts {
   if (HARNESS_MCP_CATALOGUE[harness].support === 'manual')
     return { support: 'manual', registrations: {} }
   return {
     support: 'automatic',
     registrations: Object.fromEntries(
-      names.map((name) => [name, readMcpRegistration(harness, bin, name, runner)]),
+      servers.map((server) => {
+        const readback = readMcpRegistration(harness, bin, server.name, runner)
+        return [
+          server.name,
+          classifyMcpRegistration(
+            readback,
+            server,
+            readback.status !== 'registered' || commandExists(readback.command),
+          ),
+        ]
+      }),
     ),
   }
+}
+
+/** Classify a raw read-back against the stable entry using already-gathered filesystem facts. */
+export function classifyMcpRegistration(
+  readback: McpReadback,
+  server: McpServer,
+  commandExists: boolean,
+): McpReadback {
+  if (readback.status !== 'registered') return readback
+  if (!commandExists)
+    return { ...readback, status: 'stale', detail: 'registered command does not exist' }
+  if (!sameMcpRegistration(readback, server))
+    return { ...readback, status: 'stale', detail: 'registered command or arguments differ' }
+  return readback
 }
 
 export function sameMcpRegistration(readback: McpReadback, server: McpServer): boolean {

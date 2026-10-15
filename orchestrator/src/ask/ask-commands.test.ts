@@ -1,14 +1,15 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { stableMcpServers } from '../setup/setup-mcp.ts'
 import { setupAskCommand } from './ask-commands.ts'
 
 test('setup-ask exits non-zero when any registration fails', async () => {
   const output: string[] = []
   const code = await setupAskCommand(
-    [`/bin/${PLATFORM_SLUG}`, 'mcp', 'ask-server'],
     { log: (line) => output.push(line) },
     {
       find: (name) => `/bin/${name}`,
+      commandExists: () => true,
       runner: (argv) => ({
         exitCode: argv[0] === '/bin/grok' ? 1 : 0,
         stdout: argv.includes('get')
@@ -26,28 +27,30 @@ test('setup-ask exits non-zero when any registration fails', async () => {
   expect(output.join('\n')).toContain('FAIL grok')
 })
 
-test('setup-ask guards a differing registration and directs replacement through setup apply', async () => {
+test('setup-ask replaces a stale differing registration', async () => {
   const output: string[] = []
   const calls: string[][] = []
+  const replaced = new Set<string>()
+  const desired = stableMcpServers().find((server) => server.name === 'orch-ask')!
   const code = await setupAskCommand(
-    [`/bin/${PLATFORM_SLUG}`, 'mcp', 'ask-server'],
     { log: (line) => output.push(line) },
     {
       find: (name) => `/bin/${name}`,
+      commandExists: () => true,
       runner: (argv) => {
         calls.push(argv)
+        if (argv.includes('add')) replaced.add(argv[0]!)
+        const entry = replaced.has(argv[0]!)
+          ? { command: desired.command, args: desired.args }
+          : { command: '/somewhere/else', args: [] }
         const stdout = argv.includes('get')
-          ? JSON.stringify({
-              transport: { type: 'stdio', command: '/somewhere/else', args: [] },
-            })
-          : JSON.stringify([{ name: 'orch-ask', command: '/somewhere/else', args: [] }])
+          ? JSON.stringify({ transport: { type: 'stdio', ...entry } })
+          : JSON.stringify([{ name: 'orch-ask', ...entry }])
         return { exitCode: 0, stdout, stderr: '', timedOut: false, error: null }
       },
     },
   )
-  expect(code).toBe(1)
-  expect(calls.some((argv) => argv.includes('add'))).toBe(false)
-  expect(output.join('\n')).toContain(
-    `run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
-  )
+  expect(code).toBe(0)
+  expect(calls.filter((argv) => argv.includes('add'))).toHaveLength(2)
+  expect(output.join('\n')).toContain('orch-ask registered and verified')
 })

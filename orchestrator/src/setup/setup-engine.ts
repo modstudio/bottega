@@ -54,7 +54,7 @@ type SetupRegistrationProposal = {
   server: McpServer
   current: McpReadback
   questionId: string | null
-  state: 'absent' | 'same' | 'different' | 'unreadable'
+  state: 'absent' | 'same' | 'stale' | 'unreadable'
 }
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
@@ -148,11 +148,13 @@ function proposeHarnessRegistrations(
           why: `Updates ${server.name} to ${PLATFORM_NAME}'s current command and arguments.`,
         },
       ],
-      recommendation: 'keep',
+      recommendation: current.status === 'unreadable' ? 'keep' : 'replace',
       why:
-        current.status === 'registered'
-          ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
-          : `The existing registration could not be read exactly: ${current.detail}`,
+        current.status === 'stale'
+          ? `The existing registration is stale: ${current.detail}.`
+          : current.status === 'registered'
+            ? `The registered command or arguments differ from ${PLATFORM_NAME}.`
+            : `The existing registration could not be read exactly: ${current.detail}`,
     })
     if (current.status === 'unreadable')
       notices.push({
@@ -165,7 +167,7 @@ function proposeHarnessRegistrations(
       server,
       current,
       questionId: replaceQuestionId,
-      state: current.status === 'registered' ? 'different' : 'unreadable',
+      state: current.status === 'registered' || current.status === 'stale' ? 'stale' : 'unreadable',
     }
   })
 }

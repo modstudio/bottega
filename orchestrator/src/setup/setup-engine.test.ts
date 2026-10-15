@@ -59,6 +59,7 @@ function machineWithMcp(
 }
 
 const orchServer = { name: 'orch' as const, command: '/bin/orch', args: ['mcp'] }
+const askServer = { name: 'orch-ask' as const, command: '/bin/orch', args: ['mcp', 'ask-server'] }
 
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
   return {
@@ -461,10 +462,59 @@ test('plans absent, same, and different MCP registration read-backs', () => {
     [],
     [orchServer],
   )
-  expect(different.questions[0]).toMatchObject({ recommendation: 'keep' })
-  expect(planSetupActions(different, recommendedAnswers(different))[0]?.kind).toBe('mcp-skipped')
+  expect(different.questions[0]).toMatchObject({ recommendation: 'replace' })
+  expect(planSetupActions(different, recommendedAnswers(different))[0]).toMatchObject({
+    kind: 'register-mcp',
+    replace: true,
+  })
   expect(planSetupActions(different, { [different.questions[0]!.id]: 'replace' })[0]).toMatchObject(
     { kind: 'register-mcp', replace: true },
+  )
+})
+
+test('plans replacement when fixture facts mark a missing registration command stale', () => {
+  const stale = proposeSetup(
+    machineWithMcp('codex', {
+      support: 'automatic',
+      registrations: {
+        orch: {
+          status: 'stale',
+          command: `/missing/bin/${PLATFORM_SLUG}`,
+          args: ['mcp', 'serve'],
+          detail: 'registered command does not exist',
+        },
+      },
+    }),
+    [],
+    [],
+    [],
+    [],
+    [orchServer],
+  )
+  expect(stale.registrations[0]?.state).toBe('stale')
+  expect(stale.questions[0]).toMatchObject({ recommendation: 'replace' })
+  expect(planSetupActions(stale, recommendedAnswers(stale))[0]).toMatchObject({
+    kind: 'register-mcp',
+    replace: true,
+  })
+})
+
+test.each([
+  ['claude', ['orch']],
+  ['codex', ['orch', 'orch-ask']],
+  ['grok', ['orch', 'orch-ask']],
+] as const)('plans stable registrations supported by the %s fixture', (harness, names) => {
+  const registrations = Object.fromEntries(names.map((name) => [name, { status: 'absent' }]))
+  const plan = proposeSetup(
+    machineWithMcp(harness, { support: 'automatic', registrations }),
+    [],
+    [],
+    [],
+    [],
+    [orchServer, askServer],
+  )
+  expect(plan.registrations.map(({ server }) => server)).toEqual(
+    [orchServer, askServer].filter(({ name }) => (names as readonly string[]).includes(name)),
   )
 })
 

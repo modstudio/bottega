@@ -3,8 +3,6 @@
 
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
@@ -18,6 +16,7 @@ import {
 } from './setup-apply.ts'
 import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
+import { stableMcpServers } from './setup-mcp.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -51,8 +50,6 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
-  const front = bottegaEntryArgv(PLATFORM_SLUG)
-  const ask = bottegaEntryArgv('ask-server')
   return proposeSetup(
     resolveWorktreeLifecycle,
     machine,
@@ -60,10 +57,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     state.projects,
     state.agents,
     repositories.notices,
-    [
-      { name: 'orch', command: front[0]!, args: [...front.slice(1), 'mcp', 'serve'] },
-      { name: 'orch-ask', command: ask[0]!, args: ask.slice(1) },
-    ],
+    stableMcpServers(),
   )
 }
 

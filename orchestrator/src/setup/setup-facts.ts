@@ -1,6 +1,6 @@
 // concern: setup-facts
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
@@ -16,8 +16,8 @@ import {
   type HarnessMcpFacts,
   type HarnessName,
   harnessMcpServers,
-  type McpServerName,
   type SetupCommandRunner,
+  stableMcpServers,
 } from './setup-mcp.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
@@ -136,8 +136,8 @@ function procVersion(): string | null {
 }
 
 /** Gather bounded, read-only observations without consulting agent registration rows. */
-function desiredServerNames(harness: HarnessName): McpServerName[] {
-  return [...harnessMcpServers(harness)]
+function desiredServers(harness: HarnessName) {
+  return stableMcpServers().filter((server) => harnessMcpServers(harness).includes(server.name))
 }
 
 export async function gatherSetupFacts(
@@ -157,7 +157,13 @@ export async function gatherSetupFacts(
           version: versionCapture(path),
           auth: auth?.status === 'ready' ? 'signed-in' : (auth?.status ?? 'unknown'),
           mcp: path
-            ? captureHarnessMcpFacts(name, path, desiredServerNames(name), registrationRunner)
+            ? captureHarnessMcpFacts(
+                name,
+                path,
+                desiredServers(name),
+                registrationRunner,
+                existsSync,
+              )
             : undefined,
         },
       ]

@@ -24,6 +24,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-apply.ts',
       './setup-engine.ts',
       './setup-facts.ts',
+      './setup-mcp.ts',
       './setup-planner.ts',
     ],
     typeOnlyAllowed: [],
@@ -94,7 +95,11 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-mcp-boundary',
     file: 'orchestrator/src/setup/setup-mcp.ts',
-    allowed: ['../../../shared/brand.ts', '../../../shared/secret-shaped.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/secret-shaped.ts',
+      '../../../shared/self-spawn.ts',
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',
   },
