@@ -3,6 +3,7 @@
 import { repoRootOf } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { proveWorktreeReconstructible } from '../reclaim/reclaim.ts'
+import { removalWorkingDirectoryRefusal } from '../worktree/removal-working-directory.ts'
 import { worktreeExists } from '../worktree/worktree.ts'
 import { branchTip, hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
 
@@ -13,6 +14,7 @@ type AbsentResult = {
   detail: string
 }
 
+type FailedResult = Omit<AbsentResult, 'outcome'> & { outcome: 'failed' }
 type ReleasedResult = Omit<AbsentResult, 'outcome'> & { outcome: 'released' }
 type HeldResult = Omit<AbsentResult, 'outcome'> & { outcome: 'held' }
 
@@ -58,11 +60,20 @@ export function absentTreeCloseOut(input: {
   retainedBranch: string | null
   dryRun?: boolean
   recordRetainedBranch: (tip: string | null) => void
-}): { absent: boolean; repoRoot: string | null; result: AbsentResult | null } {
+}): { absent: boolean; repoRoot: string | null; result: AbsentResult | FailedResult | null } {
   const absent = !worktreeExists(input.treePath)
   const repoRoot =
     (input.repo ? projectByName(input.repo)?.path : null) ?? repoRootOf(input.treePath) ?? input.cwd
-  if (!absent) return { absent, repoRoot, result: null }
+  if (!absent) {
+    const detail = repoRoot ? removalWorkingDirectoryRefusal(input.treePath, repoRoot) : null
+    return {
+      absent,
+      repoRoot,
+      result: detail
+        ? { runId: input.runId, worktree: input.treePath, outcome: 'failed', detail }
+        : null,
+    }
+  }
   if (!input.dryRun && repoRoot && input.retainedBranch) {
     input.recordRetainedBranch(branchTip(repoRoot, input.retainedBranch))
   }

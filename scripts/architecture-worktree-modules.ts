@@ -59,6 +59,7 @@ export const worktreeModules: WorktreeModule[] = [
     '../resources/ref-guard.ts',
     '../resources/resource-claims.ts',
     './snapshotless-tracked-recipe.ts',
+    './removal-working-directory.ts',
     './worktree-tool.ts',
     './worktree-types.ts',
   ]),

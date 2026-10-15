@@ -154,6 +154,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../project/projects.ts',
     '../reclaim/reclaim.ts',
+    '../worktree/removal-working-directory.ts',
     '../worktree/worktree.ts',
     '../worktree/worktree-remove.ts',
   ]),
