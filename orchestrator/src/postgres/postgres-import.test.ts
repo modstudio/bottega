@@ -60,6 +60,17 @@ type ImportedProject = Record<string, unknown> & {
   key_prefixes: string[]
 }
 
+function expectPreservedProjectIds(
+  sourceProjects: SourceProject[],
+  importedProjects: ImportedProject[],
+): void {
+  for (const source of sourceProjects) {
+    if (source.record_id !== null) {
+      expect(importedProjects.find((row) => row.name === source.name)?.id).toBe(source.record_id)
+    }
+  }
+}
+
 test('project-level autonomy is deliberately not imported', () => {
   const settings = { autonomy: { mode: 'supervised' } }
   const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
@@ -205,11 +216,7 @@ realPostgres('project import against copied live SQLite data', () => {
 
     const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
     expect(imported).toHaveLength(sourceProjects.length)
-    for (const source of sourceProjects) {
-      if (source.record_id !== null) {
-        expect(imported.find((row) => row.name === source.name)?.id).toBe(source.record_id)
-      }
-    }
+    expectPreservedProjectIds(sourceProjects, imported)
     const columnForSetting: Record<string, string> = {
       color: 'color',
       colorDark: 'color_dark',
