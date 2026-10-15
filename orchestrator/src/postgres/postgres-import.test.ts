@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
-import { copyFileSync, existsSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
@@ -24,7 +25,7 @@ import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
-import { importProjects } from './postgres-import.ts'
+import { importProjects, projectImportRecordId } from './postgres-import.ts'
 import { migratePostgres } from './postgres-migrate.ts'
 
 const container = process.env.ORCH_TEST_POSTGRES_CONTAINER
@@ -39,14 +40,35 @@ const realPostgres =
     : describe.skip
 
 type SourceProject = {
+  record_id: string | null
   name: string
   settings: string
   retired_at: string | null
 }
 
+test('project import keeps an existing record id and mints only when absent', () => {
+  const existing = '01990000-0000-7000-8000-000000000001'
+  const minted = '01990000-0000-7000-8000-000000000002'
+  const mint = () => minted
+
+  expect(projectImportRecordId(existing, mint)).toBe(existing)
+  expect(projectImportRecordId(null, mint)).toBe(minted)
+})
+
 type ImportedProject = Record<string, unknown> & {
   name: string
   key_prefixes: string[]
+}
+
+function expectPreservedProjectIds(
+  sourceProjects: SourceProject[],
+  importedProjects: ImportedProject[],
+): void {
+  for (const source of sourceProjects) {
+    if (source.record_id !== null) {
+      expect(importedProjects.find((row) => row.name === source.name)?.id).toBe(source.record_id)
+    }
+  }
 }
 
 test('project-level autonomy is deliberately not imported', () => {
@@ -158,7 +180,9 @@ realPostgres('project import against copied live SQLite data', () => {
     const orch = new Database(sources.orchDb, { readonly: true })
     const hub = new Database(sources.hubDb, { readonly: true })
     const sourceProjects = orch
-      .query<SourceProject, []>('SELECT name, settings, retired_at FROM project ORDER BY name')
+      .query<SourceProject, []>(
+        'SELECT record_id, name, settings, retired_at FROM project ORDER BY name',
+      )
       .all()
     const sourceSequences = hub
       .query<{ name: string; next: number }, []>('SELECT name, next FROM seq ORDER BY name')
@@ -192,6 +216,7 @@ realPostgres('project import against copied live SQLite data', () => {
 
     const imported = (await sql`SELECT * FROM project ORDER BY name`) as ImportedProject[]
     expect(imported).toHaveLength(sourceProjects.length)
+    expectPreservedProjectIds(sourceProjects, imported)
     const columnForSetting: Record<string, string> = {
       color: 'color',
       colorDark: 'color_dark',
@@ -339,7 +364,19 @@ realPostgres('project import against copied live SQLite data', () => {
     const backfill = backfillRunRecords(source, sourceMachineId)
     const scoreBackfill = backfillScoreRecords(source, sourceMachineId)
     const reviewBackfill = backfillReviewRecords(source)
-    const landingEvidenceBackfill = backfillLandingEvidenceRecords(source)
+    // The suite preload owns an isolated machine config, while this proof deliberately
+    // replays a copied machine. Mint its new landing payloads as that copied machine.
+    const configPath = join(process.env.BOTTEGA_CONFIG_HOME!, 'machine.toml')
+    const testMachineConfig = readFileSync(configPath, 'utf8')
+    const testMachineId = /\bid\s*=\s*"([^"]+)"/.exec(testMachineConfig)?.[1]
+    if (!testMachineId) throw new Error(`test machine identity is absent from ${configPath}`)
+    writeFileSync(configPath, testMachineConfig.replace(testMachineId, sourceMachineId))
+    let landingEvidenceBackfill: ReturnType<typeof backfillLandingEvidenceRecords>
+    try {
+      landingEvidenceBackfill = backfillLandingEvidenceRecords(source)
+    } finally {
+      writeFileSync(configPath, testMachineConfig)
+    }
     console.log(
       `live-copy backfill: enqueued ${backfill.enqueued}, skipped-live ${backfill.skippedLive}`,
     )
